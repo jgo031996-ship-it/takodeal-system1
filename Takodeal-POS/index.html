@@ -1,0 +1,2190 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    :root {
+      --primary: #ff9f43;
+      --primary-light: #ffb36e;
+      --sidebar-bg: #127c67;
+      --sidebar-hover: #18987f;
+      --bg-color: #f4f6f8;
+      --card-bg: #ffffff;
+      --text-main: #333;
+      --border: #e9ecef;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      color: var(--text-main);
+      user-select: none;
+    }
+
+    .login-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--sidebar-bg);
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+    }
+
+    .login-box {
+      background: white;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      color: #333;
+    }
+
+    .pin-display {
+      font-size: 32px;
+      letter-spacing: 15px;
+      margin: 20px 0;
+      height: 40px;
+      font-weight: bold;
+      color: var(--sidebar-bg);
+    }
+
+    .login-numpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+    }
+
+    .log-btn {
+      padding: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: 0.1s;
+    }
+
+    .log-btn:active {
+      background: #e9ecef;
+    }
+
+    .log-btn.action {
+      font-size: 16px;
+      background: #eee;
+    }
+
+    .sidebar {
+      width: 220px;
+      background: var(--sidebar-bg);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      transition: width 0.3s ease;
+      z-index: 20;
+      flex-shrink: 0;
+    }
+
+    .sidebar.collapsed {
+      width: 75px;
+    }
+
+    .sidebar-header {
+      padding: 15px 20px;
+      font-size: 20px;
+      font-weight: bold;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 60px;
+      box-sizing: border-box;
+    }
+
+    .brand-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+      white-space: nowrap;
+      transition: 0.3s;
+    }
+
+    .sidebar.collapsed .brand-container {
+      display: none;
+    }
+
+    .brand-icon {
+      display: none;
+      font-size: 26px;
+      text-align: center;
+      flex: 1;
+    }
+
+    .sidebar.collapsed .brand-icon {
+      display: block;
+    }
+
+    .sidebar-toggle {
+      cursor: pointer;
+      color: rgba(255, 255, 255, 0.6);
+      padding: 5px;
+      font-size: 14px;
+    }
+
+    .sidebar-toggle:hover {
+      color: white;
+    }
+
+    .nav-menu {
+      flex: 1;
+      padding: 15px 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    .nav-item {
+      padding: 15px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transition: 0.2s;
+      color: rgba(255, 255, 255, 0.8);
+      border-left: 4px solid transparent;
+      white-space: nowrap;
+    }
+
+    .nav-item span {
+      font-size: 18px;
+      min-width: 25px;
+      text-align: center;
+    }
+
+    .nav-item:hover {
+      background: var(--sidebar-hover);
+      color: white;
+    }
+
+    .nav-item.active {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      border-left-color: var(--primary);
+    }
+
+    .sidebar.collapsed .nav-item-text {
+      display: none;
+    }
+
+    .sidebar-footer {
+      padding: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.6);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .sidebar.collapsed .sidebar-footer {
+      display: none;
+    }
+
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .top-bar {
+      height: 60px;
+      background: var(--card-bg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 25px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+      z-index: 10;
+    }
+
+    .top-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #444;
+    }
+
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .shift-btn {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 20px;
+      color: #555;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 8px 18px;
+    }
+
+    .view-container {
+      display: none;
+      width: 100%;
+      height: calc(100vh - 60px);
+      flex: 1;
+      overflow-y: auto;
+      background: var(--bg-color);
+    }
+
+    .view-container.active {
+      display: flex;
+      flex-direction: row;
+    }
+
+    .pos-layout {
+      flex: 1;
+      display: flex;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .menu-panel {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      background: #fdfdfd;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .category-header {
+      display: flex;
+      gap: 10px;
+      padding: 15px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card-bg);
+      overflow-x: auto;
+    }
+
+    .cat-btn {
+      padding: 12px 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: white;
+      font-weight: bold;
+      color: #666;
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .cat-btn.active {
+      color: white;
+      border-color: var(--primary);
+      background: var(--primary);
+    }
+
+    .item-grid-container {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .item-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 15px;
+      align-content: start;
+    }
+
+    .item-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+      position: relative;
+      padding: 0;
+      text-align: center;
+      height: 130px;
+      justify-content: space-between;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
+    }
+
+    .item-number {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 11px;
+      color: #999;
+      font-weight: bold;
+    }
+
+    .item-name {
+      font-weight: 600;
+      font-size: 14px;
+      margin-top: 30px;
+      padding: 0 10px;
+      color: #444;
+    }
+
+    .item-price-tag {
+      background: #fff3e6;
+      color: var(--primary);
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 15px;
+      font-weight: bold;
+      width: 85%;
+      margin: 0 auto 15px auto;
+    }
+
+    .ticket-panel {
+      flex: 1;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      min-width: 400px;
+      max-width: 450px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border);
+    }
+
+    .ticket-header {
+      padding: 15px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fafafa;
+    }
+
+    .table-header {
+      display: flex;
+      padding: 10px 20px;
+      font-size: 11px;
+      font-weight: bold;
+      color: #888;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
+    }
+
+    .col-desc {
+      flex: 2;
+    }
+
+    .col-price {
+      flex: 1;
+      text-align: right;
+    }
+
+    .col-qty {
+      flex: 1;
+      text-align: center;
+    }
+
+    .col-sub {
+      flex: 1;
+      text-align: right;
+    }
+
+    .order-list {
+      flex: 1;
+      overflow-y: auto;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .cart-item {
+      display: flex;
+      padding: 15px 20px;
+      border-bottom: 1px solid #f1f1f1;
+      align-items: flex-start;
+      font-size: 13px;
+      background: white;
+      cursor: pointer;
+    }
+
+    .cart-item-desc {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cart-item-name {
+      font-weight: 700;
+      color: #333;
+      font-size: 14px;
+    }
+
+    .cart-item-price {
+      flex: 1;
+      text-align: right;
+      color: #777;
+      font-weight: 500;
+    }
+
+    .cart-item-qty {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .cart-item-sub {
+      flex: 1;
+      text-align: right;
+      font-weight: 700;
+      color: var(--text-main);
+      font-size: 14px;
+    }
+
+    .btn-remove {
+      margin-left: 10px;
+      color: #ccc;
+      background: none;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .ticket-footer {
+      padding: 20px;
+      border-top: 1px solid var(--border);
+      background: #fafafa;
+    }
+
+    .total-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      margin-bottom: 8px;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .total-line.grand {
+      font-size: 22px;
+      font-weight: bold;
+      color: var(--text-main);
+      margin-top: 15px;
+      margin-bottom: 20px;
+      border-top: 1px dashed #ccc;
+      padding-top: 15px;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-clear {
+      flex: 1;
+      padding: 16px;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      color: #666;
+    }
+
+    .btn-place {
+      flex: 2;
+      text-align: center;
+      padding: 16px;
+      font-size: 16px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .shift-lockout {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.95);
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(3px);
+    }
+
+    .btn-shift-open {
+      padding: 15px 40px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      flex: none;
+      box-shadow: 0 4px 12px rgba(255, 159, 67, 0.3);
+      margin-top: 15px;
+    }
+
+    .dashboard-layout {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-color);
+      width: 100%;
+    }
+
+    .sales-table-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      margin: 20px;
+      max-width: 1200px;
+    }
+
+    .sales-tabs {
+      display: flex;
+      gap: 10px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 15px;
+    }
+
+    .st-btn {
+      padding: 8px 15px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 13px;
+      color: #666;
+      border-radius: 6px 6px 0 0;
+    }
+
+    .stable {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    .stable th {
+      background: #fafafa;
+      padding: 12px 20px;
+      color: #666;
+      font-size: 12px;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stable td {
+      padding: 15px 20px;
+      border-bottom: 1px solid #f1f1f1;
+      color: #444;
+    }
+
+    .dot-menu {
+      cursor: pointer;
+      color: #999;
+      font-weight: bold;
+      font-size: 18px;
+      padding: 0 10px;
+      position: relative;
+    }
+
+    .action-dropdown {
+      display: none;
+      position: absolute;
+      right: 20px;
+      top: 20px;
+      background: white;
+      border: 1px solid #ddd;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      border-radius: 8px;
+      z-index: 50;
+      flex-direction: column;
+      min-width: 150px;
+      overflow: hidden;
+    }
+
+    .action-dropdown.show {
+      display: flex;
+    }
+
+    .action-item {
+      padding: 12px 15px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #444;
+      border-bottom: 1px solid #f1f1f1;
+      text-align: left;
+    }
+
+    .action-item.danger {
+      color: #dc3545;
+      font-weight: bold;
+    }
+
+    .status-badge {
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .status-good {
+      background: #e6f4ea;
+      color: #198754;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status-out {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 10000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-height: 95vh;
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
+      width: 100%;
+    }
+
+    .modal-head {
+      padding: 18px 25px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-weight: bold;
+      font-size: 17px;
+    }
+
+    .modal-body {
+      padding: 25px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    .modal-foot {
+      padding: 15px 25px;
+      display: flex;
+      gap: 12px;
+      border-top: 1px solid var(--border);
+      background: #fafafa;
+    }
+
+    .close-modal {
+      cursor: pointer;
+      color: #999;
+      font-size: 20px;
+    }
+
+    .input-box {
+      width: 100%;
+      padding: 14px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      box-sizing: border-box;
+      outline: none;
+      background: white;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: #999;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .qty-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 5px;
+    }
+
+    .btn-qty-small {
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .variant-grid,
+    .discount-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .discount-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .var-btn {
+      padding: 14px;
+      font-size: 13px;
+      font-weight: bold;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #666;
+    }
+
+    .var-btn.active {
+      background: var(--sidebar-bg);
+      color: white;
+      border-color: var(--sidebar-bg);
+    }
+
+    .qty-display-box {
+      width: 60px;
+      height: 60px;
+      font-size: 32px;
+      font-weight: bold;
+      color: #333;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 2px solid #ddd;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .checkout-yellow-box {
+      background: #fffcf0;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #ffeeba;
+    }
+
+    .checkout-grey-box {
+      background: #f8f9fa;
+      padding: 18px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border: 1px solid #eee;
+    }
+
+    .numpad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .num-btn {
+      padding: 18px;
+      font-size: 20px;
+      font-weight: bold;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .payment-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .pay-btn {
+      padding: 14px 5px;
+      font-size: 13px;
+      font-weight: bold;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #666;
+    }
+
+    .pay-btn.active {
+      background: var(--primary);
+      color: white;
+    }
+
+    .shift-section {
+      border-bottom: 1px solid #eee;
+      padding-bottom: 15px;
+      margin-bottom: 15px;
+    }
+
+    .shift-section-title {
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--sidebar-bg);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .shift-section-title:hover {
+      color: var(--primary);
+    }
+
+    .shift-arrow {
+      display: inline-block;
+      width: 15px;
+      text-align: center;
+      color: #888;
+      font-size: 10px;
+    }
+
+    .shift-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #555;
+    }
+
+    .shift-val {
+      font-weight: 600;
+      color: #333;
+    }
+
+    .modal.variant-modal {
+      width: 550px;
+      position: relative;
+    }
+
+    .modal.checkout-modal {
+      width: 450px;
+    }
+
+    .modal.shift-modal {
+      width: 500px;
+    }
+
+    .modal.receipt-modal {
+      width: 450px;
+      padding-bottom: 0;
+    }
+
+    /* NEW INVENTORY CHECK MODAL STYLES */
+    .count-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f1f1;
+    }
+
+    .count-row:last-child {
+      border-bottom: none;
+    }
+
+    .count-input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      outline: none;
+      font-size: 14px;
+    }
+
+    .count-input:focus {
+      border-color: var(--primary);
+    }
+
+    @media (max-width: 768px) {
+      body {
+        flex-direction: column;
+        overflow: auto;
+      }
+
+      .sidebar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        height: 60px;
+        flex-direction: row;
+        z-index: 100;
+      }
+
+      .sidebar-header,
+      .sidebar-footer {
+        display: none;
+      }
+
+      .nav-menu {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+        padding: 0;
+        width: 100%;
+      }
+
+      .nav-item {
+        flex: 1;
+        text-align: center;
+        border-left: none;
+        border-bottom: 4px solid transparent;
+        flex-direction: column;
+        padding: 10px 0;
+        gap: 0;
+      }
+
+      .nav-item.active {
+        background: none;
+        border-bottom-color: var(--primary);
+      }
+
+      .nav-item span {
+        font-size: 20px;
+      }
+
+      .nav-item-text {
+        display: none;
+      }
+
+      .content-area {
+        width: 100%;
+        display: block;
+        margin-bottom: 60px;
+        overflow-y: auto;
+      }
+
+      .top-bar {
+        position: sticky;
+        top: 0;
+        left: 0;
+        width: 100%;
+        z-index: 10;
+      }
+
+      .pos-layout {
+        display: block;
+        height: auto;
+      }
+
+      .menu-panel {
+        width: 100%;
+        border-right: none;
+        height: auto;
+        border-bottom: 3px solid var(--primary);
+        display: block;
+        margin-top: 10px;
+      }
+
+      .item-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .ticket-panel {
+        width: 100%;
+        display: block;
+        height: auto;
+        min-width: 100%;
+        max-width: 100%;
+        border-left: none;
+      }
+
+      .modal {
+        width: 90% !important;
+        margin: 20px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="deviceSetupOverlay"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 99999; justify-content: center; align-items: center; flex-direction: column; color: white;">
+    <h1 style="color: #f59e0b; margin-bottom: 10px;">⚙️ Device Setup</h1>
+    <p style="margin-bottom: 30px; color: #94a3b8;">Which branch is this tablet physically located at?</p>
+
+    <select id="setupBranchSelect"
+      style="padding: 15px; border-radius: 8px; font-size: 18px; font-weight: bold; width: 300px; margin-bottom: 20px;">
+      <option value="Cabantian">Cabantian</option>
+      <option value="Citygate">Citygate</option>
+      <option value="Maa">Maa</option>
+    </select>
+
+    <button onclick="lockDeviceToBranch()"
+      style="padding: 15px 30px; background: #10b981; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; width: 300px;">🔒
+      Lock Device</button>
+  </div>
+
+  <div class="login-overlay" id="loginOverlay">
+    <div class="brand-container" style="margin-bottom: 20px;">
+      <span style="font-size: 32px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
+    </div>
+    <div class="login-box">
+      <h2 style="margin: 0 0 10px 0; color: #555;">Cashier Login</h2>
+      <div class="pin-display" id="pinDisplay">****</div>
+      <div class="login-numpad">
+        <button class="log-btn" onclick="loginPin('1')">1</button>
+        <button class="log-btn" onclick="loginPin('2')">2</button>
+        <button class="log-btn" onclick="loginPin('3')">3</button>
+        <button class="log-btn" onclick="loginPin('4')">4</button>
+        <button class="log-btn" onclick="loginPin('5')">5</button>
+        <button class="log-btn" onclick="loginPin('6')">6</button>
+        <button class="log-btn" onclick="loginPin('7')">7</button>
+        <button class="log-btn" onclick="loginPin('8')">8</button>
+        <button class="log-btn" onclick="loginPin('9')">9</button>
+        <button class="log-btn action" onclick="clearLoginPin()">CLR</button>
+        <button class="log-btn" onclick="loginPin('0')">0</button>
+        <button class="log-btn action" style="background: var(--primary); color: white; border-color: var(--primary);"
+          onclick="submitLoginPin()" id="btnSubmitPin">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar" id="mainSidebar">
+    <div class="sidebar-header">
+      <div class="brand-icon">🐙</div>
+      <div class="brand-container">
+        <span style="font-size: 20px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
+      </div>
+      <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon">◀</div>
+    </div>
+    <div class="nav-menu">
+      <div class="nav-item active" id="nav-pos" onclick="switchView('pos')"><span>🖥️</span>
+        <div class="nav-item-text">Point of Sale</div>
+      </div>
+      <div class="nav-item" id="nav-sales" onclick="switchView('sales')"><span>🧾</span>
+        <div class="nav-item-text">Shift Sales</div>
+      </div>
+      <div class="nav-item" onclick="openInventoryCheckModal()"><span>📋</span>
+        <div class="nav-item-text">Stock Count</div>
+      </div>
+
+      <div class="nav-item"
+        onclick="alert('🖨️ PRINTER SETUP\n\n1. Go to your Tablet Settings and pair the Bluetooth Printer.\n2. Open your Print Service App (e.g., RawBT) and ensure it is active.\n\nThe POS will automatically route all tickets through your Print Service!')">
+        <span>🖨️</span>
+        <div class="nav-item-text">Printer Setup</div>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div id="displayCashier">👤 Loading...</div>
+      <div id="displayBranch" style="margin-top: 5px;">📍 Loading...</div>
+    </div>
+  </div>
+
+  <div class="content-area">
+    <div class="top-bar">
+      <div class="top-title" id="topBarTitle">🖥️ Point of Sale</div>
+      <div class="top-bar-right">
+        <div style="display: flex; gap: 10px; align-items: center;">
+
+          <button onclick="showParkedOrders()"
+            style="position: relative; background: #34495e; color: white; border: none; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-family: inherit; font-size: 14px; font-weight: 600;">
+            🕒 Parked Orders
+            <span id="parkedBadge"
+              style="position: absolute; top: -5px; right: -5px; background: #e74c3c; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
+          </button>
+
+          <button id="btnTopShift" onclick="openShiftModal()"
+            style="background: white; color: #333; border: 1px solid #ddd; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-family: inherit; font-size: 14px; font-weight: 600;">
+            🔴 Shift Closed
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="view-container active" id="view-pos">
+      <div class="pos-layout">
+        <div class="menu-panel">
+          <div class="shift-lockout" id="shiftLockout" style="display: flex;">
+            <h2 style="color: var(--primary); margin-bottom: 8px;">Register is Closed</h2>
+            <p style="color: #777; margin-bottom: 25px;">Open a shift to begin taking orders.</p>
+            <button class="btn-shift-open" onclick="openShiftModal()">Open Shift</button>
+          </div>
+          <div class="category-header"></div>
+          <div class="item-grid-container">
+            <div class="item-grid">
+              <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Loading Menu...</div>
+            </div>
+          </div>
+          <div
+            style="padding: 10px; background: #fff; margin-bottom: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); box-sizing: border-box; width: 100%;">
+            <input type="text" id="posSearchInput" placeholder="🔍 Search menu items..." onkeyup="searchMenuItems()"
+              style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box;">
+          </div>
+        </div>
+        <div class="ticket-panel">
+          <div class="ticket-header">
+            <h2>Current Orders</h2><select id="mainOrderType" class="order-type-select">
+              <option>Loading...</option>
+            </select>
+          </div>
+          <div class="table-header"><span class="col-desc">Description</span><span class="col-price">Unit
+              Price</span><span class="col-qty">Qty</span><span class="col-sub">Subtotal</span></div>
+          <ul class="order-list" id="cartList">
+            <li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>
+          </ul>
+          <div class="ticket-footer">
+            <div class="total-line"><span>Total Amount:</span><span id="displaySubTotal">₱0.00</span></div>
+            <div class="total-line grand"><span>Grand Total:</span><span id="displayGrandTotal">₱0.00</span></div>
+            <div class="action-row" style="margin-bottom: 10px; display: flex; gap: 10px;">
+              <button class="btn-clear" onclick="clearCart()">Clear</button>
+              <button onclick="parkOrder()"
+                style="flex-grow: 1; background: #f39c12; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px;">⏸️
+                Park Order</button>
+            </div>
+            <button class="btn-place" id="btnMainPlaceOrder" onclick="openCheckoutModal()" disabled
+              style="width: 100%; padding: 18px; font-size: 20px; border-radius: 5px;">Place Order</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view-container" id="view-sales">
+      <div class="dashboard-layout">
+        <div class="sales-table-card">
+          <div class="sales-tabs" style="padding: 15px 20px 0 20px; margin-bottom: 0; background: #fafafa;">
+            <div class="st-btn active" style="background: var(--sidebar-bg); color: white;">Current Shift Transactions
+            </div>
+            <button class="btn-clear" style="margin-left: auto; padding: 5px 15px; font-size: 12px;"
+              onclick="loadSalesDashboard()">🔄 Refresh</button>
+          </div>
+          <div style="overflow-y: auto; flex: 1;">
+            <table class="stable">
+              <thead>
+                <tr>
+                  <th>OR#</th>
+                  <th>Customer</th>
+                  <th>Payment Method</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Time</th>
+                  <th>Sales Amount</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tbTransBody">
+                <tr>
+                  <td colspan="7" style="text-align:center; padding:30px;">Loading transactions...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="variantModal">
+    <div class="modal variant-modal">
+      <div class="modal-head"><span>Add Order</span><span class="close-modal"
+          onclick="closeModal('variantModal')">✖</span></div>
+      <div class="modal-body">
+        <div style="font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom:15px;">
+          <div style="display:flex;"><span style="width:100px; color:#666;">Description:</span> <strong
+              id="modalItemName">Cheesy Takoyaki</strong></div>
+          <div style="display:flex;"><span style="width:100px; color:#666;">Base Price:</span> <strong
+              id="modalItemPrice" style="color:var(--primary);">₱ 0.00</strong></div>
+        </div>
+        <div style="margin-bottom:15px;">
+          <div class="section-title">Select Variant</div>
+          <div class="variant-grid" id="variantOptions"></div>
+        </div>
+        <div style="margin-bottom:15px;">
+          <div class="section-title">Set Quantity</div>
+          <div class="qty-controls"><button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;"
+              onclick="adjustModalMainQty(-1)">-</button>
+            <div id="modalMainQty" class="qty-display-box">1</div>
+            <button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;"
+              onclick="adjustModalMainQty(1)">+</button>
+          </div>
+        </div>
+        <div style="margin-bottom:15px;">
+          <div class="section-title">Apply Discount</div>
+          <div class="discount-grid">
+            <button class="var-btn active" id="btnDiscNone" onclick="setDiscountType('none')">None</button>
+            <button class="var-btn" id="btnDiscPerc" onclick="setDiscountType('percentage')">%</button>
+            <button class="var-btn" id="btnDiscFixed" onclick="setDiscountType('fixed')">Fixed (₱)</button>
+          </div>
+          <input type="number" id="discountValueInput" class="input-box" placeholder="Enter discount amount..."
+            style="display:none; margin-top:10px;" oninput="updateModalTotals()">
+        </div>
+        <div style="margin-top: 5px;">
+          <div class="section-title" style="margin-bottom: 8px;">Select Add-Ons</div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <select id="addonSelectDropdown" class="input-box" style="flex:2; margin:0; cursor:pointer;"
+              onchange="if(this.value){addAddonFromDropdown(); this.value='';}"></select>
+          </div>
+          <div id="activeAddonsContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"></div>
+        </div>
+        <div style="margin-top: 15px;">
+          <div class="section-title" style="margin-bottom: 8px;">✎ Notes</div><input type="text" id="orderNotesInput"
+            class="input-box" placeholder="e.g., Spicy, No Mayo">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-clear" onclick="closeModal('variantModal')"
+          style="padding:15px; flex:1; order: 2;">Cancel</button>
+        <button class="btn-place" style="flex:2; order: 1;" onclick="confirmAddOrUpdateToCart()">
+          <span id="confirmAddToCartText" style="float:left">Add to Order</span>
+          <span id="modalLiveTotal" style="float:right">₱ 0.00</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="checkoutModal">
+    <div class="modal checkout-modal">
+      <div class="modal-head"><span>Secure Payment</span><span class="close-modal"
+          onclick="closeModal('checkoutModal')">✖</span></div>
+      <div class="modal-body" style="padding: 25px;">
+        <div class="checkout-yellow-box">
+          <div style="color: var(--primary); font-size: 14px; margin-bottom: 5px;">Total Payable</div>
+          <div id="checkoutTotalPayable" style="font-size: 32px; font-weight: bold; color: #333;">₱0.00</div>
+        </div>
+        <div class="checkout-grey-box">
+          <div>
+            <div style="color: var(--primary); font-size: 13px; margin-bottom: 5px;">Received</div>
+            <div id="checkoutReceived" style="font-size: 26px; font-weight: bold; color: #333;">₱0</div>
+          </div>
+          <div style="text-align: right;">
+            <div id="checkoutChangeLabel" style="color: #666; font-size: 13px;">Change</div>
+            <div id="checkoutChange" style="font-size: 22px; font-weight: bold; color: #dc3545;">₱0.00</div>
+          </div>
+        </div>
+        <div id="standardPaymentArea">
+          <div class="numpad-grid"><button class="num-btn" onclick="appendNumpad('1')">1</button><button class="num-btn"
+              onclick="appendNumpad('2')">2</button><button class="num-btn"
+              onclick="appendNumpad('3')">3</button><button class="num-btn"
+              onclick="appendNumpad('4')">4</button><button class="num-btn"
+              onclick="appendNumpad('5')">5</button><button class="num-btn"
+              onclick="appendNumpad('6')">6</button><button class="num-btn"
+              onclick="appendNumpad('7')">7</button><button class="num-btn"
+              onclick="appendNumpad('8')">8</button><button class="num-btn"
+              onclick="appendNumpad('9')">9</button><button class="num-btn"
+              onclick="appendNumpad('.')">.</button><button class="num-btn"
+              onclick="appendNumpad('0')">0</button><button class="num-btn" onclick="clearNumpadOne()">⌫</button><button
+              class="num-btn" style="grid-column: span 2;" onclick="setExactAmount()">Exact Amount</button><button
+              class="num-btn" onclick="clearNumpadAll()">Clear</button></div>
+          <div class="section-title">Payment Method</div>
+          <div class="payment-grid"></div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 15px;"><input type="text" id="finalCustomerName"
+            class="input-box" placeholder="Customer Name (Optional)"></div>
+      </div>
+      <div class="modal-foot"><button class="btn-place" style="width: 100%;" id="btnSubmitFinal"
+          onclick="submitFinalOrder()">Complete checkout</button></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="receiptModal">
+    <div class="modal receipt-modal">
+      <div class="modal-head"><span>Transaction Complete</span><span class="close-modal"
+          onclick="closeModal('receiptModal')">✖</span></div>
+      <div class="modal-body" style="padding: 25px; display: flex; flex-direction: column; gap: 15px;">
+        <div style="text-align: center;">
+          <div
+            style="width: 50px; height: 50px; border-radius: 50%; border: 3px solid #198754; color: #198754; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 0 auto 10px auto;">
+            ✓</div>
+          <div style="color: #198754; font-weight: bold; font-size: 18px;">Payment Completed</div>
+        </div>
+        <div style="border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; padding: 15px 0;">
+          <div class="shift-row"><span>Rcpt #</span><span class="receipt-value" id="rcptId">: 000000</span></div>
+          <div class="shift-row"><span>Date</span><span class="receipt-value" id="rcptDate">: 2026-04-01</span></div>
+          <div class="shift-row"><span>Time</span><span class="receipt-value" id="rcptTime">: 10:18 PM</span></div>
+          <div class="shift-row"><span class="shift-val" style="font-size:16px;">Net Total</span><span
+              class="receipt-value shift-val" id="rcptTotal" style="font-size:16px;">: ₱0.00</span></div>
+        </div>
+      </div>
+      <div class="modal-foot"
+        style="background: white; flex-direction: column; gap: 10px; border-top: 1px solid #eee; padding: 20px;">
+        <button class="btn-place" onclick="printReceipt('receipt')"
+          style="width:100%; padding:16px; font-size:16px; border-radius:8px; box-shadow: 0 4px 6px rgba(255,159,67,0.2);">🖨️
+          Print Customer Receipt</button>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn-clear" onclick="printReceipt('food')"
+            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🍳
+            Print Kitchen</button>
+          <button class="btn-clear" onclick="printReceipt('drinks')"
+            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🥤
+            Print Bar</button>
+        </div>
+        <button class="btn-clear" onclick="closeModal('receiptModal')"
+          style="width:100%; padding:14px; border:2px solid #e74c3c; color:#e74c3c; background:transparent; font-weight:bold; border-radius:8px; margin-top: 5px;">Close
+          & Next Order</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="shiftModal">
+    <div class="modal shift-modal">
+      <div class="modal-head"><span id="shiftModalTitle">Shift Management</span><span class="close-modal"
+          onclick="closeModal('shiftModal')">✖</span></div>
+
+      <div class="modal-body" id="shiftViewOpen" style="display: none;">
+        <div
+          style="background: #fff3e6; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #ffeacc;">
+          <h3 style="margin: 0; color: var(--primary);">Start New Shift</h3>
+          <p style="margin: 5px 0 0; font-size: 13px; color: #666;">Enter your starting cash float.</p>
+        </div>
+        <div style="display: none;"><label style="font-size: 12px; font-weight: bold; color: #666;">Cashier
+            Name</label><input type="text" id="inputShiftCashier" class="input-box" placeholder="e.g. Bern, Jen"
+            style="margin-bottom: 10px;"></div>
+        <div><label style="font-size: 12px; font-weight: bold; color: #666;">Starting Cash Amount (₱)</label><input
+            type="number" id="inputStartingCash" class="input-box" placeholder="e.g. 1500" value="0"></div>
+        <button class="btn-place" style="width: 100%; margin-top: 10px; box-shadow: none;" id="btnOpenShiftSubmit"
+          onclick="submitOpenShift()">Open Shift</button>
+      </div>
+
+      <div class="modal-body" id="shiftViewClose" style="display: none; padding-top:10px;">
+        <div
+          style="font-size: 13px; color: #666; padding-bottom: 15px; margin-bottom: 15px; border-bottom: 1px solid #eee;"
+          id="shiftActiveDetails"></div>
+        <div class="shift-section" style="border-bottom: none;">
+          <div class="shift-section-title" onclick="toggleShiftSection('scDrawer', 'arrDrawer')"><span id="arrDrawer"
+              class="shift-arrow">▼</span> Cash Drawer</div>
+          <div id="scDrawer">
+            <div class="shift-row"><span>Starting Cash</span><span class="shift-val" id="scStartingCash">₱0.00</span>
+            </div>
+            <div class="shift-row"><span>Cash Out (Expenses)</span><span class="shift-val" id="scCashOut"
+                style="color: #e74c3c;">-₱0.00</span></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:20px;">
+          <button class="btn-clear" onclick="closeModal('shiftModal')" style="flex:1;">Cancel</button>
+
+          <button class="btn-place" id="btnCloseShiftSubmit" onclick="openEndShiftClearance()"
+            style="flex: 2; background: #f97316; color: white; border: none; border-radius: 6px; font-weight: bold; padding: 10px;">📝
+            Begin Z-Reading</button>
+
+          <button class="btn-clear"
+            style="border: 1px solid #dc3545; color: #dc3545; font-weight: bold; padding: 10px 15px;"
+            onclick="openExpenseModal()">💸 Pay Expense</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="endShiftModal" style="display: none;">
+    <div class="modal" style="width: 800px; max-width: 95%;">
+      <div class="modal-head">
+        <span id="endShiftTitle">End of Shift Clearance</span>
+        <span class="close-modal" onclick="closeModal('endShiftModal')">✖</span>
+      </div>
+
+      <div class="modal-body"
+        style="display: flex; flex-direction: row; gap: 20px; align-items: flex-start; padding-top: 15px;">
+
+        <div
+          style="flex: 1; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; min-width: 250px;">
+          <h3
+            style="margin-top: 0; color: var(--primary); border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; font-size: 16px;">
+            💵 Cash Drawer Count</h3>
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+            <thead>
+              <tr style="border-bottom: 1px solid #ccc;">
+                <th style="padding: 5px 0;">Bill/Coin</th>
+                <th style="padding: 5px 0; width: 80px;">Pieces</th>
+                <th style="padding: 5px 0; text-align: right;">Total</th>
+              </tr>
+            </thead>
+            <tbody id="denominationTable"></tbody>
+            <tfoot>
+              <tr style="font-weight: bold; font-size: 16px; background: #e2e8f0;">
+                <td colspan="2" style="padding: 10px;">GRAND TOTAL:</td>
+                <td id="grandTotalCash" style="text-align: right; padding: 10px; color: var(--primary);">₱0.00</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div
+          style="flex: 1; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; min-width: 250px;">
+          <h3
+            style="margin-top: 0; color: #d97706; border-bottom: 2px solid #fcd34d; padding-bottom: 5px; font-size: 16px;">
+            📦 Physical Stock Count</h3>
+          <p style="font-size: 12px; color: #92400e; margin-bottom: 15px;">Enter the exact remaining physical count.</p>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;"><label
+                style="font-size: 13px; font-weight: bold;">320cc Paper Bowls:</label><input type="number"
+                id="count320cc" class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center;"><label
+                style="font-size: 13px; font-weight: bold;">520cc Paper Bowls:</label><input type="number"
+                id="count520cc" class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center;"><label
+                style="font-size: 13px; font-weight: bold;">Takoyaki Boxes:</label><input type="number" id="countBoxes"
+                class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center;"><label
+                style="font-size: 13px; font-weight: bold;">Straws:</label><input type="number" id="countStraws"
+                class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 15px; display: flex; gap: 10px; border-top: 1px solid #eee; background: #fff;">
+        <button class="btn-clear" onclick="closeModal('endShiftModal')" style="flex: 1;">Cancel</button>
+
+        <button class="btn-place" onclick="submitComprehensiveCloseShift()"
+          style="flex: 2; background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; padding: 10px;">🛑
+          Confirm & End Shift</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="expenseModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
+    <div class="modal"
+      style="background: white; width: 450px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden;">
+
+      <div
+        style="background: #dc2626; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-weight: bold; font-size: 16px;">💸 Branch Expense / COD Payment</span>
+        <span onclick="document.getElementById('expenseModal').style.display='none'"
+          style="cursor: pointer; font-size: 20px;">✖</span>
+      </div>
+
+      <div style="padding: 20px;">
+        <label style="font-size: 13px; font-weight: bold; color: #334155;">What are you paying for?</label>
+        <select id="expenseType" class="input-box"
+          style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px;" onchange="toggleExpenseQty()">
+          <option value="general">General Expense (Fare, Ice, Cleaning Supplies)</option>
+        </select>
+
+        <div id="expenseQtyDiv"
+          style="display: none; background: #fffbeb; border: 1px solid #fde68a; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
+          <label style="font-size: 13px; font-weight: bold; color: #b45309;">📦 Quantity Delivered (Restock)</label>
+          <input type="number" id="expenseQty" class="input-box" style="width: 100%; padding: 10px; margin-top: 5px;"
+            placeholder="e.g., 50">
+          <span style="font-size: 11px; color: #d97706;">This will automatically be added to your live inventory.</span>
+        </div>
+
+        <label style="font-size: 13px; font-weight: bold; color: #334155;">Amount Taken from Drawer (₱)</label>
+        <input type="number" id="expenseAmount" class="input-box"
+          style="width: 100%; font-size: 18px; font-weight: bold; color: #dc2626; padding: 10px; margin-top: 5px; margin-bottom: 15px;"
+          placeholder="0.00">
+
+        <label style="font-size: 13px; font-weight: bold; color: #334155;">Notes / Description</label>
+        <input type="text" id="expenseDesc" class="input-box"
+          style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 20px;"
+          placeholder="e.g. Delivery from HQ, or Tricycle fare">
+
+        <div style="display: flex; gap: 10px;">
+          <button onclick="document.getElementById('expenseModal').style.display='none'"
+            style="flex: 1; padding: 12px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Cancel</button>
+          <button onclick="submitSmartExpense()"
+            style="flex: 1; padding: 12px; background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Submit
+            Expense</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="inventoryCheckModal">
+    <div class="modal" style="width: 550px; max-height: 85vh;">
+      <div class="modal-head"><span>📋 End of Shift Stock Count</span><span class="close-modal"
+          onclick="closeModal('inventoryCheckModal')">✖</span></div>
+      <div class="modal-body" style="padding: 0;">
+        <div
+          style="background: #fffcf0; padding: 15px 25px; border-bottom: 1px solid #ffeeba; font-size: 13px; color: #856404;">
+          <strong>Instructions:</strong> Enter the physical quantity you currently see. Leave blank if not counting.
+        </div>
+        <div style="padding: 20px 25px;" id="invCheckListContainer">
+          <div style="text-align:center; padding:20px; color:#888;">Fetching inventory list...</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-clear" onclick="closeModal('inventoryCheckModal')">Cancel</button>
+        <button class="btn-place" id="btnSubmitInvCheck" onclick="submitInventoryCheck()">Submit Count</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="parkedModal">
+    <div class="modal" style="width: 500px; max-height: 85vh;">
+      <div class="modal-head"><span>🕒 Parked Orders (Pay Later)</span><span class="close-modal"
+          onclick="closeModal('parkedModal')">✖</span></div>
+      <div class="modal-body" id="parkedListContainer" style="padding: 15px; background: #f9f9f9;">Loading...</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="txDetailModal">
+    <div class="modal product-modal" style="width: 500px;">
+      <div class="modal-head"><span id="txDetailTitle">Receipt Details</span><span class="close-modal"
+          onclick="closeModal('txDetailModal')">✖</span></div>
+      <div class="modal-body" id="txDetailBody" style="padding: 20px;"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="remittanceModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
+    <div class="modal"
+      style="background: white; width: 700px; max-width: 95%; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden; display: flex; flex-direction: column;">
+
+      <div
+        style="background: #047857; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-weight: bold; font-size: 18px;">💸 Weekly Sales Remittance</span>
+        <span onclick="document.getElementById('remittanceModal').style.display='none'"
+          style="cursor: pointer; font-size: 20px;">✖</span>
+      </div>
+
+      <div style="display: flex; background: #f1f5f9; border-bottom: 2px solid #e2e8f0;">
+        <button id="tabRemitForm" onclick="switchRemittanceTab('form')"
+          style="flex: 1; padding: 12px; background: white; border: none; border-bottom: 3px solid #047857; font-weight: bold; cursor: pointer;">📝
+          Send Remittance</button>
+        <button id="tabRemitHistory" onclick="switchRemittanceTab('history')"
+          style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer;">📜
+          Remittance History</button>
+      </div>
+
+      <div style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+
+        <div id="remitFormSection">
+          <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+            <div style="flex: 1;">
+              <label style="font-size: 12px; font-weight: bold; color: #666;">Sales Period (Start Date)</label>
+              <input type="date" id="remitStartDate" class="input-box"
+                style="width: 100%; padding: 8px; margin-top: 5px;">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-size: 12px; font-weight: bold; color: #666;">Sales Period (End Date)</label>
+              <input type="date" id="remitEndDate" class="input-box"
+                style="width: 100%; padding: 8px; margin-top: 5px;">
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+            <div style="flex: 1;">
+              <label style="font-size: 12px; font-weight: bold; color: #666;">Remitting Cashier</label>
+              <input type="text" id="remitCashier" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px;"
+                placeholder="e.g. Bern">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-size: 12px; font-weight: bold; color: #666;">Total Amount Remitted (₱)</label>
+              <input type="number" id="remitAmount" class="input-box"
+                style="width: 100%; font-size: 18px; font-weight: bold; color: #16a34a; padding: 8px; margin-top: 5px;"
+                placeholder="0.00">
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+            <div style="flex: 1;">
+              <label style="font-size: 12px; font-weight: bold; color: #666;">Send Via (Bank/E-Wallet)</label>
+              <input type="text" id="remitChannel" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px;"
+                placeholder="e.g. GoTyme, GCash, BDO">
+            </div>
+            <div style="flex: 1;">
+              <label style="font-size: 12px; font-weight: bold; color: #666;">Sent To (Recipient Name)</label>
+              <input type="text" id="remitRecipient" class="input-box"
+                style="width: 100%; padding: 8px; margin-top: 5px;" placeholder="e.g. Jostuart">
+            </div>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <label style="font-size: 12px; font-weight: bold; color: #666;">Reference / Trace Number</label>
+            <input type="text" id="remitRefNum" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px;"
+              placeholder="e.g. 0012399485">
+          </div>
+
+          <button onclick="submitRemittance()"
+            style="width: 100%; padding: 12px; background: #16a34a; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;">📤
+            Submit Remittance</button>
+        </div>
+
+        <div id="remitHistorySection" style="display: none;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; text-align: left;">
+            <thead>
+              <tr style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                <th style="padding: 10px 8px;">Date Logged</th>
+                <th style="padding: 10px 8px;">Sales Period</th>
+                <th style="padding: 10px 8px;">Destination</th>
+                <th style="padding: 10px 8px; text-align: right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="remitHistoryTableBody">
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
+    let cart = []; let masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
+    let pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
+    let amountReceivedStr = "0"; let selectedPaymentMethod = "Cash"; let isSplitMode = false; let splitRows = []; let lastTransactionData = {};
+    let editIndex = -1; let currentShift = null; let activeShiftDetails = null; let pinBuffer = ""; let systemReady = false;
+
+    document.addEventListener("DOMContentLoaded", function () {
+      let loginBox = document.getElementById('loginOverlay');
+      if (loginBox) { loginBox.style.display = 'flex'; }
+    });
+
+    // --- 1. UI HELPERS ---
+    function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); document.getElementById('sidebarIcon').innerText = sidebar.classList.contains('collapsed') ? '▶' : '◀'; }
+    function switchView(viewName) {
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
+      let navEl = document.getElementById('nav-' + viewName); if (navEl) navEl.classList.add('active');
+      let viewEl = document.getElementById('view-' + viewName); if (viewEl) viewEl.classList.add('active');
+      let topBar = document.getElementById('topBarTitle');
+      if (viewName === 'pos') topBar.innerText = "🖥️ Point of Sale";
+      else if (viewName === 'sales') { topBar.innerText = "🧾 Shift Sales"; loadSalesDashboard(); }
+    }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
+
+    // --- 2. LOGIN SYSTEM ---
+    function loginPin(num) { if (pinBuffer.length < 4) { pinBuffer += num; document.getElementById('pinDisplay').innerText = "*".repeat(pinBuffer.length); } }
+    function clearLoginPin() { pinBuffer = ""; document.getElementById('pinDisplay').innerText = "****"; }
+
+    async function submitLoginPin() {
+      let btn = document.getElementById('btnSubmitPin'); btn.innerText = "..."; btn.disabled = true;
+      let identity = await window.verifyPin(pinBuffer);
+      if (!identity) { alert("Invalid PIN."); clearLoginPin(); btn.innerText = "OK"; btn.disabled = false; return; }
+
+      sessionUser = identity;
+
+      // 🔥 THE FIX: Save the name so the Shift Engine can find it later!
+      localStorage.setItem('cashierName', identity.cashierName);
+
+      document.getElementById('displayBranch').innerText = "📍 " + identity.branch;
+      document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
+      document.getElementById('loginOverlay').style.display = 'none';
+
+      await loadPOSData();
+      await checkCurrentShift();
+      await updateParkedBadge();
+    }
+
+    // --- 3. MENU BUILDER ---
+    async function loadPOSData() {
+      let products = await window.fetchMenu();
+      masterPOSData.items = products;
+      masterPOSData.variants = {};
+      masterPOSData.addons = [];
+      let cats = [...new Set(products.map(p => p.category))].filter(Boolean);
+      masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
+      masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery"], payMethods: ["Cash", "GCash", "Maya"] };
+
+      buildCategories();
+
+      let otHtml = ''; masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
+      let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
+    }
+
+    function buildCategories() {
+      const catContainer = document.querySelector('.category-header');
+      catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All items</button>`;
+      masterPOSData.categories.forEach(cat => { catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`; });
+      filterMenu('All', catContainer.firstElementChild);
+    }
+
+    function filterMenu(category, clickedBtn) {
+      if (clickedBtn) { document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); clickedBtn.classList.add('active'); }
+      const grid = document.querySelector('.item-grid'); grid.innerHTML = '';
+      let filteredItems = category === 'All' ? masterPOSData.items : masterPOSData.items.filter(item => item.category === category);
+      filteredItems.forEach((item, index) => {
+        let safePrice = parseFloat(item.price) || 0;
+        grid.innerHTML += `<div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})"><span class="item-number">${index + 1}</span><div class="item-name">${item.name}</div><div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div></div>`;
+      });
+    }
+
+    function searchMenuItems() {
+      let input = document.getElementById('posSearchInput').value.toLowerCase();
+      let cards = document.querySelector('.item-grid').children;
+      for (let i = 0; i < cards.length; i++) {
+        cards[i].style.display = cards[i].innerText.toLowerCase().includes(input) ? "" : "none";
+      }
+    }
+
+    // --- 4. SHIFT & EXPENSE SYSTEM ---
+    async function checkCurrentShift() {
+      let status = await window.checkShiftStatus(sessionUser.branch);
+
+      // 🔥 THE FIX: We removed the lines that were overwriting 
+      // your login name with the name from the shift record.
+      // The Sidebar will now stay as the person who just entered their PIN.
+
+      updateShiftUI(status);
+      systemReady = true;
+    }
+
+    function updateShiftUI(status) {
+      let btn = document.getElementById('btnTopShift'); let lock = document.getElementById('shiftLockout'); let placeBtn = document.getElementById('btnMainPlaceOrder');
+      if (status && status.active) { currentShift = status; btn.innerText = "🟢 Active Shift"; lock.style.display = "none"; placeBtn.disabled = false; }
+      else { currentShift = null; btn.innerText = "🔴 Shift Closed"; lock.style.display = "flex"; placeBtn.disabled = true; }
+    }
+
+    function openShiftModal() {
+      if (!systemReady) return;
+      if (!currentShift) {
+        document.getElementById('shiftViewOpen').style.display = "block"; document.getElementById('shiftViewClose').style.display = "none";
+        let nameEl = document.getElementById('inputShiftCashier'); if (nameEl) nameEl.value = ""; document.getElementById('inputStartingCash').value = "";
+        document.getElementById('shiftModal').style.display = "flex";
+      } else {
+        let btn = document.getElementById('btnTopShift'); let oldText = btn.innerText; btn.innerText = "⏳ Data..."; btn.disabled = true;
+        window.getLiveShiftDetails(sessionUser.branch).then(details => {
+          if (!details) return; activeShiftDetails = details;
+          document.getElementById('shiftViewOpen').style.display = "none"; document.getElementById('shiftViewClose').style.display = "block";
+          document.getElementById('shiftActiveDetails').innerText = `Started By: ${details.startedBy}  |  Start Time: ${new Date(details.startTime).toLocaleString()}`;
+
+          document.getElementById('scStartingCash').innerText = '₱' + details.startingCash.toFixed(2);
+          document.getElementById('scCashOut').innerText = '- ₱' + details.cashOut.toFixed(2);
+
+          document.getElementById('shiftModal').style.display = "flex"; btn.innerText = oldText; btn.disabled = false;
+        });
+      }
+    }
+
+    async function submitOpenShift() {
+      try {
+        // 🔥 THE FIX: Get the name directly from the logged-in sessionUser
+        let shiftName = sessionUser.cashierName || localStorage.getItem('cashierName') || 'Unknown';
+
+        let startEl = document.getElementById('inputStartingCash');
+        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
+
+        let btn = document.getElementById('btnOpenShiftSubmit');
+        if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
+
+        let shiftId = await window.openNewShift(sessionUser.branch, shiftName, startCash);
+
+        if (shiftId) {
+          await checkCurrentShift();
+          closeModal('shiftModal');
+        } else {
+          alert("Failed to open shift. Check connection!");
+        }
+        if (btn) { btn.innerText = "Open Shift"; btn.disabled = false; }
+      } catch (e) { console.error(e); }
+    }
+
+    async function submitCloseShift() {
+      let parked = await window.getParkedOrders(sessionUser.branch);
+      if (parked.length > 0) {
+        alert("⚠️ CANNOT CLOSE SHIFT!\nThere are still " + parked.length + " unpaid parked orders.\nPlease go to Parked Orders and resume/pay them or cancel them first.");
+        return;
+      }
+      let actualCash = parseFloat(document.getElementById('inputActualCash').value); if (isNaN(actualCash)) { alert("Enter counted cash."); return; }
+      let expectedCash = activeShiftDetails.expectedCash; let diff = actualCash - expectedCash;
+      let btn = document.getElementById('btnCloseShiftSubmit'); btn.innerText = "Ending Shift..."; btn.disabled = true;
+      try {
+        await window.closeShift(sessionUser.branch, activeShiftDetails.logId, actualCash, expectedCash, diff);
+        alert(`SHIFT CLOSED SUCCESSFULLY!\nThank you for your hard work today.`); updateShiftUI({ active: false }); closeModal('shiftModal'); btn.innerText = "End Shift"; btn.disabled = false;
+      } catch (e) { alert("Error closing shift."); btn.innerText = "End Shift"; btn.disabled = false; }
+    }
+
+    function openExpenseModal() { closeModal('shiftModal'); document.getElementById('expAmount').value = ''; document.getElementById('expDesc').value = ''; document.getElementById('expenseModal').style.display = 'flex'; }
+    async function submitBranchExpense() {
+      let amt = parseFloat(document.getElementById('expAmount').value); let desc = document.getElementById('expDesc').value.trim();
+      if (!amt || amt <= 0 || !desc) { alert("Please enter a valid amount and description."); return; }
+      let btn = document.getElementById('btnSubmitExpense'); btn.innerText = "Processing..."; btn.disabled = true;
+      let payload = { branch: sessionUser.branch, cashier: sessionUser.cashierName, amount: amt, description: desc };
+      try { let res = await window.processPettyCashExpense(payload); alert(res); closeModal('expenseModal'); btn.innerText = "Submit Expense"; btn.disabled = false; }
+      catch (e) { alert("Error: " + e); btn.innerText = "Submit Expense"; btn.disabled = false; }
+    }
+
+    // --- 5. INVENTORY SYSTEM ---
+    async function openInventoryCheckModal() {
+      document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory list from Firebase...</div>'; document.getElementById('inventoryCheckModal').style.display = 'flex';
+      let items = await window.getInventoryForCount(sessionUser.branch);
+      let html = '';
+      if (items.length === 0) { html = '<div style="text-align:center; padding:20px; color:#888;">No inventory items setup yet.<br>Add items to your "inventory" collection in Firebase to see them here!</div>'; }
+      else { items.forEach(i => { html += `<div class="count-row"><div style="font-weight:600; color:#444; font-size:14px;">${i.name}</div><div style="color:#888; font-size:12px;">${i.uom || 'units'}</div><div><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty"></div></div>`; }); }
+      document.getElementById('invCheckListContainer').innerHTML = html;
+    }
+
+    async function submitInventoryCheck() {
+      let inputs = document.querySelectorAll('.count-target-input'); let counts = [];
+      inputs.forEach(inp => { let val = parseFloat(inp.value); if (!isNaN(val)) { counts.push({ name: inp.getAttribute('data-item'), physicalQty: val }); } });
+      if (counts.length === 0) { alert("Please enter at least one quantity before submitting."); return; }
+      let btn = document.getElementById('btnSubmitInvCheck'); btn.innerText = "Submitting..."; btn.disabled = true;
+      try { await window.submitInventoryCheck(sessionUser.branch, sessionUser.cashierName, counts); alert("End-of-day stock count submitted securely!"); closeModal('inventoryCheckModal'); }
+      catch (e) { alert("Error submitting stock count. Check connection."); } btn.innerText = "Submit Count"; btn.disabled = false;
+    }
+
+    // --- 6. DASHBOARD & DETAILS SYSTEM ---
+    async function loadSalesDashboard() {
+      document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
+      if (!currentShift || !currentShift.active) { document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; return; }
+      let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
+      let tBody = '';
+      if (!transactions || transactions.length === 0) { tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; }
+      else {
+        transactions.forEach((tx, idx) => {
+          let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
+          let txDate = "Today"; let txTime = "--:--";
+          if (tx.timestamp && tx.timestamp.toDate) { let d = tx.timestamp.toDate(); txDate = d.toLocaleDateString(); txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+          tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
+            <td style="font-weight:bold;">${tx.receiptId || 'N/A'}</td>
+            <td>${tx.customerName || '-'}</td>
+            <td>${tx.paymentMethod || 'Unknown'}</td>
+            <td>${statusBadge}</td>
+            <td>${txDate}</td>
+            <td>${txTime}</td>
+            <td style="font-weight:bold; color: var(--primary);">₱${(tx.netTotal || 0).toFixed(2)}</td>
+            <td style="text-align:right;">
+              <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
+                <div class="action-dropdown" id="txMenu-${idx}">
+                  <div class="action-item" onclick="viewReceiptDetails('${tx.receiptId}')">View Details</div>
+                  <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">🖨️ Print Receipt</div>
+                  <div class="action-item danger" onclick="voidTx('${tx.receiptId}')">Void Transaction</div>
+                </div>
+              </div>
+            </td>
+          </tr>`;
+        });
+      }
+      document.getElementById('tbTransBody').innerHTML = tBody;
+    }
+
+    function toggleTxMenu(id) { document.querySelectorAll('.action-dropdown').forEach(el => { if (el.id !== id) el.classList.remove('show'); }); let el = document.getElementById(id); if (el) el.classList.toggle('show'); }
+    document.addEventListener('click', function (e) { if (!e.target.classList.contains('dot-menu')) { document.querySelectorAll('.action-dropdown').forEach(el => el.classList.remove('show')); } });
+
+    async function voidTx(receiptId) {
+      if (confirm(`Are you sure you want to VOID transaction ${receiptId}?\n\n⚠️ WARNING: This action will be reported immediately to the Manager.`)) {
+        try { await window.voidTransaction(receiptId, sessionUser.cashierName, sessionUser.branch); alert(`Transaction voided. The Manager has been notified.`); loadSalesDashboard(); }
+        catch (e) { alert("Error voiding transaction: " + e.message); }
+      }
+    }
+
+    async function viewReceiptDetails(receiptId) {
+      try {
+        document.getElementById('txDetailTitle').innerText = "Loading " + receiptId + "...";
+        document.getElementById('txDetailBody').innerHTML = "Fetching...";
+        document.getElementById('txDetailModal').style.display = 'flex';
+
+        let tx = await window.getReceiptDetails(receiptId);
+        if (!tx) { document.getElementById('txDetailBody').innerHTML = "Receipt not found in database."; return; }
+
+        document.getElementById('txDetailTitle').innerText = "Receipt: " + receiptId;
+
+        let html = `<div style="margin-bottom:15px; font-size:13px; color:#555;">
+             <div><strong>Date:</strong> ${tx.timestamp ? tx.timestamp.toDate().toLocaleString() : 'N/A'}</div>
+             <div><strong>Cashier:</strong> ${tx.cashier || 'Unknown'}</div>
+             ${tx.customerName ? `<div><strong>Customer:</strong> ${tx.customerName}</div>` : ''}
+             <div><strong>Method:</strong> ${tx.paymentMethod || '-'}</div>
+             <div><strong>Status:</strong> ${tx.status === 'Voided' ? '<span style="color:red; font-weight:bold;">VOIDED</span>' : '<span style="color:green; font-weight:bold;">PAID</span>'}</div>
+           </div><table style="width:100%; border-collapse:collapse; font-size:13px;"><tr style="border-bottom:1px solid #ddd; text-align:left;"><th>Item</th><th>Qty</th><th style="text-align:right;">Subtotal</th></tr>`;
+
+        if (tx.cart && Array.isArray(tx.cart)) {
+          tx.cart.forEach(i => {
+            let addonsText = '';
+            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<br><span style="color:#d97706;">+ ${i.addons[key].qty}x ${key}</span>`; } }
+            html += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px 0;"><strong>${i.name || 'Item'}</strong><br><span style="font-size:11px; color:#777;">${i.variantName !== 'Standard' ? i.variantName : ''}${addonsText}</span></td><td style="padding:8px 0;">x${i.qty || 1}</td><td style="padding:8px 0; text-align:right;">₱${(i.lineTotalFinal || 0).toFixed(2)}</td></tr>`;
+          });
+        }
+
+        // SAFE MATH: Defaults to 0 if the data is missing from old receipts
+        let received = parseFloat(tx.amountReceived) || 0;
+        let net = parseFloat(tx.netTotal) || 0;
+        let change = received - net; if (change < 0) change = 0;
+
+        html += `</table><div style="text-align:right; margin-top:15px; font-size:18px; font-weight:bold;">Total: ₱${net.toFixed(2)}</div>`;
+        if (tx.paymentMethod === 'Cash') { html += `<div style="text-align:right; font-size:13px; color:#666; margin-top:5px;">Cash Tendered: ₱${received.toFixed(2)}<br>Change: ₱${change.toFixed(2)}</div>`; }
+        document.getElementById('txDetailBody').innerHTML = html;
+      } catch (error) {
+        console.error("Receipt Render Error: ", error);
+        document.getElementById('txDetailBody').innerHTML = "<span style='color:red;'>Error loading receipt details.</span>";
+      }
+    }
+
+    async function reprintDashboardReceipt(receiptId) {
+      let tx = await window.getReceiptDetails(receiptId);
+      if (!tx) { alert("Receipt not found!"); return; }
+
+      // Temporarily load this transaction into the print memory, then fire the printer!
+      lastTransactionData = tx;
+      printReceipt('receipt');
+    }
+
+    // --- 7. CART & VARIANT LOGIC ---
+    function openAddOrderModal(name, basePrice, existingItem = null) {
+      if (existingItem) { pendingItem = JSON.parse(JSON.stringify(existingItem)); editIndex = cart.indexOf(existingItem); }
+      else { pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 }; editIndex = -1; }
+
+      document.getElementById('modalItemName').innerText = pendingItem.name;
+      document.getElementById('modalItemPrice').innerText = '₱ ' + pendingItem.basePrice.toFixed(2);
+      document.getElementById('modalMainQty').innerText = pendingItem.qty;
+      document.getElementById('orderNotesInput').value = pendingItem.notes;
+
+      setDiscountType(pendingItem.discountType);
+      if (pendingItem.discountType !== 'none') { document.getElementById('discountValueInput').value = pendingItem.discountVal; }
+
+      let aoHtml = '<option value="">-- Select Add-On --</option>';
+      masterPOSData.addons.forEach(a => aoHtml += `<option value="${a.name}|${a.price}">${a.name} (+₱${a.price})</option>`);
+      document.getElementById('addonSelectDropdown').innerHTML = aoHtml;
+      renderActiveAddons();
+
+      const varContainer = document.getElementById('variantOptions'); varContainer.innerHTML = '';
+      const itemVariants = masterPOSData.variants[pendingItem.name];
+      if (itemVariants && itemVariants.length > 0) {
+        itemVariants.forEach((v, index) => {
+          let activeClass = v.name === pendingItem.variantName ? 'active' : '';
+          if (!existingItem && index === 0) { pendingItem.variantName = v.name; pendingItem.variantPrice = basePrice + v.priceAdj; activeClass = 'active'; }
+          varContainer.innerHTML += `<button class="var-btn ${activeClass}" onclick="selectVariant(this, '${v.name}', ${basePrice + v.priceAdj})">${v.name}</button>`;
+        });
+      } else {
+        pendingItem.variantName = 'Standard'; pendingItem.variantPrice = basePrice;
+        varContainer.innerHTML = `<button class="var-btn active">Standard</button>`;
+      }
+
+      updateModalTotals(); document.getElementById('variantModal').style.display = 'flex';
+    }
+
+    function selectVariant(btn, vName, vPrice) {
+      document.querySelectorAll('#variantOptions .var-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active'); pendingItem.variantName = vName; pendingItem.variantPrice = vPrice; updateModalTotals();
+    }
+
+    function adjustModalMainQty(delta) { let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1; if (cur + delta > 0) { pendingItem.qty = cur + delta; document.getElementById('modalMainQty').innerText = pendingItem.qty; updateModalTotals(); } }
+
+    function setDiscountType(type) {
+      pendingItem.discountType = type; document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
+      let dvi = document.getElementById('discountValueInput'); dvi.style.display = type === 'none' ? 'none' : 'block'; dvi.value = '';
+      if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); pendingItem.discountVal = 0; }
+      else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
+      else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
+      updateModalTotals();
+    }
+
+    function addAddonFromDropdown() { let val = document.getElementById('addonSelectDropdown').value; if (!val) return; let parts = val.split('|'); adjustAddon(parts[0], parseFloat(parts[1]), 1); }
+    function adjustAddon(name, price, delta) { if (!pendingItem.addons[name]) pendingItem.addons[name] = { price: price, qty: 0 }; if (pendingItem.addons[name].qty + delta >= 0) { pendingItem.addons[name].qty += delta; renderActiveAddons(); updateModalTotals(); } }
+    function renderActiveAddons() {
+      let container = document.getElementById('activeAddonsContainer'); container.innerHTML = '';
+      for (let key in pendingItem.addons) {
+        if (pendingItem.addons[key].qty > 0) {
+          container.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; background:#f8f9fa; padding:10px 15px; border-radius:6px; border:1px solid #eee; margin-top:5px;"><span style="font-size:14px; font-weight:600; color:#333;">${key} <span style="color:var(--primary);">(+₱${pendingItem.addons[key].price.toFixed(2)})</span></span><div style="display:flex; align-items:center; gap:8px;"><button class="btn-qty-small" onclick="adjustAddon('${key}', ${pendingItem.addons[key].price}, -1)">-</button><span style="font-size:15px; font-weight:bold; width:20px; text-align:center;">${pendingItem.addons[key].qty}</span><button class="btn-qty-small" onclick="adjustAddon('${key}', ${pendingItem.addons[key].price}, 1)">+</button></div></div>`;
+        }
+      }
+    }
+
+    function updateModalTotals() {
+      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
+      let addonsTotal = 0; for (let key in pendingItem.addons) addonsTotal += (pendingItem.addons[key].price * pendingItem.addons[key].qty);
+      let lineTotal = (pendingItem.variantPrice + addonsTotal) * qty;
+      let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; pendingItem.discountVal = discInput;
+      let calcDisc = 0;
+      if (pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
+      else if (pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
+      let finalTotal = lineTotal - calcDisc;
+      document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
+    }
+
+    function confirmAddOrUpdateToCart() {
+      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; pendingItem.notes = document.getElementById('orderNotesInput').value;
+      let addonsTotal = 0; for (let key in pendingItem.addons) addonsTotal += (pendingItem.addons[key].price * pendingItem.addons[key].qty);
+      let lineTotalBeforeDisc = (pendingItem.variantPrice + addonsTotal) * qty;
+      let rowDiscount = 0;
+      if (pendingItem.discountType === 'percentage' && pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (pendingItem.discountVal / 100);
+      else if (pendingItem.discountType === 'fixed' && pendingItem.discountVal > 0) rowDiscount = pendingItem.discountVal;
+      let finalTotal = lineTotalBeforeDisc - rowDiscount;
+      pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; pendingItem.qty = qty;
+      if (editIndex >= 0) { cart[editIndex] = JSON.parse(JSON.stringify(pendingItem)); editIndex = -1; } else { cart.push(JSON.parse(JSON.stringify(pendingItem))); }
+      closeModal('variantModal'); renderCart();
+    }
+
+    function renderCart() {
+      const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
+      if (cart.length === 0) { list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; document.getElementById('displaySubTotal').innerText = '₱0.00'; document.getElementById('displayGrandTotal').innerText = '₱0.00'; window.currentGrandTotal = 0; }
+      else {
+        cart.forEach((item, index) => {
+          grandTotal += item.lineTotalFinal;
+          let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">✎ "${item.notes}"</div>` : '';
+          list.innerHTML += `<li class="cart-item" onclick="openAddOrderModal('${item.name}', ${item.basePrice}, cart[${index}])"><div class="cart-item-desc"><span class="cart-item-name">${item.name}</span><div class="cart-item-subtext">${notesText}</div></div><div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div><div class="cart-item-qty">x ${item.qty}</div><div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div><button class="btn-remove" onclick="cart.splice(${index}, 1); renderCart(); event.stopPropagation();">✖</button></li>`;
+        });
+        window.currentGrandTotal = grandTotal; document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
+      }
+    }
+    function clearCart() { if (cart.length === 0) return; if (confirm("Clear order?")) { cart = []; renderCart(); } }
+
+    // --- 8. CHECKOUT SYSTEM ---
+    function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; }
+    function appendNumpad(num) { if (amountReceivedStr === "0" && num !== ".") amountReceivedStr = num; else if (num === "." && amountReceivedStr.includes(".")) return; else amountReceivedStr += num; updateNumpadDisplay(); }
+    function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
+    function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
+    function setExactAmount() { amountReceivedStr = window.currentGrandTotal.toString(); updateNumpadDisplay(); }
+    function updateNumpadDisplay() { let received = parseFloat(amountReceivedStr) || 0; document.getElementById('checkoutReceived').innerText = '₱' + amountReceivedStr; let change = received - window.currentGrandTotal; document.getElementById('checkoutChange').innerText = '₱' + (change > 0 ? change.toFixed(2) : '0.00'); }
+    function setPaymentMethod(btn, method) { document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); selectedPaymentMethod = method; }
+
+    async function submitFinalOrder() {
+      const btn = document.getElementById('btnSubmitFinal'); btn.innerText = "Processing..."; btn.disabled = true;
+      const payload = {
+        branch: sessionUser.branch,
+        cashier: sessionUser.cashierName,
+        shiftId: activeShiftDetails ? activeShiftDetails.logId : "UNKNOWN",
+        orderType: document.getElementById('mainOrderType').value,
+        paymentMethod: selectedPaymentMethod,
+        netTotal: window.currentGrandTotal,
+        customerName: document.getElementById('finalCustomerName').value,
+        amountReceived: amountReceivedStr,
+        cart: cart
+      };
+
+      let receiptId = await window.processCheckout(payload);
+      if (receiptId) {
+        lastTransactionData = { ...payload, receiptId: receiptId };
+        document.getElementById('rcptId').innerText = `: ${receiptId}`;
+        let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${window.currentGrandTotal.toFixed(2)}`;
+        cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete Payment"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
+      } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete Payment"; btn.disabled = false; }
+    }
+
+    function printReceipt(type) {
+      let d = lastTransactionData; if (!d || !d.cart) return;
+      let hasFood = false; let hasDrinks = false;
+      d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
+
+      let cartHtml = '';
+      d.cart.forEach(item => {
+        let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
+        if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
+        let priceStr = type === 'receipt' ? `<span>${item.lineTotalFinal.toFixed(2)}</span>` : '';
+        cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span>${priceStr}</div>`;
+        if (item.notes) { cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">✎ ${item.notes}</div>`; }
+      });
+
+      let headerTxt = ''; let crossRefNote = '';
+      if (type === 'receipt') { headerTxt = 'TAKODEÁL'; }
+      else if (type === 'food') { headerTxt = 'KITCHEN TICKET'; if (hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`; }
+      else if (type === 'drinks') { headerTxt = 'BAR TICKET'; if (hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`; }
+
+      let totalsHtml = '';
+      if (type === 'receipt') {
+        totalsHtml = `<div class="line"></div><div class="row bold" style="font-size: 15px; margin-top: 5px;"><span>TOTAL</span><span>₱${d.netTotal.toFixed(2)}</span></div><div class="line"></div><div class="row"><span>Method:</span><span>${d.paymentMethod}</span></div><div class="center" style="margin-top: 20px; font-size: 11px; font-weight: bold;">Thank you for choosing TAKODEÁL!</div>`;
+      } else { totalsHtml = `<div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div>`; }
+
+      let html = `<html><head><style>@media print { @page { margin: 0; size: 58mm auto; } body { margin: 0; } } body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; width: 50mm; color: #000; background: white; } .center { text-align: center; } .bold { font-weight: bold; } .line { border-top: 1px dashed #000; margin: 8px 0; } .row { display: flex; justify-content: space-between; margin-bottom: 4px; }</style></head><body><div class="center bold" style="font-size: 22px; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid #000;">${headerTxt}</div><div class="row"><span>Rcpt:</span><span class="bold">${d.receiptId}</span></div><div class="row"><span>Type:</span><span class="bold">${d.orderType}</span></div><div class="row"><span>Cashier:</span><span>${sessionUser.cashierName}</span></div>${d.customerName ? `<div class="row bold" style="font-size: 14px; margin-top: 8px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 5px 0;"><span>Cust:</span><span>${d.customerName}</span></div>` : '<div class="line"></div>'}${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div>${totalsHtml}</body></html>`;
+
+      let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
+      let encodedText = encodeURIComponent(plainTextReceipt); let intentUrl = "intent:#Intent;action=android.intent.action.SEND;type=text/plain;S.android.intent.extra.TEXT=" + encodedText + ";end";
+      let bypassLink = document.createElement('a'); bypassLink.href = intentUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+    }
+
+    // --- 9. PARKED ORDERS SYSTEM ---
+    async function updateParkedBadge() {
+      let orders = await window.getParkedOrders(sessionUser.branch);
+      let badge = document.getElementById('parkedBadge');
+      if (badge) { if (orders.length > 0) { badge.innerText = orders.length; badge.style.display = 'block'; } else { badge.style.display = 'none'; } }
+    }
+
+    async function parkOrder() {
+      if (cart.length === 0) return;
+      let customerName = prompt("Enter Customer Name or Table Number:"); if (!customerName) return;
+      let payload = { branch: sessionUser.branch, cashier: sessionUser.cashierName, name: customerName, items: cart, total: window.currentGrandTotal };
+      let parkedId = await window.parkOrderToDB(payload);
+      if (parkedId) { printParkedReceipt(parkedId, payload); cart = []; renderCart(); updateParkedBadge(); alert("Order Parked Securely in Cloud!"); }
+      else { alert("Failed to park order. Check connection."); }
+    }
+
+    async function showParkedOrders() {
+      document.getElementById('parkedModal').style.display = 'flex'; document.getElementById('parkedListContainer').innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Fetching parked orders...</div>';
+      let orders = await window.getParkedOrders(sessionUser.branch);
+      let html = '';
+      if (orders.length === 0) { html = '<div style="text-align:center; padding: 20px; color: #777;">No parked orders right now.</div>'; }
+      else {
+        orders.forEach(o => {
+          let itemsHtml = o.items.map(i => {
+            let addonsText = '';
+            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
+
+            // THE FIX: We pull the notes out and format them with a little pen icon!
+            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
+
+            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${i.lineTotalFinal.toFixed(2)}</div></div>`;
+          }).join('');
+
+          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">👤 ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">₱${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;"><button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="printParkedReceipt('${o.id}')">🖨️ Re-print</button><button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="resumeOrder('${o.id}')">▶️ Resume & Pay</button></div></div>`;
+        });
+      }
+      document.getElementById('parkedListContainer').innerHTML = html;
+    }
+
+    async function resumeOrder(docId) {
+      if (cart.length > 0) { if (!confirm("You have active items in the cart. Overwrite them?")) return; }
+      let orders = await window.getParkedOrders(sessionUser.branch); let order = orders.find(o => o.id === docId); if (!order) return;
+      cart = order.items; renderCart(); closeModal('parkedModal'); await window.deleteParkedOrder(docId); updateParkedBadge();
+    }
+
+    async function printParkedReceipt(docId, preloadedData = null) {
+      let order = preloadedData; if (!order) { let orders = await window.getParkedOrders(sessionUser.branch); order = orders.find(o => o.id === docId); } if (!order) return;
+      let cartHtml = ''; order.items.forEach(item => { cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span><span>${item.lineTotalFinal.toFixed(2)}</span></div>`; if (item.notes) { cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">✎ ${item.notes}</div>`; } });
+      let html = `<html><head><style>@media print { @page { margin: 0; size: 58mm auto; } body { margin: 0; } } body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; width: 50mm; color: #000; background: white; } .center { text-align: center; } .bold { font-weight: bold; } .line { border-top: 1px dashed #000; margin: 8px 0; } .row { display: flex; justify-content: space-between; margin-bottom: 4px; }</style></head><body><div class="center bold" style="font-size: 22px; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid #000;">TAKODEÁL</div><div class="center bold" style="font-size: 14px; margin-bottom: 5px; background: #000; color: #fff; padding: 3px;">** PAY LATER **</div><div class="row"><span>Cashier:</span><span>${sessionUser.cashierName}</span></div><div class="row bold" style="font-size: 14px; margin-top: 8px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 5px 0;"><span>Cust/Table:</span><span>${order.name}</span></div><div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="row bold" style="font-size: 15px; margin-top: 5px;"><span>TOTAL DUE</span><span>₱${order.total.toFixed(2)}</span></div><div class="center bold" style="font-size: 12px; margin-top: 15px;">PLEASE PAY AT COUNTER</div><div class="center" style="font-size: 10px; margin-top: 5px;">(Not an Official Receipt)</div></body></html>`;
+      let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
+      let encodedText = encodeURIComponent(plainTextReceipt); let intentUrl = "intent:#Intent;action=android.intent.action.SEND;type=text/plain;S.android.intent.extra.TEXT=" + encodedText + ";end";
+      let bypassLink = document.createElement('a'); bypassLink.href = intentUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+    }
+
+  </script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
