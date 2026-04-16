@@ -51,8 +51,8 @@ window.lockDeviceToBranch = async function () {
 };
 
 // --- TAKODEAL FIREBASE ENGINE ---
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy } from "firebase/firestore";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // Your secure database keys
 const firebaseConfig = {
