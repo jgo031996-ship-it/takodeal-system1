@@ -22,7 +22,8 @@
     body {
       font-family: 'Segoe UI', Tahoma, sans-serif;
       margin: 0;
-      padding: 0;
+      padding-top: 28px; 
+      box-sizing: border-box; 
       background-color: var(--bg-color);
       display: flex;
       height: 100vh;
@@ -30,8 +31,6 @@
       color: var(--text-main);
       user-select: none;
     }
-
-    
 
     .login-overlay {
       position: fixed;
@@ -1068,11 +1067,11 @@
 
 <body>
 
-  <div style="background-color: #000000; color: #ffffff; width: 100%; height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; font-size: 12px; font-family: 'Segoe UI', Tahoma, sans-serif; z-index: 9999; position: relative;">
-    <div id="liveClock" style="font-weight: 500; letter-spacing: 0.5px;">Loading time...</div>
-    <div style="display: flex; align-items: center; gap: 8px; color: #a0a0a0;">
-        <span>📶 Takodeal POS V1.0</span>
-    </div>
+  <div style="background-color: #000000; color: #ffffff; width: 100%; height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; font-size: 12px; font-family: 'Segoe UI', Tahoma, sans-serif; z-index: 9999; position: absolute; top: 0; left: 0;">
+      <div id="liveClock" style="font-weight: 500; letter-spacing: 0.5px;">Loading time...</div>
+      <div style="display: flex; align-items: center; gap: 8px; color: #a0a0a0;">
+          <span>📶 Takodeal POS V1.0</span>
+      </div>
   </div>
 
   <div id="deviceSetupOverlay"
