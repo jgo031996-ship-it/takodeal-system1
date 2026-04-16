@@ -5,7 +5,8 @@
   <base target="_top">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <div id="liveClock" style="font-size: 14px; color: var(--text-muted); font-weight: 600; margin-bottom: 15px; text-align: right;"></div>
+  <link rel="icon" type="image/jpeg" href="logo.jpg">
+  <link rel="apple-touch-icon" href="logo.jpg">
   <style>
     :root {
       --primary: #ff9f43;
@@ -135,6 +136,7 @@
       text-align: center;
       flex: 1;
     }
+    <div id="liveClock" style="font-size: 14px; color: var(--text-muted); font-weight: 600; margin-bottom: 15px; text-align: right;"></div>
 
     .sidebar.collapsed .brand-icon {
       display: block;
@@ -1109,9 +1111,9 @@
 
   <div class="sidebar" id="mainSidebar">
     <div class="sidebar-header">
-      <div class="brand-icon">🐙</div>
-      <div class="brand-container">
-        <span style="font-size: 20px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
+      <div style="text-align: center; width: 100%; padding-top: 10px;">
+          <img src="logo.jpg" alt="Takodeal Logo" style="width: 50px; border-radius: 8px; margin-bottom: 5px;">
+          <div style="font-size: 16px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</div>
       </div>
       <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon">◀</div>
     </div>
