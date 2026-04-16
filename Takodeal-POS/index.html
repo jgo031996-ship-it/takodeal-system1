@@ -1119,12 +1119,20 @@
 
   <div class="sidebar" id="mainSidebar">
     <div class="sidebar-header">
-      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px;">
+      <style>
+          /* This rule forces the text to hide when the sidebar shrinks! */
+          .sidebar.collapsed .brand-text { display: none !important; }
+          .sidebar.collapsed .sidebar-header { justify-content: center !important; padding: 15px 0 !important; }
+          .sidebar.collapsed .sidebar-toggle { display: none !important; }
+      </style>
+
+      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; overflow: hidden; white-space: nowrap;">
           <div style="display: flex; align-items: center; gap: 10px;">
-              <img src="logo.jpg" alt="Logo" style="width: 35px; border-radius: 8px;">
-              <span style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
+              <img src="logo.jpg" alt="Logo" style="width: 32px; border-radius: 6px; flex-shrink: 0;">
+              <span class="brand-text" style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
           </div>
-          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer;">◀</div>
+          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer; flex-shrink: 0;">◀</div>
+      </div>
       <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon"> </div>
     </div>
     <div class="nav-menu">
