@@ -730,14 +730,12 @@ function startLiveClock() {
 
   setInterval(() => {
     const now = new Date();
-    // Formats like: "Thursday, April 16, 2026 at 1:45:30 PM"
-    const timeString = now.toLocaleDateString('en-US', { 
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
-      hour: '2-digit', minute: '2-digit', second: '2-digit' 
-    });
-    clockEl.innerText = timeString;
+    // Creates format: "10:17 PM"
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    // Creates format: "Thu, Apr 16"
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    
+    clockEl.innerHTML = `${timeStr} &nbsp;&nbsp; ${dateStr}`;
   }, 1000);
 }
-
-// Start the clock immediately
 startLiveClock();
