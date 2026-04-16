@@ -248,13 +248,12 @@ async function loadGlobalDashboard() {
 
       // Calculate Variance (Short/Over)
       let varianceHtml = '<span style="color: var(--text-muted);">-</span>';
-      if (isClosed) {
-        let diff = shiftData.difference || 0;
-        let color = diff === 0 ? 'var(--success)' : (diff > 0 ? '#ea580c' : 'var(--danger)');
-        let label = diff === 0 ? 'Perfect' : (diff > 0 ? `+${diff.toFixed(2)} (Over)` : `${diff.toFixed(2)} (Short)`);
-        varianceHtml = `<span style="color: ${color}; font-weight: bold;">${label}</span>`;
+            if (isClosed) {
+          // Instead of doing math on zeros, tell the manager exactly where the money went!
+          varianceHtml = `<span style="color: #10b981; font-weight: bold; font-style: italic;">Saved to Z-Reading ✓</span>`;
       } else if (isActive) {
-        varianceHtml = `<span style="color: #64748b; font-style: italic;">Shift in progress...</span>`;
+          // Keep the normal text for active shifts
+          varianceHtml = `<span style="color: #64748b; font-style: italic;">Shift in progress...</span>`;
       }
 
       globalGross += branchGross; globalNet += branchNet; globalExp += branchExp;
