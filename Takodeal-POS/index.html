@@ -1110,10 +1110,14 @@
 
   <div class="sidebar" id="mainSidebar">
     <div class="sidebar-header">
-      <div class="brand-container" style="display: flex; align-items: center; gap: 10px;">
-          <img src="logo.jpg" alt="Logo" style="width: 32px; border-radius: 6px;">
-          <span style="font-size: 20px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
+      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+              <img src="logo.jpg" alt="Logo" style="width: 35px; border-radius: 8px;">
+              <span style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
+          </div>
+          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer;">◀</div>
       </div>
+      <div id="liveClock" style="padding: 0 15px 15px 15px; font-size: 13px; color: #a7f3d0; font-weight: 600; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 10px;"></div>
       <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon">◀</div>
     </div>
     <div class="nav-menu">
@@ -1141,7 +1145,7 @@
 
   <div class="content-area">
     <div class="top-bar">
-      <div id="liveClock" style="font-size: 15px; color: var(--text-muted); font-weight: bold; margin-left: 20px;"></div>
+      
       <div class="top-title" id="topBarTitle">🖥️ Point of Sale</div>
       <div class="top-bar-right">
         <div style="display: flex; gap: 10px; align-items: center;">
