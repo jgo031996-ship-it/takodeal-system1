@@ -722,3 +722,22 @@ window.submitSmartExpense = async function () {
     alert("❌ Failed to log expense. Check console.");
   }
 };
+
+// --- LIVE CLOCK ENGINE ---
+function startLiveClock() {
+  const clockEl = document.getElementById('liveClock');
+  if (!clockEl) return;
+
+  setInterval(() => {
+    const now = new Date();
+    // Formats like: "Thursday, April 16, 2026 at 1:45:30 PM"
+    const timeString = now.toLocaleDateString('en-US', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+      hour: '2-digit', minute: '2-digit', second: '2-digit' 
+    });
+    clockEl.innerText = timeString;
+  }, 1000);
+}
+
+// Start the clock immediately
+startLiveClock();
