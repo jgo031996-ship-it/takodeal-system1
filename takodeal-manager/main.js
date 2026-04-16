@@ -3132,3 +3132,35 @@ window.loadExpenseLogs = async function () {
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: var(--danger);">❌ Error loading logs.</td></tr>';
   }
 };
+
+// ==========================================
+// RECEIPT BUILDER ENGINE
+// ==========================================
+
+// 1. Live Typing Preview
+function updateReceiptPreview() {
+    document.getElementById('prevName').innerText = document.getElementById('rcptName').value || 'TAKODEÁL';
+    document.getElementById('prevAddress').innerText = document.getElementById('rcptAddress').value || '';
+    document.getElementById('prevContact').innerText = document.getElementById('rcptContact').value || '';
+    document.getElementById('prevFooter').innerText = document.getElementById('rcptFooter').value || '';
+}
+
+// 2. Save to Cloud
+async function saveReceiptSettings() {
+    const rSettings = {
+        storeName: document.getElementById('rcptName').value,
+        address: document.getElementById('rcptAddress').value,
+        contact: document.getElementById('rcptContact').value,
+        footerMessage: document.getElementById('rcptFooter').value,
+        updatedAt: serverTimestamp()
+    };
+    
+    try {
+        // We use setDoc with {merge: true} to safely create or update the global settings file
+        await setDoc(doc(db, "settings", "global_receipt"), rSettings, { merge: true });
+        alert("✅ Receipt Layout Saved to Cloud!");
+    } catch (error) {
+        console.error("Error saving receipt:", error);
+        alert("Failed to save layout.");
+    }
+}
