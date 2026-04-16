@@ -2414,95 +2414,93 @@ window.wipeTestData = async function () {
   }
 };
 
-// ========================================================
-// 💰 CASH TRANSFER EXPLORER ENGINE 💰
-// ========================================================
+// ==========================================
+// REMITTANCE & CASH TRANSFER EXPLORER
+// ==========================================
+window.loadCashExplorer = async function() {
+    const tbody = document.getElementById('transferLogBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px;">Fetching remittances...</td></tr>';
 
-window.loadCashExplorer = async function () {
-  const tbody = document.getElementById('transferLogBody');
-  if (!tbody) return;
+    // 1. Grab the current filters from the top of the page
+    const branchFilter = document.getElementById('transferBranchFilter') ? document.getElementById('transferBranchFilter').value : 'All';
+    
+    // Grab dates, or default to today if missing
+    const today = new Date().toISOString().split('T')[0];
+    const startDateRaw = document.getElementById('transferStartDate') ? document.getElementById('transferStartDate').value : today;
+    const endDateRaw = document.getElementById('transferEndDate') ? document.getElementById('transferEndDate').value : today;
 
-  tbody.innerHTML = '<tr><td colspan="6" class="text-center">Fetching secure logs...</td></tr>';
+    // Convert string dates to actual Date objects for Firebase comparison
+    const startTimestamp = new Date(startDateRaw + 'T00:00:00');
+    const endTimestamp = new Date(endDateRaw + 'T23:59:59');
 
-  // 1. Setup Filters
-  const branchFilter = document.getElementById('transferBranchFilter').value;
-  const startDateInput = document.getElementById('transferStartDate');
-  const endDateInput = document.getElementById('transferEndDate');
+    try {
+        let q;
+        
+        // 2. Build the Firebase Query based on the filters
+        if (branchFilter === 'All') {
+            q = query(collection(db, "remittances"), 
+                where("timestamp", ">=", startTimestamp),
+                where("timestamp", "<=", endTimestamp),
+                orderBy("timestamp", "desc")
+            );
+        } else {
+            q = query(collection(db, "remittances"), 
+                where("branch", "==", branchFilter),
+                where("timestamp", ">=", startTimestamp),
+                where("timestamp", "<=", endTimestamp),
+                orderBy("timestamp", "desc")
+            );
+        }
 
-  // Default to today if no dates are selected
-  if (!startDateInput.value) startDateInput.valueAsDate = new Date();
-  if (!endDateInput.value) endDateInput.valueAsDate = new Date();
+        const snap = await getDocs(q);
 
-  const startOfDay = new Date(startDateInput.value);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(endDateInput.value);
-  endOfDay.setHours(23, 59, 59, 999);
+        let html = '';
+        let totalCash = 0;
+        let count = 0;
 
-  let totalTransferred = 0;
-  let pendingCount = 0;
-  let html = '';
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
+            
+            totalCash += (data.amount || 0);
+            count++;
 
-  try {
-    // 2. Fetch the Data (Assuming your DB folder is called 'cash_transfers')
-    let q;
-    if (branchFilter === 'All') {
-      q = query(collection(db, "cash_transfers"),
-        where("timestamp", ">=", startOfDay),
-        where("timestamp", "<=", endOfDay));
-    } else {
-      q = query(collection(db, "cash_transfers"),
-        where("branch", "==", branchFilter),
-        where("timestamp", ">=", startOfDay),
-        where("timestamp", "<=", endOfDay));
+            html += `
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 15px 20px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 15px 20px;">
+                        <strong style="color: var(--primary); font-size: 15px;">${data.branch}</strong><br>
+                        <span style="font-size: 12px; color: #64748b;">By: ${data.cashier}</span>
+                    </td>
+                    <td style="padding: 15px 20px; font-size: 13px;">${data.salesPeriodStart} to ${data.salesPeriodEnd}</td>
+                    <td style="padding: 15px 20px;">
+                        <strong style="font-size: 13px;">${data.channel}</strong> ➡️ ${data.recipient}<br>
+                        <span style="font-size: 12px; font-family: monospace; color: #0284c7;">Ref: ${data.referenceNumber || 'N/A'}</span>
+                    </td>
+                    <td style="padding: 15px 20px; text-align: right; font-size: 16px; font-weight: bold; color: #16a34a;">
+                        ₱${data.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                    </td>
+                </tr>
+            `;
+        });
+
+        // 3. Update the table and the big summary cards at the top
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No remittances found for this filter.</td></tr>';
+        
+        if (document.getElementById('totalTransfersVal')) {
+            document.getElementById('totalTransfersVal').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        }
+        if (document.getElementById('pendingTransfersVal')) {
+            document.getElementById('pendingTransfersVal').innerText = count; // Changed to show total count of logs
+            document.getElementById('pendingTransfersVal').previousElementSibling.innerText = "TOTAL LOGS"; // Update the label
+        }
+
+    } catch (error) {
+        console.error("Error loading remittances:", error);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: red;">Error fetching data. (Check Firebase Console for Index links)</td></tr>';
     }
-
-    const snap = await getDocs(q);
-
-    // Sort locally by newest first
-    let transfers = [];
-    snap.forEach(doc => transfers.push({ id: doc.id, ...doc.data() }));
-    transfers.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
-
-    // 3. Process the Data
-    if (transfers.length === 0) {
-      html = `<tr><td colspan="6" class="text-center" style="padding: 30px; color: var(--text-muted);">No cash transfers found for this filter.</td></tr>`;
-    } else {
-      transfers.forEach(t => {
-        let amt = parseFloat(t.amount) || 0;
-        let dateStr = t.timestamp ? t.timestamp.toDate().toLocaleString() : 'Unknown Time';
-        let statusColor = t.status === 'Completed' ? 'var(--success)' : '#d97706';
-        let statusBadge = t.status === 'Completed'
-          ? `<span class="badge badge-active">✅ Completed</span>`
-          : `<span class="badge" style="background: #fef3c7; color: #b45309;">⏳ Pending</span>`;
-
-        // Calculate KPI totals
-        if (t.status === 'Completed') totalTransferred += amt;
-        if (t.status === 'Pending') pendingCount++;
-
-        html += `
-          <tr>
-            <td style="color: var(--text-muted); font-size: 13px;">${dateStr}</td>
-            <td><strong>📍 ${t.branch}</strong></td>
-            <td>${t.type || 'Internal Transfer to Main Office'}</td>
-            <td>${statusBadge}</td>
-            <td style="font-weight: bold; color: ${statusColor}; font-size: 15px;">${formatMoney(amt)}</td>
-            <td>
-              ${t.status === 'Pending' ? `<button class="btn-refresh" style="background: white; border: 1px solid var(--success); color: var(--success); padding: 5px 10px;" onclick="approveTransfer('${t.id}')">Approve</button>` : '<span style="color: var(--text-muted); font-size: 12px;">Archived</span>'}
-            </td>
-          </tr>
-        `;
-      });
-    }
-
-    // 4. Update the Dashboard
-    tbody.innerHTML = html;
-    document.getElementById('explorerTotalTransfer').innerText = formatMoney(totalTransferred);
-    document.getElementById('explorerPendingCount').innerText = pendingCount;
-
-  } catch (error) {
-    console.error("Transfer Explorer Error:", error);
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
-  }
 };
 
 // Bonus: The function to mark a pending transfer as completed!
