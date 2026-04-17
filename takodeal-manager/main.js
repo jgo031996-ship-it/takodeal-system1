@@ -2423,11 +2423,19 @@ window.loadCashExplorer = async function() {
     
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">Fetching remittances...</td></tr>';
 
+    // 1. Grab the current filters from the top of the page
     const branchFilter = document.getElementById('transferBranchFilter') ? document.getElementById('transferBranchFilter').value : 'All';
+    
+    // Grab dates safely!
     const today = new Date().toISOString().split('T')[0];
-    const startDateRaw = document.getElementById('transferStartDate') ? document.getElementById('transferStartDate').value : today;
-    const endDateRaw = document.getElementById('transferEndDate') ? document.getElementById('transferEndDate').value : today;
+    const startInput = document.getElementById('transferStartDate');
+    const endInput = document.getElementById('transferEndDate');
+    
+    // If the input exists AND is not blank, use it. Otherwise, default to today!
+    const startDateRaw = (startInput && startInput.value) ? startInput.value : today;
+    const endDateRaw = (endInput && endInput.value) ? endInput.value : today;
 
+    // Convert string dates to actual Date objects for Firebase comparison
     const startTimestamp = new Date(startDateRaw + 'T00:00:00');
     const endTimestamp = new Date(endDateRaw + 'T23:59:59');
 
