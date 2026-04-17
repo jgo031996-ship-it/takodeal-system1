@@ -2421,24 +2421,18 @@ window.loadCashExplorer = async function() {
     const tbody = document.getElementById('transferLogBody');
     if (!tbody) return;
     
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px;">Fetching remittances...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">Fetching remittances...</td></tr>';
 
-    // 1. Grab the current filters from the top of the page
     const branchFilter = document.getElementById('transferBranchFilter') ? document.getElementById('transferBranchFilter').value : 'All';
-    
-    // Grab dates, or default to today if missing
     const today = new Date().toISOString().split('T')[0];
     const startDateRaw = document.getElementById('transferStartDate') ? document.getElementById('transferStartDate').value : today;
     const endDateRaw = document.getElementById('transferEndDate') ? document.getElementById('transferEndDate').value : today;
 
-    // Convert string dates to actual Date objects for Firebase comparison
     const startTimestamp = new Date(startDateRaw + 'T00:00:00');
     const endTimestamp = new Date(endDateRaw + 'T23:59:59');
 
     try {
         let q;
-        
-        // 2. Build the Firebase Query based on the filters
         if (branchFilter === 'All') {
             q = query(collection(db, "remittances"), 
                 where("timestamp", ">=", startTimestamp),
@@ -2458,60 +2452,69 @@ window.loadCashExplorer = async function() {
 
         let html = '';
         let totalCash = 0;
-        let count = 0;
+        let pendingCount = 0;
 
         snap.forEach(docSnap => {
             let data = docSnap.data();
             let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
             
-            totalCash += (data.amount || 0);
-            count++;
+            // The Boss Security Check!
+            let status = data.status || "Pending"; 
+            if (status === "Pending") pendingCount++;
+            if (status === "Received") totalCash += (data.amount || 0); // Only count money safely in your hands!
+
+            let statusBadge = status === "Received"
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`
+                : `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
+
+            let actionBtn = status === "Pending"
+                ? `<button onclick="approveRemittance('${docSnap.id}')" style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; width: 100%;">Approve</button>`
+                : `<span style="color: #94a3b8; font-size: 12px; display: block; text-align: center;">Locked</span>`;
 
             html += `
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 15px 20px; color: #64748b; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 15px 20px;">
                         <strong style="color: var(--primary); font-size: 15px;">${data.branch}</strong><br>
-                        <span style="font-size: 12px; color: #64748b;">By: ${data.cashier}</span>
+                        <span style="font-size: 12px; color: #64748b;">By: ${data.cashier}</span><br>
+                        <span style="font-size: 11px; color: #94a3b8;">Sales: ${data.salesPeriodStart} to ${data.salesPeriodEnd}</span>
                     </td>
-                    <td style="padding: 15px 20px; font-size: 13px;">${data.salesPeriodStart} to ${data.salesPeriodEnd}</td>
                     <td style="padding: 15px 20px;">
                         <strong style="font-size: 13px;">${data.channel}</strong> ➡️ ${data.recipient}<br>
                         <span style="font-size: 12px; font-family: monospace; color: #0284c7;">Ref: ${data.referenceNumber || 'N/A'}</span>
                     </td>
+                    <td style="padding: 15px 20px; text-align: center;">${statusBadge}</td>
                     <td style="padding: 15px 20px; text-align: right; font-size: 16px; font-weight: bold; color: #16a34a;">
                         ₱${data.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
                     </td>
+                    <td style="padding: 15px 20px;">${actionBtn}</td>
                 </tr>
             `;
         });
 
-        // 3. Update the table and the big summary cards at the top
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No remittances found for this filter.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No remittances found for this filter.</td></tr>';
         
-        if (document.getElementById('totalTransfersVal')) {
-            document.getElementById('totalTransfersVal').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        }
+        if (document.getElementById('totalTransfersVal')) document.getElementById('totalTransfersVal').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         if (document.getElementById('pendingTransfersVal')) {
-            document.getElementById('pendingTransfersVal').innerText = count; // Changed to show total count of logs
-            document.getElementById('pendingTransfersVal').previousElementSibling.innerText = "TOTAL LOGS"; // Update the label
+            document.getElementById('pendingTransfersVal').innerText = pendingCount;
+            document.getElementById('pendingTransfersVal').previousElementSibling.innerText = "PENDING TRANSFERS";
         }
 
     } catch (error) {
-        console.error("Error loading remittances:", error);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: red;">Error fetching data. (Check Firebase Console for Index links)</td></tr>';
+        console.error(error);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Error fetching data. (Check Firebase Console for Index links)</td></tr>';
     }
 };
 
-// Bonus: The function to mark a pending transfer as completed!
-window.approveTransfer = async function (docId) {
-  if (!confirm("Mark this cash transfer as safely received in the Main Office?")) return;
-  try {
-    await updateDoc(doc(db, "cash_transfers", docId), { status: "Completed" });
-    loadCashExplorer(); // Refresh the table instantly!
-  } catch (e) {
-    console.error(e); alert("Failed to approve transfer.");
-  }
+// --- THE NEW BOSS APPROVAL BUTTON ---
+window.approveRemittance = async function (docId) {
+    if (!confirm("✅ Mark this remittance as safely received in the Main Office?")) return;
+    try {
+        await updateDoc(doc(db, "remittances", docId), { status: "Received" });
+        loadCashExplorer(); // Refresh the table instantly!
+    } catch (e) {
+        console.error(e); alert("Failed to approve remittance.");
+    }
 };
 
 // ========================================================
