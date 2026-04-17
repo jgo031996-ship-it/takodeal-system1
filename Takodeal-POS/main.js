@@ -557,6 +557,7 @@ window.submitRemittance = async function () {
       channel: channel,
       recipient: recipient,
       referenceNumber: refNum,
+      status: "Pending", // <--- THIS NEW LINE HERE!
       timestamp: serverTimestamp()
     });
 
