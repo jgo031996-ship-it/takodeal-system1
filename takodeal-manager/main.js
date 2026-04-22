@@ -2514,14 +2514,56 @@ window.loadCashExplorer = async function() {
     }
 };
 
-// --- THE NEW BOSS APPROVAL BUTTON ---
+// --- THE NEW SMART DEPOSIT APPROVAL BUTTON ---
 window.approveRemittance = async function (docId) {
-    if (!confirm("✅ Mark this remittance as safely received in the Main Office?")) return;
+    if (!confirm("✅ Mark this remittance as safely received and deposit it into your Cash Accounts?")) return;
+    
     try {
-        await updateDoc(doc(db, "remittances", docId), { status: "Received" });
-        loadCashExplorer(); // Refresh the table instantly!
+        // 1. Fetch the exact remittance document to see how much money is coming in
+        const remitRef = doc(db, "remittances", docId);
+        const remitSnap = await getDoc(remitRef);
+        if (!remitSnap.exists()) return;
+
+        const data = remitSnap.data();
+        const amountToDeposit = parseFloat(data.amount) || 0;
+        const channelUsed = data.channel; // e.g., "GCash" or "Physical Handover"
+
+        // 2. Map the channel to your actual Manager Account names
+        // If cashier selected "Physical Handover", we deposit to "Cash". Otherwise, look for an exact match (like GCash, BDO, etc.)
+        let targetAccountName = channelUsed;
+        if (channelUsed === "Physical Handover") {
+            targetAccountName = "Cash"; 
+        }
+
+        // 3. Find that matching account in your Master Cash & Budget database
+        const accQuery = query(collection(db, "cash_accounts"), where("name", "==", targetAccountName));
+        const accSnap = await getDocs(accQuery);
+
+        if (accSnap.empty) {
+            // SAFETY LOCK: If they remitted to "BDO" but you haven't created a "BDO" account yet!
+            alert(`⚠️ Routing Error: No cash account named "${targetAccountName}" found in your Cash & Budget tab!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}", and try approving this again.`);
+            return; 
+        }
+
+        // 4. Deposit the money!
+        const targetAccDoc = accSnap.docs[0];
+        const currentBalance = parseFloat(targetAccDoc.data().balance) || 0;
+        const newBalance = currentBalance + amountToDeposit;
+        
+        await updateDoc(doc(db, "cash_accounts", targetAccDoc.id), { balance: newBalance });
+
+        // 5. Finally, mark the remittance as safely Received
+        await updateDoc(remitRef, { status: "Received" });
+
+        alert(`✅ Success! ₱${amountToDeposit.toLocaleString()} has been officially deposited into your [${targetAccountName}] account.`);
+        
+        // Refresh the screens
+        loadCashExplorer(); 
+        if (typeof loadAccountsAndBudget === 'function') loadAccountsAndBudget();
+
     } catch (e) {
-        console.error(e); alert("Failed to approve remittance.");
+        console.error("Deposit Error:", e); 
+        alert("❌ Failed to approve and route the remittance.");
     }
 };
 
