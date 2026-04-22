@@ -438,7 +438,7 @@ window.openEndShiftClearance = function () {
 };
 
 // ========================================================
-// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE
+// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH ANTI-FRAUD ALARM)
 // ========================================================
 window.submitComprehensiveCloseShift = async function () {
   // 1. Get the exact total they counted
@@ -468,7 +468,15 @@ window.submitComprehensiveCloseShift = async function () {
 
     // Save everything to the database
     await updateDoc(doc(db, "shifts", shiftId), {
-      // 🔥 THE ANTI-FRAUD ALARM ENGINE 🔥
+      active: false,
+      endTime: serverTimestamp(),
+      declaredCash: declaredCash,
+      cashBreakdown: cashBreakdown, // The exact 1000s, 500s, etc.
+      physicalStockCount: physicalStock, // The exact cups, boxes, etc.
+      status: "Closed"
+    });
+
+    // 🔥 THE ANTI-FRAUD ALARM ENGINE 🔥
     let expectedCash = activeShiftDetails.expectedCash || 0;
     let variance = declaredCash - expectedCash;
 
