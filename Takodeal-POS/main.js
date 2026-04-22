@@ -576,15 +576,15 @@ window.submitRemittance = async function () {
   }
 };
 
-// Fetch History for the Tab
+// Fetch History for the Tab (With Live Status!)
 window.loadRemittanceHistory = async function () {
   const tbody = document.getElementById('remitHistoryTableBody');
+  if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Fetching records...</td></tr>';
 
   let branch = localStorage.getItem('takodeal_device_branch') || localStorage.getItem('branch') || 'Unknown Branch';
 
   try {
-    // Note: This asks Firebase to filter by branch AND sort by time. 
     const q = query(collection(db, "remittances"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(20));
     const snap = await getDocs(q);
 
@@ -592,6 +592,12 @@ window.loadRemittanceHistory = async function () {
     snap.forEach(docSnap => {
       let data = docSnap.data();
       let dateLogged = data.timestamp ? data.timestamp.toDate().toLocaleDateString() : 'Just now';
+      
+      // Look at the status from the cloud!
+      let status = data.status || "Pending";
+      let statusBadge = status === "Received"
+          ? `<div style="margin-top: 4px; font-size: 10px; background: #dcfce7; color: #16a34a; padding: 3px 6px; border-radius: 4px; display: inline-block; font-weight: bold;">✅ Received by HQ</div>`
+          : `<div style="margin-top: 4px; font-size: 10px; background: #fef9c3; color: #ca8a04; padding: 3px 6px; border-radius: 4px; display: inline-block; font-weight: bold;">⏳ Pending / On Hold</div>`;
 
       html += `
         <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -604,7 +610,10 @@ window.loadRemittanceHistory = async function () {
             <div>${data.channel} ➡️ ${data.recipient}</div>
             <div style="font-size: 11px; color: #0284c7; font-family: monospace;">Ref: ${data.referenceNumber || 'N/A'}</div>
           </td>
-          <td style="padding: 12px 8px; text-align: right; color: #16a34a; font-weight: bold; font-size: 15px;">₱${data.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+          <td style="padding: 12px 8px; text-align: right;">
+            <div style="color: #16a34a; font-weight: bold; font-size: 15px;">₱${data.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+            ${statusBadge}
+          </td>
         </tr>
       `;
     });
@@ -612,7 +621,7 @@ window.loadRemittanceHistory = async function () {
     tbody.innerHTML = html || '<tr><td colspan="4" style="text-align: center; padding: 20px;">No remittances logged yet.</td></tr>';
   } catch (error) {
     console.error("Error loading remittance history:", error);
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: red; padding: 20px;">Firebase Index Required! Please press F12 and click the index link in the console.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: red; padding: 20px;">Firebase Index Required! Please press F12 and click the index link.</td></tr>';
   }
 };
 
