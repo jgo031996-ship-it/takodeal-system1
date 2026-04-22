@@ -468,13 +468,32 @@ window.submitComprehensiveCloseShift = async function () {
 
     // Save everything to the database
     await updateDoc(doc(db, "shifts", shiftId), {
-      active: false,
-      endTime: serverTimestamp(),
-      declaredCash: declaredCash,
-      cashBreakdown: cashBreakdown, // The exact 1000s, 500s, etc.
-      physicalStockCount: physicalStock, // The exact cups, boxes, etc.
-      status: "Closed"
-    });
+      // 🔥 THE ANTI-FRAUD ALARM ENGINE 🔥
+    let expectedCash = activeShiftDetails.expectedCash || 0;
+    let variance = declaredCash - expectedCash;
+
+    if (variance !== 0) {
+      let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+      let currentCashier = localStorage.getItem('cashierName') || 'Unknown';
+      let varianceType = variance < 0 ? "SHORT" : "OVER";
+      
+      await addDoc(collection(db, "manager_alerts"), {
+        type: "VARIANCE_ALERT",
+        branch: branchName,
+        cashier: currentCashier,
+        shiftId: shiftId,
+        expected: expectedCash,
+        declared: declaredCash,
+        varianceAmount: variance,
+        stockCounts: physicalStock, // We send you their stock counts to check for cheating!
+        message: `CASH ${varianceType}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
+        explanationCause: "Awaiting Staff Letter...",
+        explanationMessage: "",
+        explanationStatus: "Pending", // You will approve this in the Manager App!
+        timestamp: serverTimestamp(),
+        isRead: false
+      });
+    }
 
     alert("✅ Shift Closed Successfully! Breakdown and Inventory logs have been sent to the Manager App.");
 
