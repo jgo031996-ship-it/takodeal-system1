@@ -768,3 +768,65 @@ function startLiveClock() {
   }, 1000);
 }
 startLiveClock();
+
+// ==========================================
+// REASON LETTER ENGINE
+// ==========================================
+window.openExplanationModal = async function() {
+    let cashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier');
+    let selectList = document.getElementById('explainAlertId');
+    selectList.innerHTML = '<option>Loading your records...</option>';
+    document.getElementById('explanationModal').style.display = 'flex';
+
+    try {
+        // Find ONLY the unresolved shorts/overs for this specific cashier!
+        const q = query(collection(db, "manager_alerts"), 
+            where("type", "==", "VARIANCE_ALERT"), 
+            where("cashier", "==", cashier),
+            where("explanationStatus", "==", "Pending")
+        );
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            selectList.innerHTML = '<option value="">No pending variances found! Excellent job.</option>';
+            return;
+        }
+
+        let html = '';
+        snap.forEach(doc => {
+            let data = doc.data();
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleDateString() : 'Recent';
+            html += `<option value="${doc.id}">${dateStr} - ₱${Math.abs(data.varianceAmount).toFixed(2)} ${data.varianceAmount < 0 ? 'SHORT' : 'OVER'}</option>`;
+        });
+        selectList.innerHTML = html;
+
+    } catch (e) {
+        console.error(e);
+        selectList.innerHTML = '<option value="">Error connecting. Press F12 to check Firebase Index.</option>';
+    }
+};
+
+window.submitReasonLetter = async function() {
+    let alertId = document.getElementById('explainAlertId').value;
+    let cause = document.getElementById('explainCause').value;
+    let message = document.getElementById('explainMessage').value;
+
+    if (!alertId) { alert("No variance selected."); return; }
+    if (!message) { alert("You must type a detailed explanation."); return; }
+
+    try {
+        // Update the Manager Alert with the Cashier's confession
+        await updateDoc(doc(db, "manager_alerts", alertId), {
+            explanationCause: cause,
+            explanationMessage: message,
+            explanationStatus: "Submitted - Awaiting Owner Approval"
+        });
+
+        alert("✅ Reason Letter successfully sent to the Owner's Security Feed.");
+        document.getElementById('explanationModal').style.display = 'none';
+        document.getElementById('explainMessage').value = '';
+
+    } catch (e) {
+        console.error(e); alert("Failed to send letter.");
+    }
+};
