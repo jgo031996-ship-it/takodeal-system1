@@ -1158,6 +1158,10 @@
       <div class="nav-item" onclick="openRemittanceModal()">
           <span style="font-size: 18px;">💸</span>
           <div class="nav-item-text">Remit Cash to HQ</div>
+        <div class="nav-item" onclick="openExplanationModal()">
+            <span style="font-size: 18px;">✉️</span>
+            <div class="nav-item-text">Submit Reason Letter</div>
+        </div>         
       </div>
 
       <div class="nav-item"
@@ -1335,6 +1339,36 @@
         </button>
       </div>
     </div>
+  </div>
+
+  <div id="explanationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center;">
+      <div style="background: white; width: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
+          <div style="background: #b91c1c; padding: 20px; color: white; display: flex; justify-content: space-between;">
+              <h2 style="margin: 0; font-size: 18px;">✉️ Cash Variance Reason Letter</h2>
+              <span onclick="document.getElementById('explanationModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
+          </div>
+          <div style="padding: 20px;">
+              <p style="font-size: 13px; color: #64748b; margin-top: 0;">Select a pending variance alert below to submit your official explanation to the Owner.</p>
+              
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Select Shift / Variance</label>
+              <select id="explainAlertId" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px;"></select>
+  
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Suspected Cause</label>
+              <select id="explainCause" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                  <option value="Wrong Change Given">Wrong Change Given to Customer</option>
+                  <option value="Dropped / Damaged Food">Dropped / Damaged Food</option>
+                  <option value="POS Input Error">POS Input Error</option>
+                  <option value="Personal Advance / IOU">Personal Advance / IOU</option>
+                  <option value="Missing / Suspected Theft">Missing / Suspected Theft</option>
+                  <option value="Unknown">Completely Unknown</option>
+              </select>
+  
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Detailed Explanation</label>
+              <textarea id="explainMessage" placeholder="Write exactly what happened during your shift..." style="width: 100%; padding: 10px; margin: 5px 0 20px; height: 100px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; box-sizing: border-box;"></textarea>
+  
+              <button onclick="submitReasonLetter()" style="width: 100%; background: #b91c1c; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer;">Send Letter to Owner</button>
+          </div>
+      </div>
   </div>
 
   <div class="overlay" id="checkoutModal">
