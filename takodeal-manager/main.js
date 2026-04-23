@@ -3235,3 +3235,54 @@ async function saveReceiptSettings() {
         alert("Failed to save layout.");
     }
 }
+
+window.loadAttendanceLogs = async function () {
+    const tbody = document.getElementById('attendanceTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">Fetching logs...</td></tr>';
+
+    try {
+        const q = query(collection(db, "attendance_logs"), orderBy("timestamp", "desc"), limit(30));
+        const snap = await getDocs(q);
+
+        let html = '';
+        snap.forEach(doc => {
+            let data = doc.data();
+            let timeStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
+            let badgeColor = data.type === "TIME IN" ? "#dcfce7" : "#fee2e2";
+            let textColor = data.type === "TIME IN" ? "#16a34a" : "#b91c1c";
+            
+            // Map Link generator if GPS exists!
+            let locationText = `📍 ${data.branch}`;
+            if (data.locationLat && data.locationLat !== "Unknown") {
+                locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
+            }
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; font-size: 13px; color: #64748b;">${timeStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.staffName}</td>
+                    <td style="padding: 12px; color: #64748b;">${locationText}</td>
+                    <td style="padding: 12px;">
+                        <span style="background: ${badgeColor}; color: ${textColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${data.type}</span>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <button onclick="viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: none; border: 1px solid #cbd5e1; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 16px;">📷</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 20px;">No logs found.</td></tr>';
+    } catch (error) {
+        console.error("Error loading attendance:", error);
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error! Press F12 to check Firebase Index.</td></tr>';
+    }
+};
+
+window.viewSelfie = function(base64Data, detailsText) {
+    if (!base64Data || base64Data === 'undefined') { alert("No photo attached."); return; }
+    document.getElementById('viewedSelfie').src = base64Data;
+    document.getElementById('selfieDetails').innerText = detailsText;
+    document.getElementById('photoViewerModal').style.display = 'flex';
+};
