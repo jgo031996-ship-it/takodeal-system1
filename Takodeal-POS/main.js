@@ -962,25 +962,38 @@ window.submitAttendance = async function(type) {
     const canvas = document.getElementById('clockCanvas');
     const branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
 
-    // 1. Snap the photo! (We compress it to 320x240 so it saves instantly)
+    // 1. Snap the photo!
     canvas.width = 320;
     canvas.height = 240;
     canvas.getContext('2d').drawImage(video, 0, 0, 320, 240);
-    
-    // Convert the image to text (Base64 JPEG)
     const photoData = canvas.toDataURL('image/jpeg', 0.7);
 
+    // 2. 🌍 CAPTURE GPS LOCATION
+    let lat = "Unknown";
+    let lng = "Unknown";
     try {
-        // 2. Save it to your new HR Database
+        const position = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+        });
+        lat = position.coords.latitude;
+        lng = position.coords.longitude;
+    } catch (geoErr) {
+        console.warn("Could not get GPS. Staff might have blocked location access.");
+    }
+
+    try {
+        // 3. Save it all to Firebase
         await addDoc(collection(db, "attendance_logs"), {
             staffName: staffName,
             branch: branchName,
-            type: type, // "TIME IN" or "TIME OUT"
+            type: type, 
             timestamp: serverTimestamp(),
-            photoBase64: photoData // The selfie!
+            photoBase64: photoData,
+            locationLat: lat,   // Saves the Latitude!
+            locationLng: lng    // Saves the Longitude!
         });
 
-        alert(`✅ ${staffName}, your ${type} has been successfully logged with a photo!`);
+        alert(`✅ ${staffName}, your ${type} has been successfully logged with a photo and GPS Location!`);
         closeTimeClock();
 
     } catch (error) {
