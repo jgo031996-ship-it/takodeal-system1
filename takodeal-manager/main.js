@@ -532,6 +532,7 @@ window.switchView = function (viewId) {
   if (viewId === 'inventory') title = "Live Inventory Dashboard";
   if (viewId === 'accounts') title = "Financial Control Center";
   if (viewId === 'payroll') title = "Payroll Engine & HR Logs";
+  if (viewId === 'schedule') title = "Schedule & Shift Manager";
   if (viewId === 'products') title = "Menu Costing & BOM";
   if (viewId === 'purchases') title = "Purchases & Alerts";
   if (viewId === 'dispatch') title = "Logistics & Dispatch";
@@ -544,6 +545,7 @@ window.switchView = function (viewId) {
   // Trigger the engine for that specific page
   if (viewId === 'dashboard') loadGlobalDashboard();
   if (viewId === 'branches') loadHRModule();
+  if (viewId === 'schedule') loadSchedules();
   if (viewId === 'menu') loadMenuEditor();
   if (viewId === 'inventory') loadInventoryData();
   if (viewId === 'accounts') loadAccountsAndBudget();
@@ -3286,4 +3288,85 @@ window.viewSelfie = function(base64Data, detailsText) {
     document.getElementById('viewedSelfie').src = base64Data;
     document.getElementById('selfieDetails').innerText = detailsText;
     document.getElementById('photoViewerModal').style.display = 'flex';
+};
+
+// ==========================================
+// 📅 SCHEDULE MANAGER ENGINE
+// ==========================================
+
+window.saveSchedule = async function() {
+    const staff = document.getElementById('schedStaff').value;
+    const branch = document.getElementById('schedBranch').value;
+    const timeIn = document.getElementById('schedTimeIn').value;
+    const timeOut = document.getElementById('schedTimeOut').value;
+
+    if (!staff || !branch || !timeIn || !timeOut) {
+        alert("Please fill out all schedule fields!");
+        return;
+    }
+
+    try {
+        // Save using the Staff Name as the Document ID so it overrides their old schedule!
+        await setDoc(doc(db, "schedules", staff), {
+            staffName: staff,
+            branch: branch,
+            expectedTimeIn: timeIn,
+            expectedTimeOut: timeOut,
+            updatedAt: serverTimestamp()
+        });
+        
+        alert(`✅ Schedule for ${staff} saved successfully!`);
+        loadSchedules();
+    } catch (error) {
+        console.error("Error saving schedule:", error);
+        alert("Failed to save schedule.");
+    }
+};
+
+window.loadSchedules = async function() {
+    const tbody = document.getElementById('scheduleTableBody');
+    if (!tbody) return;
+    
+    try {
+        const snap = await getDocs(collection(db, "schedules"));
+        let html = '';
+        
+        snap.forEach(doc => {
+            const data = doc.data();
+            
+            // Calculate Required Hours automatically
+            const start = new Date(`2000-01-01T${data.expectedTimeIn}`);
+            const end = new Date(`2000-01-01T${data.expectedTimeOut}`);
+            let diffHours = (end - start) / (1000 * 60 * 60);
+            if (diffHours < 0) diffHours += 24; // Handles night shifts crossing midnight
+
+            // Format times for reading (e.g., 09:00 -> 9:00 AM)
+            const fmtIn = start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const fmtOut = end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.staffName}</td>
+                    <td style="padding: 12px; color: #64748b;">📍 ${data.branch}</td>
+                    <td style="padding: 12px; color: #16a34a; font-weight: bold;">${fmtIn}</td>
+                    <td style="padding: 12px; color: #b91c1c; font-weight: bold;">${fmtOut}</td>
+                    <td style="padding: 12px; font-weight: bold;">${diffHours.toFixed(1)} hrs</td>
+                    <td style="padding: 12px;">
+                        <button onclick="deleteSchedule('${doc.id}')" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">🗑️ Remove</button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align: center; padding: 20px;">No schedules set. Assign shifts above!</td></tr>';
+    } catch (error) {
+        console.error("Error loading schedules:", error);
+    }
+};
+
+window.deleteSchedule = async function(staffId) {
+    if (confirm(`Are you sure you want to remove the schedule for ${staffId}?`)) {
+        await deleteDoc(doc(db, "schedules", staffId));
+        loadSchedules();
+    }
 };
