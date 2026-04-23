@@ -3647,3 +3647,79 @@ window.renderTables = function() {
         contentWrap.appendChild(cBox);
     }
 };
+
+// ==========================================
+// 🧬 RECIPE CLONER ENGINE
+// ==========================================
+
+window.loadCloneDropdown = async function() {
+    const select = document.getElementById('recipeCloneSelect');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Loading products...</option>';
+
+    try {
+        // Change "menu" to "products" or "bom" if your recipes are saved in a different collection!
+        const snap = await getDocs(collection(db, "menu")); 
+        let html = '<option value="">-- Select an existing product to copy... --</option>';
+
+        let items = [];
+        snap.forEach(doc => items.push({ id: doc.id, name: doc.data().name }));
+        items.sort((a, b) => a.name.localeCompare(b.name)); // Sort A-Z
+
+        items.forEach(item => {
+            html += `<option value="${item.id}">${item.name}</option>`;
+        });
+
+        select.innerHTML = html;
+    } catch (error) {
+        console.error("Error loading clone dropdown:", error);
+        select.innerHTML = '<option value="">Error loading products</option>';
+    }
+};
+
+window.cloneRecipe = async function() {
+    const sourceId = document.getElementById('recipeCloneSelect').value;
+    if (!sourceId) {
+        alert("Please select a product to copy from first!");
+        return;
+    }
+
+    if (!confirm("Are you sure? This will overwrite your currently listed ingredients!")) {
+        return;
+    }
+
+    try {
+        // Fetch the recipe data from the selected product
+        const docRef = doc(db, "menu", sourceId); // Make sure this collection matches the one above!
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+
+            // ⚠️ YOUR CUSTOM INTEGRATION GOES HERE:
+            // Since I don't have your specific "+ Add item" function code, 
+            // you will loop through the copied ingredients and trigger your own row-adding function!
+            
+            console.log("Here is the recipe data we copied from Firebase:", data.ingredients);
+            
+            /* Example of how you would wire this up:
+            
+            document.getElementById('yourIngredientsTableBody').innerHTML = ""; // Clear current rows
+            
+            data.ingredients.forEach(ing => {
+                // Call your exact function that adds a row to the screen!
+                addNewIngredientRow(ing.description, ing.qty, ing.uom, ing.unitCost);
+            });
+            */
+            
+            alert(`✅ Recipe successfully cloned!`);
+
+        } else {
+            alert("Could not find that product in the database.");
+        }
+    } catch (error) {
+        console.error("Error cloning recipe:", error);
+        alert("Failed to clone recipe.");
+    }
+};
