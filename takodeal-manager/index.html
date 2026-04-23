@@ -433,71 +433,38 @@
       </div>
     </div>
 
-    <div id="view-receipt" class="view" style="padding: 20px;">
-        <h2 style="margin-top:0; color: var(--primary);">Receipt Layout Builder</h2>
-        
-        <div style="display: flex; gap: 40px; flex-wrap: wrap;">
+    <div id="receipt" class="view">
+        <div class="card" style="max-width: 600px; margin: 0 auto;">
+            <h2 style="margin-top: 0;">🖨️ Thermal Receipt Settings</h2>
             
-            <div style="flex: 1; min-width: 300px; background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <h3 style="margin-top: 0;">Header Settings</h3>
-                <div style="margin-bottom: 15px;">
-                    <label style="font-size: 12px; font-weight: bold; color: #64748b;">Official Store Logo (Black & White works best!)</label>
-                    <input type="file" id="rcptLogo" accept="image/png, image/jpeg" onchange="processLogoUpload(event)" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: white;">
-                    
-                    <input type="hidden" id="logoBase64Val" value="">
-                    
-                    <div style="text-align: center; margin-top: 10px;">
-                        <img id="logoPreview" src="" style="max-width: 150px; max-height: 150px; display: none; border-radius: 8px; border: 1px dashed #cbd5e1; padding: 5px;">
-                    </div>
-                </div>
+            <div style="margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                <label style="font-size: 13px; font-weight: bold; color: #334155; display: block; margin-bottom: 8px;">Official Store Logo (Black & White works best!)</label>
+                <input type="file" id="rcptLogo" accept="image/png, image/jpeg" onchange="processLogoUpload(event)" style="width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; box-sizing: border-box;">
+                <input type="hidden" id="logoBase64Val" value="">
                 
-                <label style="font-weight: bold; font-size: 13px;">Store Name</label><br>
-                <input type="text" id="rcptName" value="TAKODEÁL" oninput="updateReceiptPreview()" style="width: 100%; margin: 5px 0 15px 0; padding: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;"><br>
-                
-                <label style="font-weight: bold; font-size: 13px;">Address / Branch Line</label><br>
-                <input type="text" id="rcptAddress" placeholder="e.g., Cabantian Branch" oninput="updateReceiptPreview()" style="width: 100%; margin: 5px 0 15px 0; padding: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;"><br>
-                
-                <label style="font-weight: bold; font-size: 13px;">Contact Info</label><br>
-                <input type="text" id="rcptContact" placeholder="e.g., 0912-345-6789" oninput="updateReceiptPreview()" style="width: 100%; margin: 5px 0 25px 0; padding: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;"><br>
-                
-                <h3 style="margin-top: 0; border-top: 1px solid var(--border); padding-top: 20px;">Footer Settings</h3>
-                <label style="font-weight: bold; font-size: 13px;">Thank You Message</label><br>
-                <textarea id="rcptFooter" oninput="updateReceiptPreview()" style="width: 100%; height: 80px; margin: 5px 0 20px 0; padding: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box; font-family: inherit;">Thank you for your purchase!
-    Please come again.</textarea><br>
-    
-                <button onclick="saveReceiptSettings()" style="background: var(--primary); color: white; padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; font-size: 15px;">💾 Save Layout to Cloud</button>
-            </div>
-    
-            <div style="width: 320px;">
-                <h3 style="margin-top: 0;">Live Preview</h3>
-                
-                <div style="background: white; color: black; font-family: 'Courier New', Courier, monospace; padding: 20px; width: 280px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); font-size: 14px; margin: 0 auto;">
-                    
-                    <div style="text-align: center;">
-                        <img src="logo.jpg" style="width: 60px; filter: grayscale(100%) contrast(1.2); margin-bottom: 5px;">
-                        <div id="prevName" style="font-weight: bold; font-size: 20px; margin-bottom: 5px;">TAKODEÁL</div>
-                        <div id="prevAddress">Cabantian Branch</div>
-                        <div id="prevContact">0912-345-6789</div>
-                        <div style="border-bottom: 1px dashed black; margin: 15px 0;"></div>
-                    </div>
-                    
-                    <div>
-                        Date: 2026-04-16 14:30<br>
-                        Cashier: Franklin<br>
-                        <div style="border-bottom: 1px dashed black; margin: 10px 0;"></div>
-                        1x Cheesy Tkyki Orig. 110.00<br>
-                        1x Iced Coffee         85.00<br>
-                        <div style="border-bottom: 1px dashed black; margin: 10px 0;"></div>
-                        <strong style="font-size: 16px;">TOTAL:             P195.00</strong>
-                    </div>
-    
-                    <div style="text-align: center; margin-top: 20px;">
-                        <div id="prevFooter" style="white-space: pre-wrap;">Thank you for your purchase!
-    Please come again.</div>
-                    </div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <img id="logoPreview" src="" style="max-width: 150px; max-height: 150px; display: none; border-radius: 8px; border: 1px solid #cbd5e1; padding: 5px; background: white;">
                 </div>
             </div>
     
+            <div style="margin-bottom: 15px;">
+                <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Store Name</label>
+                <input type="text" id="rcptName" placeholder="e.g. TAKODEÁL" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Address</label>
+                <input type="text" id="rcptAddress" placeholder="e.g. Cabantian Branch" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Contact Info</label>
+                <input type="text" id="rcptContact" placeholder="Phone / Social Media" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <div style="margin-bottom: 25px;">
+                <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Footer Message</label>
+                <input type="text" id="rcptFooter" placeholder="e.g. Thank you for your purchase!" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+            </div>
+            
+            <button onclick="saveReceiptSettings()" style="background: #16a34a; color: white; padding: 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px;">💾 Save Receipt Layout</button>
         </div>
     </div>
 
