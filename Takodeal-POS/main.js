@@ -926,3 +926,65 @@ window.printThermalReceipt = async function () {
         alert("Could not connect to printer. Please ensure RawBT is installed.");
     }
 };
+
+// ==========================================
+// 📸 NATIVE CAMERA & ATTENDANCE ENGINE
+// ==========================================
+let cameraStream = null;
+
+window.openTimeClockModal = async function() {
+    document.getElementById('timeClockModal').style.display = 'flex';
+    document.getElementById('clockStaffName').value = "";
+    
+    try {
+        // Request the tablet's front camera
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        document.getElementById('clockVideo').srcObject = cameraStream;
+    } catch (err) {
+        console.error("Camera error:", err);
+        alert("Could not access the camera. Please ensure permissions are granted in your browser settings.");
+    }
+};
+
+window.closeTimeClock = function() {
+    document.getElementById('timeClockModal').style.display = 'none';
+    // Turn off the camera light to save battery!
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+    }
+};
+
+window.submitAttendance = async function(type) {
+    const staffName = document.getElementById('clockStaffName').value;
+    if (!staffName) { alert("Please select your name first!"); return; }
+
+    const video = document.getElementById('clockVideo');
+    const canvas = document.getElementById('clockCanvas');
+    const branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+
+    // 1. Snap the photo! (We compress it to 320x240 so it saves instantly)
+    canvas.width = 320;
+    canvas.height = 240;
+    canvas.getContext('2d').drawImage(video, 0, 0, 320, 240);
+    
+    // Convert the image to text (Base64 JPEG)
+    const photoData = canvas.toDataURL('image/jpeg', 0.7);
+
+    try {
+        // 2. Save it to your new HR Database
+        await addDoc(collection(db, "attendance_logs"), {
+            staffName: staffName,
+            branch: branchName,
+            type: type, // "TIME IN" or "TIME OUT"
+            timestamp: serverTimestamp(),
+            photoBase64: photoData // The selfie!
+        });
+
+        alert(`✅ ${staffName}, your ${type} has been successfully logged with a photo!`);
+        closeTimeClock();
+
+    } catch (error) {
+        console.error("Attendance Error:", error);
+        alert("Failed to log attendance. Check connection.");
+    }
+};
