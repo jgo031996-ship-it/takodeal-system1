@@ -541,7 +541,7 @@ window.switchView = function (viewId) {
   if (viewId === 'receipt') title = "Thermal Printer Setup";
   if (viewId === 'schedule') {
         title = "Schedule & Shift Manager";
-        loadSchedules(); 
+        loadFromCloud(); // Wakes up your new imported engine!
     }
   document.getElementById('pageTitle').innerText = title;
 
@@ -3293,82 +3293,357 @@ window.viewSelfie = function(base64Data, detailsText) {
 };
 
 // ==========================================
-// 📅 SCHEDULE MANAGER ENGINE
+// 📅 TAKODEÁL CLOUD AUTO-SCHEDULER ENGINE
 // ==========================================
 
-window.saveSchedule = async function() {
-    const staff = document.getElementById('schedStaff').value;
-    const branch = document.getElementById('schedBranch').value;
-    const timeIn = document.getElementById('schedTimeIn').value;
-    const timeOut = document.getElementById('schedTimeOut').value;
+const defaultSchedConfig = {
+    Cabantian: [
+        { id: 'm1', name: 'Morning (9am-6pm)', active: true, days: [0,1,2,3,4,5,6] },
+        { id: 'm2', name: 'Morning (10am-7pm)', active: true, days: [0,1,2,3,4,5,6] },
+        { id: 'mid', name: 'Mid (4pm-2am)', active: true, days: [0,1,5,6] }, 
+        { id: 'n1', name: 'Night 1 (7pm-3am)', active: true, days: [0,1,2,3,4,5,6] },
+        { id: 'n2', name: 'Night 2 (7pm-3am)', active: true, days: [0,1,2,3,4,5,6] }
+    ],
+    Maa: [
+        { id: 'm1', name: 'Morning (9am-6pm)', active: true, days: [0,1,2,3,4,5,6] },
+        { id: 'm2', name: 'Morning (10am-7pm)', active: true, days: [0,1,2,3,4,5,6] },
+        { id: 'mid', name: 'Mid (4pm-2am)', active: true, days: [0,1,5,6] },
+        { id: 'n1', name: 'Night 1 (6pm-2am)', active: true, days: [0,1,2,3,4,5,6] },
+        { id: 'n2', name: 'Night 2 (6pm-2am)', active: true, days: [0,1,2,3,4,5,6] }
+    ],
+    Citygate: [
+        { id: 'open', name: 'Opener (10am-7pm)', active: true, days: [0,1,2,3,4,5,6] },
+        { id: 'close', name: 'Closer (12nn-9pm)', active: true, days: [0,1,2,3,4,5,6] }
+    ]
+};
 
-    if (!staff || !branch || !timeIn || !timeOut) {
-        alert("Please fill out all schedule fields!");
-        return;
-    }
+let branchConfig = JSON.parse(JSON.stringify(defaultSchedConfig));
+let employees = [];
+let unavailability = {}; 
+let currentSchedule = {}; 
+let currentYear, currentMonth;
+let swapData = null; 
+let currentActiveTab = 'Cabantian'; // Your tab memory!
 
+// 🔥 FIREBASE SAVE/LOAD (Replaces localStorage)
+window.saveToCloud = async function() {
     try {
-        // Save using the Staff Name as the Document ID so it overrides their old schedule!
-        await setDoc(doc(db, "schedules", staff), {
-            staffName: staff,
-            branch: branch,
-            expectedTimeIn: timeIn,
-            expectedTimeOut: timeOut,
-            updatedAt: serverTimestamp()
+        const appData = { branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth };
+        await setDoc(doc(db, "settings", "global_schedule"), appData);
+    } catch(e) { console.error("Cloud Save Error:", e); }
+};
+
+window.loadFromCloud = async function() {
+    try {
+        const snap = await getDoc(doc(db, "settings", "global_schedule"));
+        if (snap.exists()) {
+            const appData = snap.data();
+            branchConfig = appData.branchConfig || JSON.parse(JSON.stringify(defaultSchedConfig));
+            employees = appData.employees || [];
+            unavailability = appData.unavailability || {};
+            currentSchedule = appData.currentSchedule || {};
+            currentYear = appData.currentYear;
+            currentMonth = appData.currentMonth;
+            if (currentYear && currentMonth) {
+                const mm = currentMonth < 10 ? '0' + currentMonth : currentMonth;
+                document.getElementById("monthSelector").value = `${currentYear}-${mm}`;
+            }
+        } else {
+            const today = new Date();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            document.getElementById("monthSelector").value = `${today.getFullYear()}-${mm}`;
+        }
+        renderConfigUI(); updateStaffDisplay(); updateAvailDropdown(); updateUnavailabilityList(); renderTables();
+    } catch(e) { console.error("Cloud Load Error:", e); }
+};
+
+// --- CORE UI FUNCTIONS ---
+window.renderConfigUI = function() {
+    const container = document.getElementById("shiftConfigGrid");
+    if(!container) return;
+    container.innerHTML = "";
+    const dayNames = ['Su', 'M', 'T', 'W', 'Th', 'F', 'Sa'];
+    for (const branch in branchConfig) {
+        const box = document.createElement("div"); box.className = "shift-config-box";
+        box.innerHTML = `<h4 style="margin:0 0 10px 0; color:#334155;">${branch}</h4>`;
+        branchConfig[branch].forEach((shift, index) => {
+            const row = document.createElement("div"); row.className = "shift-row";
+            row.innerHTML = `<input type="checkbox" ${shift.active ? 'checked' : ''} id="chk_${branch}_${index}">
+                             <input type="text" value="${shift.name}" id="inp_${branch}_${index}">`;
+            box.appendChild(row);
+            const daysDiv = document.createElement("div"); daysDiv.className = "shift-days";
+            dayNames.forEach((name, i) => {
+                daysDiv.innerHTML += `<label><input type="checkbox" value="${i}" class="day-chk-${branch}-${index}" ${shift.days.includes(i) ? 'checked' : ''}>${name}</label>`;
+            });
+            box.appendChild(daysDiv);
         });
-        
-        alert(`✅ Schedule for ${staff} saved successfully!`);
-        loadSchedules();
-    } catch (error) {
-        console.error("Error saving schedule:", error);
-        alert("Failed to save schedule.");
+        container.appendChild(box);
     }
 };
 
-window.loadSchedules = async function() {
-    const tbody = document.getElementById('scheduleTableBody');
-    if (!tbody) return;
+window.saveShiftConfigChanges = function() {
+    for (const branch in branchConfig) {
+        branchConfig[branch].forEach((shift, index) => {
+            shift.active = document.getElementById(`chk_${branch}_${index}`).checked;
+            shift.name = document.getElementById(`inp_${branch}_${index}`).value.trim();
+            const dChks = document.querySelectorAll(`.day-chk-${branch}-${index}`);
+            shift.days = Array.from(dChks).filter(c => c.checked).map(c => parseInt(c.value));
+        });
+    }
+    if (currentSchedule[1]) {
+        for (let day in currentSchedule) {
+            const dayOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
+            for (const branch in branchConfig) {
+                let bData = currentSchedule[day][branch]; let newSch = {};
+                branchConfig[branch].filter(s => s.active).forEach(s => {
+                    if (!s.days.includes(dayOfWeek)) {
+                        newSch[s.id] = "N/A";
+                        let old = bData.scheduled[s.id];
+                        if (old && old !== "N/A" && old !== "UNFILLED" && !bData.rest.includes(old)) bData.rest.push(old);
+                    } else { newSch[s.id] = bData.scheduled[s.id] || "UNFILLED"; }
+                });
+                bData.scheduled = newSch;
+            }
+        }
+        renderTables();
+    }
+    saveToCloud();
+    const msg = document.getElementById("configSaveMsg");
+    msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000);
+};
+
+window.addEmployee = function() {
+    const name = document.getElementById('empName').value.trim();
+    const branch = document.getElementById('empBranch').value;
+    if (!name) return alert("Enter name.");
+    if (employees.some(e => e.name === name)) return alert("Exists.");
+    employees.push({ name, branch });
+    document.getElementById('empName').value = '';
     
-    try {
-        const snap = await getDocs(collection(db, "schedules"));
-        let html = '';
-        
-        snap.forEach(doc => {
-            const data = doc.data();
-            
-            // Calculate Required Hours automatically
-            const start = new Date(`2000-01-01T${data.expectedTimeIn}`);
-            const end = new Date(`2000-01-01T${data.expectedTimeOut}`);
-            let diffHours = (end - start) / (1000 * 60 * 60);
-            if (diffHours < 0) diffHours += 24; // Handles night shifts crossing midnight
-
-            // Format times for reading (e.g., 09:00 -> 9:00 AM)
-            const fmtIn = start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const fmtOut = end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.staffName}</td>
-                    <td style="padding: 12px; color: #64748b;">📍 ${data.branch}</td>
-                    <td style="padding: 12px; color: #16a34a; font-weight: bold;">${fmtIn}</td>
-                    <td style="padding: 12px; color: #b91c1c; font-weight: bold;">${fmtOut}</td>
-                    <td style="padding: 12px; font-weight: bold;">${diffHours.toFixed(1)} hrs</td>
-                    <td style="padding: 12px;">
-                        <button onclick="deleteSchedule('${doc.id}')" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">🗑️ Remove</button>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align: center; padding: 20px;">No schedules set. Assign shifts above!</td></tr>';
-    } catch (error) {
-        console.error("Error loading schedules:", error);
+    if (currentSchedule[1]) {
+        for (let day in currentSchedule) {
+            const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            if (unavailability[dateStr] && unavailability[dateStr][name]) {
+                currentSchedule[day][branch].unavailable.push({ name, status: unavailability[dateStr][name] });
+            } else {
+                currentSchedule[day][branch].rest.push(name);
+            }
+        }
     }
+    updateStaffDisplay(); updateAvailDropdown(); renderTables(); saveToCloud();
 };
 
-window.deleteSchedule = async function(staffId) {
-    if (confirm(`Are you sure you want to remove the schedule for ${staffId}?`)) {
-        await deleteDoc(doc(db, "schedules", staffId));
-        loadSchedules();
+window.removeEmployee = function(name) {
+    if(!confirm(`Delete ${name}?`)) return;
+    employees = employees.filter(e => e.name !== name);
+    if (currentSchedule[1]) {
+        for (let day in currentSchedule) {
+            for (const branch in currentSchedule[day]) {
+                let bData = currentSchedule[day][branch];
+                for (let sId in bData.scheduled) { if (bData.scheduled[sId] === name) bData.scheduled[sId] = "UNFILLED"; }
+                bData.rest = bData.rest.filter(n => n !== name);
+                bData.unavailable = bData.unavailable.filter(u => u.name !== name);
+            }
+        }
+    }
+    for (let date in unavailability) { if (unavailability[date][name]) delete unavailability[date][name]; if (Object.keys(unavailability[date]).length === 0) delete unavailability[date]; }
+    updateStaffDisplay(); updateAvailDropdown(); updateUnavailabilityList(); renderTables(); saveToCloud();
+};
+
+window.updateStaffDisplay = function() {
+    const wrapper = document.getElementById('staffListWrapper'); if(!wrapper) return;
+    wrapper.innerHTML = "";
+    employees.forEach(e => {
+        const chip = document.createElement('div'); chip.className = 'staff-chip';
+        chip.innerHTML = `${e.name} (${e.branch}) <span class="remove-staff" onclick="removeEmployee('${e.name}')">×</span>`;
+        wrapper.appendChild(chip);
+    });
+};
+
+window.updateAvailDropdown = function() {
+    const select = document.getElementById('availEmp'); if(!select) return;
+    select.innerHTML = '<option value="">-- Select Staff --</option>';
+    employees.forEach(e => {
+        const opt = document.createElement('option'); opt.value = e.name; opt.innerText = `${e.name} (${e.branch})`;
+        select.appendChild(opt);
+    });
+};
+
+window.markUnavailable = function() {
+    const emp = document.getElementById('availEmp').value;
+    const date = document.getElementById('availDate').value;
+    const status = document.getElementById('availStatus').value;
+    if (!emp || !date) return alert("Select staff and date.");
+    if (!unavailability[date]) unavailability[date] = {};
+    unavailability[date][emp] = status;
+    updateUnavailabilityList();
+    if (currentSchedule[1]) {
+        const [y, m, d] = date.split('-').map(Number);
+        if (y === currentYear && m === currentMonth) {
+            for (const branch in currentSchedule[d]) {
+                let bData = currentSchedule[d][branch];
+                for (let sId in bData.scheduled) { if (bData.scheduled[sId] === emp) bData.scheduled[sId] = "UNFILLED"; }
+                bData.rest = bData.rest.filter(n => n !== emp);
+                if (!bData.unavailable.some(u => u.name === emp)) {
+                    const eObj = employees.find(e => e.name === emp);
+                    if (eObj && eObj.branch === branch) bData.unavailable.push({ name: emp, status });
+                }
+            }
+            renderTables();
+        }
+    }
+    saveToCloud();
+};
+
+window.removeUnavailable = function(date, emp) {
+    if (!confirm(`Remove ${emp} leave?`)) return;
+    delete unavailability[date][emp];
+    if (Object.keys(unavailability[date]).length === 0) delete unavailability[date];
+    updateUnavailabilityList();
+    if (currentSchedule[1]) {
+        const [y, m, d] = date.split('-').map(Number);
+        if (y === currentYear && m === currentMonth) {
+            for (const branch in currentSchedule[d]) {
+                let bData = currentSchedule[d][branch];
+                bData.unavailable = bData.unavailable.filter(u => u.name !== emp);
+                const eObj = employees.find(e => e.name === emp);
+                if (eObj && eObj.branch === branch && !bData.rest.includes(emp)) bData.rest.push(emp);
+            }
+            renderTables();
+        }
+    }
+    saveToCloud();
+};
+
+window.updateUnavailabilityList = function() {
+    const list = document.getElementById('unavailabilityList'); if(!list) return;
+    list.innerHTML = '';
+    const dates = Object.keys(unavailability).sort();
+    if (dates.length === 0) { list.innerHTML = '<span style="color:#aaa;">No leaves recorded.</span>'; return; }
+    dates.forEach(date => {
+        for (const emp in unavailability[date]) {
+            const div = document.createElement('div'); div.style.cssText = 'display:flex; justify-content:space-between; padding:5px; border-bottom:1px solid #eee;';
+            div.innerHTML = `<span><strong>${date}</strong>: ${emp} [${unavailability[date][emp]}]</span><span style="color:red;cursor:pointer;" onclick="removeUnavailable('${date}', '${emp}')">❌</span>`;
+            list.appendChild(div);
+        }
+    });
+};
+
+window.generateSchedule = function() {
+    const monthVal = document.getElementById("monthSelector").value;
+    if (!monthVal) return alert("Select month.");
+    [currentYear, currentMonth] = monthVal.split('-').map(Number);
+    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+    currentSchedule = {};
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        currentSchedule[day] = {};
+        const dStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
+        
+        for (const branch in branchConfig) {
+            currentSchedule[day][branch] = { scheduled: {}, rest: [], unavailable: [] };
+            let pool = employees.filter(e => e.branch === branch).map(e => e.name);
+            let available = [];
+            
+            pool.forEach(name => {
+                if (unavailability[dStr] && unavailability[dStr][name]) currentSchedule[day][branch].unavailable.push({ name, status: unavailability[dStr][name] });
+                else available.push(name);
+            });
+            
+            let shuffled = available.sort(() => 0.5 - Math.random());
+            branchConfig[branch].filter(s => s.active).forEach(shift => {
+                if (!shift.days.includes(dOfWeek)) currentSchedule[day][branch].scheduled[shift.id] = "N/A";
+                else currentSchedule[day][branch].scheduled[shift.id] = shuffled.length > 0 ? shuffled.pop() : "UNFILLED";
+            });
+            currentSchedule[day][branch].rest = shuffled;
+        }
+    }
+    renderTables(); saveToCloud();
+};
+
+window.openSwapModal = function(day, branch, shiftId) {
+    swapData = { day, branch, shiftId };
+    const cur = currentSchedule[day][branch].scheduled[shiftId];
+    document.getElementById('swapMessage').innerText = cur === "UNFILLED" ? "Assigning empty shift:" : `Swapping: ${cur}`;
+    const select = document.getElementById('swapTarget');
+    select.innerHTML = '<option value="">-- Choose Staff --</option>';
+    
+    for (let sId in currentSchedule[day][branch].scheduled) {
+        if (sId !== shiftId && currentSchedule[day][branch].scheduled[sId] !== "N/A" && currentSchedule[day][branch].scheduled[sId] !== "UNFILLED") {
+            const sName = branchConfig[branch].find(s => s.id === sId).name;
+            select.innerHTML += `<option value="shift_${sId}">${currentSchedule[day][branch].scheduled[sId]} (from ${sName})</option>`;
+        }
+    }
+    currentSchedule[day][branch].rest.forEach((name, i) => select.innerHTML += `<option value="rest_${i}">${name} (from Standby)</option>`);
+    document.getElementById('swapModal').style.display = 'flex';
+};
+
+window.closeModal = function() { document.getElementById('swapModal').style.display = 'none'; swapData = null; };
+
+window.executeSwap = function() {
+    const target = document.getElementById('swapTarget').value;
+    if (!target) return alert("Select someone.");
+    const { day, branch, shiftId } = swapData;
+    const curStaff = currentSchedule[day][branch].scheduled[shiftId];
+    
+    if (target.startsWith('shift_')) {
+        const tSId = target.replace('shift_', '');
+        currentSchedule[day][branch].scheduled[shiftId] = currentSchedule[day][branch].scheduled[tSId];
+        currentSchedule[day][branch].scheduled[tSId] = curStaff;
+    } else {
+        const rIdx = parseInt(target.replace('rest_', ''));
+        const tStaff = currentSchedule[day][branch].rest[rIdx];
+        currentSchedule[day][branch].scheduled[shiftId] = tStaff;
+        if (curStaff !== "UNFILLED") currentSchedule[day][branch].rest[rIdx] = curStaff;
+        else currentSchedule[day][branch].rest.splice(rIdx, 1);
+    }
+    closeModal(); renderTables(); saveToCloud();
+};
+
+// 🔥 TAB MEMORY ENGINE
+window.switchTab = function(branch) {
+    currentActiveTab = branch; // Remembers your active tab!
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${branch}`));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `content-${branch}`));
+};
+
+window.renderTables = function() {
+    const container = document.getElementById("scheduleContainer"); if(!container) return;
+    container.innerHTML = "";
+    if (Object.keys(currentSchedule).length === 0) return;
+    
+    const tabBox = document.createElement("div"); tabBox.className = "tab-container";
+    const contentWrap = document.createElement("div");
+    container.appendChild(tabBox); container.appendChild(contentWrap);
+
+    for (const branch in branchConfig) {
+        const isAct = (branch === currentActiveTab); // Check memory!
+        const btn = document.createElement("button");
+        btn.className = `tab-btn ${isAct ? 'active' : ''}`; btn.innerText = `${branch} Schedule`; btn.id = `btn-${branch}`;
+        btn.onclick = () => switchTab(branch); tabBox.appendChild(btn);
+
+        const cBox = document.createElement("div");
+        cBox.className = `tab-content ${isAct ? 'active' : ''}`; cBox.id = `content-${branch}`;
+        const activeShifts = branchConfig[branch].filter(s => s.active);
+        let tableHTML = `<table class="sched-table"><thead><tr><th class="date-col">Date</th>`;
+        activeShifts.forEach(s => tableHTML += `<th>${s.name}</th>`);
+        tableHTML += `<th>Standby</th><th>Off / Leave</th></tr></thead><tbody>`;
+
+        for (let day in currentSchedule) {
+            const dStr = new Date(currentYear, currentMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            tableHTML += `<tr><td class="date-col">${dStr}</td>`;
+            activeShifts.forEach(s => {
+                const val = currentSchedule[day][branch].scheduled[s.id];
+                if (val === "N/A") tableHTML += `<td style="background:#f1f5f9; color:#94a3b8;">-</td>`;
+                else if (val === "UNFILLED") tableHTML += `<td><span class="empty-shift" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span></td>`;
+                else tableHTML += `<td><span class="clickable" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span></td>`;
+            });
+            tableHTML += `<td class="rest-day">${currentSchedule[day][branch].rest.join(", ") || "-"}</td>`;
+            const un = currentSchedule[day][branch].unavailable.map(u => `${u.name} (${u.status})`).join("<br>");
+            tableHTML += `<td>${un || "-"}</td></tr>`;
+        }
+        cBox.innerHTML = tableHTML + `</tbody></table>`;
+        contentWrap.appendChild(cBox);
     }
 };
