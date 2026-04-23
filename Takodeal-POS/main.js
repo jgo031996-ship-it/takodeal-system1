@@ -838,3 +838,91 @@ window.submitReasonLetter = async function() {
         console.error(e); alert("Failed to send letter.");
     }
 };
+
+// ==========================================
+// THERMAL BLUETOOTH PRINTING ENGINE (WITH LOGO)
+// ==========================================
+window.printThermalReceipt = async function () {
+    // If the cart is empty, don't print!
+    if (!window.currentOrder || window.currentOrder.length === 0) {
+        alert("No items to print!");
+        return;
+    }
+
+    try {
+        // 1. Fetch your custom layout & LOGO from the Manager App!
+        const docRef = doc(db, "settings", "global_receipt");
+        const docSnap = await getDoc(docRef);
+        
+        let headerName = "TAKODEÁL";
+        let headerAddress = "";
+        let headerContact = "";
+        let footerMsg = "Thank you!";
+        let logoData = "";
+
+        if (docSnap.exists()) {
+            const layout = docSnap.data();
+            headerName = layout.storeName || headerName;
+            headerAddress = layout.address || headerAddress;
+            headerContact = layout.contact || headerContact;
+            footerMsg = layout.footerMessage || footerMsg;
+            logoData = layout.logoBase64 || ""; // Grab the hidden logo text!
+        }
+
+        // 2. Build the exact text layout for the thermal printer
+        let receiptText = "";
+        
+        // --- HEADER ---
+        // If a logo exists, print it first!
+        if (logoData) {
+            receiptText += `<center><img src="${logoData}" width="250"></center>\n`;
+        }
+        
+        receiptText += `<center><b><font size="4">${headerName}</font></b></center>\n`;
+        if (headerAddress) receiptText += `<center>${headerAddress}</center>\n`;
+        if (headerContact) receiptText += `<center>${headerContact}</center>\n`;
+        receiptText += `--------------------------------\n`; // 32 dashes for thermal paper
+        
+        // --- TRANSACTION DETAILS ---
+        const now = new Date();
+        receiptText += `Date: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}\n`;
+        receiptText += `Cashier: ${localStorage.getItem('cashierName') || 'Staff'}\n`;
+        receiptText += `--------------------------------\n`;
+
+        // --- ITEMS ---
+        let totalQty = 0;
+        let grandTotal = 0;
+        
+        window.currentOrder.forEach(item => {
+            let line1 = `${item.qty}x ${item.name || item.itemName}`;
+            receiptText += `${line1}\n`;
+            
+            let priceStr = `P${(item.price * item.qty).toFixed(2)}`;
+            let spacePadding = 32 - priceStr.length;
+            let paddingStr = " ".repeat(Math.max(0, spacePadding));
+            receiptText += `${paddingStr}${priceStr}\n`;
+            
+            totalQty += item.qty;
+            grandTotal += (item.price * item.qty);
+        });
+
+        receiptText += `--------------------------------\n`;
+        
+        // --- TOTAL ---
+        let totalStr = `P${grandTotal.toFixed(2)}`;
+        receiptText += `<b>TOTAL:             ${totalStr}</b>\n`;
+        receiptText += `Items: ${totalQty}\n`;
+        
+        // --- FOOTER ---
+        receiptText += `\n<center>${footerMsg}</center>\n`;
+        receiptText += `\n\n\n`; // Feed paper slightly
+
+        // 3. Send the command to the Android Tablet's Print Service (RawBT)
+        const printIntentUrl = "intent:" + encodeURIComponent(receiptText) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        window.location.href = printIntentUrl;
+
+    } catch (error) {
+        console.error("Print Error:", error);
+        alert("Could not connect to printer. Please ensure RawBT is installed.");
+    }
+};
