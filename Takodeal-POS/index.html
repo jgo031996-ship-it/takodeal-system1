@@ -1164,6 +1164,11 @@
           <div class="nav-item-text">Reason Letter</div>
       </div>   
 
+      <div class="nav-item" onclick="openTimeClockModal()">
+          <span style="font-size: 18px;">📸</span>
+          <div class="nav-item-text">Time Clock</div>
+      </div>
+
       <div class="nav-item"
         onclick="alert('🖨️ PRINTER SETUP\n\n1. Go to your Tablet Settings and pair the Bluetooth Printer.\n2. Open your Print Service App (e.g., RawBT) and ensure it is active.\n\nThe POS will automatically route all tickets through your Print Service!')">
         <span>🖨️</span>
@@ -1751,6 +1756,37 @@
 
       </div>
     </div>
+  </div>
+  
+  <div id="timeClockModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
+      <div style="background: white; width: 400px; border-radius: 12px; overflow: hidden; text-align: center;">
+          <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between;">
+              <h2 style="margin: 0; font-size: 18px;">📸 Staff Time Clock</h2>
+              <span onclick="closeTimeClock()" style="cursor: pointer; font-size: 24px;">&times;</span>
+          </div>
+          <div style="padding: 20px;">
+              <p style="font-size: 13px; color: #64748b; margin-top: 0;">Look at the camera to verify your attendance.</p>
+              
+              <div style="width: 100%; height: 250px; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 15px; position: relative;">
+                  <video id="clockVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+              </div>
+              
+              <canvas id="clockCanvas" style="display: none;"></canvas>
+  
+              <select id="clockStaffName" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
+                  <option value="">-- Select Your Name --</option>
+                  <option value="Bern">Bern</option>
+                  <option value="Jen">Jen</option>
+                  <option value="Aljhon">Aljhon</option>
+                  <option value="Franklin">Franklin</option>
+                  </select>
+  
+              <div style="display: flex; gap: 10px;">
+                  <button onclick="submitAttendance('TIME IN')" style="flex: 1; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;">TIME IN</button>
+                  <button onclick="submitAttendance('TIME OUT')" style="flex: 1; background: #b91c1c; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;">TIME OUT</button>
+              </div>
+          </div>
+      </div>
   </div>
 
   <script>
