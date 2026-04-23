@@ -538,6 +538,7 @@ window.switchView = function (viewId) {
   if (viewId === 'zreading') title = "Z-Reading Reports";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
+  if (viewId === 'receipt') title = "Thermal Printer Setup";
   document.getElementById('pageTitle').innerText = title;
 
   // Trigger the engine for that specific page
