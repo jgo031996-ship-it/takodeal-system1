@@ -3188,6 +3188,25 @@ window.loadExpenseLogs = async function () {
 // RECEIPT BUILDER ENGINE
 // ==========================================
 
+// --- LOGO UPLOAD & CONVERT ENGINE ---
+window.processLogoUpload = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64String = e.target.result;
+        // 1. Save it to the hidden input for Firebase
+        document.getElementById('logoBase64Val').value = base64String;
+        // 2. Show the live preview on the screen
+        const preview = document.getElementById('logoPreview');
+        preview.src = base64String;
+        preview.style.display = 'inline-block';
+    };
+    // This physically converts the image into text data!
+    reader.readAsDataURL(file);
+};
+
 // 1. Live Typing Preview
 function updateReceiptPreview() {
     document.getElementById('prevName').innerText = document.getElementById('rcptName').value || 'TAKODEÁL';
@@ -3199,6 +3218,7 @@ function updateReceiptPreview() {
 // 2. Save to Cloud
 async function saveReceiptSettings() {
     const rSettings = {
+        logoBase64: document.getElementById('logoBase64Val').value,
         storeName: document.getElementById('rcptName').value,
         address: document.getElementById('rcptAddress').value,
         contact: document.getElementById('rcptContact').value,
