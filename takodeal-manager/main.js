@@ -532,7 +532,6 @@ window.switchView = function (viewId) {
   if (viewId === 'inventory') title = "Live Inventory Dashboard";
   if (viewId === 'accounts') title = "Financial Control Center";
   if (viewId === 'payroll') title = "Payroll Engine & HR Logs";
-  if (viewId === 'schedule') title = "Schedule & Shift Manager";
   if (viewId === 'products') title = "Menu Costing & BOM";
   if (viewId === 'purchases') title = "Purchases & Alerts";
   if (viewId === 'dispatch') title = "Logistics & Dispatch";
@@ -540,12 +539,15 @@ window.switchView = function (viewId) {
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'receipt') title = "Thermal Printer Setup";
+  if (viewId === 'schedule') {
+        title = "Schedule & Shift Manager";
+        loadSchedules(); 
+    }
   document.getElementById('pageTitle').innerText = title;
 
   // Trigger the engine for that specific page
   if (viewId === 'dashboard') loadGlobalDashboard();
   if (viewId === 'branches') loadHRModule();
-  if (viewId === 'schedule') loadSchedules();
   if (viewId === 'menu') loadMenuEditor();
   if (viewId === 'inventory') loadInventoryData();
   if (viewId === 'accounts') loadAccountsAndBudget();
