@@ -23,6 +23,7 @@
       <a href="#" class="nav-item" id="nav-devices" onclick="switchView('devices'); loadDeviceFleet();">💻 Device
         Fleet</a>
       <a href="#" class="nav-item" id="nav-payroll" onclick="switchView('payroll')">⏱️ HR & Payroll</a>
+      <a href="#" class="nav-item" id="nav-schedule" onclick="switchView('schedule')">📅 Schedule Manager</a>
       <a href="#" class="nav-item" id="nav-products" onclick="switchView('products')">🏷️ Menu Costing & BOM</a>
       <a href="#" class="nav-item" id="nav-purchases" onclick="switchView('purchases')">⚠️ Purchases & Alerts</a>
       <a href="#" class="nav-item" id="nav-dispatch" onclick="switchView('dispatch')">🚚 Dispatch Stock</a>
@@ -687,6 +688,63 @@
               </table>
           </div>
       </div>
+    </div>
+
+    <div id="view-schedule" class="view">
+        <div class="stat-grid" style="margin-bottom: 20px;">
+            <div class="card" style="flex: 1;">
+                <h3 style="margin-top: 0;">➕ Assign New Shift</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #64748b;">Staff Member</label>
+                        <select id="schedStaff" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                            <option value="Bern">Bern</option>
+                            <option value="Jen">Jen</option>
+                            <option value="Aljhon">Aljhon</option>
+                            <option value="Franklin">Franklin</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #64748b;">Branch</label>
+                        <select id="schedBranch" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                            <option value="Cabantian">Cabantian</option>
+                            <option value="Citygate">Citygate</option>
+                            <option value="Maa">Maa</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #64748b;">Expected Time In</label>
+                        <input type="time" id="schedTimeIn" value="09:00" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #64748b;">Expected Time Out</label>
+                        <input type="time" id="schedTimeOut" value="21:00" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                </div>
+                <button onclick="saveSchedule()" style="background: #16a34a; color: white; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%;">💾 Save Schedule Rule</button>
+            </div>
+        </div>
+    
+        <div class="card">
+            <h2 style="margin-top: 0;">📋 Current Active Schedules</h2>
+            <div class="table-responsive">
+                <table class="data-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Staff Name</th>
+                            <th>Branch Assigned</th>
+                            <th>Expected Time In</th>
+                            <th>Expected Time Out</th>
+                            <th>Required Hours</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scheduleTableBody">
+                        <tr><td colspan="6" style="text-align: center;">Loading schedules...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <div id="view-products" class="view">
