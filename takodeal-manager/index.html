@@ -440,6 +440,16 @@
             
             <div style="flex: 1; min-width: 300px; background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 <h3 style="margin-top: 0;">Header Settings</h3>
+                <div style="margin-bottom: 15px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #64748b;">Official Store Logo (Black & White works best!)</label>
+                    <input type="file" id="rcptLogo" accept="image/png, image/jpeg" onchange="processLogoUpload(event)" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: white;">
+                    
+                    <input type="hidden" id="logoBase64Val" value="">
+                    
+                    <div style="text-align: center; margin-top: 10px;">
+                        <img id="logoPreview" src="" style="max-width: 150px; max-height: 150px; display: none; border-radius: 8px; border: 1px dashed #cbd5e1; padding: 5px;">
+                    </div>
+                </div>
                 
                 <label style="font-weight: bold; font-size: 13px;">Store Name</label><br>
                 <input type="text" id="rcptName" value="TAKODEÁL" oninput="updateReceiptPreview()" style="width: 100%; margin: 5px 0 15px 0; padding: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;"><br>
