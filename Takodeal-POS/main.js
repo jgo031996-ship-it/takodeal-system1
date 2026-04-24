@@ -840,7 +840,7 @@ window.submitReasonLetter = async function() {
 };
 
 // ==========================================
-// THERMAL BLUETOOTH PRINTING ENGINE (FAST TEXT INTENT)
+// THERMAL BLUETOOTH PRINTING ENGINE (PRO RECEIPT UPGRADE)
 // ==========================================
 window.printThermalReceipt = async function () {
     // If the cart is empty, don't print!
@@ -854,60 +854,95 @@ window.printThermalReceipt = async function () {
         const docRef = doc(db, "settings", "global_receipt");
         const docSnap = await getDoc(docRef);
         
-        let headerName = "TAKODEÁL";
-        let headerAddress = "";
-        let headerContact = "";
-        let footerMsg = "Thank you!";
+        let headerName = "TAKODEAL"; // No 'Á' so printer doesn't glitch!
+        let headerAddress = "B14L6 Deca Homes Cabantian";
+        let headerContact = "09629721305";
+        let footerMsg = "Acknowledgement Receipt\nThank you!";
 
         if (docSnap.exists()) {
             const layout = docSnap.data();
             headerName = layout.storeName || headerName;
             headerAddress = layout.address || headerAddress;
             headerContact = layout.contact || headerContact;
-            footerMsg = layout.footerMessage || footerMsg;
+            // If you have a custom footer saved in Firebase, it will use it here
+            if (layout.footerMessage) footerMsg = layout.footerMessage;
         }
 
         // 2. Build the exact text layout for the thermal printer
         let receiptText = "";
         
+        // --- THE LOGO UPGRADE ---
+        // RawBT will grab this image directly from your Vercel site!
+        receiptText += `<center><img src="https://takodeal-owner.vercel.app/logo.jpg" width="200"></center>\n`;
+
         // --- HEADER ---
+        // (If your logo already has the word TAKODEAL on it, you can delete this next line!)
         receiptText += `<center><b><font size="4">${headerName}</font></b></center>\n`;
         if (headerAddress) receiptText += `<center>${headerAddress}</center>\n`;
         if (headerContact) receiptText += `<center>${headerContact}</center>\n`;
-        receiptText += `--------------------------------\n`; // 32 dashes for thermal paper
+        receiptText += `================================\n`;
         
         // --- TRANSACTION DETAILS ---
         const now = new Date();
-        receiptText += `Date: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}\n`;
+        let dateStr = now.toISOString().split('T')[0]; // Creates YYYY-MM-DD
+        let timeStr = now.toTimeString().split(' ')[0].substring(0,5); // Creates HH:MM
+        
+        // Generates a random 6-digit receipt number for the active checkout
+        let tempReceiptNo = Math.floor(100000 + Math.random() * 900000);
+
+        receiptText += `Receipt No: ${tempReceiptNo}\n`;
+        receiptText += `Date: ${dateStr}\n`;
+        receiptText += `Time: ${timeStr}\n`;
         receiptText += `Cashier: ${localStorage.getItem('cashierName') || 'Staff'}\n`;
+        receiptText += `================================\n`;
+        receiptText += `ITEM/S PURCHASED\n`;
         receiptText += `--------------------------------\n`;
 
-        // --- ITEMS ---
+        // --- ITEMS LOOP (Pro Layout) ---
         let totalQty = 0;
         let grandTotal = 0;
         
         window.currentOrder.forEach(item => {
-            let line1 = `${item.qty}x ${item.name || item.itemName}`;
-            receiptText += `${line1}\n`;
+            // Line 1: Item Name
+            receiptText += `${item.name || item.itemName}\n`;
             
-            let priceStr = `P${(item.price * item.qty).toFixed(2)}`;
-            let spacePadding = 32 - priceStr.length;
-            let paddingStr = " ".repeat(Math.max(0, spacePadding));
-            receiptText += `${paddingStr}${priceStr}\n`;
+            // Line 2: Qty x Price      Total
+            let qtyStr = `  ${parseFloat(item.qty).toFixed(1)}      x ${parseFloat(item.price).toFixed(2)}`;
+            let itemTotal = item.price * item.qty;
+            let totalStr = `${itemTotal.toFixed(2)}`;
+            
+            // Math to push the Total all the way to the right edge!
+            let spacePadding = 32 - qtyStr.length - totalStr.length;
+            let paddingStr = " ".repeat(Math.max(1, spacePadding));
+            
+            receiptText += `${qtyStr}${paddingStr}${totalStr}\n`;
             
             totalQty += item.qty;
-            grandTotal += (item.price * item.qty);
+            grandTotal += itemTotal;
         });
 
         receiptText += `--------------------------------\n`;
         
-        // --- TOTAL ---
-        let totalStr = `P${grandTotal.toFixed(2)}`;
-        receiptText += `<b>TOTAL:              ${totalStr}</b>\n`;
-        receiptText += `Items: ${totalQty}\n`;
+        // --- TOTALS BLOCK ---
+        receiptText += `Subtotal: ${grandTotal.toFixed(2)}\n`;
+        receiptText += `Discount: -0.00\n`;
+        receiptText += `Service Fee: 0.00\n`;
+        receiptText += `Delivery Fee: 0.00\n`;
+        receiptText += `Total: ${grandTotal.toFixed(2)}\n`;
+        receiptText += `--------------------------------\n`;
+        
+        // Note: If you have a specific variable tracking how much cash the customer handed you, 
+        // put it here. Otherwise, it will just default to exact change!
+        let amountReceived = window.cashTendered || grandTotal; 
+        let changeAmount = amountReceived - grandTotal;
+
+        receiptText += `Amount Received: ${amountReceived.toFixed(2)}\n`;
+        receiptText += `Payment Method: Cash\n`;
+        receiptText += `Change Amount: ${changeAmount.toFixed(2)}\n`;
+        receiptText += `\n`;
         
         // --- FOOTER ---
-        receiptText += `\n<center>${footerMsg}</center>\n`;
+        receiptText += `<center>${footerMsg}</center>\n`;
         receiptText += `\n\n\n`; // Feed paper slightly
 
         // 3. Send the command to the Android Tablet's Print Service (RawBT)
