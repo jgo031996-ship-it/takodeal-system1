@@ -911,7 +911,7 @@ window.printThermalReceipt = async function () {
         receiptText += `\n\n\n`; // Feed paper slightly
 
         // 3. Send the command to the Android Tablet's Print Service (RawBT)
-        const printIntentUrl = "intent:" + encodeURIComponent(receiptText) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        const printIntentUrl = "rawbt:" + encodeURIComponent(receiptText);
         
         // Execute the print!
         window.location.href = printIntentUrl;
