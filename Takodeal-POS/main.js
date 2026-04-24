@@ -840,7 +840,7 @@ window.submitReasonLetter = async function() {
 };
 
 // ==========================================
-// THERMAL BLUETOOTH PRINTING ENGINE (WITH LOGO)
+// THERMAL BLUETOOTH PRINTING ENGINE (FAST TEXT INTENT)
 // ==========================================
 window.printThermalReceipt = async function () {
     // If the cart is empty, don't print!
@@ -850,7 +850,7 @@ window.printThermalReceipt = async function () {
     }
 
     try {
-        // 1. Fetch your custom layout & LOGO from the Manager App!
+        // 1. Fetch your custom layout from the Manager App!
         const docRef = doc(db, "settings", "global_receipt");
         const docSnap = await getDoc(docRef);
         
@@ -858,7 +858,6 @@ window.printThermalReceipt = async function () {
         let headerAddress = "";
         let headerContact = "";
         let footerMsg = "Thank you!";
-        let logoData = "";
 
         if (docSnap.exists()) {
             const layout = docSnap.data();
@@ -866,18 +865,12 @@ window.printThermalReceipt = async function () {
             headerAddress = layout.address || headerAddress;
             headerContact = layout.contact || headerContact;
             footerMsg = layout.footerMessage || footerMsg;
-            logoData = layout.logoBase64 || ""; // Grab the hidden logo text!
         }
 
         // 2. Build the exact text layout for the thermal printer
         let receiptText = "";
         
         // --- HEADER ---
-        // If a logo exists, print it first!
-        if (logoData) {
-            receiptText += `<center><img src="${logoData}" width="250"></center>\n`;
-        }
-        
         receiptText += `<center><b><font size="4">${headerName}</font></b></center>\n`;
         if (headerAddress) receiptText += `<center>${headerAddress}</center>\n`;
         if (headerContact) receiptText += `<center>${headerContact}</center>\n`;
@@ -910,7 +903,7 @@ window.printThermalReceipt = async function () {
         
         // --- TOTAL ---
         let totalStr = `P${grandTotal.toFixed(2)}`;
-        receiptText += `<b>TOTAL:             ${totalStr}</b>\n`;
+        receiptText += `<b>TOTAL:              ${totalStr}</b>\n`;
         receiptText += `Items: ${totalQty}\n`;
         
         // --- FOOTER ---
@@ -919,11 +912,13 @@ window.printThermalReceipt = async function () {
 
         // 3. Send the command to the Android Tablet's Print Service (RawBT)
         const printIntentUrl = "intent:" + encodeURIComponent(receiptText) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        
+        // Execute the print!
         window.location.href = printIntentUrl;
 
     } catch (error) {
         console.error("Print Error:", error);
-        alert("Could not connect to printer. Please ensure RawBT is installed.");
+        alert("Could not connect to printer settings.");
     }
 };
 
