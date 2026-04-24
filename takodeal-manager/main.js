@@ -1220,7 +1220,7 @@ async function loadInventoryData() {
           <td>${statusBadge}</td>
           <td>${formatMoney(cost)}</td>
           <td>
-            <button class="btn-refresh" style="background: white; color: var(--text-main); border: 1px solid var(--border); padding: 4px 10px; border-radius: 4px;" onclick="openEditInv('${editData}')">✏️ Edit</button>
+            <button class="btn-refresh" style="background: white; color: var(--text-main); border: 1px solid var(--border); padding: 4px 10px; border-radius: 4px;" onclick="openEditInv('${editData}')">✏️ Edit</button> <button onclick="deleteInventoryItem('${doc.id}', '${data.description}')" style="color: #ef4444; border: 1px solid #ef4444; background: transparent; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 5px;">🗑️ Delete</button>
           </td>
         </tr>
       `;
