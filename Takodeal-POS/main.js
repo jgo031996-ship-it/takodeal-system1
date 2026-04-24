@@ -854,10 +854,23 @@ window.printThermalReceipt = async function () {
         const docRef = doc(db, "settings", "global_receipt");
         const docSnap = await getDoc(docRef);
         
-        let headerName = "TAKODEAL"; // No 'Á' so printer doesn't glitch!
-        let headerAddress = "B14L6 Deca Homes Cabantian";
+        let headerName = "TAKODEAL"; 
         let headerContact = "09629721305";
         let footerMsg = "Acknowledgement Receipt\nThank you!";
+
+        // 🤖 --- NEW: AUTO-DETECT BRANCH ADDRESS --- 🤖
+        let currentBranch = window.sessionUser?.branch || localStorage.getItem('branch') || "Main Office";
+        let headerAddress = "";
+
+        if (currentBranch === "Cabantian") {
+            headerAddress = "B14L6 Deca Homes Cabantian";
+        } else if (currentBranch === "Maa") {
+            headerAddress = "Maa Branch Exact Address"; // <-- Type your Maa address here!
+        } else if (currentBranch === "Citygate") {
+            headerAddress = "Citygate Branch Exact Address"; // <-- Type your Citygate address here!
+        } else {
+            headerAddress = "Davao City"; 
+        }
 
         if (docSnap.exists()) {
             const layout = docSnap.data();
