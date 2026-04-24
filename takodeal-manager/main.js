@@ -340,7 +340,7 @@ async function loadHRModule() {
               ${pinDisplay}
             </td>
             <td>
-              <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 5px 10px; margin-right: 5px;" onclick="openEditStaff('${docSnap.id}', '${data.cashierName}', '${data.branch}')">✏️ Edit</button>
+              <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 5px 10px; margin-right: 5px;" onclick="openEditStaff('${docSnap.id}', '${data.cashierName}', '${data.branch}')">✏️ Edit</button> <button onclick="deleteInventoryItem('${doc.id}', '${data.description}')" style="color: #ef4444; border: 1px solid #ef4444; background: transparent; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 5px;">🗑️ Delete</button>
               <button class="btn-refresh" style="background: white; border: 1px solid #666; color: #666; padding: 5px 10px;" onclick="resetStaffPin('${docSnap.id}', '${data.cashierName}')">🔑 Reset PIN</button>
             </td>
           </tr>
@@ -3721,5 +3721,20 @@ window.cloneRecipe = async function() {
     } catch (error) {
         console.error("Error cloning recipe:", error);
         alert("Failed to clone recipe.");
+    }
+};
+
+window.deleteInventoryItem = async function(docId, itemName) {
+    if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone and might break recipes using this ingredient!`)) {
+        try {
+            await deleteDoc(doc(db, "inventory", docId)); 
+            alert(`✅ "${itemName}" has been permanently deleted.`);
+            
+            // Call whatever function you use to refresh the table!
+            // e.g., loadInventory(); 
+        } catch (error) {
+            console.error("Error deleting item:", error);
+            alert("Failed to delete the ingredient.");
+        }
     }
 };
