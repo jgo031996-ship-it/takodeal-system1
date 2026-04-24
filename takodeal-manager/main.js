@@ -1253,6 +1253,20 @@ window.addNewInventoryItem = async function () {
   let initStock = parseFloat(initStockStr) || 0;
 
   try {
+        const duplicateQuery = query(collection(db, "inventory"), where("name", "==", name));
+        const duplicateSnap = await getDocs(duplicateQuery);
+        
+        if (!duplicateSnap.empty) {
+            alert(`❌ Blocked: "${name}" already exists in your inventory! Please use Multi-Restock to add more quantity.`);
+            return; // Stops the code dead in its tracks!
+        }
+    } catch (err) {
+        console.error("Error checking for duplicates:", err);
+        alert("Database connection error while verifying item.");
+        return;
+    }
+  
+  try {
     await addDoc(collection(db, "inventory"), { branch: branch, name: name, category: category, uom: uom, baseCost: cost, currentStock: initStock, reorderLevel: 5 });
     alert(`✅ Success! ${name} added to ${branch} warehouse.`);
     loadInventoryData();
