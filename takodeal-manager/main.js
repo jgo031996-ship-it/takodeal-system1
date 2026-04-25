@@ -965,8 +965,6 @@ async function loadMenuEditor() {
         `;
       });
     }
-
-  };
     
     tbody.innerHTML = html;
   } catch (error) {
