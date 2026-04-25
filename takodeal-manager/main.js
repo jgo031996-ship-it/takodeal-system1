@@ -594,27 +594,24 @@ window.loadPurchasesAndAlerts = async function () {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="7" class="text-center">Scanning inventory levels...</td></tr>';
 
-  // 🛠️ FIX 1: Updated ID to match the new HTML dropdown
   const filterElement = document.getElementById('branchAlertFilter');
   let branchFilter = filterElement ? filterElement.value : "All Branches";
 
   try {
     const snap = await getDocs(collection(db, "inventory"));
     let html = '';
-    window.globalInventoryList = []; // Reset memory
+    window.globalInventoryList = []; 
 
     snap.forEach(docSnap => {
       let data = docSnap.data();
       data.id = docSnap.id;
-      window.globalInventoryList.push(data); // Save for the restock modal
+      window.globalInventoryList.push(data); 
 
-      // 🛠️ FIX 2: Handle "All Branches" logic correctly
       if (branchFilter !== "All Branches" && data.branch !== branchFilter) return; 
 
       let stock = parseFloat(data.currentStock) || 0;
       let reorder = parseFloat(data.reorderLevel) || 0;
 
-      // If stock is below or equal to the safe line, Trigger Alert!
       if (stock <= reorder) {
         let suggested = (reorder * 2) - stock; 
         if (suggested <= 0) suggested = reorder;
@@ -633,21 +630,13 @@ window.loadPurchasesAndAlerts = async function () {
       }
     });
 
-    // 🛠️ FIX 3: Final check - if no items are low, show a clean message
-    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center">✅ All items are above reorder levels!</td></tr>';
+    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="color: var(--success); font-weight: bold; padding: 40px;">✅ All inventory levels are optimal. No alerts.</td></tr>';
 
-   catch (error) {
+  } catch (error) {
     console.error("Error loading alerts:", error);
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Failed to scan inventory.</td></tr>';
   }
 };
-
-    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="color: var(--success); font-weight: bold; padding: 40px;">✅ All inventory levels are optimal. No alerts.</td></tr>';
-  } catch (e) {
-    console.error(e); tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Error loading alerts.</td></tr>';
-  }
-};
-
 // --- THE RESTOCK MODAL LOGIC ---
 window.openMultiRestockModal = async function (preSelectId = null) {
   document.getElementById('restockModal').style.display = 'flex';
