@@ -1959,6 +1959,15 @@ window.openBomEditor = async function (menuItemName) {
     const menuSnap = await getDocs(menuQ);
     if (!menuSnap.empty) {
       let mData = menuSnap.docs[0].data();
+      // 1. CLEAR the ghost Add-ons from the previous product!
+        document.getElementById('addonTableBody').innerHTML = '';
+
+        // 2. If THIS product has Add-ons saved in the database, load them to the screen!
+        if (mData.addons && Array.isArray(mData.addons)) {
+            mData.addons.forEach(addon => {
+                window.addAddonRow(addon.name, addon.price, addon.linkedIngredient, addon.deductQty);
+            });
+        }
       document.getElementById('advProdId').value = menuSnap.docs[0].id;
       document.getElementById('advProdCat').value = mData.category || '';
       document.getElementById('advProdPrice').value = mData.price || 0;
@@ -1986,6 +1995,7 @@ window.openBomEditor = async function (menuItemName) {
             window.loadCloneDropdown();
         }
     }, 200);
+  
 };
 
 window.renderAdvRecipeTable = function () {
