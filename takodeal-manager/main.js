@@ -636,7 +636,7 @@ window.loadPurchasesAndAlerts = async function () {
     // 🛠️ FIX 3: Final check - if no items are low, show a clean message
     tbody.innerHTML = html || '<tr><td colspan="7" class="text-center">✅ All items are above reorder levels!</td></tr>';
 
-  } catch (error) {
+   catch (error) {
     console.error("Error loading alerts:", error);
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Failed to scan inventory.</td></tr>';
   }
