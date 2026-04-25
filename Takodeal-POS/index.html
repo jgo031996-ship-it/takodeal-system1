@@ -2244,12 +2244,12 @@
       let proReceipt = "";
 
         // 1. Header (Manually centered - do not include <img> tags here!)
-        proReceipt +=             TAKODEAL\n;
-        proReceipt +=    B14L6 Deca Homes Cabantian\n;
-        proReceipt +=            09629721305\n;
-        proReceipt += ================================\n; // Solid line
+        proReceipt += "            TAKODEAL\n";
+        proReceipt += "   B14L6 Deca Homes Cabantian\n";
+        proReceipt += "           09629721305\n";
+        proReceipt += "================================\n";
     
-        // 2. META DATA (Formatted perfectly to match Image 2)
+        // 2. META DATA
         const now = new Date();
         
         // --- AM/PM Time Formatting Engine ---
@@ -2257,26 +2257,23 @@
         let minutes = now.getMinutes();
         const ampm = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12;
-        hours = hours ? hours : 12; // the hour '0' should be '12'
-        minutes = minutes < 10 ? '0'+minutes : minutes;
+        hours = hours ? hours : 12;
+        minutes = minutes < 10 ? '0' + minutes : minutes;
         const timeStr = hours + ':' + minutes + ' ' + ampm;
-        // ------------------------------------
     
         // --- Variable Safetynet ---
-        // Make sure these match the variables defined in your save/checkout code!
         let cashier = (typeof d !== 'undefined' && d.cashierName) || (typeof sessionUser !== 'undefined' && sessionUser.cashierName) || "Staff";
         let customer = (typeof order !== 'undefined' && order.name) || (typeof d !== 'undefined' && d.customerName) || "Guest";
-        // ---------------------------
     
-        proReceipt += Date: ${now.toLocaleDateString()}\n;
-        proReceipt += Time: ${timeStr}\n;
-        proReceipt += Customer: ${customer}\n;
-        proReceipt += Cashier: ${cashier}\n;
-        proReceipt += ================================\n;
-        proReceipt += ITEM/S PURCHASED\n;
-        proReceipt += --------------------------------\n;
+        proReceipt += "Date: " + now.toLocaleDateString() + "\n";
+        proReceipt += "Time: " + timeStr + "\n";
+        proReceipt += "Customer: " + customer + "\n";
+        proReceipt += "Cashier: " + cashier + "\n";
+        proReceipt += "================================\n";
+        proReceipt += "ITEM/S PURCHASED\n";
+        proReceipt += "--------------------------------\n";
     
-        // 3. Smart Items Loop (Matches Image 2 exactly with 2-line layout)
+        // 3. Smart Items Loop
         let cartSource = [];
         if (typeof d !== 'undefined' && d.cart) cartSource = d.cart;
         else if (typeof order !== 'undefined' && order.items) cartSource = order.items;
@@ -2285,74 +2282,64 @@
         cartSource.forEach(item => {
             let name = item.name || item.itemName || "Item";
             let qty = parseFloat(item.qty || 1);
-            
+    
             // --- ULTIMATE PRICE SAFETY NET ---
-            // Checks all possible variable names. Add your unique price variable here if it still fails!
             let rawPrice = item.price || item.unitPrice || item.sellingPrice || item.lineTotalFinal;
-            if (!rawPrice && item.total && qty > 0) rawPrice = item.total / qty; // Reverse engineer from total
-            let price = parseFloat(rawPrice || 0); 
-            // ----------------------------------
-            
+            if (!rawPrice && item.total && qty > 0) rawPrice = item.total / qty;
+            let price = parseFloat(rawPrice || 0);
+    
             let lineTotal = qty * price;
             grandTotal += lineTotal;
     
             // Line 1: Item Name
-            proReceipt += ${name}\n;
-            
+            proReceipt += name + "\n";
+    
             // Line 2: Qty x UnitPrice      Total
-            let qtyStr =   ${qty.toFixed(1)}      x ${price.toFixed(2)};
-            let totalStr = ${lineTotal.toFixed(2)};
-            
+            let qtyStr = qty.toFixed(1) + "      x " + price.toFixed(2);
+            let totalStr = lineTotal.toFixed(2);
+    
             // Math to right-align the total column
             let spacePadding = 32 - qtyStr.length - totalStr.length;
-            proReceipt += ${qtyStr}${" ".repeat(Math.max(1, spacePadding))}${totalStr}\n;
+            proReceipt += qtyStr + " ".repeat(Math.max(1, spacePadding)) + totalStr + "\n";
         });
     
         // 4. Totals Block (Right-Aligned spacing logic)
-        // Add your dynamic variables for Discount, Service, Delivery, and AmountReceived here!
         let discountAmt = (typeof order !== 'undefined' && order.discount) || 0;
         let serviceFee = (typeof order !== 'undefined' && order.serviceFee) || 0;
         let deliveryFee = (typeof order !== 'undefined' && order.deliveryFee) || 0;
-        let amountRec = (typeof order !== 'undefined' && order.amountReceived) || grandTotal; // Fallback to grand total if not set
+        let amountRec = (typeof order !== 'undefined' && order.amountReceived) || grandTotal;
         let paymentMethod = (typeof order !== 'undefined' && order.paymentMethod) || "Cash";
-        
+    
         let subtotalVal = grandTotal.toFixed(2);
         let totalVal = (grandTotal - discountAmt + serviceFee + deliveryFee).toFixed(2);
         let changeVal = (amountRec - parseFloat(totalVal)).toFixed(2);
     
-        proReceipt += --------------------------------\n;
-        
+        proReceipt += "--------------------------------\n";
+    
         // --- Right Alignment Helper Function ---
         function formatLine(label, value) {
             let valStr = value.toFixed(2);
             let padding = 32 - label.length - valStr.length;
-            return ${label}${" ".repeat(Math.max(1, padding))}${valStr}\n;
+            return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
         }
-        // ----------------------------------------
     
         proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
         proReceipt += formatLine("Discount:", -parseFloat(discountAmt));
         proReceipt += formatLine("Service Fee:", parseFloat(serviceFee));
         proReceipt += formatLine("Delivery Fee:", parseFloat(deliveryFee));
-        
-        // Total Line (Bold formatting - might not be supported by all thermal fonts)
-        proReceipt += formatLine("<b>TOTAL DUE:</b>", parseFloat(totalVal));
-        proReceipt += --------------------------------\n;
+    
+        proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
+        proReceipt += "--------------------------------\n";
     
         proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
-        
-        // Payment Method (Centered or Left Aligned usually - let's match image exactly)
-        let payPad = Math.floor((32 - Payment Method: ${paymentMethod}.length) / 2);
-        // proReceipt += ${" ".repeat(Math.max(0, payPad))}Payment Method: ${paymentMethod}\n; // Manual Centered
-        proReceipt += Payment Method: ${paymentMethod}\n; // Left aligned as in other sections
-    
+        proReceipt += "Payment Method: " + paymentMethod + "\n";
         proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
-        proReceipt += \n;
+        proReceipt += "\n";
     
         // 5. Footer
-        proReceipt +=      Acknowledgement Receipt\n;
-        proReceipt +=            Thank you!\n;
-        proReceipt += \n\n\n; // Feed paper slightly
+        proReceipt += "     Acknowledgement Receipt\n";
+        proReceipt += "           Thank you!\n";
+        proReceipt += "\n\n\n";
       // ------------------------------------------
       let bypassLink = document.createElement('a'); bypassLink.href = intentUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
     }
