@@ -1098,7 +1098,7 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
         try {
             // ⚠️ IMPORTANT: Change "orders" below if your database folder is named differently 
             // (e.g., "parked_orders" or "transactions")
-            const docRef = doc(db, "orders", docId); 
+            const docRef = doc(db, "parked_orders", docId); 
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {
