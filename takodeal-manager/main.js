@@ -3905,7 +3905,12 @@ window.cloneRecipe = async function() {
             if (typeof window.renderAdvRecipeTable === "function") {
                 window.renderAdvRecipeTable();
             }
-            
+
+            // 🧮 Nudge the calculator to update the Profitability boxes!
+            if (typeof window.updateAdvTotals === "function") {
+                window.updateAdvTotals(); 
+            }
+          
             alert(`✅ Recipe successfully cloned! Don't forget to click "Save Changes" at the bottom!`);
 
         } else {
