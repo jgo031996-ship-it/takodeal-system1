@@ -3715,30 +3715,38 @@ window.deleteInventoryItem = async function(docId, itemName) {
 };
 
 window.loadCloneDropdown = async function() {
-    // Uses your exact HTML ID!
+    console.log("🟢 STEP 1: Dropdown function triggered!");
+
     const dropdown = document.getElementById('recipeCloneSelect'); 
     
     if (!dropdown) {
-        console.warn("Cloning Dropdown not found on this screen.");
+        console.warn("🔴 STEP 2: Dropdown HTML element NOT found on screen!");
         return; 
     }
+    console.log("🟢 STEP 2: Found the dropdown element in the HTML!");
 
     try {
+        console.log("🟢 STEP 3: Contacting Firebase...");
         const snap = await getDocs(collection(db, "menu"));
+        console.log(`🟢 STEP 4: Firebase returned ${snap.size} items!`);
+
         let optionsHtml = '<option value="">-- Select an existing product to copy... --</option>';
         
         let items = [];
         snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-        items.sort((a, b) => a.name.localeCompare(b.name));
+        
+        // Added a safety net here just in case a product is missing a name!
+        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
         items.forEach(item => {
-            optionsHtml += `<option value="${item.id}">${item.name}</option>`;
+            optionsHtml += `<option value="${item.id}">${item.name || "Unnamed Item"}</option>`;
         });
 
         dropdown.innerHTML = optionsHtml;
+        console.log(`🟢 STEP 5: Successfully shoved ${items.length} options into the dropdown!`);
         
     } catch (error) {
-        console.error("Error loading cloning dropdown:", error);
+        console.error("🔴 FATAL ERROR loading cloning dropdown:", error);
     }
 };
 
