@@ -1153,12 +1153,14 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
     r += "--------------------------------\n";
     r += `[L]<b>TOTAL DUE</b>[R]<b>P${total.toFixed(2)}</b>\n`;
     r += "--------------------------------\n";
-    r += "[C]PLEASE PAY AT COUNTER\n";
+    r += "\n[C]**PLEASE PAY AT COUNTER**\n";
     r += "\n\n\n"; // Feed paper at the end
 
-    // --- SEND TO RAWBT PRINTER ---
-    let encodedText = encodeURIComponent(r); 
-    let intentUrl = "intent:" + encodedText + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter;end;";
+    // --- SEND TO RAWBT PRINTER (COMMAND MODE) ---
+    // We use "base64" to ensure the printer understands the [C], [L], and [R] tags perfectly
+    let base64Text = btoa(unescape(encodeURIComponent(r))); 
+    let intentUrl = "intent:base64," + base64Text + "#Intent;scheme=ru.a402d.rawbtprinter.action.PRINT;package=ru.a402d.rawbtprinter;end;";
+    
     window.location.href = intentUrl;
     
 };
