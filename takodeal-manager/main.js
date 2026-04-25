@@ -3922,3 +3922,28 @@ window.cloneRecipe = async function() {
     }
 };
 console.log("HEARTBEAT 2: File finished reading!");
+
+window.filterAlertsTable = function() {
+    const input = document.getElementById('alertSearchInput');
+    const filter = input.value.toLowerCase();
+    const table = document.querySelector('table'); // Targets your alerts table
+    const tr = table.getElementsByTagName('tr');
+
+    // Loop through all table rows (starting at index 1 to skip the header)
+    for (let i = 1; i < tr.length; i++) {
+        const categoryCell = tr[i].getElementsByTagName('td')[1]; // Category Column
+        const nameCell = tr[i].getElementsByTagName('td')[2];     // Item Name Column
+        
+        if (nameCell || categoryCell) {
+            const nameText = nameCell.textContent || nameCell.innerText;
+            const catText = categoryCell.textContent || categoryCell.innerText;
+            
+            // If the search text matches the name OR the category, show it!
+            if (nameText.toLowerCase().indexOf(filter) > -1 || catText.toLowerCase().indexOf(filter) > -1) {
+                tr[i].style.display = "";
+            } else {
+                tr[i].style.display = "none";
+            }
+        }
+    }
+};
