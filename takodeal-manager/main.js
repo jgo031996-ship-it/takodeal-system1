@@ -3690,32 +3690,48 @@ window.renderTables = function() {
 };
 
 // ==========================================
-// 🧬 RECIPE CLONER ENGINE
+// 🧬 RECIPE CLONER ENGINE & INVENTORY TOOLS
 // ==========================================
 
-window.loadCloneDropdown = async function() {
-    const select = document.getElementById('recipeCloneSelect');
-    if (!select) return;
+window.deleteInventoryItem = async function(docId, itemName) {
+    if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone and might break recipes using this ingredient!`)) {
+        try {
+            await deleteDoc(doc(db, "inventory", docId)); 
+            alert(`✅ "${itemName}" has been permanently deleted.`);
+            // Call whatever function you use to refresh the table!
+            // e.g., loadInventory(); 
+        } catch (error) {
+            console.error("Error deleting item:", error);
+            alert("Failed to delete the ingredient.");
+        }
+    }
+};
 
-    select.innerHTML = '<option value="">Loading products...</option>';
+window.loadCloneDropdown = async function() {
+    // Uses your exact HTML ID!
+    const dropdown = document.getElementById('recipeCloneSelect'); 
+    
+    if (!dropdown) {
+        console.warn("Cloning Dropdown not found on this screen.");
+        return; 
+    }
 
     try {
-        // Change "menu" to "products" or "bom" if your recipes are saved in a different collection!
-        const snap = await getDocs(collection(db, "menu")); 
-        let html = '<option value="">-- Select an existing product to copy... --</option>';
-
+        const snap = await getDocs(collection(db, "menu"));
+        let optionsHtml = '<option value="">-- Select an existing product to copy... --</option>';
+        
         let items = [];
-        snap.forEach(doc => items.push({ id: doc.id, name: doc.data().name }));
-        items.sort((a, b) => a.name.localeCompare(b.name)); // Sort A-Z
+        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        items.sort((a, b) => a.name.localeCompare(b.name));
 
         items.forEach(item => {
-            html += `<option value="${item.id}">${item.name}</option>`;
+            optionsHtml += `<option value="${item.id}">${item.name}</option>`;
         });
 
-        select.innerHTML = html;
+        dropdown.innerHTML = optionsHtml;
+        
     } catch (error) {
-        console.error("Error loading clone dropdown:", error);
-        select.innerHTML = '<option value="">Error loading products</option>';
+        console.error("Error loading cloning dropdown:", error);
     }
 };
 
@@ -3731,21 +3747,17 @@ window.cloneRecipe = async function() {
     }
 
     try {
-        // Fetch the recipe data from the selected product
-        const docRef = doc(db, "menu", sourceId); // Make sure this collection matches the one above!
+        const docRef = doc(db, "menu", sourceId); 
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
             const data = docSnap.data();
 
             // ⚠️ YOUR CUSTOM INTEGRATION GOES HERE:
-            // Since I don't have your specific "+ Add item" function code, 
-            // you will loop through the copied ingredients and trigger your own row-adding function!
-            
+            // You will loop through the copied ingredients and trigger your own row-adding function!
             console.log("Here is the recipe data we copied from Firebase:", data.ingredients);
             
             /* Example of how you would wire this up:
-            
             document.getElementById('yourIngredientsTableBody').innerHTML = ""; // Clear current rows
             
             data.ingredients.forEach(ing => {
@@ -3754,7 +3766,7 @@ window.cloneRecipe = async function() {
             });
             */
             
-            alert(`✅ Recipe successfully cloned!`);
+            alert(`✅ Recipe successfully cloned! (Check console to see data)`);
 
         } else {
             alert("Could not find that product in the database.");
@@ -3762,20 +3774,5 @@ window.cloneRecipe = async function() {
     } catch (error) {
         console.error("Error cloning recipe:", error);
         alert("Failed to clone recipe.");
-    }
-};
-
-window.deleteInventoryItem = async function(docId, itemName) {
-    if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone and might break recipes using this ingredient!`)) {
-        try {
-            await deleteDoc(doc(db, "inventory", docId)); 
-            alert(`✅ "${itemName}" has been permanently deleted.`);
-            
-            // Call whatever function you use to refresh the table!
-            // e.g., loadInventory(); 
-        } catch (error) {
-            console.error("Error deleting item:", error);
-            alert("Failed to delete the ingredient.");
-        }
     }
 };
