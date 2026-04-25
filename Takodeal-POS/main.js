@@ -1138,9 +1138,4 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
     let intentUrl = "intent:" + encodedText + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter;end;";
     window.location.href = intentUrl;
     
-    let bypassLink = document.createElement('a'); 
-    bypassLink.href = intentUrl; 
-    document.body.appendChild(bypassLink); 
-    bypassLink.click(); 
-    document.body.removeChild(bypassLink);
 };
