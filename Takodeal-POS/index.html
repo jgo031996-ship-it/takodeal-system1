@@ -2118,11 +2118,24 @@
     
             if (!snap.empty) {
                 let itemData = snap.docs[0].data();
-                // If we find the addons array we saved from the Manager Dashboard...
+            
                 if (itemData.addons && itemData.addons.length > 0) {
                     addonsFound = true;
+                    
+                    // 🔥 THE BUNDLER FIX: Group duplicates so the cashier only sees ONE option!
+                    let groupedAddons = {};
                     itemData.addons.forEach(a => {
-                        // Format it exactly how your POS expects: "Name|Price"
+                        if (!groupedAddons[a.name]) {
+                            // First time seeing this Add-on name, save it
+                            groupedAddons[a.name] = { name: a.name, price: parseFloat(a.price) || 0 };
+                        } else {
+                            // If it's a duplicate (like the plastic cup), combine the price (usually +0)
+                            groupedAddons[a.name].price += (parseFloat(a.price) || 0);
+                        }
+                    });
+    
+                    // Pour the clean, grouped list into the bucket
+                    Object.values(groupedAddons).forEach(a => {
                         aoHtml += `<option value="${a.name}|${a.price}">${a.name} (+₱${a.price})</option>`;
                     });
                 }
