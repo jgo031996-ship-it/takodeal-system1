@@ -966,10 +966,6 @@ async function loadMenuEditor() {
       });
     }
 
-    // Wake up the cloning dropdown!
-    if (typeof window.loadCloneDropdown === "function") {
-        window.loadCloneDropdown();
-    }
 };
     
     tbody.innerHTML = html;
@@ -1016,6 +1012,10 @@ window.editMenuItem = async function (docId, name, currentPrice) {
   } catch (error) {
     console.error(error); alert("❌ Failed to update price.");
   }
+  // Wake up the cloning dropdown!
+    if (typeof window.loadCloneDropdown === "function") {
+        window.loadCloneDropdown();
+    }
 };
 
 window.deleteMenuItem = async function (docId, name) {
