@@ -965,10 +965,13 @@ async function loadMenuEditor() {
         `;
       });
     }
+
     // Wake up the cloning dropdown!
     if (typeof window.loadCloneDropdown === "function") {
         window.loadCloneDropdown();
     }
+};
+    
     tbody.innerHTML = html;
   } catch (error) {
     console.error("Menu Engine Error:", error);
