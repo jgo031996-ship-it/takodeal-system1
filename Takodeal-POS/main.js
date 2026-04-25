@@ -1158,7 +1158,7 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
 
     // --- SEND TO RAWBT PRINTER (COMMAND MODE) ---
     // We use "base64" to ensure the printer understands the [C], [L], and [R] tags perfectly
-    let encodedText = encodeURIComponent(proReceipt);
+    let encodedText = encodeURIComponent(r);
       let intentUrl = "rawbt:" + encodedText;
       
       let bypassLink = document.createElement('a'); 
