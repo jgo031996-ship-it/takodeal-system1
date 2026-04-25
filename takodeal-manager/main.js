@@ -1979,6 +1979,13 @@ window.openBomEditor = async function (menuItemName) {
   } catch (e) {
     console.error(e); alert("Failed to load product details.");
   }
+
+  // The automatic Wake-Up trigger for the clone dropdown
+    setTimeout(() => {
+        if (typeof window.loadCloneDropdown === "function") {
+            window.loadCloneDropdown();
+        }
+    }, 200);
 };
 
 window.renderAdvRecipeTable = function () {
