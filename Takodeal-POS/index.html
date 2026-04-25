@@ -2242,7 +2242,7 @@
       let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
       // --- THE ULTIMATE PRO RECEIPT OVERRIDE ---
       let proReceipt = "";
-  
+
       // 1. Logo and Header (Using your Vercel image!)
       proReceipt += `<center><img src="https://takodeal-owner.vercel.app/logo.jpg" width="200"></center>\n`;
       proReceipt += `<center><b><font size="4">TAKODEAL</font></b></center>\n`;
@@ -2270,24 +2270,24 @@
           let price = parseFloat(item.price || 0);
           let lineTotal = qty * price;
           grandTotal += lineTotal;
-          
-          proReceipt += ${name}\n;
-          let qtyStr =   ${qty.toFixed(1)}      x ${price.toFixed(2)};
-          let totalStr = ${lineTotal.toFixed(2)};
+  
+          proReceipt += `${name}\n`;
+          let qtyStr = `${qty.toFixed(1)}      x ${price.toFixed(2)}`;
+          let totalStr = `${lineTotal.toFixed(2)}`;
           let spacePadding = 32 - qtyStr.length - totalStr.length;
-          proReceipt += ${qtyStr}${" ".repeat(Math.max(1, spacePadding))}${totalStr}\n;
+          proReceipt += `${qtyStr}${" ".repeat(Math.max(1, spacePadding))}${totalStr}\n`;
       });
   
       // 4. Totals Block
-      proReceipt += --------------------------------\n;
-      proReceipt += `Subtotal: ${order.total.toFixed(2)}\n`;
-      proReceipt += Total: ${grandTotal.toFixed(2)}\n;
-      proReceipt += --------------------------------\n;
-      proReceipt += Payment Method: Cash\n;
-      proReceipt += \n;
-      proReceipt += <center>Acknowledgement Receipt</center>\n;
-      proReceipt += <center>Thank you!</center>\n;
-      proReceipt += \n\n\n;
+      proReceipt += `--------------------------------\n`;
+      proReceipt += `Subtotal: ${grandTotal.toFixed(2)}\n`;
+      proReceipt += `Total: ${grandTotal.toFixed(2)}\n`;
+      proReceipt += `--------------------------------\n`;
+      proReceipt += `Payment Method: Cash\n`;
+      proReceipt += `\n`;
+      proReceipt += `<center>Acknowledgement Receipt</center>\n`;
+      proReceipt += `<center>Thank you!</center>\n`;
+      proReceipt += `\n\n\n`;
   
       // 5. Force RawBT to use OUR new layout, completely ignoring the old ghost code!
       let encodedText = encodeURIComponent(proReceipt);
