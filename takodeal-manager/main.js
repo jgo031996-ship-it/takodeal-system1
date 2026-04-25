@@ -2934,6 +2934,52 @@ window.addAddonRow = function (name = '', price = '', ingredient = '', qty = '')
   }
 };
 
+window.cloneAddons = async function() {
+    const selectDropdown = document.getElementById('addonCloneSelect');
+    const sourceId = selectDropdown.value;
+    const sourceName = selectDropdown.options[selectDropdown.selectedIndex].text;
+
+    if (!sourceId) {
+        alert("Please select a product to copy Add-ons from!");
+        return;
+    }
+
+    if (!confirm(`Copy all Add-ons from ${sourceName}? This will add them to your current list.`)) {
+        return;
+    }
+
+    try {
+        console.log(`🔎 Fetching Add-ons from menu item: ${sourceName}`);
+        
+        // Since your save code uses the "menu" collection...
+        const docRef = doc(db, "menu", sourceId);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists() && docSnap.data().addons) {
+            const copiedAddons = docSnap.data().addons;
+            let count = 0;
+
+            copiedAddons.forEach(item => {
+                // We use your existing function to draw the rows!
+                window.addAddonRow(
+                    item.name, 
+                    item.price, 
+                    item.linkedIngredient, 
+                    item.deductQty
+                );
+                count++;
+            });
+
+            alert(`✅ Successfully added ${count} Add-ons!`);
+        } else {
+            alert(`⚠️ No Add-ons found for "${sourceName}".`);
+        }
+    } catch (error) {
+        console.error("🔴 Error cloning Add-ons:", error);
+        alert("Failed to copy Add-ons.");
+    }
+};
+
 // ========================================================
 // 🍔 MASTER RECIPE & ADD-ON SAVER (MANAGER)
 // ========================================================
