@@ -2123,13 +2123,36 @@ window.saveAdvancedProduct = async function () {
     }
 
     alert("✅ Product and Recipe saved successfully!");
-    document.getElementById('advancedProductModal').style.display = 'none';
-    loadMenuCosting(); // Refresh the main table to see the new item!
-  } catch (error) {
-    console.error(error); alert("Failed to save product.");
-  } finally {
-    btn.innerText = "Save Changes"; btn.disabled = false;
-  }
+        
+        // 1. Safely close the modal (Won't crash if the ID is slightly different)
+        let modal = document.getElementById('advancedProductModal');
+        if (modal) {
+            modal.style.display = 'none';
+        } else {
+            console.warn("Could not find modal to close. Check your HTML ID!");
+        }
+
+        // 2. Refresh the table
+        loadMenuCosting(); 
+
+    } catch (error) {
+        console.error("Save Error:", error); 
+        alert("Failed to save product. Check Console for details.");
+    } finally {
+        // 3. Bulletproof Button Reset (Forces ANY stuck button to wake up)
+        if (typeof btn !== 'undefined' && btn) {
+            btn.innerText = "Save Changes"; 
+            btn.disabled = false;
+        } else {
+            // Backup scanner: finds the frozen button and fixes it anyway
+            document.querySelectorAll('button').forEach(b => {
+                if (b.innerText.includes("Saving")) {
+                    b.innerText = "Save Changes";
+                    b.disabled = false;
+                }
+            });
+        }
+    }
 };
 
 
