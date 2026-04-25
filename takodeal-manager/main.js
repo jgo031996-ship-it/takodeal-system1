@@ -2150,7 +2150,7 @@ window.saveAdvancedProduct = async function () {
       }
     }
 
-    alert("✅ Product and Recipe saved successfully!");
+    alert("✅ Product, Recipe, and Add-ons saved successfully!");
         
         // 1. Safely close the modal (Won't crash if the ID is slightly different)
         let modal = document.getElementById('advancedProductModal');
