@@ -1166,5 +1166,4 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
       document.body.appendChild(bypassLink); 
       bypassLink.click(); 
       document.body.removeChild(bypassLink);
-      }
 };
