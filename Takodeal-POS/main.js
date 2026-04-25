@@ -70,6 +70,11 @@ const db = getFirestore(app);
 
 // Make the database available to our POS
 window.db = db;
+window.query = query;
+window.where = where;
+window.collection = collection;
+window.getDocs = getDocs;
+
 console.log("🔥 Firebase Engine is LIVE!");
 
 // --- THE FIREBASE PIN SEARCHER ---
