@@ -3803,37 +3803,54 @@ window.deleteInventoryItem = async function(docId, itemName) {
 
 window.loadCloneDropdown = async function() {
     console.log("🟢 STEP 1: Dropdown function triggered!");
-
-    const dropdown = document.getElementById('recipeCloneSelect'); 
     
-    if (!dropdown) {
-        console.warn("🔴 STEP 2: Dropdown HTML element NOT found on screen!");
-        return; 
+    // Find BOTH dropdowns on the screen
+    let recipeDrop = document.getElementById('recipeCloneSelect');
+    let addonDrop = document.getElementById('addonCloneSelect');
+
+    // Only give up if BOTH are missing
+    if (!recipeDrop && !addonDrop) {
+        console.warn("🔴 STEP 2: No dropdown HTML elements found on screen!");
+        return;
     }
-    console.log("🟢 STEP 2: Found the dropdown element in the HTML!");
+    
+    console.log("🟢 STEP 2: Found dropdown element(s) in the HTML!");
 
     try {
         console.log("🟢 STEP 3: Contacting Firebase...");
         const snap = await getDocs(collection(db, "menu"));
         console.log(`🟢 STEP 4: Firebase returned ${snap.size} items!`);
-
-        let optionsHtml = '<option value="">-- Select an existing product to copy... --</option>';
         
+        // Setup the default top choices for BOTH
+        let recipeOptions = '<option value="">-- Select an existing product to copy... --</option>';
+        let addonOptions = '<option value="">-- Copy Add-ons From... --</option>';
+
         let items = [];
-        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-        
-        // Added a safety net here just in case a product is missing a name!
-        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-
-        items.forEach(item => {
-            optionsHtml += `<option value="${item.id}">${item.name || "Unnamed Item"}</option>`;
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            if (data.name) {
+                items.push({ id: docSnap.id, name: data.name });
+            }
         });
 
-        dropdown.innerHTML = optionsHtml;
-        console.log(`🟢 STEP 5: Successfully shoved ${items.length} options into the dropdown!`);
-        
+        // Sort them alphabetically so they are easy to find
+        items.sort((a, b) => a.name.localeCompare(b.name));
+
+        // Build the HTML list
+        items.forEach(item => {
+            let optionHtml = `<option value="${item.id}">${item.name}</option>`;
+            recipeOptions += optionHtml;
+            addonOptions += optionHtml;
+        });
+
+        // Inject the HTML ONLY into the dropdowns that actually exist on the screen!
+        if (recipeDrop) recipeDrop.innerHTML = recipeOptions;
+        if (addonDrop) addonDrop.innerHTML = addonOptions;
+
+        console.log(`🟢 STEP 5: Successfully shoved ${items.length} options into the dropdowns!`);
+
     } catch (error) {
-        console.error("🔴 FATAL ERROR loading cloning dropdown:", error);
+        console.error("🔴 FATAL ERROR loading cloning dropdowns:", error);
     }
 };
 
