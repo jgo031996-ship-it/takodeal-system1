@@ -958,7 +958,7 @@ async function loadMenuEditor() {
             <td><span class="badge badge-closed">${data.category || 'Uncategorized'}</span></td>
             <td style="font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
             <td style="display: flex; gap: 10px;">
-              <button class="btn-refresh" onclick="editMenuItem('${data.id}', '${data.name}', ${safePrice})">✏️ Edit Price</button>
+              <button class="btn-refresh" onclick="editMenuItem('${data.id}', '${data.name}', ${safePrice}); setTimeout(function(){ if(window.loadCloneDropdown) window.loadCloneDropdown(); }, 200);">✏️ Edit Price</button>
               <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${data.name}')">🗑️ Delete</button>
             </td>
           </tr>
@@ -1014,7 +1014,13 @@ window.editMenuItem = async function (docId, name, currentPrice) {
     if (typeof window.loadCloneDropdown === "function") {
         window.loadCloneDropdown();
     }
-};
+  // The Snooze Button
+      setTimeout(() => {
+          if (typeof window.loadCloneDropdown === "function") {
+              window.loadCloneDropdown();
+          }
+      }, 200);
+  };
 
 window.deleteMenuItem = async function (docId, name) {
   if (!confirm(`⚠️ ARE YOU SURE?\n\nThis will permanently delete ${name} from the menu at ALL branches.`)) return;
