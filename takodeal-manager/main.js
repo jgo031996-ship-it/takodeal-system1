@@ -3770,7 +3770,7 @@ window.cloneRecipe = async function() {
 
             // ⚠️ YOUR CUSTOM INTEGRATION GOES HERE:
             // You will loop through the copied ingredients and trigger your own row-adding function!
-            console.log("Here is the recipe data we copied from Firebase:", data.ingredients);
+            console.log("🔥 X-RAY VISION OF FIREBASE DATA:", data);
             
             /* Example of how you would wire this up:
             document.getElementById('yourIngredientsTableBody').innerHTML = ""; // Clear current rows
