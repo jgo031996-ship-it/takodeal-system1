@@ -2082,54 +2082,102 @@
     }
 
     // --- 7. CART & VARIANT LOGIC ---
-    function openAddOrderModal(name, basePrice, existingItem = null) {
-      if (existingItem) { pendingItem = JSON.parse(JSON.stringify(existingItem)); editIndex = cart.indexOf(existingItem); }
-      else { pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 }; editIndex = -1; }
-
-      document.getElementById('modalItemName').innerText = pendingItem.name;
-      document.getElementById('modalItemPrice').innerText = '₱ ' + pendingItem.basePrice.toFixed(2);
-      document.getElementById('modalMainQty').innerText = pendingItem.qty;
-      document.getElementById('orderNotesInput').value = pendingItem.notes;
-
-      setDiscountType(pendingItem.discountType);
-      if (pendingItem.discountType !== 'none') { document.getElementById('discountValueInput').value = pendingItem.discountVal; }
-
-      let aoHtml = '<option value="">-- Select Add-On --</option>';
-      masterPOSData.addons.forEach(a => aoHtml += `<option value="${a.name}|${a.price}">${a.name} (+₱${a.price})</option>`);
-      document.getElementById('addonSelectDropdown').innerHTML = aoHtml;
-      renderActiveAddons();
-
-      const varContainer = document.getElementById('variantOptions'); varContainer.innerHTML = '';
-      const itemVariants = masterPOSData.variants[pendingItem.name];
-      if (itemVariants && itemVariants.length > 0) {
-        itemVariants.forEach((v, index) => {
-          let activeClass = v.name === pendingItem.variantName ? 'active' : '';
-          if (!existingItem && index === 0) { pendingItem.variantName = v.name; pendingItem.variantPrice = basePrice + v.priceAdj; activeClass = 'active'; }
-          varContainer.innerHTML += `<button class="var-btn ${activeClass}" onclick="selectVariant(this, '${v.name}', ${basePrice + v.priceAdj})">${v.name}</button>`;
-        });
-      } else {
-        pendingItem.variantName = 'Standard'; pendingItem.variantPrice = basePrice;
-        varContainer.innerHTML = `<button class="var-btn active">Standard</button>`;
-      }
-
-      updateModalTotals(); document.getElementById('variantModal').style.display = 'flex';
+    async function openAddOrderModal(name, basePrice, existingItem = null) {
+        if (existingItem) { 
+            pendingItem = JSON.parse(JSON.stringify(existingItem)); 
+            editIndex = cart.indexOf(existingItem); 
+        } else { 
+            pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 }; 
+            editIndex = -1; 
+        }
+    
+        document.getElementById('modalItemName').innerText = pendingItem.name;
+        document.getElementById('modalItemPrice').innerText = '₱ ' + pendingItem.basePrice.toFixed(2);
+        document.getElementById('modalMainQty').innerText = pendingItem.qty;
+        document.getElementById('orderNotesInput').value = pendingItem.notes;
+    
+        setDiscountType(pendingItem.discountType);
+        if (pendingItem.discountType !== 'none') { 
+            document.getElementById('discountValueInput').value = pendingItem.discountVal; 
+        }
+    
+        // 1. Pop the window open immediately so it feels lightning-fast for the cashier!
+        document.getElementById('variantModal').style.display = 'flex';
+        
+        // 2. Set the bucket to "Loading" while we talk to Firebase
+        document.getElementById('addonSelectDropdown').innerHTML = '<option value="">⏳ Loading Add-Ons...</option>';
+        renderActiveAddons();
+    
+        // 🍟 3. THE NEW PIPE: Fetch the specific Add-ons for THIS exact product!
+        try {
+            const q = query(collection(db, "menu"), where("name", "==", pendingItem.name));
+            const snap = await getDocs(q);
+            
+            let aoHtml = '<option value="">-- Select Add-On --</option>';
+            let addonsFound = false;
+    
+            if (!snap.empty) {
+                let itemData = snap.docs[0].data();
+                // If we find the addons array we saved from the Manager Dashboard...
+                if (itemData.addons && itemData.addons.length > 0) {
+                    addonsFound = true;
+                    itemData.addons.forEach(a => {
+                        // Format it exactly how your POS expects: "Name|Price"
+                        aoHtml += `<option value="${a.name}|${a.price}">${a.name} (+₱${a.price})</option>`;
+                    });
+                }
+            }
+    
+            if (!addonsFound) {
+                aoHtml = '<option value="">-- No Add-Ons Available --</option>';
+            }
+            
+            // Pour the data into the bucket!
+            document.getElementById('addonSelectDropdown').innerHTML = aoHtml;
+            
+        } catch (error) {
+            console.error("Error loading specific addons:", error);
+            document.getElementById('addonSelectDropdown').innerHTML = '<option value="">⚠️ Error Loading Add-Ons</option>';
+        }
+    
+        // --- VARIANT LOGIC (Untouched, exactly as you had it) ---
+        const varContainer = document.getElementById('variantOptions'); 
+        varContainer.innerHTML = '';
+        const itemVariants = masterPOSData.variants[pendingItem.name];
+        if (itemVariants && itemVariants.length > 0) {
+            itemVariants.forEach((v, index) => {
+                let activeClass = v.name === pendingItem.variantName ? 'active' : '';
+                if (!existingItem && index === 0) { 
+                    pendingItem.variantName = v.name; 
+                    pendingItem.variantPrice = basePrice + v.priceAdj; 
+                    activeClass = 'active'; 
+                }
+                varContainer.innerHTML += `<button class="var-btn ${activeClass}" onclick="selectVariant(this, '${v.name}', ${basePrice + v.priceAdj})">${v.name}</button>`;
+            });
+        } else {
+            pendingItem.variantName = 'Standard'; 
+            pendingItem.variantPrice = basePrice;
+            varContainer.innerHTML = `<button class="var-btn active">Standard</button>`;
+        }
+    
+        updateModalTotals(); 
     }
-
-    function selectVariant(btn, vName, vPrice) {
-      document.querySelectorAll('#variantOptions .var-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active'); pendingItem.variantName = vName; pendingItem.variantPrice = vPrice; updateModalTotals();
-    }
-
-    function adjustModalMainQty(delta) { let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1; if (cur + delta > 0) { pendingItem.qty = cur + delta; document.getElementById('modalMainQty').innerText = pendingItem.qty; updateModalTotals(); } }
-
-    function setDiscountType(type) {
-      pendingItem.discountType = type; document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
-      let dvi = document.getElementById('discountValueInput'); dvi.style.display = type === 'none' ? 'none' : 'block'; dvi.value = '';
-      if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); pendingItem.discountVal = 0; }
-      else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
-      else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
-      updateModalTotals();
-    }
+    
+        function selectVariant(btn, vName, vPrice) {
+          document.querySelectorAll('#variantOptions .var-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active'); pendingItem.variantName = vName; pendingItem.variantPrice = vPrice; updateModalTotals();
+        }
+    
+        function adjustModalMainQty(delta) { let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1; if (cur + delta > 0) { pendingItem.qty = cur + delta; document.getElementById('modalMainQty').innerText = pendingItem.qty; updateModalTotals(); } }
+    
+        function setDiscountType(type) {
+          pendingItem.discountType = type; document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
+          let dvi = document.getElementById('discountValueInput'); dvi.style.display = type === 'none' ? 'none' : 'block'; dvi.value = '';
+          if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); pendingItem.discountVal = 0; }
+          else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
+          else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
+          updateModalTotals();
+        }
 
     function addAddonFromDropdown() { let val = document.getElementById('addonSelectDropdown').value; if (!val) return; let parts = val.split('|'); adjustAddon(parts[0], parseFloat(parts[1]), 1); }
     function adjustAddon(name, price, delta) { if (!pendingItem.addons[name]) pendingItem.addons[name] = { price: price, qty: 0 }; if (pendingItem.addons[name].qty + delta >= 0) { pendingItem.addons[name].qty += delta; renderActiveAddons(); updateModalTotals(); } }
