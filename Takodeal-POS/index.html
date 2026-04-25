@@ -2341,8 +2341,16 @@
         proReceipt += "           Thank you!\n";
         proReceipt += "\n\n\n";
       // ------------------------------------------
-      let bypassLink = document.createElement('a'); bypassLink.href = intentUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
-    }
+      // --- SEND TO PRINTER ---
+      let encodedText = encodeURIComponent(proReceipt);
+      let intentUrl = "rawbt:" + encodedText;
+      
+      let bypassLink = document.createElement('a'); 
+      bypassLink.href = intentUrl; 
+      document.body.appendChild(bypassLink); 
+      bypassLink.click(); 
+      document.body.removeChild(bypassLink);
+      }
 
     // --- 9. PARKED ORDERS SYSTEM ---
     async function updateParkedBadge() {
