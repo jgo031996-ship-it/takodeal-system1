@@ -1088,13 +1088,24 @@ window.submitAttendance = async function(type) {
 window.printParkedReceipt = async function(docId, preloadedData = null) {
     let order = preloadedData; 
     
-    // If the data wasn't passed directly, fetch it from your parked orders list
+    // THE SILENT NINJA: Fetch directly from Firebase without touching the screen!
     if (!order) { 
-        if (typeof window.getParkedOrders === "function") {
-            let orders = await window.getParkedOrders(window.sessionUser ? window.sessionUser.branch : ""); 
-            order = orders.find(o => o.id === docId); 
-        } else {
-            console.error("Could not find the parked orders list!");
+        try {
+            // ⚠️ IMPORTANT: Change "orders" below if your database folder is named differently 
+            // (e.g., "parked_orders" or "transactions")
+            const docRef = doc(db, "orders", docId); 
+            const docSnap = await getDoc(docRef);
+            
+            if (docSnap.exists()) {
+                order = docSnap.data();
+                order.id = docId; // Save the ID just in case
+            } else {
+                alert("❌ Order not found in the database!");
+                return;
+            }
+        } catch (e) {
+            console.error("🔴 Failed to fetch order silently:", e);
+            alert("❌ Failed to connect to database for printing.");
             return;
         }
     } 
