@@ -874,18 +874,24 @@
             <span style="font-size: 12px; color: var(--text-muted);">Automatically tracks items that fall below your set
               re-order levels.</span>
           </div>
-          <div style="display: flex; gap: 10px;">
-            <select id="alertBranchFilter"
-              style="padding: 8px; border-radius: 6px; border: 1px solid var(--border); font-weight: bold;"
-              onchange="loadPurchasesAndAlerts()">
-              <option value="All">All Branches</option>
-              <option value="Main Office">Main Office</option>
-              <option value="Cabantian">Cabantian</option>
-              <option value="Citygate">Citygate</option>
-              <option value="Maa">Maa</option>
-            </select>
-            <button class="btn-refresh" style="background: var(--surface); color: var(--text-main);"
-              onclick="loadPurchasesAndAlerts()">🔄 Refresh</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-bottom: 20px;">
+              <div style="position: relative; flex: 1;">
+                  <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
+                  <input type="text" id="alertSearchInput" onkeyup="filterAlertsTable()" placeholder="Search item name or category..." 
+                         style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 14px; outline: none; transition: border 0.2s;">
+              </div>
+          
+              <div style="display: flex; gap: 10px; align-items: center;">
+                  <select id="branchAlertFilter" onchange="loadAlerts()" style="padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+                      <option value="All Branches">All Branches</option>
+                      <option value="Cabantian">Cabantian</option>
+                      <option value="Maa">Maa</option>
+                      <option value="Citygate">Citygate</option>
+                  </select>
+                  <button onclick="loadAlerts()" style="background: white; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: 500;">
+                      🔄 Refresh
+                  </button>
+              </div>
           </div>
         </div>
         <div class="table-responsive">
