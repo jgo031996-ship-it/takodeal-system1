@@ -918,20 +918,27 @@ window.printThermalReceipt = async function () {
         window.currentOrder.forEach(item => {
             // Line 1: Item Name
             receiptText += `${item.name || item.itemName}\n`;
+    
+            // THE FIX: Stop the Double Math!
+            // Grab the true total directly from the item, don't recalculate it.
+            let itemTotal = parseFloat(item.subtotal || item.lineTotalFinal || item.price);
             
-            // Line 2: Qty x Price      Total
-            let qtyStr = `  ${parseFloat(item.qty).toFixed(1)}      x ${parseFloat(item.price).toFixed(2)}`;
-            let itemTotal = item.price * item.qty;
+            // Find the TRUE unit price by dividing the total by the quantity
+            let qty = parseFloat(item.qty) || 1;
+            let trueUnitPrice = itemTotal / qty;
+    
+            // Line 2: Qty x True Unit Price      Total
+            let qtyStr = `${qty.toFixed(1)}      x ${trueUnitPrice.toFixed(2)}`;
             let totalStr = `${itemTotal.toFixed(2)}`;
-            
+    
             // Math to push the Total all the way to the right edge!
             let spacePadding = 32 - qtyStr.length - totalStr.length;
             let paddingStr = " ".repeat(Math.max(1, spacePadding));
-            
+    
             receiptText += `${qtyStr}${paddingStr}${totalStr}\n`;
-            
-            totalQty += item.qty;
-            grandTotal += itemTotal;
+    
+            totalQty += qty;
+            grandTotal += itemTotal; // This will now perfectly match the 243!
         });
         receiptText += "--------------------------------\n";
     
