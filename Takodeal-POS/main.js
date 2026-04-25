@@ -933,6 +933,38 @@ window.printThermalReceipt = async function () {
             totalQty += item.qty;
             grandTotal += itemTotal;
         });
+        receiptText += "--------------------------------\n";
+    
+        // 1. SHOW DISCOUNT (We need to tell it where to find your discount!)
+        // Boss Jostuart: Replace the '0' below with your actual discount variable or input!
+        let discountAmt = 0; 
+        if (typeof order !== 'undefined' && order.discount) discountAmt = parseFloat(order.discount);
+        
+        if (discountAmt > 0) {
+            receiptText += `[L]Discount:[R]-P${discountAmt.toFixed(2)}\n`;
+        }
+    
+        // 2. SHOW FINAL TOTAL DUE (Using YOUR grandTotal from line 934!)
+        let finalTotal = grandTotal; 
+        receiptText += `[L]<b>TOTAL DUE</b>[R]<b>P${finalTotal.toFixed(2)}</b>\n`;
+        
+        // 3. SHOW PAYMENT & CHANGE
+        // Boss Jostuart: Replace the '0' below with your actual cash received variable or input!
+        let amountPaid = 0;
+        if (typeof order !== 'undefined' && order.amountReceived) amountPaid = parseFloat(order.amountReceived);
+    
+        if (amountPaid > 0) {
+            let changeAmt = amountPaid - finalTotal;
+            
+            receiptText += "--------------------------------\n";
+            receiptText += `[L]Amount Received:[R]P${amountPaid.toFixed(2)}\n`;
+            receiptText += `[L]Change Amount:[R]P${changeAmt.toFixed(2)}\n`;
+        }
+        
+        receiptText += "--------------------------------\n";
+        receiptText += "[C]Thank you for dining with us!\n";
+        receiptText += "\n\n\n"; // Feed paper at the end
+      
 
         receiptText += `--------------------------------\n`;
         
@@ -1043,4 +1075,71 @@ window.submitAttendance = async function(type) {
         console.error("Attendance Error:", error);
         alert("Failed to log attendance. Check connection.");
     }
+};
+
+// --- NEW PRO RECEIPT FOR PARKED ORDERS ---
+window.printParkedReceipt = async function(docId, preloadedData = null) {
+    let order = preloadedData; 
+    
+    // If the data wasn't passed directly, fetch it from your parked orders list
+    if (!order) { 
+        if (typeof window.getParkedOrders === "function") {
+            let orders = await window.getParkedOrders(window.sessionUser ? window.sessionUser.branch : ""); 
+            order = orders.find(o => o.id === docId); 
+        } else {
+            console.error("Could not find the parked orders list!");
+            return;
+        }
+    } 
+    
+    if (!order) {
+        console.error("Order not found!");
+        return;
+    }
+
+    // --- BUILD THE PRO RECEIPT FORMAT ---
+    let r = "";
+    r += "[C]<font size=\"big\">TAKODEÁL</font>\n";
+    r += "[C]** PAY LATER **\n";
+    r += "--------------------------------\n";
+    
+    let cashierName = (window.sessionUser && window.sessionUser.name) ? window.sessionUser.name : "Cashier";
+    r += `[L]Cashier:[R]${cashierName}\n`;
+    
+    // Safely grab the customer name or table number
+    let customerStr = order.customerName || order.customer || order.table || "Walk-in";
+    r += `[L]Cust/Table:[R]${customerStr}\n`;
+    r += "--------------------------------\n";
+    
+    let total = 0;
+    
+    // Ensure order.items exists before looping
+    if (order.items && Array.isArray(order.items)) {
+        order.items.forEach(item => {
+            let qty = item.qty || 1;
+            let name = item.name || "Item";
+            // Calculate price fallback safely
+            let price = parseFloat(item.lineTotalFinal || (item.price * qty) || 0);
+            total += price;
+            
+            // [L] pushes item left, [R] pushes price perfectly to the right margin!
+            r += `[L]${qty}x ${name}[R]${price.toFixed(2)}\n`;
+        });
+    }
+    
+    r += "--------------------------------\n";
+    r += `[L]<b>TOTAL DUE</b>[R]<b>P${total.toFixed(2)}</b>\n`;
+    r += "--------------------------------\n";
+    r += "[C]PLEASE PAY AT COUNTER\n";
+    r += "\n\n\n"; // Feed paper at the end
+
+    // --- SEND TO RAWBT PRINTER ---
+    let encodedText = encodeURIComponent(r); 
+    let intentUrl = "rawbt:" + encodedText;
+    
+    let bypassLink = document.createElement('a'); 
+    bypassLink.href = intentUrl; 
+    document.body.appendChild(bypassLink); 
+    bypassLink.click(); 
+    document.body.removeChild(bypassLink);
 };
