@@ -1014,12 +1014,12 @@ window.editMenuItem = async function (docId, name, currentPrice) {
     if (typeof window.loadCloneDropdown === "function") {
         window.loadCloneDropdown();
     }
-  // The Snooze Button
-      setTimeout(() => {
-          if (typeof window.loadCloneDropdown === "function") {
-              window.loadCloneDropdown();
-          }
-      }, 200);
+  // The automatic Wake-Up trigger for the clone dropdown
+    setTimeout(() => {
+        if (typeof window.loadCloneDropdown === "function") {
+            window.loadCloneDropdown();
+        }
+    }, 200);
   };
 
 window.deleteMenuItem = async function (docId, name) {
