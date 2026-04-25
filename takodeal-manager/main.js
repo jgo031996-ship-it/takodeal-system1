@@ -2116,12 +2116,37 @@ window.saveAdvancedProduct = async function () {
   }
 
   try {
-    // 1. Save Menu Details (Update OR Create New)
+    // 🍟 NEW: GATHER ALL ADD-ONS BEFORE SAVING
+    let addonsArray = [];
+    document.querySelectorAll('#addonTableBody tr').forEach(row => {
+      let nameInput = row.querySelector('.addon-name');
+      
+      // Only save if they actually typed an Add-on name
+      if (nameInput && nameInput.value.trim() !== '') { 
+        addonsArray.push({
+          name: nameInput.value.trim(),
+          price: parseFloat(row.querySelector('.addon-price').value) || 0,
+          linkedIngredient: row.querySelector('.addon-ingredient').value,
+          deductQty: parseFloat(row.querySelector('.addon-qty').value) || 0
+        });
+      }
+    });
+
+    // 1. Save Menu Details AND Add-ons (Update OR Create New)
     if (menuId) {
-      await updateDoc(doc(db, "menu", menuId), { name: prodName, category: category, price: price });
+      await updateDoc(doc(db, "menu", menuId), { 
+          name: prodName, 
+          category: category, 
+          price: price,
+          addons: addonsArray // 👈 This glues the Add-ons to the product!
+      });
     } else {
-      // 🔥 THIS IS THE MISSING PIECE! Create the new product in the database.
-      let newMenuRef = await addDoc(collection(db, "menu"), { name: prodName, category: category, price: price });
+      let newMenuRef = await addDoc(collection(db, "menu"), { 
+          name: prodName, 
+          category: category, 
+          price: price,
+          addons: addonsArray // 👈 This glues the Add-ons to the product!
+      });
       document.getElementById('advProdId').value = newMenuRef.id; // Save the new ID
     }
 
@@ -2150,39 +2175,38 @@ window.saveAdvancedProduct = async function () {
       }
     }
 
+    // 🔥 NEW: Updated Success Message!
     alert("✅ Product, Recipe, and Add-ons saved successfully!");
         
-        // 1. Safely close the modal (Won't crash if the ID is slightly different)
-        let modal = document.getElementById('advancedProductModal');
-        if (modal) {
-            modal.style.display = 'none';
-        } else {
-            console.warn("Could not find modal to close. Check your HTML ID!");
-        }
-
-        // 2. Refresh the table
-        loadMenuCosting(); 
-
-    } catch (error) {
-        console.error("Save Error:", error); 
-        alert("Failed to save product. Check Console for details.");
-    } finally {
-        // 3. Bulletproof Button Reset (Forces ANY stuck button to wake up)
-        if (typeof btn !== 'undefined' && btn) {
-            btn.innerText = "Save Changes"; 
-            btn.disabled = false;
-        } else {
-            // Backup scanner: finds the frozen button and fixes it anyway
-            document.querySelectorAll('button').forEach(b => {
-                if (b.innerText.includes("Saving")) {
-                    b.innerText = "Save Changes";
-                    b.disabled = false;
-                }
-            });
-        }
+    // 1. Safely close the modal
+    let modal = document.getElementById('advancedProductModal');
+    if (modal) {
+        modal.style.display = 'none';
+    } else {
+        console.warn("Could not find modal to close. Check your HTML ID!");
     }
-};
 
+    // 2. Refresh the table
+    loadMenuCosting(); 
+
+  } catch (error) {
+    console.error("Save Error:", error); 
+    alert("Failed to save product. Check Console for details.");
+  } finally {
+    // 3. Bulletproof Button Reset
+    if (typeof btn !== 'undefined' && btn) {
+        btn.innerText = "Save Changes"; 
+        btn.disabled = false;
+    } else {
+        document.querySelectorAll('button').forEach(b => {
+            if (b.innerText.includes("Saving")) {
+                b.innerText = "Save Changes";
+                b.disabled = false;
+            }
+        });
+    }
+  }
+};
 
 // ========================================================
 // 🔥 BULK CSV RECIPE UPLOADER ENGINE 🔥
