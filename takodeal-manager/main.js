@@ -3751,7 +3751,12 @@ window.loadCloneDropdown = async function() {
 };
 
 window.cloneRecipe = async function() {
-    const sourceId = document.getElementById('recipeCloneSelect').value;
+    const selectDropdown = document.getElementById('recipeCloneSelect');
+    const sourceId = selectDropdown.value;
+    
+    // We need the ACTUAL NAME of the product, because the "bom" collection links by name!
+    const sourceName = selectDropdown.options[selectDropdown.selectedIndex].text;
+
     if (!sourceId) {
         alert("Please select a product to copy from first!");
         return;
@@ -3762,32 +3767,48 @@ window.cloneRecipe = async function() {
     }
 
     try {
-        const docRef = doc(db, "menu", sourceId); 
-        const docSnap = await getDoc(docRef);
+        console.log(`🟢 Searching BOM vault for: ${sourceName}`);
+        
+        // 1. Knock on the correct door (the "bom" collection)!
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", sourceName));
+        const bomSnap = await getDocs(bomQ);
 
-        if (docSnap.exists()) {
-            const data = docSnap.data();
+        if (!bomSnap.empty) {
+            // 2. Clear out the old ingredients on the screen
+            window.currentAdvRecipe = [];
 
-            // ⚠️ YOUR CUSTOM INTEGRATION GOES HERE:
-            // You will loop through the copied ingredients and trigger your own row-adding function!
-            console.log("🔥 X-RAY VISION OF FIREBASE DATA:", data);
-            
-            /* Example of how you would wire this up:
-            document.getElementById('yourIngredientsTableBody').innerHTML = ""; // Clear current rows
-            
-            data.ingredients.forEach(ing => {
-                // Call your exact function that adds a row to the screen!
-                addNewIngredientRow(ing.description, ing.qty, ing.uom, ing.unitCost);
+            // 3. Find the name of the NEW product we are pasting into
+            const targetProductName = document.getElementById('advProdName').value; 
+
+            // 4. Loop through the copied ingredients
+            bomSnap.forEach(docSnap => {
+                let data = docSnap.data();
+                
+                // CRITICAL: We change the "menuItem" label on the ingredient 
+                // so it belongs to the NEW product instead of the old one!
+                let clonedIngredient = {
+                    ...data,
+                    menuItem: targetProductName 
+                };
+                
+                // Shove it into the live memory array
+                window.currentAdvRecipe.push(clonedIngredient);
             });
-            */
+
+            console.log(`🟢 Successfully copied ${window.currentAdvRecipe.length} ingredients!`);
             
-            alert(`✅ Recipe successfully cloned! (Check console to see data)`);
+            // 5. Tell the big modal to redraw the table with the new items!
+            if (typeof window.renderAdvRecipeTable === "function") {
+                window.renderAdvRecipeTable();
+            }
+            
+            alert(`✅ Recipe successfully cloned! Don't forget to click "Save Changes" at the bottom!`);
 
         } else {
-            alert("Could not find that product in the database.");
+            alert(`⚠️ "${sourceName}" doesn't have any ingredients saved in the BOM yet!`);
         }
     } catch (error) {
-        console.error("Error cloning recipe:", error);
+        console.error("🔴 Error cloning recipe:", error);
         alert("Failed to clone recipe.");
     }
 };
