@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.json">
   <style>
     :root {
-        /* The warm, golden-tan for buttons/accents */
+      /* The warm, golden-tan for buttons/accents */
       --primary: #E5A93D; 
       --primary-light: #F2C97D;
   
@@ -1101,55 +1101,49 @@
       Lock Device</button>
   </div>
 
+  <script>
+      let pinBuffer = "";
+      let sessionUser = null;
+  
+      function loginPin(num) { 
+          if (pinBuffer.length < 4) { 
+              pinBuffer += num; 
+              document.getElementById('pinDisplay').innerText = "*".repeat(pinBuffer.length); 
+          } 
+      }
+  
+      function clearLoginPin() { 
+          pinBuffer = ""; 
+          document.getElementById('pinDisplay').innerText = "****"; 
+      }
+  
+      async function submitLoginPin() {
+          let btn = document.getElementById('btnSubmitPin'); btn.innerText = "..."; btn.disabled = true;
+          let identity = await window.verifyPin(pinBuffer);
+          
+          if (!identity) { 
+              alert("Invalid PIN."); 
+              clearLoginPin(); 
+              btn.innerText = "OK"; 
+              btn.disabled = false; 
+              return; 
+          }
+  
+          sessionUser = identity;
+          
+          localStorage.setItem('cashierName', identity.cashierName);
+          
+          document.getElementById('displayBranch').innerText = "📍 " + identity.branch;
+          document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
+          
+          document.getElementById('loginOverlay').style.display = 'none';
+          
+          if (typeof loadPOSData === 'function') await loadPOSData();
+          if (typeof checkCurrentShift === 'function') await checkCurrentShift();
+          if (typeof updateParkedBadge === 'function') await updateParkedBadge();
+      }
+  </script>
   <div class="login-overlay" id="loginOverlay">
-    <script>
-        // 1. We declare the memory variables here so they are always safe
-        let pinBuffer = "";
-        let sessionUser = null;
-    
-        function loginPin(num) { 
-            if (pinBuffer.length < 4) { 
-                pinBuffer += num; 
-                document.getElementById('pinDisplay').innerText = "*".repeat(pinBuffer.length); 
-            } 
-        }
-    
-        function clearLoginPin() { 
-            pinBuffer = ""; 
-            document.getElementById('pinDisplay').innerText = "****"; 
-        }
-    
-        async function submitLoginPin() {
-            let btn = document.getElementById('btnSubmitPin'); btn.innerText = "..."; btn.disabled = true;
-            let identity = await window.verifyPin(pinBuffer);
-            
-            if (!identity) { 
-                alert("Invalid PIN."); 
-                clearLoginPin(); 
-                btn.innerText = "OK"; 
-                btn.disabled = false; 
-                return; 
-            }
-    
-            sessionUser = identity;
-            
-            // 🔥 Save the name so the Shift Engine can find it later!
-            localStorage.setItem('cashierName', identity.cashierName);
-            
-            document.getElementById('displayBranch').innerText = "📍 " + identity.branch;
-            document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
-            
-            // Hide the overlay!
-            document.getElementById('loginOverlay').style.display = 'none';
-            
-            // Load the POS
-            if (typeof loadPOSData === 'function') await loadPOSData();
-            if (typeof checkCurrentShift === 'function') await checkCurrentShift();
-            if (typeof updateParkedBadge === 'function') await updateParkedBadge();
-        }
-    </script>
-    <div class="login-overlay" id="loginOverlay">
-    
     <div class="brand-container" style="margin-bottom: 20px;">
       <span style="font-size: 32px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
     </div>
@@ -1183,14 +1177,13 @@
           .sidebar.collapsed .sidebar-toggle { display: none !important; }
       </style>
 
-      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; overflow: hidden; white-space: nowrap;">
+      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; overflow: hidden; white-space: nowrap; width: 100%;">
           <div style="display: flex; align-items: center; gap: 10px;">
               <img src="logo.jpg" alt="Logo" style="width: 32px; border-radius: 6px; flex-shrink: 0;">
               <span class="brand-text" style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
           </div>
-          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer; flex-shrink: 0;"><</div>
+          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer; flex-shrink: 0;">◀</div>
       </div>
-      <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon">></div>
     </div>
     <div class="nav-menu">
       <div class="nav-item active" id="nav-pos" onclick="switchView('pos')"><span>🖥️</span>
@@ -1203,16 +1196,16 @@
         <div class="nav-item-text">Stock Count</div>
       </div>
 
-      <div class="nav-item" onclick="openRemittanceModal()">
+      <div class="nav-item" onclick="document.getElementById('remittanceModal').style.display='flex'">
           <span style="font-size: 18px;">💸</span>
           <div class="nav-item-text">Remit Cash to HQ</div>
       </div>  
-      <div class="nav-item" onclick="openExplanationModal()">
+      <div class="nav-item" onclick="document.getElementById('explanationModal').style.display='flex'">
           <span style="font-size: 18px;">✉️</span>
           <div class="nav-item-text">Reason Letter</div>
       </div>   
 
-      <div class="nav-item" onclick="openTimeClockModal()">
+      <div class="nav-item" onclick="document.getElementById('timeClockModal').style.display='flex'">
           <span style="font-size: 18px;">📸</span>
           <div class="nav-item-text">Time Clock</div>
       </div>
@@ -1706,106 +1699,6 @@
     </div>
   </div>
 
-  <div class="overlay" id="remittanceModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
-    <div class="modal"
-      style="background: white; width: 700px; max-width: 95%; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden; display: flex; flex-direction: column;">
-
-      <div
-        style="background: #047857; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-weight: bold; font-size: 18px;">💸 Weekly Sales Remittance</span>
-        <span onclick="document.getElementById('remittanceModal').style.display='none'"
-          style="cursor: pointer; font-size: 20px;">✖</span>
-      </div>
-
-      <div style="display: flex; background: #f1f5f9; border-bottom: 2px solid #e2e8f0;">
-        <button id="tabRemitForm" onclick="switchRemittanceTab('form')"
-          style="flex: 1; padding: 12px; background: white; border: none; border-bottom: 3px solid #047857; font-weight: bold; cursor: pointer;">📝
-          Send Remittance</button>
-        <button id="tabRemitHistory" onclick="switchRemittanceTab('history')"
-          style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer;">📜
-          Remittance History</button>
-      </div>
-
-      <div style="padding: 20px; max-height: 70vh; overflow-y: auto;">
-
-        <div id="remitFormSection">
-          <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight: bold; color: #666;">Sales Period (Start Date)</label>
-              <input type="date" id="remitStartDate" class="input-box"
-                style="width: 100%; padding: 8px; margin-top: 5px;">
-            </div>
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight: bold; color: #666;">Sales Period (End Date)</label>
-              <input type="date" id="remitEndDate" class="input-box"
-                style="width: 100%; padding: 8px; margin-top: 5px;">
-            </div>
-          </div>
-
-          <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight: bold; color: #666;">Remitting Cashier</label>
-              <input type="text" id="remitCashier" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px;"
-                placeholder="e.g. Bern">
-            </div>
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight: bold; color: #666;">Total Amount Remitted (₱)</label>
-              <input type="number" id="remitAmount" class="input-box"
-                style="width: 100%; font-size: 18px; font-weight: bold; color: #16a34a; padding: 8px; margin-top: 5px;"
-                placeholder="0.00">
-            </div>
-          </div>
-
-          <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight: bold; color: #666;">Send Via (Bank/E-Wallet)</label>
-              <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; background: white;">
-                  <option value="GCash">GCash</option>
-                  <option value="GoTyme">GoTyme</option>
-                  <option value="BDO">BDO</option>
-                  <option value="PNB">PNB</option>
-                  <option value="Maya">Maya</option>
-                  <option value="Cash">Physical Handover</option>
-              </select>
-            </div>
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight: bold; color: #666;">Sent To (Recipient Name)</label>
-              <input type="text" id="remitRecipient" class="input-box"
-                style="width: 100%; padding: 8px; margin-top: 5px;" placeholder="e.g. Jostuart">
-            </div>
-          </div>
-
-          <div style="margin-bottom: 20px;">
-            <label style="font-size: 12px; font-weight: bold; color: #666;">Reference / Trace Number</label>
-            <input type="text" id="remitRefNum" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px;"
-              placeholder="e.g. 0012399485">
-          </div>
-
-          <button onclick="submitRemittance()"
-            style="width: 100%; padding: 12px; background: #16a34a; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;">📤
-            Submit Remittance</button>
-        </div>
-
-        <div id="remitHistorySection" style="display: none;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px; text-align: left;">
-            <thead>
-              <tr style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
-                <th style="padding: 10px 8px;">Date Logged</th>
-                <th style="padding: 10px 8px;">Sales Period</th>
-                <th style="padding: 10px 8px;">Destination</th>
-                <th style="padding: 10px 8px; text-align: right;">Amount</th>
-              </tr>
-            </thead>
-            <tbody id="remitHistoryTableBody">
-            </tbody>
-          </table>
-        </div>
-
-      </div>
-    </div>
-  </div>
-  
   <div id="timeClockModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
       <div style="background: white; width: 400px; border-radius: 12px; overflow: hidden; text-align: center;">
           <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between;">
@@ -1837,12 +1730,87 @@
       </div>
   </div>
 
+  <div id="remittanceModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center;">
+      <div style="background: var(--bg-color); width: 600px; max-width: 90%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+          
+          <div style="background: #047857; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 20px;">💸 Cash Remittance</h2>
+              <span onclick="document.getElementById('remittanceModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+          </div>
+  
+          <div style="display: flex; background: #e2e8f0; border-bottom: 1px solid #cbd5e1;">
+              <div id="tabRemitForm" onclick="switchRemittanceTab('form')" style="flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; background: white; color: black; border-bottom: 3px solid #047857;">New Remittance</div>
+              <div id="tabRemitHistory" onclick="switchRemittanceTab('history')" style="flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; color: #64748b; border-bottom: 3px solid transparent;">Transfer History</div>
+          </div>
+  
+          <div style="padding: 20px;">
+              
+              <div id="remitFormSection">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Sales Period Start</label>
+                          <input type="date" id="remitStartDate" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+                      </div>
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Sales Period End</label>
+                          <input type="date" id="remitEndDate" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+                      </div>
+                  </div>
+  
+                  <div style="margin-bottom: 15px;">
+                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Cashier Name</label>
+                      <input type="text" id="remitCashier" readonly style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; box-sizing: border-box;">
+                  </div>
+  
+                  <div style="margin-bottom: 15px;">
+                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Amount Remitted (₱)</label>
+                      <input type="number" id="remitAmount" placeholder="e.g. 5000" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 18px; font-weight: bold; box-sizing: border-box;">
+                  </div>
+  
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Deposit Channel</label>
+                          <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+                              <option value="GCash">GCash</option>
+                              <option value="BDO">BDO</option>
+                              <option value="BPI">BPI</option>
+                              <option value="Maya">Maya</option>
+                              <option value="Physical Handover">Physical Handover</option>
+                          </select>
+                      </div>
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Recipient Details</label>
+                          <input type="text" id="remitRecipient" placeholder="e.g. Boss Jostuart" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+                      </div>
+                  </div>
+  
+                  <div style="margin-bottom: 20px;">
+                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Bank/GCash Reference Number (Optional)</label>
+                      <input type="text" id="remitRefNum" placeholder="Enter Ref. No." style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+                  </div>
+  
+                  <button onclick="submitRemittance()" style="width: 100%; background: #047857; color: white; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer;">
+                      Submit Remittance to HQ
+                  </button>
+              </div>
+  
+              <div id="remitHistorySection" style="display: none; max-height: 400px; overflow-y: auto;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                      <tbody id="remitHistoryTableBody">
+                          </tbody>
+                  </table>
+              </div>
+  
+          </div>
+      </div>
+  </div>
+
   <script>
-    let sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
+    sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
     let cart = []; let masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
     let pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
     let amountReceivedStr = "0"; let selectedPaymentMethod = "Cash"; let isSplitMode = false; let splitRows = []; let lastTransactionData = {};
-    let editIndex = -1; let currentShift = null; let activeShiftDetails = null; let pinBuffer = ""; let systemReady = false;
+    let editIndex = -1; let currentShift = null; let activeShiftDetails = null; let systemReady = false;
 
     document.addEventListener("DOMContentLoaded", function () {
       let loginBox = document.getElementById('loginOverlay');
@@ -1907,11 +1875,6 @@
     // --- 4. SHIFT & EXPENSE SYSTEM ---
     async function checkCurrentShift() {
       let status = await window.checkShiftStatus(sessionUser.branch);
-
-      // 🔥 THE FIX: We removed the lines that were overwriting 
-      // your login name with the name from the shift record.
-      // The Sidebar will now stay as the person who just entered their PIN.
-
       updateShiftUI(status);
       systemReady = true;
     }
@@ -1945,7 +1908,6 @@
 
     async function submitOpenShift() {
       try {
-        // 🔥 THE FIX: Get the name directly from the logged-in sessionUser
         let shiftName = sessionUser.cashierName || localStorage.getItem('cashierName') || 'Unknown';
 
         let startEl = document.getElementById('inputStartingCash');
@@ -2083,7 +2045,6 @@
           });
         }
 
-        // SAFE MATH: Defaults to 0 if the data is missing from old receipts
         let received = parseFloat(tx.amountReceived) || 0;
         let net = parseFloat(tx.netTotal) || 0;
         let change = received - net; if (change < 0) change = 0;
@@ -2100,8 +2061,6 @@
     async function reprintDashboardReceipt(receiptId) {
       let tx = await window.getReceiptDetails(receiptId);
       if (!tx) { alert("Receipt not found!"); return; }
-
-      // Temporarily load this transaction into the print memory, then fire the printer!
       lastTransactionData = tx;
       printReceipt('receipt');
     }
@@ -2126,14 +2085,11 @@
             document.getElementById('discountValueInput').value = pendingItem.discountVal; 
         }
     
-        // 1. Pop the window open immediately so it feels lightning-fast for the cashier!
         document.getElementById('variantModal').style.display = 'flex';
         
-        // 2. Set the bucket to "Loading" while we talk to Firebase
         document.getElementById('addonSelectDropdown').innerHTML = '<option value="">⏳ Loading Add-Ons...</option>';
         renderActiveAddons();
     
-        // 🍟 3. THE NEW PIPE: Fetch the specific Add-ons for THIS exact product!
         try {
             const q = query(collection(db, "menu"), where("name", "==", pendingItem.name));
             const snap = await getDocs(q);
@@ -2147,19 +2103,15 @@
                 if (itemData.addons && itemData.addons.length > 0) {
                     addonsFound = true;
                     
-                    // 🔥 THE BUNDLER FIX: Group duplicates so the cashier only sees ONE option!
                     let groupedAddons = {};
                     itemData.addons.forEach(a => {
                         if (!groupedAddons[a.name]) {
-                            // First time seeing this Add-on name, save it
                             groupedAddons[a.name] = { name: a.name, price: parseFloat(a.price) || 0 };
                         } else {
-                            // If it's a duplicate (like the plastic cup), combine the price (usually +0)
                             groupedAddons[a.name].price += (parseFloat(a.price) || 0);
                         }
                     });
     
-                    // Pour the clean, grouped list into the bucket
                     Object.values(groupedAddons).forEach(a => {
                         aoHtml += `<option value="${a.name}|${a.price}">${a.name} (+₱${a.price})</option>`;
                     });
@@ -2170,7 +2122,6 @@
                 aoHtml = '<option value="">-- No Add-Ons Available --</option>';
             }
             
-            // Pour the data into the bucket!
             document.getElementById('addonSelectDropdown').innerHTML = aoHtml;
             
         } catch (error) {
@@ -2178,7 +2129,6 @@
             document.getElementById('addonSelectDropdown').innerHTML = '<option value="">⚠️ Error Loading Add-Ons</option>';
         }
     
-        // --- VARIANT LOGIC (Untouched, exactly as you had it) ---
         const varContainer = document.getElementById('variantOptions'); 
         varContainer.innerHTML = '';
         const itemVariants = masterPOSData.variants[pendingItem.name];
@@ -2265,12 +2215,10 @@
           grandTotal += item.lineTotalFinal;
           let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
 
-          // 🔥 NEW: Check for Add-Ons and format them nicely!
           let addonsText = '';
           if (item.addons) {
               for (let key in item.addons) {
                   if (item.addons[key].qty > 0) {
-                      // Notice the backticks ` wrapping the HTML string here too!
                       addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${item.addons[key].name || key}</div>`;
                   }
               }
@@ -2339,7 +2287,6 @@
         let priceStr = type === 'receipt' ? `<span>${item.lineTotalFinal.toFixed(2)}</span>` : '';
         cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span>${priceStr}</div>`;
         
-        // 🔥 NEW: Print the Add-ons right under the item name for the kitchen!
         if (item.addons) {
           for (let key in item.addons) {
             if (item.addons[key].qty > 0) {
@@ -2366,19 +2313,16 @@
       let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 10px;">${headerTxt}</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div>${totalsHtml}</div>`;
       
       let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
-      // --- THE ULTIMATE PRO RECEIPT OVERRIDE ---
+      
       let proReceipt = "";
 
-        // 1. Header (Manually centered - do not include <img> tags here!)
         proReceipt += "            TAKODEAL\n";
         proReceipt += "   B14L6 Deca Homes Cabantian\n";
-        proReceipt += "           09629721305\n";
+        proReceipt += "            09629721305\n";
         proReceipt += "================================\n";
     
-        // 2. META DATA
         const now = new Date();
         
-        // --- AM/PM Time Formatting Engine ---
         let hours = now.getHours();
         let minutes = now.getMinutes();
         const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -2387,7 +2331,6 @@
         minutes = minutes < 10 ? '0' + minutes : minutes;
         const timeStr = hours + ':' + minutes + ' ' + ampm;
     
-        // --- Variable Safetynet ---
         let cashier = (typeof d !== 'undefined' && d.cashierName) || (typeof sessionUser !== 'undefined' && sessionUser.cashierName) || "Staff";
         let customer = (typeof order !== 'undefined' && order.name) || (typeof d !== 'undefined' && d.customerName) || "Guest";
     
@@ -2399,7 +2342,6 @@
         proReceipt += "ITEM/S PURCHASED\n";
         proReceipt += "--------------------------------\n";
     
-        // 3. Smart Items Loop
         let cartSource = [];
         if (typeof d !== 'undefined' && d.cart) cartSource = d.cart;
         else if (typeof order !== 'undefined' && order.items) cartSource = order.items;
@@ -2409,7 +2351,6 @@
             let name = item.name || item.itemName || "Item";
             let qty = parseFloat(item.qty || 1);
     
-            // --- ULTIMATE PRICE SAFETY NET ---
             let rawPrice = item.price || item.unitPrice || item.sellingPrice || item.lineTotalFinal;
             if (!rawPrice && item.total && qty > 0) rawPrice = item.total / qty;
             let price = parseFloat(rawPrice || 0);
@@ -2417,19 +2358,15 @@
             let lineTotal = qty * price;
             grandTotal += lineTotal;
     
-            // Line 1: Item Name
             proReceipt += name + "\n";
     
-            // Line 2: Qty x UnitPrice      Total
             let qtyStr = qty.toFixed(1) + "      x " + price.toFixed(2);
             let totalStr = lineTotal.toFixed(2);
     
-            // Math to right-align the total column
             let spacePadding = 32 - qtyStr.length - totalStr.length;
             proReceipt += qtyStr + " ".repeat(Math.max(1, spacePadding)) + totalStr + "\n";
         });
     
-        // 4. Totals Block (Right-Aligned spacing logic)
         let discountAmt = (typeof order !== 'undefined' && order.discount) || 0;
         let serviceFee = (typeof order !== 'undefined' && order.serviceFee) || 0;
         let deliveryFee = (typeof order !== 'undefined' && order.deliveryFee) || 0;
@@ -2442,7 +2379,6 @@
     
         proReceipt += "--------------------------------\n";
     
-        // --- Right Alignment Helper Function ---
         function formatLine(label, value) {
             let valStr = value.toFixed(2);
             let padding = 32 - label.length - valStr.length;
@@ -2462,12 +2398,10 @@
         proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
         proReceipt += "\n";
     
-        // 5. Footer
         proReceipt += "     Acknowledgement Receipt\n";
-        proReceipt += "           Thank you!\n";
+        proReceipt += "            Thank you!\n";
         proReceipt += "\n\n\n";
-      // ------------------------------------------
-      // --- SEND TO PRINTER ---
+      
       let encodedText = encodeURIComponent(proReceipt);
       let intentUrl = "rawbt:" + encodedText;
       
@@ -2505,7 +2439,6 @@
             let addonsText = '';
             if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
 
-            // THE FIX: We pull the notes out and format them with a little pen icon!
             let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
 
             return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${i.lineTotalFinal.toFixed(2)}</div></div>`;
@@ -2534,81 +2467,5 @@
 
   </script>
   <script type="module" src="main.js"></script>
-
-  <div id="remittanceModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center;">
-      <div style="background: var(--bg-color); width: 600px; max-width: 90%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
-          
-          <div style="background: #047857; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 20px;">💸 Cash Remittance</h2>
-              <span onclick="document.getElementById('remittanceModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
-          </div>
-  
-          <div style="display: flex; background: #e2e8f0; border-bottom: 1px solid #cbd5e1;">
-              <div id="tabRemitForm" onclick="switchRemittanceTab('form')" style="flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; background: white; color: black; border-bottom: 3px solid #047857;">New Remittance</div>
-              <div id="tabRemitHistory" onclick="switchRemittanceTab('history')" style="flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; color: #64748b; border-bottom: 3px solid transparent;">Transfer History</div>
-          </div>
-  
-          <div style="padding: 20px;">
-              
-              <div id="remitFormSection">
-                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Sales Period Start</label>
-                          <input type="date" id="remitStartDate" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                      </div>
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Sales Period End</label>
-                          <input type="date" id="remitEndDate" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                      </div>
-                  </div>
-  
-                  <div style="margin-bottom: 15px;">
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Cashier Name</label>
-                      <input type="text" id="remitCashier" readonly style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; box-sizing: border-box;">
-                  </div>
-  
-                  <div style="margin-bottom: 15px;">
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Amount Remitted (₱)</label>
-                      <input type="number" id="remitAmount" placeholder="e.g. 5000" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 18px; font-weight: bold; box-sizing: border-box;">
-                  </div>
-  
-                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Deposit Channel</label>
-                          <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                              <option value="GCash">GCash</option>
-                              <option value="BDO">BDO</option>
-                              <option value="BPI">BPI</option>
-                              <option value="Maya">Maya</option>
-                              <option value="Physical Handover">Physical Handover</option>
-                          </select>
-                      </div>
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Recipient Details</label>
-                          <input type="text" id="remitRecipient" placeholder="e.g. Boss Jostuart" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                      </div>
-                  </div>
-  
-                  <div style="margin-bottom: 20px;">
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Bank/GCash Reference Number (Optional)</label>
-                      <input type="text" id="remitRefNum" placeholder="Enter Ref. No." style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                  </div>
-  
-                  <button onclick="submitRemittance()" style="width: 100%; background: #047857; color: white; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer;">
-                      Submit Remittance to HQ
-                  </button>
-              </div>
-  
-              <div id="remitHistorySection" style="display: none; max-height: 400px; overflow-y: auto;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                      <tbody id="remitHistoryTableBody">
-                          </tbody>
-                  </table>
-              </div>
-  
-          </div>
-      </div>
-  </div>
 </body>
-
 </html>
