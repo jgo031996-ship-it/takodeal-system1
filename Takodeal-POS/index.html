@@ -1102,6 +1102,54 @@
   </div>
 
   <div class="login-overlay" id="loginOverlay">
+    <script>
+        // 1. We declare the memory variables here so they are always safe
+        let pinBuffer = "";
+        let sessionUser = null;
+    
+        function loginPin(num) { 
+            if (pinBuffer.length < 4) { 
+                pinBuffer += num; 
+                document.getElementById('pinDisplay').innerText = "*".repeat(pinBuffer.length); 
+            } 
+        }
+    
+        function clearLoginPin() { 
+            pinBuffer = ""; 
+            document.getElementById('pinDisplay').innerText = "****"; 
+        }
+    
+        async function submitLoginPin() {
+            let btn = document.getElementById('btnSubmitPin'); btn.innerText = "..."; btn.disabled = true;
+            let identity = await window.verifyPin(pinBuffer);
+            
+            if (!identity) { 
+                alert("Invalid PIN."); 
+                clearLoginPin(); 
+                btn.innerText = "OK"; 
+                btn.disabled = false; 
+                return; 
+            }
+    
+            sessionUser = identity;
+            
+            // 🔥 Save the name so the Shift Engine can find it later!
+            localStorage.setItem('cashierName', identity.cashierName);
+            
+            document.getElementById('displayBranch').innerText = "📍 " + identity.branch;
+            document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
+            
+            // Hide the overlay!
+            document.getElementById('loginOverlay').style.display = 'none';
+            
+            // Load the POS
+            if (typeof loadPOSData === 'function') await loadPOSData();
+            if (typeof checkCurrentShift === 'function') await checkCurrentShift();
+            if (typeof updateParkedBadge === 'function') await updateParkedBadge();
+        }
+    </script>
+    <div class="login-overlay" id="loginOverlay">
+    
     <div class="brand-container" style="margin-bottom: 20px;">
       <span style="font-size: 32px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
     </div>
@@ -1815,16 +1863,6 @@
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
 
-    // --- 2. LOGIN SYSTEM ---
-    function loginPin(num) { if (pinBuffer.length < 4) { pinBuffer += num; document.getElementById('pinDisplay').innerText = "*".repeat(pinBuffer.length); } }
-    function clearLoginPin() { pinBuffer = ""; document.getElementById('pinDisplay').innerText = "****"; }
-
-    async function submitLoginPin() {
-      let btn = document.getElementById('btnSubmitPin'); btn.innerText = "..."; btn.disabled = true;
-      let identity = await window.verifyPin(pinBuffer);
-      if (!identity) { alert("Invalid PIN."); clearLoginPin(); btn.innerText = "OK"; btn.disabled = false; return; }
-
-      sessionUser = identity;
 
       // 🔥 THE FIX: Save the name so the Shift Engine can find it later!
       localStorage.setItem('cashierName', identity.cashierName);
