@@ -1096,14 +1096,12 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
     // THE SILENT NINJA: Fetch directly from Firebase without touching the screen!
     if (!order) { 
         try {
-            // ⚠️ IMPORTANT: Change "orders" below if your database folder is named differently 
-            // (e.g., "parked_orders" or "transactions")
             const docRef = doc(db, "parked_orders", docId); 
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {
                 order = docSnap.data();
-                order.id = docId; // Save the ID just in case
+                order.id = docId; 
             } else {
                 alert("❌ Order not found in the database!");
                 return;
@@ -1115,55 +1113,77 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
         }
     } 
     
-    if (!order) {
-        console.error("Order not found!");
-        return;
-    }
+    if (!order) return;
 
-    // --- BUILD THE PRO RECEIPT FORMAT ---
+    // ==========================================
+    // 🖨️ PURE TEXT FORMATTER (32 CHARACTERS WIDE)
+    // ==========================================
+    const center = (text) => {
+        let width = 32;
+        if (text.length >= width) return text;
+        return " ".repeat(Math.floor((width - text.length) / 2)) + text;
+    };
+    const alignLR = (left, right) => {
+        let spaces = 32 - left.length - right.length;
+        if (spaces < 1) spaces = 1;
+        return left + " ".repeat(spaces) + right;
+    };
+
     let r = "";
-    r += "[C]<font size=\"big\">TAKODEÁL</font>\n";
-    r += "[C]** PAY LATER **\n";
-    r += "--------------------------------\n";
+    
+    // --- HEADER ---
+    r += center("TAKODEAL") + "\n";
+    let branchStr = order.branch || (window.sessionUser ? window.sessionUser.branch : "Davao City");
+    r += center(branchStr) + "\n";
+    r += "================================\n";
+    
+    // --- ORDER DETAILS ---
+    let d = new Date();
+    r += `Date: ${d.toLocaleDateString()}\n`;
+    r += `Time: ${d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}\n`;
+    
+    let customerStr = order.customerName || order.customer || order.table || "Guest";
+    r += `Customer: ${customerStr}\n`;
     
     let cashierName = (window.sessionUser && window.sessionUser.name) ? window.sessionUser.name : "Cashier";
-    r += `[L]Cashier:[R]${cashierName}\n`;
+    r += `Cashier: ${cashierName}\n`;
     
-    // Safely grab the customer name or table number
-    let customerStr = order.customerName || order.customer || order.table || "Walk-in";
-    r += `[L]Cust/Table:[R]${customerStr}\n`;
+    r += "================================\n";
+    r += "ITEM/S PURCHASED\n";
     r += "--------------------------------\n";
     
     let total = 0;
     
-    // Ensure order.items exists before looping
+    // --- ITEMS LOOP ---
     if (order.items && Array.isArray(order.items)) {
         order.items.forEach(item => {
-            let qty = item.qty || 1;
+            let qty = parseFloat(item.qty) || 1;
             let name = item.name || "Item";
-            // Calculate price fallback safely
-            let price = parseFloat(item.lineTotalFinal || (item.price * qty) || 0);
-            total += price;
+            let price = parseFloat(item.price) || 0;
+            let lineTotal = parseFloat(item.lineTotalFinal || (price * qty) || 0);
+            total += lineTotal;
             
-            // [L] pushes item left, [R] pushes price perfectly to the right margin!
-            r += `[L]${qty}x ${name}[R]${price.toFixed(2)}\n`;
+            // 1. Print the item name on its own line
+            r += name + "\n";
+            // 2. Format Qty x Price, and push the lineTotal to the far right!
+            let leftLine = `${qty.toFixed(1)}      x ${price.toFixed(2)}`;
+            let rightLine = lineTotal.toFixed(2);
+            r += alignLR(leftLine, rightLine) + "\n";
         });
     }
     
     r += "--------------------------------\n";
-    r += `[L]<b>TOTAL DUE</b>[R]<b>P${total.toFixed(2)}</b>\n`;
-    r += "--------------------------------\n";
-    r += "\n[C]**PLEASE PAY AT COUNTER**\n";
+    r += alignLR("TOTAL DUE:", total.toFixed(2)) + "\n";
+    r += "--------------------------------\n\n";
+    
+    // --- THE BOLD NOTE & FOOTER ---
+    r += center("** PLEASE PAY AT COUNTER **") + "\n\n";
+    r += center("Acknowledgement Receipt") + "\n";
+    r += center("Thank you!") + "\n";
     r += "\n\n\n"; // Feed paper at the end
 
-    // --- SEND TO RAWBT PRINTER (COMMAND MODE) ---
-    // We use "base64" to ensure the printer understands the [C], [L], and [R] tags perfectly
-    let encodedText = encodeURIComponent(r);
-      let intentUrl = "rawbt:" + encodedText;
-      
-      let bypassLink = document.createElement('a'); 
-      bypassLink.href = intentUrl; 
-      document.body.appendChild(bypassLink); 
-      bypassLink.click(); 
-      document.body.removeChild(bypassLink);
+    // --- SEND TO RAWBT (AS PLAIN TEXT INTENT) ---
+    let encodedText = encodeURIComponent(r); 
+    let intentUrl = "intent:" + encodedText + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter;end;";
+    window.location.href = intentUrl;
 };
