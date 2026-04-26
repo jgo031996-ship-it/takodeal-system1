@@ -75,84 +75,76 @@
     /* 📱 RESPONSIVE MOBILE ENGINE               */
     /* ========================================= */
     
-    /* Hide hamburger on Desktop */
     .mobile-menu-btn {
       display: none;
       background: none;
       border: none;
-      font-size: 26px;
+      font-size: 28px;
       color: #333;
       cursor: pointer;
       margin-right: 15px;
     }
 
-    /* Activate Mobile Mode when screen is small */
-    @media (max-width: 768px) {
-      .mobile-menu-btn {
-        display: block; /* Show hamburger */
-      }
-
-      /* 1. Sidebar becomes a sliding drawer */
+    @media (max-width: 1024px) {
+      .mobile-menu-btn { display: block !important; }
+      
+      /* 1. Force sidebar off-screen */
       .sidebar {
-        position: fixed;
-        left: -300px; /* Hide off-screen */
-        top: 0;
-        height: 100vh;
-        z-index: 100000;
-        transition: left 0.3s ease;
-        box-shadow: 4px 0 15px rgba(0,0,0,0.5);
+        position: fixed !important;
+        left: -300px !important; 
+        top: 0 !important;
+        height: 100vh !important;
+        width: 260px !important;
+        z-index: 99999 !important;
+        transition: left 0.3s ease !important;
+        box-shadow: 4px 0 15px rgba(0,0,0,0.5) !important;
       }
+      .sidebar.show-mobile { left: 0 !important; }
 
-      .sidebar.show-mobile {
-        left: 0; /* Slide in! */
-      }
-
-      /* 2. Main content takes up the whole screen */
+      /* 2. Main content takes full width */
       .main-content {
         margin-left: 0 !important;
-        width: 100%;
+        width: 100% !important;
+        padding: 10px !important;
       }
 
-      /* 3. Fix the Topbar to wrap controls nicely */
-      .topbar {
-        flex-direction: column;
-        align-items: flex-start;
-        height: auto;
-        padding: 15px;
-      }
-
-      #globalDateControls {
-        margin-top: 15px;
-        width: 100%;
-        flex-wrap: wrap;
-        justify-content: flex-start;
-      }
-
-      /* 4. Force all grids to stack vertically! */
-      .stat-grid, 
-      .shift-config-grid, 
-      .grid-container,
-      div[style*="grid-template-columns"] {
+      /* 3. Stack stat cards vertically */
+      .stat-grid {
         grid-template-columns: 1fr !important;
       }
-
-      /* 5. Make sure Modals don't bleed off screen */
-      .modal, div[style*="width: 700px"], div[style*="width: 850px"] {
-        width: 95% !important;
-        margin: 10px auto;
-        max-height: 95vh;
+      div[style*="grid-template-columns: repeat(2, 1fr)"] {
+        grid-template-columns: 1fr !important;
+      }
+      div[style*="grid-template-columns: 2fr 1fr"] {
+        grid-template-columns: 1fr !important;
+      }
+      
+      /* 4. Fix topbar wrapping */
+      #globalDateControls {
+        margin-top: 15px !important;
+        width: 100% !important;
       }
 
-      /* 6. Allow tables to be swiped left/right if they are too wide */
+      /* 5. Allow tables to scroll horizontally instead of squishing */
       .table-responsive {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+      }
+      
+      /* 6. Fit modals to screen */
+      .modal, div[style*="width: 700px"], div[style*="width: 850px"], div[style*="width: 800px"] {
+        width: 95% !important;
+        min-width: 0 !important;
+        margin: 10px auto !important;
       }
     }
-  </style>
-    <header class="topbar">
-      <h1 id="pageTitle">Global Dashboard</h1>
-      <div id="globalDateControls" class="actions" style="display: flex; gap: 10px; align-items: center;">
+    </style>>
+    <header class="topbar" style="display: flex; align-items: center; flex-wrap: wrap;">
+      <button class="mobile-menu-btn" onclick="toggleManagerSidebar()" style="margin-top: 5px;">☰</button>
+      
+      <h1 id="pageTitle" style="flex-grow: 1; margin: 0;">Global Dashboard</h1>
+      
+      <div id="globalDateControls" class="actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <span style="font-size: 13px; font-weight: bold; color: var(--text-muted);">From:</span>
         <input type="date" id="dashStartDate" class="date-display"
           style="padding: 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
@@ -163,10 +155,12 @@
           style="background: var(--primary); color: white; border: none;">🔄 Refresh Live Data</button>
 
         <button id="btnWipeData" class="btn-refresh"
-          style="background: #ef4444; color: white; border: none; margin-left: 20px;" onclick="wipeTestData()">🧹
+          style="background: #ef4444; color: white; border: none; margin-left: auto;" onclick="wipeTestData()">🧹
           Factory Reset</button>
       </div>
     </header>
+    
+    <div id="mobileSidebarOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 99998;" onclick="toggleManagerSidebar()"></div>
 
     <div id="view-dashboard" class="view active">
 
@@ -1750,14 +1744,24 @@
     // --- MOBILE SIDEBAR LOGIC ---
     function toggleManagerSidebar() {
       const sidebar = document.querySelector('.sidebar');
+      const overlay = document.getElementById('mobileSidebarOverlay');
+      
       sidebar.classList.toggle('show-mobile');
+      
+      // Show/Hide the dark background overlay
+      if (sidebar.classList.contains('show-mobile')) {
+          overlay.style.display = 'block';
+      } else {
+          overlay.style.display = 'none';
+      }
     }
 
     // Auto-close the sidebar if you click a link while on your phone
     document.querySelectorAll('.sidebar .nav-item').forEach(link => {
       link.addEventListener('click', () => {
-        if (window.innerWidth <= 768) {
+        if (window.innerWidth <= 1024) {
           document.querySelector('.sidebar').classList.remove('show-mobile');
+          document.getElementById('mobileSidebarOverlay').style.display = 'none';
         }
       });
     });
