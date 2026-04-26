@@ -3240,21 +3240,41 @@ window.processBulkUpload = function (event) {
 };
 
 // ========================================================
-// 📊 Z-READING REPORTS ENGINE (FULL PAGE UPGRADE)
+// 📊 Z-READING REPORTS ENGINE (DATE FILTER UPGRADE)
 // ========================================================
 window.loadZReadingReports = async function () {
   const tbody = document.getElementById('zReadingTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" class="text-center">Loading reports from cloud...</td></tr>';
 
+  // Grab the date from the new HTML input (if it exists)
+  let dateFilter = document.getElementById('zReadingDateFilter') ? document.getElementById('zReadingDateFilter').value : "";
+
   try {
     const q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"));
     const snap = await getDocs(q);
 
     let html = '';
+    let count = 0;
+
     snap.forEach(docSnap => {
       let data = docSnap.data();
-      let dateStr = data.endTime ? data.endTime.toDate().toLocaleString() : 'Unknown Date';
+      if (!data.endTime) return;
+      
+      let jsDate = data.endTime.toDate();
+      
+      // 📅 THE DATE FILTER ENGINE
+      if (dateFilter) {
+          // Format Firestore date to YYYY-MM-DD to match the HTML calendar picker
+          let yyyy = jsDate.getFullYear();
+          let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
+          let dd = String(jsDate.getDate()).padStart(2, '0');
+          let formattedDate = `${yyyy}-${mm}-${dd}`;
+          
+          if (formattedDate !== dateFilter) return; // Skip if it doesn't match the selected date!
+      }
+
+      let dateStr = jsDate.toLocaleString();
       let declared = data.declaredCash || 0;
       let declaredFormatted = `₱${declared.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
@@ -3274,9 +3294,14 @@ window.loadZReadingReports = async function () {
           </td>
         </tr>
       `;
+      count++;
     });
 
-    tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No closed shifts found.</td></tr>';
+    if (count === 0 && dateFilter) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center">No shifts closed on ${dateFilter}.</td></tr>`;
+    } else {
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No closed shifts found.</td></tr>';
+    }
   } catch (error) {
     console.error("Error loading Z-Readings:", error);
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading reports. Check console.</td></tr>';
@@ -3284,21 +3309,40 @@ window.loadZReadingReports = async function () {
 };
 
 // ========================================================
-// 💸 EXPENSE & RESTOCK FEED ENGINE (FULL PAGE UPGRADE)
+// 💸 EXPENSE & RESTOCK FEED ENGINE (DATE FILTER UPGRADE)
 // ========================================================
 window.loadExpenseLogs = async function () {
   const tbody = document.getElementById('expenseLogsTableBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Fetching live expense logs from all branches...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Fetching live expense logs...</td></tr>';
+
+  let dateFilter = document.getElementById('expenseDateFilter') ? document.getElementById('expenseDateFilter').value : "";
 
   try {
-    const q = query(collection(db, "expenses"), orderBy("timestamp", "desc"), limit(50));
+    // Increased limit to 300 so date filtering works further back in time!
+    const q = query(collection(db, "expenses"), orderBy("timestamp", "desc"), limit(300));
     const snap = await getDocs(q);
 
     let html = '';
+    let count = 0;
+
     snap.forEach(docSnap => {
       let data = docSnap.data();
-      let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
+      if (!data.timestamp) return;
+      
+      let jsDate = data.timestamp.toDate();
+
+      // 📅 THE DATE FILTER ENGINE
+      if (dateFilter) {
+          let yyyy = jsDate.getFullYear();
+          let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
+          let dd = String(jsDate.getDate()).padStart(2, '0');
+          let formattedDate = `${yyyy}-${mm}-${dd}`;
+          
+          if (formattedDate !== dateFilter) return; 
+      }
+
+      let dateStr = jsDate.toLocaleString();
       let amountStr = data.amount ? `₱${data.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '₱0.00';
 
       let descHtml = data.description || '';
@@ -3315,16 +3359,20 @@ window.loadExpenseLogs = async function () {
           <td style="text-align: right; font-weight: bold; color: var(--danger);">${amountStr}</td>
         </tr>
       `;
+      count++;
     });
 
-    tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No expenses logged yet.</td></tr>';
+    if (count === 0 && dateFilter) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center">No expenses logged on ${dateFilter}.</td></tr>`;
+    } else {
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No expenses logged yet.</td></tr>';
+    }
 
   } catch (error) {
     console.error("Error loading expense logs:", error);
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: var(--danger);">❌ Error loading logs.</td></tr>';
   }
 };
-
 // ==========================================
 // RECEIPT BUILDER ENGINE
 // ==========================================
@@ -3947,4 +3995,45 @@ window.filterAlertsTable = function() {
             }
         }
     }
+};
+
+// ========================================================
+// 📥 UNIVERSAL EXCEL / CSV EXPORTER
+// ========================================================
+window.downloadExcel = function(tbodyId, fileName) {
+    let tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    
+    // Find the actual table that wraps around this body
+    let table = tbody.closest('table');
+    let rows = table.querySelectorAll('tr');
+    let csv = [];
+
+    for (let i = 0; i < rows.length; i++) {
+        let row = [], cols = rows[i].querySelectorAll('td, th');
+        
+        // Loop through columns, but skip the "Action" column so buttons don't go into Excel!
+        let colCount = cols.length;
+        if (tbodyId === 'zReadingTableBody' && i > 0) colCount -= 1; 
+
+        for (let j = 0; j < colCount; j++) {
+            // Clean up the text so Excel reads it perfectly
+            let text = cols[j].innerText.replace(/"/g, '""'); 
+            row.push('"' + text + '"');
+        }
+        csv.push(row.join(","));
+    }
+
+    // Create the downloadable file
+    let csvFile = new Blob([csv.join("\n")], {type: "text/csv"});
+    let tempLink = document.createElement("a");
+    let d = new Date();
+    let dateTag = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    
+    tempLink.download = `${fileName}_${dateTag}.csv`;
+    tempLink.href = window.URL.createObjectURL(csvFile);
+    tempLink.style.display = "none";
+    document.body.appendChild(tempLink);
+    tempLink.click();
+    document.body.removeChild(tempLink);
 };
