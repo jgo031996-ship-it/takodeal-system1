@@ -2336,8 +2336,8 @@
         let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
         if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
         
-        let priceStr = type === 'receipt' ? <span>${item.lineTotalFinal.toFixed(2)}</span> : '';
-        cartHtml += <div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span>${priceStr}</div>;
+        let priceStr = type === 'receipt' ? `<span>${item.lineTotalFinal.toFixed(2)}</span>` : '';
+        cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span>${priceStr}</div>`;
         
         // 🔥 NEW: Print the Add-ons right under the item name for the kitchen!
         if (item.addons) {
