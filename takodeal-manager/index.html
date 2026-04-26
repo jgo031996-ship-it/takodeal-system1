@@ -70,6 +70,86 @@
 
   <main class="main-content">
 
+    <style>
+    /* ========================================= */
+    /* 📱 RESPONSIVE MOBILE ENGINE               */
+    /* ========================================= */
+    
+    /* Hide hamburger on Desktop */
+    .mobile-menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 26px;
+      color: #333;
+      cursor: pointer;
+      margin-right: 15px;
+    }
+
+    /* Activate Mobile Mode when screen is small */
+    @media (max-width: 768px) {
+      .mobile-menu-btn {
+        display: block; /* Show hamburger */
+      }
+
+      /* 1. Sidebar becomes a sliding drawer */
+      .sidebar {
+        position: fixed;
+        left: -300px; /* Hide off-screen */
+        top: 0;
+        height: 100vh;
+        z-index: 100000;
+        transition: left 0.3s ease;
+        box-shadow: 4px 0 15px rgba(0,0,0,0.5);
+      }
+
+      .sidebar.show-mobile {
+        left: 0; /* Slide in! */
+      }
+
+      /* 2. Main content takes up the whole screen */
+      .main-content {
+        margin-left: 0 !important;
+        width: 100%;
+      }
+
+      /* 3. Fix the Topbar to wrap controls nicely */
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        height: auto;
+        padding: 15px;
+      }
+
+      #globalDateControls {
+        margin-top: 15px;
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+
+      /* 4. Force all grids to stack vertically! */
+      .stat-grid, 
+      .shift-config-grid, 
+      .grid-container,
+      div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* 5. Make sure Modals don't bleed off screen */
+      .modal, div[style*="width: 700px"], div[style*="width: 850px"] {
+        width: 95% !important;
+        margin: 10px auto;
+        max-height: 95vh;
+      }
+
+      /* 6. Allow tables to be swiped left/right if they are too wide */
+      .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+    }
+  </style>
     <header class="topbar">
       <h1 id="pageTitle">Global Dashboard</h1>
       <div id="globalDateControls" class="actions" style="display: flex; gap: 10px; align-items: center;">
@@ -1666,6 +1746,23 @@
   </div>
 
   <script type="module" src="main.js"></script>
+  <script>
+    // --- MOBILE SIDEBAR LOGIC ---
+    function toggleManagerSidebar() {
+      const sidebar = document.querySelector('.sidebar');
+      sidebar.classList.toggle('show-mobile');
+    }
+
+    // Auto-close the sidebar if you click a link while on your phone
+    document.querySelectorAll('.sidebar .nav-item').forEach(link => {
+      link.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          document.querySelector('.sidebar').classList.remove('show-mobile');
+        }
+      });
+    });
+  </script>
+  
 </body>
 
 </html>
