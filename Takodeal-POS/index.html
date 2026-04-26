@@ -2230,14 +2230,40 @@
 
     function renderCart() {
       const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
-      if (cart.length === 0) { list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; document.getElementById('displaySubTotal').innerText = '₱0.00'; document.getElementById('displayGrandTotal').innerText = '₱0.00'; window.currentGrandTotal = 0; }
-      else {
+      if (cart.length === 0) { 
+        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
+        document.getElementById('displaySubTotal').innerText = '₱0.00'; 
+        document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
+        window.currentGrandTotal = 0; 
+      } else {
         cart.forEach((item, index) => {
           grandTotal += item.lineTotalFinal;
-          let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">✎ "${item.notes}"</div>` : '';
-          list.innerHTML += `<li class="cart-item" onclick="openAddOrderModal('${item.name}', ${item.basePrice}, cart[${index}])"><div class="cart-item-desc"><span class="cart-item-name">${item.name}</span><div class="cart-item-subtext">${notesText}</div></div><div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div><div class="cart-item-qty">x ${item.qty}</div><div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div><button class="btn-remove" onclick="cart.splice(${index}, 1); renderCart(); event.stopPropagation();">✖</button></li>`;
+          let notesText = item.notes ? <div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">✎ "${item.notes}"</div> : '';
+          
+          // 🔥 NEW: Check for Add-Ons and format them nicely!
+          let addonsText = '';
+          if (item.addons) {
+            for (let key in item.addons) {
+              if (item.addons[key].qty > 0) {
+                addonsText += <div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${item.addons[key].qty}x ${key}</div>;
+              }
+            }
+          }
+    
+          list.innerHTML += `<li class="cart-item" onclick="openAddOrderModal('${item.name}', ${item.basePrice}, cart[${index}])">
+            <div class="cart-item-desc">
+              <span class="cart-item-name">${item.name}</span>
+              <div class="cart-item-subtext">${addonsText}${notesText}</div>
+            </div>
+            <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
+            <div class="cart-item-qty">x ${item.qty}</div>
+            <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
+            <button class="btn-remove" onclick="cart.splice(${index}, 1); renderCart(); event.stopPropagation();">✖</button>
+          </li>`;
         });
-        window.currentGrandTotal = grandTotal; document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
+        window.currentGrandTotal = grandTotal; 
+        document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
+        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
       }
     }
     function clearCart() { if (cart.length === 0) return; if (confirm("Clear order?")) { cart = []; renderCart(); } }
@@ -2278,14 +2304,27 @@
       let d = lastTransactionData; if (!d || !d.cart) return;
       let hasFood = false; let hasDrinks = false;
       d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
-
+    
       let cartHtml = '';
       d.cart.forEach(item => {
         let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
         if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
-        let priceStr = type === 'receipt' ? `<span>${item.lineTotalFinal.toFixed(2)}</span>` : '';
-        cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span>${priceStr}</div>`;
-        if (item.notes) { cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">✎ ${item.notes}</div>`; }
+        
+        let priceStr = type === 'receipt' ? <span>${item.lineTotalFinal.toFixed(2)}</span> : '';
+        cartHtml += <div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span>${priceStr}</div>;
+        
+        // 🔥 NEW: Print the Add-ons right under the item name for the kitchen!
+        if (item.addons) {
+          for (let key in item.addons) {
+            if (item.addons[key].qty > 0) {
+              cartHtml += <div style="font-size: 12px; color: #333; padding-left: 15px; margin-bottom: 2px;">+ ${item.addons[key].qty}x ${key}</div>;
+            }
+          }
+        }
+    
+        if (item.notes) { 
+          cartHtml += <div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">✎ ${item.notes}</div>; 
+        }
       });
 
       let headerTxt = ''; let crossRefNote = '';
