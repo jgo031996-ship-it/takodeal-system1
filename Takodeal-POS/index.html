@@ -2238,16 +2238,17 @@
       } else {
         cart.forEach((item, index) => {
           grandTotal += item.lineTotalFinal;
-          let notesText = item.notes ? <div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">✎ "${item.notes}"</div> : '';
-          
+          let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
+
           // 🔥 NEW: Check for Add-Ons and format them nicely!
           let addonsText = '';
           if (item.addons) {
-            for (let key in item.addons) {
-              if (item.addons[key].qty > 0) {
-                addonsText += <div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${item.addons[key].qty}x ${key}</div>;
+              for (let key in item.addons) {
+                  if (item.addons[key].qty > 0) {
+                      // Notice the backticks ` wrapping the HTML string here too!
+                      addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${item.addons[key].name || key}</div>`;
+                  }
               }
-            }
           }
     
           list.innerHTML += `<li class="cart-item" onclick="openAddOrderModal('${item.name}', ${item.basePrice}, cart[${index}])">
