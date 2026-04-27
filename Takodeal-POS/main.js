@@ -526,15 +526,42 @@ window.submitComprehensiveCloseShift = async function () {
 };
 
 // ========================================================
-// 💸 REMITTANCE ENGINE (CASHIER APP)
+// 💸 SMART REMITTANCE ENGINE (CASHIER APP)
 // ========================================================
-window.openRemittanceModal = function () {
+window.openRemittanceModal = async function () {
   document.getElementById('remittanceModal').style.display = 'flex';
   switchRemittanceTab('form');
 
-  // 🧠 Automatic Memory Grabber (Same as Shift engine)
-  let currentCashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || '';
+  // 🧠 SECURE MEMORY GRABBER (Forces the logged-in user's name)
+  let currentCashier = window.sessionUser ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
   document.getElementById('remitCashier').value = currentCashier;
+
+  // 🏦 FETCH LIVE HQ ACCOUNTS FOR DROPDOWN
+  let channelSelect = document.getElementById('remitChannel');
+  channelSelect.innerHTML = '<option value="">⏳ Fetching HQ Accounts...</option>';
+
+  try {
+      // Look ONLY for accounts belonging to the Main Office
+      const q = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"));
+      const snap = await getDocs(q);
+      
+      // Keep Physical Handover as the default first option for cash deliveries
+      let optionsHtml = '<option value="Physical Handover">Physical Handover (Cash)</option>';
+
+      snap.forEach(doc => {
+          let acc = doc.data();
+          // Add accounts from the database (skip if it's named literally "Cash" to avoid confusion with Handover)
+          if(acc.name !== "Cash") { 
+              optionsHtml += `<option value="${acc.name}">${acc.name}</option>`;
+          }
+      });
+
+      // Inject the live options into the dropdown!
+      channelSelect.innerHTML = optionsHtml;
+  } catch (e) {
+      console.error("Error fetching HQ accounts:", e);
+      channelSelect.innerHTML = '<option value="Physical Handover">Physical Handover (Fallback)</option>';
+  }
 };
 
 // Controls the Tabs
@@ -565,10 +592,13 @@ window.switchRemittanceTab = function (tab) {
 
 // Submit to Database
 window.submitRemittance = async function () {
-  let branch = localStorage.getItem('takodeal_device_branch') || localStorage.getItem('branch') || 'Unknown Branch';
+  let branch = window.sessionUser ? window.sessionUser.branch : (localStorage.getItem('takodeal_device_branch') || 'Unknown Branch');
   let startDate = document.getElementById('remitStartDate').value;
   let endDate = document.getElementById('remitEndDate').value;
-  let cashier = document.getElementById('remitCashier').value;
+  
+  // 🔒 SECURITY CHECK: Pull the name straight from memory, ignoring any HTML tampering
+  let cashier = window.sessionUser ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
+  
   let amount = parseFloat(document.getElementById('remitAmount').value);
   let channel = document.getElementById('remitChannel').value;
   let recipient = document.getElementById('remitRecipient').value;
@@ -579,17 +609,21 @@ window.submitRemittance = async function () {
     return;
   }
 
+  // Prevent double-clicking
+  let btn = document.querySelector('button[onclick="submitRemittance()"]');
+  if(btn) { btn.innerText = "⏳ Sending..."; btn.disabled = true; }
+
   try {
     await addDoc(collection(db, "remittances"), {
       branch: branch,
       salesPeriodStart: startDate,
       salesPeriodEnd: endDate,
-      cashier: cashier,
+      cashier: cashier, // <--- Secured!
       amount: amount,
       channel: channel,
       recipient: recipient,
       referenceNumber: refNum,
-      status: "Pending", // <--- THIS NEW LINE HERE!
+      status: "Pending", 
       timestamp: serverTimestamp()
     });
 
@@ -605,6 +639,8 @@ window.submitRemittance = async function () {
   } catch (error) {
     console.error("Error saving remittance:", error);
     alert("❌ Failed to save remittance. Check connection.");
+  } finally {
+      if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
   }
 };
 
@@ -614,7 +650,7 @@ window.loadRemittanceHistory = async function () {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Fetching records...</td></tr>';
 
-  let branch = localStorage.getItem('takodeal_device_branch') || localStorage.getItem('branch') || 'Unknown Branch';
+  let branch = window.sessionUser ? window.sessionUser.branch : (localStorage.getItem('takodeal_device_branch') || 'Unknown Branch');
 
   try {
     const q = query(collection(db, "remittances"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(20));
