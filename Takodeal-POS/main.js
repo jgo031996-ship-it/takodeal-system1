@@ -837,3 +837,99 @@ window.submitAttendance = async function(type) {
         buttons.forEach(b => b.disabled = false);
     }, { enableHighAccuracy: true }); 
 };
+
+// ==========================================
+// 📝 STAFF REQUEST & DEDUCTION HUB ENGINE
+// ==========================================
+
+window.openStaffRequestsModal = function() {
+    document.getElementById('staffRequestsModal').style.display = 'flex';
+    window.switchRequestTab('Advance'); // Default to Cash Advance tab
+};
+
+window.switchRequestTab = function(tabName) {
+    // Reset all tabs to gray
+    const tabs = ['Advance', 'Leave', 'Meal', 'Reason'];
+    tabs.forEach(t => {
+        let btn = document.getElementById('tabReq' + t);
+        let form = document.getElementById('formReq' + t);
+        
+        if (t === tabName) {
+            btn.style.borderBottom = "3px solid #3b82f6";
+            btn.style.color = "#0f172a";
+            btn.style.background = "white";
+            form.style.display = "block";
+        } else {
+            btn.style.borderBottom = "3px solid transparent";
+            btn.style.color = "#64748b";
+            btn.style.background = "transparent";
+            form.style.display = "none";
+        }
+    });
+};
+
+window.submitStaffRequest = async function(requestType) {
+    let payload = {
+        type: requestType,
+        staffName: sessionUser.cashierName,
+        branch: sessionUser.branch,
+        status: "Pending", // Owner needs to approve/review these in Manager App
+        timestamp: new Date()
+    };
+
+    // Gather data based on the type of request
+    if (requestType === "Cash Advance") {
+        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value);
+        payload.reason = document.getElementById('reqAdvReason').value.trim();
+        if (isNaN(payload.amount) || payload.amount <= 0 || !payload.reason) {
+            alert("❌ Please enter a valid amount and reason."); return;
+        }
+    } 
+    else if (requestType === "Leave") {
+        payload.startDate = document.getElementById('reqLeaveStart').value;
+        payload.endDate = document.getElementById('reqLeaveEnd').value;
+        payload.leaveType = document.getElementById('reqLeaveType').value;
+        payload.reason = document.getElementById('reqLeaveReason').value.trim();
+        if (!payload.startDate || !payload.endDate || !payload.reason) {
+            alert("❌ Please fill out all dates and a reason."); return;
+        }
+    }
+    else if (requestType === "Staff Meal") {
+        payload.item = document.getElementById('reqMealItem').value.trim();
+        payload.amount = parseFloat(document.getElementById('reqMealCost').value);
+        if (!payload.item || isNaN(payload.amount) || payload.amount < 0) {
+            alert("❌ Please enter the item consumed and a valid deduction cost."); return;
+        }
+    }
+    else if (requestType === "Reason Letter") {
+        payload.alertId = document.getElementById('explainAlertId').value;
+        payload.cause = document.getElementById('explainCause').value;
+        payload.message = document.getElementById('explainMessage').value.trim();
+        if (!payload.message) {
+            alert("❌ Please provide a detailed explanation."); return;
+        }
+    }
+
+    try {
+        // Send to a unified "staff_requests" collection in Firebase
+        await addDoc(collection(db, "staff_requests"), payload);
+        
+        alert(`✅ Success! Your ${requestType} has been securely submitted to the Main Office for review.`);
+        
+        // Clear the forms
+        document.getElementById('reqAdvAmount').value = '';
+        document.getElementById('reqAdvReason').value = '';
+        document.getElementById('reqLeaveStart').value = '';
+        document.getElementById('reqLeaveEnd').value = '';
+        document.getElementById('reqLeaveReason').value = '';
+        document.getElementById('reqMealItem').value = '';
+        document.getElementById('reqMealCost').value = '';
+        document.getElementById('explainMessage').value = '';
+
+        document.getElementById('staffRequestsModal').style.display = 'none';
+
+    } catch (error) {
+        console.error("Error submitting request:", error);
+        alert("❌ Failed to submit request to the cloud. Check internet connection.");
+    }
+};
