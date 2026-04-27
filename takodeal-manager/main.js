@@ -1564,32 +1564,68 @@ window.addCashAccount = async function () {
   } catch (e) { console.error(e); alert("Failed to add account."); }
 };
 
-window.transferCash = async function () {
-  if (!window.liveAccounts || window.liveAccounts.length < 2) { alert("You need at least 2 accounts to make a transfer."); return; }
+// ==========================================
+// 🔄 UPGRADED CASH TRANSFER ENGINE
+// ==========================================
+window.transferCash = function () {
+  if (!window.liveAccounts || window.liveAccounts.length < 2) { 
+      alert("You need at least 2 accounts to make a transfer."); 
+      return; 
+  }
 
-  // Create a simple text menu for selecting accounts
-  let accList = window.liveAccounts.map((a, i) => `[${i}] ${a.name} (${a.branch}) - Bal: ₱${a.balance}`).join('\n');
+  // Build the beautiful dropdown options
+  let optionsHtml = '<option value="">-- Select Account --</option>';
+  window.liveAccounts.forEach(acc => {
+      optionsHtml += `<option value="${acc.id}">${acc.name} (${acc.branch}) - Bal: ₱${acc.balance.toLocaleString()}</option>`;
+  });
 
-  let fromIdx = parseInt(prompt("TRANSFER FROM (Enter the Number):\n\n" + accList));
-  if (isNaN(fromIdx) || !window.liveAccounts[fromIdx]) return;
+  // Inject them into the new Modal
+  document.getElementById('transferFromAcc').innerHTML = optionsHtml;
+  document.getElementById('transferToAcc').innerHTML = optionsHtml;
+  document.getElementById('transferAmount').value = '';
 
-  let toIdx = parseInt(prompt("TRANSFER TO (Enter the Number):\n\n" + accList));
-  if (isNaN(toIdx) || !window.liveAccounts[toIdx] || fromIdx === toIdx) return;
+  // Pop open the modal!
+  document.getElementById('transferModal').style.display = 'flex';
+};
 
-  let amt = parseFloat(prompt("Amount to Transfer (₱):"));
-  if (isNaN(amt) || amt <= 0) return;
+window.submitCashTransfer = async function() {
+    let fromId = document.getElementById('transferFromAcc').value;
+    let toId = document.getElementById('transferToAcc').value;
+    let amt = parseFloat(document.getElementById('transferAmount').value);
 
-  let fromAcc = window.liveAccounts[fromIdx];
-  let toAcc = window.liveAccounts[toIdx];
+    if (!fromId || !toId) { alert("Please select both accounts."); return; }
+    if (fromId === toId) { alert("Cannot transfer to the same account."); return; }
+    if (isNaN(amt) || amt <= 0) { alert("Please enter a valid amount."); return; }
 
-  if (fromAcc.balance < amt) { alert("❌ Insufficient funds in " + fromAcc.name); return; }
+    let fromAcc = window.liveAccounts.find(a => a.id === fromId);
+    let toAcc = window.liveAccounts.find(a => a.id === toId);
 
-  try {
-    await updateDoc(doc(db, "cash_accounts", fromAcc.id), { balance: fromAcc.balance - amt });
-    await updateDoc(doc(db, "cash_accounts", toAcc.id), { balance: toAcc.balance + amt });
-    alert(`✅ Successfully transferred ₱${amt} from ${fromAcc.name} to ${toAcc.name}.`);
-    window.loadAccountsAndBudget();
-  } catch (e) { console.error(e); alert("Transfer failed."); }
+    if (fromAcc.balance < amt) { 
+        alert(`❌ Insufficient funds in ${fromAcc.name}.\nAvailable balance: ₱${fromAcc.balance.toLocaleString()}`); 
+        return; 
+    }
+
+    let btn = document.getElementById('btnSubmitTransfer');
+    btn.innerText = "⏳ Transferring..."; btn.disabled = true;
+
+    try {
+        await updateDoc(doc(db, "cash_accounts", fromAcc.id), { balance: fromAcc.balance - amt });
+        await updateDoc(doc(db, "cash_accounts", toAcc.id), { balance: toAcc.balance + amt });
+        
+        alert(`✅ Successfully transferred ₱${amt.toLocaleString()} from ${fromAcc.name} to ${toAcc.name}.`);
+        document.getElementById('transferModal').style.display = 'none';
+        window.loadAccountsAndBudget();
+    } catch (e) { 
+        console.error(e); 
+        alert("Transfer failed. Check console."); 
+    } finally {
+        btn.innerText = "Confirm Transfer"; btn.disabled = false;
+    }
+};
+
+// 🛠️ THE FIX FOR THE LOGS BUTTON ERROR 
+window.openAccountHistory = function() {
+    alert("Account History Logs module is coming in the next update! 🚧\n\nFor now, you can view your Cash Transfers in the 'Cash Transfers' tab on the sidebar.");
 };
 
 window.addBudgetCategory = async function () {
