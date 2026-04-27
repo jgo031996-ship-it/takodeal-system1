@@ -1817,32 +1817,6 @@
     </div>
   </div>
 
-  // --- CASH ACCOUNT EDIT & DELETE UI HANDLERS ---
-    function openEditAccountModal(id, name, balance) {
-        document.getElementById('editAccId').value = id;
-        document.getElementById('editAccName').value = name;
-        document.getElementById('editAccBalance').value = balance;
-        document.getElementById('editAccOldBalance').value = balance;
-        document.getElementById('editAccReason').value = '';
-        document.getElementById('editAccountModal').style.display = 'flex';
-    }
-
-    function openAccountHistory() {
-        document.getElementById('accountHistoryModal').style.display = 'flex';
-        // You will need to wire this up in main.js to fetch from Firebase:
-        if(typeof window.loadAccountAuditLogs === 'function') {
-            window.loadAccountAuditLogs();
-        }
-    }
-
-    // Example of how your main.js should format the table buttons later:
-    /*
-      <td style="text-align: center; display: flex; gap: 5px; justify-content: center;">
-        <button onclick="openEditAccountModal('${acc.id}', '${acc.name}', ${acc.balance})" style="background: #f59e0b; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">✏️ Edit</button>
-        <button onclick="deleteCashAccount('${acc.id}', '${acc.name}')" style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">🗑️ Del</button>
-      </td>
-    */
-
   <script type="module" src="main.js"></script>
   <script>
     // --- MOBILE SIDEBAR LOGIC ---
