@@ -1200,10 +1200,10 @@
           <span style="font-size: 18px;">💸</span>
           <div class="nav-item-text">Remit Cash to HQ</div>
       </div>  
-      <div class="nav-item" onclick="document.getElementById('explanationModal').style.display='flex'">
-          <span style="font-size: 18px;">✉️</span>
-          <div class="nav-item-text">Reason Letter</div>
-      </div>   
+      <div class="nav-item" onclick="openStaffRequestsModal()">
+          <span style="font-size: 18px;">📝</span>
+          <div class="nav-item-text">Staff Requests</div>
+      </div>  
 
       <div class="nav-item" onclick="openTimeClockModal()">
           <span style="font-size: 18px;">📸</span>
@@ -1387,32 +1387,101 @@
     </div>
   </div>
 
-  <div id="explanationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center;">
-      <div style="background: white; width: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
-          <div style="background: #b91c1c; padding: 20px; color: white; display: flex; justify-content: space-between;">
-              <h2 style="margin: 0; font-size: 18px;">✉️ Cash Variance Reason Letter</h2>
-              <span onclick="document.getElementById('explanationModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
+  <div id="staffRequestsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 600px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
+          
+          <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">📝 Staff Request Hub</h2>
+              <span onclick="document.getElementById('staffRequestsModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
           </div>
-          <div style="padding: 20px;">
-              <p style="font-size: 13px; color: #64748b; margin-top: 0;">Select a pending variance alert below to submit your official explanation to the Owner.</p>
+
+          <div style="display: flex; background: #f1f5f9; border-bottom: 2px solid #e2e8f0; overflow-x: auto;">
+              <button id="tabReqAdvance" onclick="switchRequestTab('Advance')" style="flex: 1; padding: 12px; background: white; border: none; border-bottom: 3px solid #3b82f6; font-weight: bold; cursor: pointer; color: #0f172a; white-space: nowrap;">💸 Cash Advance</button>
+              <button id="tabReqLeave" onclick="switchRequestTab('Leave')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">📅 Leave Request</button>
+              <button id="tabReqMeal" onclick="switchRequestTab('Meal')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">🍔 Staff Meal</button>
+              <button id="tabReqReason" onclick="switchRequestTab('Reason')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">✉️ Reason Letter</button>
+          </div>
+
+          <div style="padding: 20px; max-height: 60vh; overflow-y: auto; background: #f8fafc;">
               
-              <label style="font-size: 12px; font-weight: bold; color: #334155;">Select Shift / Variance</label>
-              <select id="explainAlertId" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px;"></select>
-  
-              <label style="font-size: 12px; font-weight: bold; color: #334155;">Suspected Cause</label>
-              <select id="explainCause" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px;">
-                  <option value="Wrong Change Given">Wrong Change Given to Customer</option>
-                  <option value="Dropped / Damaged Food">Dropped / Damaged Food</option>
-                  <option value="POS Input Error">POS Input Error</option>
-                  <option value="Personal Advance / IOU">Personal Advance / IOU</option>
-                  <option value="Missing / Suspected Theft">Missing / Suspected Theft</option>
-                  <option value="Unknown">Completely Unknown</option>
-              </select>
-  
-              <label style="font-size: 12px; font-weight: bold; color: #334155;">Detailed Explanation</label>
-              <textarea id="explainMessage" placeholder="Write exactly what happened during your shift..." style="width: 100%; padding: 10px; margin: 5px 0 20px; height: 100px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; box-sizing: border-box;"></textarea>
-  
-              <button onclick="submitReasonLetter()" style="width: 100%; background: #b91c1c; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer;">Send Letter to Owner</button>
+              <div id="formReqAdvance">
+                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Request a Cash Advance (Vale)</h3>
+                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">This will be routed to the Owner for approval and deducted from your next payroll.</p>
+                  
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount Requested (₱)</label>
+                  <input type="number" id="reqAdvAmount" placeholder="e.g. 500" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #3b82f6; outline: none;">
+                  
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Reason for Advance</label>
+                  <textarea id="reqAdvReason" placeholder="Why do you need this cash advance?" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; height: 80px; font-family: inherit; outline: none;"></textarea>
+                  
+                  <button onclick="submitStaffRequest('Cash Advance')" style="width: 100%; background: #3b82f6; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Submit Advance Request</button>
+              </div>
+
+              <div id="formReqLeave" style="display: none;">
+                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Request Days Off / Leave</h3>
+                  
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #334155;">Start Date</label>
+                          <input type="date" id="reqLeaveStart" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
+                      </div>
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #334155;">End Date</label>
+                          <input type="date" id="reqLeaveEnd" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
+                      </div>
+                  </div>
+
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Type of Leave</label>
+                  <select id="reqLeaveType" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
+                      <option value="Sick Leave">Sick Leave</option>
+                      <option value="Vacation Leave">Vacation Leave</option>
+                      <option value="Emergency Leave">Emergency Leave</option>
+                      <option value="Unpaid Day Off">Unpaid Day Off</option>
+                  </select>
+
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Reason</label>
+                  <textarea id="reqLeaveReason" placeholder="Details about your leave..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; height: 80px; font-family: inherit; outline: none;"></textarea>
+
+                  <button onclick="submitStaffRequest('Leave')" style="width: 100%; background: #0ea5e9; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Submit Leave Request</button>
+              </div>
+
+              <div id="formReqMeal" style="display: none;">
+                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Log a Staff Meal (Food Deduction)</h3>
+                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Items consumed during your shift will be recorded here for inventory and payroll deduction.</p>
+                  
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Food/Drink Item Consumed</label>
+                  <input type="text" id="reqMealItem" placeholder="e.g. 1pc Cheesy Takoyaki, 1 Blue Lemonade" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
+
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount to Deduct (₱)</label>
+                  <input type="number" id="reqMealCost" placeholder="Staff discounted price..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #f59e0b; outline: none;">
+
+                  <button onclick="submitStaffRequest('Staff Meal')" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Log Staff Meal</button>
+              </div>
+
+              <div id="formReqReason" style="display: none;">
+                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Cash Variance Reason Letter</h3>
+                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Explain any cash shortages or overages from your shift.</p>
+                  
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Select Shift / Variance</label>
+                  <select id="explainAlertId" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
+                      <option value="General Explanation">General Explanation / Report</option>
+                  </select>
+
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Suspected Cause</label>
+                  <select id="explainCause" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
+                      <option value="Wrong Change Given">Wrong Change Given to Customer</option>
+                      <option value="Dropped / Damaged Food">Dropped / Damaged Food</option>
+                      <option value="POS Input Error">POS Input Error</option>
+                      <option value="Missing / Suspected Theft">Missing / Suspected Theft</option>
+                      <option value="Unknown">Completely Unknown</option>
+                  </select>
+
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Detailed Explanation</label>
+                  <textarea id="explainMessage" placeholder="Write exactly what happened..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; height: 80px; font-family: inherit; outline: none;"></textarea>
+
+                  <button onclick="submitStaffRequest('Reason Letter')" style="width: 100%; background: #b91c1c; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Send Letter to Owner</button>
+              </div>
+
           </div>
       </div>
   </div>
