@@ -1445,9 +1445,20 @@ window.loadAccountsAndBudget = async function() {
       let data = doc.data();
       totalCash += (data.balance || 0);
       window.liveAccounts.push({ id: doc.id, ...data });
-      accHtml += `<tr><td><span class="badge badge-closed">${data.branch}</span></td><td><strong>${data.name}</strong></td><td style="font-weight: 700; color: var(--success); font-size: 15px;">${formatMoney(data.balance || 0)}</td></tr>`;
+      
+      // 🟢 ADDED: The Edit and Delete Buttons for Cash Accounts
+      accHtml += `
+        <tr>
+            <td><span class="badge badge-closed">${data.branch}</span></td>
+            <td><strong>${data.name}</strong></td>
+            <td style="font-weight: 700; color: var(--success); font-size: 15px;">${formatMoney(data.balance || 0)}</td>
+            <td>
+                <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 4px 8px; border-radius: 4px; font-size: 11px;" onclick="editCashAccount('${doc.id}', '${data.name}', ${data.balance})">✏️ Edit</button>
+                <button class="btn-refresh" style="background: white; border: 1px solid var(--danger); color: var(--danger); padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-left: 5px;" onclick="deleteCashAccount('${doc.id}', '${data.name}')">🗑️</button>
+            </td>
+        </tr>`;
     });
-    accBody.innerHTML = accHtml || '<tr><td colspan="3" class="text-center">No accounts found.</td></tr>';
+    accBody.innerHTML = accHtml || '<tr><td colspan="4" class="text-center">No accounts found.</td></tr>';
     document.getElementById('accTotalCash').innerText = formatMoney(totalCash);
 
     // 2. Fetch Budgets
@@ -1465,10 +1476,17 @@ window.loadAccountsAndBudget = async function() {
       let barColor = pct >= 90 ? 'var(--danger)' : (pct >= 75 ? '#f59e0b' : 'var(--primary)');
       if (pct > 100) pct = 100;
 
+      // 🟢 ADDED: The Edit and Delete links for Budgets
       budHtml += `
         <div style="margin-bottom: 20px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-            <strong>${data.category} <span style="color: var(--text-muted); font-weight: normal;">(${data.branch})</span></strong>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; font-size: 13px;">
+            <div>
+                <strong>${data.category} <span style="color: var(--text-muted); font-weight: normal;">(${data.branch})</span></strong>
+                <div style="margin-top: 4px;">
+                    <span style="color: var(--primary); cursor: pointer; font-weight: bold; font-size: 11px; margin-right: 10px;" onclick="editBudgetCategory('${doc.id}', '${data.category}', ${data.limit})">✏️ Edit Limit</span>
+                    <span style="color: var(--danger); cursor: pointer; font-weight: bold; font-size: 11px;" onclick="deleteBudgetCategory('${doc.id}', '${data.category}')">🗑️ Delete</span>
+                </div>
+            </div>
             <span style="color: var(--text-muted); font-weight: 600;">${formatMoney(data.spent)} / ${formatMoney(data.limit)}</span>
           </div>
           <div style="background: var(--bg-color); height: 10px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);">
@@ -1483,8 +1501,54 @@ window.loadAccountsAndBudget = async function() {
 
   } catch (error) {
     console.error("Finance Engine Error:", error);
-    accBody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red;">Error loading data.</td></tr>';
+    accBody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading data.</td></tr>';
   }
+};
+
+// --- CASH ACCOUNT EDIT & DELETE ACTIONS ---
+window.editCashAccount = async function(docId, accName, currentBal) {
+    let newBalStr = prompt(`Update exact balance for ${accName} (₱):`, currentBal);
+    if (newBalStr === null) return; 
+    let newBal = parseFloat(newBalStr);
+    if (isNaN(newBal)) { alert("❌ Invalid amount."); return; }
+
+    try {
+        await updateDoc(doc(db, "cash_accounts", docId), { balance: newBal });
+        alert(`✅ ${accName} balance successfully updated to ₱${newBal.toLocaleString()}!`);
+        window.loadAccountsAndBudget();
+    } catch(e) { console.error(e); alert("Failed to update account."); }
+};
+
+window.deleteCashAccount = async function(docId, accName) {
+    if (!confirm(`⚠️ ARE YOU SURE?\n\nDelete cash account: ${accName}?\nThis cannot be undone.`)) return;
+    try {
+        await deleteDoc(doc(db, "cash_accounts", docId));
+        alert(`🗑️ ${accName} deleted.`);
+        window.loadAccountsAndBudget();
+    } catch(e) { console.error(e); alert("Failed to delete account."); }
+};
+
+// --- BUDGET CATEGORY EDIT & DELETE ACTIONS ---
+window.editBudgetCategory = async function(docId, catName, currentLimit) {
+    let newLimitStr = prompt(`Update monthly limit for ${catName} (₱):`, currentLimit);
+    if (newLimitStr === null) return;
+    let newLimit = parseFloat(newLimitStr);
+    if (isNaN(newLimit) || newLimit < 0) { alert("❌ Invalid limit amount."); return; }
+
+    try {
+        await updateDoc(doc(db, "budgets", docId), { limit: newLimit });
+        alert(`✅ ${catName} limit successfully updated to ₱${newLimit.toLocaleString()}!`);
+        window.loadAccountsAndBudget();
+    } catch(e) { console.error(e); alert("Failed to update budget limit."); }
+};
+
+window.deleteBudgetCategory = async function(docId, catName) {
+    if (!confirm(`⚠️ ARE YOU SURE?\n\nDelete budget category: ${catName}?\nThis cannot be undone.`)) return;
+    try {
+        await deleteDoc(doc(db, "budgets", docId));
+        alert(`🗑️ ${catName} budget category deleted.`);
+        window.loadAccountsAndBudget();
+    } catch(e) { console.error(e); alert("Failed to delete budget."); }
 };
 
 window.addCashAccount = async function () {
