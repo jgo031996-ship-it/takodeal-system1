@@ -189,7 +189,7 @@ window.removeHqManager = async function (docId, email) {
 };
 
 // --- THE GLOBAL RADAR ENGINE (TRANSACTION-FIRST UPGRADE) ---
-async function loadGlobalDashboard() {
+window.loadGlobalDashboard = async function() {
   const startDateInput = document.getElementById('dashStartDate');
   const endDateInput = document.getElementById('dashEndDate');
 
@@ -289,12 +289,12 @@ async function loadGlobalDashboard() {
     console.error("Radar Engine Error:", error);
     document.getElementById('branchTableBody').innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
   }
-}
+};
 
 // --- WIRING THE BUTTONS ---
 // Run the radar the moment the page loads
 document.addEventListener("DOMContentLoaded", () => {
-  loadGlobalDashboard();
+  window.loadGlobalDashboard();
 
   // Wire up the Refresh Button
   const refreshBtn = document.getElementById('btnRefreshData');
@@ -302,7 +302,7 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshBtn.addEventListener('click', async () => {
       refreshBtn.innerText = "Scanning Cloud...";
       refreshBtn.style.opacity = "0.7";
-      await loadGlobalDashboard();
+      await window.loadGlobalDashboard();
       refreshBtn.innerText = "🔄 Refresh Live Data";
       refreshBtn.style.opacity = "1";
     });
@@ -310,7 +310,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // --- THE HR & SECURITY ENGINE ---
-async function loadHRModule() {
+window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
@@ -352,7 +352,7 @@ async function loadHRModule() {
     console.error("HR Engine Error:", error);
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading staff records.</td></tr>';
   }
-}
+};
 
 window.openEditStaff = function (id, name, currentBranch) {
   document.getElementById('editStaffId').value = id;
@@ -371,7 +371,7 @@ window.saveStaffEdit = async function () {
   try {
     await updateDoc(doc(db, "users", id), { branch: newBranch });
     document.getElementById('editStaffModal').style.display = 'none';
-    loadHRModule(); // Refresh the table
+    window.loadHRModule(); // Refresh the table
     alert(`✅ Staff reassigned to ${newBranch}.`);
   } catch (e) {
     console.error(e); alert("Failed to reassign staff.");
@@ -400,7 +400,7 @@ window.addNewStaff = async function () {
       role: "Cashier"
     });
     alert(`✅ Success! ${name} added to ${branch}.`);
-    loadHRModule();
+    window.loadHRModule();
   } catch (error) {
     alert("❌ Failed to add staff.");
   }
@@ -431,10 +431,9 @@ window.resetStaffPin = async function (staffId, staffName) {
 
     alert(`✅ Security PIN for ${staffName} has been successfully updated!`);
 
-    // Refresh the table to show the update (change this to your actual load function name if it's different)
-    if (typeof loadStaffManagement === 'function') {
-      loadHRModule();
-    }
+    // Refresh the table to show the update
+    window.loadHRModule();
+    
   } catch (error) {
     console.error("PIN Reset Error:", error);
     alert("❌ Failed to update the PIN in the database.");
@@ -546,41 +545,18 @@ window.switchView = function (viewId) {
   document.getElementById('pageTitle').innerText = title;
 
   // Trigger the engine for that specific page
-  if (viewId === 'dashboard') loadGlobalDashboard();
-  if (viewId === 'branches') loadHRModule();
-  if (viewId === 'menu') loadMenuEditor();
-  if (viewId === 'inventory') loadInventoryData();
-  if (viewId === 'accounts') loadAccountsAndBudget();
-  if (viewId === 'payroll') loadPayrollDashboard();
-  if (viewId === 'products') loadMenuCosting();
-  if (viewId === 'purchases') loadPurchasesAndAlerts();
-  if (viewId === 'dispatch') loadDispatchDashboard();
-  if (viewId === 'zreading') loadZReadingReports();
-  if (viewId === 'expenses') loadExpenseLogs();
-  if (viewId === 'admin') loadAdminDashboard();
-};
-
-window.switchInvTab = function (tab) {
-  // 1. Change the Tab Colors
-  document.getElementById('tab-inv-live').style.color = (tab === 'live') ? 'var(--primary)' : 'var(--text-muted)';
-  document.getElementById('tab-inv-live').style.borderBottom = (tab === 'live') ? '3px solid var(--primary)' : 'none';
-
-  document.getElementById('tab-inv-logs').style.color = (tab === 'logs') ? 'var(--primary)' : 'var(--text-muted)';
-  document.getElementById('tab-inv-logs').style.borderBottom = (tab === 'logs') ? '3px solid var(--primary)' : 'none';
-
-  // 2. Hide/Show the correct screens
-  document.getElementById('invTabLiveContent').style.display = (tab === 'live') ? 'block' : 'none';
-  document.getElementById('invTabLogsContent').style.display = (tab === 'logs') ? 'block' : 'none';
-
-  // 🔥 3. THE FIX: If they click the Logs tab, wake up the engine and fetch the data!
-  if (tab === 'logs') {
-    loadStockLogs();
-  }
-};
-
-window.refreshInventoryView = function () {
-  loadInventoryData();
-  loadStockLogs();
+  if (viewId === 'dashboard') window.loadGlobalDashboard();
+  if (viewId === 'branches') window.loadHRModule();
+  if (viewId === 'menu') window.loadMenuEditor();
+  if (viewId === 'inventory') window.loadInventoryData();
+  if (viewId === 'accounts') window.loadAccountsAndBudget();
+  if (viewId === 'payroll') window.loadPayrollDashboard();
+  if (viewId === 'products') window.loadMenuCosting();
+  if (viewId === 'purchases') window.loadPurchasesAndAlerts();
+  if (viewId === 'dispatch') window.loadDispatchDashboard();
+  if (viewId === 'zreadings') window.loadZReadingReports();
+  if (viewId === 'expenses') window.loadExpenseLogs();
+  if (viewId === 'admin') window.loadAdminDashboard();
 };
 
 // ========================================================
@@ -637,6 +613,9 @@ window.loadPurchasesAndAlerts = async function () {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Failed to scan inventory.</td></tr>';
   }
 };
+// ALIAS FOR THE HTML ONCLICK
+window.loadAlerts = window.loadPurchasesAndAlerts;
+
 // --- THE RESTOCK MODAL LOGIC ---
 window.openMultiRestockModal = async function (preSelectId = null) {
   document.getElementById('restockModal').style.display = 'flex';
@@ -757,8 +736,8 @@ window.confirmMultiRestock = async function () {
     document.getElementById('restockModal').style.display = 'none';
 
     // Refresh whatever screen they are currently looking at!
-    if (document.getElementById('view-purchases').classList.contains('active')) loadPurchasesAndAlerts();
-    if (document.getElementById('view-inventory').classList.contains('active')) loadInventoryData();
+    if (document.getElementById('view-purchases').classList.contains('active')) window.loadPurchasesAndAlerts();
+    if (document.getElementById('view-inventory').classList.contains('active')) window.loadInventoryData();
 
   } catch (e) {
     console.error(e); alert("Failed to process restock.");
@@ -771,7 +750,7 @@ window.confirmMultiRestock = async function () {
 let dispatchCart = [];
 let dispatchInventoryList = [];
 
-async function loadDispatchDashboard() {
+window.loadDispatchDashboard = async function() {
   const branches = ["Main Office", "Cabantian", "Citygate", "Maa"];
   let fromHtml = '<option value="">-- Select Source --</option>';
   let toHtml = '<option value="">-- Select Destination --</option>';
@@ -788,9 +767,9 @@ async function loadDispatchDashboard() {
 
   dispatchCart = [];
   renderDispatchCart();
-  await loadDispatchInventory();
+  await window.loadDispatchInventory();
   await loadDispatchLogs();
-}
+};
 
 window.loadDispatchInventory = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
@@ -904,7 +883,7 @@ window.submitMultiDispatch = async function () {
     alert(`✅ Success! Dispatched ${dispatchCart.length} items to ${toBranch}.`);
     dispatchCart = [];
     renderDispatchCart();
-    loadDispatchInventory();
+    window.loadDispatchInventory();
     loadDispatchLogs();
     btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
 
@@ -934,7 +913,7 @@ async function loadDispatchLogs() {
 }
 
 // --- THE MENU EDITOR ENGINE ---
-async function loadMenuEditor() {
+window.loadMenuEditor = async function() {
   const tbody = document.getElementById('menuTableBody');
   tbody.innerHTML = '<tr><td colspan="4" class="text-center">Fetching global menu...</td></tr>';
 
@@ -972,7 +951,7 @@ async function loadMenuEditor() {
     console.error("Menu Engine Error:", error);
     tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error loading menu.</td></tr>';
   }
-}
+};
 
 window.addMenuItem = async function () {
   let name = prompt("Enter new item name (e.g., Spicy Takoyaki):");
@@ -991,7 +970,7 @@ window.addMenuItem = async function () {
     // Saves it directly to the cloud!
     await addDoc(collection(db, "menu"), { name: name, category: category, price: price });
     alert(`✅ Success! ${name} added to the global menu.`);
-    loadMenuEditor();
+    window.loadMenuEditor();
   } catch (error) {
     console.error(error); alert("❌ Failed to add item.");
   }
@@ -1007,7 +986,7 @@ window.editMenuItem = async function (docId, name, currentPrice) {
   try {
     await updateDoc(doc(db, "menu", docId), { price: newPrice });
     alert(`✅ Success! ${name} is now ₱${newPrice.toFixed(2)}.`);
-    loadMenuEditor();
+    window.loadMenuEditor();
   } catch (error) {
     console.error(error); alert("❌ Failed to update price.");
   }
@@ -1029,7 +1008,7 @@ window.deleteMenuItem = async function (docId, name) {
   try {
     await deleteDoc(doc(db, "menu", docId));
     alert(`🗑️ ${name} has been deleted.`);
-    loadMenuEditor();
+    window.loadMenuEditor();
   } catch (error) {
     console.error(error); alert("❌ Failed to delete item.");
   }
@@ -1183,7 +1162,13 @@ window.openBranchDetails = async function (branch) {
 };
 
 // --- THE LIVE INVENTORY ENGINE (UPGRADED WITH FILTERING) ---
-async function loadInventoryData() {
+window.loadInventoryData = async function() {
+  // Force the UI back to the Live Tab when this is called (e.g., from sidebar)
+  let liveTab = document.getElementById('invTabLiveContent');
+  let logsTab = document.getElementById('invTabLogsContent');
+  if (liveTab) liveTab.style.display = 'block';
+  if (logsTab) logsTab.style.display = 'none';
+
   const tbody = document.getElementById('inventoryTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="8" class="text-center">Scanning warehouse...</td></tr>';
@@ -1246,7 +1231,18 @@ async function loadInventoryData() {
     console.error("Inventory Error:", error);
     tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color: red;">Error loading inventory.</td></tr>';
   }
-}
+};
+
+window.openInventoryLogs = function() {
+  let liveTab = document.getElementById('invTabLiveContent');
+  let logsTab = document.getElementById('invTabLogsContent');
+  if (liveTab) liveTab.style.display = 'none';
+  if (logsTab) logsTab.style.display = 'block';
+  
+  if (typeof window.loadStockLogs === 'function') {
+    window.loadStockLogs();
+  }
+};
 
 window.addNewInventoryItem = async function () {
   let branch = prompt("Enter Branch (Main Office, Cabantian, Citygate, Maa):", "Main Office");
@@ -1281,7 +1277,7 @@ window.addNewInventoryItem = async function () {
   try {
     await addDoc(collection(db, "inventory"), { branch: branch, name: name, category: category, uom: uom, baseCost: cost, currentStock: initStock, reorderLevel: 5 });
     alert(`✅ Success! ${name} added to ${branch} warehouse.`);
-    loadInventoryData();
+    window.loadInventoryData();
   } catch (error) {
     console.error(error); alert("❌ Failed to add item.");
   }
@@ -1308,7 +1304,7 @@ window.restockItem = async function () {
 
     await updateDoc(docRef, { currentStock: newStock });
     alert(`📦 Success! Added ${addedStock} to ${itemName}. New total: ${newStock}.`);
-    loadInventoryData();
+    window.loadInventoryData();
   } catch (error) {
     console.error(error); alert("❌ Failed to restock.");
   }
@@ -1424,7 +1420,7 @@ window.executeBatchPrep = async function () {
     // Success!
     alert(`🥣 Kitchen Success!\n\nPrepared ${prepQty} units of ${targetItem}.\nAll raw ingredients were automatically deducted from ${branch}.`);
     document.getElementById('batchModal').style.display = 'none';
-    loadInventoryData(); // Refresh the table
+    window.loadInventoryData(); // Refresh the table
 
   } catch (error) {
     console.error(error); alert("Failed to prepare batch.");
@@ -1434,7 +1430,7 @@ window.executeBatchPrep = async function () {
 };
 
 // --- THE CASH ACCOUNTS & BUDGET ENGINE ---
-async function loadAccountsAndBudget() {
+window.loadAccountsAndBudget = async function() {
   const accBody = document.getElementById('accTableBody');
   const budBody = document.getElementById('budgetListBody');
   if (!accBody || !budBody) return;
@@ -1489,7 +1485,7 @@ async function loadAccountsAndBudget() {
     console.error("Finance Engine Error:", error);
     accBody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red;">Error loading data.</td></tr>';
   }
-}
+};
 
 window.addCashAccount = async function () {
   let branch = prompt("Enter Branch (Main Office, Cabantian, Citygate, Maa):", "Main Office");
@@ -1500,7 +1496,7 @@ window.addCashAccount = async function () {
 
   try {
     await addDoc(collection(db, "cash_accounts"), { branch, name, balance: bal });
-    loadAccountsAndBudget();
+    window.loadAccountsAndBudget();
   } catch (e) { console.error(e); alert("Failed to add account."); }
 };
 
@@ -1528,7 +1524,7 @@ window.transferCash = async function () {
     await updateDoc(doc(db, "cash_accounts", fromAcc.id), { balance: fromAcc.balance - amt });
     await updateDoc(doc(db, "cash_accounts", toAcc.id), { balance: toAcc.balance + amt });
     alert(`✅ Successfully transferred ₱${amt} from ${fromAcc.name} to ${toAcc.name}.`);
-    loadAccountsAndBudget();
+    window.loadAccountsAndBudget();
   } catch (e) { console.error(e); alert("Transfer failed."); }
 };
 
@@ -1541,7 +1537,7 @@ window.addBudgetCategory = async function () {
 
   try {
     await addDoc(collection(db, "budgets"), { branch, category, limit, spent: 0 });
-    loadAccountsAndBudget();
+    window.loadAccountsAndBudget();
   } catch (e) { console.error(e); alert("Failed to add category."); }
 };
 
@@ -1588,12 +1584,12 @@ window.logExpense = async function () {
     });
 
     alert(`🧾✅ Expense Logged! ₱${amt} deducted from ${selAcc.name}.`);
-    loadAccountsAndBudget();
+    window.loadAccountsAndBudget();
   } catch (e) { console.error(e); alert("Failed to log expense."); }
 };
 
 // --- THE PAYROLL & HR ENGINE ---
-async function loadPayrollDashboard() {
+window.loadPayrollDashboard = async function() {
   const tbody = document.getElementById('hrTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" class="text-center">Scanning employee timesheets...</td></tr>';
@@ -1676,7 +1672,7 @@ async function loadPayrollDashboard() {
     console.error("HR Engine Error:", error);
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading shifts.</td></tr>';
   }
-}
+};
 
 window.adjustPayroll = async function (shiftId, name, basePay) {
   let bonus = parseFloat(prompt(`Adding BONUS for ${name}.\nBase Pay is ${formatMoney(basePay)}.\n\nEnter bonus amount (₱):`, "0")) || 0;
@@ -1687,7 +1683,7 @@ window.adjustPayroll = async function (shiftId, name, basePay) {
   try {
     await updateDoc(doc(db, "shifts", shiftId), { payrollBonus: bonus, payrollDeduct: deduct });
     alert(`✅ Success! Payroll recalculated for ${name}.`);
-    loadPayrollDashboard();
+    window.loadPayrollDashboard();
   } catch (e) {
     console.error(e); alert("Failed to adjust payroll.");
   }
@@ -1698,38 +1694,16 @@ let globalInventoryCosts = {};
 let currentEditingMenuItem = "";
 
 // ========================================================
-// 🔥 TABBED MENU COSTING & SEARCH ENGINE 🔥
-// ========================================================
-window.activeCostingTab = 'All';
-
-window.switchCostingTab = function (element, tabName) {
-  window.activeCostingTab = tabName;
-
-  // Reset all tabs
-  document.querySelectorAll('.costing-tab').forEach(el => {
-    el.style.color = 'var(--text-muted)';
-    el.style.borderBottom = 'none';
-  });
-
-  // Highlight the clicked tab
-  element.style.color = 'var(--primary)';
-  element.style.borderBottom = '3px solid var(--primary)';
-
-  // Reload the table
-  loadMenuCosting();
-};
-
-// ========================================================
 // 🔥 DYNAMIC TABBED MENU COSTING & SEARCH ENGINE 🔥
 // ========================================================
 window.activeCostingTab = 'All';
 
 window.switchCostingTab = function (element, tabName) {
   window.activeCostingTab = tabName;
-  loadMenuCosting(); // This redraws the table AND the tabs to highlight the right one!
+  window.loadMenuCosting(); // This redraws the table AND the tabs to highlight the right one!
 };
 
-async function loadMenuCosting() {
+window.loadMenuCosting = async function() {
   const tbody = document.getElementById('bomTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" class="text-center">Calculating margins...</td></tr>';
@@ -1831,21 +1805,6 @@ async function loadMenuCosting() {
     console.error("Costing Engine Error:", error);
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
   }
-}
-
-window.openNewProductModal = function () {
-  document.getElementById('advancedProductModal').style.display = 'flex';
-
-  document.getElementById('advProdId').value = '';
-  document.getElementById('advProdName').value = '';
-  document.getElementById('advProdName').readOnly = false;
-
-  // Auto-fill category if they are in a specific tab
-  document.getElementById('advProdCat').value = window.activeCostingTab !== 'All' ? window.activeCostingTab : '';
-  document.getElementById('advProdPrice').value = 0;
-
-  window.currentAdvRecipe = [];
-  renderAdvRecipeTable();
 };
 
 window.openNewProductModal = function () {
@@ -1861,7 +1820,7 @@ window.openNewProductModal = function () {
   document.getElementById('advProdPrice').value = 0;
 
   window.currentAdvRecipe = [];
-  renderAdvRecipeTable();
+  window.renderAdvRecipeTable();
 };
 
 // --- ADVANCED INVENTORY ADDER ---
@@ -1875,7 +1834,7 @@ window.openAddInventoryModal = function () {
   document.getElementById('newInvCost').value = '';
   document.getElementById('newInvInitQty').value = '';
   document.getElementById('newInvReorder').value = '';
-  updateInvSummary();
+  window.updateInvSummary();
 };
 
 window.updateInvSummary = function () {
@@ -1935,7 +1894,7 @@ window.saveAdvancedInventoryItem = async function () {
 
     alert(`✅ Success! Added ${name} to ${branch}.`);
     document.getElementById('addInvModal').style.display = 'none';
-    loadInventoryData();
+    window.loadInventoryData();
   } catch (error) {
     console.error(error); alert("❌ Failed to add item.");
   } finally {
@@ -1985,7 +1944,7 @@ window.openBomEditor = async function (menuItemName) {
       window.currentAdvRecipe.push(data);
     });
 
-    renderAdvRecipeTable();
+    window.renderAdvRecipeTable();
   } catch (e) {
     console.error(e); alert("Failed to load product details.");
   }
@@ -2041,17 +2000,17 @@ window.renderAdvRecipeTable = function () {
 
   tbody.innerHTML = html;
   document.getElementById('advTotalCost').innerText = formatMoney(totalCost);
-  calcAdvProfit(totalCost);
+  window.calcAdvProfit(totalCost);
 };
 
 window.addAdvRecipeRow = function () {
   window.currentAdvRecipe.push({ ingredientName: "", qty: 0, isNew: true });
-  renderAdvRecipeTable();
+  window.renderAdvRecipeTable();
 };
 
 window.updateAdvRecipeName = function (index, newName) {
   window.currentAdvRecipe[index].ingredientName = newName;
-  renderAdvRecipeTable(); // Re-render to update UOM and Costs
+  window.renderAdvRecipeTable(); // Re-render to update UOM and Costs
 };
 
 window.updateAdvRecipeQty = function (index, newQty) {
@@ -2064,7 +2023,7 @@ window.updateAdvRecipeQty = function (index, newQty) {
     totalCost += (unitCost * item.qty);
   });
   document.getElementById('advTotalCost').innerText = formatMoney(totalCost);
-  calcAdvProfit(totalCost);
+  window.calcAdvProfit(totalCost);
 };
 
 window.removeAdvRecipeRow = function (index) {
@@ -2074,7 +2033,7 @@ window.removeAdvRecipeRow = function (index) {
     window.deletedAdvRecipes.push(window.currentAdvRecipe[index].docId);
   }
   window.currentAdvRecipe.splice(index, 1);
-  renderAdvRecipeTable();
+  window.renderAdvRecipeTable();
 };
 
 window.calcAdvProfit = function (forceCogs = null) {
@@ -2188,7 +2147,7 @@ window.saveAdvancedProduct = async function () {
     }
 
     // 2. Refresh the table
-    loadMenuCosting(); 
+    window.loadMenuCosting(); 
 
   } catch (error) {
     console.error("Save Error:", error); 
@@ -2268,7 +2227,7 @@ window.processRecipeCsvUpload = function (event) {
         successCount++;
       }
       alert(`✅ Recipes Uploaded!\n\nAdded ${successCount} ingredient links.\nErrors: ${errorCount}`);
-      loadMenuCosting();
+      window.loadMenuCosting();
     } catch (error) {
       console.error(error); alert("❌ Fatal Error.");
     } finally {
@@ -2346,7 +2305,7 @@ window.processCsvUpload = function (event) {
         successCount++;
       }
       alert(`✅ Mission Accomplished!\n\nAdded: ${successCount}\nErrors: ${errorCount}`);
-      loadInventoryData();
+      window.loadInventoryData();
     } catch (error) {
       console.error(error); alert("❌ Fatal Error.");
     } finally {
@@ -2359,7 +2318,7 @@ window.processCsvUpload = function (event) {
 // ========================================================
 // 🔥 STOCK HISTORY & LOGGING ENGINE 🔥
 // ========================================================
-async function loadStockLogs() {
+window.loadStockLogs = async function() {
   const tbody = document.getElementById('stockLogsBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="7" class="text-center">Loading history...</td></tr>';
@@ -2398,7 +2357,7 @@ async function loadStockLogs() {
 
     tbody.innerHTML = html || '<tr><td colspan="7" class="text-center">No logs found.</td></tr>';
   } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Error loading logs.</td></tr>'; }
-}
+};
 
 window.openEditInv = function (encodedData) {
   let data = JSON.parse(decodeURIComponent(encodedData));
@@ -2444,7 +2403,7 @@ window.saveInventoryEdit = async function () {
     });
 
     document.getElementById('editInvModal').style.display = 'none';
-    refreshInventoryView();
+    window.refreshInventoryView();
   } catch (e) { console.error(e); alert("Failed to save."); }
   finally { btn.innerText = "💾 Save & Log Variance"; btn.disabled = false; }
 };
@@ -2624,7 +2583,6 @@ window.approveRemittance = async function (docId) {
         const channelUsed = data.channel; // e.g., "GCash" or "Physical Handover"
 
         // 2. Map the channel to your actual Manager Account names
-        // If cashier selected "Physical Handover", we deposit to "Cash". Otherwise, look for an exact match (like GCash, BDO, etc.)
         let targetAccountName = channelUsed;
         if (channelUsed === "Physical Handover") {
             targetAccountName = "Cash"; 
@@ -2653,8 +2611,8 @@ window.approveRemittance = async function (docId) {
         alert(`✅ Success! ₱${amountToDeposit.toLocaleString()} has been officially deposited into your [${targetAccountName}] account.`);
         
         // Refresh the screens
-        loadCashExplorer(); 
-        if (typeof loadAccountsAndBudget === 'function') loadAccountsAndBudget();
+        window.loadCashExplorer(); 
+        if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
 
     } catch (e) {
         console.error("Deposit Error:", e); 
@@ -2750,7 +2708,7 @@ window.smartImportCSV = function (event) {
       alert(`✅ Smart Sync Complete!\n\nUpdated: ${updatedCount} existing items.\nAdded: ${addedCount} brand new items.`);
 
       // Refresh your Live Inventory table so you can see the changes!
-      if (typeof loadLiveInventory === 'function') loadLiveInventory();
+      if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
       else location.reload();
 
     } catch (error) {
@@ -2813,7 +2771,7 @@ window.toggleDeviceStatus = async function (deviceId, newStatus) {
   if (!confirm(`Are you sure you want to change this device to ${newStatus}?`)) return;
   try {
     await updateDoc(doc(db, "pos_devices", deviceId), { status: newStatus });
-    loadDeviceFleet();
+    window.loadDeviceFleet();
   } catch (e) { alert("Failed to update status."); }
 };
 
@@ -2821,7 +2779,7 @@ window.deleteDevice = async function (deviceId) {
   if (!confirm("Are you sure you want to permanently delete this device? It will log out the tablet.")) return;
   try {
     await deleteDoc(doc(db, "pos_devices", deviceId));
-    loadDeviceFleet();
+    window.loadDeviceFleet();
   } catch (e) { alert("Failed to delete device."); }
 };
 
@@ -2937,7 +2895,7 @@ window.addAddonRow = function (name = '', price = '', ingredient = '', qty = '')
 
   // Make sure we have the inventory options loaded
   if (cachedInventoryOptions === '<option value="">-- Select Raw Ingredient --</option>') {
-    preloadInventoryForAddons(); // Just in case it wasn't preloaded
+    window.preloadInventoryForAddons(); // Just in case it wasn't preloaded
   }
 
   tr.innerHTML = `
@@ -3397,7 +3355,7 @@ window.processLogoUpload = function(event) {
 };
 
 // 1. Live Typing Preview
-function updateReceiptPreview() {
+window.updateReceiptPreview = function() {
     document.getElementById('prevName').innerText = document.getElementById('rcptName').value || 'TAKODEÁL';
     document.getElementById('prevAddress').innerText = document.getElementById('rcptAddress').value || '';
     document.getElementById('prevContact').innerText = document.getElementById('rcptContact').value || '';
@@ -3405,7 +3363,7 @@ function updateReceiptPreview() {
 }
 
 // 2. Save to Cloud
-async function saveReceiptSettings() {
+window.saveReceiptSettings = async function() {
     const rSettings = {
         logoBase64: document.getElementById('logoBase64Val').value,
         storeName: document.getElementById('rcptName').value,
@@ -3537,7 +3495,7 @@ window.loadFromCloud = async function() {
             const mm = String(today.getMonth() + 1).padStart(2, '0');
             document.getElementById("monthSelector").value = `${today.getFullYear()}-${mm}`;
         }
-        renderConfigUI(); updateStaffDisplay(); updateAvailDropdown(); updateUnavailabilityList(); renderTables();
+        window.renderConfigUI(); window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables();
     } catch(e) { console.error("Cloud Load Error:", e); }
 };
 
@@ -3589,9 +3547,9 @@ window.saveShiftConfigChanges = function() {
                 bData.scheduled = newSch;
             }
         }
-        renderTables();
+        window.renderTables();
     }
-    saveToCloud();
+    window.saveToCloud();
     const msg = document.getElementById("configSaveMsg");
     msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000);
 };
@@ -3614,7 +3572,7 @@ window.addEmployee = function() {
             }
         }
     }
-    updateStaffDisplay(); updateAvailDropdown(); renderTables(); saveToCloud();
+    window.updateStaffDisplay(); window.updateAvailDropdown(); window.renderTables(); window.saveToCloud();
 };
 
 window.removeEmployee = function(name) {
@@ -3631,7 +3589,7 @@ window.removeEmployee = function(name) {
         }
     }
     for (let date in unavailability) { if (unavailability[date][name]) delete unavailability[date][name]; if (Object.keys(unavailability[date]).length === 0) delete unavailability[date]; }
-    updateStaffDisplay(); updateAvailDropdown(); updateUnavailabilityList(); renderTables(); saveToCloud();
+    window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables(); window.saveToCloud();
 };
 
 window.updateStaffDisplay = function() {
@@ -3660,7 +3618,7 @@ window.markUnavailable = function() {
     if (!emp || !date) return alert("Select staff and date.");
     if (!unavailability[date]) unavailability[date] = {};
     unavailability[date][emp] = status;
-    updateUnavailabilityList();
+    window.updateUnavailabilityList();
     if (currentSchedule[1]) {
         const [y, m, d] = date.split('-').map(Number);
         if (y === currentYear && m === currentMonth) {
@@ -3673,17 +3631,17 @@ window.markUnavailable = function() {
                     if (eObj && eObj.branch === branch) bData.unavailable.push({ name: emp, status });
                 }
             }
-            renderTables();
+            window.renderTables();
         }
     }
-    saveToCloud();
+    window.saveToCloud();
 };
 
 window.removeUnavailable = function(date, emp) {
     if (!confirm(`Remove ${emp} leave?`)) return;
     delete unavailability[date][emp];
     if (Object.keys(unavailability[date]).length === 0) delete unavailability[date];
-    updateUnavailabilityList();
+    window.updateUnavailabilityList();
     if (currentSchedule[1]) {
         const [y, m, d] = date.split('-').map(Number);
         if (y === currentYear && m === currentMonth) {
@@ -3693,10 +3651,10 @@ window.removeUnavailable = function(date, emp) {
                 const eObj = employees.find(e => e.name === emp);
                 if (eObj && eObj.branch === branch && !bData.rest.includes(emp)) bData.rest.push(emp);
             }
-            renderTables();
+            window.renderTables();
         }
     }
-    saveToCloud();
+    window.saveToCloud();
 };
 
 window.updateUnavailabilityList = function() {
@@ -3743,7 +3701,7 @@ window.generateSchedule = function() {
             currentSchedule[day][branch].rest = shuffled;
         }
     }
-    renderTables(); saveToCloud();
+    window.renderTables(); window.saveToCloud();
 };
 
 window.openSwapModal = function(day, branch, shiftId) {
@@ -3782,7 +3740,7 @@ window.executeSwap = function() {
         if (curStaff !== "UNFILLED") currentSchedule[day][branch].rest[rIdx] = curStaff;
         else currentSchedule[day][branch].rest.splice(rIdx, 1);
     }
-    closeModal(); renderTables(); saveToCloud();
+    window.closeModal(); window.renderTables(); window.saveToCloud();
 };
 
 // 🔥 TAB MEMORY ENGINE
@@ -3805,7 +3763,7 @@ window.renderTables = function() {
         const isAct = (branch === currentActiveTab); // Check memory!
         const btn = document.createElement("button");
         btn.className = `tab-btn ${isAct ? 'active' : ''}`; btn.innerText = `${branch} Schedule`; btn.id = `btn-${branch}`;
-        btn.onclick = () => switchTab(branch); tabBox.appendChild(btn);
+        btn.onclick = () => window.switchTab(branch); tabBox.appendChild(btn);
 
         const cBox = document.createElement("div");
         cBox.className = `tab-content ${isAct ? 'active' : ''}`; cBox.id = `content-${branch}`;
@@ -3841,8 +3799,7 @@ window.deleteInventoryItem = async function(docId, itemName) {
         try {
             await deleteDoc(doc(db, "inventory", docId)); 
             alert(`✅ "${itemName}" has been permanently deleted.`);
-            // Call whatever function you use to refresh the table!
-            // e.g., loadInventory(); 
+            if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
         } catch (error) {
             console.error("Error deleting item:", error);
             alert("Failed to delete the ingredient.");
@@ -3956,8 +3913,8 @@ window.cloneRecipe = async function() {
             }
 
             // 🧮 Nudge the calculator to update the Profitability boxes!
-            if (typeof window.updateAdvTotals === "function") {
-                window.updateAdvTotals(); 
+            if (typeof window.calcAdvProfit === "function") {
+                window.calcAdvProfit(); 
             }
           
             alert(`✅ Recipe successfully cloned! Don't forget to click "Save Changes" at the bottom!`);
@@ -3970,7 +3927,6 @@ window.cloneRecipe = async function() {
         alert("Failed to clone recipe.");
     }
 };
-console.log("HEARTBEAT 2: File finished reading!");
 
 window.filterAlertsTable = function() {
     const input = document.getElementById('alertSearchInput');
@@ -4037,3 +3993,17 @@ window.downloadExcel = function(tbodyId, fileName) {
     tempLink.click();
     document.body.removeChild(tempLink);
 };
+
+// Modals safety catch
+window.closeTimeClock = function() {
+    let modal = document.getElementById('timeClockModal');
+    if (modal) modal.style.display = 'none';
+};
+window.submitAttendance = function(type) {
+    alert("This module is logged via the Cashier POS app.");
+};
+window.submitReasonLetter = function() {
+    alert("Reason letters are submitted from the Cashier POS app.");
+};
+
+console.log("HEARTBEAT 2: File finished reading!");
