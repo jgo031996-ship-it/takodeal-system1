@@ -1223,3 +1223,85 @@ window.printParkedReceipt = async function(docId, preloadedData = null) {
     let intentUrl = "intent:" + encodedText + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter;end;";
     window.location.href = intentUrl;
 };
+
+// ==========================================
+// 🗑️ PARKED ORDER DELETER & SETTINGS MATCHER
+// ==========================================
+window.deleteParkedOrder = async function(docId) {
+    try {
+        await deleteDoc(doc(db, "parked_orders", docId));
+    } catch(e) { console.error("Error deleting parked order:", e); }
+};
+
+window.getReceiptSettings = async function() {
+    try {
+        const snap = await getDoc(doc(db, "settings", "global_receipt"));
+        if (snap.exists()) return snap.data();
+    } catch(e) { console.warn("No global receipt settings found yet."); }
+    return null;
+};
+
+// ==========================================
+// 🔍 UPGRADED VIEW DETAILS (Separates Add-ons in UI)
+// ==========================================
+window.viewReceiptDetails = async function (receiptId) {
+  try {
+    document.getElementById('txDetailTitle').innerText = "Loading " + receiptId + "...";
+    document.getElementById('txDetailBody').innerHTML = "Fetching...";
+    document.getElementById('txDetailModal').style.display = 'flex';
+
+    let tx = await window.getReceiptDetails(receiptId);
+    if (!tx) { document.getElementById('txDetailBody').innerHTML = "Receipt not found."; return; }
+
+    document.getElementById('txDetailTitle').innerText = "Receipt: " + receiptId;
+
+    let html = `<div style="margin-bottom:15px; font-size:13px; color:#555;">
+         <div><strong>Date:</strong> ${tx.timestamp ? tx.timestamp.toDate().toLocaleString() : 'N/A'}</div>
+         <div><strong>Cashier:</strong> ${tx.cashier || 'Unknown'}</div>
+         ${tx.customerName ? `<div><strong>Customer:</strong> ${tx.customerName}</div>` : ''}
+         <div><strong>Method:</strong> ${tx.paymentMethod || '-'}</div>
+         <div><strong>Status:</strong> ${tx.status === 'Voided' ? '<span style="color:red; font-weight:bold;">VOIDED</span>' : '<span style="color:green; font-weight:bold;">PAID</span>'}</div>
+       </div><table style="width:100%; border-collapse:collapse; font-size:13px;"><tr style="border-bottom:1px solid #ddd; text-align:left;"><th>Item</th><th>Qty</th><th style="text-align:right;">Subtotal</th></tr>`;
+
+    if (tx.cart && Array.isArray(tx.cart)) {
+      tx.cart.forEach(i => {
+        let qty = i.qty || 1;
+        let basePrice = parseFloat(i.variantPrice || i.basePrice || i.price || 0);
+        let baseLineTotal = basePrice * qty;
+        
+        let addonsHtml = '';
+        if (i.addons) { 
+            for (let key in i.addons) { 
+                let addon = i.addons[key];
+                if (addon.qty > 0) { 
+                    let addPrice = parseFloat(addon.price || 0);
+                    let addLineTotal = addPrice * (addon.qty * qty);
+                    addonsHtml += `<tr style="border-bottom:1px dashed #eee; font-size:12px;">
+                        <td style="padding:4px 0; padding-left:15px; color:#d97706;">+ ${addon.qty}x ${key}</td>
+                        <td style="padding:4px 0; color:#d97706;">x${qty}</td>
+                        <td style="padding:4px 0; text-align:right; color:#d97706;">₱${addLineTotal.toFixed(2)}</td>
+                    </tr>`; 
+                } 
+            } 
+        }
+        
+        let variantTxt = (i.variantName && i.variantName !== 'Standard') ? `<br><span style="font-size:11px; color:#777;">${i.variantName}</span>` : '';
+        
+        html += `<tr style="border-bottom: ${addonsHtml ? 'none' : '1px solid #eee'};">
+            <td style="padding:8px 0;"><strong>${i.name || 'Item'}</strong>${variantTxt}</td>
+            <td style="padding:8px 0;">x${qty}</td>
+            <td style="padding:8px 0; text-align:right;">₱${baseLineTotal.toFixed(2)}</td>
+        </tr>`;
+        html += addonsHtml;
+      });
+    }
+
+    let received = parseFloat(tx.amountReceived) || 0;
+    let net = parseFloat(tx.netTotal) || 0;
+    let change = received - net; if (change < 0) change = 0;
+
+    html += `</table><div style="text-align:right; margin-top:15px; font-size:18px; font-weight:bold;">Total: ₱${net.toFixed(2)}</div>`;
+    if (tx.paymentMethod === 'Cash') { html += `<div style="text-align:right; font-size:13px; color:#666; margin-top:5px;">Cash Tendered: ₱${received.toFixed(2)}<br>Change: ₱${change.toFixed(2)}</div>`; }
+    document.getElementById('txDetailBody').innerHTML = html;
+  } catch (error) { console.error(error); }
+};
