@@ -1953,6 +1953,38 @@
       catch (e) { alert("Error: " + e); btn.innerText = "Submit Expense"; btn.disabled = false; }
     }
 
+    async function safeOpenEndShiftClearance() {
+      let btn = document.getElementById('btnCloseShiftSubmit');
+      let originalText = btn.innerText;
+      btn.innerText = "Checking..."; 
+      btn.disabled = true;
+
+      try {
+        // 1. Check for parked orders FIRST
+        let parked = await window.getParkedOrders(sessionUser.branch);
+        if (parked && parked.length > 0) {
+          alert("⚠️ CANNOT CLOSE SHIFT!\n\nThere are still " + parked.length + " unpaid parked orders.\nPlease go to Parked Orders and resume/pay them, or cancel them first.");
+          btn.innerText = originalText;
+          btn.disabled = false;
+          return; // 🛑 Block them from opening the counting screen!
+        }
+
+        // 2. If clear, let them open the Z-Reading screen
+        btn.innerText = originalText;
+        btn.disabled = false;
+        
+        if (typeof window.openEndShiftClearance === 'function') {
+            window.openEndShiftClearance();
+        } else if (typeof openEndShiftClearance === 'function') {
+            openEndShiftClearance();
+        }
+      } catch (e) {
+        console.error("Error checking parked orders:", e);
+        btn.innerText = originalText;
+        btn.disabled = false;
+      }
+    }
+
     // --- 5. INVENTORY SYSTEM ---
     async function openInventoryCheckModal() {
       document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory list from Firebase...</div>'; document.getElementById('inventoryCheckModal').style.display = 'flex';
