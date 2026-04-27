@@ -309,7 +309,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// --- THE HR & SECURITY ENGINE ---
+// --- THE HR & SECURITY ENGINE (ENTERPRISE UPGRADE) ---
 window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
@@ -325,23 +325,33 @@ window.loadHRModule = async function() {
     if (snap.empty) {
       html = '<tr><td colspan="5" class="text-center">No staff found. Click "Add New Staff" to create one.</td></tr>';
     } else {
+      // Store globally so the modal can read it easily
+      window.globalStaffData = {};
+
       snap.forEach(docSnap => {
         let data = docSnap.data();
+        window.globalStaffData[docSnap.id] = data; // Cache data
 
         // 🔐 PIN LOGIC: Real PIN for Owner, Stars for Managers
         let pinDisplay = isOwner ? (data.pin || '0000') : '****';
+        let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/hr` : '<span style="color:#ef4444; font-size:11px;">Rate Missing</span>';
 
         html += `
           <tr>
-            <td><strong style="font-size: 15px;">👤 ${data.cashierName || 'Unknown'}</strong></td>
+            <td>
+                <strong style="font-size: 15px; color: var(--primary);">👤 ${data.cashierName || 'Unknown'}</strong><br>
+                <span style="font-size: 11px; color: var(--text-muted);">${data.phone || 'No Phone'}</span>
+            </td>
             <td>📍 ${data.branch || 'Unassigned'}</td>
-            <td><span class="badge badge-active">${data.role || 'Cashier'}</span></td>
+            <td>
+                <span class="badge badge-active">${data.role || 'Crew'}</span><br>
+                <span style="font-size: 12px; font-weight: bold; color: #16a34a; margin-top: 4px; display: inline-block;">${rateDisplay}</span>
+            </td>
             <td style="font-family: monospace; font-size: 18px; letter-spacing: 2px; color: var(--danger); font-weight: bold;">
               ${pinDisplay}
             </td>
             <td>
-              <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 5px 10px; margin-right: 5px;" onclick="openEditStaff('${docSnap.id}', '${data.cashierName}', '${data.branch}')">✏️ Edit</button>
-              <button class="btn-refresh" style="background: white; border: 1px solid #666; color: #666; padding: 5px 10px;" onclick="resetStaffPin('${docSnap.id}', '${data.cashierName}')">🔑 Reset PIN</button>
+              <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 8px 12px; font-weight: bold; border-radius: 6px;" onclick="openEmployeeProfile('${docSnap.id}')">📂 Open Profile</button>
             </td>
           </tr>
         `;
@@ -354,56 +364,107 @@ window.loadHRModule = async function() {
   }
 };
 
-window.openEditStaff = function (id, name, currentBranch) {
-  document.getElementById('editStaffId').value = id;
-  document.getElementById('editStaffName').value = name;
-  document.getElementById('editStaffBranch').value = currentBranch;
-  document.getElementById('editStaffModal').style.display = 'flex';
+window.addNewStaff = function() {
+    // Clear the modal for a fresh entry
+    document.getElementById('empProfileId').value = '';
+    document.getElementById('empFullName').value = '';
+    document.getElementById('empBranchAssign').value = 'Cabantian';
+    document.getElementById('empRole').value = 'Crew';
+    document.getElementById('empDateHired').value = '';
+    document.getElementById('empHourlyRate').value = '';
+    document.getElementById('empPin').value = '';
+    document.getElementById('empPhone').value = '';
+    document.getElementById('empAddress').value = '';
+    document.getElementById('empGcashName').value = '';
+    document.getElementById('empGcashNum').value = '';
+    document.getElementById('empGotymeName').value = '';
+    document.getElementById('empGotymeNum').value = '';
+    document.getElementById('empSSS').value = '';
+    document.getElementById('empPhilhealth').value = '';
+    document.getElementById('empPagibig').value = '';
+
+    document.getElementById('employeeProfileModal').style.display = 'flex';
 };
 
-window.saveStaffEdit = async function () {
-  let btn = document.getElementById('btnSaveStaffEdit');
-  btn.innerText = "⏳ Saving..."; btn.disabled = true;
+window.openEmployeeProfile = function(docId) {
+    let data = window.globalStaffData[docId];
+    if (!data) return;
 
-  let id = document.getElementById('editStaffId').value;
-  let newBranch = document.getElementById('editStaffBranch').value;
+    document.getElementById('empProfileId').value = docId;
+    document.getElementById('empFullName').value = data.cashierName || '';
+    document.getElementById('empBranchAssign').value = data.branch || 'Cabantian';
+    document.getElementById('empRole').value = data.role || 'Crew';
+    document.getElementById('empDateHired').value = data.dateHired || '';
+    document.getElementById('empHourlyRate').value = data.hourlyRate || '';
+    document.getElementById('empPin').value = data.pin || '';
+    document.getElementById('empPhone').value = data.phone || '';
+    document.getElementById('empAddress').value = data.address || '';
+    document.getElementById('empGcashName').value = data.gcashName || '';
+    document.getElementById('empGcashNum').value = data.gcashNum || '';
+    document.getElementById('empGotymeName').value = data.gotymeName || '';
+    document.getElementById('empGotymeNum').value = data.gotymeNum || '';
+    document.getElementById('empSSS').value = data.sss || '';
+    document.getElementById('empPhilhealth').value = data.philhealth || '';
+    document.getElementById('empPagibig').value = data.pagibig || '';
 
-  try {
-    await updateDoc(doc(db, "users", id), { branch: newBranch });
-    document.getElementById('editStaffModal').style.display = 'none';
-    window.loadHRModule(); // Refresh the table
-    alert(`✅ Staff reassigned to ${newBranch}.`);
-  } catch (e) {
-    console.error(e); alert("Failed to reassign staff.");
-  } finally {
-    btn.innerText = "💾 Save Assignment"; btn.disabled = false;
-  }
+    document.getElementById('employeeProfileModal').style.display = 'flex';
 };
 
-window.addNewStaff = async function () {
-  let name = prompt("Enter new staff name:");
-  if (!name) return;
+window.saveEmployeeProfile = async function() {
+    let docId = document.getElementById('empProfileId').value;
+    
+    // Core validation
+    let name = document.getElementById('empFullName').value.trim();
+    let branch = document.getElementById('empBranchAssign').value;
+    let rate = parseFloat(document.getElementById('empHourlyRate').value);
+    let pin = document.getElementById('empPin').value.trim();
 
-  let branch = prompt("Enter Branch (Cabantian, Citygate, Maa):");
-  if (!branch) return;
+    if (!name || isNaN(rate) || !pin || pin.length !== 4) {
+        alert("❌ Error: Name, Hourly Rate, and a 4-Digit PIN are strictly required!");
+        return;
+    }
 
-  let pin = prompt("Create a 4-digit PIN for them:");
-  if (!pin || pin.length !== 4 || isNaN(pin)) {
-    alert("❌ Error: PIN must be exactly 4 numbers."); return;
-  }
+    let payload = {
+        cashierName: name,
+        branch: branch,
+        role: document.getElementById('empRole').value.trim(),
+        dateHired: document.getElementById('empDateHired').value,
+        hourlyRate: rate,
+        pin: pin,
+        phone: document.getElementById('empPhone').value.trim(),
+        address: document.getElementById('empAddress').value.trim(),
+        gcashName: document.getElementById('empGcashName').value.trim(),
+        gcashNum: document.getElementById('empGcashNum').value.trim(),
+        gotymeName: document.getElementById('empGotymeName').value.trim(),
+        gotymeNum: document.getElementById('empGotymeNum').value.trim(),
+        sss: document.getElementById('empSSS').value.trim(),
+        philhealth: document.getElementById('empPhilhealth').value.trim(),
+        pagibig: document.getElementById('empPagibig').value.trim()
+    };
 
-  try {
-    await addDoc(collection(db, "cashiers"), {
-      cashierName: name,
-      branch: branch,
-      pin: pin,
-      role: "Cashier"
-    });
-    alert(`✅ Success! ${name} added to ${branch}.`);
-    window.loadHRModule();
-  } catch (error) {
-    alert("❌ Failed to add staff.");
-  }
+    let btn = document.getElementById('btnSaveEmpProfile');
+    btn.innerText = "⏳ Saving to Cloud..."; btn.disabled = true;
+
+    try {
+        if (docId) {
+            // Update existing
+            await updateDoc(doc(db, "cashiers", docId), payload);
+            alert(`✅ ${name}'s profile has been updated.`);
+        } else {
+            // Create new
+            await addDoc(collection(db, "cashiers"), payload);
+            alert(`✅ ${name} has been added to the database.`);
+        }
+        
+        document.getElementById('employeeProfileModal').style.display = 'none';
+        window.loadHRModule(); // Refresh the table
+
+    } catch (e) {
+        console.error(e);
+        alert("❌ Failed to save employee data.");
+    } finally {
+        btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
+    }
 };
 
 // ========================================================
