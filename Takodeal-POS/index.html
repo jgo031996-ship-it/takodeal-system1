@@ -1608,7 +1608,7 @@
       <div style="padding: 15px; display: flex; gap: 10px; border-top: 1px solid #eee; background: #fff;">
         <button class="btn-clear" onclick="closeModal('endShiftModal')" style="flex: 1;">Cancel</button>
 
-        <button class="btn-place" onclick="submitComprehensiveCloseShift()"
+        <button class="btn-place" onclick="safeSubmitComprehensiveCloseShift()"
           style="flex: 2; background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; padding: 10px;">🛑
           Confirm & End Shift</button>
       </div>
@@ -1982,6 +1982,27 @@
         console.error("Error checking parked orders:", e);
         btn.innerText = originalText;
         btn.disabled = false;
+      }
+    }
+
+    async function safeSubmitComprehensiveCloseShift() {
+      // 1. Scan the database right as they click the final red button!
+      let parked = await window.getParkedOrders(sessionUser.branch);
+      
+      // 2. If there are parked orders, sound the alarm and kick them out!
+      if (parked && parked.length > 0) {
+        alert("⚠️ STRICT SYSTEM LOCK!\n\nYou have " + parked.length + " parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.");
+        
+        // Force the counting modal to completely close!
+        closeModal('endShiftModal'); 
+        return; // 🛑 Block the submission dead in its tracks
+      }
+
+      // 3. If the coast is clear, run the normal shift closing process
+      if (typeof window.submitComprehensiveCloseShift === 'function') {
+        window.submitComprehensiveCloseShift();
+      } else if (typeof submitComprehensiveCloseShift === 'function') {
+        submitComprehensiveCloseShift();
       }
     }
 
