@@ -793,22 +793,72 @@ window.loadDispatchInventory = async function () {
     });
 
     drop.innerHTML = html || '<option value="">No available stock</option>';
+    // 🟢 NEW: Trigger the label update so it defaults to the correct units!
+    window.updateDispatchUomLabel();
   } catch (e) { console.error(e); drop.innerHTML = '<option value="">Error loading stock</option>'; }
+};
+
+// 🟢 NEW: Updates the dropdown to show "Packs" vs "grams" based on the item
+window.updateDispatchUomLabel = function() {
+    let itemName = document.getElementById('dispItem').value;
+    let uomDrop = document.getElementById('dispUomSelect');
+    
+    if (!itemName) {
+        uomDrop.innerHTML = '<option value="base">Units</option>';
+        return;
+    }
+
+    let invItem = dispatchInventoryList.find(i => i.name === itemName);
+    if (invItem) {
+        let baseUom = invItem.uom || 'units';
+        let purchUom = invItem.purchaseUom || 'Bulk';
+        
+        uomDrop.innerHTML = `
+            <option value="purch">${purchUom}</option>
+            <option value="base">${baseUom}</option>
+        `;
+    }
 };
 
 window.addToDispatchCart = function () {
   let itemName = document.getElementById('dispItem').value;
-  let qty = parseFloat(document.getElementById('dispQty').value);
+  let rawQty = parseFloat(document.getElementById('dispQty').value);
+  let selectedUomType = document.getElementById('dispUomSelect').value;
 
-  if (!itemName || isNaN(qty) || qty <= 0) { alert("Please select an item and valid quantity."); return; }
+  if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
+
+  let invItem = dispatchInventoryList.find(i => i.name === itemName);
+  if (!invItem) return;
+
+  // 🟢 NEW: THE CONVERSION MAGIC!
+  let finalBaseQty = rawQty;
+  let displayMsg = `${rawQty} ${invItem.uom}`;
+
+  if (selectedUomType === 'purch') {
+      let convRate = parseFloat(invItem.conversionRate) || 1;
+      finalBaseQty = rawQty * convRate; // Multiply 1 Pack x 2000 grams!
+      displayMsg = `${rawQty} ${invItem.purchaseUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
+  }
 
   // Prevent sending more than we have
-  let invItem = dispatchInventoryList.find(i => i.name === itemName);
-  if (invItem && qty > invItem.currentStock) { alert(`❌ Not enough stock! Only ${invItem.currentStock} available.`); return; }
+  if (finalBaseQty > invItem.currentStock) { 
+      alert(`❌ Not enough stock!\n\nYou are trying to send ${finalBaseQty} ${invItem.uom}, but you only have ${invItem.currentStock} ${invItem.uom} available.`); 
+      return; 
+  }
 
   let existing = dispatchCart.find(i => i.itemName === itemName);
-  if (existing) { existing.qty += qty; }
-  else { dispatchCart.push({ itemName, qty, uom: invItem.uom, sourceId: invItem.id }); }
+  if (existing) { 
+      existing.qty += finalBaseQty; 
+      existing.displayMsg = `${existing.qty} ${invItem.uom}`; // Updates text if added twice
+  } else { 
+      dispatchCart.push({ 
+          itemName: itemName, 
+          qty: finalBaseQty, 
+          uom: invItem.uom, 
+          sourceId: invItem.id,
+          displayMsg: displayMsg // Store the beautiful breakdown for the table
+      }); 
+  }
 
   document.getElementById('dispQty').value = '';
   renderDispatchCart();
@@ -825,9 +875,11 @@ function renderDispatchCart() {
 
   let html = '';
   dispatchCart.forEach((item, idx) => {
+    let qtyText = item.displayMsg || `${item.qty} ${item.uom}`;
+    
     html += `<tr>
       <td><strong>${item.itemName}</strong></td>
-      <td style="font-size:16px; font-weight:bold;">${item.qty} <span style="font-size:12px; color:var(--text-muted);">${item.uom}</span></td>
+      <td style="font-size:14px; font-weight:bold; color:var(--primary);">${qtyText}</td>
       <td><button class="btn-refresh" style="color:var(--danger); border-color:var(--danger); padding:4px 8px; font-size:11px;" onclick="removeFromDispatchCart(${idx})">✖ Remove</button></td>
     </tr>`;
   });
