@@ -1305,3 +1305,129 @@ window.viewReceiptDetails = async function (receiptId) {
     document.getElementById('txDetailBody').innerHTML = html;
   } catch (error) { console.error(error); }
 };
+
+// ==========================================
+// 📍 GPS & SELFIE TIME CLOCK ENGINE
+// ==========================================
+
+// ⚠️ BOSS JOSTUART: UPDATE THESE COORDINATES!
+// Go to Google Maps, right-click your exact branch building, and copy the Latitude/Longitude numbers!
+const BRANCH_ZONES = {
+    "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, // Example coordinates
+    "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  // Example coordinates
+    "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 },       // Example coordinates
+    "Main Office": { lat: 7.1539090939416266, lng: 125.59588373531139 }
+};
+
+const ALLOWED_RADIUS_METERS = 100; // The digital fence size!
+let cameraStream = null;
+
+// 1. Haversine Formula to calculate exact meters between two GPS points
+function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; // Earth's radius in meters
+    const p1 = lat1 * Math.PI/180;
+    const p2 = lat2 * Math.PI/180;
+    const deltaP = (lat2-lat1) * Math.PI/180;
+    const deltaLon = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) +
+              Math.cos(p1) * Math.cos(p2) *
+              Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+// 2. Open Modal & Turn on Front Camera
+window.openTimeClockModal = async function() {
+    document.getElementById('timeClockModal').style.display = 'flex';
+    document.getElementById('clockStaffName').value = ""; // Reset dropdown
+    
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        document.getElementById('clockVideo').srcObject = cameraStream;
+    } catch (e) {
+        console.error("Camera Error:", e);
+        alert("⚠️ Camera access is required for the Time Clock!");
+    }
+};
+
+// 3. Close Modal & Turn off Camera
+window.closeTimeClock = function() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+    document.getElementById('timeClockModal').style.display = 'none';
+};
+
+// 4. The Main Submit Function
+window.submitAttendance = async function(type) {
+    const staffName = document.getElementById('clockStaffName').value;
+    if (!staffName) { alert("❌ Please select your name."); return; }
+
+    const branch = sessionUser.branch;
+    const targetZone = BRANCH_ZONES[branch];
+
+    if (!targetZone) {
+        alert(`❌ GPS Configuration Missing for ${branch}. Please contact the Owner.`);
+        return;
+    }
+
+    // A. Snap the Photo!
+    const video = document.getElementById('clockVideo');
+    const canvas = document.getElementById('clockCanvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const photoBase64 = canvas.toDataURL('image/jpeg', 0.6); // Compress slightly for faster upload
+
+    // B. Get GPS & Validate
+    if (!navigator.geolocation) {
+        alert("❌ Geolocation is not supported by this browser.");
+        return;
+    }
+
+    // Disable buttons while calculating
+    let buttons = document.querySelectorAll('#timeClockModal button');
+    buttons.forEach(b => b.disabled = true);
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+
+        // C. Calculate Distance
+        const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+
+        if (distance > ALLOWED_RADIUS_METERS) {
+            alert(`🚨 SECURITY LOCKOUT!\n\nYou are ${Math.round(distance)} meters away from the ${branch} branch.\nYou must be within ${ALLOWED_RADIUS_METERS} meters to clock in or out!`);
+            buttons.forEach(b => b.disabled = false);
+            return;
+        }
+
+        // D. Secure! Save to Firebase
+        try {
+            await addDoc(collection(db, "attendance_logs"), {
+                staffName: staffName,
+                branch: branch,
+                type: type, // "TIME IN" or "TIME OUT"
+                timestamp: new Date(),
+                locationLat: userLat,
+                locationLng: userLng,
+                distanceMeters: Math.round(distance),
+                photoBase64: photoBase64
+            });
+
+            alert(`✅ ${type} SUCCESS!\n\nIdentity and Location Verified for ${staffName}.`);
+            window.closeTimeClock();
+        } catch (error) {
+            console.error("Firebase Error:", error);
+            alert("❌ Failed to log attendance. Check internet connection.");
+        } finally {
+            buttons.forEach(b => b.disabled = false);
+        }
+
+    }, (error) => {
+        console.error("GPS Error:", error);
+        alert("❌ GPS access is required to use the Time Clock. Please enable Location Services on this tablet.");
+        buttons.forEach(b => b.disabled = false);
+    }, { enableHighAccuracy: true }); // Force high accuracy mode for mobile GPS
+};
