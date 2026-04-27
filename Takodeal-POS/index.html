@@ -1196,7 +1196,7 @@
         <div class="nav-item-text">Stock Count</div>
       </div>
 
-      <div class="nav-item" onclick="document.getElementById('remittanceModal').style.display='flex'">
+      <div class="nav-item" onclick="openRemittanceModal()"
           <span style="font-size: 18px;">💸</span>
           <div class="nav-item-text">Remit Cash to HQ</div>
       </div>  
@@ -1757,9 +1757,9 @@
                       </div>
                   </div>
   
-                  <div style="margin-bottom: 15px;">
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Cashier Name</label>
-                      <input type="text" id="remitCashier" readonly style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; box-sizing: border-box;">
+                  <div style="flex: 1;">
+                    <label style="font-size: 12px; font-weight: bold; color: #666;">Remitting Cashier</label>
+                    <input type="text" id="remitCashier" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px; background: #f8fafc; font-weight: bold; color: #475569;" readonly>
                   </div>
   
                   <div style="margin-bottom: 15px;">
@@ -1768,15 +1768,11 @@
                   </div>
   
                   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Deposit Channel</label>
-                          <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                              <option value="GCash">GCash</option>
-                              <option value="BDO">BDO</option>
-                              <option value="BPI">BPI</option>
-                              <option value="Maya">Maya</option>
-                              <option value="Physical Handover">Physical Handover</option>
-                          </select>
+                      <div style="flex: 1;">
+                        <label style="font-size: 12px; font-weight: bold; color: #666;">Send Via (Bank/E-Wallet)</label>
+                        <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; background: white;">
+                            <option value="">Loading HQ Accounts...</option>
+                        </select>
                       </div>
                       <div>
                           <label style="font-size: 12px; font-weight: bold; color: #64748b;">Recipient Details</label>
