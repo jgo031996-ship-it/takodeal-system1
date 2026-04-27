@@ -710,7 +710,9 @@
         <div class="card" style="margin-bottom: 0;">
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h2>💰 Cash Accounts</h2>
-            <div style="display: flex; gap: 10px;">
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button class="btn-refresh" style="background: #3b82f6; color: white; border: none;"
+                onclick="openAccountHistory()">📜 Logs</button>
               <button class="btn-refresh" style="background: var(--surface); color: var(--text-main);"
                 onclick="addCashAccount()">➕ Add</button>
               <button class="btn-refresh" style="background: var(--primary); color: white; border: none;"
@@ -724,11 +726,12 @@
                   <th>Branch</th>
                   <th>Account Name</th>
                   <th>Balance</th>
+                  <th style="text-align: center;">Actions</th>
                 </tr>
               </thead>
               <tbody id="accTableBody">
                 <tr>
-                  <td colspan="3" class="text-center">Loading accounts...</td>
+                  <td colspan="4" class="text-center">Loading accounts...</td>
                 </tr>
               </tbody>
             </table>
@@ -1756,6 +1759,89 @@
           <div id="selfieDetails" style="text-align: center; margin-top: 10px; font-weight: bold; color: #334155;"></div>
       </div>
   </div>
+
+  <div id="editAccountModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: var(--bg-color); width: 95%; max-width: 400px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+      <div style="background: #eab308; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; font-size: 18px; color: white;">✏️ Edit Cash Account</h2>
+        <button onclick="document.getElementById('editAccountModal').style.display='none'" style="background: none; border: none; font-size: 24px; cursor: pointer; color: white;">✖</button>
+      </div>
+      <div style="padding: 20px;">
+        <input type="hidden" id="editAccId">
+        <input type="hidden" id="editAccOldBalance">
+        
+        <div style="margin-bottom: 15px;">
+          <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Account Name</label>
+          <input type="text" id="editAccName" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px; font-weight: bold; box-sizing: border-box;">
+        </div>
+
+        <div style="margin-bottom: 20px;">
+          <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Adjust Balance (₱)</label>
+          <input type="number" id="editAccBalance" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 18px; font-weight: bold; box-sizing: border-box; color: #16a34a;">
+        </div>
+
+        <div style="margin-bottom: 20px;">
+          <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Reason for Update</label>
+          <input type="text" id="editAccReason" placeholder="e.g., Audit correction, Bank fee" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+        </div>
+
+        <button onclick="saveAccountEdit()" style="width: 100%; background: #eab308; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">💾 Save & Log Update</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="accountHistoryModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: var(--bg-color); width: 95%; max-width: 800px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-height: 90vh;">
+      <div style="background: #3b82f6; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; font-size: 18px; color: white;">📜 Account Audit Logs</h2>
+        <button onclick="document.getElementById('accountHistoryModal').style.display='none'" style="background: none; border: none; font-size: 24px; cursor: pointer; color: white;">✖</button>
+      </div>
+      <div style="padding: 20px; overflow-y: auto; background: #f8fafc;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; background: white; border: 1px solid #e2e8f0;">
+          <thead style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+            <tr>
+              <th style="padding: 12px 10px; color: #475569;">Date & Time</th>
+              <th style="padding: 12px 10px; color: #475569;">User</th>
+              <th style="padding: 12px 10px; color: #475569;">Action</th>
+              <th style="padding: 12px 10px; color: #475569;">Account</th>
+              <th style="padding: 12px 10px; color: #475569;">Details / Reason</th>
+            </tr>
+          </thead>
+          <tbody id="accHistoryTableBody">
+            <tr><td colspan="5" class="text-center">Loading audit logs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  // --- CASH ACCOUNT EDIT & DELETE UI HANDLERS ---
+    function openEditAccountModal(id, name, balance) {
+        document.getElementById('editAccId').value = id;
+        document.getElementById('editAccName').value = name;
+        document.getElementById('editAccBalance').value = balance;
+        document.getElementById('editAccOldBalance').value = balance;
+        document.getElementById('editAccReason').value = '';
+        document.getElementById('editAccountModal').style.display = 'flex';
+    }
+
+    function openAccountHistory() {
+        document.getElementById('accountHistoryModal').style.display = 'flex';
+        // You will need to wire this up in main.js to fetch from Firebase:
+        if(typeof window.loadAccountAuditLogs === 'function') {
+            window.loadAccountAuditLogs();
+        }
+    }
+
+    // Example of how your main.js should format the table buttons later:
+    /*
+      <td style="text-align: center; display: flex; gap: 5px; justify-content: center;">
+        <button onclick="openEditAccountModal('${acc.id}', '${acc.name}', ${acc.balance})" style="background: #f59e0b; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">✏️ Edit</button>
+        <button onclick="deleteCashAccount('${acc.id}', '${acc.name}')" style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">🗑️ Del</button>
+      </td>
+    */
 
   <script type="module" src="main.js"></script>
   <script>
