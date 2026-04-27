@@ -1196,7 +1196,7 @@
         <div class="nav-item-text">Stock Count</div>
       </div>
 
-      <div class="nav-item" onclick="openRemittanceModal()"
+      <div class="nav-item" onclick="openRemittanceModal()">
           <span style="font-size: 18px;">💸</span>
           <div class="nav-item-text">Remit Cash to HQ</div>
       </div>  
@@ -1229,7 +1229,7 @@
       <div class="top-bar-right">
         <div style="display: flex; gap: 10px; align-items: center;">
 
-          <button onclick="showParkedOrders()"
+          <button onclick="window.showParkedOrders()"
             style="position: relative; background: #34495e; color: white; border: none; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-family: inherit; font-size: 14px; font-weight: 600;">
             🕒 Parked Orders
             <span id="parkedBadge"
@@ -1286,7 +1286,7 @@
             </div>
             <button class="btn-place" id="btnMainPlaceOrder" onclick="openCheckoutModal()" disabled
               style="width: 100%; padding: 18px; font-size: 20px; border-radius: 5px;">Place Order</button>
-            <button id="btnPrintReceipt" onclick="printThermalReceipt()" style="display: none; background: #334155; color: white; padding: 15px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; margin-top: 10px; transition: all 0.2s;">
+            <button id="btnPrintReceipt" onclick="window.printReceipt('receipt')" style="display: none; background: #334155; color: white; padding: 15px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; margin-top: 10px; transition: all 0.2s;">
                 🖨️ Print Receipt
             </button>
           </div>
@@ -1482,14 +1482,14 @@
       </div>
       <div class="modal-foot"
         style="background: white; flex-direction: column; gap: 10px; border-top: 1px solid #eee; padding: 20px;">
-        <button class="btn-place" onclick="printReceipt('receipt')"
+        <button class="btn-place" onclick="window.printReceipt('receipt')"
           style="width:100%; padding:16px; font-size:16px; border-radius:8px; box-shadow: 0 4px 6px rgba(255,159,67,0.2);">🖨️
           Print Customer Receipt</button>
         <div style="display: flex; gap: 10px;">
-          <button class="btn-clear" onclick="printReceipt('food')"
+          <button class="btn-clear" onclick="window.printReceipt('food')"
             style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🍳
             Print Kitchen</button>
-          <button class="btn-clear" onclick="printReceipt('drinks')"
+          <button class="btn-clear" onclick="window.printReceipt('drinks')"
             style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🥤
             Print Bar</button>
         </div>
@@ -1806,531 +1806,43 @@
   </div>
 
   <script>
-    sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
-    let cart = []; let masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
-    let pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
-    let amountReceivedStr = "0"; let selectedPaymentMethod = "Cash"; let isSplitMode = false; let splitRows = []; let lastTransactionData = {};
-    let editIndex = -1; let currentShift = null; let activeShiftDetails = null; let systemReady = false;
-
-    document.addEventListener("DOMContentLoaded", function () {
-      let loginBox = document.getElementById('loginOverlay');
-      if (loginBox) { loginBox.style.display = 'flex'; }
-    });
-
-    // --- 1. UI HELPERS ---
-    function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); document.getElementById('sidebarIcon').innerText = sidebar.classList.contains('collapsed') ? '▶' : '◀'; }
-    function switchView(viewName) {
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
-      let navEl = document.getElementById('nav-' + viewName); if (navEl) navEl.classList.add('active');
-      let viewEl = document.getElementById('view-' + viewName); if (viewEl) viewEl.classList.add('active');
-      let topBar = document.getElementById('topBarTitle');
-      if (viewName === 'pos') topBar.innerText = "🖥️ Point of Sale";
-      else if (viewName === 'sales') { topBar.innerText = "🧾 Shift Sales"; loadSalesDashboard(); }
-    }
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-    function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
-
-    // --- 3. MENU BUILDER ---
-    async function loadPOSData() {
-      let products = await window.fetchMenu();
-      masterPOSData.items = products;
-      masterPOSData.variants = {};
-      masterPOSData.addons = [];
-      let cats = [...new Set(products.map(p => p.category))].filter(Boolean);
-      masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
-      masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery"], payMethods: ["Cash", "GCash", "Maya"] };
-
-      buildCategories();
-
-      let otHtml = ''; masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
-      let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
-    }
-
-    function buildCategories() {
-      const catContainer = document.querySelector('.category-header');
-      catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All items</button>`;
-      masterPOSData.categories.forEach(cat => { catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`; });
-      filterMenu('All', catContainer.firstElementChild);
-    }
-
-    function filterMenu(category, clickedBtn) {
-      if (clickedBtn) { document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); clickedBtn.classList.add('active'); }
-      const grid = document.querySelector('.item-grid'); grid.innerHTML = '';
-      let filteredItems = category === 'All' ? masterPOSData.items : masterPOSData.items.filter(item => item.category === category);
-      filteredItems.forEach((item, index) => {
-        let safePrice = parseFloat(item.price) || 0;
-        grid.innerHTML += `<div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})"><span class="item-number">${index + 1}</span><div class="item-name">${item.name}</div><div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div></div>`;
-      });
-    }
-
-    function searchMenuItems() {
-      let input = document.getElementById('posSearchInput').value.toLowerCase();
-      let cards = document.querySelector('.item-grid').children;
-      for (let i = 0; i < cards.length; i++) {
-        cards[i].style.display = cards[i].innerText.toLowerCase().includes(input) ? "" : "none";
-      }
-    }
-
-    // --- 4. SHIFT & EXPENSE SYSTEM ---
-    async function checkCurrentShift() {
-      let status = await window.checkShiftStatus(sessionUser.branch);
-      updateShiftUI(status);
-      systemReady = true;
-    }
-
-    function updateShiftUI(status) {
-      let btn = document.getElementById('btnTopShift'); let lock = document.getElementById('shiftLockout'); let placeBtn = document.getElementById('btnMainPlaceOrder');
-      if (status && status.active) { currentShift = status; btn.innerText = "🟢 Active Shift"; lock.style.display = "none"; placeBtn.disabled = false; }
-      else { currentShift = null; btn.innerText = "🔴 Shift Closed"; lock.style.display = "flex"; placeBtn.disabled = true; }
-    }
-
-    function openShiftModal() {
-      if (!systemReady) return;
-      if (!currentShift) {
-        document.getElementById('shiftViewOpen').style.display = "block"; document.getElementById('shiftViewClose').style.display = "none";
-        let nameEl = document.getElementById('inputShiftCashier'); if (nameEl) nameEl.value = ""; document.getElementById('inputStartingCash').value = "";
-        document.getElementById('shiftModal').style.display = "flex";
-      } else {
-        let btn = document.getElementById('btnTopShift'); let oldText = btn.innerText; btn.innerText = "⏳ Data..."; btn.disabled = true;
-        window.getLiveShiftDetails(sessionUser.branch).then(details => {
-          if (!details) return; activeShiftDetails = details;
-          document.getElementById('shiftViewOpen').style.display = "none"; document.getElementById('shiftViewClose').style.display = "block";
-          document.getElementById('shiftActiveDetails').innerText = `Started By: ${details.startedBy}  |  Start Time: ${new Date(details.startTime).toLocaleString()}`;
-
-          document.getElementById('scStartingCash').innerText = '₱' + details.startingCash.toFixed(2);
-          document.getElementById('scCashOut').innerText = '- ₱' + details.cashOut.toFixed(2);
-
-          document.getElementById('shiftModal').style.display = "flex"; btn.innerText = oldText; btn.disabled = false;
-        });
-      }
-    }
-
-    async function submitOpenShift() {
-      try {
-        let shiftName = sessionUser.cashierName || localStorage.getItem('cashierName') || 'Unknown';
-
-        let startEl = document.getElementById('inputStartingCash');
-        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
-
-        let btn = document.getElementById('btnOpenShiftSubmit');
-        if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
-
-        let shiftId = await window.openNewShift(sessionUser.branch, shiftName, startCash);
-
-        if (shiftId) {
-          await checkCurrentShift();
-          closeModal('shiftModal');
-        } else {
-          alert("Failed to open shift. Check connection!");
-        }
-        if (btn) { btn.innerText = "Open Shift"; btn.disabled = false; }
-      } catch (e) { console.error(e); }
-    }
-
-    async function submitCloseShift() {
-      let parked = await window.getParkedOrders(sessionUser.branch);
-      if (parked.length > 0) {
-        alert("⚠️ CANNOT CLOSE SHIFT!\nThere are still " + parked.length + " unpaid parked orders.\nPlease go to Parked Orders and resume/pay them or cancel them first.");
-        return;
-      }
-      let actualCash = parseFloat(document.getElementById('inputActualCash').value); if (isNaN(actualCash)) { alert("Enter counted cash."); return; }
-      let expectedCash = activeShiftDetails.expectedCash; let diff = actualCash - expectedCash;
-      let btn = document.getElementById('btnCloseShiftSubmit'); btn.innerText = "Ending Shift..."; btn.disabled = true;
-      try {
-        await window.closeShift(sessionUser.branch, activeShiftDetails.logId, actualCash, expectedCash, diff);
-        alert(`SHIFT CLOSED SUCCESSFULLY!\nThank you for your hard work today.`); updateShiftUI({ active: false }); closeModal('shiftModal'); btn.innerText = "End Shift"; btn.disabled = false;
-      } catch (e) { alert("Error closing shift."); btn.innerText = "End Shift"; btn.disabled = false; }
-    }
-
-    function openExpenseModal() { closeModal('shiftModal'); document.getElementById('expAmount').value = ''; document.getElementById('expDesc').value = ''; document.getElementById('expenseModal').style.display = 'flex'; }
-    async function submitBranchExpense() {
-      let amt = parseFloat(document.getElementById('expAmount').value); let desc = document.getElementById('expDesc').value.trim();
-      if (!amt || amt <= 0 || !desc) { alert("Please enter a valid amount and description."); return; }
-      let btn = document.getElementById('btnSubmitExpense'); btn.innerText = "Processing..."; btn.disabled = true;
-      let payload = { branch: sessionUser.branch, cashier: sessionUser.cashierName, amount: amt, description: desc };
-      try { let res = await window.processPettyCashExpense(payload); alert(res); closeModal('expenseModal'); btn.innerText = "Submit Expense"; btn.disabled = false; }
-      catch (e) { alert("Error: " + e); btn.innerText = "Submit Expense"; btn.disabled = false; }
-    }
-
-    async function safeOpenEndShiftClearance() {
-      let btn = document.getElementById('btnCloseShiftSubmit');
-      let originalText = btn.innerText;
-      btn.innerText = "Checking..."; 
-      btn.disabled = true;
-
-      try {
-        // 1. Check for parked orders FIRST
-        let parked = await window.getParkedOrders(sessionUser.branch);
-        if (parked && parked.length > 0) {
-          alert("⚠️ CANNOT CLOSE SHIFT!\n\nThere are still " + parked.length + " unpaid parked orders.\nPlease go to Parked Orders and resume/pay them, or cancel them first.");
-          btn.innerText = originalText;
-          btn.disabled = false;
-          return; // 🛑 Block them from opening the counting screen!
-        }
-
-        // 2. If clear, let them open the Z-Reading screen
-        btn.innerText = originalText;
-        btn.disabled = false;
-        
-        if (typeof window.openEndShiftClearance === 'function') {
-            window.openEndShiftClearance();
-        } else if (typeof openEndShiftClearance === 'function') {
-            openEndShiftClearance();
-        }
-      } catch (e) {
-        console.error("Error checking parked orders:", e);
-        btn.innerText = originalText;
-        btn.disabled = false;
-      }
-    }
-
-    async function safeSubmitComprehensiveCloseShift() {
-      // 1. Scan the database right as they click the final red button!
-      let parked = await window.getParkedOrders(sessionUser.branch);
-      
-      // 2. If there are parked orders, sound the alarm and kick them out!
-      if (parked && parked.length > 0) {
-        alert("⚠️ STRICT SYSTEM LOCK!\n\nYou have " + parked.length + " parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.");
-        
-        // Force the counting modal to completely close!
-        closeModal('endShiftModal'); 
-        return; // 🛑 Block the submission dead in its tracks
-      }
-
-      // 3. If the coast is clear, run the normal shift closing process
-      if (typeof window.submitComprehensiveCloseShift === 'function') {
-        window.submitComprehensiveCloseShift();
-      } else if (typeof submitComprehensiveCloseShift === 'function') {
-        submitComprehensiveCloseShift();
-      }
-    }
-
-    // --- 5. INVENTORY SYSTEM ---
-    async function openInventoryCheckModal() {
-      document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory list from Firebase...</div>'; document.getElementById('inventoryCheckModal').style.display = 'flex';
-      let items = await window.getInventoryForCount(sessionUser.branch);
+    window.showParkedOrders = async function() {
+      document.getElementById('parkedModal').style.display = 'flex'; 
+      document.getElementById('parkedListContainer').innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Fetching parked orders...</div>';
+      let orders = await window.getParkedOrders(sessionUser.branch);
       let html = '';
-      if (items.length === 0) { html = '<div style="text-align:center; padding:20px; color:#888;">No inventory items setup yet.<br>Add items to your "inventory" collection in Firebase to see them here!</div>'; }
-      else { items.forEach(i => { html += `<div class="count-row"><div style="font-weight:600; color:#444; font-size:14px;">${i.name}</div><div style="color:#888; font-size:12px;">${i.uom || 'units'}</div><div><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty"></div></div>`; }); }
-      document.getElementById('invCheckListContainer').innerHTML = html;
-    }
-
-    async function submitInventoryCheck() {
-      let inputs = document.querySelectorAll('.count-target-input'); let counts = [];
-      inputs.forEach(inp => { let val = parseFloat(inp.value); if (!isNaN(val)) { counts.push({ name: inp.getAttribute('data-item'), physicalQty: val }); } });
-      if (counts.length === 0) { alert("Please enter at least one quantity before submitting."); return; }
-      let btn = document.getElementById('btnSubmitInvCheck'); btn.innerText = "Submitting..."; btn.disabled = true;
-      try { await window.submitInventoryCheck(sessionUser.branch, sessionUser.cashierName, counts); alert("End-of-day stock count submitted securely!"); closeModal('inventoryCheckModal'); }
-      catch (e) { alert("Error submitting stock count. Check connection."); } btn.innerText = "Submit Count"; btn.disabled = false;
-    }
-
-    // --- 6. DASHBOARD & DETAILS SYSTEM ---
-    async function loadSalesDashboard() {
-      document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
-      if (!currentShift || !currentShift.active) { document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; return; }
-      let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
-      let tBody = '';
-      if (!transactions || transactions.length === 0) { tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; }
+      if (orders.length === 0) { html = '<div style="text-align:center; padding: 20px; color: #777;">No parked orders right now.</div>'; }
       else {
-        transactions.forEach((tx, idx) => {
-          let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
-          let txDate = "Today"; let txTime = "--:--";
-          if (tx.timestamp && tx.timestamp.toDate) { let d = tx.timestamp.toDate(); txDate = d.toLocaleDateString(); txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
-
-          tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
-            <td style="font-weight:bold;">${tx.receiptId || 'N/A'}</td>
-            <td>${tx.customerName || '-'}</td>
-            <td>${tx.paymentMethod || 'Unknown'}</td>
-            <td>${statusBadge}</td>
-            <td>${txDate}</td>
-            <td>${txTime}</td>
-            <td style="font-weight:bold; color: var(--primary);">₱${(tx.netTotal || 0).toFixed(2)}</td>
-            <td style="text-align:right;">
-              <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
-                <div class="action-dropdown" id="txMenu-${idx}">
-                  <div class="action-item" onclick="viewReceiptDetails('${tx.receiptId}')">View Details</div>
-                  <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">🖨️ Print Receipt</div>
-                  <div class="action-item danger" onclick="voidTx('${tx.receiptId}')">Void Transaction</div>
-                </div>
-              </div>
-            </td>
-          </tr>`;
-        });
-      }
-      document.getElementById('tbTransBody').innerHTML = tBody;
-    }
-
-    function toggleTxMenu(id) { document.querySelectorAll('.action-dropdown').forEach(el => { if (el.id !== id) el.classList.remove('show'); }); let el = document.getElementById(id); if (el) el.classList.toggle('show'); }
-    document.addEventListener('click', function (e) { if (!e.target.classList.contains('dot-menu')) { document.querySelectorAll('.action-dropdown').forEach(el => el.classList.remove('show')); } });
-
-    async function voidTx(receiptId) {
-      if (confirm(`Are you sure you want to VOID transaction ${receiptId}?\n\n⚠️ WARNING: This action will be reported immediately to the Manager.`)) {
-        try { await window.voidTransaction(receiptId, sessionUser.cashierName, sessionUser.branch); alert(`Transaction voided. The Manager has been notified.`); loadSalesDashboard(); }
-        catch (e) { alert("Error voiding transaction: " + e.message); }
-      }
-    }
-
-    async function viewReceiptDetails(receiptId) {
-      try {
-        document.getElementById('txDetailTitle').innerText = "Loading " + receiptId + "...";
-        document.getElementById('txDetailBody').innerHTML = "Fetching...";
-        document.getElementById('txDetailModal').style.display = 'flex';
-
-        let tx = await window.getReceiptDetails(receiptId);
-        if (!tx) { document.getElementById('txDetailBody').innerHTML = "Receipt not found in database."; return; }
-
-        document.getElementById('txDetailTitle').innerText = "Receipt: " + receiptId;
-
-        let html = `<div style="margin-bottom:15px; font-size:13px; color:#555;">
-             <div><strong>Date:</strong> ${tx.timestamp ? tx.timestamp.toDate().toLocaleString() : 'N/A'}</div>
-             <div><strong>Cashier:</strong> ${tx.cashier || 'Unknown'}</div>
-             ${tx.customerName ? `<div><strong>Customer:</strong> ${tx.customerName}</div>` : ''}
-             <div><strong>Method:</strong> ${tx.paymentMethod || '-'}</div>
-             <div><strong>Status:</strong> ${tx.status === 'Voided' ? '<span style="color:red; font-weight:bold;">VOIDED</span>' : '<span style="color:green; font-weight:bold;">PAID</span>'}</div>
-           </div><table style="width:100%; border-collapse:collapse; font-size:13px;"><tr style="border-bottom:1px solid #ddd; text-align:left;"><th>Item</th><th>Qty</th><th style="text-align:right;">Subtotal</th></tr>`;
-
-        if (tx.cart && Array.isArray(tx.cart)) {
-          tx.cart.forEach(i => {
+        orders.forEach(o => {
+          let itemsHtml = o.items.map(i => {
             let addonsText = '';
-            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<br><span style="color:#d97706;">+ ${i.addons[key].qty}x ${key}</span>`; } }
-            html += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px 0;"><strong>${i.name || 'Item'}</strong><br><span style="font-size:11px; color:#777;">${i.variantName !== 'Standard' ? i.variantName : ''}${addonsText}</span></td><td style="padding:8px 0;">x${i.qty || 1}</td><td style="padding:8px 0; text-align:right;">₱${(i.lineTotalFinal || 0).toFixed(2)}</td></tr>`;
-          });
-        }
+            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
+            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
+            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${i.lineTotalFinal.toFixed(2)}</div></div>`;
+          }).join('');
 
-        let received = parseFloat(tx.amountReceived) || 0;
-        let net = parseFloat(tx.netTotal) || 0;
-        let change = received - net; if (change < 0) change = 0;
-
-        html += `</table><div style="text-align:right; margin-top:15px; font-size:18px; font-weight:bold;">Total: ₱${net.toFixed(2)}</div>`;
-        if (tx.paymentMethod === 'Cash') { html += `<div style="text-align:right; font-size:13px; color:#666; margin-top:5px;">Cash Tendered: ₱${received.toFixed(2)}<br>Change: ₱${change.toFixed(2)}</div>`; }
-        document.getElementById('txDetailBody').innerHTML = html;
-      } catch (error) {
-        console.error("Receipt Render Error: ", error);
-        document.getElementById('txDetailBody').innerHTML = "<span style='color:red;'>Error loading receipt details.</span>";
-      }
-    }
-
-    async function reprintDashboardReceipt(receiptId) {
-      let tx = await window.getReceiptDetails(receiptId);
-      if (!tx) { alert("Receipt not found!"); return; }
-      lastTransactionData = tx;
-      printReceipt('receipt');
-    }
-
-    // --- 7. CART & VARIANT LOGIC ---
-    async function openAddOrderModal(name, basePrice, existingItem = null) {
-        if (existingItem) { 
-            pendingItem = JSON.parse(JSON.stringify(existingItem)); 
-            editIndex = cart.indexOf(existingItem); 
-        } else { 
-            pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 }; 
-            editIndex = -1; 
-        }
-    
-        document.getElementById('modalItemName').innerText = pendingItem.name;
-        document.getElementById('modalItemPrice').innerText = '₱ ' + pendingItem.basePrice.toFixed(2);
-        document.getElementById('modalMainQty').innerText = pendingItem.qty;
-        document.getElementById('orderNotesInput').value = pendingItem.notes;
-    
-        setDiscountType(pendingItem.discountType);
-        if (pendingItem.discountType !== 'none') { 
-            document.getElementById('discountValueInput').value = pendingItem.discountVal; 
-        }
-    
-        document.getElementById('variantModal').style.display = 'flex';
-        
-        document.getElementById('addonSelectDropdown').innerHTML = '<option value="">⏳ Loading Add-Ons...</option>';
-        renderActiveAddons();
-    
-        try {
-            const q = query(collection(db, "menu"), where("name", "==", pendingItem.name));
-            const snap = await getDocs(q);
-            
-            let aoHtml = '<option value="">-- Select Add-On --</option>';
-            let addonsFound = false;
-    
-            if (!snap.empty) {
-                let itemData = snap.docs[0].data();
-            
-                if (itemData.addons && itemData.addons.length > 0) {
-                    addonsFound = true;
-                    
-                    let groupedAddons = {};
-                    itemData.addons.forEach(a => {
-                        if (!groupedAddons[a.name]) {
-                            groupedAddons[a.name] = { name: a.name, price: parseFloat(a.price) || 0 };
-                        } else {
-                            groupedAddons[a.name].price += (parseFloat(a.price) || 0);
-                        }
-                    });
-    
-                    Object.values(groupedAddons).forEach(a => {
-                        aoHtml += `<option value="${a.name}|${a.price}">${a.name} (+₱${a.price})</option>`;
-                    });
-                }
-            }
-    
-            if (!addonsFound) {
-                aoHtml = '<option value="">-- No Add-Ons Available --</option>';
-            }
-            
-            document.getElementById('addonSelectDropdown').innerHTML = aoHtml;
-            
-        } catch (error) {
-            console.error("Error loading specific addons:", error);
-            document.getElementById('addonSelectDropdown').innerHTML = '<option value="">⚠️ Error Loading Add-Ons</option>';
-        }
-    
-        const varContainer = document.getElementById('variantOptions'); 
-        varContainer.innerHTML = '';
-        const itemVariants = masterPOSData.variants[pendingItem.name];
-        if (itemVariants && itemVariants.length > 0) {
-            itemVariants.forEach((v, index) => {
-                let activeClass = v.name === pendingItem.variantName ? 'active' : '';
-                if (!existingItem && index === 0) { 
-                    pendingItem.variantName = v.name; 
-                    pendingItem.variantPrice = basePrice + v.priceAdj; 
-                    activeClass = 'active'; 
-                }
-                varContainer.innerHTML += `<button class="var-btn ${activeClass}" onclick="selectVariant(this, '${v.name}', ${basePrice + v.priceAdj})">${v.name}</button>`;
-            });
-        } else {
-            pendingItem.variantName = 'Standard'; 
-            pendingItem.variantPrice = basePrice;
-            varContainer.innerHTML = `<button class="var-btn active">Standard</button>`;
-        }
-    
-        updateModalTotals(); 
-    }
-    
-        function selectVariant(btn, vName, vPrice) {
-          document.querySelectorAll('#variantOptions .var-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active'); pendingItem.variantName = vName; pendingItem.variantPrice = vPrice; updateModalTotals();
-        }
-    
-        function adjustModalMainQty(delta) { let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1; if (cur + delta > 0) { pendingItem.qty = cur + delta; document.getElementById('modalMainQty').innerText = pendingItem.qty; updateModalTotals(); } }
-    
-        function setDiscountType(type) {
-          pendingItem.discountType = type; document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
-          let dvi = document.getElementById('discountValueInput'); dvi.style.display = type === 'none' ? 'none' : 'block'; dvi.value = '';
-          if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); pendingItem.discountVal = 0; }
-          else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
-          else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
-          updateModalTotals();
-        }
-
-    function addAddonFromDropdown() { let val = document.getElementById('addonSelectDropdown').value; if (!val) return; let parts = val.split('|'); adjustAddon(parts[0], parseFloat(parts[1]), 1); }
-    function adjustAddon(name, price, delta) { if (!pendingItem.addons[name]) pendingItem.addons[name] = { price: price, qty: 0 }; if (pendingItem.addons[name].qty + delta >= 0) { pendingItem.addons[name].qty += delta; renderActiveAddons(); updateModalTotals(); } }
-    function renderActiveAddons() {
-      let container = document.getElementById('activeAddonsContainer'); container.innerHTML = '';
-      for (let key in pendingItem.addons) {
-        if (pendingItem.addons[key].qty > 0) {
-          container.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; background:#f8f9fa; padding:10px 15px; border-radius:6px; border:1px solid #eee; margin-top:5px;"><span style="font-size:14px; font-weight:600; color:#333;">${key} <span style="color:var(--primary);">(+₱${pendingItem.addons[key].price.toFixed(2)})</span></span><div style="display:flex; align-items:center; gap:8px;"><button class="btn-qty-small" onclick="adjustAddon('${key}', ${pendingItem.addons[key].price}, -1)">-</button><span style="font-size:15px; font-weight:bold; width:20px; text-align:center;">${pendingItem.addons[key].qty}</span><button class="btn-qty-small" onclick="adjustAddon('${key}', ${pendingItem.addons[key].price}, 1)">+</button></div></div>`;
-        }
-      }
-    }
-
-    function updateModalTotals() {
-      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
-      let addonsTotal = 0; for (let key in pendingItem.addons) addonsTotal += (pendingItem.addons[key].price * pendingItem.addons[key].qty);
-      let lineTotal = (pendingItem.variantPrice + addonsTotal) * qty;
-      let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; pendingItem.discountVal = discInput;
-      let calcDisc = 0;
-      if (pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
-      else if (pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
-      let finalTotal = lineTotal - calcDisc;
-      document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
-    }
-
-    function confirmAddOrUpdateToCart() {
-      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; pendingItem.notes = document.getElementById('orderNotesInput').value;
-      let addonsTotal = 0; for (let key in pendingItem.addons) addonsTotal += (pendingItem.addons[key].price * pendingItem.addons[key].qty);
-      let lineTotalBeforeDisc = (pendingItem.variantPrice + addonsTotal) * qty;
-      let rowDiscount = 0;
-      if (pendingItem.discountType === 'percentage' && pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (pendingItem.discountVal / 100);
-      else if (pendingItem.discountType === 'fixed' && pendingItem.discountVal > 0) rowDiscount = pendingItem.discountVal;
-      let finalTotal = lineTotalBeforeDisc - rowDiscount;
-      pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; pendingItem.qty = qty;
-      if (editIndex >= 0) { cart[editIndex] = JSON.parse(JSON.stringify(pendingItem)); editIndex = -1; } else { cart.push(JSON.parse(JSON.stringify(pendingItem))); }
-      closeModal('variantModal'); renderCart();
-    }
-
-    function renderCart() {
-      const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
-      if (cart.length === 0) { 
-        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
-        document.getElementById('displaySubTotal').innerText = '₱0.00'; 
-        document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
-        window.currentGrandTotal = 0; 
-      } else {
-        cart.forEach((item, index) => {
-          grandTotal += item.lineTotalFinal;
-          let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
-
-          let addonsText = '';
-          if (item.addons) {
-              for (let key in item.addons) {
-                  if (item.addons[key].qty > 0) {
-                      addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${item.addons[key].name || key}</div>`;
-                  }
-              }
-          }
-    
-          list.innerHTML += `<li class="cart-item" onclick="openAddOrderModal('${item.name}', ${item.basePrice}, cart[${index}])">
-            <div class="cart-item-desc">
-              <span class="cart-item-name">${item.name}</span>
-              <div class="cart-item-subtext">${addonsText}${notesText}</div>
-            </div>
-            <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
-            <div class="cart-item-qty">x ${item.qty}</div>
-            <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
-            <button class="btn-remove" onclick="cart.splice(${index}, 1); renderCart(); event.stopPropagation();">✖</button>
-          </li>`;
+          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">👤 ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">₱${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;">
+          <button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="window.printParkedReceipt('${o.id}')">🖨️ Re-print</button>
+          <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="resumeOrder('${o.id}')">▶️ Resume & Pay</button>
+          <button style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;" onclick="window.deleteParkedOrderManually('${o.id}')">🗑️</button>
+          </div></div>`;
         });
-        window.currentGrandTotal = grandTotal; 
-        document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
-        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
       }
-    }
-    function clearCart() { if (cart.length === 0) return; if (confirm("Clear order?")) { cart = []; renderCart(); } }
+      document.getElementById('parkedListContainer').innerHTML = html;
+    };
 
-    // --- 8. CHECKOUT SYSTEM ---
-    function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; }
-    function appendNumpad(num) { if (amountReceivedStr === "0" && num !== ".") amountReceivedStr = num; else if (num === "." && amountReceivedStr.includes(".")) return; else amountReceivedStr += num; updateNumpadDisplay(); }
-    function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
-    function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
-    function setExactAmount() { amountReceivedStr = window.currentGrandTotal.toString(); updateNumpadDisplay(); }
-    function updateNumpadDisplay() { let received = parseFloat(amountReceivedStr) || 0; document.getElementById('checkoutReceived').innerText = '₱' + amountReceivedStr; let change = received - window.currentGrandTotal; document.getElementById('checkoutChange').innerText = '₱' + (change > 0 ? change.toFixed(2) : '0.00'); }
-    function setPaymentMethod(btn, method) { document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); selectedPaymentMethod = method; }
-
-    async function submitFinalOrder() {
-      const btn = document.getElementById('btnSubmitFinal'); btn.innerText = "Processing..."; btn.disabled = true;
-      const payload = {
-        branch: sessionUser.branch,
-        cashier: sessionUser.cashierName,
-        shiftId: activeShiftDetails ? activeShiftDetails.logId : "UNKNOWN",
-        orderType: document.getElementById('mainOrderType').value,
-        paymentMethod: selectedPaymentMethod,
-        netTotal: window.currentGrandTotal,
-        customerName: document.getElementById('finalCustomerName').value,
-        amountReceived: amountReceivedStr,
-        cart: cart
-      };
-
-      let receiptId = await window.processCheckout(payload);
-      if (receiptId) {
-        lastTransactionData = { ...payload, receiptId: receiptId };
-        document.getElementById('rcptId').innerText = `: ${receiptId}`;
-        let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${window.currentGrandTotal.toFixed(2)}`;
-        cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete Payment"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
-      } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete Payment"; btn.disabled = false; }
-    }
+    window.deleteParkedOrderManually = async function(docId) {
+        if(!confirm("Are you sure you want to permanently delete this parked order?")) return;
+        await window.deleteParkedOrder(docId);
+        window.showParkedOrders();
+        if (typeof window.updateParkedBadge === 'function') window.updateParkedBadge();
+        else updateParkedBadge();
+    };
 
     // ==========================================
     // 🖨️ ULTIMATE RAWBT PRINTER ENGINE
     // ==========================================
-    async function printReceipt(type) {
+    window.printReceipt = async function(type) {
       let d = lastTransactionData; if (!d || !d.cart) return;
       let hasFood = false; let hasDrinks = false;
       d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
@@ -2510,12 +2022,12 @@
       document.body.appendChild(bypassLink); 
       bypassLink.click(); 
       document.body.removeChild(bypassLink);
-    }
+    };
 
     // ==========================================
     // 🕒 PARKED ORDER PRINTER ENGINE
     // ==========================================
-    async function printParkedReceipt(docId) {
+    window.printParkedReceipt = async function(docId) {
       let orders = await window.getParkedOrders(sessionUser.branch); 
       let order = orders.find(o => o.id === docId); 
       if (!order) return;
@@ -2600,8 +2112,7 @@
       let encodedText = encodeURIComponent(proReceipt);
       let bypassLink = document.createElement('a'); 
       bypassLink.href = "rawbt:" + encodedText; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
-    }
-
+    };
   </script>
   <script type="module" src="main.js"></script>
 </body>
