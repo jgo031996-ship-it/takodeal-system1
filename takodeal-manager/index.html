@@ -1057,20 +1057,19 @@
 
             <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;">
               <div style="flex: 2; min-width: 200px;">
-                <label
-                  style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Item
-                  to Send</label>
-                <select id="dispItem"
-                  style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px;">
+                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Item to Send</label>
+                <select id="dispItem" onchange="updateDispatchUomLabel()" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;">
                   <option value="">Loading stock...</option>
                 </select>
               </div>
-              <div style="flex: 1; min-width: 100px;">
-                <label
-                  style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Quantity</label>
-                <input type="number" id="dispQty"
-                  style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px;"
-                  placeholder="0">
+              <div style="flex: 1; min-width: 150px;">
+                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Quantity</label>
+                <div style="display: flex; gap: 5px;">
+                  <input type="number" id="dispQty" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;" placeholder="0">
+                  <select id="dispUomSelect" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; color: var(--primary); background: #f8fafc; outline: none;">
+                     <option value="base">Units</option>
+                  </select>
+                </div>
               </div>
               <button onclick="addToDispatchCart()"
                 style="background: var(--sidebar-bg); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 38px;">➕
