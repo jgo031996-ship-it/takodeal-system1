@@ -1757,27 +1757,31 @@
                       </div>
                   </div>
   
-                  <div style="flex: 1;">
-                    <label style="font-size: 12px; font-weight: bold; color: #666;">Remitting Cashier</label>
-                    <input type="text" id="remitCashier" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px; background: #f8fafc; font-weight: bold; color: #475569;" readonly>
+                  <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                    <div style="flex: 1;">
+                      <label style="font-size: 12px; font-weight: bold; color: #666;">Remitting Cashier</label>
+                      <input type="text" id="remitCashier" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px; background: #f8fafc; font-weight: bold; color: #475569;" readonly>
+                    </div>
+                    <div style="flex: 1;">
+                      <label style="font-size: 12px; font-weight: bold; color: #666;">Total Amount Remitted (₱)</label>
+                      <input type="number" id="remitAmount" class="input-box"
+                        style="width: 100%; font-size: 18px; font-weight: bold; color: #16a34a; padding: 8px; margin-top: 5px;"
+                        placeholder="0.00">
+                    </div>
                   </div>
-  
-                  <div style="margin-bottom: 15px;">
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Amount Remitted (₱)</label>
-                      <input type="number" id="remitAmount" placeholder="e.g. 5000" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 18px; font-weight: bold; box-sizing: border-box;">
-                  </div>
-  
-                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                      <div style="flex: 1;">
-                        <label style="font-size: 12px; font-weight: bold; color: #666;">Send Via (Bank/E-Wallet)</label>
-                        <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; background: white;">
-                            <option value="">Loading HQ Accounts...</option>
-                        </select>
-                      </div>
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Recipient Details</label>
-                          <input type="text" id="remitRecipient" placeholder="e.g. Boss Jostuart" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                      </div>
+        
+                  <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                    <div style="flex: 1;">
+                      <label style="font-size: 12px; font-weight: bold; color: #666;">Send Via (Bank/E-Wallet)</label>
+                      <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; background: white;">
+                          <option value="">Loading HQ Accounts...</option>
+                      </select>
+                    </div>
+                    <div style="flex: 1;">
+                      <label style="font-size: 12px; font-weight: bold; color: #666;">Sent To (Recipient Name)</label>
+                      <input type="text" id="remitRecipient" class="input-box"
+                        style="width: 100%; padding: 8px; margin-top: 5px;" placeholder="e.g. Boss Jostuart">
+                    </div>
                   </div>
   
                   <div style="margin-bottom: 20px;">
