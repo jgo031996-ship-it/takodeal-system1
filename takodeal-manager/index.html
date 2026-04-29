@@ -869,6 +869,7 @@
                 <th style="color: #0284c7;">Total Loaned (₱)</th>
                 <th style="color: #16a34a;">Total Paid (₱)</th>
                 <th style="color: #dc2626;">Remaining Balance</th>
+                <th style="color: #8b5cf6;">Auto-Deduct / Cutoff</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1988,6 +1989,7 @@
           <div style="background: #1e293b; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;" class="no-print">
               <h2 style="margin: 0; font-size: 16px; color: white;">Digital Payslip Generator</h2>
               <div style="display: flex; gap: 10px;">
+                  <button onclick="window.finalizePayslip()" id="btnFinalizePayslip" style="background: #3b82f6; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✅ Mark Paid & Auto-Deduct</button>
                   <button onclick="printPayslip()" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">🖨️ Print / Save PDF</button>
                   <button onclick="document.getElementById('payslipModal').style.display='none'" style="background: transparent; color: white; border: 1px solid white; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✖ Close</button>
               </div>
