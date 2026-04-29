@@ -2580,6 +2580,35 @@ window.loadStockLogs = async function() {
 // ==========================================
 // ✏️ UPGRADED INVENTORY EDIT ENGINE
 // ==========================================
+window.calcEditCost = function() {
+    let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
+    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
+    let baseUom = document.getElementById('editInvBaseUom').value || 'Unit';
+    let baseCost = purchCost / conversion;
+    let summaryEl = document.getElementById('editInvCostSummary');
+    if(summaryEl) summaryEl.innerHTML = `Calculated Base Cost: <strong style="color:#d97706;">₱${baseCost.toFixed(4)}</strong> per ${baseUom}`;
+};
+
+window.calcEditVariance = function() {
+    let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
+    let newQInput = document.getElementById('editInvNewQty').value;
+    let varEl = document.getElementById('editInvVariance');
+
+    if (newQInput === '') {
+        varEl.innerText = '0';
+        varEl.style.color = '#64748b';
+        return;
+    }
+
+    let newQ = parseFloat(newQInput) || 0;
+    let diff = newQ - oldQ;
+    
+    varEl.innerText = diff > 0 ? '+' + diff : diff;
+    if (diff < 0) varEl.style.color = '#ef4444';
+    else if (diff > 0) varEl.style.color = '#10b981';
+    else varEl.style.color = '#64748b';
+};
+
 window.openEditInv = async function(encodedData) {
     let passedData = JSON.parse(decodeURIComponent(encodedData));
     let id = passedData.id;
