@@ -2638,10 +2638,14 @@ window.saveInventoryEdit = async function () {
 
     try {
         // 1. Update the item with ALL the new metadata and stock
+        // 🔥 BRUTE-FORCE COST UPDATE: We update all 3 common cost variables 
+        // to guarantee the table instantly reads the new price!
         await updateDoc(doc(db, "inventory", id), { 
             name: newName,
             category: newCat,
             costPerBaseUOM: newCost,
+            cost: newCost,
+            baseCost: newCost,
             currentStock: newQty 
         });
         
