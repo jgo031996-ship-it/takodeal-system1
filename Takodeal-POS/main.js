@@ -351,30 +351,77 @@ window.deleteParkedOrder = async function (docId) {
   } catch (e) { console.error(e); return false; }
 };
 
-// --- VOID & DETAILS ENGINE ---
+// --- VOID & DETAILS ENGINE (WITH INVENTORY REPLENISHMENT) ---
 window.voidTransaction = async function (receiptId, cashierName, branch) {
   try {
     const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
     const snap = await getDocs(q);
     if (snap.empty) throw new Error("Transaction not found");
-    const docId = snap.docs[0].id;
+    
+    const txDoc = snap.docs[0];
+    const docId = txDoc.id;
+    const txData = txDoc.data();
 
-    // 1. Void the transaction
+    // Prevent double-voiding glitches
+    if (txData.status === "Voided") {
+        alert("⚠️ This transaction is already voided.");
+        return false;
+    }
+
+    // 1. Void the transaction record
     await updateDoc(doc(db, "transactions", docId), { status: "Voided", voidedBy: cashierName, voidTime: serverTimestamp() });
 
-    // 2. 🔥 THE MANAGER ALARM: Write to the push notification pipeline!
+    // 2. 🔥 INVENTORY REPLENISHMENT ENGINE 🔥
+    if (txData.cart && Array.isArray(txData.cart)) {
+      for (let cartItem of txData.cart) {
+        let itemName = cartItem.name || cartItem.itemName;
+        let qtyVoided = cartItem.qty || 1;
+
+        // Pull the recipe (BOM) for this specific item
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
+
+        for (let bomDoc of bomSnap.docs) {
+          let recipeData = bomDoc.data();
+          let ingredientName = recipeData.ingredientName;
+          
+          // Calculate exactly how much to return (+ instead of -)
+          let totalAmountToReturn = (recipeData.qty || 0) * qtyVoided;
+
+          // Find the ingredient in this specific branch's inventory
+          const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ingredientName));
+          const invSnap = await getDocs(invQ);
+
+          if (!invSnap.empty) {
+            let invDocRef = invSnap.docs[0].ref;
+            let invData = invSnap.docs[0].data();
+            
+            // Add it back to the current stock!
+            let newStock = (invData.currentStock || 0) + totalAmountToReturn;
+
+            // Update the cloud silently
+            await updateDoc(invDocRef, { currentStock: newStock });
+          }
+        }
+      }
+    }
+
+    // 3. 🚨 THE MANAGER ALARM
     await addDoc(collection(db, "manager_alerts"), {
       type: "VOID_ALERT",
       branch: branch,
       cashier: cashierName,
       receiptId: receiptId,
-      message: `WARNING: Cashier ${cashierName} voided Receipt ${receiptId}.`,
+      message: `WARNING: Cashier ${cashierName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
       timestamp: serverTimestamp(),
       isRead: false
     });
 
     return true;
-  } catch (e) { console.error(e); throw e; }
+  } catch (e) { 
+    console.error(e); 
+    throw e; 
+  }
 };
 
 // --- MISSING RECEIPT DETAILS ENGINE ---
