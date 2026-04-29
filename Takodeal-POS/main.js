@@ -1070,3 +1070,93 @@ window.submitStaffRequest = async function(requestType) {
         document.getElementById('reqMealCost').value = ''; document.getElementById('staffRequestsModal').style.display = 'none';
     } catch (error) { console.error(error); alert("❌ Failed to submit."); }
 };
+
+// ==========================================
+// 🔪 KITCHEN PREP ENGINE
+// ==========================================
+
+window.loadKitchenPrep = async function() {
+    let container = document.getElementById('kitchenPrepList');
+    if (!container) return;
+    
+    // Safety check for branch
+    let branch = localStorage.getItem('branch') || (window.sessionUser ? window.sessionUser.branch : null);
+    if (!branch) {
+        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Error: Cannot detect your branch.</div>`;
+        return;
+    }
+
+    container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
+
+    try {
+        // Fetch only "Prep Batch" category items for THIS specific branch
+        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("category", "==", "Prep Batch"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        if (snap.empty) {
+            html = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">No Prep Batch items found for this branch.</div>`;
+        } else {
+            snap.forEach(docSnap => {
+                let d = docSnap.data();
+                html += `
+                    <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; background: #ffffff; text-align: center;">
+                        <h3 style="margin: 0 0 10px 0; color: #0f172a; font-size: 16px;">${d.name}</h3>
+                        <p style="margin: 0 0 15px 0; color: #64748b; font-size: 12px;">Current Stock: <strong style="color:#0f172a;">${d.currentStock || 0} ${d.baseUom || 'batch'}</strong></p>
+                        <button onclick="window.logPrepBatch('${docSnap.id}', '${d.name}', '${branch}')" style="background: #f59e0b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);">
+                            + Log 1 Batch Made
+                        </button>
+                    </div>
+                `;
+            });
+        }
+        container.innerHTML = html;
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Failed to load items. Check connection.</div>`;
+    }
+};
+
+window.logPrepBatch = async function(invId, itemName, branch) {
+    let qty = prompt(`How many batches of ${itemName} did you prepare?`, "1");
+    if (!qty || isNaN(qty) || qty <= 0) return;
+    
+    qty = parseFloat(qty);
+    if (!confirm(`Confirm adding ${qty} batch(es) of ${itemName} to ${branch} inventory?`)) return;
+
+    try {
+        const invRef = doc(db, "inventory", invId);
+        
+        // 1. ADD TO PREP BATCH INVENTORY
+        await updateDoc(invRef, {
+            currentStock: increment(qty)
+        });
+
+        // 2. LOG THE ACTION
+        let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
+        await addDoc(collection(db, "stock_logs"), {
+            branch: branch,
+            item: itemName,
+            variance: qty,
+            type: "Kitchen Prep Generation",
+            note: `Prepared by ${safeCashierName}`,
+            timestamp: new Date()
+        });
+
+        /* 
+        🔥 PHASE 2 BOM DEDUCTION HOOK:
+        If your BOM collection holds recipes for Prep Batches, you would fetch it here:
+        const bomSnap = await getDoc(doc(db, "bom", itemName));
+        if(bomSnap.exists()) {
+             // Loop through bomSnap.data().ingredients and deduct them from raw inventory!
+        }
+        */
+
+        alert(`✅ Successfully logged ${qty} batch(es) of ${itemName}!`);
+        window.loadKitchenPrep(); // Refresh the list
+        
+    } catch (e) {
+        console.error(e);
+        alert("❌ Failed to log prep batch.");
+    }
+};
