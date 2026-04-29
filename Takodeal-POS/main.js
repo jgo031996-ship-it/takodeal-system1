@@ -988,13 +988,15 @@ window.submitStaffRequest = async function(requestType) {
     }
 };
 
+let currentBranchStaffCache = []; // Caches staff data to check PINs!
+
 // ==========================================
 // 🚪 SIGN OUT ENGINE
 // ==========================================
 window.logoutCashier = function() {
     if (confirm("Are you sure you want to sign out of this account?")) {
         localStorage.removeItem('cashierName'); // Clear memory
-        sessionUser = null;
+        window.sessionUser = null;
         location.reload(); // Instantly returns to the PIN Lock screen
     }
 };
@@ -1004,16 +1006,13 @@ window.logoutCashier = function() {
 // ==========================================
 window.openRemittanceModal = function() {
     document.getElementById('remittanceModal').style.display = 'flex';
-    document.getElementById('remitCashier').value = sessionUser.cashierName;
+    document.getElementById('remitCashier').value = window.sessionUser.cashierName;
     
-    // Auto-fill dates with today
     let today = new Date().toISOString().split('T')[0];
     document.getElementById('remitStartDate').value = today;
     document.getElementById('remitEndDate').value = today;
     
     window.switchRemittanceTab('form');
-    
-    // Load HQ Bank Accounts for the dropdown!
     window.loadHqAccountsForRemittance();
 };
 
@@ -1039,8 +1038,8 @@ window.loadHqAccountsForRemittance = async function() {
         const q = query(collection(db, "cash_accounts"));
         const snap = await getDocs(q);
         let html = '<option value="">-- Select Transfer Method --</option>';
-        snap.forEach(doc => {
-            html += `<option value="${doc.data().name}">${doc.data().name}</option>`;
+        snap.forEach(docSnap => {
+            html += `<option value="${docSnap.data().name}">${docSnap.data().name}</option>`;
         });
         html += '<option value="Physical Handover">Physical Handover (Cash)</option>';
         select.innerHTML = html;
@@ -1051,8 +1050,8 @@ window.loadHqAccountsForRemittance = async function() {
 
 window.submitRemittance = async function() {
     let payload = {
-        branch: sessionUser.branch,
-        cashier: sessionUser.cashierName,
+        branch: window.sessionUser.branch,
+        cashier: window.sessionUser.cashierName,
         salesPeriodStart: document.getElementById('remitStartDate').value,
         salesPeriodEnd: document.getElementById('remitEndDate').value,
         amount: parseFloat(document.getElementById('remitAmount').value),
@@ -1070,7 +1069,6 @@ window.submitRemittance = async function() {
     try {
         await addDoc(collection(db, "remittances"), payload);
         alert("✅ Remittance securely sent to HQ! Waiting for Owner's approval.");
-        
         document.getElementById('remitAmount').value = '';
         document.getElementById('remitRefNum').value = '';
         window.switchRemittanceTab('history');
@@ -1083,14 +1081,13 @@ window.loadRemittanceHistory = async function() {
     const tbody = document.getElementById('remitHistoryTableBody');
     tbody.innerHTML = '<tr><td style="padding:20px; text-align:center;">Fetching history...</td></tr>';
     try {
-        const q = query(collection(db, "remittances"), where("branch", "==", sessionUser.branch), orderBy("timestamp", "desc"), limit(20));
+        const q = query(collection(db, "remittances"), where("branch", "==", window.sessionUser.branch), orderBy("timestamp", "desc"), limit(20));
         const snap = await getDocs(q);
         let html = '';
-        snap.forEach(doc => {
-            let d = doc.data();
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Just now';
             let statusColor = d.status === "Received" ? "#16a34a" : "#d97706";
-            
             html += `
                 <tr style="border-bottom: 1px solid #cbd5e1;">
                     <td style="padding: 10px; font-weight: bold; color: #334155;">₱${d.amount.toLocaleString()}</td>
@@ -1103,5 +1100,211 @@ window.loadRemittanceHistory = async function() {
         tbody.innerHTML = html || '<tr><td style="padding:20px; text-align:center;">No previous transfers.</td></tr>';
     } catch (e) {
         console.error(e); tbody.innerHTML = '<tr><td style="padding:20px; text-align:center; color:red;">Error loading history.</td></tr>';
+    }
+};
+
+// ==========================================
+// 📍 UPGRADED GPS & SELFIE TIME CLOCK
+// ==========================================
+window.openTimeClockModal = async function() {
+    document.getElementById('timeClockModal').style.display = 'flex';
+    document.getElementById('clockStaffPin').value = ''; 
+    
+    let select = document.getElementById('clockStaffName');
+    select.innerHTML = '<option value="">Loading Staff...</option>';
+
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        const q = query(collection(db, "cashiers"), where("branch", "in", [branch, "Main Office"]));
+        const snap = await getDocs(q);
+        
+        currentBranchStaffCache = [];
+        let html = '<option value="">-- Select Your Name --</option>';
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            currentBranchStaffCache.push(data); 
+            html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
+        });
+        select.innerHTML = html;
+
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        document.getElementById('clockVideo').srcObject = cameraStream;
+    } catch (e) {
+        console.error("Camera/DB Error:", e);
+        alert("⚠️ Error loading Time Clock. Check Camera permissions.");
+    }
+};
+
+window.submitAttendance = async function(type) {
+    const staffName = document.getElementById('clockStaffName').value;
+    const inputPin = document.getElementById('clockStaffPin').value.trim();
+
+    if (!staffName) { alert("❌ Please select your name."); return; }
+    if (!inputPin) { alert("❌ Please enter your 4-Digit Security PIN."); return; }
+
+    let staffProfile = currentBranchStaffCache.find(s => s.cashierName === staffName);
+    if (!staffProfile || staffProfile.pin !== inputPin) {
+        alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
+        document.getElementById('clockStaffPin').value = ''; 
+        return;
+    }
+
+    const branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    const targetZone = BRANCH_ZONES[branch];
+
+    if (!targetZone) { alert(`❌ GPS Configuration Missing for ${branch}.`); return; }
+
+    const video = document.getElementById('clockVideo');
+    const canvas = document.getElementById('clockCanvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+
+    if (!navigator.geolocation) { alert("❌ Geolocation is not supported."); return; }
+
+    let buttons = document.querySelectorAll('#timeClockModal button');
+    buttons.forEach(b => b.disabled = true);
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+        const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+
+        if (distance > ALLOWED_RADIUS_METERS) {
+            alert(`🚨 SECURITY LOCKOUT!\n\nYou are ${Math.round(distance)} meters away from the ${branch} branch.\nYou must be within ${ALLOWED_RADIUS_METERS} meters to clock in or out!`);
+            buttons.forEach(b => b.disabled = false); return;
+        }
+
+        try {
+            await addDoc(collection(db, "attendance_logs"), {
+                staffName: staffName, branch: branch, type: type, timestamp: new Date(),
+                locationLat: userLat, locationLng: userLng, distanceMeters: Math.round(distance),
+                photoBase64: photoBase64
+            });
+
+            alert(`✅ ${type} SUCCESS!\n\nIdentity and Location Verified for ${staffName}.`);
+            window.closeTimeClock();
+        } catch (error) {
+            console.error(error); alert("❌ Failed to log attendance.");
+        } finally { buttons.forEach(b => b.disabled = false); }
+
+    }, (error) => {
+        alert("❌ GPS access is required to use the Time Clock.");
+        buttons.forEach(b => b.disabled = false);
+    }, { enableHighAccuracy: true }); 
+};
+
+// ==========================================
+// 📥 UPGRADED STAFF REQUEST HUB (WITH INBOX)
+// ==========================================
+window.switchRequestTab = function(tabName) {
+    const tabs = ['Advance', 'Leave', 'Meal', 'Reason', 'Inbox'];
+    tabs.forEach(t => {
+        let btn = document.getElementById('tabReq' + t);
+        let form = document.getElementById('formReq' + t);
+        if (!btn || !form) return;
+        
+        if (t === tabName) {
+            btn.style.borderBottom = "3px solid #3b82f6";
+            btn.style.color = "#0f172a";
+            btn.style.background = "white";
+            form.style.display = "block";
+            if (tabName === 'Inbox') window.loadStaffPersonalInbox();
+        } else {
+            btn.style.borderBottom = "3px solid transparent";
+            btn.style.color = "#64748b";
+            btn.style.background = "transparent";
+            form.style.display = "none";
+        }
+    });
+};
+
+window.loadStaffPersonalInbox = async function() {
+    let container = document.getElementById('staffPersonalInboxList');
+    container.innerHTML = '<div style="padding:20px; text-align:center; color:#64748b;">Loading your records...</div>';
+
+    try {
+        const q = query(collection(db, "staff_requests"), where("staffName", "==", window.sessionUser.cashierName), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
+            
+            let statusBadge = `<span style="background: #fef9c3; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending Review</span>`;
+            if (d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Approved</span>`;
+            if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Rejected</span>`;
+
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <strong style="color: #334155;">${d.type}</strong>
+                        ${statusBadge}
+                    </div>
+                    <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">Submitted: ${dateStr}</div>
+                    <div style="font-size: 14px; font-weight: bold; color: var(--primary);">
+                        ${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>';
+    }
+};
+
+window.submitStaffRequest = async function(requestType) {
+    let payload = {
+        type: requestType,
+        staffName: window.sessionUser.cashierName,
+        branch: window.sessionUser.branch,
+        status: "Pending", 
+        timestamp: new Date()
+    };
+
+    if (requestType === "Cash Advance") {
+        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value);
+        payload.reason = document.getElementById('reqAdvReason').value.trim();
+        if (isNaN(payload.amount) || payload.amount <= 0 || !payload.reason) { alert("❌ Please enter a valid amount and reason."); return; }
+    } 
+    else if (requestType === "Leave") {
+        payload.startDate = document.getElementById('reqLeaveStart').value;
+        payload.endDate = document.getElementById('reqLeaveEnd').value;
+        payload.leaveType = document.getElementById('reqLeaveType').value;
+        payload.reason = document.getElementById('reqLeaveReason').value.trim();
+        if (!payload.startDate || !payload.endDate || !payload.reason) { alert("❌ Please fill out all dates and a reason."); return; }
+    }
+    else if (requestType === "Staff Meal") {
+        payload.item = document.getElementById('reqMealItem').value.trim();
+        payload.amount = parseFloat(document.getElementById('reqMealCost').value);
+        if (!payload.item || isNaN(payload.amount) || payload.amount < 0) { alert("❌ Please enter the item consumed and a valid deduction cost."); return; }
+    }
+    else if (requestType === "Reason Letter") {
+        payload.alertId = document.getElementById('explainAlertId').value;
+        payload.cause = document.getElementById('explainCause').value;
+        payload.message = document.getElementById('explainMessage').value.trim();
+        if (!payload.message) { alert("❌ Please provide a detailed explanation."); return; }
+    }
+
+    try {
+        await addDoc(collection(db, "staff_requests"), payload);
+        alert(`✅ Success! Your ${requestType} has been securely submitted to the Main Office for review.`);
+        
+        document.getElementById('reqAdvAmount').value = '';
+        document.getElementById('reqAdvReason').value = '';
+        document.getElementById('reqLeaveStart').value = '';
+        document.getElementById('reqLeaveEnd').value = '';
+        document.getElementById('reqLeaveReason').value = '';
+        document.getElementById('reqMealItem').value = '';
+        document.getElementById('reqMealCost').value = '';
+        document.getElementById('explainMessage').value = '';
+        document.getElementById('staffRequestsModal').style.display = 'none';
+    } catch (error) {
+        console.error("Error submitting request:", error);
+        alert("❌ Failed to submit request to the cloud. Check internet connection.");
     }
 };
