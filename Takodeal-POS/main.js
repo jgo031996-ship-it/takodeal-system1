@@ -802,8 +802,16 @@ window.logoutCashier = function() {
 // 💸 REMIT CASH TO HQ ENGINE
 // ==========================================
 window.openRemittanceModal = function() {
+  // 🛡️ 1. BULLETPROOF NAME GRABBER 
+    let safeCashierName = localStorage.getItem('cashierName');
+    if (!safeCashierName && typeof window.sessionUser !== 'undefined' && window.sessionUser) {
+        safeCashierName = window.sessionUser.cashierName;
+    }
+    if (!safeCashierName) {
+        safeCashierName = "Unknown Staff"; 
+    }
     document.getElementById('remittanceModal').style.display = 'flex';
-    document.getElementById('remitCashier').value = window.sessionUser.cashierName;
+    document.getElementById('remitCashier').value = safeCashierName;
     
     let today = new Date().toISOString().split('T')[0];
     document.getElementById('remitStartDate').value = today;
