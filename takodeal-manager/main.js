@@ -4355,48 +4355,47 @@ window.setDefaultCutoffDates = function() {
 // Call it immediately so the dates populate when the app opens
 window.setDefaultCutoffDates();
 
+// ==========================================
+// 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
+// ==========================================
+
 window.loadPayrollGenerator = async function() {
     const tbody = document.getElementById('payrollGeneratorBody');
     if (!tbody) return;
 
     let startDateRaw = document.getElementById('payrollStart').value;
     let endDateRaw = document.getElementById('payrollEnd').value;
+    if (!startDateRaw || !endDateRaw) { alert("Please set both cutoff dates."); return; }
 
-    if (!startDateRaw || !endDateRaw) {
-        alert("Please set both cutoff dates."); return;
-    }
-
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Crunching payroll numbers...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Crunching payroll numbers & ledgers...</td></tr>';
 
     const startTimestamp = new Date(startDateRaw + 'T00:00:00');
     const endTimestamp = new Date(endDateRaw + 'T23:59:59');
 
     try {
-        // 1. Fetch Staff Profiles (to get exact hourly rates & details)
+        // 1. Fetch Staff Profiles & Ledger Balances
         const staffSnap = await getDocs(collection(db, "cashiers"));
+        const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
+        
         let staffDict = {};
-        staffSnap.forEach(doc => {
-            staffDict[doc.data().cashierName] = doc.data();
-        });
+        staffSnap.forEach(docSnap => { staffDict[docSnap.data().cashierName] = docSnap.data(); });
+        
+        let ledgerDict = {};
+        ledgerSnap.forEach(docSnap => { ledgerDict[docSnap.data().staffName] = { id: docSnap.id, ...docSnap.data() }; });
 
-        // 2. Fetch Shifts in Date Range
-        const shiftQ = query(collection(db, "shifts"), 
-            where("startTime", ">=", startTimestamp), 
-            where("startTime", "<=", endTimestamp)
-        );
+        // 2. Fetch Shifts & 1-Time Deductions
+        const shiftQ = query(collection(db, "shifts"), where("startTime", ">=", startTimestamp), where("startTime", "<=", endTimestamp));
         const shiftSnap = await getDocs(shiftQ);
-
-        // 3. Fetch Unpaid Deductions (Advances & Meals)
+        
         const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
         const deductSnap = await getDocs(deductQ);
 
-        // Aggregate Data into a neat package
         let payrollData = {};
 
+        // Aggregate Hours
         shiftSnap.forEach(docSnap => {
             let shift = docSnap.data();
-            if (!shift.endTime) return; // Skip shifts that haven't clocked out yet
-
+            if (!shift.endTime) return; 
             let name = shift.cashier;
             if (!payrollData[name]) payrollData[name] = { branch: shift.branch, hours: 0, deductions: 0, advances: 0, meals: 0 };
 
@@ -4405,37 +4404,47 @@ window.loadPayrollGenerator = async function() {
             payrollData[name].hours += hrs;
         });
 
+        // Aggregate Vales & Meals
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data();
             let name = deduct.staffName;
-            if (!payrollData[name]) return; // Only process deductions if they actually worked this cycle
-
+            if (!payrollData[name]) return; 
             let amt = parseFloat(deduct.amount) || 0;
-            if (deduct.type === "Cash Advance") {
-                payrollData[name].advances += amt;
-            } else if (deduct.type === "Staff Meal") {
-                payrollData[name].meals += amt;
-            }
+            if (deduct.type === "Cash Advance") payrollData[name].advances += amt;
+            else if (deduct.type === "Staff Meal") payrollData[name].meals += amt;
             payrollData[name].deductions += amt;
         });
 
-        // Render the Table
+        // Build Table & Apply Auto-Deductions!
         let html = '';
         for (let name in payrollData) {
             let data = payrollData[name];
             let rate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
             
-            // Encode all this heavy data to pass it directly into the Payslip Modal
+            // 🧠 The Auto-Deduct Math
+            let loanData = ledgerDict[name];
+            let autoLoanDeduction = 0;
+            let ledgerId = null;
+
+            if (loanData) {
+                let currentBalance = loanData.totalLoaned - loanData.totalPaid;
+                if (currentBalance > 0) {
+                    let setRate = loanData.cutoffDeduction || 0;
+                    // Ensure we don't deduct more than what they actually owe!
+                    autoLoanDeduction = Math.min(setRate, currentBalance);
+                    ledgerId = loanData.id;
+                }
+            }
+
+            data.loans = autoLoanDeduction;
+            data.ledgerId = ledgerId;
+            data.deductions += autoLoanDeduction; // Add to total display
+
             let encodedData = encodeURIComponent(JSON.stringify({
-                name: name,
-                branch: data.branch,
-                hours: data.hours,
-                advances: data.advances,
-                meals: data.meals,
-                rate: rate,
-                profile: staffDict[name] || {},
-                start: startDateRaw,
-                end: endDateRaw
+                name: name, branch: data.branch, hours: data.hours,
+                advances: data.advances, meals: data.meals, loans: data.loans,
+                ledgerId: data.ledgerId, rate: rate, profile: staffDict[name] || {},
+                start: startDateRaw, end: endDateRaw
             }));
 
             html += `
@@ -4462,57 +4471,93 @@ window.loadPayrollGenerator = async function() {
 window.openPayslipModal = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
     
-    // 🧮 Do the Final Math
+    // Save to global memory so the Finalize button can access it!
+    window.currentPayslipData = data; 
+    
     let basicPay = data.hours * data.rate;
-    let totalDeduct = data.advances + data.meals; // SSS/PhilHealth logic can be added here later
+    let totalDeduct = data.advances + data.meals + data.loans;
     let netPay = basicPay - totalDeduct;
 
-    // 📝 Fill the Header
     document.getElementById('psName').innerText = data.name;
     document.getElementById('psBranch').innerText = data.branch;
     document.getElementById('psStart').innerText = data.start;
     document.getElementById('psEnd').innerText = data.end;
     document.getElementById('psDist').innerText = new Date().toISOString().split('T')[0];
     
-    // 📝 Fill from Employee Profile
     document.getElementById('psHired').innerText = data.profile.dateHired || '---';
     document.getElementById('psSSS').innerText = data.profile.sss ? "Logged" : "0.00"; 
     document.getElementById('psPhil').innerText = data.profile.philhealth ? "Logged" : "0.00";
     document.getElementById('psPagibig').innerText = data.profile.pagibig ? "Logged" : "0.00";
 
-    // 📝 Fill Financials
     document.getElementById('psHours').innerText = data.hours.toFixed(2);
     document.getElementById('psBasicPay').innerText = basicPay.toLocaleString(undefined, {minimumFractionDigits: 2});
     document.getElementById('psGross').innerText = basicPay.toLocaleString(undefined, {minimumFractionDigits: 2});
     
     document.getElementById('psAdvance').innerText = data.advances.toLocaleString(undefined, {minimumFractionDigits: 2});
     document.getElementById('psFoods').innerText = data.meals.toLocaleString(undefined, {minimumFractionDigits: 2});
-    document.getElementById('psTotalDeduct').innerText = totalDeduct.toLocaleString(undefined, {minimumFractionDigits: 2});
     
+    // 🧠 Fill the new Loan field
+    document.getElementById('psLoans').innerText = data.loans.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psTotalDeduct').innerText = totalDeduct.toLocaleString(undefined, {minimumFractionDigits: 2});
     document.getElementById('psNetPay').innerText = netPay.toLocaleString(undefined, {minimumFractionDigits: 2});
 
-    // Pop the Modal!
     document.getElementById('payslipModal').style.display = 'flex';
 };
 
+window.finalizePayslip = async function() {
+    let data = window.currentPayslipData;
+    if (!data) return;
+    
+    let confirmMsg = `Are you sure you want to mark ${data.name}'s payslip as PAID?\n\n`;
+    if (data.loans > 0) {
+        confirmMsg += `This will AUTOMATICALLY deduct ₱${data.loans} from their Ledger Balance!\n\n`;
+    }
+    confirmMsg += `⚠️ Only click this ONCE per cutoff when you physically hand them the cash!`;
+
+    if (!confirm(confirmMsg)) return;
+    
+    let btn = document.getElementById('btnFinalizePayslip');
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+    
+    try {
+        // Automatically deduct the loan in the ledger!
+        if (data.loans > 0 && data.ledgerId) {
+            const ledgerRef = doc(db, "staff_ledger", data.ledgerId);
+            const ledgerSnap = await getDoc(ledgerRef);
+            if (ledgerSnap.exists()) {
+                let currentPaid = ledgerSnap.data().totalPaid || 0;
+                await updateDoc(ledgerRef, { totalPaid: currentPaid + data.loans });
+            }
+        }
+        
+        alert(`✅ ${data.name}'s payslip finalized and ledger updated!`);
+        document.getElementById('payslipModal').style.display = 'none';
+        
+        // Refresh screens so the new balances show instantly
+        window.loadLedger(); 
+        window.loadPayrollGenerator(); 
+    } catch (e) {
+        console.error(e); alert("❌ Failed to finalize payslip.");
+    } finally {
+        btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false;
+    }
+};
+
 window.printPayslip = function() {
-    window.print(); // Triggers the browser's native Print to PDF function!
+    window.print(); 
 };
 
 // ==========================================
-// 📘 STAFF LOANS & LEDGER ENGINE
+// 📘 STAFF LOANS & LEDGER ENGINE (WITH AUTO-DEDUCT)
 // ==========================================
 
 window.loadLedger = async function() {
     const tbody = document.getElementById('ledgerTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center">⏳ Calculating running balances...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">⏳ Calculating running balances...</td></tr>';
 
     try {
-        // 1. Fetch all staff to build the rows
         const staffSnap = await getDocs(collection(db, "cashiers"));
-        
-        // 2. Fetch the master ledger records
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         let ledgerData = {};
 
@@ -4527,11 +4572,10 @@ window.loadLedger = async function() {
             let staff = docSnap.data();
             let name = staff.cashierName;
             
-            // If they don't have a ledger yet, default to 0
-            let record = ledgerData[name] || { totalLoaned: 0, totalPaid: 0 };
+            let record = ledgerData[name] || { totalLoaned: 0, totalPaid: 0, cutoffDeduction: 0 };
             let balance = record.totalLoaned - record.totalPaid;
+            let cutoffDed = record.cutoffDeduction || 0;
 
-            // Only highlight if they owe money
             let balColor = balance > 0 ? 'var(--danger)' : 'var(--text-muted)';
             let balWeight = balance > 0 ? 'bold' : 'normal';
 
@@ -4542,20 +4586,46 @@ window.loadLedger = async function() {
                     <td style="font-weight: bold; color: #0284c7;">₱${record.totalLoaned.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="font-weight: bold; color: #16a34a;">₱${record.totalPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="font-weight: ${balWeight}; color: ${balColor}; font-size: 15px;">₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="font-weight: bold; color: #8b5cf6;">₱${cutoffDed.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td>
-                        <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Issue Loan</button>
-                        <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance})">💸 Log Payment</button>
+                        <button class="btn-refresh" style="background: #f3e8ff; color: #7c3aed; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.setAutoDeduct('${record.id}', '${name}', ${cutoffDed}, ${balance})">⚙️ Set Deduct</button>
+                        <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Loan</button>
+                        <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance})">💸 Pay</button>
                     </td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center">No staff found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center">No staff found.</td></tr>';
 
     } catch (e) {
         console.error("Ledger Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading ledger.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error loading ledger.</td></tr>';
     }
+};
+
+window.setAutoDeduct = async function(docId, staffName, currentDed, balance) {
+    if (balance <= 0) { alert("✅ This employee has no outstanding balance."); return; }
+    
+    let amtStr = prompt(`Set automatic per-cutoff deduction for ${staffName}.\nRemaining Balance: ₱${balance.toLocaleString()}\n\nEnter amount to deduct every payslip (₱):`, currentDed);
+    if (amtStr === null) return;
+    
+    let amt = parseFloat(amtStr) || 0;
+    if (amt < 0) return;
+    if (amt > balance) { 
+        alert(`⚠️ Warning: You set the deduction higher than their balance. We will cap it at ₱${balance.toLocaleString()}.`); 
+        amt = balance; 
+    }
+    
+    try {
+        if (docId && docId !== 'undefined') {
+            await updateDoc(doc(db, "staff_ledger", docId), { cutoffDeduction: amt });
+            alert(`✅ ${staffName} will now be automatically deducted ₱${amt.toLocaleString()} every cutoff.`);
+            window.loadLedger();
+        } else {
+            alert("❌ You must issue a loan first before setting a deduction rate.");
+        }
+    } catch (e) { alert("Error setting auto-deduct."); console.error(e); }
 };
 
 window.issueLoan = async function(docId, staffName, currentLoaned) {
@@ -4564,43 +4634,30 @@ window.issueLoan = async function(docId, staffName, currentLoaned) {
 
     try {
         let newTotal = currentLoaned + amount;
-
         if (docId && docId !== 'undefined') {
             await updateDoc(doc(db, "staff_ledger", docId), { totalLoaned: newTotal });
         } else {
-            // First time this employee is getting a loan!
             await addDoc(collection(db, "staff_ledger"), {
                 staffName: staffName,
                 totalLoaned: amount,
-                totalPaid: 0
+                totalPaid: 0,
+                cutoffDeduction: 0 // Initialize default
             });
         }
         alert(`✅ Success! ₱${amount.toLocaleString()} added to ${staffName}'s loan balance.`);
         window.loadLedger();
-    } catch (e) {
-        console.error(e); alert("Failed to issue loan.");
-    }
+    } catch (e) { console.error(e); alert("Failed to issue loan."); }
 };
 
 window.logLoanPayment = async function(docId, staffName, currentPaid, currentBalance) {
-    if (currentBalance <= 0) {
-        alert("✅ This employee has no outstanding balance."); return;
-    }
-
+    if (currentBalance <= 0) { alert("✅ This employee has no outstanding balance."); return; }
     let amount = parseFloat(prompt(`${staffName} currently owes ₱${currentBalance.toLocaleString()}.\n\nHow much did they pay back this cutoff? (₱)`));
     if (isNaN(amount) || amount <= 0) return;
-
-    if (amount > currentBalance) {
-        alert(`❌ They only owe ₱${currentBalance}. You cannot log a payment higher than the balance.`); return;
-    }
+    if (amount > currentBalance) { alert(`❌ They only owe ₱${currentBalance}. You cannot log a payment higher than the balance.`); return; }
 
     try {
-        let newPaid = currentPaid + amount;
-        await updateDoc(doc(db, "staff_ledger", docId), { totalPaid: newPaid });
-        
+        await updateDoc(doc(db, "staff_ledger", docId), { totalPaid: currentPaid + amount });
         alert(`✅ Payment of ₱${amount.toLocaleString()} successfully logged for ${staffName}!`);
         window.loadLedger();
-    } catch (e) {
-        console.error(e); alert("Failed to log payment.");
-    }
+    } catch (e) { console.error(e); alert("Failed to log payment."); }
 };
