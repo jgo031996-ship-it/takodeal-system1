@@ -2571,47 +2571,110 @@ window.loadStockLogs = async function() {
   } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Error loading logs.</td></tr>'; }
 };
 
-window.openEditInv = function (encodedData) {
-  let data = JSON.parse(decodeURIComponent(encodedData));
-  document.getElementById('editInvId').value = data.id;
-  document.getElementById('editInvOldQty').value = data.stock;
-  document.getElementById('editInvName').innerText = data.name;
-  document.getElementById('editInvBranch').innerText = data.branch;
-  document.getElementById('editInvUom').innerText = data.uom;
-  document.getElementById('editInvNewQty').value = data.stock;
-  document.getElementById('editInvModal').style.display = 'flex';
+// ==========================================
+// ✏️ UPGRADED INVENTORY EDIT ENGINE
+// ==========================================
+
+window.openEditInv = function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    document.getElementById('editInvModal').style.display = 'flex';
+    
+    // Fill the Read-Only Info
+    document.getElementById('editInvId').value = data.id;
+    document.getElementById('editInvBranch').value = data.branch;
+    document.getElementById('editInvName').value = data.name;
+    document.getElementById('editInvCat').value = data.category || 'Uncategorized';
+    document.getElementById('editInvCost').value = (data.costPerBaseUOM || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('lblEditUom').innerText = data.uom || 'Unit';
+    document.getElementById('editInvOldQty').value = data.currentStock || 0;
+    
+    // Reset the Inputs
+    document.getElementById('editInvNewQty').value = '';
+    document.getElementById('editInvNote').value = '';
+    document.getElementById('editInvVariance').innerText = '0';
+    document.getElementById('editInvVariance').style.color = '#64748b';
+};
+
+// 🧮 Live Math: Calculates difference as you type!
+window.calculateVariance = function() {
+    let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
+    let newQty = parseFloat(document.getElementById('editInvNewQty').value);
+    let varEl = document.getElementById('editInvVariance');
+    
+    if (isNaN(newQty)) {
+        varEl.innerText = '0';
+        varEl.style.color = '#64748b';
+        return;
+    }
+    
+    let variance = newQty - oldQty;
+    if (variance > 0) {
+        varEl.innerText = '+' + variance;
+        varEl.style.color = '#16a34a'; // Green for Extra Stock
+    } else if (variance < 0) {
+        varEl.innerText = variance;
+        varEl.style.color = '#dc2626'; // Red for Missing Stock
+    } else {
+        varEl.innerText = '0';
+        varEl.style.color = '#64748b'; // Gray for Perfect Match
+    }
 };
 
 window.saveInventoryEdit = async function () {
-  let id = document.getElementById('editInvId').value;
-  let name = document.getElementById('editInvName').innerText;
-  let branch = document.getElementById('editInvBranch').innerText;
-  let uom = document.getElementById('editInvUom').innerText;
-  let oldQty = parseFloat(document.getElementById('editInvOldQty').value);
-  let newQty = parseFloat(document.getElementById('editInvNewQty').value);
+    let id = document.getElementById('editInvId').value;
+    let name = document.getElementById('editInvName').value;
+    let branch = document.getElementById('editInvBranch').value;
+    let uom = document.getElementById('lblEditUom').innerText;
+    let oldQty = parseFloat(document.getElementById('editInvOldQty').value);
+    let newQty = parseFloat(document.getElementById('editInvNewQty').value);
+    let note = document.getElementById('editInvNote').value.trim();
 
-  if (!id) { alert("❌ Error: Missing Document ID."); return; }
-  if (isNaN(newQty)) { alert("❌ Invalid quantity"); return; }
-  let variance = newQty - oldQty;
-  if (variance === 0) { document.getElementById('editInvModal').style.display = 'none'; return; }
+    if (!id) { alert("❌ Error: Missing Document ID."); return; }
+    if (isNaN(newQty)) { alert("❌ Please enter the New Physical Count."); return; }
+    
+    let variance = newQty - oldQty;
+    
+    // Safety Checks
+    if (variance === 0) { 
+        alert("✅ No changes detected. Stock matches perfectly!");
+        document.getElementById('editInvModal').style.display = 'none'; 
+        return; 
+    }
+    if (!note) {
+        alert("❌ VARIANCE DETECTED: You must provide an Adjustment Note/Reason (e.g. Spoilage, Staff Meal) before saving.");
+        return;
+    }
 
-  let btn = document.getElementById('btnSaveInvEdit');
-  btn.innerText = "⏳ Saving..."; btn.disabled = true;
+    let btn = document.getElementById('btnSaveInvEdit');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
-  try {
-    await updateDoc(doc(db, "inventory", id), { currentStock: newQty });
-    await addDoc(collection(db, "stock_logs"), {
-      branch: branch, item: name, uom: uom, oldQty: oldQty, newQty: newQty, variance: variance, type: "Manual Update",
-      user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-      timestamp: new Date()
-    });
-    document.getElementById('editInvModal').style.display = 'none';
-    window.loadInventoryData();
-  } catch (e) { 
-    console.error(e); alert("❌ Failed to save. Check your internet connection."); 
-  } finally { 
-    btn.innerText = "💾 Save & Log Variance"; btn.disabled = false; 
-  }
+    try {
+        // 1. Update the live stock number
+        await updateDoc(doc(db, "inventory", id), { currentStock: newQty });
+        
+        // 2. Save a permanent record to the ledger for the Owner to see!
+        await addDoc(collection(db, "stock_logs"), {
+            branch: branch, 
+            item: name, 
+            uom: uom, 
+            oldQty: oldQty, 
+            newQty: newQty, 
+            variance: variance, 
+            type: "Manual Variance Adjustment",
+            note: note, // Saves your explanation!
+            user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: new Date()
+        });
+        
+        alert(`✅ Stock adjusted! A variance of ${variance} has been securely logged.`);
+        document.getElementById('editInvModal').style.display = 'none';
+        window.loadInventoryData();
+        
+    } catch (e) { 
+        console.error(e); alert("❌ Failed to save. Check your internet connection."); 
+    } finally { 
+        btn.innerText = "💾 Log Variance & Save"; btn.disabled = false; 
+    }
 };
 
 // ========================================================
