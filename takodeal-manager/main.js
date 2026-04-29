@@ -2604,32 +2604,95 @@ window.openEditInv = function(encodedData) {
     document.getElementById('editInvVariance').style.color = '#64748b';
 };
 
+window.calcEditCost = function() {
+    let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
+    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
+    let baseUom = document.getElementById('editInvBaseUom').value || 'Unit';
+    let baseCost = purchCost / conversion;
+    document.getElementById('editInvCostSummary').innerHTML = `Calculated Base Cost: <strong style="color:#d97706;">₱${baseCost.toFixed(4)}</strong> per ${baseUom}`;
+};
+
+window.calcEditVariance = function() {
+    let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
+    let newQInput = document.getElementById('editInvNewQty').value;
+    let varEl = document.getElementById('editInvVariance');
+
+    if (newQInput === '') {
+        varEl.innerText = '0';
+        varEl.style.color = '#64748b';
+        return;
+    }
+
+    let newQ = parseFloat(newQInput) || 0;
+    let diff = newQ - oldQ;
+    
+    varEl.innerText = diff > 0 ? '+' + diff : diff;
+    if (diff < 0) varEl.style.color = '#ef4444';
+    else if (diff > 0) varEl.style.color = '#10b981';
+    else varEl.style.color = '#64748b';
+};
+
+window.openEditInv = function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    document.getElementById('editInvModal').style.display = 'flex';
+    
+    // Fill all the detailed info!
+    document.getElementById('editInvId').value = data.id;
+    document.getElementById('editInvBranch').value = data.branch || 'Main Office';
+    document.getElementById('editInvName').value = data.name;
+    document.getElementById('editInvCat').value = data.category || 'Ingredients';
+    
+    document.getElementById('editInvPurchUom').value = data.purchUom || '';
+    document.getElementById('editInvBaseUom').value = data.uom || data.baseUom || '';
+    document.getElementById('editInvConversion').value = data.conversion || 1;
+    
+    // Backwards compatibility check: If purchCost is missing, calculate it backwards
+    let purchCost = data.purchCost;
+    if (purchCost === undefined) {
+        purchCost = (data.costPerBaseUOM || data.cost || 0) * (data.conversion || 1);
+    }
+    document.getElementById('editInvPurchCost').value = purchCost.toFixed(2);
+    
+    document.getElementById('editInvLowStock').value = data.reorderLevel || 0;
+    document.getElementById('editInvOldQty').value = data.currentStock || 0;
+    
+    // Reset Variance inputs
+    document.getElementById('editInvNewQty').value = '';
+    document.getElementById('editInvNote').value = '';
+    document.getElementById('editInvVariance').innerText = '0';
+    document.getElementById('editInvVariance').style.color = '#64748b';
+
+    // Trigger the cost math visually
+    window.calcEditCost();
+};
+
 window.saveInventoryEdit = async function () {
     let id = document.getElementById('editInvId').value;
-    
-    // 🔥 Grab the newly editable fields!
-    let newName = document.getElementById('editInvName').value.trim();
-    let newCat = document.getElementById('editInvCat').value.trim();
-    let newCost = parseFloat(document.getElementById('editInvCost').value) || 0;
-
-    let branch = document.getElementById('editInvBranch').value;
-    let uom = document.getElementById('lblEditUom').innerText;
-    let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    
-    // If they leave New Count blank, assume they are ONLY editing the Name/Cost and don't change the stock!
-    let newQtyInput = document.getElementById('editInvNewQty').value;
-    let newQty = newQtyInput === '' ? oldQty : parseFloat(newQtyInput);
-    
-    let note = document.getElementById('editInvNote').value.trim();
-
     if (!id) { alert("❌ Error: Missing Document ID."); return; }
+
+    let newName = document.getElementById('editInvName').value.trim();
     if (!newName) { alert("❌ Item Name cannot be empty."); return; }
     
-    let variance = newQty - oldQty;
+    // Grab all the new form values
+    let newCat = document.getElementById('editInvCat').value;
+    let branch = document.getElementById('editInvBranch').value;
+    let purchUom = document.getElementById('editInvPurchUom').value.trim();
+    let baseUom = document.getElementById('editInvBaseUom').value.trim();
+    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
+    let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
+    let reorderLevel = parseFloat(document.getElementById('editInvLowStock').value) || 0;
     
-    // Safety Check: Only demand a note if the physical stock ACTUALLY changed.
+    // Calculate the mathematical Base Cost
+    let newBaseCost = purchCost / conversion;
+
+    let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
+    let newQtyInput = document.getElementById('editInvNewQty').value;
+    let newQty = newQtyInput === '' ? oldQty : parseFloat(newQtyInput);
+    let note = document.getElementById('editInvNote').value.trim();
+    
+    let variance = newQty - oldQty;
     if (variance !== 0 && !note) {
-        alert("❌ VARIANCE DETECTED: You must provide an Adjustment Note/Reason (e.g. Spoilage) before saving.");
+        alert("❌ VARIANCE DETECTED: You must provide an Adjustment Note/Reason.");
         return;
     }
 
@@ -2637,24 +2700,29 @@ window.saveInventoryEdit = async function () {
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
-        // 1. Update the item with ALL the new metadata and stock
-        // 🔥 BRUTE-FORCE COST UPDATE: We update all 3 common cost variables 
-        // to guarantee the table instantly reads the new price!
+        // 🔥 Save EVERYTHING with the Brute-Force Base Cost update!
         await updateDoc(doc(db, "inventory", id), { 
             name: newName,
             category: newCat,
-            costPerBaseUOM: newCost,
-            cost: newCost,
-            baseCost: newCost,
+            branch: branch,
+            purchUom: purchUom,
+            uom: baseUom,         // legacy compatibility
+            baseUom: baseUom,     // modern variable
+            conversion: conversion,
+            purchCost: purchCost,
+            reorderLevel: reorderLevel,
+            costPerBaseUOM: newBaseCost,
+            cost: newBaseCost,
+            baseCost: newBaseCost,
             currentStock: newQty 
         });
         
-        // 2. Only log a variance ledger entry if the physical count changed
+        // Log Variance if physical stock was changed
         if (variance !== 0) {
             await addDoc(collection(db, "stock_logs"), {
                 branch: branch, 
                 item: newName, 
-                uom: uom, 
+                uom: baseUom, 
                 oldQty: oldQty, 
                 newQty: newQty, 
                 variance: variance, 
@@ -2665,14 +2733,14 @@ window.saveInventoryEdit = async function () {
             });
         }
         
-        alert(`✅ Details updated successfully!`);
+        alert(`✅ Item completely updated successfully!`);
         document.getElementById('editInvModal').style.display = 'none';
         window.loadInventoryData();
         
     } catch (e) { 
-        console.error(e); alert("❌ Failed to save. Check your internet connection."); 
+        console.error(e); alert("❌ Failed to save."); 
     } finally { 
-        btn.innerText = "💾 Save Changes"; btn.disabled = false; 
+        btn.innerText = "💾 Save All Changes"; btn.disabled = false; 
     }
 };
 
