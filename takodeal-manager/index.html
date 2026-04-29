@@ -1799,18 +1799,19 @@
               <input type="hidden" id="editInvBranch">
               <span id="lblEditUom" style="display: none;"></span>
 
+              <!-- Item Information Group -->
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Item Name</label>
-                      <input type="text" id="editInvName" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: #f8fafc; font-weight: bold; color: #334155;" readonly>
+                      <input type="text" id="editInvName" style="width: 100%; padding: 10px; border: 1px solid #3b82f6; border-radius: 6px; box-sizing: border-box; background: #ffffff; font-weight: bold; color: #334155; outline: none;">
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Category</label>
-                      <input type="text" id="editInvCat" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: #f8fafc; color: #475569;" readonly>
+                      <input type="text" id="editInvCat" style="width: 100%; padding: 10px; border: 1px solid #3b82f6; border-radius: 6px; box-sizing: border-box; background: #ffffff; color: #475569; outline: none;">
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Current Cost (₱)</label>
-                      <input type="text" id="editInvCost" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: #f8fafc; font-weight: bold; color: #16a34a;" readonly>
+                      <input type="number" step="0.01" id="editInvCost" style="width: 100%; padding: 10px; border: 1px solid #3b82f6; border-radius: 6px; box-sizing: border-box; background: #ffffff; font-weight: bold; color: #16a34a; outline: none;">
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">System Qty (Expected)</label>
