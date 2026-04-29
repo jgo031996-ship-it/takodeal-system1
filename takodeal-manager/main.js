@@ -598,6 +598,7 @@ window.switchView = function (viewId) {
   if (viewId === 'zreading') title = "Z-Reading Reports";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
+  if (viewId === 'ledger') title = "Staff Loans & Ledger";
   if (viewId === 'receipt') title = "Thermal Printer Setup";
   if (viewId === 'schedule') {
         title = "Schedule & Shift Manager";
@@ -618,6 +619,7 @@ window.switchView = function (viewId) {
   if (viewId === 'dispatch') window.loadDispatchDashboard();
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
+  if (viewId === 'ledger') window.loadLedger();
   if (viewId === 'admin') window.loadAdminDashboard();
 };
 
@@ -4504,4 +4506,110 @@ window.openPayslipModal = function(encodedData) {
 
 window.printPayslip = function() {
     window.print(); // Triggers the browser's native Print to PDF function!
+};
+
+// ==========================================
+// 📘 STAFF LOANS & LEDGER ENGINE
+// ==========================================
+
+window.loadLedger = async function() {
+    const tbody = document.getElementById('ledgerTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">⏳ Calculating running balances...</td></tr>';
+
+    try {
+        // 1. Fetch all staff to build the rows
+        const staffSnap = await getDocs(collection(db, "cashiers"));
+        
+        // 2. Fetch the master ledger records
+        const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
+        let ledgerData = {};
+
+        ledgerSnap.forEach(doc => {
+            let data = doc.data();
+            ledgerData[data.staffName] = { id: doc.id, ...data };
+        });
+
+        let html = '';
+
+        staffSnap.forEach(docSnap => {
+            let staff = docSnap.data();
+            let name = staff.cashierName;
+            
+            // If they don't have a ledger yet, default to 0
+            let record = ledgerData[name] || { totalLoaned: 0, totalPaid: 0 };
+            let balance = record.totalLoaned - record.totalPaid;
+
+            // Only highlight if they owe money
+            let balColor = balance > 0 ? 'var(--danger)' : 'var(--text-muted)';
+            let balWeight = balance > 0 ? 'bold' : 'normal';
+
+            html += `
+                <tr>
+                    <td><strong style="color: var(--primary);">👤 ${name}</strong></td>
+                    <td><span class="badge badge-closed">${staff.branch}</span></td>
+                    <td style="font-weight: bold; color: #0284c7;">₱${record.totalLoaned.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="font-weight: bold; color: #16a34a;">₱${record.totalPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="font-weight: ${balWeight}; color: ${balColor}; font-size: 15px;">₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td>
+                        <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Issue Loan</button>
+                        <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance})">💸 Log Payment</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center">No staff found.</td></tr>';
+
+    } catch (e) {
+        console.error("Ledger Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading ledger.</td></tr>';
+    }
+};
+
+window.issueLoan = async function(docId, staffName, currentLoaned) {
+    let amount = parseFloat(prompt(`How much are you loaning to ${staffName}? (₱)`));
+    if (isNaN(amount) || amount <= 0) return;
+
+    try {
+        let newTotal = currentLoaned + amount;
+
+        if (docId && docId !== 'undefined') {
+            await updateDoc(doc(db, "staff_ledger", docId), { totalLoaned: newTotal });
+        } else {
+            // First time this employee is getting a loan!
+            await addDoc(collection(db, "staff_ledger"), {
+                staffName: staffName,
+                totalLoaned: amount,
+                totalPaid: 0
+            });
+        }
+        alert(`✅ Success! ₱${amount.toLocaleString()} added to ${staffName}'s loan balance.`);
+        window.loadLedger();
+    } catch (e) {
+        console.error(e); alert("Failed to issue loan.");
+    }
+};
+
+window.logLoanPayment = async function(docId, staffName, currentPaid, currentBalance) {
+    if (currentBalance <= 0) {
+        alert("✅ This employee has no outstanding balance."); return;
+    }
+
+    let amount = parseFloat(prompt(`${staffName} currently owes ₱${currentBalance.toLocaleString()}.\n\nHow much did they pay back this cutoff? (₱)`));
+    if (isNaN(amount) || amount <= 0) return;
+
+    if (amount > currentBalance) {
+        alert(`❌ They only owe ₱${currentBalance}. You cannot log a payment higher than the balance.`); return;
+    }
+
+    try {
+        let newPaid = currentPaid + amount;
+        await updateDoc(doc(db, "staff_ledger", docId), { totalPaid: newPaid });
+        
+        alert(`✅ Payment of ₱${amount.toLocaleString()} successfully logged for ${staffName}!`);
+        window.loadLedger();
+    } catch (e) {
+        console.error(e); alert("Failed to log payment.");
+    }
 };
