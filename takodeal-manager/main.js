@@ -4792,3 +4792,29 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
         window.loadLedger();
     } catch (e) { console.error(e); alert("Failed to log payment."); }
 };
+
+// ==========================================
+// 🧹 PRE-LAUNCH FACTORY RESET ENGINE
+// ==========================================
+window.resetAllInventoryToZero = async function() {
+    if(!confirm("⚠️ WARNING: This will set ALL inventory items to exactly 0 stock! Are you 100% sure?")) return;
+    
+    console.log("Starting inventory reset...");
+    let count = 0;
+    try {
+        const snap = await getDocs(collection(db, "inventory"));
+        
+        for (let document of snap.docs) {
+            await updateDoc(doc(db, "inventory", document.id), {
+                currentStock: 0
+            });
+            count++;
+            console.log(`Resetting item ${count} of ${snap.size}...`);
+        }
+        alert(`✅ Grand Wipe Complete! ${count} items have been reset to 0 stock.`);
+        window.loadInventoryData(); // Refresh the table
+    } catch(e) {
+        console.error(e);
+        alert("❌ Error resetting inventory.");
+    }
+};
