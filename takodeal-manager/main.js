@@ -2168,8 +2168,6 @@ window.openBomEditor = async function (menuItemName) {
             window.loadCloneDropdown();
         }
     }, 200);
-  
-};
 
 window.renderAdvRecipeTable = function () {
   const tbody = document.getElementById('advRecipeBody');
