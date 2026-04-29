@@ -4331,3 +4331,177 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         alert("❌ Failed to process request.");
     }
 };
+
+// ==========================================
+// 💸 AUTO-PAYSLIP GENERATOR ENGINE
+// ==========================================
+
+// Run this when the page loads to automatically set the Cutoff Dates
+window.setDefaultCutoffDates = function() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    
+    // Automatically aligns with the 3rd and 17th cutoff cycle
+    let startDate = `${yyyy}-${mm}-03`;
+    let endDate = `${yyyy}-${mm}-17`;
+    
+    if (today.getDate() > 17) {
+        // If we are past the 17th, the cutoff shifts to 18th to the 2nd
+        startDate = `${yyyy}-${mm}-18`;
+        let nextMonth = new Date(yyyy, today.getMonth() + 1, 2);
+        endDate = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-02`;
+    }
+
+    const startEl = document.getElementById('payrollStart');
+    const endEl = document.getElementById('payrollEnd');
+    if(startEl) startEl.value = startDate;
+    if(endEl) endEl.value = endDate;
+};
+
+// Call it immediately so the dates populate when the app opens
+window.setDefaultCutoffDates();
+
+window.loadPayrollGenerator = async function() {
+    const tbody = document.getElementById('payrollGeneratorBody');
+    if (!tbody) return;
+
+    let startDateRaw = document.getElementById('payrollStart').value;
+    let endDateRaw = document.getElementById('payrollEnd').value;
+
+    if (!startDateRaw || !endDateRaw) {
+        alert("Please set both cutoff dates."); return;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Crunching payroll numbers...</td></tr>';
+
+    const startTimestamp = new Date(startDateRaw + 'T00:00:00');
+    const endTimestamp = new Date(endDateRaw + 'T23:59:59');
+
+    try {
+        // 1. Fetch Staff Profiles (to get exact hourly rates & details)
+        const staffSnap = await getDocs(collection(db, "cashiers"));
+        let staffDict = {};
+        staffSnap.forEach(doc => {
+            staffDict[doc.data().cashierName] = doc.data();
+        });
+
+        // 2. Fetch Shifts in Date Range
+        const shiftQ = query(collection(db, "shifts"), 
+            where("startTime", ">=", startTimestamp), 
+            where("startTime", "<=", endTimestamp)
+        );
+        const shiftSnap = await getDocs(shiftQ);
+
+        // 3. Fetch Unpaid Deductions (Advances & Meals)
+        const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
+        const deductSnap = await getDocs(deductQ);
+
+        // Aggregate Data into a neat package
+        let payrollData = {};
+
+        shiftSnap.forEach(docSnap => {
+            let shift = docSnap.data();
+            if (!shift.endTime) return; // Skip shifts that haven't clocked out yet
+
+            let name = shift.cashier;
+            if (!payrollData[name]) payrollData[name] = { branch: shift.branch, hours: 0, deductions: 0, advances: 0, meals: 0 };
+
+            let diffMs = shift.endTime.toDate() - shift.startTime.toDate();
+            let hrs = diffMs / (1000 * 60 * 60);
+            payrollData[name].hours += hrs;
+        });
+
+        deductSnap.forEach(docSnap => {
+            let deduct = docSnap.data();
+            let name = deduct.staffName;
+            if (!payrollData[name]) return; // Only process deductions if they actually worked this cycle
+
+            let amt = parseFloat(deduct.amount) || 0;
+            if (deduct.type === "Cash Advance") {
+                payrollData[name].advances += amt;
+            } else if (deduct.type === "Staff Meal") {
+                payrollData[name].meals += amt;
+            }
+            payrollData[name].deductions += amt;
+        });
+
+        // Render the Table
+        let html = '';
+        for (let name in payrollData) {
+            let data = payrollData[name];
+            let rate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
+            
+            // Encode all this heavy data to pass it directly into the Payslip Modal
+            let encodedData = encodeURIComponent(JSON.stringify({
+                name: name,
+                branch: data.branch,
+                hours: data.hours,
+                advances: data.advances,
+                meals: data.meals,
+                rate: rate,
+                profile: staffDict[name] || {},
+                start: startDateRaw,
+                end: endDateRaw
+            }));
+
+            html += `
+                <tr>
+                    <td><strong>👤 ${name}</strong></td>
+                    <td><span class="badge badge-closed">${data.branch}</span></td>
+                    <td><strong style="color: var(--primary);">${data.hours.toFixed(2)} hrs</strong></td>
+                    <td style="color: var(--danger); font-weight: bold;">₱${data.deductions.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td>
+                        <button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="window.openPayslipModal('${encodedData}')">🧾 Generate Payslip</button>
+                    </td>
+                </tr>
+            `;
+        }
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: var(--success); font-weight: bold;">No shifts found for this cutoff period.</td></tr>';
+
+    } catch (e) {
+        console.error("Payroll Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error generating payroll.</td></tr>';
+    }
+};
+
+window.openPayslipModal = function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    
+    // 🧮 Do the Final Math
+    let basicPay = data.hours * data.rate;
+    let totalDeduct = data.advances + data.meals; // SSS/PhilHealth logic can be added here later
+    let netPay = basicPay - totalDeduct;
+
+    // 📝 Fill the Header
+    document.getElementById('psName').innerText = data.name;
+    document.getElementById('psBranch').innerText = data.branch;
+    document.getElementById('psStart').innerText = data.start;
+    document.getElementById('psEnd').innerText = data.end;
+    document.getElementById('psDist').innerText = new Date().toISOString().split('T')[0];
+    
+    // 📝 Fill from Employee Profile
+    document.getElementById('psHired').innerText = data.profile.dateHired || '---';
+    document.getElementById('psSSS').innerText = data.profile.sss ? "Logged" : "0.00"; 
+    document.getElementById('psPhil').innerText = data.profile.philhealth ? "Logged" : "0.00";
+    document.getElementById('psPagibig').innerText = data.profile.pagibig ? "Logged" : "0.00";
+
+    // 📝 Fill Financials
+    document.getElementById('psHours').innerText = data.hours.toFixed(2);
+    document.getElementById('psBasicPay').innerText = basicPay.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psGross').innerText = basicPay.toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    document.getElementById('psAdvance').innerText = data.advances.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psFoods').innerText = data.meals.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psTotalDeduct').innerText = totalDeduct.toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    document.getElementById('psNetPay').innerText = netPay.toLocaleString(undefined, {minimumFractionDigits: 2});
+
+    // Pop the Modal!
+    document.getElementById('payslipModal').style.display = 'flex';
+};
+
+window.printPayslip = function() {
+    window.print(); // Triggers the browser's native Print to PDF function!
+};
