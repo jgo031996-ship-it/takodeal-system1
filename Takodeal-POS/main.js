@@ -1006,11 +1006,22 @@ window.switchRequestTab = function(tabName) {
         }
     });
 };
-
 window.loadStaffPersonalInbox = async function() {
-    let container = document.getElementById('staffPersonalInboxList');
-    container.innerHTML = '<div style="padding:20px; text-align:center; color:#64748b;">Loading your records...</div>';
+    // 🛡️ 1. BULLETPROOF NAME GRABBER 
+    let safeCashierName = localStorage.getItem('cashierName');
+    if (!safeCashierName && typeof window.sessionUser !== 'undefined' && window.sessionUser) {
+        safeCashierName = window.sessionUser.cashierName;
+    }
+    if (!safeCashierName) {
+        safeCashierName = "Unknown Staff"; 
+    }
+
+    let container = document.getElementById("staffPersonalInboxList");
+    container.innerHTML = "<div style='padding:20px; text-align:center; color:#666;'>Loading your records...</div>";
+    
     try {
+        // 🛡️ 2. UPDATED QUERY USING THE SAFE NAME
+        const q = query(collection(db, "staff_requests"), where("cashierName", "==", safeCashierName), orderBy("timestamp", "desc"));
         const q = query(collection(db, "staff_requests"), where("staffName", "==", window.sessionUser.cashierName), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
         let html = '';
