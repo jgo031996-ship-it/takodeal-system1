@@ -2398,11 +2398,20 @@ window.printReceipt = async function(type) {
       if (typeof window.getReceiptSettings === 'function') {
           rSettings = await window.getReceiptSettings();
       }
-      let storeName = rSettings?.storeName || "TAKODEAL";
-      let storeAddress = rSettings?.address || "B14L6 Deca Homes Cabantian";
-      let storeContact = rSettings?.contact || "09629721305";
-      let footerMsg = rSettings?.footerMessage || "Acknowledgement Receipt\nThank you!";
-      let logoBase64 = rSettings?.logoBase64 || "";
+      // Dynamic Branch Addresses!
+      let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
+      let storeAddress = "";
+      if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes Cabantian";
+      else if (currentBranch === "Citygate") storeAddress = "Citygate Foodpark Buhangin";
+      else if (currentBranch === "Maa") storeAddress = "Maa Road, Davao City";
+      else storeAddress = "Takodeal Headquarters";
+      
+      let storeContact = "09629721305";
+      let footerMsg = "Acknowledgement Receipt\nThank you!";
+      
+      // Update formatting tags for Modern RawBT
+      let cTag = "<center>"; 
+      let cTagEnd = "</center>";
 
       // ------------------------------------------
       // KITCHEN & BAR TICKETS 
@@ -2448,9 +2457,9 @@ window.printReceipt = async function(type) {
           proReceipt += `[C]<img>${logoBase64}</img>\n`;
       }
       
-      proReceipt += `[C]<b>${storeName}</b>\n`;
-      if (storeAddress) proReceipt += `[C]${storeAddress}\n`;
-      if (storeContact) proReceipt += `[C]${storeContact}\n`;
+      proReceipt += `${cTag}<b>TAKODEAL</b>${cTagEnd}\n`;
+      if (storeAddress) proReceipt += `${cTag}${storeAddress}${cTagEnd}\n`;
+      if (storeContact) proReceipt += `${cTag}${storeContact}${cTagEnd}\n`;
       proReceipt += "================================\n";
   
       const now = new Date();
