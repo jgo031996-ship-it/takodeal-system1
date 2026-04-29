@@ -743,7 +743,6 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
 }
 
 // 2. Open Modal & Turn on Front Camera
-let currentBranchStaffCache = []; // Caches staff data to check PINs!
 
 window.openTimeClockModal = async function() {
     document.getElementById('timeClockModal').style.display = 'flex';
