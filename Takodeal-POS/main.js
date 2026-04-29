@@ -52,7 +52,7 @@ window.lockDeviceToBranch = async function () {
 
 // --- TAKODEAL FIREBASE ENGINE ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // Your secure database keys
 const firebaseConfig = {
@@ -148,7 +148,7 @@ window.openNewShift = async function (branch, cashier, startCash) {
   }
 };
 
-// --- THE CHECKOUT ENGINE (WITH AUTO-DEDUCT & LOW STOCK ALARM) ---
+// --- THE CHECKOUT ENGINE (STREAMLINED & FAST) ---
 window.processCheckout = async function (payload) {
   try {
     let d = new Date();
@@ -160,59 +160,51 @@ window.processCheckout = async function (payload) {
     let orderNum = (snap.size + 1).toString().padStart(3, '0');
     const receiptId = `${dateStr}-${shiftCode}-${orderNum}`;
 
+    // 1. Immediately save the transaction so the UI doesn't lag!
     await addDoc(collection(db, "transactions"), {
       ...payload, receiptId: receiptId, timestamp: serverTimestamp()
     });
 
-    // 🔥 THE AUTO-DEDUCT & ALARM ENGINE 🔥
-    let lowStockWarnings = []; // We will collect dying ingredients here
+    // 2. Offload Inventory Updates to the background (Async execution without await blocking)
+    setTimeout(async () => {
+        let lowStockTriggered = false;
+        
+        for (let cartItem of payload.cart) {
+            let itemName = cartItem.name || cartItem.itemName;
+            let qtySold = cartItem.qty || 1;
 
-    if (payload.cart && Array.isArray(payload.cart)) {
-      for (let cartItem of payload.cart) {
-        let itemName = cartItem.name || cartItem.itemName;
-        let qtySold = cartItem.qty || 1;
+            const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+            const bomSnap = await getDocs(bomQ);
 
-        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
-        const bomSnap = await getDocs(bomQ);
+            for (let bomDoc of bomSnap.docs) {
+                let recipeData = bomDoc.data();
+                let ingredientName = recipeData.ingredientName;
+                let totalAmountToDeduct = (recipeData.qty || 0) * qtySold;
 
-        for (let bomDoc of bomSnap.docs) {
-          let recipeData = bomDoc.data();
-          let ingredientName = recipeData.ingredientName;
-          let recipeQtyNeeded = recipeData.qty || 0;
-          let totalAmountToDeduct = recipeQtyNeeded * qtySold;
+                const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", ingredientName));
+                const invSnap = await getDocs(invQ);
 
-          const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", ingredientName));
-          const invSnap = await getDocs(invQ);
+                if (!invSnap.empty) {
+                    let invDocRef = invSnap.docs[0].ref;
+                    let invData = invSnap.docs[0].data();
+                    let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
 
-          if (!invSnap.empty) {
-            let invDocRef = invSnap.docs[0].ref;
-            let invData = invSnap.docs[0].data();
-            let currentStock = invData.currentStock || 0;
-            let reorderLevel = invData.reorderLevel || 5; // The safe line!
-
-            let newStock = currentStock - totalAmountToDeduct;
-
-            // Update the cloud quietly
-            await updateDoc(invDocRef, { currentStock: newStock });
-
-            // 🚨 TRIGGER THE RADAR: If it drops below the safe line, remember it!
-            if (newStock <= reorderLevel) {
-              // Prevent duplicates if multiple items use the same ingredient
-              if (!lowStockWarnings.includes(ingredientName)) {
-                lowStockWarnings.push(ingredientName);
-              }
+                    // Update quietly
+                    await updateDoc(invDocRef, { currentStock: newStock });
+                    
+                    // Simple Alarm Check
+                    if (newStock <= (invData.reorderLevel || 5)) {
+                        lowStockTriggered = true;
+                    }
+                }
             }
-          }
         }
-      }
-    }
-
-    // 🚨 SOUND THE ALARM AFTER CHECKOUT 🚨
-    if (lowStockWarnings.length > 0) {
-      setTimeout(() => {
-        alert(`⚠️ LOW STOCK WARNING ⚠️\n\nPlease notify the Manager immediately!\nThe following items are running critically low:\n\n- ${lowStockWarnings.join('\n- ')}`);
-      }, 500); // Waits half a second so the receipt screen loads first
-    }
+        
+        // 🚨 Simple, non-blocking alarm
+        if (lowStockTriggered) {
+             alert(`⚠️ LOW STOCK ALERT\n\nSome ingredients used in the last order are running low. Please notify the Manager to check the Live Inventory dashboard.`);
+        }
+    }, 100); // 100ms delay lets the receipt screen pop up instantly!
 
     return receiptId;
   } catch (error) {
@@ -424,17 +416,57 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
   }
 };
 
-// --- MISSING RECEIPT DETAILS ENGINE ---
+// --- RECEIPT DETAILS ENGINE ---
 window.getReceiptDetails = async function (receiptId) {
   try {
     const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
     const snap = await getDocs(q);
     if (snap.empty) return null;
     return snap.docs[0].data();
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
+  } catch (e) { console.error(e); return null; }
+};
+
+window.viewReceiptDetails = async function (receiptId) {
+    let tx = await window.getReceiptDetails(receiptId);
+    if (!tx) { alert("Receipt not found!"); return; }
+
+    let modalHtml = `
+        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #ccc;">
+            <div style="font-weight: bold; font-size: 16px;">OR# ${tx.receiptId}</div>
+            <div style="font-size: 12px; color: #666;">Date: ${tx.timestamp ? tx.timestamp.toDate().toLocaleString() : 'Unknown'}</div>
+            <div style="font-size: 12px; color: #666;">Cashier: ${tx.cashier || 'Unknown'}</div>
+            <div style="font-size: 12px; color: #666;">Method: ${tx.paymentMethod || 'Cash'}</div>
+            <div style="font-size: 12px; color: #666; margin-top:5px; font-weight:bold;">Status: <span style="color:${tx.status==='Voided' ? 'red' : 'green'};">${tx.status || 'Paid'}</span></div>
+        </div>
+        <div style="max-height: 250px; overflow-y: auto; margin-bottom: 15px;">
+    `;
+
+    if (tx.cart && tx.cart.length > 0) {
+        tx.cart.forEach(item => {
+            let addonsText = '';
+            if (item.addons) {
+                for(let key in item.addons) {
+                    if(item.addons[key].qty > 0) addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${item.addons[key].qty}x ${key}</span>`;
+                }
+            }
+            modalHtml += `
+                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
+                    <div><strong>${item.qty}x ${item.name}</strong><br><span style="font-size:11px; color:#888;">${item.variantName !== 'Standard' ? item.variantName : ''}</span>${addonsText}</div>
+                    <div style="font-weight: bold;">₱${(item.lineTotalFinal || 0).toFixed(2)}</div>
+                </div>
+            `;
+        });
+    }
+
+    modalHtml += `
+        </div>
+        <div style="border-top: 1px solid #eee; padding-top: 15px; font-size: 18px; font-weight: bold; text-align: right; color: var(--primary);">
+            TOTAL: ₱${(tx.netTotal || 0).toFixed(2)}
+        </div>
+    `;
+
+    document.getElementById('txDetailBody').innerHTML = modalHtml;
+    document.getElementById('txDetailModal').style.display = 'flex';
 };
 
 // ========================================================
