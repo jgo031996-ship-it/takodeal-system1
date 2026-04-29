@@ -612,6 +612,7 @@ window.switchView = function (viewId) {
   if (viewId === 'inventory') window.loadInventoryData();
   if (viewId === 'accounts') window.loadAccountsAndBudget();
   if (viewId === 'payroll') window.loadPayrollDashboard();
+  if (viewId === 'inbox') window.loadInbox();
   if (viewId === 'products') window.loadMenuCosting();
   if (viewId === 'purchases') window.loadPurchasesAndAlerts();
   if (viewId === 'dispatch') window.loadDispatchDashboard();
@@ -4220,3 +4221,113 @@ window.submitReasonLetter = function() {
 };
 
 console.log("HEARTBEAT 2: File finished reading!");
+
+// ==========================================
+// 📥 STAFF REQUEST INBOX ENGINE
+// ==========================================
+
+// Global listener to update the sidebar badge in real-time
+onSnapshot(query(collection(db, "staff_requests"), where("status", "==", "Pending")), (snapshot) => {
+    let badge = document.getElementById('inboxBadge');
+    if (badge) {
+        if (!snapshot.empty) {
+            badge.innerText = snapshot.size;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+});
+
+window.loadInbox = async function() {
+    const tbody = document.getElementById('inboxTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">📥 Fetching pending requests...</td></tr>';
+
+    try {
+        const q = query(collection(db, "staff_requests"), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        let html = '';
+
+        if (snap.empty) {
+            html = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: var(--success); font-weight: bold;">✅ All caught up! No pending requests.</td></tr>';
+        } else {
+            snap.forEach(docSnap => {
+                let data = docSnap.data();
+                let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+                
+                let typeBadge = '';
+                let detailsHtml = '';
+
+                if (data.type === "Cash Advance") {
+                    typeBadge = `<span style="background: #dbeafe; color: #0284c7; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">💸 Vale / Advance</span>`;
+                    detailsHtml = `<strong style="color: var(--danger); font-size: 15px;">₱${data.amount}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${data.reason}</span>`;
+                } else if (data.type === "Leave") {
+                    typeBadge = `<span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">📅 Leave</span>`;
+                    detailsHtml = `<strong>${data.leaveType}</strong> (${data.startDate} to ${data.endDate})<br><span style="font-size: 11px; color: var(--text-muted);">${data.reason}</span>`;
+                } else if (data.type === "Staff Meal") {
+                    typeBadge = `<span style="background: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🍔 Meal Deduct</span>`;
+                    detailsHtml = `<strong>${data.item}</strong><br><strong style="color: var(--danger);">₱${data.amount}</strong>`;
+                } else if (data.type === "Reason Letter") {
+                    typeBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✉️ Reason Letter</span>`;
+                    detailsHtml = `<strong>Cause: ${data.cause}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${data.message}</span>`;
+                }
+
+                html += `
+                    <tr>
+                        <td style="font-size: 12px; color: var(--text-muted);">${dateStr}</td>
+                        <td><strong style="color: var(--primary);">👤 ${data.staffName}</strong></td>
+                        <td>📍 ${data.branch}</td>
+                        <td>${typeBadge}</td>
+                        <td>${detailsHtml}</td>
+                        <td>
+                            <button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; margin-right: 5px;" onclick="handleRequest('${docSnap.id}', 'Approved', '${data.type}', ${data.amount || 0}, '${data.staffName}')">✓ Approve</button>
+                            <button class="btn-refresh" style="background: white; border: 1px solid var(--danger); color: var(--danger); padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;" onclick="handleRequest('${docSnap.id}', 'Rejected', '${data.type}', 0, '${data.staffName}')">✖ Reject</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+        tbody.innerHTML = html;
+    } catch (e) {
+        console.error("Inbox Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading inbox.</td></tr>';
+    }
+};
+
+window.handleRequest = async function(docId, action, type, amount, staffName) {
+    let confirmMsg = action === 'Approved' 
+        ? `Approve this ${type} for ${staffName}?` 
+        : `Reject this ${type} for ${staffName}?`;
+        
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        // 1. Update the request status
+        await updateDoc(doc(db, "staff_requests", docId), {
+            status: action,
+            processedAt: new Date(),
+            processedBy: sessionUser.cashierName
+        });
+
+        // 2. 🚨 PREPARING FOR PHASE 4: LOG THE DEDUCTION!
+        // If you approve a Cash Advance or a Meal, we save a record to 'staff_deductions' 
+        // so the Auto-Payslip generator can pull it automatically later!
+        if (action === "Approved" && (type === "Cash Advance" || type === "Staff Meal")) {
+            await addDoc(collection(db, "staff_deductions"), {
+                staffName: staffName,
+                type: type,
+                amount: amount,
+                dateAdded: new Date(),
+                status: "Unpaid" // Will change to "Paid" once the payslip is generated
+            });
+        }
+
+        alert(`✅ Request successfully ${action.toLowerCase()}!`);
+        window.loadInbox();
+
+    } catch (e) {
+        console.error("Action Error:", e);
+        alert("❌ Failed to process request.");
+    }
+};
