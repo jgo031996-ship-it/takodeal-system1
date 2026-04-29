@@ -2398,7 +2398,11 @@ window.printReceipt = async function(type) {
       if (typeof window.getReceiptSettings === 'function') {
           rSettings = await window.getReceiptSettings();
       }
-      // Dynamic Branch Addresses!
+      
+      // Dynamic Branch Addresses & Settings!
+      let storeName = rSettings?.storeName || "TAKODEAL";
+      let logoBase64 = rSettings?.logoBase64 || ""; // THIS PREVENTS THE CRASH!
+      
       let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
       let storeAddress = "";
       if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes Cabantian";
@@ -2409,7 +2413,6 @@ window.printReceipt = async function(type) {
       let storeContact = "09629721305";
       let footerMsg = "Acknowledgement Receipt\nThank you!";
       
-      // Update formatting tags for Modern RawBT
       let cTag = "<center>"; 
       let cTagEnd = "</center>";
 
@@ -2449,17 +2452,18 @@ window.printReceipt = async function(type) {
       }
 
       // ------------------------------------------
-      // ULTIMATE PRO CUSTOMER RECEIPT
+      // CUSTOMER RECEIPT
       // ------------------------------------------
       let proReceipt = "";
       
+      // Add Logo if available
       if (logoBase64) {
-          proReceipt += `[C]<img>${logoBase64}</img>\n`;
+          proReceipt += `${cTag}<img>${logoBase64}</img>${cTagEnd}\n`;
       }
       
-      proReceipt += `${cTag}<b>TAKODEAL</b>${cTagEnd}\n`;
-      if (storeAddress) proReceipt += `${cTag}${storeAddress}${cTagEnd}\n`;
-      if (storeContact) proReceipt += `${cTag}${storeContact}${cTagEnd}\n`;
+      proReceipt += `${cTag}<b>${storeName}</b>${cTagEnd}\n`;
+      proReceipt += `${cTag}${storeAddress}${cTagEnd}\n`;
+      proReceipt += `${cTag}${storeContact}${cTagEnd}\n`;
       proReceipt += "================================\n";
   
       const now = new Date();
@@ -2467,7 +2471,6 @@ window.printReceipt = async function(type) {
       hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
       const timeStr = hours + ':' + minutes + ' ' + ampm;
   
-      // 🔥 FIX: Pull cashier securely from hard drive!
       let cashier = d.cashierName || localStorage.getItem('cashierName') || "Staff";
       let customer = d.customerName || "Guest";
   
@@ -2486,7 +2489,6 @@ window.printReceipt = async function(type) {
           let name = item.name || "Item";
           let qty = parseFloat(item.qty || 1);
           let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          
           let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
           let baseLineTotal = qty * basePrice;
           let itemGrossTotal = baseLineTotal;
@@ -2556,12 +2558,12 @@ window.printReceipt = async function(type) {
           proReceipt += "Payment Method: " + paymentMethod + "\n";
           proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
       } else {
-          proReceipt += "[C]** PLEASE PAY AT COUNTER **\n";
+          proReceipt += `${cTag}** PLEASE PAY AT COUNTER **${cTagEnd}\n`;
       }
       proReceipt += "\n";
       
       let footerLines = footerMsg.split('\n');
-      footerLines.forEach(l => proReceipt += `[C]${l}\n`);
+      footerLines.forEach(l => proReceipt += `${cTag}${l}${cTagEnd}\n`);
       proReceipt += "\n\n\n";
     
       // 🛡️ The Base64 Upgrade (Direct Launch!)
@@ -2573,9 +2575,8 @@ window.printReceipt = async function(type) {
 // 🕒 PARKED ORDER PRINTER ENGINE
 // ==========================================
 window.printParkedReceipt = async function(docId) {
-      // 🔥 FIX: Pull branch securely from localStorage
-      let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-      let orders = await window.getParkedOrders(branch); 
+      let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
+      let orders = await window.getParkedOrders(currentBranch); 
       let order = orders.find(o => o.id === docId); 
       if (!order) return;
       
@@ -2583,16 +2584,19 @@ window.printParkedReceipt = async function(docId) {
       if (typeof window.getReceiptSettings === 'function') {
           rSettings = await window.getReceiptSettings();
       }
+      
       let storeName = rSettings?.storeName || "TAKODEAL";
-      let logoBase64 = rSettings?.logoBase64 || "";
+      let logoBase64 = rSettings?.logoBase64 || ""; // THIS PREVENTS THE CRASH!
+      
+      let cTag = "<center>"; 
+      let cTagEnd = "</center>";
 
       let proReceipt = "";
-      if (logoBase64) proReceipt += `[C]<img>${logoBase64}</img>\n`;
-      proReceipt += `[C]<b>${storeName}</b>\n`;
-      proReceipt += `[C]** PAY LATER (PARKED) **\n`;
+      if (logoBase64) proReceipt += `${cTag}<img>${logoBase64}</img>${cTagEnd}\n`;
+      proReceipt += `${cTag}<b>${storeName}</b>${cTagEnd}\n`;
+      proReceipt += `${cTag}** PAY LATER (PARKED) **${cTagEnd}\n`;
       proReceipt += "================================\n";
       
-      // 🔥 FIX: Pull cashier securely from localStorage
       let cashierName = localStorage.getItem('cashierName') || "Staff";
       proReceipt += "Cashier: " + cashierName + "\n";
       proReceipt += "Cust/Table: " + order.name + "\n";
@@ -2605,7 +2609,6 @@ window.printParkedReceipt = async function(docId) {
           let name = item.name || "Item";
           let qty = parseFloat(item.qty || 1);
           let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          
           let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
           let baseLineTotal = qty * basePrice;
           let itemGrossTotal = baseLineTotal;
@@ -2656,7 +2659,7 @@ window.printParkedReceipt = async function(docId) {
       if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
       proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
       proReceipt += "--------------------------------\n";
-      proReceipt += "[C]** PLEASE PAY AT COUNTER **\n\n\n\n";
+      proReceipt += `${cTag}** PLEASE PAY AT COUNTER **${cTagEnd}\n\n\n\n`;
       
       // 🛡️ The Base64 Upgrade (Direct Launch!)
       let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
