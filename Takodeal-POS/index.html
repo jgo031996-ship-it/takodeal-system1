@@ -2399,22 +2399,25 @@ window.printReceipt = async function(type) {
           rSettings = await window.getReceiptSettings();
       }
       
-      // Dynamic Branch Addresses & Settings!
       let storeName = rSettings?.storeName || "TAKODEAL";
-      let logoBase64 = rSettings?.logoBase64 || ""; // THIS PREVENTS THE CRASH!
       
       let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
       let storeAddress = "";
-      if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes Cabantian";
-      else if (currentBranch === "Citygate") storeAddress = "Citygate Foodpark Buhangin";
+      if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes";
+      else if (currentBranch === "Citygate") storeAddress = "Citygate Foodpark";
       else if (currentBranch === "Maa") storeAddress = "Maa Road, Davao City";
       else storeAddress = "Takodeal Headquarters";
       
       let storeContact = "09629721305";
       let footerMsg = "Acknowledgement Receipt\nThank you!";
-      
-      let cTag = "<center>"; 
-      let cTagEnd = "</center>";
+
+      // 🔥 THE BULLETPROOF CENTERING ENGINE 🔥
+      function centerTxt(text) {
+          let cleanText = text.trim();
+          if (cleanText.length >= 32) return cleanText;
+          let leftPad = Math.floor((32 - cleanText.length) / 2);
+          return " ".repeat(leftPad) + cleanText;
+      }
 
       // ------------------------------------------
       // KITCHEN & BAR TICKETS 
@@ -2456,14 +2459,10 @@ window.printReceipt = async function(type) {
       // ------------------------------------------
       let proReceipt = "";
       
-      // Add Logo if available
-      if (logoBase64) {
-          proReceipt += `${cTag}<img>${logoBase64}</img>${cTagEnd}\n`;
-      }
-      
-      proReceipt += `${cTag}<b>${storeName}</b>${cTagEnd}\n`;
-      proReceipt += `${cTag}${storeAddress}${cTagEnd}\n`;
-      proReceipt += `${cTag}${storeContact}${cTagEnd}\n`;
+      // We use manual spacing so it is guaranteed to center!
+      proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
+      if (storeAddress) proReceipt += centerTxt(storeAddress) + "\n";
+      if (storeContact) proReceipt += centerTxt(storeContact) + "\n";
       proReceipt += "================================\n";
   
       const now = new Date();
@@ -2558,12 +2557,12 @@ window.printReceipt = async function(type) {
           proReceipt += "Payment Method: " + paymentMethod + "\n";
           proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
       } else {
-          proReceipt += `${cTag}** PLEASE PAY AT COUNTER **${cTagEnd}\n`;
+          proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n";
       }
       proReceipt += "\n";
       
       let footerLines = footerMsg.split('\n');
-      footerLines.forEach(l => proReceipt += `${cTag}${l}${cTagEnd}\n`);
+      footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
       proReceipt += "\n\n\n";
     
       // 🛡️ The Base64 Upgrade (Direct Launch!)
@@ -2586,15 +2585,18 @@ window.printParkedReceipt = async function(docId) {
       }
       
       let storeName = rSettings?.storeName || "TAKODEAL";
-      let logoBase64 = rSettings?.logoBase64 || ""; // THIS PREVENTS THE CRASH!
-      
-      let cTag = "<center>"; 
-      let cTagEnd = "</center>";
+
+      // 🔥 THE BULLETPROOF CENTERING ENGINE 🔥
+      function centerTxt(text) {
+          let cleanText = text.trim();
+          if (cleanText.length >= 32) return cleanText;
+          let leftPad = Math.floor((32 - cleanText.length) / 2);
+          return " ".repeat(leftPad) + cleanText;
+      }
 
       let proReceipt = "";
-      if (logoBase64) proReceipt += `${cTag}<img>${logoBase64}</img>${cTagEnd}\n`;
-      proReceipt += `${cTag}<b>${storeName}</b>${cTagEnd}\n`;
-      proReceipt += `${cTag}** PAY LATER (PARKED) **${cTagEnd}\n`;
+      proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
+      proReceipt += centerTxt("** PAY LATER (PARKED) **") + "\n";
       proReceipt += "================================\n";
       
       let cashierName = localStorage.getItem('cashierName') || "Staff";
@@ -2659,7 +2661,7 @@ window.printParkedReceipt = async function(docId) {
       if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
       proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
       proReceipt += "--------------------------------\n";
-      proReceipt += `${cTag}** PLEASE PAY AT COUNTER **${cTagEnd}\n\n\n\n`;
+      proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n\n\n\n";
       
       // 🛡️ The Base64 Upgrade (Direct Launch!)
       let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
