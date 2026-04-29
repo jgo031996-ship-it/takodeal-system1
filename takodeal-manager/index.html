@@ -1786,40 +1786,60 @@
     </div>
   </div>
 
-  <div id="editInvModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
-    <div
-      style="background: var(--bg-color); width: 95%; max-width: 400px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
-      <div
-        style="background: var(--surface); padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="margin: 0; font-size: 18px;">✏️ Edit Stock Level</h2>
-        <button onclick="document.getElementById('editInvModal').style.display='none'"
-          style="background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-muted);">✖</button>
+  <div id="editInvModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 600px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); display: flex; flex-direction: column; max-height: 90vh;">
+          
+          <div style="background: #f59e0b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">✏️ Adjust Stock & Variance</h2>
+              <span onclick="document.getElementById('editInvModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
+          </div>
+          
+          <div style="padding: 25px; overflow-y: auto;">
+              <input type="hidden" id="editInvId">
+              <input type="hidden" id="editInvBranch">
+              <span id="lblEditUom" style="display: none;"></span>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Item Name</label>
+                      <input type="text" id="editInvName" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: #f8fafc; font-weight: bold; color: #334155;" readonly>
+                  </div>
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Category</label>
+                      <input type="text" id="editInvCat" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: #f8fafc; color: #475569;" readonly>
+                  </div>
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Current Cost (₱)</label>
+                      <input type="text" id="editInvCost" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: #f8fafc; font-weight: bold; color: #16a34a;" readonly>
+                  </div>
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">System Qty (Expected)</label>
+                      <input type="number" id="editInvOldQty" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; background: #f1f5f9; font-weight: bold; color: #475569;" readonly>
+                  </div>
+              </div>
+
+              <div style="background: #fffbeb; border: 1px solid #fde68a; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                  <label style="font-size: 13px; font-weight: bold; color: #b45309;">New Physical Count *</label>
+                  <input type="number" id="editInvNewQty" oninput="window.calculateVariance()" placeholder="Enter the exact quantity you see..." style="width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #fcd34d; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #b45309; outline: none;">
+                  
+                  <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #fcd34d; display: flex; justify-content: space-between; align-items: center;">
+                      <span style="font-size: 13px; font-weight: bold; color: #92400e;">Calculated Variance:</span>
+                      <span id="editInvVariance" style="font-size: 18px; font-weight: bold; color: #64748b;">0</span>
+                  </div>
+              </div>
+
+              <div>
+                  <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Adjustment Note / Reason *</label>
+                  <textarea id="editInvNote" placeholder="Why are you changing this? (e.g. Spoilage, Found extra box, Missing item...)" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; height: 70px; font-family: inherit; outline: none;"></textarea>
+              </div>
+
+          </div>
+          
+          <div style="background: #f8fafc; padding: 15px 25px; border-top: 1px solid var(--border); display: flex; gap: 15px;">
+              <button onclick="document.getElementById('editInvModal').style.display='none'" style="flex: 1; padding: 14px; background: white; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; cursor: pointer; color: #475569; font-size: 15px;">Cancel</button>
+              <button id="btnSaveInvEdit" onclick="window.saveInventoryEdit()" style="flex: 2; padding: 14px; background: #f59e0b; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px;">💾 Log Variance & Save</button>
+          </div>
       </div>
-      <div style="padding: 20px;">
-        <input type="hidden" id="editInvId">
-        <input type="hidden" id="editInvOldQty">
-
-        <div style="margin-bottom: 15px;">
-          <strong id="editInvName" style="font-size: 16px; display: block; margin-bottom: 5px;">Item Name</strong>
-          <span id="editInvBranch"
-            style="font-size: 12px; color: var(--text-muted); background: var(--surface); padding: 3px 8px; border-radius: 4px;">Branch</span>
-        </div>
-
-        <label
-          style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Adjust
-          Base Quantity</label>
-        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 20px;">
-          <input type="number" id="editInvNewQty"
-            style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 16px; font-weight: bold; box-sizing: border-box;">
-          <span id="editInvUom" style="color: var(--text-muted); font-weight: bold;">units</span>
-        </div>
-
-        <button onclick="saveInventoryEdit()" id="btnSaveInvEdit"
-          style="width: 100%; background: #f59e0b; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">💾
-          Save & Log Variance</button>
-      </div>
-    </div>
   </div>
 
   <div id="employeeProfileModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
