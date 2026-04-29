@@ -2386,7 +2386,7 @@
         else updateParkedBadge();
     };
 
-    // ==========================================
+// ==========================================
 // 🖨️ ULTIMATE RAWBT PRINTER ENGINE
 // ==========================================
 window.printReceipt = async function(type) {
@@ -2435,9 +2435,7 @@ window.printReceipt = async function(type) {
           let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
           
           let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
-          let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-          let bypassLink = document.createElement('a'); 
-          bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+          window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
           return;
       }
 
@@ -2460,7 +2458,8 @@ window.printReceipt = async function(type) {
       hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
       const timeStr = hours + ':' + minutes + ' ' + ampm;
   
-      let cashier = d.cashierName || window.sessionUser.cashierName || "Staff";
+      // 🔥 FIX: Pull cashier securely from hard drive!
+      let cashier = d.cashierName || localStorage.getItem('cashierName') || "Staff";
       let customer = d.customerName || "Guest";
   
       proReceipt += "Date: " + now.toLocaleDateString() + "\n";
@@ -2558,8 +2557,6 @@ window.printReceipt = async function(type) {
     
       // 🛡️ The Base64 Upgrade (Direct Launch!)
       let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      
-      // We use window.location to force the browser to open the app directly, bypassing the popup blocker!
       window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
 };
 
@@ -2567,7 +2564,9 @@ window.printReceipt = async function(type) {
 // 🕒 PARKED ORDER PRINTER ENGINE
 // ==========================================
 window.printParkedReceipt = async function(docId) {
-      let orders = await window.getParkedOrders(window.sessionUser.branch); 
+      // 🔥 FIX: Pull branch securely from localStorage
+      let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+      let orders = await window.getParkedOrders(branch); 
       let order = orders.find(o => o.id === docId); 
       if (!order) return;
       
@@ -2583,7 +2582,10 @@ window.printParkedReceipt = async function(docId) {
       proReceipt += `[C]<b>${storeName}</b>\n`;
       proReceipt += `[C]** PAY LATER (PARKED) **\n`;
       proReceipt += "================================\n";
-      proReceipt += "Cashier: " + window.sessionUser.cashierName + "\n";
+      
+      // 🔥 FIX: Pull cashier securely from localStorage
+      let cashierName = localStorage.getItem('cashierName') || "Staff";
+      proReceipt += "Cashier: " + cashierName + "\n";
       proReceipt += "Cust/Table: " + order.name + "\n";
       proReceipt += "================================\n";
       
@@ -2647,12 +2649,9 @@ window.printParkedReceipt = async function(docId) {
       proReceipt += "--------------------------------\n";
       proReceipt += "[C]** PLEASE PAY AT COUNTER **\n\n\n\n";
       
-      // 🛡️ The Base64 Upgrade!
+      // 🛡️ The Base64 Upgrade (Direct Launch!)
       let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-      
-      let bypassLink = document.createElement('a'); 
-      bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
 };
   </script>
   <script type="module" src="main.js"></script>
