@@ -1022,7 +1022,6 @@ window.loadStaffPersonalInbox = async function() {
     try {
         // 🛡️ 2. UPDATED QUERY USING THE SAFE NAME
         const q = query(collection(db, "staff_requests"), where("cashierName", "==", safeCashierName), orderBy("timestamp", "desc"));
-        const q = query(collection(db, "staff_requests"), where("staffName", "==", window.sessionUser.cashierName), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
         let html = '';
         snap.forEach(docSnap => {
