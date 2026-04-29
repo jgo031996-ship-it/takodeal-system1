@@ -2556,15 +2556,11 @@ window.printReceipt = async function(type) {
       footerLines.forEach(l => proReceipt += `[C]${l}\n`);
       proReceipt += "\n\n\n";
     
-      // 🛡️ The Base64 Upgrade!
+      // 🛡️ The Base64 Upgrade (Direct Launch!)
       let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
       
-      let bypassLink = document.createElement('a'); 
-      bypassLink.href = rawbtUrl; 
-      document.body.appendChild(bypassLink); 
-      bypassLink.click(); 
-      document.body.removeChild(bypassLink);
+      // We use window.location to force the browser to open the app directly, bypassing the popup blocker!
+      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
 };
 
 // ==========================================
