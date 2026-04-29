@@ -2585,12 +2585,15 @@ window.openEditInv = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
     document.getElementById('editInvModal').style.display = 'flex';
     
-    // Fill the Read-Only Info
+    // Fill the Info (Unlocked!)
     document.getElementById('editInvId').value = data.id;
     document.getElementById('editInvBranch').value = data.branch;
     document.getElementById('editInvName').value = data.name;
     document.getElementById('editInvCat').value = data.category || 'Uncategorized';
-    document.getElementById('editInvCost').value = (data.costPerBaseUOM || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    // 🔥 FIX: Number inputs cannot have commas, so we use .toFixed(2) instead of toLocaleString
+    document.getElementById('editInvCost').value = (data.costPerBaseUOM || 0).toFixed(2);
+    
     document.getElementById('lblEditUom').innerText = data.uom || 'Unit';
     document.getElementById('editInvOldQty').value = data.currentStock || 0;
     
@@ -2601,53 +2604,32 @@ window.openEditInv = function(encodedData) {
     document.getElementById('editInvVariance').style.color = '#64748b';
 };
 
-// 🧮 Live Math: Calculates difference as you type!
-window.calculateVariance = function() {
-    let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQty = parseFloat(document.getElementById('editInvNewQty').value);
-    let varEl = document.getElementById('editInvVariance');
-    
-    if (isNaN(newQty)) {
-        varEl.innerText = '0';
-        varEl.style.color = '#64748b';
-        return;
-    }
-    
-    let variance = newQty - oldQty;
-    if (variance > 0) {
-        varEl.innerText = '+' + variance;
-        varEl.style.color = '#16a34a'; // Green for Extra Stock
-    } else if (variance < 0) {
-        varEl.innerText = variance;
-        varEl.style.color = '#dc2626'; // Red for Missing Stock
-    } else {
-        varEl.innerText = '0';
-        varEl.style.color = '#64748b'; // Gray for Perfect Match
-    }
-};
-
 window.saveInventoryEdit = async function () {
     let id = document.getElementById('editInvId').value;
-    let name = document.getElementById('editInvName').value;
+    
+    // 🔥 Grab the newly editable fields!
+    let newName = document.getElementById('editInvName').value.trim();
+    let newCat = document.getElementById('editInvCat').value.trim();
+    let newCost = parseFloat(document.getElementById('editInvCost').value) || 0;
+
     let branch = document.getElementById('editInvBranch').value;
     let uom = document.getElementById('lblEditUom').innerText;
-    let oldQty = parseFloat(document.getElementById('editInvOldQty').value);
-    let newQty = parseFloat(document.getElementById('editInvNewQty').value);
+    let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
+    
+    // If they leave New Count blank, assume they are ONLY editing the Name/Cost and don't change the stock!
+    let newQtyInput = document.getElementById('editInvNewQty').value;
+    let newQty = newQtyInput === '' ? oldQty : parseFloat(newQtyInput);
+    
     let note = document.getElementById('editInvNote').value.trim();
 
     if (!id) { alert("❌ Error: Missing Document ID."); return; }
-    if (isNaN(newQty)) { alert("❌ Please enter the New Physical Count."); return; }
+    if (!newName) { alert("❌ Item Name cannot be empty."); return; }
     
     let variance = newQty - oldQty;
     
-    // Safety Checks
-    if (variance === 0) { 
-        alert("✅ No changes detected. Stock matches perfectly!");
-        document.getElementById('editInvModal').style.display = 'none'; 
-        return; 
-    }
-    if (!note) {
-        alert("❌ VARIANCE DETECTED: You must provide an Adjustment Note/Reason (e.g. Spoilage, Staff Meal) before saving.");
+    // Safety Check: Only demand a note if the physical stock ACTUALLY changed.
+    if (variance !== 0 && !note) {
+        alert("❌ VARIANCE DETECTED: You must provide an Adjustment Note/Reason (e.g. Spoilage) before saving.");
         return;
     }
 
@@ -2655,31 +2637,38 @@ window.saveInventoryEdit = async function () {
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
-        // 1. Update the live stock number
-        await updateDoc(doc(db, "inventory", id), { currentStock: newQty });
-        
-        // 2. Save a permanent record to the ledger for the Owner to see!
-        await addDoc(collection(db, "stock_logs"), {
-            branch: branch, 
-            item: name, 
-            uom: uom, 
-            oldQty: oldQty, 
-            newQty: newQty, 
-            variance: variance, 
-            type: "Manual Variance Adjustment",
-            note: note, // Saves your explanation!
-            user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: new Date()
+        // 1. Update the item with ALL the new metadata and stock
+        await updateDoc(doc(db, "inventory", id), { 
+            name: newName,
+            category: newCat,
+            costPerBaseUOM: newCost,
+            currentStock: newQty 
         });
         
-        alert(`✅ Stock adjusted! A variance of ${variance} has been securely logged.`);
+        // 2. Only log a variance ledger entry if the physical count changed
+        if (variance !== 0) {
+            await addDoc(collection(db, "stock_logs"), {
+                branch: branch, 
+                item: newName, 
+                uom: uom, 
+                oldQty: oldQty, 
+                newQty: newQty, 
+                variance: variance, 
+                type: "Manual Variance Adjustment",
+                note: note,
+                user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+                timestamp: new Date()
+            });
+        }
+        
+        alert(`✅ Details updated successfully!`);
         document.getElementById('editInvModal').style.display = 'none';
         window.loadInventoryData();
         
     } catch (e) { 
         console.error(e); alert("❌ Failed to save. Check your internet connection."); 
     } finally { 
-        btn.innerText = "💾 Log Variance & Save"; btn.disabled = false; 
+        btn.innerText = "💾 Save Changes"; btn.disabled = false; 
     }
 };
 
