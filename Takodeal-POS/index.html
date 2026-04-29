@@ -2571,20 +2571,70 @@ window.printReceipt = async function(type) {
 };
 
 // ==========================================
-// 🕒 PARKED ORDER PRINTER ENGINE
+// 🕒 PARKED ORDERS ENGINE (ZERO DELAY CACHE)
 // ==========================================
-window.printParkedReceipt = async function(docId) {
-      let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
-      let orders = await window.getParkedOrders(currentBranch); 
-      let order = orders.find(o => o.id === docId); 
+window.currentParkedOrdersList = []; // 🔥 This holds the memory instantly!
+
+window.showParkedOrders = async function() {
+      document.getElementById('parkedModal').style.display = 'flex'; 
+      document.getElementById('parkedListContainer').innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Fetching parked orders...</div>';
+      
+      let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+      let orders = await window.getParkedOrders(branch);
+      
+      // 🔥 Save it into fast memory so the printer has zero delay!
+      window.currentParkedOrdersList = orders;
+
+      let html = '';
+      if (orders.length === 0) { html = '<div style="text-align:center; padding: 20px; color: #777;">No parked orders right now.</div>'; }
+      else {
+        orders.forEach(o => {
+          let itemsHtml = o.items.map(i => {
+            let addonsText = '';
+            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
+            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
+            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${(i.lineTotalFinal || 0).toFixed(2)}</div></div>`;
+          }).join('');
+
+          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">👤 ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">₱${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;">
+          <button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="window.printParkedReceipt('${o.id}')">🖨️ Re-print</button>
+          <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.resumeOrder('${o.id}')">▶️ Resume & Pay</button>
+          <button style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;" onclick="window.deleteParkedOrderManually('${o.id}')">🗑️</button>
+          </div></div>`;
+        });
+      }
+      document.getElementById('parkedListContainer').innerHTML = html;
+};
+
+window.resumeOrder = async function(docId) {
+      if (cart.length > 0) { if (!confirm("You have active items in the cart. Overwrite them?")) return; }
+      // Pull straight from fast memory!
+      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
       if (!order) return;
       
-      let rSettings = null;
-      if (typeof window.getReceiptSettings === 'function') {
-          rSettings = await window.getReceiptSettings();
-      }
+      cart = order.items; 
+      renderCart(); 
+      closeModal('parkedModal'); 
+      await window.deleteParkedOrder(docId); 
       
-      let storeName = rSettings?.storeName || "TAKODEAL";
+      if (typeof window.updateParkedBadge === 'function') window.updateParkedBadge();
+      else updateParkedBadge();
+};
+
+window.deleteParkedOrderManually = async function(docId) {
+      if(!confirm("Are you sure you want to permanently delete this parked order?")) return;
+      await window.deleteParkedOrder(docId);
+      window.showParkedOrders();
+      if (typeof window.updateParkedBadge === 'function') window.updateParkedBadge();
+      else updateParkedBadge();
+};
+
+window.printParkedReceipt = function(docId) {
+      // 🔥 FIX: Pull directly from instant memory! NO AWAIT MEANS ZERO DELAY!
+      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
+      if (!order) { alert("Order data missing! Please refresh."); return; }
+      
+      let storeName = "TAKODEAL";
 
       // 🔥 THE BULLETPROOF CENTERING ENGINE 🔥
       function centerTxt(text) {
