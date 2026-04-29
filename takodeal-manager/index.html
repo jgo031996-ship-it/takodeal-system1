@@ -587,6 +587,10 @@
             <option value="Citygate">📍 Citygate</option>
             <option value="Maa">📍 Maa</option>
           </select>
+          <div style="position: relative; flex: 1; min-width: 250px; margin-left: 10px;">
+            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
+            <input type="text" id="liveInvSearch" onkeyup="window.loadInventoryData()" placeholder="Search items..." style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; box-sizing: border-box;">
+          </div>
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
