@@ -2387,14 +2387,13 @@
     };
 
     // ==========================================
-    // 🖨️ ULTIMATE RAWBT PRINTER ENGINE
-    // ==========================================
-    window.printReceipt = async function(type) {
+// 🖨️ ULTIMATE RAWBT PRINTER ENGINE
+// ==========================================
+window.printReceipt = async function(type) {
       let d = lastTransactionData; if (!d || !d.cart) return;
       let hasFood = false; let hasDrinks = false;
       d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
       
-      // Fetch HQ Receipt Settings (Logo, Address, etc.)
       let rSettings = null;
       if (typeof window.getReceiptSettings === 'function') {
           rSettings = await window.getReceiptSettings();
@@ -2406,7 +2405,7 @@
       let logoBase64 = rSettings?.logoBase64 || "";
 
       // ------------------------------------------
-      // KITCHEN & BAR TICKETS (HTML Based)
+      // KITCHEN & BAR TICKETS 
       // ------------------------------------------
       if (type === 'food' || type === 'drinks') {
           let cartHtml = '';
@@ -2435,18 +2434,18 @@
           let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
           let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
           
-          let encodedText = encodeURIComponent(plainTextReceipt);
+          let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
+          let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
           let bypassLink = document.createElement('a'); 
-          bypassLink.href = "rawbt:" + encodedText; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+          bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
           return;
       }
 
       // ------------------------------------------
-      // ULTIMATE PRO CUSTOMER RECEIPT (RAWBT NATIVE)
+      // ULTIMATE PRO CUSTOMER RECEIPT
       // ------------------------------------------
       let proReceipt = "";
       
-      // RawBT Logo Command
       if (logoBase64) {
           proReceipt += `[C]<img>${logoBase64}</img>\n`;
       }
@@ -2461,7 +2460,7 @@
       hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
       const timeStr = hours + ':' + minutes + ' ' + ampm;
   
-      let cashier = d.cashierName || sessionUser.cashierName || "Staff";
+      let cashier = d.cashierName || window.sessionUser.cashierName || "Staff";
       let customer = d.customerName || "Guest";
   
       proReceipt += "Date: " + now.toLocaleDateString() + "\n";
@@ -2475,7 +2474,6 @@
       let grandTotal = 0;
       let totalDiscount = 0;
 
-      // The Magic Math Engine!
       d.cart.forEach(item => {
           let name = item.name || "Item";
           let qty = parseFloat(item.qty || 1);
@@ -2485,13 +2483,11 @@
           let baseLineTotal = qty * basePrice;
           let itemGrossTotal = baseLineTotal;
   
-          // Line 1: Main Item
           proReceipt += name + variantName + "\n";
           let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
           let totalStr = baseLineTotal.toFixed(2);
           proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
   
-          // Line 2+: Add-ons Separated!
           if (item.addons) {
               for (let key in item.addons) {
                   let addon = item.addons[key];
@@ -2513,10 +2509,8 @@
               }
           }
   
-          // Line 3: Notes
           if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
   
-          // Math: Detect Discounts accurately
           let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
           let diff = itemGrossTotal - actualFinal;
           if (diff > 0.01) totalDiscount += diff;
@@ -2558,28 +2552,29 @@
       }
       proReceipt += "\n";
       
-      // Multi-line footer handling
       let footerLines = footerMsg.split('\n');
       footerLines.forEach(l => proReceipt += `[C]${l}\n`);
       proReceipt += "\n\n\n";
     
-      let encodedText = encodeURIComponent(proReceipt);
+      // 🛡️ The Base64 Upgrade!
+      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
+      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+      
       let bypassLink = document.createElement('a'); 
-      bypassLink.href = "rawbt:" + encodedText; 
+      bypassLink.href = rawbtUrl; 
       document.body.appendChild(bypassLink); 
       bypassLink.click(); 
       document.body.removeChild(bypassLink);
-    };
+};
 
-    // ==========================================
-    // 🕒 PARKED ORDER PRINTER ENGINE
-    // ==========================================
-    window.printParkedReceipt = async function(docId) {
-      let orders = await window.getParkedOrders(sessionUser.branch); 
+// ==========================================
+// 🕒 PARKED ORDER PRINTER ENGINE
+// ==========================================
+window.printParkedReceipt = async function(docId) {
+      let orders = await window.getParkedOrders(window.sessionUser.branch); 
       let order = orders.find(o => o.id === docId); 
       if (!order) return;
       
-      // Fetch HQ Receipt Settings
       let rSettings = null;
       if (typeof window.getReceiptSettings === 'function') {
           rSettings = await window.getReceiptSettings();
@@ -2592,7 +2587,7 @@
       proReceipt += `[C]<b>${storeName}</b>\n`;
       proReceipt += `[C]** PAY LATER (PARKED) **\n`;
       proReceipt += "================================\n";
-      proReceipt += "Cashier: " + sessionUser.cashierName + "\n";
+      proReceipt += "Cashier: " + window.sessionUser.cashierName + "\n";
       proReceipt += "Cust/Table: " + order.name + "\n";
       proReceipt += "================================\n";
       
@@ -2656,10 +2651,13 @@
       proReceipt += "--------------------------------\n";
       proReceipt += "[C]** PLEASE PAY AT COUNTER **\n\n\n\n";
       
-      let encodedText = encodeURIComponent(proReceipt);
+      // 🛡️ The Base64 Upgrade!
+      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
+      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+      
       let bypassLink = document.createElement('a'); 
-      bypassLink.href = "rawbt:" + encodedText; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
-    };
+      bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+};
   </script>
   <script type="module" src="main.js"></script>
 </body>
