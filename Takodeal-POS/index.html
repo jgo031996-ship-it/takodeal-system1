@@ -2328,100 +2328,192 @@
       } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete Payment"; btn.disabled = false; }
     }
 
-    // ==========================================
-// 🕒 ULTIMATE PARKED ORDERS & PRINTER ENGINE
 // ==========================================
-window.currentParkedOrdersList = []; 
-
-window.parkOrder = async function() {
-    if (typeof cart === 'undefined' || cart.length === 0) return;
-    let customerName = prompt("Enter Customer Name or Table Number:"); if (!customerName) return;
-    
-    // Always use the exact physical tablet branch!
-    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    let cashier = localStorage.getItem('cashierName') || 'Unknown';
-    let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
-
-    let payload = { branch: branch, cashier: cashier, name: customerName, items: cart, total: grandTotal };
-    let parkedId = await window.parkOrderToDB(payload);
-    
-    if (parkedId) { 
-        // 1. INSTANT MEMORY INJECTION: Give it to the printer instantly!
-        let newOrder = { id: parkedId, ...payload };
-        window.currentParkedOrdersList.push(newOrder);
-        
-        // 2. Clear UI instantly
-        cart = []; 
-        if (typeof renderCart === 'function') renderCart(); 
-        window.updateParkedBadge(); 
-        
-        // 3. Trigger Print (Zero Delay)
-        window.printParkedReceipt(parkedId); 
-        
-        alert("✅ Order Parked Securely!"); 
-    } else { 
-        alert("❌ Failed to park order. Check connection."); 
-    }
-};
-
-window.updateParkedBadge = async function() {
-    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    let orders = await window.getParkedOrders(branch);
-    let badge = document.getElementById('parkedBadge');
-    if (badge) { 
-        if (orders.length > 0) { badge.innerText = orders.length; badge.style.display = 'block'; } 
-        else { badge.style.display = 'none'; } 
-    }
-};
-
-window.showParkedOrders = async function() {
-      document.getElementById('parkedModal').style.display = 'flex'; 
-      document.getElementById('parkedListContainer').innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Fetching parked orders...</div>';
+// 🖨️ ULTIMATE RAWBT PRINTER ENGINE
+// ==========================================
+window.printReceipt = async function(type) {
+      let d = lastTransactionData; if (!d || !d.cart) return;
+      let hasFood = false; let hasDrinks = false;
+      d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
       
-      let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-      let orders = await window.getParkedOrders(branch);
-      window.currentParkedOrdersList = orders; // Load memory for the modal!
-
-      let html = '';
-      if (orders.length === 0) { html = '<div style="text-align:center; padding: 20px; color: #777;">No parked orders right now.</div>'; }
-      else {
-        orders.forEach(o => {
-          let itemsHtml = o.items.map(i => {
-            let addonsText = '';
-            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
-            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
-            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${(i.lineTotalFinal || 0).toFixed(2)}</div></div>`;
-          }).join('');
-
-          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">👤 ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">₱${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;">
-          <button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="window.printParkedReceipt('${o.id}')">🖨️ Re-print</button>
-          <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.resumeOrder('${o.id}')">▶️ Resume & Pay</button>
-          <button style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;" onclick="window.deleteParkedOrderManually('${o.id}')">🗑️</button>
-          </div></div>`;
-        });
+      let rSettings = null;
+      if (typeof window.getReceiptSettings === 'function') {
+          rSettings = await window.getReceiptSettings();
       }
-      document.getElementById('parkedListContainer').innerHTML = html;
-};
-
-window.resumeOrder = async function(docId) {
-      if (typeof cart !== 'undefined' && cart.length > 0) { if (!confirm("You have active items in the cart. Overwrite them?")) return; }
-      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-      if (!order) return;
       
-      cart = order.items; 
-      if (typeof renderCart === 'function') renderCart(); 
-      if (typeof closeModal === 'function') closeModal('parkedModal'); 
-      await window.deleteParkedOrder(docId); 
-      window.updateParkedBadge();
+      let storeName = rSettings?.storeName || "TAKODEAL";
+      
+      let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
+      let storeAddress = "";
+      if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes Cabantian";
+      else if (currentBranch === "Citygate") storeAddress = "Citygate Foodpark";
+      else if (currentBranch === "Maa") storeAddress = "Maa Road, Davao City";
+      else storeAddress = "Takodeal Headquarters";
+      
+      let storeContact = "09629721305";
+      let footerMsg = "Acknowledgement Receipt\nThank you!";
+
+      // 🔥 THE BULLETPROOF CENTERING ENGINE 🔥
+      function centerTxt(text) {
+          let cleanText = text.trim();
+          if (cleanText.length >= 32) return cleanText;
+          let leftPad = Math.floor((32 - cleanText.length) / 2);
+          return " ".repeat(leftPad) + cleanText;
+      }
+
+      // ------------------------------------------
+      // KITCHEN & BAR TICKETS 
+      // ------------------------------------------
+      if (type === 'food' || type === 'drinks') {
+          let cartHtml = '';
+          d.cart.forEach(item => {
+            let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
+            if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
+            
+            cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span></div>`;
+            
+            if (item.addons) {
+              for (let key in item.addons) {
+                if (item.addons[key].qty > 0) {
+                  cartHtml += `<div style="font-size: 12px; color: #333; padding-left: 15px; margin-bottom: 2px;">+ ${item.addons[key].qty}x ${key}</div>`;
+                }
+              }
+            }
+            if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">↘ ${item.notes}</div>`; 
+          });
+
+          let headerTxt = type === 'food' ? 'KITCHEN TICKET' : 'BAR TICKET'; 
+          let crossRefNote = '';
+          if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`;
+          if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`;
+
+          let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 10px;">${headerTxt}</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div></div>`;
+          let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
+          let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
+          
+          let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
+          window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+          return;
+      }
+
+      // ------------------------------------------
+      // CUSTOMER RECEIPT
+      // ------------------------------------------
+      let proReceipt = "";
+      
+      // We use manual spacing so it is guaranteed to center!
+      proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
+      if (storeAddress) proReceipt += centerTxt(storeAddress) + "\n";
+      if (storeContact) proReceipt += centerTxt(storeContact) + "\n";
+      proReceipt += "================================\n";
+  
+      const now = new Date();
+      let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
+      const timeStr = hours + ':' + minutes + ' ' + ampm;
+  
+      let cashier = d.cashierName || localStorage.getItem('cashierName') || "Staff";
+      let customer = d.customerName || "Guest";
+  
+      proReceipt += "Date: " + now.toLocaleDateString() + "\n";
+      proReceipt += "Time: " + timeStr + "\n";
+      proReceipt += "Customer: " + customer + "\n";
+      proReceipt += "Cashier: " + cashier + "\n";
+      proReceipt += "================================\n";
+      proReceipt += "ITEM/S PURCHASED\n";
+      proReceipt += "--------------------------------\n";
+  
+      let grandTotal = 0;
+      let totalDiscount = 0;
+
+      d.cart.forEach(item => {
+          let name = item.name || "Item";
+          let qty = parseFloat(item.qty || 1);
+          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
+          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
+          let baseLineTotal = qty * basePrice;
+          let itemGrossTotal = baseLineTotal;
+  
+          proReceipt += name + variantName + "\n";
+          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
+          let totalStr = baseLineTotal.toFixed(2);
+          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
+  
+          if (item.addons) {
+              for (let key in item.addons) {
+                  let addon = item.addons[key];
+                  if (addon.qty > 0) {
+                      let addonPrice = parseFloat(addon.price || 0);
+                      let addonTotalQty = qty * addon.qty; 
+                      let addonLineTotal = addonTotalQty * addonPrice;
+                      itemGrossTotal += addonLineTotal;
+                      
+                      let aName = `  + ${addon.qty}x ${key}`;
+                      if (addonPrice > 0) {
+                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
+                          let aTotalStr = addonLineTotal.toFixed(2);
+                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
+                      } else {
+                          proReceipt += aName + "\n";
+                      }
+                  }
+              }
+          }
+  
+          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
+  
+          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
+          let diff = itemGrossTotal - actualFinal;
+          if (diff > 0.01) totalDiscount += diff;
+          
+          grandTotal += itemGrossTotal; 
+      });
+  
+      let amountRec = parseFloat(d.amountReceived) || 0;
+      let paymentMethod = d.paymentMethod || "Cash";
+      
+      let subtotalVal = grandTotal.toFixed(2);
+      let totalVal = (grandTotal - totalDiscount).toFixed(2);
+      let changeVal = 0;
+      
+      if (amountRec > 0) {
+          changeVal = amountRec - parseFloat(totalVal);
+          if (changeVal < 0) changeVal = 0;
+      }
+  
+      proReceipt += "--------------------------------\n";
+  
+      function formatLine(label, value) {
+          let valStr = value.toFixed(2);
+          let padding = 32 - label.length - valStr.length;
+          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
+      }
+  
+      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
+      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
+      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
+      proReceipt += "--------------------------------\n";
+  
+      if (amountRec > 0) {
+          proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
+          proReceipt += "Payment Method: " + paymentMethod + "\n";
+          proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
+      } else {
+          proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n";
+      }
+      proReceipt += "\n";
+      
+      let footerLines = footerMsg.split('\n');
+      footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
+      proReceipt += "\n\n\n";
+    
+      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
+      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
 };
 
-window.deleteParkedOrderManually = async function(docId) {
-      if(!confirm("Are you sure you want to permanently delete this parked order?")) return;
-      await window.deleteParkedOrder(docId);
-      window.showParkedOrders();
-      window.updateParkedBadge();
-};
-
+// ==========================================
+// 🕒 PARKED ORDER PRINTER ENGINE
+// ==========================================
 window.printParkedReceipt = function(docId) {
       // Look up the order in instant memory!
       let order = window.currentParkedOrdersList.find(o => o.id === docId); 
@@ -2505,154 +2597,6 @@ window.printParkedReceipt = function(docId) {
       proReceipt += "--------------------------------\n";
       proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n\n\n\n";
       
-      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-};
-
-// ==========================================
-// 🕒 PARKED ORDERS ENGINE (ZERO DELAY CACHE)
-// ==========================================
-window.currentParkedOrdersList = []; // 🔥 This holds the memory instantly!
-
-window.showParkedOrders = async function() {
-      document.getElementById('parkedModal').style.display = 'flex'; 
-      document.getElementById('parkedListContainer').innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Fetching parked orders...</div>';
-      
-      let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-      let orders = await window.getParkedOrders(branch);
-      
-      // 🔥 Save it into fast memory so the printer has zero delay!
-      window.currentParkedOrdersList = orders;
-
-      let html = '';
-      if (orders.length === 0) { html = '<div style="text-align:center; padding: 20px; color: #777;">No parked orders right now.</div>'; }
-      else {
-        orders.forEach(o => {
-          let itemsHtml = o.items.map(i => {
-            let addonsText = '';
-            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
-            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
-            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${(i.lineTotalFinal || 0).toFixed(2)}</div></div>`;
-          }).join('');
-
-          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">👤 ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">₱${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;">
-          <button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="window.printParkedReceipt('${o.id}')">🖨️ Re-print</button>
-          <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.resumeOrder('${o.id}')">▶️ Resume & Pay</button>
-          <button style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;" onclick="window.deleteParkedOrderManually('${o.id}')">🗑️</button>
-          </div></div>`;
-        });
-      }
-      document.getElementById('parkedListContainer').innerHTML = html;
-};
-
-window.resumeOrder = async function(docId) {
-      if (cart.length > 0) { if (!confirm("You have active items in the cart. Overwrite them?")) return; }
-      // Pull straight from fast memory!
-      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-      if (!order) return;
-      
-      cart = order.items; 
-      renderCart(); 
-      closeModal('parkedModal'); 
-      await window.deleteParkedOrder(docId); 
-      
-      if (typeof window.updateParkedBadge === 'function') window.updateParkedBadge();
-      else updateParkedBadge();
-};
-
-window.deleteParkedOrderManually = async function(docId) {
-      if(!confirm("Are you sure you want to permanently delete this parked order?")) return;
-      await window.deleteParkedOrder(docId);
-      window.showParkedOrders();
-      if (typeof window.updateParkedBadge === 'function') window.updateParkedBadge();
-      else updateParkedBadge();
-};
-
-window.printParkedReceipt = function(docId) {
-      // 🔥 FIX: Pull directly from instant memory! NO AWAIT MEANS ZERO DELAY!
-      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-      if (!order) { alert("Order data missing! Please refresh."); return; }
-      
-      let storeName = "TAKODEAL";
-
-      // 🔥 THE BULLETPROOF CENTERING ENGINE 🔥
-      function centerTxt(text) {
-          let cleanText = text.trim();
-          if (cleanText.length >= 32) return cleanText;
-          let leftPad = Math.floor((32 - cleanText.length) / 2);
-          return " ".repeat(leftPad) + cleanText;
-      }
-
-      let proReceipt = "";
-      proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
-      proReceipt += centerTxt("** PAY LATER (PARKED) **") + "\n";
-      proReceipt += "================================\n";
-      
-      let cashierName = localStorage.getItem('cashierName') || "Staff";
-      proReceipt += "Cashier: " + cashierName + "\n";
-      proReceipt += "Cust/Table: " + order.name + "\n";
-      proReceipt += "================================\n";
-      
-      let grandTotal = 0;
-      let totalDiscount = 0;
-
-      order.items.forEach(item => {
-          let name = item.name || "Item";
-          let qty = parseFloat(item.qty || 1);
-          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-          let baseLineTotal = qty * basePrice;
-          let itemGrossTotal = baseLineTotal;
-  
-          proReceipt += name + variantName + "\n";
-          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-          let totalStr = baseLineTotal.toFixed(2);
-          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
-  
-          if (item.addons) {
-              for (let key in item.addons) {
-                  let addon = item.addons[key];
-                  if (addon.qty > 0) {
-                      let addonPrice = parseFloat(addon.price || 0);
-                      let addonTotalQty = qty * addon.qty; 
-                      let addonLineTotal = addonTotalQty * addonPrice;
-                      itemGrossTotal += addonLineTotal;
-                      
-                      let aName = `  + ${addon.qty}x ${key}`;
-                      if (addonPrice > 0) {
-                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                          let aTotalStr = addonLineTotal.toFixed(2);
-                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                      } else {
-                          proReceipt += aName + "\n";
-                      }
-                  }
-              }
-          }
-          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
-  
-          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
-          let diff = itemGrossTotal - actualFinal;
-          if (diff > 0.01) totalDiscount += diff;
-          
-          grandTotal += itemGrossTotal; 
-      });
-  
-      let subtotalVal = grandTotal.toFixed(2);
-      let totalVal = (grandTotal - totalDiscount).toFixed(2);
-  
-      proReceipt += "--------------------------------\n";
-      function formatLine(label, value) {
-          let valStr = value.toFixed(2); let padding = 32 - label.length - valStr.length;
-          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-      }
-      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
-      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-      proReceipt += "--------------------------------\n";
-      proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n\n\n\n";
-      
-      // 🛡️ The Base64 Upgrade (Direct Launch!)
       let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
       window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
 };
