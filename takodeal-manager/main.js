@@ -4823,3 +4823,13 @@ window.resetAllInventoryToZero = async function() {
         alert("❌ Error resetting inventory.");
     }
 };
+
+// Bridge for the Branch Dropdown
+window.refreshInventoryView = function() {
+    // Whenever the dropdown changes, just reload the main inventory table!
+    if (typeof window.loadInventoryData === 'function') {
+        window.loadInventoryData();
+    } else {
+        console.warn("loadInventoryData is missing!");
+    }
+};
