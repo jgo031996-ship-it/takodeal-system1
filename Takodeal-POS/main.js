@@ -743,16 +743,36 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
 }
 
 // 2. Open Modal & Turn on Front Camera
+let currentBranchStaffCache = []; // Caches staff data to check PINs!
+
 window.openTimeClockModal = async function() {
     document.getElementById('timeClockModal').style.display = 'flex';
-    document.getElementById('clockStaffName').value = ""; // Reset dropdown
+    document.getElementById('clockStaffPin').value = ''; // Reset PIN
     
+    let select = document.getElementById('clockStaffName');
+    select.innerHTML = '<option value="">Loading Staff...</option>';
+
     try {
+        // Fetch staff assigned to this specific tablet's branch
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        const q = query(collection(db, "cashiers"), where("branch", "in", [branch, "Main Office"]));
+        const snap = await getDocs(q);
+        
+        currentBranchStaffCache = [];
+        let html = '<option value="">-- Select Your Name --</option>';
+        snap.forEach(doc => {
+            let data = doc.data();
+            currentBranchStaffCache.push(data); // Save in memory for PIN checking
+            html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
+        });
+        select.innerHTML = html;
+
+        // Start Camera
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
         document.getElementById('clockVideo').srcObject = cameraStream;
     } catch (e) {
-        console.error("Camera Error:", e);
-        alert("⚠️ Camera access is required for the Time Clock!");
+        console.error("Camera/DB Error:", e);
+        alert("⚠️ Error loading Time Clock. Check Camera permissions.");
     }
 };
 
@@ -768,72 +788,64 @@ window.closeTimeClock = function() {
 // 4. The Main Submit Function
 window.submitAttendance = async function(type) {
     const staffName = document.getElementById('clockStaffName').value;
+    const inputPin = document.getElementById('clockStaffPin').value.trim();
+
     if (!staffName) { alert("❌ Please select your name."); return; }
+    if (!inputPin) { alert("❌ Please enter your 4-Digit Security PIN."); return; }
+
+    // 🔥 PIN SECURITY CHECK
+    let staffProfile = currentBranchStaffCache.find(s => s.cashierName === staffName);
+    if (!staffProfile || staffProfile.pin !== inputPin) {
+        alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
+        document.getElementById('clockStaffPin').value = ''; // wipe it
+        return;
+    }
 
     const branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     const targetZone = BRANCH_ZONES[branch];
 
     if (!targetZone) {
-        alert(`❌ GPS Configuration Missing for ${branch}. Please contact the Owner.`);
-        return;
+        alert(`❌ GPS Configuration Missing for ${branch}. Please contact the Owner.`); return;
     }
 
     // A. Snap the Photo!
     const video = document.getElementById('clockVideo');
     const canvas = document.getElementById('clockCanvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     const photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
 
     // B. Get GPS & Validate
-    if (!navigator.geolocation) {
-        alert("❌ Geolocation is not supported by this browser.");
-        return;
-    }
+    if (!navigator.geolocation) { alert("❌ Geolocation is not supported."); return; }
 
-    // Disable buttons while calculating
     let buttons = document.querySelectorAll('#timeClockModal button');
     buttons.forEach(b => b.disabled = true);
 
     navigator.geolocation.getCurrentPosition(async (position) => {
         const userLat = position.coords.latitude;
         const userLng = position.coords.longitude;
-
-        // C. Calculate Distance
         const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
 
         if (distance > ALLOWED_RADIUS_METERS) {
             alert(`🚨 SECURITY LOCKOUT!\n\nYou are ${Math.round(distance)} meters away from the ${branch} branch.\nYou must be within ${ALLOWED_RADIUS_METERS} meters to clock in or out!`);
-            buttons.forEach(b => b.disabled = false);
-            return;
+            buttons.forEach(b => b.disabled = false); return;
         }
 
-        // D. Secure! Save to Firebase
         try {
             await addDoc(collection(db, "attendance_logs"), {
-                staffName: staffName,
-                branch: branch,
-                type: type, // "TIME IN" or "TIME OUT"
-                timestamp: new Date(),
-                locationLat: userLat,
-                locationLng: userLng,
-                distanceMeters: Math.round(distance),
+                staffName: staffName, branch: branch, type: type, timestamp: new Date(),
+                locationLat: userLat, locationLng: userLng, distanceMeters: Math.round(distance),
                 photoBase64: photoBase64
             });
 
             alert(`✅ ${type} SUCCESS!\n\nIdentity and Location Verified for ${staffName}.`);
             window.closeTimeClock();
         } catch (error) {
-            console.error("Firebase Error:", error);
-            alert("❌ Failed to log attendance. Check internet connection.");
-        } finally {
-            buttons.forEach(b => b.disabled = false);
-        }
+            console.error(error); alert("❌ Failed to log attendance.");
+        } finally { buttons.forEach(b => b.disabled = false); }
 
     }, (error) => {
-        console.error("GPS Error:", error);
-        alert("❌ GPS access is required to use the Time Clock. Please enable Location Services on this tablet.");
+        alert("❌ GPS access is required to use the Time Clock.");
         buttons.forEach(b => b.disabled = false);
     }, { enableHighAccuracy: true }); 
 };
@@ -848,17 +860,19 @@ window.openStaffRequestsModal = function() {
 };
 
 window.switchRequestTab = function(tabName) {
-    // Reset all tabs to gray
-    const tabs = ['Advance', 'Leave', 'Meal', 'Reason'];
+    const tabs = ['Advance', 'Leave', 'Meal', 'Reason', 'Inbox'];
     tabs.forEach(t => {
         let btn = document.getElementById('tabReq' + t);
         let form = document.getElementById('formReq' + t);
+        if (!btn || !form) return;
         
         if (t === tabName) {
             btn.style.borderBottom = "3px solid #3b82f6";
             btn.style.color = "#0f172a";
             btn.style.background = "white";
             form.style.display = "block";
+            // 🔥 If they open Inbox, trigger the fetch!
+            if (tabName === 'Inbox') window.loadStaffPersonalInbox();
         } else {
             btn.style.borderBottom = "3px solid transparent";
             btn.style.color = "#64748b";
@@ -866,6 +880,46 @@ window.switchRequestTab = function(tabName) {
             form.style.display = "none";
         }
     });
+};
+
+window.loadStaffPersonalInbox = async function() {
+    let container = document.getElementById('staffPersonalInboxList');
+    container.innerHTML = '<div style="padding:20px; text-align:center; color:#64748b;">Loading your records...</div>';
+
+    try {
+        // Fetch requests ONLY for the currently logged-in cashier
+        const q = query(collection(db, "staff_requests"), where("staffName", "==", sessionUser.cashierName), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        snap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
+            
+            // Format Status Badges
+            let statusBadge = `<span style="background: #fef9c3; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending Review</span>`;
+            if (d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Approved</span>`;
+            if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Rejected</span>`;
+
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <strong style="color: #334155;">${d.type}</strong>
+                        ${statusBadge}
+                    </div>
+                    <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">Submitted: ${dateStr}</div>
+                    <div style="font-size: 14px; font-weight: bold; color: var(--primary);">
+                        ${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>';
+    }
 };
 
 window.submitStaffRequest = async function(requestType) {
@@ -931,5 +985,123 @@ window.submitStaffRequest = async function(requestType) {
     } catch (error) {
         console.error("Error submitting request:", error);
         alert("❌ Failed to submit request to the cloud. Check internet connection.");
+    }
+};
+
+// ==========================================
+// 🚪 SIGN OUT ENGINE
+// ==========================================
+window.logoutCashier = function() {
+    if (confirm("Are you sure you want to sign out of this account?")) {
+        localStorage.removeItem('cashierName'); // Clear memory
+        sessionUser = null;
+        location.reload(); // Instantly returns to the PIN Lock screen
+    }
+};
+
+// ==========================================
+// 💸 REMIT CASH TO HQ ENGINE
+// ==========================================
+window.openRemittanceModal = function() {
+    document.getElementById('remittanceModal').style.display = 'flex';
+    document.getElementById('remitCashier').value = sessionUser.cashierName;
+    
+    // Auto-fill dates with today
+    let today = new Date().toISOString().split('T')[0];
+    document.getElementById('remitStartDate').value = today;
+    document.getElementById('remitEndDate').value = today;
+    
+    window.switchRemittanceTab('form');
+    
+    // Load HQ Bank Accounts for the dropdown!
+    window.loadHqAccountsForRemittance();
+};
+
+window.switchRemittanceTab = function(tab) {
+    if (tab === 'form') {
+        document.getElementById('remitFormSection').style.display = 'block';
+        document.getElementById('remitHistorySection').style.display = 'none';
+        document.getElementById('tabRemitForm').style.borderBottom = '3px solid #047857';
+        document.getElementById('tabRemitHistory').style.borderBottom = '3px solid transparent';
+    } else {
+        document.getElementById('remitFormSection').style.display = 'none';
+        document.getElementById('remitHistorySection').style.display = 'block';
+        document.getElementById('tabRemitForm').style.borderBottom = '3px solid transparent';
+        document.getElementById('tabRemitHistory').style.borderBottom = '3px solid #047857';
+        window.loadRemittanceHistory();
+    }
+};
+
+window.loadHqAccountsForRemittance = async function() {
+    let select = document.getElementById('remitChannel');
+    select.innerHTML = '<option value="">Loading HQ Accounts...</option>';
+    try {
+        const q = query(collection(db, "cash_accounts"));
+        const snap = await getDocs(q);
+        let html = '<option value="">-- Select Transfer Method --</option>';
+        snap.forEach(doc => {
+            html += `<option value="${doc.data().name}">${doc.data().name}</option>`;
+        });
+        html += '<option value="Physical Handover">Physical Handover (Cash)</option>';
+        select.innerHTML = html;
+    } catch (e) {
+        console.error("Error loading accounts:", e);
+    }
+};
+
+window.submitRemittance = async function() {
+    let payload = {
+        branch: sessionUser.branch,
+        cashier: sessionUser.cashierName,
+        salesPeriodStart: document.getElementById('remitStartDate').value,
+        salesPeriodEnd: document.getElementById('remitEndDate').value,
+        amount: parseFloat(document.getElementById('remitAmount').value),
+        channel: document.getElementById('remitChannel').value,
+        recipient: document.getElementById('remitRecipient').value.trim(),
+        referenceNumber: document.getElementById('remitRefNum').value.trim(),
+        status: "Pending", // HQ needs to approve it!
+        timestamp: serverTimestamp()
+    };
+
+    if (isNaN(payload.amount) || payload.amount <= 0 || !payload.channel || !payload.recipient) {
+        alert("❌ Please fill out Amount, Channel, and Recipient."); return;
+    }
+
+    try {
+        await addDoc(collection(db, "remittances"), payload);
+        alert("✅ Remittance securely sent to HQ! Waiting for Owner's approval.");
+        
+        document.getElementById('remitAmount').value = '';
+        document.getElementById('remitRefNum').value = '';
+        window.switchRemittanceTab('history');
+    } catch (e) {
+        console.error(e); alert("❌ Failed to send remittance.");
+    }
+};
+
+window.loadRemittanceHistory = async function() {
+    const tbody = document.getElementById('remitHistoryTableBody');
+    tbody.innerHTML = '<tr><td style="padding:20px; text-align:center;">Fetching history...</td></tr>';
+    try {
+        const q = query(collection(db, "remittances"), where("branch", "==", sessionUser.branch), orderBy("timestamp", "desc"), limit(20));
+        const snap = await getDocs(q);
+        let html = '';
+        snap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Just now';
+            let statusColor = d.status === "Received" ? "#16a34a" : "#d97706";
+            
+            html += `
+                <tr style="border-bottom: 1px solid #cbd5e1;">
+                    <td style="padding: 10px; font-weight: bold; color: #334155;">₱${d.amount.toLocaleString()}</td>
+                    <td style="padding: 10px; font-size: 12px; color: #64748b;">To: ${d.channel}</td>
+                    <td style="padding: 10px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 10px; font-weight: bold; color: ${statusColor}; text-align: right;">${d.status}</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html || '<tr><td style="padding:20px; text-align:center;">No previous transfers.</td></tr>';
+    } catch (e) {
+        console.error(e); tbody.innerHTML = '<tr><td style="padding:20px; text-align:center; color:red;">Error loading history.</td></tr>';
     }
 };
