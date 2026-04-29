@@ -2580,90 +2580,66 @@ window.loadStockLogs = async function() {
 // ==========================================
 // ✏️ UPGRADED INVENTORY EDIT ENGINE
 // ==========================================
+window.openEditInv = async function(encodedData) {
+    let passedData = JSON.parse(decodeURIComponent(encodedData));
+    let id = passedData.id;
 
-window.openEditInv = function(encodedData) {
-    let data = JSON.parse(decodeURIComponent(encodedData));
-    document.getElementById('editInvModal').style.display = 'flex';
-    
-    // Fill the Info (Unlocked!)
-    document.getElementById('editInvId').value = data.id;
-    document.getElementById('editInvBranch').value = data.branch;
-    document.getElementById('editInvName').value = data.name;
-    document.getElementById('editInvCat').value = data.category || 'Uncategorized';
-    
-    // 🔥 FIX: Number inputs cannot have commas, so we use .toFixed(2) instead of toLocaleString
-    document.getElementById('editInvCost').value = (data.costPerBaseUOM || 0).toFixed(2);
-    
-    document.getElementById('lblEditUom').innerText = data.uom || 'Unit';
-    document.getElementById('editInvOldQty').value = data.currentStock || 0;
-    
-    // Reset the Inputs
-    document.getElementById('editInvNewQty').value = '';
-    document.getElementById('editInvNote').value = '';
-    document.getElementById('editInvVariance').innerText = '0';
-    document.getElementById('editInvVariance').style.color = '#64748b';
-};
-
-window.calcEditCost = function() {
-    let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
-    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
-    let baseUom = document.getElementById('editInvBaseUom').value || 'Unit';
-    let baseCost = purchCost / conversion;
-    document.getElementById('editInvCostSummary').innerHTML = `Calculated Base Cost: <strong style="color:#d97706;">₱${baseCost.toFixed(4)}</strong> per ${baseUom}`;
-};
-
-window.calcEditVariance = function() {
-    let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQInput = document.getElementById('editInvNewQty').value;
-    let varEl = document.getElementById('editInvVariance');
-
-    if (newQInput === '') {
-        varEl.innerText = '0';
-        varEl.style.color = '#64748b';
+    if (!id) {
+        alert("❌ Error: Cannot find item ID.");
         return;
     }
 
-    let newQ = parseFloat(newQInput) || 0;
-    let diff = newQ - oldQ;
-    
-    varEl.innerText = diff > 0 ? '+' + diff : diff;
-    if (diff < 0) varEl.style.color = '#ef4444';
-    else if (diff > 0) varEl.style.color = '#10b981';
-    else varEl.style.color = '#64748b';
-};
-
-window.openEditInv = function(encodedData) {
-    let data = JSON.parse(decodeURIComponent(encodedData));
+    // Open the modal immediately so the user sees action
     document.getElementById('editInvModal').style.display = 'flex';
     
-    // Fill all the detailed info!
-    document.getElementById('editInvId').value = data.id;
-    document.getElementById('editInvBranch').value = data.branch || 'Main Office';
-    document.getElementById('editInvName').value = data.name;
-    document.getElementById('editInvCat').value = data.category || 'Ingredients';
-    
-    document.getElementById('editInvPurchUom').value = data.purchUom || '';
-    document.getElementById('editInvBaseUom').value = data.uom || data.baseUom || '';
-    document.getElementById('editInvConversion').value = data.conversion || 1;
-    
-    // Backwards compatibility check: If purchCost is missing, calculate it backwards
-    let purchCost = data.purchCost;
-    if (purchCost === undefined) {
-        purchCost = (data.costPerBaseUOM || data.cost || 0) * (data.conversion || 1);
-    }
-    document.getElementById('editInvPurchCost').value = purchCost.toFixed(2);
-    
-    document.getElementById('editInvLowStock').value = data.reorderLevel || 0;
-    document.getElementById('editInvOldQty').value = data.currentStock || 0;
-    
-    // Reset Variance inputs
-    document.getElementById('editInvNewQty').value = '';
-    document.getElementById('editInvNote').value = '';
-    document.getElementById('editInvVariance').innerText = '0';
-    document.getElementById('editInvVariance').style.color = '#64748b';
+    // Show a loading indicator in the name field while it fetches from the cloud
+    document.getElementById('editInvName').value = "⏳ Loading fresh data from Cloud...";
 
-    // Trigger the cost math visually
-    window.calcEditCost();
+    try {
+        // 🔥 DIRECT CLOUD FETCH: Grab the absolute newest data directly from Firebase!
+        const docRef = doc(db, "inventory", id);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            let data = docSnap.data();
+
+            // Fill all the detailed info directly from the Cloud!
+            document.getElementById('editInvId').value = id;
+            document.getElementById('editInvBranch').value = data.branch || passedData.branch || 'Main Office';
+            document.getElementById('editInvName').value = data.name || '';
+            document.getElementById('editInvCat').value = data.category || 'Ingredients';
+            
+            document.getElementById('editInvPurchUom').value = data.purchUom || '';
+            document.getElementById('editInvBaseUom').value = data.uom || data.baseUom || '';
+            document.getElementById('editInvConversion').value = data.conversion || 1;
+            
+            // Calculate the Purchase Cost if it's missing
+            let purchCost = data.purchCost;
+            if (purchCost === undefined) {
+                purchCost = (data.costPerBaseUOM || data.cost || 0) * (data.conversion || 1);
+            }
+            document.getElementById('editInvPurchCost').value = purchCost.toFixed(2);
+            
+            document.getElementById('editInvLowStock').value = data.reorderLevel || 0;
+            document.getElementById('editInvOldQty').value = data.currentStock || 0;
+            
+            // Reset Variance inputs
+            document.getElementById('editInvNewQty').value = '';
+            document.getElementById('editInvNote').value = '';
+            document.getElementById('editInvVariance').innerText = '0';
+            document.getElementById('editInvVariance').style.color = '#64748b';
+
+            // Trigger the cost math visually
+            window.calcEditCost();
+        } else {
+            alert("❌ Item not found in database.");
+            document.getElementById('editInvModal').style.display = 'none';
+        }
+    } catch (e) {
+        console.error("Error fetching item details:", e);
+        alert("❌ Failed to load item details from cloud. Check your connection.");
+        document.getElementById('editInvModal').style.display = 'none';
+    }
 };
 
 window.saveInventoryEdit = async function () {
