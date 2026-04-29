@@ -652,7 +652,7 @@ function startLiveClock() {
 startLiveClock();
 
 // ==========================================
-// REASON LETTER ENGINE
+// ✉️ REASON LETTER ENGINE
 // ==========================================
 window.openExplanationModal = async function() {
     let cashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier');
@@ -661,7 +661,6 @@ window.openExplanationModal = async function() {
     document.getElementById('explanationModal').style.display = 'flex';
 
     try {
-        // Find ONLY the unresolved shorts/overs for this specific cashier!
         const q = query(collection(db, "manager_alerts"), 
             where("type", "==", "VARIANCE_ALERT"), 
             where("cashier", "==", cashier),
@@ -684,7 +683,7 @@ window.openExplanationModal = async function() {
 
     } catch (e) {
         console.error(e);
-        selectList.innerHTML = '<option value="">Error connecting. Press F12 to check Firebase Index.</option>';
+        selectList.innerHTML = '<option value="">Error connecting.</option>';
     }
 };
 
@@ -697,7 +696,6 @@ window.submitReasonLetter = async function() {
     if (!message) { alert("You must type a detailed explanation."); return; }
 
     try {
-        // Update the Manager Alert with the Cashier's confession
         await updateDoc(doc(db, "manager_alerts", alertId), {
             explanationCause: cause,
             explanationMessage: message,
@@ -707,296 +705,17 @@ window.submitReasonLetter = async function() {
         alert("✅ Reason Letter successfully sent to the Owner's Security Feed.");
         document.getElementById('explanationModal').style.display = 'none';
         document.getElementById('explainMessage').value = '';
-
-    } catch (e) {
-        console.error(e); alert("Failed to send letter.");
-    }
+    } catch (e) { console.error(e); alert("Failed to send letter."); }
 };
-
-// ==========================================
-// 📍 GPS & SELFIE TIME CLOCK ENGINE
-// ==========================================
-
-// ⚠️ BOSS JOSTUART: UPDATE THESE COORDINATES!
-const BRANCH_ZONES = {
-    "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
-    "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  
-    "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 },       
-    "Main Office": { lat: 7.1539090939416266, lng: 125.59588373531139 }
-};
-
-const ALLOWED_RADIUS_METERS = 100; // The digital fence size!
-let cameraStream = null;
-
-// 1. Haversine Formula to calculate exact meters between two GPS points
-function getDistanceInMeters(lat1, lon1, lat2, lon2) {
-    const R = 6371e3; // Earth's radius in meters
-    const p1 = lat1 * Math.PI/180;
-    const p2 = lat2 * Math.PI/180;
-    const deltaP = (lat2-lat1) * Math.PI/180;
-    const deltaLon = (lon2-lon1) * Math.PI/180;
-    const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) +
-              Math.cos(p1) * Math.cos(p2) *
-              Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-}
-
-// 2. Open Modal & Turn on Front Camera
-
-window.openTimeClockModal = async function() {
-    document.getElementById('timeClockModal').style.display = 'flex';
-    document.getElementById('clockStaffPin').value = ''; // Reset PIN
-    
-    let select = document.getElementById('clockStaffName');
-    select.innerHTML = '<option value="">Loading Staff...</option>';
-
-    try {
-        // Fetch staff assigned to this specific tablet's branch
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        const q = query(collection(db, "cashiers"), where("branch", "in", [branch, "Main Office"]));
-        const snap = await getDocs(q);
-        
-        currentBranchStaffCache = [];
-        let html = '<option value="">-- Select Your Name --</option>';
-        snap.forEach(doc => {
-            let data = doc.data();
-            currentBranchStaffCache.push(data); // Save in memory for PIN checking
-            html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
-        });
-        select.innerHTML = html;
-
-        // Start Camera
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-        document.getElementById('clockVideo').srcObject = cameraStream;
-    } catch (e) {
-        console.error("Camera/DB Error:", e);
-        alert("⚠️ Error loading Time Clock. Check Camera permissions.");
-    }
-};
-
-// 3. Close Modal & Turn off Camera
-window.closeTimeClock = function() {
-    if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-        cameraStream = null;
-    }
-    document.getElementById('timeClockModal').style.display = 'none';
-};
-
-// 4. The Main Submit Function
-window.submitAttendance = async function(type) {
-    const staffName = document.getElementById('clockStaffName').value;
-    const inputPin = document.getElementById('clockStaffPin').value.trim();
-
-    if (!staffName) { alert("❌ Please select your name."); return; }
-    if (!inputPin) { alert("❌ Please enter your 4-Digit Security PIN."); return; }
-
-    // 🔥 PIN SECURITY CHECK
-    let staffProfile = currentBranchStaffCache.find(s => s.cashierName === staffName);
-    if (!staffProfile || staffProfile.pin !== inputPin) {
-        alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
-        document.getElementById('clockStaffPin').value = ''; // wipe it
-        return;
-    }
-
-    const branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    const targetZone = BRANCH_ZONES[branch];
-
-    if (!targetZone) {
-        alert(`❌ GPS Configuration Missing for ${branch}. Please contact the Owner.`); return;
-    }
-
-    // A. Snap the Photo!
-    const video = document.getElementById('clockVideo');
-    const canvas = document.getElementById('clockCanvas');
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    const photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
-
-    // B. Get GPS & Validate
-    if (!navigator.geolocation) { alert("❌ Geolocation is not supported."); return; }
-
-    let buttons = document.querySelectorAll('#timeClockModal button');
-    buttons.forEach(b => b.disabled = true);
-
-    navigator.geolocation.getCurrentPosition(async (position) => {
-        const userLat = position.coords.latitude;
-        const userLng = position.coords.longitude;
-        const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
-
-        if (distance > ALLOWED_RADIUS_METERS) {
-            alert(`🚨 SECURITY LOCKOUT!\n\nYou are ${Math.round(distance)} meters away from the ${branch} branch.\nYou must be within ${ALLOWED_RADIUS_METERS} meters to clock in or out!`);
-            buttons.forEach(b => b.disabled = false); return;
-        }
-
-        try {
-            await addDoc(collection(db, "attendance_logs"), {
-                staffName: staffName, branch: branch, type: type, timestamp: new Date(),
-                locationLat: userLat, locationLng: userLng, distanceMeters: Math.round(distance),
-                photoBase64: photoBase64
-            });
-
-            alert(`✅ ${type} SUCCESS!\n\nIdentity and Location Verified for ${staffName}.`);
-            window.closeTimeClock();
-        } catch (error) {
-            console.error(error); alert("❌ Failed to log attendance.");
-        } finally { buttons.forEach(b => b.disabled = false); }
-
-    }, (error) => {
-        alert("❌ GPS access is required to use the Time Clock.");
-        buttons.forEach(b => b.disabled = false);
-    }, { enableHighAccuracy: true }); 
-};
-
-// ==========================================
-// 📝 STAFF REQUEST & DEDUCTION HUB ENGINE
-// ==========================================
-
-window.openStaffRequestsModal = function() {
-    document.getElementById('staffRequestsModal').style.display = 'flex';
-    window.switchRequestTab('Advance'); // Default to Cash Advance tab
-};
-
-window.switchRequestTab = function(tabName) {
-    const tabs = ['Advance', 'Leave', 'Meal', 'Reason', 'Inbox'];
-    tabs.forEach(t => {
-        let btn = document.getElementById('tabReq' + t);
-        let form = document.getElementById('formReq' + t);
-        if (!btn || !form) return;
-        
-        if (t === tabName) {
-            btn.style.borderBottom = "3px solid #3b82f6";
-            btn.style.color = "#0f172a";
-            btn.style.background = "white";
-            form.style.display = "block";
-            // 🔥 If they open Inbox, trigger the fetch!
-            if (tabName === 'Inbox') window.loadStaffPersonalInbox();
-        } else {
-            btn.style.borderBottom = "3px solid transparent";
-            btn.style.color = "#64748b";
-            btn.style.background = "transparent";
-            form.style.display = "none";
-        }
-    });
-};
-
-window.loadStaffPersonalInbox = async function() {
-    let container = document.getElementById('staffPersonalInboxList');
-    container.innerHTML = '<div style="padding:20px; text-align:center; color:#64748b;">Loading your records...</div>';
-
-    try {
-        // Fetch requests ONLY for the currently logged-in cashier
-        const q = query(collection(db, "staff_requests"), where("staffName", "==", sessionUser.cashierName), orderBy("timestamp", "desc"));
-        const snap = await getDocs(q);
-        
-        let html = '';
-        snap.forEach(doc => {
-            let d = doc.data();
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
-            
-            // Format Status Badges
-            let statusBadge = `<span style="background: #fef9c3; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending Review</span>`;
-            if (d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Approved</span>`;
-            if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Rejected</span>`;
-
-            html += `
-                <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                        <strong style="color: #334155;">${d.type}</strong>
-                        ${statusBadge}
-                    </div>
-                    <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">Submitted: ${dateStr}</div>
-                    <div style="font-size: 14px; font-weight: bold; color: var(--primary);">
-                        ${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}
-                    </div>
-                </div>
-            `;
-        });
-        
-        container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
-    } catch (e) {
-        console.error(e);
-        container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>';
-    }
-};
-
-window.submitStaffRequest = async function(requestType) {
-    let payload = {
-        type: requestType,
-        staffName: sessionUser.cashierName,
-        branch: sessionUser.branch,
-        status: "Pending", // Owner needs to approve/review these in Manager App
-        timestamp: new Date()
-    };
-
-    // Gather data based on the type of request
-    if (requestType === "Cash Advance") {
-        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value);
-        payload.reason = document.getElementById('reqAdvReason').value.trim();
-        if (isNaN(payload.amount) || payload.amount <= 0 || !payload.reason) {
-            alert("❌ Please enter a valid amount and reason."); return;
-        }
-    } 
-    else if (requestType === "Leave") {
-        payload.startDate = document.getElementById('reqLeaveStart').value;
-        payload.endDate = document.getElementById('reqLeaveEnd').value;
-        payload.leaveType = document.getElementById('reqLeaveType').value;
-        payload.reason = document.getElementById('reqLeaveReason').value.trim();
-        if (!payload.startDate || !payload.endDate || !payload.reason) {
-            alert("❌ Please fill out all dates and a reason."); return;
-        }
-    }
-    else if (requestType === "Staff Meal") {
-        payload.item = document.getElementById('reqMealItem').value.trim();
-        payload.amount = parseFloat(document.getElementById('reqMealCost').value);
-        if (!payload.item || isNaN(payload.amount) || payload.amount < 0) {
-            alert("❌ Please enter the item consumed and a valid deduction cost."); return;
-        }
-    }
-    else if (requestType === "Reason Letter") {
-        payload.alertId = document.getElementById('explainAlertId').value;
-        payload.cause = document.getElementById('explainCause').value;
-        payload.message = document.getElementById('explainMessage').value.trim();
-        if (!payload.message) {
-            alert("❌ Please provide a detailed explanation."); return;
-        }
-    }
-
-    try {
-        // Send to a unified "staff_requests" collection in Firebase
-        await addDoc(collection(db, "staff_requests"), payload);
-        
-        alert(`✅ Success! Your ${requestType} has been securely submitted to the Main Office for review.`);
-        
-        // Clear the forms
-        document.getElementById('reqAdvAmount').value = '';
-        document.getElementById('reqAdvReason').value = '';
-        document.getElementById('reqLeaveStart').value = '';
-        document.getElementById('reqLeaveEnd').value = '';
-        document.getElementById('reqLeaveReason').value = '';
-        document.getElementById('reqMealItem').value = '';
-        document.getElementById('reqMealCost').value = '';
-        document.getElementById('explainMessage').value = '';
-
-        document.getElementById('staffRequestsModal').style.display = 'none';
-
-    } catch (error) {
-        console.error("Error submitting request:", error);
-        alert("❌ Failed to submit request to the cloud. Check internet connection.");
-    }
-};
-
-let currentBranchStaffCache = []; // Caches staff data to check PINs!
 
 // ==========================================
 // 🚪 SIGN OUT ENGINE
 // ==========================================
 window.logoutCashier = function() {
     if (confirm("Are you sure you want to sign out of this account?")) {
-        localStorage.removeItem('cashierName'); // Clear memory
+        localStorage.removeItem('cashierName'); 
         window.sessionUser = null;
-        location.reload(); // Instantly returns to the PIN Lock screen
+        location.reload(); 
     }
 };
 
@@ -1037,14 +756,10 @@ window.loadHqAccountsForRemittance = async function() {
         const q = query(collection(db, "cash_accounts"));
         const snap = await getDocs(q);
         let html = '<option value="">-- Select Transfer Method --</option>';
-        snap.forEach(docSnap => {
-            html += `<option value="${docSnap.data().name}">${docSnap.data().name}</option>`;
-        });
+        snap.forEach(docSnap => { html += `<option value="${docSnap.data().name}">${docSnap.data().name}</option>`; });
         html += '<option value="Physical Handover">Physical Handover (Cash)</option>';
         select.innerHTML = html;
-    } catch (e) {
-        console.error("Error loading accounts:", e);
-    }
+    } catch (e) { console.error(e); }
 };
 
 window.submitRemittance = async function() {
@@ -1057,7 +772,7 @@ window.submitRemittance = async function() {
         channel: document.getElementById('remitChannel').value,
         recipient: document.getElementById('remitRecipient').value.trim(),
         referenceNumber: document.getElementById('remitRefNum').value.trim(),
-        status: "Pending", // HQ needs to approve it!
+        status: "Pending", 
         timestamp: serverTimestamp()
     };
 
@@ -1067,13 +782,11 @@ window.submitRemittance = async function() {
 
     try {
         await addDoc(collection(db, "remittances"), payload);
-        alert("✅ Remittance securely sent to HQ! Waiting for Owner's approval.");
+        alert("✅ Remittance securely sent to HQ!");
         document.getElementById('remitAmount').value = '';
         document.getElementById('remitRefNum').value = '';
         window.switchRemittanceTab('history');
-    } catch (e) {
-        console.error(e); alert("❌ Failed to send remittance.");
-    }
+    } catch (e) { console.error(e); alert("❌ Failed to send remittance."); }
 };
 
 window.loadRemittanceHistory = async function() {
@@ -1097,26 +810,38 @@ window.loadRemittanceHistory = async function() {
             `;
         });
         tbody.innerHTML = html || '<tr><td style="padding:20px; text-align:center;">No previous transfers.</td></tr>';
-    } catch (e) {
-        console.error(e); tbody.innerHTML = '<tr><td style="padding:20px; text-align:center; color:red;">Error loading history.</td></tr>';
-    }
+    } catch (e) { console.error(e); tbody.innerHTML = '<tr><td style="padding:20px; text-align:center; color:red;">Error loading history.</td></tr>'; }
 };
 
 // ==========================================
-// 📍 UPGRADED GPS & SELFIE TIME CLOCK
+// 📍 GPS & SELFIE TIME CLOCK ENGINE
 // ==========================================
+const BRANCH_ZONES = {
+    "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
+    "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  
+    "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 },        
+    "Main Office": { lat: 7.1539090939416266, lng: 125.59588373531139 }
+};
+const ALLOWED_RADIUS_METERS = 100; 
+let cameraStream = null;
+let currentBranchStaffCache = []; // DECLARED ONLY ONCE HERE!
+
+function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; const p1 = lat1 * Math.PI/180; const p2 = lat2 * Math.PI/180;
+    const deltaP = (lat2-lat1) * Math.PI/180; const deltaLon = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 window.openTimeClockModal = async function() {
     document.getElementById('timeClockModal').style.display = 'flex';
     document.getElementById('clockStaffPin').value = ''; 
-    
     let select = document.getElementById('clockStaffName');
     select.innerHTML = '<option value="">Loading Staff...</option>';
-
     try {
         let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
         const q = query(collection(db, "cashiers"), where("branch", "in", [branch, "Main Office"]));
         const snap = await getDocs(q);
-        
         currentBranchStaffCache = [];
         let html = '<option value="">-- Select Your Name --</option>';
         snap.forEach(docSnap => {
@@ -1125,19 +850,19 @@ window.openTimeClockModal = async function() {
             html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
         });
         select.innerHTML = html;
-
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
         document.getElementById('clockVideo').srcObject = cameraStream;
-    } catch (e) {
-        console.error("Camera/DB Error:", e);
-        alert("⚠️ Error loading Time Clock. Check Camera permissions.");
-    }
+    } catch (e) { console.error(e); alert("⚠️ Error loading Time Clock. Check Camera permissions."); }
+};
+
+window.closeTimeClock = function() {
+    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    document.getElementById('timeClockModal').style.display = 'none';
 };
 
 window.submitAttendance = async function(type) {
     const staffName = document.getElementById('clockStaffName').value;
     const inputPin = document.getElementById('clockStaffPin').value.trim();
-
     if (!staffName) { alert("❌ Please select your name."); return; }
     if (!inputPin) { alert("❌ Please enter your 4-Digit Security PIN."); return; }
 
@@ -1150,7 +875,6 @@ window.submitAttendance = async function(type) {
 
     const branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     const targetZone = BRANCH_ZONES[branch];
-
     if (!targetZone) { alert(`❌ GPS Configuration Missing for ${branch}.`); return; }
 
     const video = document.getElementById('clockVideo');
@@ -1160,60 +884,46 @@ window.submitAttendance = async function(type) {
     const photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
 
     if (!navigator.geolocation) { alert("❌ Geolocation is not supported."); return; }
-
     let buttons = document.querySelectorAll('#timeClockModal button');
     buttons.forEach(b => b.disabled = true);
 
     navigator.geolocation.getCurrentPosition(async (position) => {
-        const userLat = position.coords.latitude;
-        const userLng = position.coords.longitude;
+        const userLat = position.coords.latitude; const userLng = position.coords.longitude;
         const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
-
         if (distance > ALLOWED_RADIUS_METERS) {
-            alert(`🚨 SECURITY LOCKOUT!\n\nYou are ${Math.round(distance)} meters away from the ${branch} branch.\nYou must be within ${ALLOWED_RADIUS_METERS} meters to clock in or out!`);
+            alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(distance)}m away from ${branch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
             buttons.forEach(b => b.disabled = false); return;
         }
-
         try {
             await addDoc(collection(db, "attendance_logs"), {
                 staffName: staffName, branch: branch, type: type, timestamp: new Date(),
-                locationLat: userLat, locationLng: userLng, distanceMeters: Math.round(distance),
-                photoBase64: photoBase64
+                locationLat: userLat, locationLng: userLng, distanceMeters: Math.round(distance), photoBase64: photoBase64
             });
-
-            alert(`✅ ${type} SUCCESS!\n\nIdentity and Location Verified for ${staffName}.`);
+            alert(`✅ ${type} SUCCESS!\nIdentity and Location Verified.`);
             window.closeTimeClock();
-        } catch (error) {
-            console.error(error); alert("❌ Failed to log attendance.");
-        } finally { buttons.forEach(b => b.disabled = false); }
-
-    }, (error) => {
-        alert("❌ GPS access is required to use the Time Clock.");
-        buttons.forEach(b => b.disabled = false);
-    }, { enableHighAccuracy: true }); 
+        } catch (error) { console.error(error); alert("❌ Failed to log attendance."); } 
+        finally { buttons.forEach(b => b.disabled = false); }
+    }, (error) => { alert("❌ GPS access required."); buttons.forEach(b => b.disabled = false); }, { enableHighAccuracy: true }); 
 };
 
 // ==========================================
-// 📥 UPGRADED STAFF REQUEST HUB (WITH INBOX)
+// 📥 STAFF REQUEST HUB (WITH INBOX)
 // ==========================================
+window.openStaffRequestsModal = function() {
+    document.getElementById('staffRequestsModal').style.display = 'flex';
+    window.switchRequestTab('Advance'); 
+};
+
 window.switchRequestTab = function(tabName) {
     const tabs = ['Advance', 'Leave', 'Meal', 'Reason', 'Inbox'];
     tabs.forEach(t => {
-        let btn = document.getElementById('tabReq' + t);
-        let form = document.getElementById('formReq' + t);
+        let btn = document.getElementById('tabReq' + t); let form = document.getElementById('formReq' + t);
         if (!btn || !form) return;
-        
         if (t === tabName) {
-            btn.style.borderBottom = "3px solid #3b82f6";
-            btn.style.color = "#0f172a";
-            btn.style.background = "white";
-            form.style.display = "block";
+            btn.style.borderBottom = "3px solid #3b82f6"; btn.style.color = "#0f172a"; btn.style.background = "white"; form.style.display = "block";
             if (tabName === 'Inbox') window.loadStaffPersonalInbox();
         } else {
-            btn.style.borderBottom = "3px solid transparent";
-            btn.style.color = "#64748b";
-            btn.style.background = "transparent";
-            form.style.display = "none";
+            btn.style.borderBottom = "3px solid transparent"; btn.style.color = "#64748b"; btn.style.background = "transparent"; form.style.display = "none";
         }
     });
 };
@@ -1221,362 +931,45 @@ window.switchRequestTab = function(tabName) {
 window.loadStaffPersonalInbox = async function() {
     let container = document.getElementById('staffPersonalInboxList');
     container.innerHTML = '<div style="padding:20px; text-align:center; color:#64748b;">Loading your records...</div>';
-
     try {
         const q = query(collection(db, "staff_requests"), where("staffName", "==", window.sessionUser.cashierName), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
-        
         let html = '';
         snap.forEach(docSnap => {
-            let d = docSnap.data();
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
-            
+            let d = docSnap.data(); let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
             let statusBadge = `<span style="background: #fef9c3; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending Review</span>`;
             if (d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Approved</span>`;
             if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Rejected</span>`;
-
             html += `
                 <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                        <strong style="color: #334155;">${d.type}</strong>
-                        ${statusBadge}
-                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;"><strong style="color: #334155;">${d.type}</strong>${statusBadge}</div>
                     <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">Submitted: ${dateStr}</div>
-                    <div style="font-size: 14px; font-weight: bold; color: var(--primary);">
-                        ${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}
-                    </div>
-                </div>
-            `;
+                    <div style="font-size: 14px; font-weight: bold; color: var(--primary);">${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}</div>
+                </div>`;
         });
-        
         container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
-    } catch (e) {
-        console.error(e);
-        container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>';
-    }
+    } catch (e) { console.error(e); container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>'; }
 };
 
 window.submitStaffRequest = async function(requestType) {
-    let payload = {
-        type: requestType,
-        staffName: window.sessionUser.cashierName,
-        branch: window.sessionUser.branch,
-        status: "Pending", 
-        timestamp: new Date()
-    };
-
+    let payload = { type: requestType, staffName: window.sessionUser.cashierName, branch: window.sessionUser.branch, status: "Pending", timestamp: new Date() };
     if (requestType === "Cash Advance") {
-        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value);
-        payload.reason = document.getElementById('reqAdvReason').value.trim();
-        if (isNaN(payload.amount) || payload.amount <= 0 || !payload.reason) { alert("❌ Please enter a valid amount and reason."); return; }
-    } 
-    else if (requestType === "Leave") {
-        payload.startDate = document.getElementById('reqLeaveStart').value;
-        payload.endDate = document.getElementById('reqLeaveEnd').value;
-        payload.leaveType = document.getElementById('reqLeaveType').value;
-        payload.reason = document.getElementById('reqLeaveReason').value.trim();
-        if (!payload.startDate || !payload.endDate || !payload.reason) { alert("❌ Please fill out all dates and a reason."); return; }
+        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value); payload.reason = document.getElementById('reqAdvReason').value.trim();
+        if (isNaN(payload.amount) || payload.amount <= 0 || !payload.reason) { alert("❌ Valid amount and reason required."); return; }
+    } else if (requestType === "Leave") {
+        payload.startDate = document.getElementById('reqLeaveStart').value; payload.endDate = document.getElementById('reqLeaveEnd').value;
+        payload.leaveType = document.getElementById('reqLeaveType').value; payload.reason = document.getElementById('reqLeaveReason').value.trim();
+        if (!payload.startDate || !payload.endDate || !payload.reason) { alert("❌ Dates and reason required."); return; }
+    } else if (requestType === "Staff Meal") {
+        payload.item = document.getElementById('reqMealItem').value.trim(); payload.amount = parseFloat(document.getElementById('reqMealCost').value);
+        if (!payload.item || isNaN(payload.amount) || payload.amount < 0) { alert("❌ Item and cost required."); return; }
     }
-    else if (requestType === "Staff Meal") {
-        payload.item = document.getElementById('reqMealItem').value.trim();
-        payload.amount = parseFloat(document.getElementById('reqMealCost').value);
-        if (!payload.item || isNaN(payload.amount) || payload.amount < 0) { alert("❌ Please enter the item consumed and a valid deduction cost."); return; }
-    }
-    else if (requestType === "Reason Letter") {
-        payload.alertId = document.getElementById('explainAlertId').value;
-        payload.cause = document.getElementById('explainCause').value;
-        payload.message = document.getElementById('explainMessage').value.trim();
-        if (!payload.message) { alert("❌ Please provide a detailed explanation."); return; }
-    }
-
     try {
         await addDoc(collection(db, "staff_requests"), payload);
-        alert(`✅ Success! Your ${requestType} has been securely submitted to the Main Office for review.`);
-        
-        document.getElementById('reqAdvAmount').value = '';
-        document.getElementById('reqAdvReason').value = '';
-        document.getElementById('reqLeaveStart').value = '';
-        document.getElementById('reqLeaveEnd').value = '';
-        document.getElementById('reqLeaveReason').value = '';
-        document.getElementById('reqMealItem').value = '';
-        document.getElementById('reqMealCost').value = '';
-        document.getElementById('explainMessage').value = '';
-        document.getElementById('staffRequestsModal').style.display = 'none';
-    } catch (error) {
-        console.error("Error submitting request:", error);
-        alert("❌ Failed to submit request to the cloud. Check internet connection.");
-    }
-};
-
-// ==========================================
-// 🖨️ ULTIMATE RAWBT PRINTER ENGINE
-// ==========================================
-window.printReceipt = async function(type) {
-      let d = lastTransactionData; if (!d || !d.cart) return;
-      let hasFood = false; let hasDrinks = false;
-      d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
-      
-      let rSettings = null;
-      if (typeof window.getReceiptSettings === 'function') {
-          rSettings = await window.getReceiptSettings();
-      }
-      let storeName = rSettings?.storeName || "TAKODEAL";
-      let storeAddress = rSettings?.address || "B14L6 Deca Homes Cabantian";
-      let storeContact = rSettings?.contact || "09629721305";
-      let footerMsg = rSettings?.footerMessage || "Acknowledgement Receipt\nThank you!";
-      let logoBase64 = rSettings?.logoBase64 || "";
-
-      // ------------------------------------------
-      // KITCHEN & BAR TICKETS 
-      // ------------------------------------------
-      if (type === 'food' || type === 'drinks') {
-          let cartHtml = '';
-          d.cart.forEach(item => {
-            let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
-            if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
-            
-            cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span></div>`;
-            
-            if (item.addons) {
-              for (let key in item.addons) {
-                if (item.addons[key].qty > 0) {
-                  cartHtml += `<div style="font-size: 12px; color: #333; padding-left: 15px; margin-bottom: 2px;">+ ${item.addons[key].qty}x ${key}</div>`;
-                }
-              }
-            }
-            if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">↘ ${item.notes}</div>`; 
-          });
-
-          let headerTxt = type === 'food' ? 'KITCHEN TICKET' : 'BAR TICKET'; 
-          let crossRefNote = '';
-          if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`;
-          if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`;
-
-          let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 10px;">${headerTxt}</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div></div>`;
-          let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
-          let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
-          
-          let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
-          let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-          let bypassLink = document.createElement('a'); 
-          bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
-          return;
-      }
-
-      // ------------------------------------------
-      // ULTIMATE PRO CUSTOMER RECEIPT
-      // ------------------------------------------
-      let proReceipt = "";
-      
-      if (logoBase64) {
-          proReceipt += `[C]<img>${logoBase64}</img>\n`;
-      }
-      
-      proReceipt += `[C]<b>${storeName}</b>\n`;
-      if (storeAddress) proReceipt += `[C]${storeAddress}\n`;
-      if (storeContact) proReceipt += `[C]${storeContact}\n`;
-      proReceipt += "================================\n";
-  
-      const now = new Date();
-      let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
-      const timeStr = hours + ':' + minutes + ' ' + ampm;
-  
-      let cashier = d.cashierName || window.sessionUser.cashierName || "Staff";
-      let customer = d.customerName || "Guest";
-  
-      proReceipt += "Date: " + now.toLocaleDateString() + "\n";
-      proReceipt += "Time: " + timeStr + "\n";
-      proReceipt += "Customer: " + customer + "\n";
-      proReceipt += "Cashier: " + cashier + "\n";
-      proReceipt += "================================\n";
-      proReceipt += "ITEM/S PURCHASED\n";
-      proReceipt += "--------------------------------\n";
-  
-      let grandTotal = 0;
-      let totalDiscount = 0;
-
-      d.cart.forEach(item => {
-          let name = item.name || "Item";
-          let qty = parseFloat(item.qty || 1);
-          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          
-          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-          let baseLineTotal = qty * basePrice;
-          let itemGrossTotal = baseLineTotal;
-  
-          proReceipt += name + variantName + "\n";
-          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-          let totalStr = baseLineTotal.toFixed(2);
-          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
-  
-          if (item.addons) {
-              for (let key in item.addons) {
-                  let addon = item.addons[key];
-                  if (addon.qty > 0) {
-                      let addonPrice = parseFloat(addon.price || 0);
-                      let addonTotalQty = qty * addon.qty; 
-                      let addonLineTotal = addonTotalQty * addonPrice;
-                      itemGrossTotal += addonLineTotal;
-                      
-                      let aName = `  + ${addon.qty}x ${key}`;
-                      if (addonPrice > 0) {
-                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                          let aTotalStr = addonLineTotal.toFixed(2);
-                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                      } else {
-                          proReceipt += aName + "\n";
-                      }
-                  }
-              }
-          }
-  
-          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
-  
-          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
-          let diff = itemGrossTotal - actualFinal;
-          if (diff > 0.01) totalDiscount += diff;
-          
-          grandTotal += itemGrossTotal; 
-      });
-  
-      let amountRec = parseFloat(d.amountReceived) || 0;
-      let paymentMethod = d.paymentMethod || "Cash";
-      
-      let subtotalVal = grandTotal.toFixed(2);
-      let totalVal = (grandTotal - totalDiscount).toFixed(2);
-      let changeVal = 0;
-      
-      if (amountRec > 0) {
-          changeVal = amountRec - parseFloat(totalVal);
-          if (changeVal < 0) changeVal = 0;
-      }
-  
-      proReceipt += "--------------------------------\n";
-  
-      function formatLine(label, value) {
-          let valStr = value.toFixed(2);
-          let padding = 32 - label.length - valStr.length;
-          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-      }
-  
-      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
-      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-      proReceipt += "--------------------------------\n";
-  
-      if (amountRec > 0) {
-          proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
-          proReceipt += "Payment Method: " + paymentMethod + "\n";
-          proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
-      } else {
-          proReceipt += "[C]** PLEASE PAY AT COUNTER **\n";
-      }
-      proReceipt += "\n";
-      
-      let footerLines = footerMsg.split('\n');
-      footerLines.forEach(l => proReceipt += `[C]${l}\n`);
-      proReceipt += "\n\n\n";
-    
-      // 🛡️ The Base64 Upgrade!
-      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-      
-      let bypassLink = document.createElement('a'); 
-      bypassLink.href = rawbtUrl; 
-      document.body.appendChild(bypassLink); 
-      bypassLink.click(); 
-      document.body.removeChild(bypassLink);
-};
-
-// ==========================================
-// 🕒 PARKED ORDER PRINTER ENGINE
-// ==========================================
-window.printParkedReceipt = async function(docId) {
-      let orders = await window.getParkedOrders(window.sessionUser.branch); 
-      let order = orders.find(o => o.id === docId); 
-      if (!order) return;
-      
-      let rSettings = null;
-      if (typeof window.getReceiptSettings === 'function') {
-          rSettings = await window.getReceiptSettings();
-      }
-      let storeName = rSettings?.storeName || "TAKODEAL";
-      let logoBase64 = rSettings?.logoBase64 || "";
-
-      let proReceipt = "";
-      if (logoBase64) proReceipt += `[C]<img>${logoBase64}</img>\n`;
-      proReceipt += `[C]<b>${storeName}</b>\n`;
-      proReceipt += `[C]** PAY LATER (PARKED) **\n`;
-      proReceipt += "================================\n";
-      proReceipt += "Cashier: " + window.sessionUser.cashierName + "\n";
-      proReceipt += "Cust/Table: " + order.name + "\n";
-      proReceipt += "================================\n";
-      
-      let grandTotal = 0;
-      let totalDiscount = 0;
-
-      order.items.forEach(item => {
-          let name = item.name || "Item";
-          let qty = parseFloat(item.qty || 1);
-          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          
-          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-          let baseLineTotal = qty * basePrice;
-          let itemGrossTotal = baseLineTotal;
-  
-          proReceipt += name + variantName + "\n";
-          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-          let totalStr = baseLineTotal.toFixed(2);
-          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
-  
-          if (item.addons) {
-              for (let key in item.addons) {
-                  let addon = item.addons[key];
-                  if (addon.qty > 0) {
-                      let addonPrice = parseFloat(addon.price || 0);
-                      let addonTotalQty = qty * addon.qty; 
-                      let addonLineTotal = addonTotalQty * addonPrice;
-                      itemGrossTotal += addonLineTotal;
-                      
-                      let aName = `  + ${addon.qty}x ${key}`;
-                      if (addonPrice > 0) {
-                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                          let aTotalStr = addonLineTotal.toFixed(2);
-                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                      } else {
-                          proReceipt += aName + "\n";
-                      }
-                  }
-              }
-          }
-          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
-  
-          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
-          let diff = itemGrossTotal - actualFinal;
-          if (diff > 0.01) totalDiscount += diff;
-          
-          grandTotal += itemGrossTotal; 
-      });
-  
-      let subtotalVal = grandTotal.toFixed(2);
-      let totalVal = (grandTotal - totalDiscount).toFixed(2);
-  
-      proReceipt += "--------------------------------\n";
-      function formatLine(label, value) {
-          let valStr = value.toFixed(2); let padding = 32 - label.length - valStr.length;
-          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-      }
-      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
-      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-      proReceipt += "--------------------------------\n";
-      proReceipt += "[C]** PLEASE PAY AT COUNTER **\n\n\n\n";
-      
-      // 🛡️ The Base64 Upgrade!
-      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-      
-      let bypassLink = document.createElement('a'); 
-      bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+        alert(`✅ Success! ${requestType} submitted.`);
+        document.getElementById('reqAdvAmount').value = ''; document.getElementById('reqAdvReason').value = '';
+        document.getElementById('reqLeaveStart').value = ''; document.getElementById('reqLeaveEnd').value = '';
+        document.getElementById('reqLeaveReason').value = ''; document.getElementById('reqMealItem').value = '';
+        document.getElementById('reqMealCost').value = ''; document.getElementById('staffRequestsModal').style.display = 'none';
+    } catch (error) { console.error(error); alert("❌ Failed to submit."); }
 };
