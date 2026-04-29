@@ -2023,17 +2023,17 @@ window.loadMenuCosting = async function() {
   }
 };
 
-window.openNewProductModal = function () {
+window.openNewProductModal = async function () {
   document.getElementById('advancedProductModal').style.display = 'flex';
-
-  // Clear the form
   document.getElementById('advProdId').value = '';
   document.getElementById('advProdName').value = '';
-  document.getElementById('advProdName').readOnly = false; // Allow typing for new items!
-
-  // Auto-fill the category based on whatever tab they are looking at!
+  document.getElementById('advProdName').readOnly = false; 
   document.getElementById('advProdCat').value = window.activeCostingTab !== 'All' ? window.activeCostingTab : 'Main Menu';
   document.getElementById('advProdPrice').value = 0;
+  
+  // 🛠️ FIX 2: Load Addon inventory
+  await window.preloadInventoryForAddons();
+  document.getElementById('addonTableBody').innerHTML = '';
 
   window.currentAdvRecipe = [];
   window.renderAdvRecipeTable();
@@ -2123,47 +2123,44 @@ window.saveAdvancedInventoryItem = async function () {
 // ========================================================
 window.currentAdvRecipe = []; // Stores the live rows in the modal
 
+// 🛠️ FIX 2: Pre-load the Add-ons BEFORE opening the modal!
 window.openBomEditor = async function (menuItemName) {
-  // Overriding the old function call!
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdName').value = menuItemName;
-  document.getElementById('advRecipeBody').innerHTML = '<tr><td colspan="5" class="text-center">Loading product details...</td></tr>';
+  document.getElementById('advRecipeBody').innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
+
+  // WAIT for inventory to load so the Add-on dropdowns actually work!
+  await window.preloadInventoryForAddons(); 
 
   try {
-    // 1. Get the Menu Item Details
     const menuQ = query(collection(db, "menu"), where("name", "==", menuItemName));
     const menuSnap = await getDocs(menuQ);
     if (!menuSnap.empty) {
       let mData = menuSnap.docs[0].data();
-      // 1. CLEAR the ghost Add-ons from the previous product!
-        document.getElementById('addonTableBody').innerHTML = '';
-
-        // 2. If THIS product has Add-ons saved in the database, load them to the screen!
-        if (mData.addons && Array.isArray(mData.addons)) {
-            mData.addons.forEach(addon => {
-                window.addAddonRow(addon.name, addon.price, addon.linkedIngredient, addon.deductQty);
-            });
-        }
+      document.getElementById('addonTableBody').innerHTML = '';
+      if (mData.addons && Array.isArray(mData.addons)) {
+        mData.addons.forEach(addon => {
+          window.addAddonRow(addon.name, addon.price, addon.linkedIngredient, addon.deductQty);
+        });
+      }
       document.getElementById('advProdId').value = menuSnap.docs[0].id;
       document.getElementById('advProdCat').value = mData.category || '';
       document.getElementById('advProdPrice').value = mData.price || 0;
     }
 
-    // 2. Get the existing Recipe (BOM)
     const bomQ = query(collection(db, "bom"), where("menuItem", "==", menuItemName));
     const bomSnap = await getDocs(bomQ);
-
     window.currentAdvRecipe = [];
     bomSnap.forEach(docSnap => {
       let data = docSnap.data();
-      data.docId = docSnap.id; // Store Firebase ID so we can delete if needed
+      data.docId = docSnap.id; 
       window.currentAdvRecipe.push(data);
     });
-
     window.renderAdvRecipeTable();
   } catch (e) {
     console.error(e); alert("Failed to load product details.");
   }
+};
 
   // The automatic Wake-Up trigger for the clone dropdown
     setTimeout(() => {
@@ -2594,7 +2591,8 @@ window.saveInventoryEdit = async function () {
   let oldQty = parseFloat(document.getElementById('editInvOldQty').value);
   let newQty = parseFloat(document.getElementById('editInvNewQty').value);
 
-  if (isNaN(newQty)) { alert("Invalid quantity"); return; }
+  if (!id) { alert("❌ Error: Missing Document ID."); return; }
+  if (isNaN(newQty)) { alert("❌ Invalid quantity"); return; }
   let variance = newQty - oldQty;
   if (variance === 0) { document.getElementById('editInvModal').style.display = 'none'; return; }
 
@@ -2602,26 +2600,19 @@ window.saveInventoryEdit = async function () {
   btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
   try {
-    // 1. Update Inventory
     await updateDoc(doc(db, "inventory", id), { currentStock: newQty });
-
-    // 2. Write to Permanent Log
     await addDoc(collection(db, "stock_logs"), {
-      branch: branch,
-      item: name,
-      uom: uom,
-      oldQty: oldQty,
-      newQty: newQty,
-      variance: variance,
-      type: "Manual Update",
+      branch: branch, item: name, uom: uom, oldQty: oldQty, newQty: newQty, variance: variance, type: "Manual Update",
       user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
       timestamp: new Date()
     });
-
     document.getElementById('editInvModal').style.display = 'none';
-    window.refreshInventoryView();
-  } catch (e) { console.error(e); alert("Failed to save."); }
-  finally { btn.innerText = "💾 Save & Log Variance"; btn.disabled = false; }
+    window.loadInventoryData();
+  } catch (e) { 
+    console.error(e); alert("❌ Failed to save. Check your internet connection."); 
+  } finally { 
+    btn.innerText = "💾 Save & Log Variance"; btn.disabled = false; 
+  }
 };
 
 // ========================================================
@@ -4011,14 +4002,16 @@ window.renderTables = function() {
 // ==========================================
 
 window.deleteInventoryItem = async function(docId, itemName) {
-    if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone and might break recipes using this ingredient!`)) {
+    // Make sure we have the right ID!
+    if (!docId || docId === 'undefined') { alert("❌ Error: Invalid Item ID."); return; }
+    if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`)) {
         try {
             await deleteDoc(doc(db, "inventory", docId)); 
             alert(`✅ "${itemName}" has been permanently deleted.`);
-            if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
+            window.loadInventoryData();
         } catch (error) {
             console.error("Error deleting item:", error);
-            alert("Failed to delete the ingredient.");
+            alert("❌ Failed to delete the ingredient. Check console.");
         }
     }
 };
