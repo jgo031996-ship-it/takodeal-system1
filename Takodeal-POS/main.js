@@ -1307,3 +1307,276 @@ window.submitStaffRequest = async function(requestType) {
         alert("❌ Failed to submit request to the cloud. Check internet connection.");
     }
 };
+
+// ==========================================
+// 🖨️ ULTIMATE RAWBT PRINTER ENGINE
+// ==========================================
+window.printReceipt = async function(type) {
+      let d = lastTransactionData; if (!d || !d.cart) return;
+      let hasFood = false; let hasDrinks = false;
+      d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
+      
+      let rSettings = null;
+      if (typeof window.getReceiptSettings === 'function') {
+          rSettings = await window.getReceiptSettings();
+      }
+      let storeName = rSettings?.storeName || "TAKODEAL";
+      let storeAddress = rSettings?.address || "B14L6 Deca Homes Cabantian";
+      let storeContact = rSettings?.contact || "09629721305";
+      let footerMsg = rSettings?.footerMessage || "Acknowledgement Receipt\nThank you!";
+      let logoBase64 = rSettings?.logoBase64 || "";
+
+      // ------------------------------------------
+      // KITCHEN & BAR TICKETS 
+      // ------------------------------------------
+      if (type === 'food' || type === 'drinks') {
+          let cartHtml = '';
+          d.cart.forEach(item => {
+            let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
+            if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
+            
+            cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span></div>`;
+            
+            if (item.addons) {
+              for (let key in item.addons) {
+                if (item.addons[key].qty > 0) {
+                  cartHtml += `<div style="font-size: 12px; color: #333; padding-left: 15px; margin-bottom: 2px;">+ ${item.addons[key].qty}x ${key}</div>`;
+                }
+              }
+            }
+            if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">↘ ${item.notes}</div>`; 
+          });
+
+          let headerTxt = type === 'food' ? 'KITCHEN TICKET' : 'BAR TICKET'; 
+          let crossRefNote = '';
+          if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`;
+          if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`;
+
+          let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 10px;">${headerTxt}</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div></div>`;
+          let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
+          let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
+          
+          let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
+          let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+          let bypassLink = document.createElement('a'); 
+          bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+          return;
+      }
+
+      // ------------------------------------------
+      // ULTIMATE PRO CUSTOMER RECEIPT
+      // ------------------------------------------
+      let proReceipt = "";
+      
+      if (logoBase64) {
+          proReceipt += `[C]<img>${logoBase64}</img>\n`;
+      }
+      
+      proReceipt += `[C]<b>${storeName}</b>\n`;
+      if (storeAddress) proReceipt += `[C]${storeAddress}\n`;
+      if (storeContact) proReceipt += `[C]${storeContact}\n`;
+      proReceipt += "================================\n";
+  
+      const now = new Date();
+      let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
+      const timeStr = hours + ':' + minutes + ' ' + ampm;
+  
+      let cashier = d.cashierName || window.sessionUser.cashierName || "Staff";
+      let customer = d.customerName || "Guest";
+  
+      proReceipt += "Date: " + now.toLocaleDateString() + "\n";
+      proReceipt += "Time: " + timeStr + "\n";
+      proReceipt += "Customer: " + customer + "\n";
+      proReceipt += "Cashier: " + cashier + "\n";
+      proReceipt += "================================\n";
+      proReceipt += "ITEM/S PURCHASED\n";
+      proReceipt += "--------------------------------\n";
+  
+      let grandTotal = 0;
+      let totalDiscount = 0;
+
+      d.cart.forEach(item => {
+          let name = item.name || "Item";
+          let qty = parseFloat(item.qty || 1);
+          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
+          
+          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
+          let baseLineTotal = qty * basePrice;
+          let itemGrossTotal = baseLineTotal;
+  
+          proReceipt += name + variantName + "\n";
+          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
+          let totalStr = baseLineTotal.toFixed(2);
+          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
+  
+          if (item.addons) {
+              for (let key in item.addons) {
+                  let addon = item.addons[key];
+                  if (addon.qty > 0) {
+                      let addonPrice = parseFloat(addon.price || 0);
+                      let addonTotalQty = qty * addon.qty; 
+                      let addonLineTotal = addonTotalQty * addonPrice;
+                      itemGrossTotal += addonLineTotal;
+                      
+                      let aName = `  + ${addon.qty}x ${key}`;
+                      if (addonPrice > 0) {
+                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
+                          let aTotalStr = addonLineTotal.toFixed(2);
+                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
+                      } else {
+                          proReceipt += aName + "\n";
+                      }
+                  }
+              }
+          }
+  
+          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
+  
+          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
+          let diff = itemGrossTotal - actualFinal;
+          if (diff > 0.01) totalDiscount += diff;
+          
+          grandTotal += itemGrossTotal; 
+      });
+  
+      let amountRec = parseFloat(d.amountReceived) || 0;
+      let paymentMethod = d.paymentMethod || "Cash";
+      
+      let subtotalVal = grandTotal.toFixed(2);
+      let totalVal = (grandTotal - totalDiscount).toFixed(2);
+      let changeVal = 0;
+      
+      if (amountRec > 0) {
+          changeVal = amountRec - parseFloat(totalVal);
+          if (changeVal < 0) changeVal = 0;
+      }
+  
+      proReceipt += "--------------------------------\n";
+  
+      function formatLine(label, value) {
+          let valStr = value.toFixed(2);
+          let padding = 32 - label.length - valStr.length;
+          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
+      }
+  
+      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
+      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
+      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
+      proReceipt += "--------------------------------\n";
+  
+      if (amountRec > 0) {
+          proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
+          proReceipt += "Payment Method: " + paymentMethod + "\n";
+          proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
+      } else {
+          proReceipt += "[C]** PLEASE PAY AT COUNTER **\n";
+      }
+      proReceipt += "\n";
+      
+      let footerLines = footerMsg.split('\n');
+      footerLines.forEach(l => proReceipt += `[C]${l}\n`);
+      proReceipt += "\n\n\n";
+    
+      // 🛡️ The Base64 Upgrade!
+      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
+      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+      
+      let bypassLink = document.createElement('a'); 
+      bypassLink.href = rawbtUrl; 
+      document.body.appendChild(bypassLink); 
+      bypassLink.click(); 
+      document.body.removeChild(bypassLink);
+};
+
+// ==========================================
+// 🕒 PARKED ORDER PRINTER ENGINE
+// ==========================================
+window.printParkedReceipt = async function(docId) {
+      let orders = await window.getParkedOrders(window.sessionUser.branch); 
+      let order = orders.find(o => o.id === docId); 
+      if (!order) return;
+      
+      let rSettings = null;
+      if (typeof window.getReceiptSettings === 'function') {
+          rSettings = await window.getReceiptSettings();
+      }
+      let storeName = rSettings?.storeName || "TAKODEAL";
+      let logoBase64 = rSettings?.logoBase64 || "";
+
+      let proReceipt = "";
+      if (logoBase64) proReceipt += `[C]<img>${logoBase64}</img>\n`;
+      proReceipt += `[C]<b>${storeName}</b>\n`;
+      proReceipt += `[C]** PAY LATER (PARKED) **\n`;
+      proReceipt += "================================\n";
+      proReceipt += "Cashier: " + window.sessionUser.cashierName + "\n";
+      proReceipt += "Cust/Table: " + order.name + "\n";
+      proReceipt += "================================\n";
+      
+      let grandTotal = 0;
+      let totalDiscount = 0;
+
+      order.items.forEach(item => {
+          let name = item.name || "Item";
+          let qty = parseFloat(item.qty || 1);
+          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
+          
+          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
+          let baseLineTotal = qty * basePrice;
+          let itemGrossTotal = baseLineTotal;
+  
+          proReceipt += name + variantName + "\n";
+          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
+          let totalStr = baseLineTotal.toFixed(2);
+          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
+  
+          if (item.addons) {
+              for (let key in item.addons) {
+                  let addon = item.addons[key];
+                  if (addon.qty > 0) {
+                      let addonPrice = parseFloat(addon.price || 0);
+                      let addonTotalQty = qty * addon.qty; 
+                      let addonLineTotal = addonTotalQty * addonPrice;
+                      itemGrossTotal += addonLineTotal;
+                      
+                      let aName = `  + ${addon.qty}x ${key}`;
+                      if (addonPrice > 0) {
+                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
+                          let aTotalStr = addonLineTotal.toFixed(2);
+                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
+                      } else {
+                          proReceipt += aName + "\n";
+                      }
+                  }
+              }
+          }
+          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
+  
+          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
+          let diff = itemGrossTotal - actualFinal;
+          if (diff > 0.01) totalDiscount += diff;
+          
+          grandTotal += itemGrossTotal; 
+      });
+  
+      let subtotalVal = grandTotal.toFixed(2);
+      let totalVal = (grandTotal - totalDiscount).toFixed(2);
+  
+      proReceipt += "--------------------------------\n";
+      function formatLine(label, value) {
+          let valStr = value.toFixed(2); let padding = 32 - label.length - valStr.length;
+          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
+      }
+      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
+      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
+      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
+      proReceipt += "--------------------------------\n";
+      proReceipt += "[C]** PLEASE PAY AT COUNTER **\n\n\n\n";
+      
+      // 🛡️ The Base64 Upgrade!
+      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
+      let rawbtUrl = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+      
+      let bypassLink = document.createElement('a'); 
+      bypassLink.href = rawbtUrl; document.body.appendChild(bypassLink); bypassLink.click(); document.body.removeChild(bypassLink);
+};
