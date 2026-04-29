@@ -2175,10 +2175,18 @@ window.renderAdvRecipeTable = function () {
   let html = '';
   let totalCost = 0;
 
-  // Build the inventory dropdown options once to reuse
-  let invOptions = '<option value="">-- Select Raw Ingredient --</option>';
+  // 1. Build the hidden "Smart Search" Datalist
+  let datalistHtml = '<datalist id="inventoryDatalist">';
   for (let invName in globalInventoryCosts) {
-    invOptions += `<option value="${invName}">${invName}</option>`;
+    datalistHtml += `<option value="${invName}">`;
+  }
+  datalistHtml += '</datalist>';
+
+  // Inject the datalist into the page if it's not there yet
+  if (!document.getElementById('inventoryDatalist')) {
+     document.body.insertAdjacentHTML('beforeend', datalistHtml);
+  } else {
+     document.getElementById('inventoryDatalist').innerHTML = datalistHtml.replace('<datalist id="inventoryDatalist">', '').replace('</datalist>', '');
   }
 
   if (window.currentAdvRecipe.length === 0) {
@@ -2191,17 +2199,15 @@ window.renderAdvRecipeTable = function () {
       let lineCost = unitCost * (item.qty || 0);
       totalCost += lineCost;
 
-      // We use a select box if it's a new row, otherwise plain text
+      // 2. The Upgraded Searchable Input box
       let nameField = item.isNew
-        ? `<select style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;" onchange="updateAdvRecipeName(${index}, this.value)">
-             ${invOptions.replace(`value="${item.ingredientName}"`, `value="${item.ingredientName}" selected`)}
-           </select>`
-        : `<input type="text" value="${item.ingredientName}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb;" readonly>`;
+        ? `<input type="text" list="inventoryDatalist" value="${item.ingredientName}" placeholder="Type to search..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box; font-weight: bold; color: #0284c7;" onchange="updateAdvRecipeName(${index}, this.value)">`
+        : `<input type="text" value="${item.ingredientName}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; outline: none; box-sizing: border-box;" readonly>`;
 
       html += `
         <tr style="border-bottom: 1px solid #f3f4f6;">
           <td style="padding: 10px 5px;">${nameField}</td>
-          <td style="padding: 10px 5px;"><input type="number" value="${item.qty || 0}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;" onkeyup="updateAdvRecipeQty(${index}, this.value)" onchange="updateAdvRecipeQty(${index}, this.value)"></td>
+          <td style="padding: 10px 5px;"><input type="number" value="${item.qty || 0}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box;" onkeyup="updateAdvRecipeQty(${index}, this.value)" onchange="updateAdvRecipeQty(${index}, this.value)"></td>
           <td style="padding: 10px 5px; color: #6b7280; font-size: 13px;">${uom}</td>
           <td style="padding: 10px 5px; font-weight: bold; color: #4b5563;">${formatMoney(lineCost)}</td>
           <td style="padding: 10px 5px; text-align: center;"><button onclick="removeAdvRecipeRow(${index})" style="background: none; border: none; cursor: pointer; color: #ef4444; font-size: 16px;">🗑️</button></td>
