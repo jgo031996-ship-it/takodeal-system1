@@ -117,6 +117,7 @@
         Fleet</a>
       <a href="#" class="nav-item" id="nav-payroll" onclick="switchView('payroll')">⏱️ HR & Payroll</a>
       <a href="#" class="nav-item" id="nav-inbox" onclick="switchView('inbox')">📥 Request Inbox <span id="inboxBadge" style="display:none; background:var(--danger); color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:5px; font-weight:bold;">0</span></a>
+      <a href="#" class="nav-item" id="nav-ledger" onclick="switchView('ledger')">📘 Loans & Ledger</a>
       <a href="#" class="nav-item" id="nav-schedule" onclick="switchView('schedule')">📅 Schedule Manager</a>
       <a href="#" class="nav-item" id="nav-products" onclick="switchView('products')">🏷️ Menu Costing & BOM</a>
       <a href="#" class="nav-item" id="nav-purchases" onclick="switchView('purchases')">⚠️ Purchases & Alerts</a>
@@ -839,6 +840,37 @@
             <tbody id="inboxTableBody">
               <tr>
                 <td colspan="6" class="text-center">Loading requests...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-ledger" class="view">
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0; color: #b45309;">📘 Staff Loans & Cash Advances</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Track long-term company loans and running balances for all employees.</span>
+          </div>
+          <button class="btn-refresh" style="background: white; border: 1px solid var(--border); color: var(--text-main);" onclick="loadLedger()">🔄 Refresh Ledger</button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr style="background: #f8fafc;">
+                <th>Staff Name</th>
+                <th>Branch</th>
+                <th style="color: #0284c7;">Total Loaned (₱)</th>
+                <th style="color: #16a34a;">Total Paid (₱)</th>
+                <th style="color: #dc2626;">Remaining Balance</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ledgerTableBody">
+              <tr>
+                <td colspan="6" class="text-center">Loading financial ledger...</td>
               </tr>
             </tbody>
           </table>
