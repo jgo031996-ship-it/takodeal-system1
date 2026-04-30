@@ -1448,9 +1448,9 @@ window.loadBatchItemsDropdown = async function () {
   try {
     // Fetch all inventory items in this branch
     const q = query(
-    collection(db, "inventory"), 
-    where("branch", "==", selectedBranch),
-    where("category", "==", "Prepared Batch") // <--- THIS IS THE MAGIC FILTER
+      collection(db, "inventory"),
+      where("branch", "==", branch), // <--- Just use the word "branch" here!
+      where("category", "==", "Prepared Batch") // <--- THIS IS THE MAGIC FILTER
     );
     const snap = await getDocs(q);
 
