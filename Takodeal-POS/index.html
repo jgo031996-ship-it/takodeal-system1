@@ -295,11 +295,12 @@
 
     .category-header {
       display: flex;
+      flex-wrap: wrap; /* 👈 THIS IS THE MAGIC LINE */
       gap: 10px;
       padding: 15px;
       border-bottom: 1px solid var(--border);
       background: var(--card-bg);
-      overflow-x: auto;
+      /* overflow-x: auto; <-- You can delete this line or leave it */
     }
 
     .cat-btn {
@@ -1939,7 +1940,31 @@
     function buildCategories() {
       const catContainer = document.querySelector('.category-header');
       catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All items</button>`;
-      masterPOSData.categories.forEach(cat => { catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`; });
+
+      // 🔥 YOUR CUSTOM TAB ARRANGEMENT 🔥
+      // Type your categories exactly as they appear in the app. 
+      // Whatever is first in this list will be the first tab!
+      const preferredOrder = [
+        "Cheesy Takoyaki",
+        "Bonito Takoyaki",
+        "Double Grilled",
+        "Iced Coffee",
+        "Milk Bubble"
+      ];
+
+      // Sort the categories based on your list above
+      masterPOSData.categories.sort((a, b) => {
+        let indexA = preferredOrder.indexOf(a);
+        let indexB = preferredOrder.indexOf(b);
+        if (indexA === -1) indexA = 999; // If not on the list, push it to the back
+        if (indexB === -1) indexB = 999;
+        return indexA - indexB;
+      });
+
+      // Generate the buttons
+      masterPOSData.categories.forEach(cat => { 
+        catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`; 
+      });
       filterMenu('All', catContainer.firstElementChild);
     }
 
