@@ -1080,7 +1080,7 @@ window.loadKitchenPrep = async function() {
     if (!container) return;
     
     // Safety check for branch
-    let branch = localStorage.getItem('branch') || (window.sessionUser ? window.sessionUser.branch : null);
+    let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : null);
     if (!branch) {
         container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Error: Cannot detect your branch.</div>`;
         return;
