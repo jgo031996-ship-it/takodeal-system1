@@ -1205,7 +1205,7 @@
           <div class="nav-item-text">Staff Requests</div>
       </div>  
 
-      <div class="nav-item" onclick="switchView('prep'); window.loadKitchenPrep();">
+      <div class="nav-item" id="nav-prep" onclick="switchView('prep'); window.loadKitchenPrep();">
         <span>🔪</span><br>Kitchen Prep
       </div>
 
@@ -1348,7 +1348,7 @@
   <!-- ========================================== -->
   <!-- 🔪 KITCHEN PREP STATION SCREEN             -->
   <!-- ========================================== -->
-  <div class="view-container" id="view-prep" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto; display: none;">
+  <div class="view-container" id="view-prep" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
     <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
         <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🔪 Kitchen Prep Station</h2>
         <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Log the batches you prepare here. This will update our Live Inventory instantly.</p>
@@ -1358,6 +1358,7 @@
         </div>
     </div>
   </div>
+  
   <div class="overlay" id="variantModal">
     <div class="modal variant-modal">
       <div class="modal-head"><span>Add Order</span><span class="close-modal"
@@ -1929,6 +1930,7 @@
       let topBar = document.getElementById('topBarTitle');
       if (viewName === 'pos') topBar.innerText = "🖥️ Point of Sale";
       else if (viewName === 'sales') { topBar.innerText = "🧾 Shift Sales"; loadSalesDashboard(); }
+      else if (viewName === 'prep') { topBar.innerText = "🔪 Kitchen Prep"; } 
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
