@@ -542,30 +542,55 @@ window.submitComprehensiveCloseShift = async function () {
     'Straws': parseInt(document.getElementById('countStraws').value) || 0
   };
 
-  // 4. Update the Shift in Firebase
   try {
     let shiftId = activeShiftDetails.logId;
     if (!shiftId) {
       alert("No active shift found to close.");
       return;
     }
+    
+    let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
 
-    // Save everything to the database
+    // 🔥 STEP 4: FETCH LIVE TRANSACTIONS TO SEPARATE CASH VS DIGITAL 🔥
+    let transactions = await window.getSalesDashboardData(branchName, activeShiftDetails.startTime);
+    let totalCashSales = 0;
+    let totalDigitalSales = 0;
+
+    if (transactions && transactions.length > 0) {
+        transactions.forEach(tx => {
+            if (tx.status !== 'Voided') {
+                // If it's Cash (or missing, default to Cash), add to Cash total
+                if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    totalCashSales += tx.netTotal;
+                } else {
+                    // GCash, BDO, GoTyme, etc. go here!
+                    totalDigitalSales += tx.netTotal;
+                }
+            }
+        });
+    }
+
+    // CALCULATE TRUE EXPECTED PHYSICAL CASH IN DRAWER
+    // Formula: Starting Float + ONLY Cash Sales - Cash Taken Out for Expenses
+    let expectedCash = activeShiftDetails.startingCash + totalCashSales - activeShiftDetails.cashOut;
+
+    // 5. Update the Shift in Firebase
     await updateDoc(doc(db, "shifts", shiftId), {
       active: false,
       endTime: serverTimestamp(),
       declaredCash: declaredCash,
+      expectedCash: expectedCash, // The true physical expected cash
+      totalCashSales: totalCashSales, // Saved for your Owner Dashboard!
+      totalDigitalSales: totalDigitalSales, // Saved for your Owner Dashboard!
       cashBreakdown: cashBreakdown, // The exact 1000s, 500s, etc.
       physicalStockCount: physicalStock, // The exact cups, boxes, etc.
       status: "Closed"
     });
 
     // 🔥 THE ANTI-FRAUD ALARM ENGINE 🔥
-    let expectedCash = activeShiftDetails.expectedCash || 0;
     let variance = declaredCash - expectedCash;
 
     if (variance !== 0) {
-      let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
       let currentCashier = localStorage.getItem('cashierName') || 'Unknown';
       let varianceType = variance < 0 ? "SHORT" : "OVER";
       
@@ -587,7 +612,8 @@ window.submitComprehensiveCloseShift = async function () {
       });
     }
 
-    alert("✅ Shift Closed Successfully! Breakdown and Inventory logs have been sent to the Manager App.");
+    // Show a detailed success message to the cashier
+    alert(`✅ Shift Closed Successfully!\n\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}\n\nBreakdown and logs have been sent to the Manager App.`);
 
     // Clear Local Storage
     localStorage.removeItem('currentShiftId');
@@ -604,7 +630,6 @@ window.submitComprehensiveCloseShift = async function () {
     alert("❌ Failed to close shift. Check your connection.");
   }
 };
-
 // ========================================================
 // 💸 SMART EXPENSE & INVENTORY RESTOCK ENGINE
 // ========================================================
