@@ -1929,7 +1929,7 @@
       masterPOSData.addons = [];
       let cats = [...new Set(products.map(p => p.category))].filter(Boolean);
       masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
-      masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery"], payMethods: ["Cash", "GCash", "Maya"] };
+      masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "GoTyme", "Bank", "Grab"] };
 
       buildCategories();
 
