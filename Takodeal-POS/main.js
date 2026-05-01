@@ -1300,10 +1300,13 @@ window.showMobileOrders = function() {
     container.innerHTML = html;
 };
 
-// --- UPDATED MENU MANAGER (NO IMAGE UPLOAD) ---
+// ==========================================
+// 🍔 UPGRADED MENU TOGGLE ENGINE (SEARCH + DROPDOWN)
+// ==========================================
+
 window.loadMenuManager = async function() {
     let container = document.getElementById('menuManagerList');
-    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Menu...</div>';
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Menu...http://googleusercontent.com/image_generation_content/166
 
     try {
         const snap = await window.getDocs(window.collection(window.db, "menu"));
