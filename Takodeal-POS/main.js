@@ -1304,48 +1304,112 @@ window.showMobileOrders = function() {
 // 🍔 UPGRADED MENU TOGGLE ENGINE (SEARCH + DROPDOWN)
 // ==========================================
 
+window.globalMenuToggleList = []; // Stores items in memory for instant searching
+
 window.loadMenuManager = async function() {
     let container = document.getElementById('menuManagerList');
-    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Menu...http://googleusercontent.com/image_generation_content/166
+    let filterDropdown = document.getElementById('categoryFilter');
+    
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Menu...</div>';
 
     try {
         const snap = await window.getDocs(window.collection(window.db, "menu"));
-        let html = '';
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
+        let uniqueCategories = new Set();
+        
+        window.globalMenuToggleList = []; // Clear memory
 
         snap.forEach(docSnap => {
             let item = docSnap.data();
-            let catName = item.category || "Other";
+            item.id = docSnap.id;
+            let catName = item.category || "Uncategorized";
             
+            // Only push visible items to the manager list
             if (!hiddenCategories.includes(catName.toLowerCase())) {
-                let isAvail = item.isAvailable !== false; 
-                let statusColor = isAvail ? '#16a34a' : '#ef4444';
-                let statusText = isAvail ? 'Available' : 'Sold Out';
-                
-                // Uses the image if uploaded from Manager app, otherwise placeholder
-                let imgHtml = item.image ? `<img src="${item.image}" style="width:60px; height:60px; border-radius:8px; object-fit:cover;">` : `<div style="width:60px; height:60px; border-radius:8px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:24px;">🍲</div>`;
-
-                html += `
-                    <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; background: white; display: flex; flex-direction: column; gap: 10px;">
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            ${imgHtml}
-                            <div style="flex: 1;">
-                                <div style="font-weight: bold; color: #1e293b; font-size: 15px;">${item.name}</div>
-                                <div style="font-size: 12px; color: #64748b;">${catName}</div>
-                            </div>
-                        </div>
-                        <button onclick="window.toggleItemStatus('${docSnap.id}', ${!isAvail})" style="width: 100%; padding: 10px; border-radius: 6px; font-weight: bold; font-size: 14px; border: 2px solid ${statusColor}; color: ${statusColor}; background: transparent; cursor: pointer;">
-                            ${statusText} (Click to Change)
-                        </button>
-                    </div>
-                `;
+                window.globalMenuToggleList.push(item);
+                uniqueCategories.add(catName);
             }
         });
-        container.innerHTML = html;
-        document.getElementById('topBarTitle').innerText = "🍔 Menu Manager";
+
+        // 1. Populate the Category Dropdown dynamically!
+        let dropdownHtml = '<option value="All">All Items</option>';
+        Array.from(uniqueCategories).sort().forEach(cat => {
+            dropdownHtml += `<option value="${cat}">${cat}</option>`;
+        });
+        if (filterDropdown) filterDropdown.innerHTML = dropdownHtml;
+
+        // 2. Render the grid
+        window.renderMenuToggleList(window.globalMenuToggleList);
+
+        let topTitle = document.getElementById('topBarTitle');
+        if (topTitle) topTitle.innerText = "🍔 Menu Toggle";
+
     } catch (e) {
-        console.error(e);
+        console.error("Menu Toggle Error:", e);
         container.innerHTML = '<div style="color:red; grid-column:1/-1; text-align:center;">Error loading menu.</div>';
+    }
+};
+
+window.renderMenuToggleList = function(itemsToRender) {
+    let container = document.getElementById('menuManagerList');
+    let html = '';
+
+    if (itemsToRender.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">No items match your search.</div>';
+        return;
+    }
+
+    itemsToRender.forEach(item => {
+        let isAvail = item.isAvailable !== false; // Default to true
+        let statusColor = isAvail ? '#16a34a' : '#ef4444';
+        let statusText = isAvail ? 'Available' : 'Sold Out';
+        let bgClass = isAvail ? 'white' : '#f8fafc';
+
+        html += `
+            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; background: ${bgClass}; display: flex; flex-direction: column; justify-content: space-between; gap: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="width: 45px; height: 45px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid #e2e8f0;">🍲</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; color: #1e293b; font-size: 15px; line-height: 1.2;">${item.name}</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">${item.category || 'Uncategorized'}</div>
+                    </div>
+                </div>
+                <button onclick="window.toggleItemStatus('${item.id}', ${!isAvail})" style="width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 14px; border: 2px solid ${statusColor}; color: ${statusColor}; background: ${isAvail ? 'transparent' : '#fef2f2'}; cursor: pointer; transition: all 0.2s;">
+                    ${statusText} (Click to Change)
+                </button>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+};
+
+// --- THE SMART SEARCH & FILTER FUNCTION ---
+window.filterMenuToggle = function() {
+    let searchText = document.getElementById('menuToggleSearch').value.toLowerCase();
+    let selectedCategory = document.getElementById('categoryFilter').value;
+
+    let filteredItems = window.globalMenuToggleList.filter(item => {
+        let matchesSearch = item.name.toLowerCase().includes(searchText);
+        let matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
+        return matchesSearch && matchesCategory;
+    });
+
+    // Instantly redraw the grid!
+    window.renderMenuToggleList(filteredItems);
+};
+
+window.toggleItemStatus = async function(docId, makeAvailable) {
+    try {
+        await window.updateDoc(window.doc(window.db, "menu", docId), {
+            isAvailable: makeAvailable
+        });
+        
+        // Refresh the data to stay synced with Firebase
+        window.loadMenuManager(); 
+        
+    } catch (e) {
+        console.error("Error updating status:", e);
+        alert("Failed to update status.");
     }
 };
 
