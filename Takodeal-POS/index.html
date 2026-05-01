@@ -1782,6 +1782,13 @@
   </div>
 
   <div class="overlay" id="mobileOrdersModal">
+    <div class="overlay" id="parkedModal">
+      <div class="modal" style="width: 500px; max-height: 85vh;">
+        <div class="modal-head"><span>🕒 Parked Orders (Pay Later)</span><span class="close-modal"
+            onclick="closeModal('parkedModal')">✖</span></div>
+        <div class="modal-body" id="parkedListContainer" style="padding: 15px; background: #f9f9f9;">Loading...</div>
+      </div>
+    </div>
     <div class="modal" style="width: 500px; max-height: 85vh;">
       <div class="modal-head"><span>📱 Incoming Mobile Orders</span><span class="close-modal"
           onclick="closeModal('mobileOrdersModal')">✖</span></div>
