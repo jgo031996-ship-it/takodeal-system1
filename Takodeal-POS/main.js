@@ -1398,6 +1398,7 @@ window.filterMenuToggle = function() {
     window.renderMenuToggleList(filteredItems);
 };
 
+// --- THIS IS THE MISSING FUNCTION CAUSING THE ERROR! ---
 window.toggleItemStatus = async function(docId, makeAvailable) {
     try {
         await window.updateDoc(window.doc(window.db, "menu", docId), {
