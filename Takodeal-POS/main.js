@@ -78,6 +78,8 @@ window.query = query;
 window.where = where;
 window.collection = collection;
 window.getDocs = getDocs;
+window.deleteDoc = deleteDoc;
+window.doc = doc;
 
 console.log("🔥 Firebase Engine is LIVE!");
 
