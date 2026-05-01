@@ -110,6 +110,11 @@
         document.getElementById('orderForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            // 1. Grab the branch name from the web address (Fallback to Main Office)
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentBranch = urlParams.get('branch') || "Main Office"; 
+
+            // 2. Get form values
             const name = document.getElementById('customerName').value;
             const paymentMode = document.getElementById('paymentMode').value;
             const refNumber = document.getElementById('refNumber')?.value || "";
@@ -134,8 +139,10 @@
                 return;
             }
 
+            // 3. Build the order data WITH THE BRANCH
             const orderData = {
                 customerName: name,
+                branch: currentBranch, // <--- Crucial link to the POS!
                 items: items,
                 totalAmount: totalAmount,
                 paymentMode: paymentMode,
@@ -144,8 +151,12 @@
                 timestamp: serverTimestamp()
             };
 
+            // 4. Send to Firebase
             try {
-                // Send to Firebase
+                const btn = document.querySelector('button[type="submit"]');
+                btn.innerText = "Sending...";
+                btn.disabled = true;
+
                 await addDoc(collection(db, "incoming_orders"), orderData);
                 
                 // Show Success
@@ -154,20 +165,9 @@
             } catch (error) {
                 console.error("Error adding document: ", error);
                 alert("Error sending order. Please try again.");
+                document.querySelector('button[type="submit"]').innerText = "Send Order";
+                document.querySelector('button[type="submit"]').disabled = false;
             }
-            // Grab the branch name from the web address
-            const urlParams = new URLSearchParams(window.location.search);
-            const currentBranch = urlParams.get('branch') || "Main"; 
-            
-            // ... (your existing code for items and totalAmount) ...
-            
-            const orderData = {
-                customerName: name,
-                branch: currentBranch, // <--- This sends the branch to Firebase!
-                items: items,
-                totalAmount: totalAmount,
-                // ... the rest of your existing orderData
-            };
         });
     </script>
 </body>
