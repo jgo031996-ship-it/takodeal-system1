@@ -1299,7 +1299,53 @@ window.showMobileOrders = function() {
     container.innerHTML = html;
 };
 
-// When Cashier accepts, it pulls the mobile order straight into their POS Cart!
+// --- UPDATED MENU MANAGER (NO IMAGE UPLOAD) ---
+window.loadMenuManager = async function() {
+    let container = document.getElementById('menuManagerList');
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Menu...</div>';
+
+    try {
+        const snap = await window.getDocs(window.collection(window.db, "menu"));
+        let html = '';
+        const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
+
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            let catName = item.category || "Other";
+            
+            if (!hiddenCategories.includes(catName.toLowerCase())) {
+                let isAvail = item.isAvailable !== false; 
+                let statusColor = isAvail ? '#16a34a' : '#ef4444';
+                let statusText = isAvail ? 'Available' : 'Sold Out';
+                
+                // Uses the image if uploaded from Manager app, otherwise placeholder
+                let imgHtml = item.image ? `<img src="${item.image}" style="width:60px; height:60px; border-radius:8px; object-fit:cover;">` : `<div style="width:60px; height:60px; border-radius:8px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:24px;">🍲</div>`;
+
+                html += `
+                    <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; background: white; display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            ${imgHtml}
+                            <div style="flex: 1;">
+                                <div style="font-weight: bold; color: #1e293b; font-size: 15px;">${item.name}</div>
+                                <div style="font-size: 12px; color: #64748b;">${catName}</div>
+                            </div>
+                        </div>
+                        <button onclick="window.toggleItemStatus('${docSnap.id}', ${!isAvail})" style="width: 100%; padding: 10px; border-radius: 6px; font-weight: bold; font-size: 14px; border: 2px solid ${statusColor}; color: ${statusColor}; background: transparent; cursor: pointer;">
+                            ${statusText} (Click to Change)
+                        </button>
+                    </div>
+                `;
+            }
+        });
+        container.innerHTML = html;
+        document.getElementById('topBarTitle').innerText = "🍔 Menu Manager";
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div style="color:red; grid-column:1/-1; text-align:center;">Error loading menu.</div>';
+    }
+};
+
+// --- UPDATED MOBILE ORDER ACTIONS (FOR LIVE TRACKING) ---
 window.acceptMobileOrder = async function(docId) {
     let order = window.mobileOrdersList.find(o => o.id === docId);
     if (!order) return;
@@ -1308,7 +1354,6 @@ window.acceptMobileOrder = async function(docId) {
         if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
     }
 
-    // Map the mobile cart to the POS cart
     cart = order.items.map(i => ({
         name: i.name,
         basePrice: i.price,
@@ -1318,21 +1363,27 @@ window.acceptMobileOrder = async function(docId) {
         lineTotalFinal: i.price * i.quantity,
         discountType: 'none',
         discountVal: 0,
-        addons: {},
-        notes: '📱 Mobile App Order'
+        addons: i.addons || {},
+        notes: i.notes || '📱 Mobile App Order'
     }));
 
-    // Auto-fill customer name for the receipt
     document.getElementById('finalCustomerName').value = order.customerName;
 
-    // Delete it from the incoming queue in Firebase
-    await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
+    // UPDATE STATUS TO "PREPARING" INSTEAD OF DELETING!
+    // (Because the listener only looks for "mobile_queue", it will still disappear from this screen)
+    await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
+        status: "preparing"
+    });
 
     if (typeof renderCart === 'function') renderCart();
     closeModal('mobileOrdersModal');
 };
 
 window.rejectMobileOrder = async function(docId) {
-    if (!confirm("Are you sure you want to delete this order from the queue?")) return;
-    await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
+    if (!confirm("Are you sure you want to reject this order? The customer will be notified.")) return;
+    
+    // UPDATE STATUS TO "REJECTED" INSTEAD OF DELETING!
+    await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
+        status: "rejected"
+    });
 };
