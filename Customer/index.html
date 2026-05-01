@@ -11,7 +11,7 @@
     <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
         <div class="text-center mb-6">
             <h1 class="text-2xl font-bold text-red-600">TAKODEÁL</h1>
-            <p class="text-sm text-gray-500">Your ideal takoyaki & COFFEE CHERY</p>
+            <p class="text-sm text-gray-500">Your ideal takoyaki</p>
         </div>
 
         <form id="orderForm" class="space-y-4">
@@ -155,6 +155,19 @@
                 console.error("Error adding document: ", error);
                 alert("Error sending order. Please try again.");
             }
+            // Grab the branch name from the web address
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentBranch = urlParams.get('branch') || "Main"; 
+            
+            // ... (your existing code for items and totalAmount) ...
+            
+            const orderData = {
+                customerName: name,
+                branch: currentBranch, // <--- This sends the branch to Firebase!
+                items: items,
+                totalAmount: totalAmount,
+                // ... the rest of your existing orderData
+            };
         });
     </script>
 </body>
