@@ -5,71 +5,114 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TAKODEÁL - Mobile Order</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Smooth animation for the dropdowns */
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+    </style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans p-4 pb-24">
+<body class="bg-gray-50 text-gray-800 font-sans pb-24">
 
-    <div class="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative">
         <!-- Header -->
-        <div class="bg-red-600 p-6 text-center text-white">
+        <div class="bg-red-600 p-6 text-center text-white sticky top-0 z-40 shadow-md">
             <h1 class="text-3xl font-black tracking-wider">TAKODEÁL</h1>
             <p class="text-sm opacity-80 mt-1">Your ideal takoyaki & Coffee</p>
         </div>
 
-        <form id="orderForm" class="p-6 space-y-6">
+        <div class="p-6">
             <!-- Customer Name -->
-            <div>
+            <div class="mb-6">
                 <label class="block text-sm font-bold text-gray-700 mb-1">Who is this order for?</label>
-                <input type="text" id="customerName" required class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 focus:ring-red-500 outline-none transition" placeholder="Enter your name...">
+                <input type="text" id="customerName" required class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" placeholder="Enter your name...">
             </div>
 
-            <!-- LIVE MENU GRID -->
-            <div>
-                <label class="block text-sm font-bold text-gray-700 mb-3">Select Your Items</label>
-                
-                <!-- This is where Firebase will inject the menu items -->
-                <div id="liveMenuContainer" class="grid grid-cols-2 gap-3">
-                    <div class="col-span-2 text-center py-8 text-gray-400 font-medium">
-                        Loading live menu...
-                    </div>
+            <!-- LIVE CATEGORY ACCORDIONS -->
+            <div class="mb-6">
+                <label class="block text-sm font-bold text-gray-700 mb-3">Menu Categories</label>
+                <div id="liveMenuContainer" class="space-y-3">
+                    <div class="text-center py-8 text-gray-400 font-medium">Loading live menu...</div>
                 </div>
             </div>
 
-            <hr class="border-gray-200">
+            <hr class="border-gray-200 my-6">
 
             <!-- Payment Method -->
-            <div>
+            <div class="mb-6">
                 <label class="block text-sm font-bold text-gray-700 mb-1">Mode of Payment</label>
-                <select id="paymentMode" class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none transition" onchange="togglePaymentView()">
+                <select id="paymentMode" class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" onchange="togglePaymentView()">
                     <option value="cash">Cash (Pay at counter)</option>
                     <option value="gcash">GCash</option>
                 </select>
             </div>
 
             <!-- Hidden GCash Section -->
-            <div id="gcashSection" class="hidden bg-blue-50 p-5 rounded-xl border border-blue-200 text-center">
+            <div id="gcashSection" class="hidden bg-blue-50 p-5 rounded-xl border border-blue-200 text-center mb-6">
                 <p class="font-bold text-blue-800 mb-3">Pay via GCash</p>
-                <div class="w-40 h-40 bg-white mx-auto flex items-center justify-center mb-3 rounded-lg shadow-sm border border-blue-100 overflow-hidden">
+                <div class="w-40 h-40 bg-white mx-auto flex items-center justify-center mb-3 rounded-lg shadow-sm border border-blue-100">
                     <span class="text-gray-400 text-sm">[Insert QR Here]</span>
                 </div>
                 <p class="text-sm font-bold text-gray-800">Account: JOSTUART O.</p>
                 <p class="text-sm text-gray-600 mb-3">No: 09XX-XXX-XXXX</p>
                 <input type="text" id="refNumber" class="block w-full rounded-lg border-gray-300 p-2 text-center text-sm outline-none focus:border-blue-500" placeholder="Enter Ref No. (Optional)">
             </div>
-
-            <!-- Sticky Submit Button -->
-            <div class="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 md:relative md:bg-transparent md:border-none md:shadow-none md:p-0">
-                <button type="submit" id="submitBtn" class="w-full max-w-md mx-auto block bg-red-600 text-white font-bold py-4 px-4 rounded-xl hover:bg-red-700 active:scale-95 transition-all shadow-lg flex justify-between items-center">
-                    <span>Send Order</span>
-                    <span id="floatingTotal">₱0.00</span>
-                </button>
-            </div>
-        </form>
-
-        <div id="successMessage" class="hidden m-6 p-6 bg-green-50 border border-green-200 text-green-800 rounded-xl text-center">
-            <div class="text-4xl mb-2">✅</div>
-            <h2 class="font-bold text-lg mb-1">Order Sent!</h2>
-            <p class="text-sm opacity-80">We've received your order. Please wait for your name to be called.</p>
         </div>
+
+        <!-- Sticky Submit Button -->
+        <div class="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40 md:relative md:bg-transparent md:border-none md:shadow-none md:p-6 md:pt-0">
+            <button onclick="submitOrder()" id="submitBtn" class="w-full max-w-md mx-auto block bg-red-600 text-white font-bold py-4 px-4 rounded-xl hover:bg-red-700 active:scale-95 transition-all shadow-lg flex justify-between items-center">
+                <span>Send Order</span>
+                <span id="floatingTotal">₱0.00</span>
+            </button>
+        </div>
+
+        <!-- Success Screen -->
+        <div id="successMessage" class="hidden absolute top-0 left-0 w-full h-full bg-white z-50 flex flex-col items-center justify-center p-6 text-center">
+            <div class="text-6xl mb-4">✅</div>
+            <h2 class="font-black text-2xl mb-2 text-gray-800">Order Sent!</h2>
+            <p class="text-gray-600 mb-8">We've received your order and sent it to the kitchen. Please wait for your name to be called.</p>
+            <button onclick="location.reload()" class="bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg w-full">Place Another Order</button>
+        </div>
+
+        <!-- ITEM MODAL (Pops up when they click an item) -->
+        <div id="itemModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-end sm:items-center justify-center">
+            <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div id="modalImage" class="w-full h-48 bg-gray-200 flex items-center justify-center text-4xl">🍲</div>
+                <div class="p-5 flex-1 overflow-y-auto">
+                    <div class="flex justify-between items-start mb-2">
+                        <h2 id="modalItemName" class="text-xl font-black text-gray-800">Item Name</h2>
+                        <span id="modalItemPrice" class="text-lg font-bold text-red-600">₱0.00</span>
+                    </div>
+                    
+                    <!-- Add-ons Container -->
+                    <div id="modalAddonsContainer" class="mt-4 hidden">
+                        <h3 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Add-ons</h3>
+                        <div id="modalAddonsList" class="space-y-2">
+                            <!-- Add-ons generate here -->
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="mt-4">
+                        <h3 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Special Instructions</h3>
+                        <input type="text" id="modalNotes" class="w-full border rounded-lg p-2 text-sm outline-none focus:border-red-500" placeholder="e.g. No mayo, extra spicy...">
+                    </div>
+                </div>
+
+                <div class="p-5 bg-gray-50 border-t flex items-center gap-4">
+                    <div class="flex items-center bg-white border rounded-lg shadow-sm">
+                        <button onclick="changeModalQty(-1)" class="w-10 h-10 font-bold text-gray-600 active:bg-gray-100">-</button>
+                        <span id="modalQty" class="w-8 text-center font-bold text-gray-800">1</span>
+                        <button onclick="changeModalQty(1)" class="w-10 h-10 font-bold text-gray-600 active:bg-gray-100">+</button>
+                    </div>
+                    <button onclick="addModalItemToCart()" class="flex-1 bg-red-600 text-white font-bold py-3 rounded-lg shadow-md active:scale-95 transition">
+                        Add to Order
+                    </button>
+                    <button onclick="closeItemModal()" class="w-10 h-10 flex items-center justify-center bg-gray-200 text-gray-600 rounded-lg font-bold">✖</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- Firebase Integration -->
@@ -89,120 +132,215 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // State to keep track of what the customer is ordering
-        window.cartState = {};
-        window.cartTotal = 0;
+        // Core Data
+        window.masterMenu = [];
+        window.cart = [];
+        window.activeModalItem = null;
 
-        // Fetch Live Menu
+        // Internal Categories to hide from Customers
+        const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
+
         async function loadLiveMenu() {
             try {
                 const snap = await getDocs(collection(db, "menu"));
-                const container = document.getElementById('liveMenuContainer');
-                container.innerHTML = '';
-                let itemsRendered = 0;
+                let categoriesMap = {};
 
                 snap.forEach(doc => {
                     const item = doc.data();
+                    item.id = doc.id;
                     
-                    // TOGGLE FEATURE: Only show if it is NOT explicitly turned off
-                    if (item.isAvailable !== false) {
-                        itemsRendered++;
-                        let price = parseFloat(item.price || item.basePrice || 0);
-                        let safeName = item.name.replace(/'/g, "\\'"); // escape quotes
-                        
-                        // Picture Feature: Use real image or a beautiful placeholder
-                        let imgHtml = item.image 
-                            ? `<img src="${item.image}" class="w-full h-28 object-cover">` 
-                            : `<div class="w-full h-28 bg-orange-50 flex items-center justify-center text-3xl">🍲</div>`;
+                    let catName = item.category || "Other";
+                    let isHidden = hiddenCategories.includes(catName.toLowerCase());
 
-                        container.innerHTML += `
-                            <div class="border border-gray-100 rounded-xl shadow-sm bg-white overflow-hidden flex flex-col">
-                                ${imgHtml}
-                                <div class="p-3 flex-1 flex flex-col justify-between">
-                                    <div>
-                                        <p class="font-bold text-sm text-gray-800 leading-tight mb-1">${item.name}</p>
-                                        <p class="text-xs font-bold text-red-600">₱${price.toFixed(2)}</p>
-                                    </div>
-                                    <div class="mt-3 bg-gray-100 rounded-lg flex items-center justify-between p-1">
-                                        <button type="button" class="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-gray-600 font-bold active:scale-90 transition" onclick="updateQty('${doc.id}', -1, ${price}, '${safeName}')">-</button>
-                                        <span id="qty-${doc.id}" class="font-bold text-sm w-6 text-center">0</span>
-                                        <button type="button" class="w-8 h-8 flex items-center justify-center bg-red-600 rounded shadow-sm text-white font-bold active:scale-90 transition" onclick="updateQty('${doc.id}', 1, ${price}, '${safeName}')">+</button>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                    // Only show if available AND not a hidden category
+                    if (item.isAvailable !== false && !isHidden) {
+                        window.masterMenu.push(item);
+                        if (!categoriesMap[catName]) categoriesMap[catName] = [];
+                        categoriesMap[catName].push(item);
                     }
                 });
 
-                if(itemsRendered === 0) {
-                    container.innerHTML = '<div class="col-span-2 text-center py-8 text-gray-400">Menu is currently unavailable.</div>';
-                }
+                renderAccordions(categoriesMap);
             } catch (error) {
                 console.error("Menu Load Error:", error);
-                document.getElementById('liveMenuContainer').innerHTML = '<div class="col-span-2 text-center py-8 text-red-400">Failed to load menu.</div>';
+                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-400">Failed to load menu.</div>';
             }
         }
 
-        // Handle Quantity Buttons
-        window.updateQty = function(id, delta, price, name) {
-            if (!window.cartState[id]) window.cartState[id] = { name: name, price: price, qty: 0 };
-            
-            window.cartState[id].qty += delta;
-            if (window.cartState[id].qty < 0) window.cartState[id].qty = 0;
-            
-            document.getElementById(`qty-${id}`).innerText = window.cartState[id].qty;
-            calculateTotal();
-        }
+        function renderAccordions(categoriesMap) {
+            const container = document.getElementById('liveMenuContainer');
+            container.innerHTML = '';
 
-        // Calculate Floating Total
-        function calculateTotal() {
-            window.cartTotal = 0;
-            for (let id in window.cartState) {
-                window.cartTotal += (window.cartState[id].qty * window.cartState[id].price);
+            for (const [category, items] of Object.entries(categoriesMap)) {
+                let itemsHtml = items.map(item => {
+                    let price = parseFloat(item.price || item.basePrice || 0);
+                    let safeData = encodeURIComponent(JSON.stringify(item));
+                    
+                    let imgHtml = item.image 
+                        ? `<img src="${item.image}" class="w-20 h-20 object-cover rounded-lg">` 
+                        : `<div class="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center text-2xl border border-gray-200">🍲</div>`;
+
+                    return `
+                        <div onclick="openItemModal('${safeData}')" class="flex items-center p-3 bg-white border border-gray-100 rounded-xl shadow-sm mb-3 cursor-pointer active:scale-95 transition">
+                            ${imgHtml}
+                            <div class="ml-3 flex-1">
+                                <h4 class="font-bold text-sm text-gray-800">${item.name}</h4>
+                                <p class="text-xs font-bold text-red-600 mt-1">₱${price.toFixed(2)}</p>
+                            </div>
+                            <div class="text-red-500 font-bold bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">+</div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML += `
+                    <details class="bg-white rounded-xl shadow-sm border border-gray-200 group overflow-hidden" open>
+                        <summary class="font-black p-4 cursor-pointer flex justify-between items-center bg-gray-50 select-none">
+                            ${category.toUpperCase()} 
+                            <span class="group-open:rotate-180 transition-transform duration-300 text-gray-400">▼</span>
+                        </summary>
+                        <div class="p-3 bg-gray-50 border-t border-gray-100">
+                            ${itemsHtml}
+                        </div>
+                    </details>
+                `;
             }
-            document.getElementById('floatingTotal').innerText = `₱${window.cartTotal.toFixed(2)}`;
         }
 
-        // Handle Payment Toggle
+        // --- MODAL LOGIC ---
+        window.openItemModal = function(encodedData) {
+            const item = JSON.parse(decodeURIComponent(encodedData));
+            window.activeModalItem = { ...item, selectedQty: 1, selectedAddons: {} };
+            let price = parseFloat(item.price || item.basePrice || 0);
+
+            document.getElementById('modalItemName').innerText = item.name;
+            document.getElementById('modalItemPrice').innerText = '₱' + price.toFixed(2);
+            document.getElementById('modalQty').innerText = '1';
+            document.getElementById('modalNotes').value = '';
+
+            // Image
+            const imgContainer = document.getElementById('modalImage');
+            if (item.image) imgContainer.innerHTML = `<img src="${item.image}" class="w-full h-full object-cover">`;
+            else imgContainer.innerHTML = '🍲';
+
+            // Add-ons
+            const addonsContainer = document.getElementById('modalAddonsContainer');
+            const addonsList = document.getElementById('modalAddonsList');
+            addonsList.innerHTML = '';
+            
+            if (item.addons && item.addons.length > 0) {
+                addonsContainer.classList.remove('hidden');
+                item.addons.forEach((addon, idx) => {
+                    let aPrice = parseFloat(addon.price || 0);
+                    let priceLabel = aPrice > 0 ? `(+₱${aPrice})` : '(Free)';
+                    
+                    addonsList.innerHTML += `
+                        <label class="flex items-center justify-between p-3 border rounded-lg bg-white shadow-sm cursor-pointer active:bg-gray-50">
+                            <span class="text-sm font-bold text-gray-700">${addon.name} <span class="text-red-500 font-normal text-xs">${priceLabel}</span></span>
+                            <input type="checkbox" id="addon-${idx}" value="${addon.name}|${aPrice}" class="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500">
+                        </label>
+                    `;
+                });
+            } else {
+                addonsContainer.classList.add('hidden');
+            }
+
+            document.getElementById('itemModal').classList.remove('hidden');
+        }
+
+        window.closeItemModal = function() {
+            document.getElementById('itemModal').classList.add('hidden');
+            window.activeModalItem = null;
+        }
+
+        window.changeModalQty = function(delta) {
+            if (!window.activeModalItem) return;
+            let current = window.activeModalItem.selectedQty;
+            if (current + delta > 0) {
+                window.activeModalItem.selectedQty = current + delta;
+                document.getElementById('modalQty').innerText = window.activeModalItem.selectedQty;
+            }
+        }
+
+        window.addModalItemToCart = function() {
+            let basePrice = parseFloat(window.activeModalItem.price || window.activeModalItem.basePrice || 0);
+            let qty = window.activeModalItem.selectedQty;
+            let notes = document.getElementById('modalNotes').value.trim();
+            
+            // Collect checked add-ons
+            let activeAddons = {};
+            let addonsTotal = 0;
+            const checkboxes = document.querySelectorAll('#modalAddonsList input[type="checkbox"]:checked');
+            
+            checkboxes.forEach(cb => {
+                let parts = cb.value.split('|');
+                let aName = parts[0];
+                let aPrice = parseFloat(parts[1]);
+                activeAddons[aName] = { name: aName, price: aPrice, qty: 1 };
+                addonsTotal += aPrice;
+            });
+
+            // Calculate final line item price
+            let unitPrice = basePrice + addonsTotal;
+            let lineTotal = unitPrice * qty;
+
+            window.cart.push({
+                name: window.activeModalItem.name,
+                quantity: qty,
+                price: basePrice, // Store base price for POS consistency
+                variantName: 'Standard',
+                lineTotalFinal: lineTotal,
+                addons: activeAddons,
+                notes: notes
+            });
+
+            updateCartUI();
+            closeItemModal();
+        }
+
+        function updateCartUI() {
+            let grandTotal = 0;
+            let totalItems = 0;
+            window.cart.forEach(item => {
+                grandTotal += item.lineTotalFinal;
+                totalItems += item.quantity;
+            });
+            document.getElementById('floatingTotal').innerText = `₱${grandTotal.toFixed(2)} (${totalItems})`;
+        }
+
+        // --- SUBMIT ORDER ---
         window.togglePaymentView = function() {
             const mode = document.getElementById('paymentMode').value;
-            const gcashSection = document.getElementById('gcashSection');
-            if (mode === 'gcash') gcashSection.classList.remove('hidden');
-            else gcashSection.classList.add('hidden');
+            if (mode === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
+            else document.getElementById('gcashSection').classList.add('hidden');
         }
 
-        // Submit Order
-        document.getElementById('orderForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        window.submitOrder = async function() {
+            if (window.cart.length === 0) {
+                alert("Your order is empty. Please select some items first.");
+                return;
+            }
 
             const urlParams = new URLSearchParams(window.location.search);
             const currentBranch = urlParams.get('branch') || "Main Office"; 
 
-            const name = document.getElementById('customerName').value;
+            const name = document.getElementById('customerName').value.trim();
+            if (!name) {
+                alert("Please enter your name so we can call you when it's ready!");
+                document.getElementById('customerName').focus();
+                return;
+            }
+
             const paymentMode = document.getElementById('paymentMode').value;
             const refNumber = document.getElementById('refNumber')?.value || "";
             
-            let finalItems = [];
-            for (let id in window.cartState) {
-                if (window.cartState[id].qty > 0) {
-                    finalItems.push({
-                        name: window.cartState[id].name,
-                        quantity: window.cartState[id].qty,
-                        price: window.cartState[id].price
-                    });
-                }
-            }
-
-            if (finalItems.length === 0) {
-                alert("Please select at least one item.");
-                return;
-            }
+            let grandTotal = 0;
+            window.cart.forEach(i => grandTotal += i.lineTotalFinal);
 
             const orderData = {
                 customerName: name,
                 branch: currentBranch,
-                items: finalItems,
-                totalAmount: window.cartTotal,
+                items: window.cart, // The cart now perfectly matches the POS structure with addons/notes!
+                totalAmount: grandTotal,
                 paymentMode: paymentMode,
                 gcashRef: paymentMode === 'gcash' ? refNumber : null,
                 status: "mobile_queue",
@@ -216,18 +354,17 @@
 
                 await addDoc(collection(db, "incoming_orders"), orderData);
                 
-                document.getElementById('orderForm').classList.add('hidden');
                 document.getElementById('successMessage').classList.remove('hidden');
                 window.scrollTo(0,0);
             } catch (error) {
                 console.error(error);
-                alert("Error sending order. Please try again.");
-                document.getElementById('submitBtn').innerHTML = '<span>Send Order</span><span id="floatingTotal">₱'+window.cartTotal.toFixed(2)+'</span>';
+                alert("Error sending order. Please check your connection.");
+                updateCartUI();
                 document.getElementById('submitBtn').disabled = false;
             }
-        });
+        }
 
-        // Initialize Menu on load
+        // Init
         loadLiveMenu();
     </script>
 </body>
