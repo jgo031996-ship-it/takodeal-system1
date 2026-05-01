@@ -1,6 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+// 🖼️ NEW: Storage Imports for Menu Pictures!
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+
 console.log("HEARTBEAT 1: File started reading!");
 // Your secure database keys
 const firebaseConfig = {
@@ -17,7 +20,9 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 export const db = getFirestore(app);
+const storage = getStorage(app); // Ignite the Storage Engine!
 
+window.storage = storage; // Make it global so the upload function can use it
 console.log("🔥 Manager Control Center is LIVE!");
 
 // --- HELPER: FORMAT CURRENCY ---
@@ -1034,27 +1039,37 @@ window.loadMenuEditor = async function() {
   tbody.innerHTML = '<tr><td colspan="4" class="text-center">Fetching global menu...</td></tr>';
 
   try {
-    // We pull from the exact same "menu" collection the POS uses!
     const snap = await getDocs(collection(db, "menu"));
     let html = '';
 
     if (snap.empty) {
       html = '<tr><td colspan="4" class="text-center">Menu is empty. Click "Add Menu Item" to start.</td></tr>';
     } else {
-      // Let's sort them alphabetically so it looks clean
       let items = [];
       snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
       items.sort((a, b) => a.name.localeCompare(b.name));
 
       items.forEach(data => {
         let safePrice = parseFloat(data.price) || 0;
+        
+        // 🖼️ Generate Thumbnail or Placeholder
+        let imgHtml = data.image 
+            ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">` 
+            : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">🍲</div>`;
+
         html += `
           <tr>
-            <td><strong> ${data.name}</strong></td>
+            <td>${imgHtml}<strong> ${data.name}</strong></td>
             <td><span class="badge badge-closed">${data.category || 'Uncategorized'}</span></td>
             <td style="font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
-            <td style="display: flex; gap: 10px;">
+            <td style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
               <button class="btn-refresh" onclick="editMenuItem('${data.id}', '${data.name}', ${safePrice}); setTimeout(function(){ if(window.loadCloneDropdown) window.loadCloneDropdown(); }, 200);">✏️ Edit Price</button>
+              
+              <label style="cursor: pointer; background: #f0fdf4; border: 1px solid #16a34a; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin: 0; display: inline-flex; align-items: center;">
+                  📷 Upload Pic
+                  <input type="file" accept="image/jpeg, image/png, image/webp" style="display:none;" onchange="window.uploadMenuImage(event, '${data.id}')">
+              </label>
+
               <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${data.name}')">🗑️ Delete</button>
             </td>
           </tr>
@@ -1118,16 +1133,49 @@ window.editMenuItem = async function (docId, name, currentPrice) {
     }, 200);
   };
 
-window.deleteMenuItem = async function (docId, name) {
-  if (!confirm(`⚠️ ARE YOU SURE?\n\nThis will permanently delete ${name} from the menu at ALL branches.`)) return;
+// --- 🖼️ IMAGE UPLOAD ENGINE ---
+window.uploadMenuImage = async function(event, docId) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-  try {
-    await deleteDoc(doc(db, "menu", docId));
-    alert(`🗑️ ${name} has been deleted.`);
-    window.loadMenuEditor();
-  } catch (error) {
-    console.error(error); alert("❌ Failed to delete item.");
-  }
+    // Strict Size Limit (2MB max) to ensure Customer App loads fast
+    if (file.size > 2 * 1024 * 1024) {
+        alert("⚠️ Image is too large! Please choose a picture under 2MB.");
+        return;
+    }
+
+    // Give visual feedback on the button
+    const label = event.target.parentElement;
+    const originalHTML = label.innerHTML;
+    label.innerText = "⏳ Uploading...";
+    label.style.opacity = "0.7";
+
+    try {
+        // 1. Create a clean, unique file name
+        const fileExt = file.name.split('.').pop();
+        const fileName = `menu_images/${docId}_${Date.now()}.${fileExt}`;
+        const storageReference = ref(window.storage, fileName);
+
+        // 2. Upload physical file to Firebase Storage
+        const snapshot = await uploadBytes(storageReference, file);
+        
+        // 3. Get the live, public URL of the uploaded image
+        const downloadURL = await getDownloadURL(snapshot.ref);
+
+        // 4. Update the Firestore Database so the Customer App sees it
+        await updateDoc(doc(db, "menu", docId), {
+            image: downloadURL
+        });
+
+        alert("✅ Image uploaded and linked successfully!");
+        window.loadMenuEditor(); // Refresh table to show the new thumbnail
+        
+    } catch (e) {
+        console.error("Upload error:", e);
+        alert("❌ Failed to upload image. Ensure Firebase Storage is fully activated.");
+        label.innerHTML = originalHTML;
+        label.style.opacity = "1";
+    }
 };
 
 // --- DETAILED BRANCH ANALYTICS ENGINE ---
