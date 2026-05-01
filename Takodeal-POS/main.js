@@ -55,8 +55,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebas
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 window.onSnapshot = onSnapshot; // Make it available globally
-window.deleteDoc = deleteDoc;
-window.doc = doc;
 
 // Your secure database keys
 const firebaseConfig = {
@@ -80,6 +78,7 @@ window.collection = collection;
 window.getDocs = getDocs;
 window.deleteDoc = deleteDoc;
 window.doc = doc;
+window.updateDoc = updateDoc;
 
 console.log("🔥 Firebase Engine is LIVE!");
 
