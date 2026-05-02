@@ -1091,26 +1091,47 @@ window.loadStaffPersonalInbox = async function() {
 };
 
 window.submitStaffRequest = async function(requestType) {
-    let payload = { type: requestType, staffName: window.sessionUser.cashierName, branch: window.sessionUser.branch, status: "Pending", timestamp: new Date() };
+    // 🛡️ Bulletproof name and branch grabbers!
+    let safeCashierName = localStorage.getItem('cashierName') || 'Unknown Staff';
+    let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
+    
+    let payload = { type: requestType, staffName: safeCashierName, branch: safeBranch, status: "Pending", timestamp: new Date() };
+    
     if (requestType === "Cash Advance") {
-        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value); payload.reason = document.getElementById('reqAdvReason').value.trim();
+        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value); 
+        payload.reason = document.getElementById('reqAdvReason').value.trim();
         if (isNaN(payload.amount) || payload.amount <= 0 || !payload.reason) { alert("❌ Valid amount and reason required."); return; }
     } else if (requestType === "Leave") {
-        payload.startDate = document.getElementById('reqLeaveStart').value; payload.endDate = document.getElementById('reqLeaveEnd').value;
-        payload.leaveType = document.getElementById('reqLeaveType').value; payload.reason = document.getElementById('reqLeaveReason').value.trim();
+        payload.startDate = document.getElementById('reqLeaveStart').value; 
+        payload.endDate = document.getElementById('reqLeaveEnd').value;
+        payload.leaveType = document.getElementById('reqLeaveType').value; 
+        payload.reason = document.getElementById('reqLeaveReason').value.trim();
         if (!payload.startDate || !payload.endDate || !payload.reason) { alert("❌ Dates and reason required."); return; }
     } else if (requestType === "Staff Meal") {
-        payload.item = document.getElementById('reqMealItem').value.trim(); payload.amount = parseFloat(document.getElementById('reqMealCost').value);
+        payload.item = document.getElementById('reqMealItem').value.trim(); 
+        payload.amount = parseFloat(document.getElementById('reqMealCost').value);
         if (!payload.item || isNaN(payload.amount) || payload.amount < 0) { alert("❌ Item and cost required."); return; }
+    } else if (requestType === "Reason Letter") {
+        // Adding safety for Reason Letters just in case!
+        let alertId = document.getElementById('explainAlertId').value;
+        if (!alertId || alertId.includes("Loading")) {
+             alert("❌ Please select a specific variance or shift to explain."); return;
+        }
     }
+    
     try {
         await addDoc(collection(db, "staff_requests"), payload);
         alert(`✅ Success! ${requestType} submitted.`);
+        
+        // Clean up the forms
         document.getElementById('reqAdvAmount').value = ''; document.getElementById('reqAdvReason').value = '';
         document.getElementById('reqLeaveStart').value = ''; document.getElementById('reqLeaveEnd').value = '';
         document.getElementById('reqLeaveReason').value = ''; document.getElementById('reqMealItem').value = '';
         document.getElementById('reqMealCost').value = ''; document.getElementById('staffRequestsModal').style.display = 'none';
-    } catch (error) { console.error(error); alert("❌ Failed to submit."); }
+    } catch (error) { 
+        console.error(error); 
+        alert("❌ Failed to submit."); 
+    }
 };
 
 // ==========================================
