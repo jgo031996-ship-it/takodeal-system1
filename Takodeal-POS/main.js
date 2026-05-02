@@ -880,9 +880,13 @@ window.loadHqAccountsForRemittance = async function() {
 };
 
 window.submitRemittance = async function() {
+    // 🛡️ Bulletproof branch and cashier grabbers
+    let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let safeCashier = localStorage.getItem('cashierName') || 'Unknown';
+
     let payload = {
-        branch: window.sessionUser.branch,
-        cashier: window.sessionUser.cashierName,
+        branch: safeBranch,
+        cashier: safeCashier,
         salesPeriodStart: document.getElementById('remitStartDate').value,
         salesPeriodEnd: document.getElementById('remitEndDate').value,
         amount: parseFloat(document.getElementById('remitAmount').value),
@@ -909,9 +913,14 @@ window.submitRemittance = async function() {
 window.loadRemittanceHistory = async function() {
     const tbody = document.getElementById('remitHistoryTableBody');
     tbody.innerHTML = '<tr><td style="padding:20px; text-align:center;">Fetching history...</td></tr>';
+    
     try {
-        const q = query(collection(db, "remittances"), where("branch", "==", window.sessionUser.branch), orderBy("timestamp", "desc"), limit(20));
+        // 🛡️ Bulletproof branch grabber for the database query
+        let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        
+        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(20));
         const snap = await getDocs(q);
+        
         let html = '';
         snap.forEach(docSnap => {
             let d = docSnap.data();
@@ -927,7 +936,10 @@ window.loadRemittanceHistory = async function() {
             `;
         });
         tbody.innerHTML = html || '<tr><td style="padding:20px; text-align:center;">No previous transfers.</td></tr>';
-    } catch (e) { console.error(e); tbody.innerHTML = '<tr><td style="padding:20px; text-align:center; color:red;">Error loading history.</td></tr>'; }
+    } catch (e) { 
+        console.error(e); 
+        tbody.innerHTML = '<tr><td style="padding:20px; text-align:center; color:red;">Error loading history.</td></tr>'; 
+    }
 };
 
 // ==========================================
