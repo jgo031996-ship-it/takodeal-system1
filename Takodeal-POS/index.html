@@ -295,12 +295,18 @@
 
     .category-header {
       display: flex;
-      flex-wrap: wrap; /* 👈 THIS IS THE MAGIC LINE */
+      flex-wrap: nowrap; /* 👈 Stops them from stacking */
       gap: 10px;
       padding: 15px;
       border-bottom: 1px solid var(--border);
       background: var(--card-bg);
-      /* overflow-x: auto; <-- You can delete this line or leave it */
+      overflow-x: auto; /* 👈 Allows sideways scrolling */
+      -webkit-overflow-scrolling: touch; /* Smooth touch scrolling */
+    }
+
+    /* 👈 Hides the horizontal scrollbar for a clean look */
+    .category-header::-webkit-scrollbar {
+      display: none; 
     }
 
     .cat-btn {
