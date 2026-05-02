@@ -870,13 +870,26 @@ window.loadHqAccountsForRemittance = async function() {
     let select = document.getElementById('remitChannel');
     select.innerHTML = '<option value="">Loading HQ Accounts...</option>';
     try {
-        const q = query(collection(db, "cash_accounts"));
+        // 🔥 ONLY pull accounts assigned to the Main Office
+        const q = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"));
         const snap = await getDocs(q);
+        
+        // 🛡️ Use a "Set" to automatically prevent any accidental duplicate names
+        let uniqueAccounts = new Set();
+        snap.forEach(docSnap => { 
+            if (docSnap.data().name) uniqueAccounts.add(docSnap.data().name); 
+        });
+        
         let html = '<option value="">-- Select Transfer Method --</option>';
-        snap.forEach(docSnap => { html += `<option value="${docSnap.data().name}">${docSnap.data().name}</option>`; });
+        uniqueAccounts.forEach(accountName => { 
+            html += `<option value="${accountName}">${accountName}</option>`; 
+        });
         html += '<option value="Physical Handover">Physical Handover (Cash)</option>';
+        
         select.innerHTML = html;
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        console.error("Error loading accounts:", e); 
+    }
 };
 
 window.submitRemittance = async function() {
@@ -1057,28 +1070,26 @@ window.switchRequestTab = function(tabName) {
     });
 };
 window.loadStaffPersonalInbox = async function() {
-    // 🛡️ 1. BULLETPROOF NAME GRABBER 
-    let safeCashierName = localStorage.getItem('cashierName');
-    if (!safeCashierName && typeof window.sessionUser !== 'undefined' && window.sessionUser) {
-        safeCashierName = window.sessionUser.cashierName;
-    }
-    if (!safeCashierName) {
-        safeCashierName = "Unknown Staff"; 
-    }
+    // 🛡️ Bulletproof name grabber
+    let safeCashierName = localStorage.getItem('cashierName') || 'Unknown Staff';
 
     let container = document.getElementById("staffPersonalInboxList");
     container.innerHTML = "<div style='padding:20px; text-align:center; color:#666;'>Loading your records...</div>";
     
     try {
-        // 🛡️ 2. UPDATED QUERY USING THE SAFE NAME
-        const q = query(collection(db, "staff_requests"), where("cashierName", "==", safeCashierName), orderBy("timestamp", "desc"));
+        // 🔥 THE FIX: Search for "staffName" instead of "cashierName"
+        const q = query(collection(db, "staff_requests"), where("staffName", "==", safeCashierName), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
+        
         let html = '';
         snap.forEach(docSnap => {
-            let d = docSnap.data(); let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
+            let d = docSnap.data(); 
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
+            
             let statusBadge = `<span style="background: #fef9c3; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending Review</span>`;
             if (d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Approved</span>`;
             if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Rejected</span>`;
+            
             html += `
                 <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 5px;"><strong style="color: #334155;">${d.type}</strong>${statusBadge}</div>
@@ -1086,8 +1097,12 @@ window.loadStaffPersonalInbox = async function() {
                     <div style="font-size: 14px; font-weight: bold; color: var(--primary);">${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}</div>
                 </div>`;
         });
+        
         container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
-    } catch (e) { console.error(e); container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>'; }
+    } catch (e) { 
+        console.error(e); 
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>'; 
+    }
 };
 
 window.submitStaffRequest = async function(requestType) {
