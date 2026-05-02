@@ -264,9 +264,9 @@
     .view-container {
       display: none;
       width: 100%;
-      height: calc(100vh - 60px);
+      height: calc(100vh - 88px); /* 👈 60px top bar + 28px clock bar */
       flex: 1;
-      overflow-y: auto;
+      overflow: hidden; /* 👈 Lets the inside panels do the scrolling */
       background: var(--bg-color);
     }
 
@@ -331,6 +331,7 @@
       flex: 1;
       padding: 20px;
       overflow-y: auto;
+      min-height: 0; /* 👈 Prevents stretching */
     }
 
     .item-grid {
@@ -439,6 +440,7 @@
       margin: 0;
       padding: 0;
       list-style: none;
+      min-height: 0; /* 👈 Forces the cart to scroll, saving your Place Order button! */
     }
 
     .cart-item {
