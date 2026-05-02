@@ -2038,45 +2038,93 @@
       let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
     }
 
+    // --- DEPARTMENT & CATEGORY ENGINE ---
+    window.currentDepartment = "MAIN MENU";
+    
+    // The categories that belong in the backend tab. Everything else goes to Main Menu.
+    const premixCategories = ["Consumables", "Prep Batch", "Raw Materials", "Packaging", "Premix"];
+    
     function buildCategories() {
-      const catContainer = document.querySelector('.category-header');
-      catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All items</button>`;
-
-      // 🔥 YOUR CUSTOM TAB ARRANGEMENT 🔥
-      // Type your categories exactly as they appear in the app. 
-      // Whatever is first in this list will be the first tab!
-      const preferredOrder = [
-        "Cheesy Takoyaki",
-        "Bonito Takoyaki",
-        "Double Grilled",
-        "Iced Coffee",
-        "Milk Bubble"
-      ];
-
-      // Sort the categories based on your list above
-      masterPOSData.categories.sort((a, b) => {
-        let indexA = preferredOrder.indexOf(a);
-        let indexB = preferredOrder.indexOf(b);
-        if (indexA === -1) indexA = 999; // If not on the list, push it to the back
-        if (indexB === -1) indexB = 999;
-        return indexA - indexB;
-      });
-
-      // Generate the buttons
-      masterPOSData.categories.forEach(cat => { 
-        catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`; 
-      });
-      filterMenu('All', catContainer.firstElementChild);
+        // 1. Render Bottom Department Tabs
+        const deptContainer = document.getElementById('bottomDepartmentFooter');
+        if (deptContainer) {
+            deptContainer.innerHTML = `
+                <button class="dept-btn ${window.currentDepartment === 'All Items' ? 'active' : ''}" onclick="window.selectDepartment('All Items')">ALL ITEMS</button>
+                <button class="dept-btn ${window.currentDepartment === 'MAIN MENU' ? 'active' : ''}" onclick="window.selectDepartment('MAIN MENU')">MAIN MENU</button>
+                <button class="dept-btn ${window.currentDepartment === 'PREMIX & CONSUMABLES' ? 'active' : ''}" onclick="window.selectDepartment('PREMIX & CONSUMABLES')">PREMIX & CONSUMABLES</button>
+            `;
+        }
+    
+        // 2. Render Top Categories based on selected Department
+        window.renderTopCategories();
     }
+    
+    window.selectDepartment = function(dept) {
+        window.currentDepartment = dept;
+        buildCategories(); // Re-render tabs to show active state
+    };
+    
+    window.renderTopCategories = function() {
+        const catContainer = document.querySelector('.category-header');
+        if (!catContainer) return;
+    
+        catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
+    
+        let catsToRender = masterPOSData.categories;
+    
+        // Filter categories based on the active bottom tab
+        if (window.currentDepartment === "PREMIX & CONSUMABLES") {
+            catsToRender = masterPOSData.categories.filter(c => premixCategories.includes(c));
+        } else if (window.currentDepartment === "MAIN MENU") {
+            catsToRender = masterPOSData.categories.filter(c => !premixCategories.includes(c));
+        }
+    
+        // Preferred Sorting (Main Menu items first)
+        const preferredOrder = ["Cheesy Takoyaki", "Bonito Takoyaki", "Double Grilled", "Iced Coffee", "Milk Bubble"];
+        catsToRender.sort((a, b) => {
+            let indexA = preferredOrder.indexOf(a);
+            let indexB = preferredOrder.indexOf(b);
+            if (indexA === -1) indexA = 999;
+            if (indexB === -1) indexB = 999;
+            return indexA - indexB;
+        });
+    
+        catsToRender.forEach(cat => {
+            catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`;
+        });
+    
+        // Automatically select "All" for the current view
+        filterMenu('All', catContainer.firstElementChild);
+    };
 
     function filterMenu(category, clickedBtn) {
-      if (clickedBtn) { document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); clickedBtn.classList.add('active'); }
-      const grid = document.querySelector('.item-grid'); grid.innerHTML = '';
-      let filteredItems = category === 'All' ? masterPOSData.items : masterPOSData.items.filter(item => item.category === category);
-      filteredItems.forEach((item, index) => {
-        let safePrice = parseFloat(item.price) || 0;
-        grid.innerHTML += `<div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})"><span class="item-number">${index + 1}</span><div class="item-name">${item.name}</div><div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div></div>`;
-      });
+        if (clickedBtn) { 
+            document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); 
+            clickedBtn.classList.add('active'); 
+        }
+        
+        const grid = document.querySelector('.item-grid'); 
+        if(!grid) return;
+        grid.innerHTML = '';
+        
+        let filteredItems = masterPOSData.items;
+    
+        // Filter by bottom tab if 'All' is selected on top
+        if (category === 'All') {
+            if (window.currentDepartment === "PREMIX & CONSUMABLES") {
+                filteredItems = masterPOSData.items.filter(item => premixCategories.includes(item.category));
+            } else if (window.currentDepartment === "MAIN MENU") {
+                filteredItems = masterPOSData.items.filter(item => !premixCategories.includes(item.category));
+            }
+        } else {
+            // Otherwise, filter strictly by the top category clicked
+            filteredItems = masterPOSData.items.filter(item => item.category === category);
+        }
+    
+        filteredItems.forEach((item, index) => {
+            let safePrice = parseFloat(item.price) || 0;
+            grid.innerHTML += `<div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})"><span class="item-number">${index + 1}</span><div class="item-name">${item.name}</div><div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div></div>`;
+        });
     }
 
     function searchMenuItems() {
