@@ -1080,6 +1080,38 @@
         width: 90% !important;
         margin: 20px;
       }
+
+      /* --- NEW DEPARTMENT BOTTOM TABS --- */
+      .department-footer {
+        display: flex;
+        background: var(--card-bg);
+        border-top: 1px solid var(--border);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .department-footer::-webkit-scrollbar { display: none; }
+  
+      .dept-btn {
+        flex: 1; /* Stretches tabs evenly */
+        padding: 15px 10px;
+        border: none;
+        background: transparent;
+        font-weight: 800;
+        color: #888;
+        cursor: pointer;
+        font-size: 12px;
+        text-transform: uppercase;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+        transition: all 0.2s;
+      }
+      .dept-btn:hover {
+        color: #444;
+      }
+      .dept-btn.active {
+        color: var(--primary);
+        border-bottom-color: var(--primary);
+      }
     }
   </style>
 </head>
@@ -1278,17 +1310,25 @@
             <p style="color: #777; margin-bottom: 25px;">Open a shift to begin taking orders.</p>
             <button class="btn-shift-open" onclick="openShiftModal()">Open Shift</button>
           </div>
-          <div class="category-header"></div>
+          
+          <!-- TOP CATEGORIES -->
+          <div class="category-header" id="topCategoryHeader"></div>
+          
+          <!-- ITEM GRID -->
           <div class="item-grid-container">
             <div class="item-grid">
               <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Loading Menu...</div>
             </div>
           </div>
-          <div
-            style="padding: 10px; background: #fff; margin-bottom: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); box-sizing: border-box; width: 100%;">
+          
+          <!-- SEARCH BAR -->
+          <div style="padding: 10px; background: #fff; border-top: 1px solid var(--border); box-sizing: border-box; width: 100%;">
             <input type="text" id="posSearchInput" placeholder="🔍 Search menu items..." onkeyup="searchMenuItems()"
               style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box;">
           </div>
+
+          <!-- NEW BOTTOM DEPARTMENT TABS -->
+          <div class="department-footer" id="bottomDepartmentFooter"></div>
         </div>
         <div class="ticket-panel">
           <div class="ticket-header">
