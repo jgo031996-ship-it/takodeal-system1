@@ -328,6 +328,40 @@
             else document.getElementById('gcashSection').classList.add('hidden');
         }
 
+        // --- SUBMIT ORDER & LIVE TRACKING (WITH GPS EXCEPTION) ---
+        window.togglePaymentView = function() {
+            if (document.getElementById('paymentMode').value === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
+            else document.getElementById('gcashSection').classList.add('hidden');
+        }
+
+        // ==========================================
+        // 📍 GPS LOCATION ENGINE
+        // ==========================================
+        const BRANCH_ZONES = {
+            "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
+            "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  
+            "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 },        
+            "Main Office": { lat: 7.1539090939416266, lng: 125.59588373531139 }
+        };
+
+        function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; const p1 = lat1 * Math.PI/180; const p2 = lat2 * Math.PI/180;
+            const deltaP = (lat2-lat1) * Math.PI/180; const deltaLon = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function resetSubmitButton(grandTotal) {
+            document.getElementById('submitBtn').innerHTML = '<span>Send Order</span><span id="floatingTotal">₱'+grandTotal.toFixed(2)+'</span>';
+            document.getElementById('submitBtn').disabled = false;
+        }
+
+        // --- SUBMIT ORDER & LIVE TRACKING (WITH GPS) ---
+        window.togglePaymentView = function() {
+            if (document.getElementById('paymentMode').value === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
+            else document.getElementById('gcashSection').classList.add('hidden');
+        }
+
         window.submitOrder = async function() {
             if (window.cart.length === 0) { alert("Your order is empty."); return; }
 
@@ -338,58 +372,88 @@
             const paymentMode = document.getElementById('paymentMode').value;
             let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
 
-            const orderData = {
-                customerName: name, branch: currentBranch, items: window.cart, totalAmount: grandTotal,
-                paymentMode: paymentMode, gcashRef: paymentMode === 'gcash' ? (document.getElementById('refNumber')?.value || "") : null,
-                status: "mobile_queue", timestamp: serverTimestamp()
-            };
-
-            try {
-                const btn = document.getElementById('submitBtn');
-                btn.innerHTML = '<span class="mx-auto">Sending...</span>'; btn.disabled = true;
-
-                // Send and get the specific document ID
-                const docRef = await addDoc(collection(db, "incoming_orders"), orderData);
-                
-                // Hide Ordering UI, Show Tracker UI
-                document.getElementById('orderingScreen').classList.add('hidden');
-                document.getElementById('trackerScreen').classList.remove('hidden');
-                document.getElementById('trackerScreen').classList.add('flex');
-                window.scrollTo(0,0);
-
-                // 🔥 START LISTENING TO THIS SPECIFIC ORDER IN REAL-TIME 🔥
-                onSnapshot(doc(db, "incoming_orders", docRef.id), (snapshot) => {
-                    if (snapshot.exists()) {
-                        const currentStatus = snapshot.data().status;
-                        const icon = document.getElementById('trackerIcon');
-                        const title = document.getElementById('trackerTitle');
-                        const subtitle = document.getElementById('trackerSubtitle');
-                        const waitTime = document.getElementById('waitTimeDisplay');
-
-                        if (currentStatus === "preparing") {
-                            icon.innerText = "🍳";
-                            icon.classList.remove('animate-pulse');
-                            title.innerText = "Preparing Your Food!";
-                            title.classList.add('text-green-600');
-                            subtitle.innerText = "The kitchen is working on your order right now.";
-                            waitTime.innerText = "Almost Ready...";
-                        } 
-                        else if (currentStatus === "rejected") {
-                            icon.innerText = "❌";
-                            icon.classList.remove('animate-pulse');
-                            title.innerText = "Order Cancelled";
-                            title.classList.add('text-red-600');
-                            subtitle.innerText = "We're sorry, but an ingredient ran out. Please see the cashier.";
-                            waitTime.innerText = "--";
-                        }
-                    }
-                });
-
-            } catch (error) {
-                console.error(error); alert("Error sending order. Please check your connection.");
-                document.getElementById('submitBtn').innerHTML = '<span>Send Order</span><span id="floatingTotal">₱'+grandTotal.toFixed(2)+'</span>';
-                document.getElementById('submitBtn').disabled = false;
+            // 1. Check if their browser even supports GPS
+            if (!navigator.geolocation) {
+                alert("❌ Your browser does not support location services. Please order directly at the counter.");
+                return;
             }
+
+            const btn = document.getElementById('submitBtn');
+            btn.innerHTML = '<span class="mx-auto">Verifying Location...</span>'; 
+            btn.disabled = true;
+
+            // 2. Trigger the GPS Request
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                const userLat = position.coords.latitude; 
+                const userLng = position.coords.longitude;
+                const targetZone = BRANCH_ZONES[currentBranch];
+
+                // 3. Measure the distance
+                if (targetZone) {
+                    const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+                    
+                    if (distance > 200) { // 200-meter safety radius
+                        alert(`📍 TOO FAR AWAY\n\nYou must be near the ${currentBranch} branch to place an order. Your phone shows you are ${Math.round(distance)} meters away.\n\nIf you are at the store, please make sure your GPS is turned on and accurate.`);
+                        resetSubmitButton(grandTotal);
+                        return;
+                    }
+                }
+
+                // 4. If they pass the GPS check, blast the order to Firebase!
+                const orderData = {
+                    customerName: name, branch: currentBranch, items: window.cart, totalAmount: grandTotal,
+                    paymentMode: paymentMode, gcashRef: paymentMode === 'gcash' ? (document.getElementById('refNumber')?.value || "") : null,
+                    status: "mobile_queue", timestamp: serverTimestamp()
+                };
+
+                try {
+                    btn.innerHTML = '<span class="mx-auto">Sending...</span>';
+
+                    const docRef = await addDoc(collection(db, "incoming_orders"), orderData);
+                    
+                    document.getElementById('orderingScreen').classList.add('hidden');
+                    document.getElementById('trackerScreen').classList.remove('hidden');
+                    document.getElementById('trackerScreen').classList.add('flex');
+                    window.scrollTo(0,0);
+
+                    // LIVE TRACKING LISTENER
+                    onSnapshot(doc(db, "incoming_orders", docRef.id), (snapshot) => {
+                        if (snapshot.exists()) {
+                            const currentStatus = snapshot.data().status;
+                            const icon = document.getElementById('trackerIcon');
+                            const title = document.getElementById('trackerTitle');
+                            const subtitle = document.getElementById('trackerSubtitle');
+                            const waitTime = document.getElementById('waitTimeDisplay');
+
+                            if (currentStatus === "preparing") {
+                                icon.innerText = "🍳";
+                                icon.classList.remove('animate-pulse');
+                                title.innerText = "Preparing Your Food!";
+                                title.classList.add('text-green-600');
+                                subtitle.innerText = "The kitchen is working on your order right now.";
+                                waitTime.innerText = "Almost Ready...";
+                            } 
+                            else if (currentStatus === "rejected") {
+                                icon.innerText = "❌";
+                                icon.classList.remove('animate-pulse');
+                                title.innerText = "Order Cancelled";
+                                title.classList.add('text-red-600');
+                                subtitle.innerText = "We're sorry, but an ingredient ran out. Please see the cashier.";
+                                waitTime.innerText = "--";
+                            }
+                        }
+                    });
+
+                } catch (error) {
+                    console.error(error); alert("Error sending order. Please check your connection.");
+                    resetSubmitButton(grandTotal);
+                }
+
+            }, (error) => {
+                // If they click "Block" on the location popup!
+                alert("📍 LOCATION REQUIRED\n\nPlease allow location access to verify you are at the store, or order directly at the counter.");
+                resetSubmitButton(grandTotal);
+            }, { enableHighAccuracy: true }); 
         }
 
         loadLiveMenu();
