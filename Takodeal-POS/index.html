@@ -981,6 +981,23 @@
       border-color: var(--primary);
     }
 
+    @media screen and (max-width: 1024px) {
+        .sidebar { 
+            width: 180px; 
+        }
+        body, button, input {
+            font-size: 14px; 
+        }
+        .item-card, .menu-toggle-card { 
+            padding: 10px;
+            min-height: 100px; 
+        }
+        .item-grid {
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); 
+            gap: 10px;
+        }
+    }
+    
     @media (max-width: 768px) {
       body {
         flex-direction: column;
