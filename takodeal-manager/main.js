@@ -4476,40 +4476,88 @@ window.loadInbox = async function() {
     }
 };
 
-window.handleRequest = async function(docId, action, type, amount, staffName) {
-    let confirmMsg = action === 'Approved' 
-        ? `Approve this ${type} for ${staffName}?` 
-        : `Reject this ${type} for ${staffName}?`;
-        
-    if (!confirm(confirmMsg)) return;
+window.handleRequest = function(docId, action, type, amount, staffName) {
+    // 1. Build a beautiful popup modal dynamically (No HTML edits required!)
+    const modalHtml = `
+        <div id="dynamicReplyModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;">
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 400px; max-width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+                <h3 style="margin-top: 0; color: #0f172a;">${action === 'Approved' ? '✅ Approve' : '❌ Reject'} Request</h3>
+                <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Send a message to <strong>${staffName}</strong> regarding this ${type}.</p>
+
+                <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Reply / Reason:</label>
+                <textarea id="replyMessage" placeholder="Type your explanation or instructions here..." style="width: 100%; height: 80px; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-family: inherit; resize: none;"></textarea>
+
+                ${action === 'Approved' ? `
+                <label style="font-size: 12px; font-weight: bold; color: #334155;">Proof of Payment (Screenshot):</label>
+                <input type="file" id="replyProofImage" accept="image/jpeg, image/png, image/webp" style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 20px; border: 1px dashed #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+                ` : ''}
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
+                    <button onclick="document.getElementById('dynamicReplyModal').remove()" style="padding: 8px 15px; border: none; background: #e2e8f0; color: #475569; border-radius: 6px; cursor: pointer; font-weight: bold;">Cancel</button>
+                    <button id="btnSubmitReply" onclick="window.submitRequestReply('${docId}', '${action}', '${type}', ${amount}, '${staffName}')" style="padding: 8px 15px; border: none; background: ${action === 'Approved' ? '#10b981' : '#ef4444'}; color: white; border-radius: 6px; cursor: pointer; font-weight: bold;">Confirm ${action}</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 2. Inject the modal directly into the screen
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+};
+
+window.submitRequestReply = async function(docId, action, type, amount, staffName) {
+    const btn = document.getElementById('btnSubmitReply');
+    const replyMsg = document.getElementById('replyMessage').value.trim();
+    const fileInput = document.getElementById('replyProofImage');
+
+    btn.innerText = "⏳ Processing...";
+    btn.disabled = true;
 
     try {
-        // 1. Update the request status
+        let proofUrl = "";
+
+        // 3. If approved and you attached an image, upload it to Firebase Storage!
+        if (action === 'Approved' && fileInput && fileInput.files.length > 0) {
+            btn.innerText = "⏳ Uploading Proof...";
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `proofs/${docId}_${Date.now()}.${fileExt}`;
+            
+            const storageReference = ref(window.storage, fileName);
+            const snapshot = await uploadBytes(storageReference, file);
+            proofUrl = await getDownloadURL(snapshot.ref);
+        }
+
+        btn.innerText = "⏳ Saving to Database...";
+
+        // 4. Update the request status and attach your reply/image
         await updateDoc(doc(db, "staff_requests", docId), {
             status: action,
+            managerReply: replyMsg,
+            proofImageUrl: proofUrl,
             processedAt: new Date(),
-            processedBy: sessionUser.cashierName
+            processedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
         });
 
-        // 2. 🚨 PREPARING FOR PHASE 4: LOG THE DEDUCTION!
-        // If you approve a Cash Advance or a Meal, we save a record to 'staff_deductions' 
-        // so the Auto-Payslip generator can pull it automatically later!
+        // 5. Keep your existing Payroll Deduction Logic perfectly intact!
         if (action === "Approved" && (type === "Cash Advance" || type === "Staff Meal")) {
             await addDoc(collection(db, "staff_deductions"), {
                 staffName: staffName,
                 type: type,
                 amount: amount,
                 dateAdded: new Date(),
-                status: "Unpaid" // Will change to "Paid" once the payslip is generated
+                status: "Unpaid" 
             });
         }
 
         alert(`✅ Request successfully ${action.toLowerCase()}!`);
+        document.getElementById('dynamicReplyModal').remove();
         window.loadInbox();
 
     } catch (e) {
         console.error("Action Error:", e);
-        alert("❌ Failed to process request.");
+        alert("❌ Failed to process request. Check connection.");
+        btn.innerText = `Confirm ${action}`;
+        btn.disabled = false;
     }
 };
 
