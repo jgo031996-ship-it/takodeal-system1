@@ -52,7 +52,7 @@ window.lockDeviceToBranch = async function () {
 
 // --- TAKODEAL FIREBASE ENGINE ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 window.onSnapshot = onSnapshot; // Make it available globally
 
@@ -208,6 +208,28 @@ window.processCheckout = async function (payload) {
         // 🚨 Simple, non-blocking alarm
         if (lowStockTriggered) {
              alert(`⚠️ LOW STOCK ALERT\n\nSome ingredients used in the last order are running low. Please notify the Manager to check the Live Inventory dashboard.`);
+        }
+
+        // 🔥 THE 1 MILLION TAKOYAKI TRACKER 🔥
+        let totalBallsInOrder = 0;
+        for (let cartItem of payload.cart) {
+            let itemName = cartItem.name || cartItem.itemName;
+            
+            // Smart AI: Looks for "8 Pcs", "15 Pcs", "6 Pcs" in your item names!
+            let match = itemName.match(/(\d+)\s*Pcs/i);
+            if (match) {
+                let ballsInBox = parseInt(match[1]);
+                totalBallsInOrder += (ballsInBox * (cartItem.qty || 1));
+            }
+        }
+
+        // If they bought Takoyaki, send the count to the Global Vault!
+        if (totalBallsInOrder > 0) {
+            const statsRef = doc(db, "settings", "global_stats");
+            // setDoc with merge creates the file if it's the very first time!
+            await setDoc(statsRef, { 
+                totalTakoyakiBalls: increment(totalBallsInOrder) 
+            }, { merge: true });
         }
     }, 100); // 100ms delay lets the receipt screen pop up instantly!
 
@@ -1218,46 +1240,74 @@ window.loadKitchenPrep = async function() {
 };
 
 window.logPrepBatch = async function(invId, itemName, branch) {
-    let qty = prompt(`How many batches of ${itemName} did you prepare?`, "1");
+    let qty = prompt(`How many batches of ${itemName} did you prepare today?`, "1");
     if (!qty || isNaN(qty) || qty <= 0) return;
     
     qty = parseFloat(qty);
-    if (!confirm(`Confirm adding ${qty} batch(es) of ${itemName} to ${branch} inventory?`)) return;
+    if (!confirm(`Confirm logging ${qty} batch(es) of ${itemName}?\n\nThis will automatically restore negative stocks and deduct the raw ingredients used.`)) return;
 
     try {
         const invRef = doc(db, "inventory", invId);
         
-        // 1. ADD TO PREP BATCH INVENTORY
+        // 1. ADD TO PREP BATCH INVENTORY (This "Refreshes" the negative numbers!)
+        const invSnap = await getDoc(invRef);
+        let currentStock = invSnap.data().currentStock || 0;
         await updateDoc(invRef, {
-            currentStock: increment(qty)
+            currentStock: currentStock + qty
         });
 
-        // 2. LOG THE ACTION
+        // 2. 🔥 THE MAGIC: AUTO-DEDUCT RAW INGREDIENTS VIA BOM 🔥
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
+        
+        let missingItems = [];
+
+        if (!bomSnap.empty) {
+            for (let bomDoc of bomSnap.docs) {
+                let recipe = bomDoc.data();
+                let rawIngredient = recipe.ingredientName;
+                let totalAmountToDeduct = (recipe.qty || 0) * qty;
+
+                // Find this raw ingredient in the branch's live inventory
+                const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
+                const rawSnap = await getDocs(rawQ);
+
+                if (!rawSnap.empty) {
+                    let rawRef = rawSnap.docs[0].ref;
+                    let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
+                    
+                    // Secretly deduct the raw ingredient!
+                    await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
+                } else {
+                    // Keep track if they forgot to add a raw material to the warehouse
+                    missingItems.push(rawIngredient);
+                }
+            }
+        }
+
+        // 3. LOG THE ACTION FOR THE OWNER'S AUDIT TRAIL
         let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
         await addDoc(collection(db, "stock_logs"), {
             branch: branch,
             item: itemName,
             variance: qty,
-            type: "Kitchen Prep Generation",
+            type: "End-of-Shift Kitchen Prep",
             note: `Prepared by ${safeCashierName}`,
             timestamp: new Date()
         });
 
-        /* 
-        🔥 PHASE 2 BOM DEDUCTION HOOK:
-        If your BOM collection holds recipes for Prep Batches, you would fetch it here:
-        const bomSnap = await getDoc(doc(db, "bom", itemName));
-        if(bomSnap.exists()) {
-             // Loop through bomSnap.data().ingredients and deduct them from raw inventory!
+        // 4. SHOW SUCCESS MESSAGE
+        let msg = `✅ Successfully logged ${qty} batch(es) of ${itemName}!\nPrep Batch stocks have been refreshed.`;
+        if (missingItems.length > 0) {
+            msg += `\n\n⚠️ Warning: The following raw ingredients are missing from the ${branch} warehouse and were not deducted: ${missingItems.join(", ")}`;
         }
-        */
-
-        alert(`✅ Successfully logged ${qty} batch(es) of ${itemName}!`);
-        window.loadKitchenPrep(); // Refresh the list
+        
+        alert(msg);
+        window.loadKitchenPrep(); // Instantly refresh the UI
         
     } catch (e) {
-        console.error(e);
-        alert("❌ Failed to log prep batch.");
+        console.error("Prep Batch Error:", e);
+        alert("❌ Failed to log prep batch. Check console.");
     }
 };
 
