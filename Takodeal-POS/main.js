@@ -179,7 +179,7 @@ window.processCheckout = async function (payload) {
     const receiptId = `${dateStr}-${shiftCode}-${orderNum}`;
 
     // 1. Immediately save the transaction so the UI doesn't lag!
-    await addDoc(collection(db, "transactions"), {
+    addDoc(collection(db, "transactions"), {
       ...payload, receiptId: receiptId, timestamp: serverTimestamp()
     });
 
