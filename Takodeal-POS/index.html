@@ -2041,8 +2041,11 @@
     // --- DEPARTMENT & CATEGORY ENGINE ---
     window.currentDepartment = "MAIN MENU";
     
-    // The categories that belong in the backend tab. Everything else goes to Main Menu.
-    const premixCategories = ["Consumables", "Prep Batch", "Raw Materials", "Packaging", "Premix"];
+    // 1. Items allowed in the 2nd tab (Things you actually sell to customers)
+    const premixCategories = ["Consumables", "Premix"];
+    
+    // 2. 🛡️ THE VAULT: Categories completely HIDDEN from the POS screen!
+    const hiddenCategories = ["Prepared Batch", "Prep Batch", "Raw Materials", "Packaging"];
     
     function buildCategories() {
         // 1. Render Bottom Department Tabs
@@ -2070,13 +2073,15 @@
     
         catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
     
-        let catsToRender = masterPOSData.categories;
+        // 🛡️ Remove backend items from the top scrolling bar
+        let safeCategories = masterPOSData.categories.filter(c => !hiddenCategories.includes(c));
+        let catsToRender = safeCategories;
     
         // Filter categories based on the active bottom tab
         if (window.currentDepartment === "PREMIX & CONSUMABLES") {
-            catsToRender = masterPOSData.categories.filter(c => premixCategories.includes(c));
+            catsToRender = safeCategories.filter(c => premixCategories.includes(c));
         } else if (window.currentDepartment === "MAIN MENU") {
-            catsToRender = masterPOSData.categories.filter(c => !premixCategories.includes(c));
+            catsToRender = safeCategories.filter(c => !premixCategories.includes(c));
         }
     
         // Preferred Sorting (Main Menu items first)
@@ -2096,7 +2101,7 @@
         // Automatically select "All" for the current view
         filterMenu('All', catContainer.firstElementChild);
     };
-
+    
     function filterMenu(category, clickedBtn) {
         if (clickedBtn) { 
             document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); 
@@ -2107,18 +2112,20 @@
         if(!grid) return;
         grid.innerHTML = '';
         
-        let filteredItems = masterPOSData.items;
+        // 🛡️ Remove backend items from the main center grid
+        let safeItems = masterPOSData.items.filter(item => !hiddenCategories.includes(item.category));
+        let filteredItems = safeItems;
     
         // Filter by bottom tab if 'All' is selected on top
         if (category === 'All') {
             if (window.currentDepartment === "PREMIX & CONSUMABLES") {
-                filteredItems = masterPOSData.items.filter(item => premixCategories.includes(item.category));
+                filteredItems = safeItems.filter(item => premixCategories.includes(item.category));
             } else if (window.currentDepartment === "MAIN MENU") {
-                filteredItems = masterPOSData.items.filter(item => !premixCategories.includes(item.category));
+                filteredItems = safeItems.filter(item => !premixCategories.includes(item.category));
             }
         } else {
             // Otherwise, filter strictly by the top category clicked
-            filteredItems = masterPOSData.items.filter(item => item.category === category);
+            filteredItems = safeItems.filter(item => item.category === category);
         }
     
         filteredItems.forEach((item, index) => {
