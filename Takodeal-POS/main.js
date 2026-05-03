@@ -1212,7 +1212,7 @@ window.loadKitchenPrep = async function() {
 
     try {
         // Fetch only "Prep Batch" category items for THIS specific branch
-        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("category", "==", "Prep Batch"));
+        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("category", "==", "Prepared Batch"));
         const snap = await getDocs(q);
         
         let html = '';
