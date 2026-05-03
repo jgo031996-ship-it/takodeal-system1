@@ -294,6 +294,19 @@ window.loadGlobalDashboard = async function() {
     console.error("Radar Engine Error:", error);
     document.getElementById('branchTableBody').innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
   }
+
+  // 🐙 THE TAKOYAKI MILESTONE TRACKER
+    try {
+        const statsSnap = await getDoc(doc(db, "settings", "global_stats"));
+        if (statsSnap.exists()) {
+            let totalBalls = statsSnap.data().totalTakoyakiBalls || 0;
+            console.log(`🔥 MILESTONE CHECK: You have sold ${totalBalls.toLocaleString()} Takoyaki Balls so far!`);
+            
+            // If you add a <div id="milestoneCounter"></div> to your HTML dashboard later, this will light it up!
+            let milestoneDiv = document.getElementById('milestoneCounter');
+            if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
+        }
+    } catch(e) { console.log("Tracker still waiting for first sale."); }
 };
 
 // --- WIRING THE BUTTONS ---
