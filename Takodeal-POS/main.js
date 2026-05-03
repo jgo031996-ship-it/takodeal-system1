@@ -52,7 +52,7 @@ window.lockDeviceToBranch = async function () {
 
 // --- TAKODEAL FIREBASE ENGINE ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 window.onSnapshot = onSnapshot; // Make it available globally
 
@@ -69,6 +69,19 @@ const firebaseConfig = {
 // Ignite the Engine
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+// --- ENABLE OFFLINE PERSISTENCE ---
+enableIndexedDbPersistence(db)
+  .then(() => {
+      console.log("🚀 TAKODEÁL Offline Mode is ACTIVE!");
+  })
+  .catch((err) => {
+      if (err.code == 'failed-precondition') {
+          console.warn("Offline persistence failed: Multiple tabs open.");
+      } else if (err.code == 'unimplemented') {
+          console.warn("Offline persistence is not supported by this browser.");
+      }
+  });
 
 // Make the database available to our POS
 window.db = db;
