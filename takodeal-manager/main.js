@@ -4838,6 +4838,7 @@ window.loadLedger = async function() {
                     <td style="font-weight: bold; color: #8b5cf6;">₱${cutoffDed.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td>
                         <button class="btn-refresh" style="background: #f3e8ff; color: #7c3aed; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.setAutoDeduct('${record.id}', '${name}', ${cutoffDed}, ${balance})">⚙️ Set Deduct</button>
+                        <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${staff.id}', '${staff.cashierName}', ${staff.totalLoaned || 0}, ${staff.totalPaid || 0})">✏️ Adjust</button>
                         <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Loan</button>
                         <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance})">💸 Pay</button>
                     </td>
@@ -4944,5 +4945,59 @@ window.refreshInventoryView = function() {
         window.loadInventoryData();
     } else {
         console.warn("loadInventoryData is missing!");
+    }
+};
+
+// ==========================================
+// ✏️ STAFF LOAN MASTER OVERRIDE ENGINE
+// ==========================================
+window.adjustStaffLoan = async function(staffId, staffName, currentLoan, currentPaid) {
+    // 1. Ask the boss for the corrected numbers
+    let newLoan = prompt(`[ADJUSTMENT] Enter the corrected TOTAL LOANED for ${staffName}:`, currentLoan);
+    if (newLoan === null) return; // Cancelled
+
+    let newPaid = prompt(`[ADJUSTMENT] Enter the corrected TOTAL PAID for ${staffName}:`, currentPaid);
+    if (newPaid === null) return; // Cancelled
+
+    // Convert them to safe numbers
+    newLoan = parseFloat(newLoan) || 0;
+    newPaid = parseFloat(newPaid) || 0;
+    let newBalance = newLoan - newPaid;
+
+    // 2. Final Confirmation Screen
+    if (!confirm(`🚨 Confirm manual override for ${staffName}?\n\nTotal Loaned: ₱${newLoan.toFixed(2)}\nTotal Paid: ₱${newPaid.toFixed(2)}\nNew Remaining Balance: ₱${newBalance.toFixed(2)}`)) {
+        return;
+    }
+
+    try {
+        // 3. Update the exact staff document in Firebase (forces the new numbers)
+        // Note: Change "cashiers" to "employees" or "staff" if your database collection is named differently
+        await window.updateDoc(window.doc(window.db, "cashiers", staffId), {
+            totalLoaned: newLoan,
+            totalPaid: newPaid
+        });
+
+        // 4. Create an audit log so you remember you made this adjustment
+        await window.addDoc(window.collection(window.db, "manager_alerts"), {
+            type: "LOAN_ADJUSTMENT",
+            branch: "Main Office",
+            message: `Manual ledger override for ${staffName}. New Balance forced to ₱${newBalance.toFixed(2)}.`,
+            timestamp: window.serverTimestamp(),
+            isRead: true // Marks it read so it doesn't annoy you with notifications
+        });
+
+        alert("✅ Ledger successfully adjusted!");
+        
+        // 5. Instantly refresh the table! 
+        // (Change this to whatever your table refresh function is called, e.g., loadStaffLedger())
+        if (typeof window.refreshLedger === 'function') {
+             window.refreshLedger();
+        } else {
+             location.reload(); 
+        }
+
+    } catch (error) {
+        console.error("Error adjusting loan:", error);
+        alert("❌ Failed to adjust database. Check F12 Console.");
     }
 };
