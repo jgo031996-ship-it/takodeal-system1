@@ -1077,7 +1077,6 @@ window.loadStaffPersonalInbox = async function() {
     container.innerHTML = "<div style='padding:20px; text-align:center; color:#666;'>Loading your records...</div>";
     
     try {
-        // 🔥 THE FIX: Search for "staffName" instead of "cashierName"
         const q = query(collection(db, "staff_requests"), where("staffName", "==", safeCashierName), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
         
@@ -1090,11 +1089,34 @@ window.loadStaffPersonalInbox = async function() {
             if (d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Approved</span>`;
             if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Rejected</span>`;
             
+            // 🔥 NEW: MANAGER REPLY UI
+            let replyHtml = '';
+            if (d.managerReply) {
+                replyHtml = `
+                <div style="margin-top: 12px; padding: 10px; background: #f8fafc; border-left: 4px solid #3b82f6; border-radius: 4px; font-size: 12px; color: #334155;">
+                    <strong style="color: #0f172a;">Owner Reply:</strong><br>
+                    <span style="font-style: italic;">"${d.managerReply}"</span>
+                </div>`;
+            }
+
+            // 🔥 NEW: PROOF OF PAYMENT UI
+            let proofHtml = '';
+            if (d.proofImageUrl) {
+                proofHtml = `
+                <div style="margin-top: 10px;">
+                    <a href="${d.proofImageUrl}" target="_blank" style="display: inline-block; background: #e0e7ff; color: #4f46e5; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; text-decoration: none;">
+                        📄 View Payment Screenshot
+                    </a>
+                </div>`;
+            }
+
             html += `
                 <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 5px;"><strong style="color: #334155;">${d.type}</strong>${statusBadge}</div>
                     <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">Submitted: ${dateStr}</div>
                     <div style="font-size: 14px; font-weight: bold; color: var(--primary);">${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}</div>
+                    ${replyHtml}
+                    ${proofHtml}
                 </div>`;
         });
         
