@@ -4595,6 +4595,7 @@ window.setDefaultCutoffDates = function() {
         endDate = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-02`;
     }
 
+    // 🔥 THE FIX: Using the exact IDs from your HTML
     const startEl = document.getElementById('payrollStart');
     const endEl = document.getElementById('payrollEnd');
     if(startEl) startEl.value = startDate;
@@ -5178,9 +5179,10 @@ window.setDefaultCutoffDates = function() {
 
 // 2. The Master Pairing Engine
 window.generateAutoPayslips = async function() {
-    let startInput = document.getElementById('cutoffStart').value;
-    let endInput = document.getElementById('cutoffEnd').value;
-    let tableBody = document.getElementById('payrollGeneratorBody'); // Matches your HTML!
+    // 🔥 THE FIX: Using the exact IDs from your HTML
+    let startInput = document.getElementById('payrollStart').value;
+    let endInput = document.getElementById('payrollEnd').value;
+    let tableBody = document.getElementById('payrollGeneratorBody'); 
 
     if (!tableBody) {
         alert("Error: Cannot find the table. Make sure your tbody has the ID 'payrollGeneratorBody'.");
@@ -5196,6 +5198,8 @@ window.generateAutoPayslips = async function() {
 
     let startDate = new Date(startInput); startDate.setHours(0, 0, 0, 0);
     let endDate = new Date(endInput); endDate.setHours(23, 59, 59, 999);
+
+    // ... (Keep the rest of the try/catch block exactly the same!) ...
 
     try {
         // 1. FETCH MASTER STAFF PROFILES & LEDGER BALANCES
