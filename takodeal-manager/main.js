@@ -5003,54 +5003,135 @@ window.adjustStaffLoan = async function(staffId, staffName, currentLoan, current
 };
 
 // ==========================================
-// 🟢 GRAB FINANCIAL & LOAN RECONCILIATION ENGINE
+// 🟢 GRAB PERFORMANCE & LOAN RECONCILIATION ENGINE
 // ==========================================
 window.calculateGrabFinancials = async function() {
-    // ⚙️ YOUR GRAB CONTRACT SETTINGS (Change these if your contract differs!)
-    const grabCommissionPercent = 0.20; // 20% Standard Grab cut
-    const grabLoanDeductionPercent = 0.10; // 10% daily loan deduction
-    
-    // Update the UI labels so you always know what % is active
-    if(document.getElementById('grabCommRateDisplay')) document.getElementById('grabCommRateDisplay').innerText = (grabCommissionPercent * 100);
-    if(document.getElementById('grabLoanRateDisplay')) document.getElementById('grabLoanRateDisplay').innerText = (grabLoanDeductionPercent * 100);
-
-    // Get today's timestamp limit
-    let today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Default fallback settings
+    let grabCommissionPercent = 0.20; 
+    let grabLoanDeductionPercent = 0.10; 
+    let currentLoanBalance = 0;
 
     try {
-        // Query ALL transactions from ALL branches today
-        const q = window.query(
-            window.collection(window.db, "transactions"), 
-            window.where("timestamp", ">=", today)
-        );
+        // 1. FETCH LIVE LOAN SETTINGS FROM DATABASE
+        const grabSettingsDoc = await window.getDoc(window.doc(window.db, "settings", "grab_financials"));
+        if (grabSettingsDoc.exists()) {
+            let data = grabSettingsDoc.data();
+            grabCommissionPercent = data.commissionRate !== undefined ? data.commissionRate : 0.20;
+            grabLoanDeductionPercent = data.loanDeductionRate !== undefined ? data.loanDeductionRate : 0.10;
+            currentLoanBalance = data.remainingLoanBalance || 0;
+        }
+
+        // Update UI Setting Labels
+        if(document.getElementById('grabLoanRateDisplay')) document.getElementById('grabLoanRateDisplay').innerText = (grabLoanDeductionPercent * 100).toFixed(0);
+        if(document.getElementById('grabRemainingLoan')) document.getElementById('grabRemainingLoan').innerText = `₱${currentLoanBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+        // 2. FETCH TODAY'S GRAB TRANSACTIONS
+        let today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", today));
         const snap = await window.getDocs(q);
         
+        let branchData = {}; // Stores the individual branch totals
         let totalGrabGross = 0;
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
-            // Look for transactions where the cashier clicked the "Grab" payment button!
+            // Find all Grab sales that haven't been voided
             if (tx.status !== 'Voided' && tx.paymentMethod === 'Grab') {
-                totalGrabGross += (tx.netTotal || 0);
+                let branch = tx.branch || "Unknown";
+                let amount = tx.netTotal || 0;
+                
+                if(!branchData[branch]) branchData[branch] = 0;
+                branchData[branch] += amount;
+                totalGrabGross += amount;
             }
         });
 
-        // 🧮 THE MATHEMATICS
-        let commissionCut = totalGrabGross * grabCommissionPercent;
-        let loanCut = totalGrabGross * grabLoanDeductionPercent;
-        let netPayout = totalGrabGross - commissionCut - loanCut;
+        // 3. RENDER THE BRANCH BREAKDOWN TABLE
+        let breakdownHtml = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #e2e8f0; color: #64748b; text-align: left;">
+                        <th style="padding: 8px 0;">Branch</th>
+                        <th style="padding: 8px 0; text-align: right;">Grab Gross</th>
+                        <th style="padding: 8px 0; text-align: right;">Comm (-${(grabCommissionPercent*100).toFixed(0)}%)</th>
+                        <th style="padding: 8px 0; text-align: right; color: #00b14f;">Net Sales</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
 
-        // 📺 UPDATE THE DASHBOARD
-        if (document.getElementById('grabGrossSales')) {
-            document.getElementById('grabGrossSales').innerText = `₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-            document.getElementById('grabCommissionCut').innerText = `- ₱${commissionCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-            document.getElementById('grabLoanCut').innerText = `- ₱${loanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-            document.getElementById('grabNetPayout').innerText = `₱${netPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-            document.getElementById('grabLoanRunningTotal').innerText = `₱${loanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if (Object.keys(branchData).length === 0) {
+            breakdownHtml += `<tr><td colspan="4" style="padding: 10px 0; text-align: center; color: #94a3b8;">No Grab sales yet today.</td></tr>`;
+        } else {
+            // Calculate math for every individual branch
+            for (let branch in branchData) {
+                let gross = branchData[branch];
+                let comm = gross * grabCommissionPercent;
+                let net = gross - comm;
+                breakdownHtml += `
+                    <tr style="border-bottom: 1px dashed #e2e8f0;">
+                        <td style="padding: 8px 0; font-weight: 600; color: #334155;">${branch}</td>
+                        <td style="padding: 8px 0; text-align: right;">₱${gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        <td style="padding: 8px 0; text-align: right; color: #ef4444;">-₱${comm.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #00b14f;">₱${net.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    </tr>
+                `;
+            }
         }
+        breakdownHtml += `</tbody></table>`;
+        if(document.getElementById('grabBranchBreakdown')) document.getElementById('grabBranchBreakdown').innerHTML = breakdownHtml;
+
+        // 4. CALCULATE GLOBAL TOTALS
+        let globalCommission = totalGrabGross * grabCommissionPercent;
+        let globalLoanCut = totalGrabGross * grabLoanDeductionPercent;
+        let finalNetPayout = totalGrabGross - globalCommission - globalLoanCut;
+
+        // 5. UPDATE THE DOM TOTALS
+        if (document.getElementById('grabTotalGross')) document.getElementById('grabTotalGross').innerText = `₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if (document.getElementById('grabTotalLoanCut')) document.getElementById('grabTotalLoanCut').innerText = `- ₱${globalLoanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if (document.getElementById('grabTotalNetPayout')) document.getElementById('grabTotalNetPayout').innerText = `₱${finalNetPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
     } catch (error) {
         console.error("Error calculating Grab financials:", error);
+    }
+};
+
+// ==========================================
+// ⚙️ GRAB LOAN SETTINGS EDITOR
+// ==========================================
+window.editGrabLoanSettings = async function() {
+    // 1. Ask the boss for the exact contract details
+    let newLoanAmount = prompt("Enter your current remaining GRAB LOAN BALANCE (e.g., 50000):");
+    if (newLoanAmount === null) return; 
+    
+    let newDeductionRate = prompt("Enter the DAILY LOAN DEDUCTION PERCENTAGE (e.g., 10 for 10%):", "10");
+    if (newDeductionRate === null) return; 
+
+    let newCommissionRate = prompt("Enter Grab's STANDARD COMMISSION PERCENTAGE (e.g., 20 for 20%):", "20");
+    if (newCommissionRate === null) return; 
+
+    // Convert strings to safe decimals
+    let loanNum = parseFloat(newLoanAmount) || 0;
+    let dedRateNum = (parseFloat(newDeductionRate) || 0) / 100;
+    let commRateNum = (parseFloat(newCommissionRate) || 0) / 100;
+
+    try {
+        // 2. Save securely to the Firebase "settings" vault
+        await window.setDoc(window.doc(window.db, "settings", "grab_financials"), {
+            remainingLoanBalance: loanNum,
+            loanDeductionRate: dedRateNum,
+            commissionRate: commRateNum,
+            lastUpdated: window.serverTimestamp()
+        }, { merge: true }); 
+
+        alert(`✅ Grab Settings Successfully Updated!\n\nRemaining Loan: ₱${loanNum.toFixed(2)}\nDaily Deduction: ${dedRateNum*100}%\nGrab Commission: ${commRateNum*100}%`);
+        
+        // 3. Instantly refresh the UI to show the new math!
+        window.calculateGrabFinancials();
+
+    } catch (error) {
+        console.error("Error saving Grab settings:", error);
+        alert("❌ Failed to save settings. Check your database connection.");
     }
 };
