@@ -5139,3 +5139,125 @@ window.editGrabLoanSettings = async function() {
         alert("❌ Failed to save settings. Please ensure setDoc is initialized in your main.js.");
     }
 };
+
+// ==========================================
+// 🕒 THE TAKODEÁL PAYROLL PAIRING ENGINE
+// ==========================================
+
+// 1. Automatically snap date pickers to the 3rd and 17th Cutoffs
+window.setDefaultCutoffDates = function() {
+    let today = new Date();
+    let currentDay = today.getDate();
+    let start, end;
+
+    if (currentDay > 17) {
+        // We are in the 18th to end of month cycle (Payout on the 3rd)
+        start = new Date(today.getFullYear(), today.getMonth(), 18);
+        end = new Date(today.getFullYear(), today.getMonth() + 1, 3);
+    } else if (currentDay > 3) {
+        // We are in the 4th to 17th cycle (Payout on the 17th)
+        start = new Date(today.getFullYear(), today.getMonth(), 4);
+        end = new Date(today.getFullYear(), today.getMonth(), 17);
+    } else {
+        // We are in the 1st to 3rd cycle (Looking at last month's 18th to 3rd)
+        start = new Date(today.getFullYear(), today.getMonth() - 1, 18);
+        end = new Date(today.getFullYear(), today.getMonth(), 3);
+    }
+
+    // Format to YYYY-MM-DD for the HTML inputs
+    document.getElementById('cutoffStart').value = start.toISOString().split('T')[0];
+    document.getElementById('cutoffEnd').value = end.toISOString().split('T')[0];
+};
+
+// 2. The Master Pairing Engine
+window.generateAutoPayslips = async function() {
+    let startInput = document.getElementById('cutoffStart').value;
+    let endInput = document.getElementById('cutoffEnd').value;
+    let tableBody = document.querySelector('.auto-payslip-table tbody'); // Adjust selector to your HTML
+
+    if (!startInput || !endInput) return;
+
+    // Set end date to the very end of the day to catch 2 AM punch outs!
+    let startDate = new Date(startInput);
+    startDate.setHours(0, 0, 0, 0);
+    let endDate = new Date(endInput);
+    endDate.setHours(23, 59, 59, 999);
+
+    try {
+        // Fetch all attendance logs in this period
+        const q = window.query(
+            window.collection(window.db, "attendance_logs"),
+            window.where("timestamp", ">=", startDate),
+            window.where("timestamp", "<=", endDate),
+            window.orderBy("timestamp", "asc") // Must be in order to pair properly!
+        );
+        const snap = await window.getDocs(q);
+
+        let staffData = {}; // This will hold all calculated hours per staff
+        let activeShifts = {}; // Temporary holding pen for staff who clocked in but haven't clocked out
+
+        snap.forEach(docSnap => {
+            let log = docSnap.data();
+            let name = log.staffName;
+            let time = log.timestamp.toDate();
+
+            if (!staffData[name]) {
+                staffData[name] = { totalHours: 0, nightShifts: 0, nightBonusTotal: 0, branch: log.branch };
+            }
+
+            if (log.type === "TIME IN") {
+                // Put them in the holding pen
+                activeShifts[name] = time;
+            } 
+            else if (log.type === "TIME OUT" && activeShifts[name]) {
+                // They clocked out! Let's pair it up.
+                let timeIn = activeShifts[name];
+                let timeOut = time;
+                
+                // Calculate hours worked (Milliseconds to Hours)
+                let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
+                staffData[name].totalHours += hoursWorked;
+
+                // 🌙 THE TAKODEÁL NIGHT SHIFT BONUS LOGIC (12 AM to 3 AM+)
+                let outHour = timeOut.getHours();
+                // If they clocked out between Midnight (0) and 4 AM (3:59 AM)
+                if (outHour >= 0 && outHour <= 3) {
+                    staffData[name].nightShifts += 1;
+                    staffData[name].nightBonusTotal += 50; // Add the flat ₱50!
+                }
+
+                // Clear the holding pen for their next shift
+                delete activeShifts[name];
+            }
+        });
+
+        // 3. Render the Data to the Table!
+        let html = '';
+        if (Object.keys(staffData).length === 0) {
+            html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts found for this cutoff period.</td></tr>`;
+        } else {
+            for (let name in staffData) {
+                let data = staffData[name];
+                let bonusLabel = data.nightBonusTotal > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${data.nightBonusTotal} Night Bonus (${data.nightShifts} shifts)</span>` : '';
+                
+                html += `
+                    <tr style="border-bottom: 1px dashed #e2e8f0;">
+                        <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
+                        <td style="padding: 12px; color: #64748b;">${data.branch}</td>
+                        <td style="padding: 12px; font-weight: bold;">${data.totalHours.toFixed(2)} hrs ${bonusLabel}</td>
+                        <td style="padding: 12px; color: #ef4444;">Calculating...</td>
+                        <td style="padding: 12px;"><button style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer;">Process Pay</button></td>
+                    </tr>
+                `;
+            }
+        }
+        tableBody.innerHTML = html;
+
+    } catch (error) {
+        console.error("Payroll Engine Error:", error);
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Failed to calculate payroll. Check console.</td></tr>`;
+    }
+};
+
+// Run the date setter when the dashboard loads!
+window.setDefaultCutoffDates();
