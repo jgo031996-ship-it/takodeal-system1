@@ -4719,13 +4719,17 @@ window.loadPayrollGenerator = async function() {
 
 window.openPayslipModal = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
-    
-    // Save to global memory so the Finalize button can access it!
     window.currentPayslipData = data; 
     
+    // Safety check on hourly rate
+    if (!data.rate || data.rate === 0) {
+        alert(`⚠️ Warning: ${data.name} does not have an Hourly Rate set in their profile!\n\nThe basic pay will show as ₱0.00 until you update their Staff Profile.`);
+    }
+
     let basicPay = data.hours * data.rate;
-    let totalDeduct = data.advances + data.meals + data.loans;
-    let netPay = basicPay - totalDeduct;
+    let grossPay = basicPay + data.nightBonus;
+    let totalDeduct = data.advances + data.meals + data.loans + data.sss + data.pagibig + data.philhealth;
+    let netPay = grossPay - totalDeduct;
 
     document.getElementById('psName').innerText = data.name;
     document.getElementById('psBranch').innerText = data.branch;
@@ -4734,19 +4738,22 @@ window.openPayslipModal = function(encodedData) {
     document.getElementById('psDist').innerText = new Date().toISOString().split('T')[0];
     
     document.getElementById('psHired').innerText = data.profile.dateHired || '---';
-    document.getElementById('psSSS').innerText = data.profile.sss ? "Logged" : "0.00"; 
-    document.getElementById('psPhil').innerText = data.profile.philhealth ? "Logged" : "0.00";
-    document.getElementById('psPagibig').innerText = data.profile.pagibig ? "Logged" : "0.00";
-
+    
     document.getElementById('psHours').innerText = data.hours.toFixed(2);
     document.getElementById('psBasicPay').innerText = basicPay.toLocaleString(undefined, {minimumFractionDigits: 2});
-    document.getElementById('psGross').innerText = basicPay.toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    // We repurpose "Overtime" as the Night Bonus in the PDF layout for now
+    document.getElementById('psOvertime').innerText = data.nightBonus.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psGross').innerText = grossPay.toLocaleString(undefined, {minimumFractionDigits: 2});
     
     document.getElementById('psAdvance').innerText = data.advances.toLocaleString(undefined, {minimumFractionDigits: 2});
     document.getElementById('psFoods').innerText = data.meals.toLocaleString(undefined, {minimumFractionDigits: 2});
-    
-    // 🧠 Fill the new Loan field
     document.getElementById('psLoans').innerText = data.loans.toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    document.getElementById('psSSS').innerText = data.sss.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psPhil').innerText = data.philhealth.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psPagibig').innerText = data.pagibig.toLocaleString(undefined, {minimumFractionDigits: 2});
+
     document.getElementById('psTotalDeduct').innerText = totalDeduct.toLocaleString(undefined, {minimumFractionDigits: 2});
     document.getElementById('psNetPay').innerText = netPay.toLocaleString(undefined, {minimumFractionDigits: 2});
 
@@ -5141,7 +5148,7 @@ window.editGrabLoanSettings = async function() {
 };
 
 // ==========================================
-// 🕒 THE TAKODEÁL PAYROLL PAIRING ENGINE
+// 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
 
 // 1. Automatically snap date pickers to the 3rd and 17th Cutoffs
@@ -5173,10 +5180,10 @@ window.setDefaultCutoffDates = function() {
 window.generateAutoPayslips = async function() {
     let startInput = document.getElementById('cutoffStart').value;
     let endInput = document.getElementById('cutoffEnd').value;
-    let tableBody = document.getElementById('autoPayslipTableBody'); // Using the exact ID!
+    let tableBody = document.getElementById('payrollGeneratorBody'); // Matches your HTML!
 
     if (!tableBody) {
-        alert("Error: Cannot find the table. Make sure your tbody has the ID 'autoPayslipTableBody'.");
+        alert("Error: Cannot find the table. Make sure your tbody has the ID 'payrollGeneratorBody'.");
         return;
     }
 
@@ -5185,21 +5192,28 @@ window.generateAutoPayslips = async function() {
         return;
     }
 
-    // Show a loading message while it calculates
-    tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Payroll Data... Please Wait.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Payroll Data & Ledgers...</td></tr>`;
 
     let startDate = new Date(startInput); startDate.setHours(0, 0, 0, 0);
     let endDate = new Date(endInput); endDate.setHours(23, 59, 59, 999);
 
     try {
-        // 1. FETCH ALL ATTENDANCE LOGS
+        // 1. FETCH MASTER STAFF PROFILES & LEDGER BALANCES
+        const staffSnap = await getDocs(collection(db, "cashiers"));
+        const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
+        
+        let staffDict = {};
+        staffSnap.forEach(docSnap => { staffDict[docSnap.data().cashierName] = docSnap.data(); });
+        
+        let ledgerDict = {};
+        ledgerSnap.forEach(docSnap => { ledgerDict[docSnap.data().staffName] = { id: docSnap.id, ...docSnap.data() }; });
+
+        // 2. FETCH ATTENDANCE LOGS & ONE-TIME DEDUCTIONS
         const attQ = window.query(window.collection(window.db, "attendance_logs"), 
             window.where("timestamp", ">=", startDate), window.where("timestamp", "<=", endDate), window.orderBy("timestamp", "asc")
         );
         const attSnap = await window.getDocs(attQ);
 
-        // 2. FETCH ALL STAFF REQUESTS (Meals & Advances)
-        // We fetch by date, and we will filter for "Approved" locally to avoid Firebase Index errors
         const reqQ = window.query(window.collection(window.db, "staff_requests"), 
             window.where("timestamp", ">=", startDate), window.where("timestamp", "<=", endDate)
         );
@@ -5213,11 +5227,10 @@ window.generateAutoPayslips = async function() {
             let log = docSnap.data();
             let name = log.staffName;
             
-            // Set up their profile if they don't exist in the list yet
             if (!staffData[name]) {
                 staffData[name] = { 
                     branch: log.branch, totalHours: 0, nightShifts: 0, nightBonusTotal: 0, 
-                    foodDeductions: 0, cashAdvances: 0, sss: 0, pagibig: 0, philhealth: 0 // Gov Benefits ready for future!
+                    foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0
                 };
             }
 
@@ -5229,7 +5242,6 @@ window.generateAutoPayslips = async function() {
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 staffData[name].totalHours += hoursWorked;
 
-                // TAKODEÁL NIGHT SHIFT BONUS LOGIC (12 AM to 3 AM+)
                 let outHour = timeOut.getHours();
                 if (outHour >= 0 && outHour <= 3) {
                     staffData[name].nightShifts += 1;
@@ -5244,10 +5256,8 @@ window.generateAutoPayslips = async function() {
             let req = docSnap.data();
             let name = req.staffName;
 
-            // Only deduct if the boss explicitly Approved it!
             if (req.status === "Approved") {
-                // If they had a deduction but didn't clock in this period, create their profile anyway
-                if (!staffData[name]) staffData[name] = { branch: req.branch || "Unknown", totalHours: 0, nightShifts: 0, nightBonusTotal: 0, foodDeductions: 0, cashAdvances: 0, sss: 0, pagibig: 0, philhealth: 0 };
+                if (!staffData[name]) staffData[name] = { branch: req.branch || "Unknown", totalHours: 0, nightShifts: 0, nightBonusTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0 };
 
                 if (req.type === "Staff Meal") {
                     staffData[name].foodDeductions += (req.amount || 0);
@@ -5257,21 +5267,52 @@ window.generateAutoPayslips = async function() {
             }
         });
 
-        // --- PART C: RENDER TO THE DASHBOARD ---
+        // --- PART C: APPLY LEDGER AUTO-DEDUCTS & GOV BENEFITS ---
         let html = '';
         if (Object.keys(staffData).length === 0) {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
             for (let name in staffData) {
                 let d = staffData[name];
-                
-                // Labels for the UI
+                let profile = staffDict[name] || {};
+                let rate = profile.hourlyRate || 0; // Fallback to 0 if rate isn't set yet
+
+                // 🧠 The Auto-Deduct Math from the Ledger!
+                let loanData = ledgerDict[name];
+                let autoLoanDeduction = 0;
+                if (loanData) {
+                    let currentBalance = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
+                    if (currentBalance > 0) {
+                        let setRate = loanData.cutoffDeduction || 0;
+                        autoLoanDeduction = Math.min(setRate, currentBalance); // Never deduct more than they owe
+                        d.ledgerId = loanData.id;
+                    }
+                }
+                d.loans = autoLoanDeduction;
+
+                // Pull Gov Benefits from Profile
+                d.sss = profile.sssDeduction || 0;
+                d.pagibig = profile.pagibigDeduction || 0;
+                d.philhealth = profile.philhealthDeduction || 0;
+
+                // Calculate the final summary strings for the dashboard
+                let totalDeduct = d.foodDeductions + d.cashAdvances + d.loans + d.sss + d.pagibig + d.philhealth;
+
                 let bonusLabel = d.nightBonusTotal > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonusTotal} Night Bonus</span>` : '';
                 let foodLabel = d.foodDeductions > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.foodDeductions.toFixed(2)} (Meals)</span>` : '';
                 let valeLabel = d.cashAdvances > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.cashAdvances.toFixed(2)} (Vale)</span>` : '';
+                let loanLabel = d.loans > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.loans.toFixed(2)} (Ledger Auto-Deduct)</span>` : '';
                 
-                // Future Gov Benefits Label
-                let govLabel = `<br><span style="font-size:10px; color:#64748b;">Gov Benefits: Pending Profile Setup</span>`;
+                let govTotal = d.sss + d.pagibig + d.philhealth;
+                let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov Benefits)</span>` : `<br><span style="font-size:10px; color:#64748b;">Gov Benefits: Not Set</span>`;
+
+                // Package all this data so we can send it to the PDF builder
+                let encodedData = encodeURIComponent(JSON.stringify({
+                    name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal,
+                    advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
+                    sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth,
+                    rate: rate, start: startInput, end: endInput, profile: profile
+                }));
 
                 html += `
                     <tr style="border-bottom: 1px dashed #e2e8f0;">
@@ -5279,13 +5320,14 @@ window.generateAutoPayslips = async function() {
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${d.totalHours.toFixed(2)} hrs ${bonusLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">
-                            Total: ₱${(d.foodDeductions + d.cashAdvances).toFixed(2)}
+                            Total: ₱${totalDeduct.toFixed(2)}
                             ${foodLabel}
                             ${valeLabel}
+                            ${loanLabel}
                             ${govLabel}
                         </td>
                         <td style="padding: 12px;">
-                            <button style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold;">
+                            <button onclick="window.openPayslipModal('${encodedData}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold;">
                                 Generate PDF Payslip
                             </button>
                         </td>
