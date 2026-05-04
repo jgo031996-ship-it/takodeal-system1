@@ -4584,26 +4584,24 @@ window.setDefaultCutoffDates = function() {
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     
-    // Automatically aligns with the 3rd and 17th cutoff cycle
     let startDate = `${yyyy}-${mm}-03`;
     let endDate = `${yyyy}-${mm}-17`;
     
     if (today.getDate() > 17) {
-        // If we are past the 17th, the cutoff shifts to 18th to the 2nd
         startDate = `${yyyy}-${mm}-18`;
         let nextMonth = new Date(yyyy, today.getMonth() + 1, 2);
         endDate = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-02`;
     }
 
-    // 🔥 THE FIX: Using the exact IDs from your HTML
+    // 🔥 FIX 1: Strict safety checks so it never crashes if the HTML is slow to load!
     const startEl = document.getElementById('payrollStart');
     const endEl = document.getElementById('payrollEnd');
-    if(startEl) startEl.value = startDate;
-    if(endEl) endEl.value = endDate;
+    if (startEl) startEl.value = startDate;
+    if (endEl) endEl.value = endDate;
 };
 
-// Call it immediately so the dates populate when the app opens
-window.setDefaultCutoffDates();
+// Safe trigger
+try { window.setDefaultCutoffDates(); } catch(e) {}
 
 // ==========================================
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
@@ -5179,7 +5177,6 @@ window.setDefaultCutoffDates = function() {
 
 // 2. The Master Pairing Engine
 window.generateAutoPayslips = async function() {
-    // 🔥 THE FIX: Using the exact IDs from your HTML
     let startInput = document.getElementById('payrollStart').value;
     let endInput = document.getElementById('payrollEnd').value;
     let tableBody = document.getElementById('payrollGeneratorBody'); 
@@ -5199,10 +5196,8 @@ window.generateAutoPayslips = async function() {
     let startDate = new Date(startInput); startDate.setHours(0, 0, 0, 0);
     let endDate = new Date(endInput); endDate.setHours(23, 59, 59, 999);
 
-    // ... (Keep the rest of the try/catch block exactly the same!) ...
-
     try {
-        // 1. FETCH MASTER STAFF PROFILES & LEDGER BALANCES
+        // 🔥 FIX 2: Removed "window." from the Firebase commands for the Manager App!
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         
@@ -5212,16 +5207,16 @@ window.generateAutoPayslips = async function() {
         let ledgerDict = {};
         ledgerSnap.forEach(docSnap => { ledgerDict[docSnap.data().staffName] = { id: docSnap.id, ...docSnap.data() }; });
 
-        // 2. FETCH ATTENDANCE LOGS & ONE-TIME DEDUCTIONS
-        const attQ = window.query(window.collection(window.db, "attendance_logs"), 
-            window.where("timestamp", ">=", startDate), window.where("timestamp", "<=", endDate), window.orderBy("timestamp", "asc")
+        // Removed "window." from query, collection, where, and orderBy
+        const attQ = query(collection(db, "attendance_logs"), 
+            where("timestamp", ">=", startDate), where("timestamp", "<=", endDate), orderBy("timestamp", "asc")
         );
-        const attSnap = await window.getDocs(attQ);
+        const attSnap = await getDocs(attQ);
 
-        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
-            window.where("timestamp", ">=", startDate), window.where("timestamp", "<=", endDate)
+        const reqQ = query(collection(db, "staff_requests"), 
+            where("timestamp", ">=", startDate), where("timestamp", "<=", endDate)
         );
-        const reqSnap = await window.getDocs(reqQ);
+        const reqSnap = await getDocs(reqQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
@@ -5279,16 +5274,16 @@ window.generateAutoPayslips = async function() {
             for (let name in staffData) {
                 let d = staffData[name];
                 let profile = staffDict[name] || {};
-                let rate = profile.hourlyRate || 0; // Fallback to 0 if rate isn't set yet
+                let rate = profile.hourlyRate || 0; 
 
-                // 🧠 The Auto-Deduct Math from the Ledger!
+                // 🧠 Auto-Deduct Math from the Ledger!
                 let loanData = ledgerDict[name];
                 let autoLoanDeduction = 0;
                 if (loanData) {
                     let currentBalance = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
                     if (currentBalance > 0) {
                         let setRate = loanData.cutoffDeduction || 0;
-                        autoLoanDeduction = Math.min(setRate, currentBalance); // Never deduct more than they owe
+                        autoLoanDeduction = Math.min(setRate, currentBalance); 
                         d.ledgerId = loanData.id;
                     }
                 }
@@ -5299,7 +5294,6 @@ window.generateAutoPayslips = async function() {
                 d.pagibig = profile.pagibigDeduction || 0;
                 d.philhealth = profile.philhealthDeduction || 0;
 
-                // Calculate the final summary strings for the dashboard
                 let totalDeduct = d.foodDeductions + d.cashAdvances + d.loans + d.sss + d.pagibig + d.philhealth;
 
                 let bonusLabel = d.nightBonusTotal > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonusTotal} Night Bonus</span>` : '';
@@ -5310,7 +5304,6 @@ window.generateAutoPayslips = async function() {
                 let govTotal = d.sss + d.pagibig + d.philhealth;
                 let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov Benefits)</span>` : `<br><span style="font-size:10px; color:#64748b;">Gov Benefits: Not Set</span>`;
 
-                // Package all this data so we can send it to the PDF builder
                 let encodedData = encodeURIComponent(JSON.stringify({
                     name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal,
                     advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
