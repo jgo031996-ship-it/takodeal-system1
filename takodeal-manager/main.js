@@ -5173,80 +5173,122 @@ window.setDefaultCutoffDates = function() {
 window.generateAutoPayslips = async function() {
     let startInput = document.getElementById('cutoffStart').value;
     let endInput = document.getElementById('cutoffEnd').value;
-    let tableBody = document.querySelector('.auto-payslip-table tbody'); // Adjust selector to your HTML
+    let tableBody = document.getElementById('autoPayslipTableBody'); // Using the exact ID!
 
-    if (!startInput || !endInput) return;
+    if (!tableBody) {
+        alert("Error: Cannot find the table. Make sure your tbody has the ID 'autoPayslipTableBody'.");
+        return;
+    }
 
-    // Set end date to the very end of the day to catch 2 AM punch outs!
-    let startDate = new Date(startInput);
-    startDate.setHours(0, 0, 0, 0);
-    let endDate = new Date(endInput);
-    endDate.setHours(23, 59, 59, 999);
+    if (!startInput || !endInput) {
+        alert("Please select both Cutoff Start and End dates.");
+        return;
+    }
+
+    // Show a loading message while it calculates
+    tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Payroll Data... Please Wait.</td></tr>`;
+
+    let startDate = new Date(startInput); startDate.setHours(0, 0, 0, 0);
+    let endDate = new Date(endInput); endDate.setHours(23, 59, 59, 999);
 
     try {
-        // Fetch all attendance logs in this period
-        const q = window.query(
-            window.collection(window.db, "attendance_logs"),
-            window.where("timestamp", ">=", startDate),
-            window.where("timestamp", "<=", endDate),
-            window.orderBy("timestamp", "asc") // Must be in order to pair properly!
+        // 1. FETCH ALL ATTENDANCE LOGS
+        const attQ = window.query(window.collection(window.db, "attendance_logs"), 
+            window.where("timestamp", ">=", startDate), window.where("timestamp", "<=", endDate), window.orderBy("timestamp", "asc")
         );
-        const snap = await window.getDocs(q);
+        const attSnap = await window.getDocs(attQ);
 
-        let staffData = {}; // This will hold all calculated hours per staff
-        let activeShifts = {}; // Temporary holding pen for staff who clocked in but haven't clocked out
+        // 2. FETCH ALL STAFF REQUESTS (Meals & Advances)
+        // We fetch by date, and we will filter for "Approved" locally to avoid Firebase Index errors
+        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
+            window.where("timestamp", ">=", startDate), window.where("timestamp", "<=", endDate)
+        );
+        const reqSnap = await window.getDocs(reqQ);
 
-        snap.forEach(docSnap => {
+        let staffData = {}; 
+        let activeShifts = {}; 
+
+        // --- PART A: CALCULATE HOURS & NIGHT BONUS ---
+        attSnap.forEach(docSnap => {
             let log = docSnap.data();
             let name = log.staffName;
-            let time = log.timestamp.toDate();
-
+            
+            // Set up their profile if they don't exist in the list yet
             if (!staffData[name]) {
-                staffData[name] = { totalHours: 0, nightShifts: 0, nightBonusTotal: 0, branch: log.branch };
+                staffData[name] = { 
+                    branch: log.branch, totalHours: 0, nightShifts: 0, nightBonusTotal: 0, 
+                    foodDeductions: 0, cashAdvances: 0, sss: 0, pagibig: 0, philhealth: 0 // Gov Benefits ready for future!
+                };
             }
 
             if (log.type === "TIME IN") {
-                // Put them in the holding pen
-                activeShifts[name] = time;
-            } 
-            else if (log.type === "TIME OUT" && activeShifts[name]) {
-                // They clocked out! Let's pair it up.
+                activeShifts[name] = log.timestamp.toDate();
+            } else if (log.type === "TIME OUT" && activeShifts[name]) {
                 let timeIn = activeShifts[name];
-                let timeOut = time;
-                
-                // Calculate hours worked (Milliseconds to Hours)
+                let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 staffData[name].totalHours += hoursWorked;
 
-                // 🌙 THE TAKODEÁL NIGHT SHIFT BONUS LOGIC (12 AM to 3 AM+)
+                // TAKODEÁL NIGHT SHIFT BONUS LOGIC (12 AM to 3 AM+)
                 let outHour = timeOut.getHours();
-                // If they clocked out between Midnight (0) and 4 AM (3:59 AM)
                 if (outHour >= 0 && outHour <= 3) {
                     staffData[name].nightShifts += 1;
-                    staffData[name].nightBonusTotal += 50; // Add the flat ₱50!
+                    staffData[name].nightBonusTotal += 50; 
                 }
-
-                // Clear the holding pen for their next shift
                 delete activeShifts[name];
             }
         });
 
-        // 3. Render the Data to the Table!
+        // --- PART B: CALCULATE APPROVED DEDUCTIONS ---
+        reqSnap.forEach(docSnap => {
+            let req = docSnap.data();
+            let name = req.staffName;
+
+            // Only deduct if the boss explicitly Approved it!
+            if (req.status === "Approved") {
+                // If they had a deduction but didn't clock in this period, create their profile anyway
+                if (!staffData[name]) staffData[name] = { branch: req.branch || "Unknown", totalHours: 0, nightShifts: 0, nightBonusTotal: 0, foodDeductions: 0, cashAdvances: 0, sss: 0, pagibig: 0, philhealth: 0 };
+
+                if (req.type === "Staff Meal") {
+                    staffData[name].foodDeductions += (req.amount || 0);
+                } else if (req.type === "Cash Advance") {
+                    staffData[name].cashAdvances += (req.amount || 0);
+                }
+            }
+        });
+
+        // --- PART C: RENDER TO THE DASHBOARD ---
         let html = '';
         if (Object.keys(staffData).length === 0) {
-            html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts found for this cutoff period.</td></tr>`;
+            html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
             for (let name in staffData) {
-                let data = staffData[name];
-                let bonusLabel = data.nightBonusTotal > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${data.nightBonusTotal} Night Bonus (${data.nightShifts} shifts)</span>` : '';
+                let d = staffData[name];
                 
+                // Labels for the UI
+                let bonusLabel = d.nightBonusTotal > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonusTotal} Night Bonus</span>` : '';
+                let foodLabel = d.foodDeductions > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.foodDeductions.toFixed(2)} (Meals)</span>` : '';
+                let valeLabel = d.cashAdvances > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.cashAdvances.toFixed(2)} (Vale)</span>` : '';
+                
+                // Future Gov Benefits Label
+                let govLabel = `<br><span style="font-size:10px; color:#64748b;">Gov Benefits: Pending Profile Setup</span>`;
+
                 html += `
                     <tr style="border-bottom: 1px dashed #e2e8f0;">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
-                        <td style="padding: 12px; color: #64748b;">${data.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${data.totalHours.toFixed(2)} hrs ${bonusLabel}</td>
-                        <td style="padding: 12px; color: #ef4444;">Calculating...</td>
-                        <td style="padding: 12px;"><button style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer;">Process Pay</button></td>
+                        <td style="padding: 12px; color: #64748b;">${d.branch}</td>
+                        <td style="padding: 12px; font-weight: bold;">${d.totalHours.toFixed(2)} hrs ${bonusLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">
+                            Total: ₱${(d.foodDeductions + d.cashAdvances).toFixed(2)}
+                            ${foodLabel}
+                            ${valeLabel}
+                            ${govLabel}
+                        </td>
+                        <td style="padding: 12px;">
+                            <button style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold;">
+                                Generate PDF Payslip
+                            </button>
+                        </td>
                     </tr>
                 `;
             }
@@ -5255,7 +5297,7 @@ window.generateAutoPayslips = async function() {
 
     } catch (error) {
         console.error("Payroll Engine Error:", error);
-        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Failed to calculate payroll. Check console.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding: 20px;">Failed to calculate payroll. Check Developer Console (F12).</td></tr>`;
     }
 };
 
