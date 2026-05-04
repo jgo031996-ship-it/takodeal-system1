@@ -5001,3 +5001,56 @@ window.adjustStaffLoan = async function(staffId, staffName, currentLoan, current
         alert("❌ Failed to adjust database. Check F12 Console.");
     }
 };
+
+// ==========================================
+// 🟢 GRAB FINANCIAL & LOAN RECONCILIATION ENGINE
+// ==========================================
+window.calculateGrabFinancials = async function() {
+    // ⚙️ YOUR GRAB CONTRACT SETTINGS (Change these if your contract differs!)
+    const grabCommissionPercent = 0.20; // 20% Standard Grab cut
+    const grabLoanDeductionPercent = 0.10; // 10% daily loan deduction
+    
+    // Update the UI labels so you always know what % is active
+    if(document.getElementById('grabCommRateDisplay')) document.getElementById('grabCommRateDisplay').innerText = (grabCommissionPercent * 100);
+    if(document.getElementById('grabLoanRateDisplay')) document.getElementById('grabLoanRateDisplay').innerText = (grabLoanDeductionPercent * 100);
+
+    // Get today's timestamp limit
+    let today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    try {
+        // Query ALL transactions from ALL branches today
+        const q = window.query(
+            window.collection(window.db, "transactions"), 
+            window.where("timestamp", ">=", today)
+        );
+        const snap = await window.getDocs(q);
+        
+        let totalGrabGross = 0;
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            // Look for transactions where the cashier clicked the "Grab" payment button!
+            if (tx.status !== 'Voided' && tx.paymentMethod === 'Grab') {
+                totalGrabGross += (tx.netTotal || 0);
+            }
+        });
+
+        // 🧮 THE MATHEMATICS
+        let commissionCut = totalGrabGross * grabCommissionPercent;
+        let loanCut = totalGrabGross * grabLoanDeductionPercent;
+        let netPayout = totalGrabGross - commissionCut - loanCut;
+
+        // 📺 UPDATE THE DASHBOARD
+        if (document.getElementById('grabGrossSales')) {
+            document.getElementById('grabGrossSales').innerText = `₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            document.getElementById('grabCommissionCut').innerText = `- ₱${commissionCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            document.getElementById('grabLoanCut').innerText = `- ₱${loanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            document.getElementById('grabNetPayout').innerText = `₱${netPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            document.getElementById('grabLoanRunningTotal').innerText = `₱${loanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        }
+
+    } catch (error) {
+        console.error("Error calculating Grab financials:", error);
+    }
+};
