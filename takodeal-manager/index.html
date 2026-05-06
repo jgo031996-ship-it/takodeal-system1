@@ -1165,6 +1165,42 @@
     </div>
 
     <div id="view-dispatch" class="view">
+      <div class="card" style="margin-bottom: 20px; border-left: 4px solid #8b5cf6;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0; color: #6d28d9;">🧠 Smart Supply Chain Analytics</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Calculates 7-Day Average Burn Rate to predict when branches will run out of stock.</span>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <select id="burnRateBranch" style="padding: 10px; border-radius: 6px; border: 1px solid var(--border); font-weight: bold; outline: none;" onchange="window.loadSmartSupplyChain()">
+              <option value="">-- Select Branch to Analyze --</option>
+              <option value="Cabantian">Cabantian</option>
+              <option value="Citygate">Citygate</option>
+              <option value="Maa">Maa</option>
+            </select>
+            <button class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px;" onclick="window.loadSmartSupplyChain()">🔄 Calculate</button>
+          </div>
+        </div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="data-table">
+            <thead style="background: #f8fafc;">
+              <tr>
+                <th>Ingredient / Item</th>
+                <th>Current Stock</th>
+                <th>7-Day Total Burn</th>
+                <th style="color: #ea580c;">Daily Burn Rate</th>
+                <th style="color: #6d28d9;">Estimated Days Left</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="burnRateTableBody">
+              <tr>
+                <td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8;">Select a branch and click Calculate to run the AI Supply Chain Engine.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
       <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
 
         <div class="card" style="margin-bottom: 0;">
@@ -1256,46 +1292,6 @@
         </div>
       </div>
     </div>
-    
-      <div id="view-dispatch" class="view">
-
-      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;"><div class="card" style="margin-bottom: 20px; border-left: 4px solid #8b5cf6;">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h2 style="margin: 0; color: #6d28d9;">🧠 Smart Supply Chain Analytics</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Calculates 7-Day Average Burn Rate to predict when branches will run out of stock.</span>
-          </div>
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <select id="burnRateBranch" style="padding: 10px; border-radius: 6px; border: 1px solid var(--border); font-weight: bold; outline: none;" onchange="window.loadSmartSupplyChain()">
-              <option value="">-- Select Branch to Analyze --</option>
-              <option value="Cabantian">Cabantian</option>
-              <option value="Citygate">Citygate</option>
-              <option value="Maa">Maa</option>
-            </select>
-            <button class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px;" onclick="window.loadSmartSupplyChain()">🔄 Calculate</button>
-          </div>
-        </div>
-        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-          <table class="data-table">
-            <thead style="background: #f8fafc;">
-              <tr>
-                <th>Ingredient / Item</th>
-                <th>Current Stock</th>
-                <th>7-Day Total Burn</th>
-                <th style="color: #ea580c;">Daily Burn Rate</th>
-                <th style="color: #6d28d9;">Estimated Days Left</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="burnRateTableBody">
-              <tr>
-                <td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8;">Select a branch and click Calculate to run the AI Supply Chain Engine.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    
 
     <div id="view-alerts" class="view">
       <div class="card">
