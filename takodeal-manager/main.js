@@ -3770,12 +3770,15 @@ window.updateReceiptPreview = function() {
 
 // 2. Save to Cloud
 window.saveReceiptSettings = async function() {
+    // 🔥 THE FIX: Safely check if the address box exists before reading it!
+    let addressBox = document.getElementById('rcptAddress');
+    
     const rSettings = {
-        logoBase64: document.getElementById('logoBase64Val').value,
-        storeName: document.getElementById('rcptName').value,
-        address: document.getElementById('rcptAddress').value,
-        contact: document.getElementById('rcptContact').value,
-        footerMessage: document.getElementById('rcptFooter').value,
+        logoBase64: document.getElementById('logoBase64Val').value || '',
+        storeName: document.getElementById('rcptName').value || '',
+        address: addressBox ? addressBox.value : '', // No crash here anymore!
+        contact: document.getElementById('rcptContact').value || '',
+        footerMessage: document.getElementById('rcptFooter').value || '',
         updatedAt: serverTimestamp()
     };
     
