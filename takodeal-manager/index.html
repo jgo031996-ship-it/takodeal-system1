@@ -1165,95 +1165,7 @@
     </div>
 
     <div id="view-dispatch" class="view">
-      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
-        <div class="card" style="margin-bottom: 0;">
-          <div class="card-header">
-            <h2>🚚 Send Stock to Branch</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Transfer raw materials from Main Office to
-              branches.</span>
-          </div>
-          <div style="padding: 24px;">
-            <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
-              <div style="flex: 1; min-width: 200px;">
-                <label
-                  style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">From
-                  (Source)</label>
-                <select id="dispFrom"
-                  style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold;"
-                  onchange="loadDispatchInventory()"></select>
-              </div>
-              <div style="flex: 1; min-width: 200px;">
-                <label
-                  style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">To
-                  (Destination)</label>
-                <select id="dispTo"
-                  style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; border-color: var(--primary);"></select>
-              </div>
-            </div>
-
-            <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;">
-              <div style="flex: 2; min-width: 200px;">
-                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Item to Send</label>
-                <select id="dispItem" onchange="updateDispatchUomLabel()" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;">
-                  <option value="">Loading stock...</option>
-                </select>
-              </div>
-              <div style="flex: 1; min-width: 150px;">
-                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Quantity</label>
-                <div style="display: flex; gap: 5px;">
-                  <input type="number" id="dispQty" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;" placeholder="0">
-                  <select id="dispUomSelect" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; color: var(--primary); background: #f8fafc; outline: none;">
-                     <option value="base">Units</option>
-                  </select>
-                </div>
-              </div>
-              <button onclick="addToDispatchCart()"
-                style="background: var(--sidebar-bg); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 38px;">➕
-                Add</button>
-            </div>
-
-            <table class="data-table"
-              style="background: white; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: 100%; margin-bottom: 20px;">
-              <thead style="background: #fafafa;">
-                <tr>
-                  <th>Item</th>
-                  <th>Qty to Send</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="dispatchCartBody">
-                <tr>
-                  <td colspan="3" class="text-center">Cart is empty.</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <button onclick="submitMultiDispatch()" id="btnSubmitDispatch"
-              style="width: 100%; background: var(--primary); color: white; border: none; padding: 14px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">🚀
-              Send Dispatch Delivery</button>
-          </div>
-        </div>
-
-        <div class="card" style="margin-bottom: 0;">
-          <div class="card-header">
-            <h2>📜 Recent Deliveries</h2>
-          </div>
-          <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody id="dispatchLogBody">
-                <tr>
-                  <td class="text-center">Loading logs...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      
       <div class="card" style="margin-bottom: 20px; border-left: 4px solid #8b5cf6;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
           <div>
@@ -1288,6 +1200,83 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+        <div class="card" style="margin-bottom: 0;">
+          <div class="card-header">
+            <h2>🚚 Send Stock to Branch</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Transfer raw materials from Main Office to branches.</span>
+          </div>
+          <div style="padding: 24px;">
+            <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 200px;">
+                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">From (Source)</label>
+                <select id="dispFrom" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold;" onchange="loadDispatchInventory()"></select>
+              </div>
+              <div style="flex: 1; min-width: 200px;">
+                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">To (Destination)</label>
+                <select id="dispTo" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; border-color: var(--primary);"></select>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;">
+              <div style="flex: 2; min-width: 200px;">
+                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Item to Send</label>
+                <select id="dispItem" onchange="updateDispatchUomLabel()" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;">
+                  <option value="">Loading stock...</option>
+                </select>
+              </div>
+              <div style="flex: 1; min-width: 150px;">
+                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Quantity</label>
+                <div style="display: flex; gap: 5px;">
+                  <input type="number" id="dispQty" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;" placeholder="0">
+                  <select id="dispUomSelect" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; color: var(--primary); background: #f8fafc; outline: none;">
+                     <option value="base">Units</option>
+                  </select>
+                </div>
+              </div>
+              <button onclick="addToDispatchCart()" style="background: var(--sidebar-bg); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 38px;">➕ Add</button>
+            </div>
+
+            <table class="data-table" style="background: white; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: 100%; margin-bottom: 20px;">
+              <thead style="background: #fafafa;">
+                <tr>
+                  <th>Item</th>
+                  <th>Qty to Send</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="dispatchCartBody">
+                <tr>
+                  <td colspan="3" class="text-center">Cart is empty.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <button onclick="submitMultiDispatch()" id="btnSubmitDispatch" style="width: 100%; background: var(--primary); color: white; border: none; padding: 14px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">🚀 Send Dispatch Delivery</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 0;">
+          <div class="card-header">
+            <h2>📜 Recent Deliveries</h2>
+          </div>
+          <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="dispatchLogBody">
+                <tr>
+                  <td class="text-center">Loading logs...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
