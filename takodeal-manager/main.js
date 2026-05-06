@@ -457,7 +457,7 @@ window.saveEmployeeProfile = async function() {
         gotymeNum: document.getElementById('empGotymeNum').value.trim(),
         sss: document.getElementById('empSSS').value.trim(),
         philhealth: document.getElementById('empPhilhealth').value.trim(),
-        pagibig: document.getElementById('empPagibig').value.trim()
+        pagibig: document.getElementById('empPagibig').value.trim(),
         scheduleName: document.getElementById('empScheduleName').value.trim(),
       
     };
