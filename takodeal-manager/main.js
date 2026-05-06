@@ -3798,11 +3798,10 @@ window.loadAttendanceLogs = async function () {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">Fetching logs & checking schedules...</td></tr>';
 
     try {
-        // 1. Fetch the Live Logs (FIXED: Removed "window." prefixes)
+        // 🔥 FIX 1: Removed ALL "window." prefixes from Firebase commands!
         const q = query(collection(db, "attendance_logs"), orderBy("timestamp", "desc"), limit(30));
         const snap = await getDocs(q);
 
-        // 2. Fetch the Schedule & Staff Profiles for cross-referencing
         let scheduleData = null;
         try {
             const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
@@ -3813,11 +3812,9 @@ window.loadAttendanceLogs = async function () {
         const staffSnap = await getDocs(collection(db, "cashiers"));
         staffSnap.forEach(docSnap => {
             let d = docSnap.data();
-            // Map their full name to their Schedule Nickname!
             staffProfiles[d.cashierName] = d.scheduleNickname || d.cashierName; 
         });
 
-        // 🧠 SMART PARSER: Converts "9am", "12nn", "4:30pm" into decimals
         const parseTimeStr = (timeStr) => {
             let t = timeStr.toLowerCase().replace(/\s/g, '');
             let isPM = t.includes('pm');
@@ -3844,7 +3841,6 @@ window.loadAttendanceLogs = async function () {
             
             let lateTag = '';
 
-            // 🔥 THE LATE DETECTOR ENGINE 🔥
             if (data.type === "TIME IN" && scheduleData && scheduleData.currentSchedule) {
                 let logDay = logDate.getDate();
                 let logMonth = logDate.getMonth() + 1;
@@ -3870,7 +3866,6 @@ window.loadAttendanceLogs = async function () {
                                         let diffHours = actualHour - expectedStartHour;
                                         let lateMinutes = Math.floor(diffHours * 60);
                                         
-                                        // ⏳ GRACE PERIOD: 5 Minutes
                                         if (lateMinutes > 5) {
                                             lateTag = `<br><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">⏰ LATE (${lateMinutes} mins)</span>`;
                                         }
@@ -4806,10 +4801,10 @@ window.openPayslipModal = function(encodedData) {
     
     // Safety check on hourly rate
     if (!data.rate || data.rate === 0) {
-        alert(`⚠️ Warning: ${data.name} does not have an Hourly Rate set in their profile!\n\nThe basic pay will show as ₱0.00 until you update their Staff Profile.`);
+        alert(`⚠️ Warning: ${data.name} does not have a Daily Rate set in their profile!`);
     }
 
-    let basicPay = data.hours * data.rate;
+    let basicPay = data.basicPay || 0;
     let grossPay = basicPay + data.nightBonus;
     let totalDeduct = data.advances + data.meals + data.loans + data.sss + data.pagibig + data.philhealth;
     let netPay = grossPay - totalDeduct;
@@ -4822,7 +4817,7 @@ window.openPayslipModal = function(encodedData) {
     
     document.getElementById('psHired').innerText = data.profile.dateHired || '---';
     
-    document.getElementById('psHours').innerText = data.hours.toFixed(2);
+    document.getElementById('psHours').innerText = `${data.hours.toFixed(2)} hrs (${data.shiftsWorked || 0} days)`;
     document.getElementById('psBasicPay').innerText = basicPay.toLocaleString(undefined, {minimumFractionDigits: 2});
     
     // We repurpose "Overtime" as the Night Bonus in the PDF layout for now
@@ -5280,14 +5275,14 @@ window.generateAutoPayslips = async function() {
         let staffData = {}; 
         let activeShifts = {}; 
 
-        // --- PART A: CALCULATE HOURS & NIGHT BONUS ---
+        // --- PART A: CALCULATE SHIFTS, HOURS & NIGHT BONUS ---
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
             let name = log.staffName;
             
             if (!staffData[name]) {
                 staffData[name] = { 
-                    branch: log.branch, totalHours: 0, nightShifts: 0, nightBonusTotal: 0, 
+                    branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, 
                     foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0
                 };
             }
@@ -5297,8 +5292,13 @@ window.generateAutoPayslips = async function() {
             } else if (log.type === "TIME OUT" && activeShifts[name]) {
                 let timeIn = activeShifts[name];
                 let timeOut = log.timestamp.toDate();
+                
+                // Track hours just for your personal reporting
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 staffData[name].totalHours += hoursWorked;
+                
+                // 🔥 DAILY RATE FIX: We count 1 fully completed shift!
+                staffData[name].shiftsWorked += 1; 
 
                 let outHour = timeOut.getHours();
                 if (outHour >= 0 && outHour <= 3) {
@@ -5333,7 +5333,7 @@ window.generateAutoPayslips = async function() {
             for (let name in staffData) {
                 let d = staffData[name];
                 let profile = staffDict[name] || {};
-                let rate = profile.hourlyRate || 0; 
+                let dailyRate = profile.hourlyRate || 0; 
 
                 // 🧠 Auto-Deduct Math from the Ledger!
                 let loanData = ledgerDict[name];
@@ -5349,6 +5349,7 @@ window.generateAutoPayslips = async function() {
                 d.loans = autoLoanDeduction;
 
                 // Pull Gov Benefits from Profile
+                d.basicPay = d.shiftsWorked * dailyRate;
                 d.sss = profile.sssDeduction || 0;
                 d.pagibig = profile.pagibigDeduction || 0;
                 d.philhealth = profile.philhealthDeduction || 0;
