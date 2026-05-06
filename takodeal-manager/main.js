@@ -855,6 +855,123 @@ window.loadDispatchDashboard = async function() {
   await loadDispatchLogs();
 };
 
+// ========================================================
+// 🧠 PHASE 5: SMART BURN RATE & SUPPLY CHAIN ENGINE
+// ========================================================
+window.loadSmartSupplyChain = async function() {
+    let branch = document.getElementById('burnRateBranch').value;
+    let tbody = document.getElementById('burnRateTableBody');
+
+    if (!branch) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; font-weight: bold; color: #8b5cf6;">⏳ Crunching 7 days of sales & recipes...</td></tr>';
+
+    try {
+        // 1. Calculate the date exactly 7 days ago
+        let endDate = new Date();
+        let startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+
+        // 2. Fetch the last 7 Days of Transactions for this branch
+        const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startDate));
+        const txSnap = await getDocs(txQ);
+
+        let itemSalesCount = {};
+        let rawBurnData = {};
+
+        // 3. Count exactly how many of each menu item was sold
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (tx.status !== 'Voided') {
+                tx.cart.forEach(item => {
+                    let name = item.name || item.itemName;
+                    let qtySold = item.qty || 1;
+                    itemSalesCount[name] = (itemSalesCount[name] || 0) + qtySold;
+
+                    // 🔥 Calculate Add-On Consumption!
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            let addon = item.addons[key];
+                            if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                let addonBurn = addon.deductQty * addon.qty * qtySold;
+                                rawBurnData[addon.linkedIngredient] = (rawBurnData[addon.linkedIngredient] || 0) + addonBurn;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        // 4. Translate Menu Items into Raw Ingredients using the BOM (Recipe Matrix)
+        const bomSnap = await getDocs(collection(db, "bom"));
+        bomSnap.forEach(doc => {
+            let recipe = doc.data();
+            if (itemSalesCount[recipe.menuItem]) {
+                let amountBurned = (recipe.qty || 0) * itemSalesCount[recipe.menuItem];
+                rawBurnData[recipe.ingredientName] = (rawBurnData[recipe.ingredientName] || 0) + amountBurned;
+            }
+        });
+
+        // 5. Fetch the Live Inventory for the branch to compare
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
+        const invSnap = await getDocs(invQ);
+        
+        let html = '';
+        let itemsAnalyzed = 0;
+
+        invSnap.forEach(doc => {
+            let invItem = doc.data();
+            let itemName = invItem.name;
+            let currentStock = invItem.currentStock || 0;
+            let uom = invItem.uom || 'units';
+            
+            // Look up how much of this item was burned in the last 7 days
+            let totalBurn7Days = rawBurnData[itemName] || 0;
+            
+            // Only show items that are actually being consumed or have low stock
+            if (totalBurn7Days > 0 || currentStock <= (invItem.reorderLevel || 5)) {
+                itemsAnalyzed++;
+                
+                let dailyBurn = totalBurn7Days / 7;
+                let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : 999;
+                
+                // Color coding logic for Days Left
+                let daysColor = "#16a34a"; // Green (Safe)
+                let daysText = Math.floor(daysLeft) + " days";
+                
+                if (daysLeft <= 0) { daysColor = "#dc2626"; daysText = "OUT OF STOCK!"; }
+                else if (daysLeft < 3) { daysColor = "#ea580c"; daysText = Math.floor(daysLeft) + " days (CRITICAL)"; }
+                else if (daysLeft === 999) { daysColor = "#94a3b8"; daysText = "No Burn Data"; }
+
+                html += `
+                    <tr style="border-bottom: 1px dashed #e2e8f0;">
+                        <td style="font-weight: bold; color: #334155;">${itemName}</td>
+                        <td style="font-weight: bold; font-size: 15px;">${currentStock.toFixed(1)} <span style="font-size:11px; color:#64748b; font-weight:normal;">${uom}</span></td>
+                        <td>${totalBurn7Days.toFixed(1)} ${uom}</td>
+                        <td style="color: #ea580c; font-weight: bold;">${dailyBurn.toFixed(2)} ${uom}/day</td>
+                        <td style="color: ${daysColor}; font-weight: bold; font-size: 15px;">${daysText}</td>
+                        <td>
+                            <button onclick="document.getElementById('dispItem').value='${itemName}'; window.updateDispatchUomLabel(); window.scrollTo(0,0);" 
+                                style="background: white; border: 1px solid #8b5cf6; color: #8b5cf6; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
+                                📦 Send Stock
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+
+        if (itemsAnalyzed === 0) {
+            html = '<tr><td colspan="6" class="text-center" style="padding: 20px; color: #64748b;">Not enough sales data to calculate Burn Rate for this branch yet.</td></tr>';
+        }
+
+        tbody.innerHTML = html;
+
+    } catch (e) {
+        console.error("Supply Chain Engine Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error calculating supply chain metrics.</td></tr>';
+    }
+};
+
 window.loadDispatchInventory = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
   let drop = document.getElementById('dispItem');
