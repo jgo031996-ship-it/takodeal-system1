@@ -2543,7 +2543,27 @@
     function setPaymentMethod(btn, method) { document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); selectedPaymentMethod = method; }
 
     async function submitFinalOrder() {
-      const btn = document.getElementById('btnSubmitFinal'); btn.innerText = "Processing..."; btn.disabled = true;
+      const btn = document.getElementById('btnSubmitFinal'); 
+      btn.innerText = "⏳ Checking Live Stock..."; 
+      btn.disabled = true;
+
+      // 🔥 NEW: PHASE 4 PRE-FLIGHT CHECK 🔥
+      let stockWarnings = await window.validateStockLevels(cart);
+      
+      if (stockWarnings.length > 0) {
+          // We use 'confirm' so the cashier isn't completely blocked during a rush, 
+          // but they are heavily warned that they need to prep more food!
+          let proceed = confirm("⚠️ NEGATIVE STOCK WARNING ⚠️\n\nThe following items will run out of stock if you process this order:\n\n" + stockWarnings.join("\n") + "\n\nDo you want to proceed anyway? (You will need to log a Kitchen Prep Batch immediately to fix the negative numbers).");
+          
+          if (!proceed) {
+              btn.innerText = "Complete checkout"; 
+              btn.disabled = false;
+              return; // Aborts the checkout!
+          }
+      }
+
+      btn.innerText = "Processing Payment...";
+
       const payload = {
         branch: sessionUser.branch,
         cashier: sessionUser.cashierName,
@@ -2561,8 +2581,8 @@
         lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
         let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${window.currentGrandTotal.toFixed(2)}`;
-        cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete Payment"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
-      } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete Payment"; btn.disabled = false; }
+        cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete checkout"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
+      } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete checkout"; btn.disabled = false; }
     }
 
 // ==========================================
