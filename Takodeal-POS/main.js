@@ -428,7 +428,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
         let itemName = cartItem.name || cartItem.itemName;
         let qtyVoided = cartItem.qty || 1;
 
-        // Pull the recipe (BOM) for this specific item
+        // --- A. REPLENISH MAIN RECIPE (BOM) ---
         const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
         const bomSnap = await getDocs(bomQ);
 
@@ -449,11 +449,33 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
             
             // Add it back to the current stock!
             let newStock = (invData.currentStock || 0) + totalAmountToReturn;
-
-            // Update the cloud silently
             await updateDoc(invDocRef, { currentStock: newStock });
           }
         }
+
+        // --- B. REPLENISH ADD-ONS ---
+        if (cartItem.addons) {
+            for (let addonKey in cartItem.addons) {
+                let addon = cartItem.addons[addonKey];
+                
+                // If the addon has a linked ingredient, return it!
+                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                    let totalAddonReturn = addon.deductQty * addon.qty * qtyVoided;
+
+                    const addonInvQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", addon.linkedIngredient));
+                    const addonInvSnap = await getDocs(addonInvQ);
+
+                    if (!addonInvSnap.empty) {
+                        let invDocRef = addonInvSnap.docs[0].ref;
+                        let invData = addonInvSnap.docs[0].data();
+                        
+                        let newStock = (invData.currentStock || 0) + totalAddonReturn;
+                        await updateDoc(invDocRef, { currentStock: newStock });
+                    }
+                }
+            }
+        }
+        
       }
     }
 
