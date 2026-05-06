@@ -1951,11 +1951,19 @@
         <input type="hidden" id="empProfileId">
 
         <h3 style="margin-top: 0; color: var(--primary); border-bottom: 2px solid var(--border); padding-bottom: 5px;">🏢 Employment Details</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-          <div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+          
+          <div style="grid-column: span 2;">
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Full Name *</label>
             <input type="text" id="empFullName" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-weight: bold;">
           </div>
+          
+          <div>
+            <label style="font-size: 12px; font-weight: bold; color: #d97706;">Schedule Nickname</label>
+            <input type="text" id="empScheduleName" placeholder="e.g. Bern" style="width: 100%; padding: 10px; border: 1px dashed #d97706; border-radius: 6px; box-sizing: border-box; background: #fffbeb;">
+          </div>
+
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Branch Assignment *</label>
             <select id="empBranchAssign" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
@@ -1965,14 +1973,17 @@
               <option value="Main Office">Main Office (Roving)</option>
             </select>
           </div>
+          
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Role / Position</label>
             <input type="text" id="empRole" value="Crew" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
           </div>
+          
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Date Hired</label>
             <input type="date" id="empDateHired" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
           </div>
+
         </div>
 
         <h3 style="margin-top: 0; color: #16a34a; border-bottom: 2px solid var(--border); padding-bottom: 5px;">💸 Payroll & Rates</h3>
