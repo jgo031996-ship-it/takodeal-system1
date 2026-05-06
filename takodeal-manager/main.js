@@ -3741,22 +3741,89 @@ window.loadExpenseLogs = async function () {
 // RECEIPT BUILDER ENGINE
 // ==========================================
 
-// --- LOGO UPLOAD & CONVERT ENGINE ---
+// --- ✂️ SMART LOGO UPLOADER (WITH AUTO-CROP) ---
 window.processLogoUpload = function(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = function(e) {
-        const base64String = e.target.result;
-        // 1. Save it to the hidden input for Firebase
-        document.getElementById('logoBase64Val').value = base64String;
-        // 2. Show the live preview on the screen
-        const preview = document.getElementById('logoPreview');
-        preview.src = base64String;
-        preview.style.display = 'inline-block';
+        const img = new Image();
+        img.onload = function() {
+            // 1. Draw original image to a hidden canvas to scan its pixels
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(img, 0, 0);
+
+            // 2. Scan every pixel to find where the actual logo is (ignore transparent space)
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const data = imageData.data;
+            let minX = tempCanvas.width, minY = tempCanvas.height, maxX = 0, maxY = 0;
+            let isTransparent = true;
+
+            for (let y = 0; y < tempCanvas.height; y++) {
+                for (let x = 0; x < tempCanvas.width; x++) {
+                    const alpha = data[(y * tempCanvas.width + x) * 4 + 3]; // Get transparency
+                    if (alpha > 10) { // If pixel is visible
+                        isTransparent = false;
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+
+            // 3. Add a tiny 10px breathing room around the logo
+            if (!isTransparent) {
+                let pad = 10;
+                minX = Math.max(0, minX - pad);
+                minY = Math.max(0, minY - pad);
+                maxX = Math.min(img.width, maxX + pad);
+                maxY = Math.min(img.height, maxY + pad);
+            } else {
+                minX = 0; minY = 0; maxX = img.width; maxY = img.height;
+            }
+
+            const cropWidth = maxX - minX;
+            const cropHeight = maxY - minY;
+
+            // 4. Shrink the CROPPED image to perfectly fit the 384px Thermal Printer width
+            const maxWidth = 384;
+            const scaleSize = cropWidth > maxWidth ? maxWidth / cropWidth : 1;
+            
+            const finalCanvas = document.createElement("canvas");
+            finalCanvas.width = cropWidth * scaleSize;
+            finalCanvas.height = cropHeight * scaleSize;
+            const finalCtx = finalCanvas.getContext("2d");
+            
+            // Paint the solid white background
+            finalCtx.fillStyle = "white";
+            finalCtx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+            
+            // Draw ONLY the chopped, zoomed-in logo
+            finalCtx.drawImage(
+                tempCanvas, 
+                minX, minY, cropWidth, cropHeight, // The cropped area
+                0, 0, finalCanvas.width, finalCanvas.height // The final size
+            );
+
+            // 5. Save and Display
+            const tinyBase64 = finalCanvas.toDataURL('image/jpeg', 0.8);
+            document.getElementById('logoBase64Val').value = tinyBase64;
+            
+            const preview = document.getElementById('logoPreview');
+            preview.src = tinyBase64;
+            preview.style.display = 'inline-block';
+            
+            // Make the preview box mold perfectly to the new image shape
+            preview.style.width = "100%"; 
+            preview.style.objectFit = "contain";
+        };
+        img.src = e.target.result;
     };
-    // This physically converts the image into text data!
     reader.readAsDataURL(file);
 };
 
