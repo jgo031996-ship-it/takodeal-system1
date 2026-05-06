@@ -4676,8 +4676,10 @@ window.setDefaultCutoffDates = function() {
     if (endEl) endEl.value = endDate;
 };
 
-// Safe trigger
-try { window.setDefaultCutoffDates(); } catch(e) {}
+// Safe trigger for dates on load
+document.addEventListener("DOMContentLoaded", () => {
+    try { window.setDefaultCutoffDates(); } catch(e) {}
+});
 
 // ==========================================
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
