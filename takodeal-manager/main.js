@@ -2839,6 +2839,7 @@ window.wipeTestData = async function () {
   }
 
   // 2. Start the Incinerator
+  await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: 0 });
   let btn = document.getElementById('btnWipeData');
   btn.innerText = "⏳ Wiping Database...";
   btn.disabled = true;
