@@ -3798,26 +3798,26 @@ window.loadAttendanceLogs = async function () {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">Fetching logs & checking schedules...</td></tr>';
 
     try {
-        // 1. Fetch the Live Logs
-        const q = window.query(window.collection(window.db, "attendance_logs"), window.orderBy("timestamp", "desc"), window.limit(30));
-        const snap = await window.getDocs(q);
+        // 1. Fetch the Live Logs (FIXED: Removed "window." prefixes)
+        const q = query(collection(db, "attendance_logs"), orderBy("timestamp", "desc"), limit(30));
+        const snap = await getDocs(q);
 
         // 2. Fetch the Schedule & Staff Profiles for cross-referencing
         let scheduleData = null;
         try {
-            const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
+            const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
             if (schedSnap.exists()) scheduleData = schedSnap.data();
         } catch(e) { console.warn("No schedule data found."); }
 
         let staffProfiles = {};
-        const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
-        staffSnap.forEach(doc => {
-            let d = doc.data();
+        const staffSnap = await getDocs(collection(db, "cashiers"));
+        staffSnap.forEach(docSnap => {
+            let d = docSnap.data();
             // Map their full name to their Schedule Nickname!
             staffProfiles[d.cashierName] = d.scheduleNickname || d.cashierName; 
         });
 
-        // 🧠 SMART PARSER: Converts "9am", "12nn", "4:30pm" into decimals (e.g., 9.0, 12.0, 16.5)
+        // 🧠 SMART PARSER: Converts "9am", "12nn", "4:30pm" into decimals
         const parseTimeStr = (timeStr) => {
             let t = timeStr.toLowerCase().replace(/\s/g, '');
             let isPM = t.includes('pm');
@@ -3835,8 +3835,8 @@ window.loadAttendanceLogs = async function () {
         };
 
         let html = '';
-        snap.forEach(doc => {
-            let data = doc.data();
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
             let timeStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
             let badgeColor = data.type === "TIME IN" ? "#dcfce7" : "#fee2e2";
             let textColor = data.type === "TIME IN" ? "#16a34a" : "#b91c1c";
@@ -3850,31 +3850,23 @@ window.loadAttendanceLogs = async function () {
                 let logMonth = logDate.getMonth() + 1;
                 let logYear = logDate.getFullYear();
 
-                // 1. Is the log from the current active schedule month?
                 if (scheduleData.currentYear === logYear && scheduleData.currentMonth === logMonth) {
                     let branchSched = scheduleData.currentSchedule[logDay] ? scheduleData.currentSchedule[logDay][data.branch] : null;
                     
                     if (branchSched && branchSched.scheduled) {
-                        // Match the log name to the nickname used in the schedule
                         let nickname = staffProfiles[data.staffName] || data.staffName;
-                        
-                        // 2. Find their exact shift ID for today
                         let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
                         
                         if (assignedShiftId && scheduleData.branchConfig[data.branch]) {
                             let shiftConfig = scheduleData.branchConfig[data.branch].find(s => s.id === assignedShiftId);
                             
                             if (shiftConfig) {
-                                // 3. Extract the start time from the text inside the parentheses! e.g., (9am-6pm) -> 9am
                                 let match = shiftConfig.name.match(/\((.*?)-/);
                                 if (match && match[1]) {
                                     let expectedStartHour = parseTimeStr(match[1]); 
                                     
                                     if (expectedStartHour !== null) {
-                                        // 4. Calculate actual clock-in time in decimals
                                         let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                        
-                                        // 5. Compare and trigger the alarm!
                                         let diffHours = actualHour - expectedStartHour;
                                         let lateMinutes = Math.floor(diffHours * 60);
                                         
@@ -3890,7 +3882,6 @@ window.loadAttendanceLogs = async function () {
                 }
             }
 
-            // Location Link
             let locationText = `📍 ${data.branch}`;
             if (data.locationLat && data.locationLat !== "Unknown") {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
