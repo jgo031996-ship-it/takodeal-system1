@@ -2484,12 +2484,17 @@
 
           let addonsText = '';
           if (item.addons) {
-              for (let key in item.addons) {
-                  if (item.addons[key].qty > 0) {
-                      addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${item.addons[key].name || key}</div>`;
-                  }
-              }
-          }
+            for (let key in item.addons) {
+                let addon = item.addons[key];
+                if (addon.qty > 0) {
+                    // Check if it has a price, multiply by qty, and format to 2 decimal places
+                    let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
+                    
+                    // Add the Qty, the Name, and the Price to the UI!
+                    addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
+                }
+            }
+        }
     
           list.innerHTML += `<li class="cart-item" onclick="openAddOrderModal('${item.name}', ${item.basePrice}, cart[${index}])">
             <div class="cart-item-desc">
