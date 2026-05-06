@@ -52,7 +52,7 @@ window.lockDeviceToBranch = async function () {
 
 // --- TAKODEAL FIREBASE ENGINE ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 window.onSnapshot = onSnapshot; // Make it available globally
 
@@ -1049,6 +1049,54 @@ window.submitAttendance = async function(type) {
         document.getElementById('clockStaffPin').value = ''; 
         return;
     }
+
+    // ==========================================
+    // 🔥 THE ANTI-DOUBLE-PUNCH LOCK 🔥
+    // ==========================================
+    try {
+        const q = query(collection(db, "attendance_logs"), 
+            where("staffName", "==", staffName), 
+            orderBy("timestamp", "desc"), 
+            limit(1)
+        );
+        
+        const lastLogSnap = await getDocs(q);
+        
+        if (!lastLogSnap.empty) {
+            let lastLog = lastLogSnap.docs[0].data();
+            let lastType = lastLog.type; // "TIME IN" or "TIME OUT"
+            let lastTime = lastLog.timestamp.toDate();
+            let now = new Date();
+            
+            // Calculate how many hours ago they last punched the clock
+            let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
+
+            // RULE 1: Cannot Time In if already Timed In (within the last 8 hours)
+            if (type === "TIME IN" && lastType === "TIME IN" && hoursSinceLastLog < 8) {
+                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
+                document.getElementById('clockStaffPin').value = ''; // Clear PIN
+                return; 
+            }
+
+            // RULE 2: Cannot Time Out if they already Timed Out recently (within 1 hour)
+            if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
+                alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping the button.`);
+                document.getElementById('clockStaffPin').value = ''; // Clear PIN
+                return; 
+            }
+            
+            // RULE 3: Cannot Time Out less than 6 minutes after Timing In (Accidental double-click)
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.1) {
+                alert(`❌ You just Timed In a few minutes ago!\n\nWait until your shift is over to Time Out.`);
+                document.getElementById('clockStaffPin').value = ''; // Clear PIN
+                return; 
+            }
+        }
+    } catch(e) {
+        console.error("Attendance Lock Error:", e);
+        // We let it proceed if there's a weird network error so they can still time in!
+    }
+    // ==========================================
 
     const branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     const targetZone = BRANCH_ZONES[branch];
