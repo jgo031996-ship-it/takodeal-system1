@@ -4676,9 +4676,15 @@ window.setDefaultCutoffDates = function() {
     if (endEl) endEl.value = endDate;
 };
 
-// Safe trigger for dates on load
+// Safe trigger that waits for the HTML to finish loading!
 document.addEventListener("DOMContentLoaded", () => {
-    try { window.setDefaultCutoffDates(); } catch(e) {}
+    if (typeof window.setDefaultCutoffDates === 'function') {
+        try { 
+            window.setDefaultCutoffDates(); 
+        } catch(e) { 
+            console.warn("Date setter skipped: UI not ready."); 
+        }
+    }
 });
 
 // ==========================================
@@ -5227,31 +5233,6 @@ window.editGrabLoanSettings = async function() {
 // ==========================================
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
-
-// 1. Automatically snap date pickers to the 3rd and 17th Cutoffs
-window.setDefaultCutoffDates = function() {
-    let today = new Date();
-    let currentDay = today.getDate();
-    let start, end;
-
-    if (currentDay > 17) {
-        // We are in the 18th to end of month cycle (Payout on the 3rd)
-        start = new Date(today.getFullYear(), today.getMonth(), 18);
-        end = new Date(today.getFullYear(), today.getMonth() + 1, 3);
-    } else if (currentDay > 3) {
-        // We are in the 4th to 17th cycle (Payout on the 17th)
-        start = new Date(today.getFullYear(), today.getMonth(), 4);
-        end = new Date(today.getFullYear(), today.getMonth(), 17);
-    } else {
-        // We are in the 1st to 3rd cycle (Looking at last month's 18th to 3rd)
-        start = new Date(today.getFullYear(), today.getMonth() - 1, 18);
-        end = new Date(today.getFullYear(), today.getMonth(), 3);
-    }
-
-    // Format to YYYY-MM-DD for the HTML inputs
-    document.getElementById('cutoffStart').value = start.toISOString().split('T')[0];
-    document.getElementById('cutoffEnd').value = end.toISOString().split('T')[0];
-};
 
 // 2. The Master Pairing Engine
 window.generateAutoPayslips = async function() {
