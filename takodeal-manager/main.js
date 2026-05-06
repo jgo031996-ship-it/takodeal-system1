@@ -400,7 +400,7 @@ window.addNewStaff = function() {
     document.getElementById('empSSS').value = '';
     document.getElementById('empPhilhealth').value = '';
     document.getElementById('empPagibig').value = '';
-
+    document.getElementById('empScheduleName').value = '';
     document.getElementById('employeeProfileModal').style.display = 'flex';
 };
 
@@ -424,7 +424,7 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empSSS').value = data.sss || '';
     document.getElementById('empPhilhealth').value = data.philhealth || '';
     document.getElementById('empPagibig').value = data.pagibig || '';
-
+    document.getElementById('empScheduleName').value = data.scheduleName || '';
     document.getElementById('employeeProfileModal').style.display = 'flex';
 };
 
@@ -458,6 +458,8 @@ window.saveEmployeeProfile = async function() {
         sss: document.getElementById('empSSS').value.trim(),
         philhealth: document.getElementById('empPhilhealth').value.trim(),
         pagibig: document.getElementById('empPagibig').value.trim()
+        scheduleName: document.getElementById('empScheduleName').value.trim(),
+      
     };
 
     let btn = document.getElementById('btnSaveEmpProfile');
