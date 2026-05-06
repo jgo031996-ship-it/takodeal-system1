@@ -1038,20 +1038,29 @@ window.closeTimeClock = function() {
 };
 
 window.submitAttendance = async function(type) {
+    // 1. INSTANTLY FREEZE BUTTONS TO PREVENT RAPID DOUBLE TAPPING!
+    let buttons = document.querySelectorAll('#timeClockModal button');
+    buttons.forEach(b => b.disabled = true);
+
     const staffName = document.getElementById('clockStaffName').value;
     const inputPin = document.getElementById('clockStaffPin').value.trim();
-    if (!staffName) { alert("❌ Please select your name."); return; }
-    if (!inputPin) { alert("❌ Please enter your 4-Digit Security PIN."); return; }
+
+    if (!staffName || !inputPin) { 
+        alert("❌ Please select your name and enter your PIN."); 
+        buttons.forEach(b => b.disabled = false);
+        return; 
+    }
 
     let staffProfile = currentBranchStaffCache.find(s => s.cashierName === staffName);
     if (!staffProfile || staffProfile.pin !== inputPin) {
         alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
         document.getElementById('clockStaffPin').value = ''; 
+        buttons.forEach(b => b.disabled = false);
         return;
     }
 
     // ==========================================
-    // 🔥 THE ANTI-DOUBLE-PUNCH LOCK 🔥
+    // 🔥 THE BULLETPROOF ANTI-DOUBLE-PUNCH LOCK
     // ==========================================
     try {
         const q = query(collection(db, "attendance_logs"), 
@@ -1059,88 +1068,126 @@ window.submitAttendance = async function(type) {
             orderBy("timestamp", "desc"), 
             limit(1)
         );
-        
         const lastLogSnap = await getDocs(q);
         
         if (!lastLogSnap.empty) {
             let lastLog = lastLogSnap.docs[0].data();
-            let lastType = lastLog.type; // "TIME IN" or "TIME OUT"
+            let lastType = lastLog.type; 
             let lastTime = lastLog.timestamp.toDate();
             let now = new Date();
             
-            // Calculate how many hours ago they last punched the clock
             let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
 
-            // RULE 1: Cannot Time In if already Timed In (within the last 8 hours)
             if (type === "TIME IN" && lastType === "TIME IN" && hoursSinceLastLog < 8) {
                 alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
-                document.getElementById('clockStaffPin').value = ''; // Clear PIN
-                return; 
+                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
-
-            // RULE 2: Cannot Time Out if they already Timed Out recently (within 1 hour)
             if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
-                alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping the button.`);
-                document.getElementById('clockStaffPin').value = ''; // Clear PIN
-                return; 
+                alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
+                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
-            
-            // RULE 3: Cannot Time Out less than 6 minutes after Timing In (Accidental double-click)
             if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.1) {
                 alert(`❌ You just Timed In a few minutes ago!\n\nWait until your shift is over to Time Out.`);
-                document.getElementById('clockStaffPin').value = ''; // Clear PIN
-                return; 
+                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
         }
     } catch(e) {
-        console.error("Attendance Lock Error:", e);
-        // We let it proceed if there's a weird network error so they can still time in!
+        console.warn("Fast query failed (Missing Firebase Index). Using fallback lock method...");
+        // 🛡️ FALLBACK LOCK: If the fast query fails, we fetch their logs manually to guarantee they don't double punch!
+        const fallbackQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
+        const fallbackSnap = await getDocs(fallbackQ);
+        let latestLog = null;
+        
+        fallbackSnap.forEach(doc => {
+            let data = doc.data();
+            if (!latestLog || data.timestamp > latestLog.timestamp) latestLog = data;
+        });
+        
+        if (latestLog) {
+            let lastTime = latestLog.timestamp.toDate();
+            let hoursSinceLastLog = (new Date() - lastTime) / (1000 * 60 * 60);
+            if (type === "TIME IN" && latestLog.type === "TIME IN" && hoursSinceLastLog < 8) {
+                alert(`❌ You are already Timed In!`);
+                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
+            }
+        }
     }
+
     // ==========================================
-
-    // ... (Your PIN checks and Anti-Double-Punch lock stay exactly the same above this) ...
-
-    const branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    
-    // 🌟 FIX 1: Prevent crash if a tablet is registered as 'Main Office' but missing from BRANCH_ZONES
-    const targetZone = BRANCH_ZONES[branch] || (branch === 'Main Office' ? {lat: 0, lng: 0} : null);
-    if (!targetZone) { alert(`❌ GPS Configuration Missing for ${branch}.`); return; }
-
+    // 🌍 GPS & SMART NEAREST-BRANCH DETECTOR
+    // ==========================================
     const video = document.getElementById('clockVideo');
     const canvas = document.getElementById('clockCanvas');
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     const photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
 
-    if (!navigator.geolocation) { alert("❌ Geolocation is not supported."); return; }
-    let buttons = document.querySelectorAll('#timeClockModal button');
-    buttons.forEach(b => b.disabled = true);
+    if (!navigator.geolocation) { 
+        alert("❌ Geolocation is not supported."); 
+        buttons.forEach(b => b.disabled = false); return; 
+    }
 
     navigator.geolocation.getCurrentPosition(async (position) => {
-        const userLat = position.coords.latitude; const userLng = position.coords.longitude;
-        const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+        const userLat = position.coords.latitude; 
+        const userLng = position.coords.longitude;
         
-        // 🌟 FIX 2: THE VIP BYPASS 🌟
-        // If they are assigned to the Main Office, or they are an Owner, ignore the GPS lock!
-        let isVIP = (staffProfile.branch === 'Main Office' || branch === 'Main Office' || (staffProfile.role && staffProfile.role.includes('Owner')));
+        let deviceBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let isVIP = (staffProfile.branch === 'Main Office' || deviceBranch === 'Main Office' || (staffProfile.role && staffProfile.role.includes('Owner')));
+        
+        let finalBranch = deviceBranch;
+        let finalDistance = 0;
 
-        if (distance > ALLOWED_RADIUS_METERS && !isVIP) {
-            alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(distance)}m away from ${branch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
-            buttons.forEach(b => b.disabled = false); return;
+        if (isVIP && typeof BRANCH_ZONES !== 'undefined') {
+            // 🌟 NEAREST BRANCH RADAR FOR MANAGERS 🌟
+            let closestBranch = "Main Office";
+            let shortestDistance = Infinity;
+
+            for (const [branchName, zone] of Object.entries(BRANCH_ZONES)) {
+                let d = getDistanceInMeters(userLat, userLng, zone.lat, zone.lng);
+                if (d < shortestDistance) {
+                    shortestDistance = d;
+                    closestBranch = branchName;
+                }
+            }
+            // Assign them to the branch they are physically closest to!
+            finalBranch = closestBranch; 
+            finalDistance = shortestDistance;
+        } else {
+            // NORMAL STAFF LOGIC (Strict Geofencing)
+            const targetZone = BRANCH_ZONES[deviceBranch];
+            if (!targetZone) { 
+                alert(`❌ GPS Configuration Missing for ${deviceBranch}.`); 
+                buttons.forEach(b => b.disabled = false); return; 
+            }
+            finalDistance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+
+            if (finalDistance > ALLOWED_RADIUS_METERS) {
+                alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(finalDistance)}m away from ${deviceBranch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
+                buttons.forEach(b => b.disabled = false); return;
+            }
         }
         
         try {
             await addDoc(collection(db, "attendance_logs"), {
-                staffName: staffName, branch: branch, type: type, timestamp: new Date(),
-                locationLat: userLat, locationLng: userLng, 
-                distanceMeters: isVIP ? 0 : Math.round(distance), // Record 0 distance for VIPs so logs look clean
+                staffName: staffName, 
+                branch: finalBranch, // Will save as the auto-detected branch!
+                type: type, 
+                timestamp: new Date(),
+                locationLat: userLat, 
+                locationLng: userLng, 
+                distanceMeters: Math.round(finalDistance), 
                 photoBase64: photoBase64
             });
-            alert(`✅ ${type} SUCCESS!\nIdentity and Location Verified.`);
+            alert(`✅ ${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`);
             window.closeTimeClock();
-        } catch (error) { console.error(error); alert("❌ Failed to log attendance."); } 
+        } catch (error) { 
+            console.error(error); alert("❌ Failed to log attendance."); 
+        } 
         finally { buttons.forEach(b => b.disabled = false); }
-    }, (error) => { alert("❌ GPS access required."); buttons.forEach(b => b.disabled = false); }, { enableHighAccuracy: true }); 
+    }, (error) => { 
+        alert("❌ GPS access required."); 
+        buttons.forEach(b => b.disabled = false); 
+    }, { enableHighAccuracy: true }); 
 };
 
 // ==========================================
