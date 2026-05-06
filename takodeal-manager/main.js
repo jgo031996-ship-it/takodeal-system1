@@ -2817,64 +2817,74 @@ window.saveInventoryEdit = async function () {
 };
 
 // ========================================================
-// 🧹 CLEAN SLATE PROTOCOL (FACTORY RESET) 🧹
+// 🧹 UPGRADED SELECTIVE RESET PROTOCOL 🧹
 // ========================================================
-window.wipeTestData = async function () {
-  // 1. The Ultimate Security Check
-  let confirmWord = prompt(
-    "⚠️ DANGER ZONE ⚠️\n\n" +
-    "This will permanently delete ALL:\n" +
-    "- Transactions / Sales\n" +
-    "- Stock History Logs\n" +
-    "- Dispatch Deliveries\n" +
-    "- Shifts\n" +
-    "- Expenses\n\n" +
-    "Your Menu, Inventory Items, and Staff will NOT be deleted.\n\n" +
-    "To proceed, type exactly: CLEAN SLATE"
-  );
+window.openSelectiveResetModal = function() {
+    // Uncheck everything by default to prevent accidental deletions
+    document.querySelectorAll('#selectiveResetModal input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.getElementById('wipeConfirmText').value = '';
+    document.getElementById('selectiveResetModal').style.display = 'flex';
+};
 
-  if (confirmWord !== "CLEAN SLATE") {
-    alert("❌ Operation cancelled. Your data is safe.");
-    return; // Stops the function immediately
-  }
-
-  // 2. Start the Incinerator
-  await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: 0 });
-  let btn = document.getElementById('btnWipeData');
-  btn.innerText = "⏳ Wiping Database...";
-  btn.disabled = true;
-
-  try {
-    // List of the specific database folders we want to empty
-    const collectionsToWipe = ["transactions", "stock_logs", "dispatch", "shifts", "expenses"];
-
-    for (let colName of collectionsToWipe) {
-      const snap = await getDocs(collection(db, colName));
-      // Loop through every document inside the folder and delete it
-      for (let docSnap of snap.docs) {
-        await deleteDoc(doc(db, colName, docSnap.id));
-      }
+window.executeSelectiveWipe = async function() {
+    let confirmWord = document.getElementById('wipeConfirmText').value.trim();
+    if (confirmWord !== "CLEAN SLATE") {
+        alert("❌ You must type CLEAN SLATE to confirm.");
+        return;
     }
 
-    // Optional: Reset all current Live Inventory stock levels back to 0
-    let resetStock = confirm("Data wiped! Do you also want to reset all current Live Inventory stock levels back to 0?");
-    if (resetStock) {
-      const invSnap = await getDocs(collection(db, "inventory"));
-      for (let iDoc of invSnap.docs) {
-        await updateDoc(doc(db, "inventory", iDoc.id), { currentStock: 0 });
-      }
+    let collectionsToWipe = [];
+    if (document.getElementById('wipeTransactions').checked) collectionsToWipe.push("transactions");
+    if (document.getElementById('wipeShifts').checked) collectionsToWipe.push("shifts");
+    if (document.getElementById('wipeExpenses').checked) collectionsToWipe.push("expenses");
+    if (document.getElementById('wipeStockLogs').checked) collectionsToWipe.push("stock_logs");
+    if (document.getElementById('wipeDispatch').checked) collectionsToWipe.push("dispatch_logs");
+    if (document.getElementById('wipeAttendance').checked) collectionsToWipe.push("attendance_logs");
+
+    let resetInv = document.getElementById('wipeInventoryStock').checked;
+    let resetMilestone = document.getElementById('wipeMilestone').checked;
+
+    if (collectionsToWipe.length === 0 && !resetInv && !resetMilestone) {
+        alert("⚠️ Please select at least one box to reset.");
+        return;
     }
 
-    alert("✅ Clean Slate Protocol Complete!\n\nYour system is now completely blank and ready for the LIVE LAUNCH.");
-    location.reload(); // Refresh the page to show the empty dashboard
+    let btn = document.getElementById('btnExecuteSelectiveWipe');
+    btn.innerText = "⏳ Wiping Data...";
+    btn.disabled = true;
 
-  } catch (error) {
-    console.error("Incinerator Error:", error);
-    alert("❌ An error occurred while wiping the data.");
-  } finally {
-    btn.innerText = "🧹 Factory Reset";
-    btn.disabled = false;
-  }
+    try {
+        // 1. Wipe Selected Collections
+        for (let colName of collectionsToWipe) {
+            const snap = await getDocs(collection(db, colName));
+            for (let docSnap of snap.docs) {
+                await deleteDoc(doc(db, colName, docSnap.id));
+            }
+        }
+
+        // 2. Reset Live Inventory Stock to 0
+        if (resetInv) {
+            const invSnap = await getDocs(collection(db, "inventory"));
+            for (let iDoc of invSnap.docs) {
+                await updateDoc(doc(db, "inventory", iDoc.id), { currentStock: 0 });
+            }
+        }
+
+        // 3. Reset the TAKOYAKI MILESTONE TRACKER to 0
+        if (resetMilestone) {
+            await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: 0 });
+        }
+
+        alert("✅ Selective Reset Complete!\n\nYour selected databases have been cleared.");
+        location.reload();
+
+    } catch (error) {
+        console.error("Incinerator Error:", error);
+        alert("❌ An error occurred while wiping the data.");
+    } finally {
+        btn.innerText = "🗑️ Delete Selected";
+        btn.disabled = false;
+    }
 };
 
 // ==========================================
