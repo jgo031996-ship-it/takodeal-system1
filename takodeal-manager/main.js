@@ -352,7 +352,7 @@ window.loadHRModule = async function() {
 
         // 🔐 PIN LOGIC: Real PIN for Owner, Stars for Managers
         let pinDisplay = isOwner ? (data.pin || '0000') : '****';
-        let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/hr` : '<span style="color:#ef4444; font-size:11px;">Rate Missing</span>';
+        let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/day` : `<span style="color:#ef4444; font-size:11px;">Rate Missing</span>`;
 
         html += `
           <tr>
