@@ -3789,14 +3789,50 @@ window.saveReceiptSettings = async function() {
     }
 }
 
+// ==========================================
+// ⏱️ LIVE ATTENDANCE & SMART LATE DETECTOR
+// ==========================================
 window.loadAttendanceLogs = async function () {
     const tbody = document.getElementById('attendanceTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">Fetching logs...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">Fetching logs & checking schedules...</td></tr>';
 
     try {
-        const q = query(collection(db, "attendance_logs"), orderBy("timestamp", "desc"), limit(30));
-        const snap = await getDocs(q);
+        // 1. Fetch the Live Logs
+        const q = window.query(window.collection(window.db, "attendance_logs"), window.orderBy("timestamp", "desc"), window.limit(30));
+        const snap = await window.getDocs(q);
+
+        // 2. Fetch the Schedule & Staff Profiles for cross-referencing
+        let scheduleData = null;
+        try {
+            const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
+            if (schedSnap.exists()) scheduleData = schedSnap.data();
+        } catch(e) { console.warn("No schedule data found."); }
+
+        let staffProfiles = {};
+        const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
+        staffSnap.forEach(doc => {
+            let d = doc.data();
+            // Map their full name to their Schedule Nickname!
+            staffProfiles[d.cashierName] = d.scheduleNickname || d.cashierName; 
+        });
+
+        // 🧠 SMART PARSER: Converts "9am", "12nn", "4:30pm" into decimals (e.g., 9.0, 12.0, 16.5)
+        const parseTimeStr = (timeStr) => {
+            let t = timeStr.toLowerCase().replace(/\s/g, '');
+            let isPM = t.includes('pm');
+            let isNN = t.includes('nn');
+            
+            let timePart = t.replace(/(am|pm|nn)/, '');
+            let parts = timePart.split(':');
+            let hour = parseInt(parts[0]) || 0;
+            let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+            
+            if ((isPM || isNN) && hour < 12) hour += 12;
+            if (t.includes('am') && hour === 12) hour = 0;
+            
+            return hour + (minute / 60);
+        };
 
         let html = '';
         snap.forEach(doc => {
@@ -3804,8 +3840,57 @@ window.loadAttendanceLogs = async function () {
             let timeStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
             let badgeColor = data.type === "TIME IN" ? "#dcfce7" : "#fee2e2";
             let textColor = data.type === "TIME IN" ? "#16a34a" : "#b91c1c";
+            let logDate = data.timestamp ? data.timestamp.toDate() : new Date();
             
-            // Map Link generator if GPS exists!
+            let lateTag = '';
+
+            // 🔥 THE LATE DETECTOR ENGINE 🔥
+            if (data.type === "TIME IN" && scheduleData && scheduleData.currentSchedule) {
+                let logDay = logDate.getDate();
+                let logMonth = logDate.getMonth() + 1;
+                let logYear = logDate.getFullYear();
+
+                // 1. Is the log from the current active schedule month?
+                if (scheduleData.currentYear === logYear && scheduleData.currentMonth === logMonth) {
+                    let branchSched = scheduleData.currentSchedule[logDay] ? scheduleData.currentSchedule[logDay][data.branch] : null;
+                    
+                    if (branchSched && branchSched.scheduled) {
+                        // Match the log name to the nickname used in the schedule
+                        let nickname = staffProfiles[data.staffName] || data.staffName;
+                        
+                        // 2. Find their exact shift ID for today
+                        let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
+                        
+                        if (assignedShiftId && scheduleData.branchConfig[data.branch]) {
+                            let shiftConfig = scheduleData.branchConfig[data.branch].find(s => s.id === assignedShiftId);
+                            
+                            if (shiftConfig) {
+                                // 3. Extract the start time from the text inside the parentheses! e.g., (9am-6pm) -> 9am
+                                let match = shiftConfig.name.match(/\((.*?)-/);
+                                if (match && match[1]) {
+                                    let expectedStartHour = parseTimeStr(match[1]); 
+                                    
+                                    if (expectedStartHour !== null) {
+                                        // 4. Calculate actual clock-in time in decimals
+                                        let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                        
+                                        // 5. Compare and trigger the alarm!
+                                        let diffHours = actualHour - expectedStartHour;
+                                        let lateMinutes = Math.floor(diffHours * 60);
+                                        
+                                        // ⏳ GRACE PERIOD: 5 Minutes
+                                        if (lateMinutes > 5) {
+                                            lateTag = `<br><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">⏰ LATE (${lateMinutes} mins)</span>`;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Location Link
             let locationText = `📍 ${data.branch}`;
             if (data.locationLat && data.locationLat !== "Unknown") {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
@@ -3814,13 +3899,13 @@ window.loadAttendanceLogs = async function () {
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px; font-size: 13px; color: #64748b;">${timeStr}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.staffName}</td>
-                    <td style="padding: 12px; color: #64748b;">${locationText}</td>
-                    <td style="padding: 12px;">
+                    <td style="padding: 12px; font-weight: bold; color: #334155; vertical-align: middle;">${data.staffName} ${lateTag}</td>
+                    <td style="padding: 12px; color: #64748b; vertical-align: middle;">${locationText}</td>
+                    <td style="padding: 12px; vertical-align: middle;">
                         <span style="background: ${badgeColor}; color: ${textColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${data.type}</span>
                     </td>
-                    <td style="padding: 12px; text-align: center;">
-                        <button onclick="viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: none; border: 1px solid #cbd5e1; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 16px;">📷</button>
+                    <td style="padding: 12px; text-align: center; vertical-align: middle;">
+                        <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: none; border: 1px solid #cbd5e1; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 16px;">📷</button>
                     </td>
                 </tr>
             `;
@@ -3829,7 +3914,7 @@ window.loadAttendanceLogs = async function () {
         tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 20px;">No logs found.</td></tr>';
     } catch (error) {
         console.error("Error loading attendance:", error);
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error! Press F12 to check Firebase Index.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error processing feed. Check Console.</td></tr>';
     }
 };
 
