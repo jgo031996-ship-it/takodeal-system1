@@ -1891,9 +1891,9 @@ window.loadPayrollDashboard = async function() {
 
     let html = ''; let activeCount = 0; let totalHours = 0; let estPayroll = 0;
 
-    // NOTE: This is an estimated default rate (₱65/hr). 
+    // NOTE: This is an estimated default rate (400/day). 
     // In a future update, we can pull exact rates from the Cashier's profile!
-    const HOURLY_RATE = 65;
+    const DAILY_RATE = 450;
 
     if (shifts.length === 0) {
       html = '<tr><td colspan="6" class="text-center">No shifts logged yet.</td></tr>';
@@ -1915,7 +1915,7 @@ window.loadPayrollDashboard = async function() {
           let diffMs = end - start;
           let hrs = diffMs / (1000 * 60 * 60); // Convert milliseconds to hours
           totalHours += hrs;
-          let basePay = hrs * HOURLY_RATE;
+          let basePay = DAILY_RATE;
 
           let bonus = shift.payrollBonus || 0;
           let deduct = shift.payrollDeduct || 0;
