@@ -5341,12 +5341,12 @@ window.generateAutoPayslips = async function() {
                 let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
-                // 🧠 AUTO-REMARKS ENGINE
-                let remark = "Complete";
+                // 🧠 AUTO-REMARKS ENGINE (UPDATED: No Overtime Remarks)
+                let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                
+                // Only flag if they worked LESS than 8 hours
                 if (hoursWorked < 8) {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short ${(8 - hoursWorked).toFixed(1)}h</span>`;
-                } else if (hoursWorked > 8.5) { // 30 min grace period before calling it over
-                    remark = `<span style="color:#10b981; font-weight:bold;">Over ${(hoursWorked - 8).toFixed(1)}h</span>`;
                 }
 
                 // ⏱️ Save the exact log for the payslip summary
