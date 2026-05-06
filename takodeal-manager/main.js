@@ -3806,9 +3806,30 @@ window.processLogoUpload = function(event) {
             // Draw ONLY the chopped, zoomed-in logo
             finalCtx.drawImage(
                 tempCanvas, 
-                minX, minY, cropWidth, cropHeight, // The cropped area
-                0, 0, finalCanvas.width, finalCanvas.height // The final size
+                minX, minY, cropWidth, cropHeight, 
+                0, 0, finalCanvas.width, finalCanvas.height 
             );
+
+            // 🔥 NEW: TRUE BLACK & WHITE CONVERTER FOR THERMAL PRINTERS 🔥
+            const imgData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
+            const pixels = imgData.data;
+            for (let i = 0; i < pixels.length; i += 4) {
+                let r = pixels[i];
+                let g = pixels[i + 1];
+                let b = pixels[i + 2];
+                
+                // Calculate brightness of the pixel
+                let brightness = (r * 0.299 + g * 0.587 + b * 0.114);
+                
+                // Threshold: If it's darker than 140, make it pure black. Otherwise, pure white.
+                let color = brightness > 140 ? 255 : 0;
+                
+                pixels[i] = color;       // Red
+                pixels[i + 1] = color;   // Green
+                pixels[i + 2] = color;   // Blue
+                // pixels[i + 3] is Alpha, we leave it alone (it's already solid from the white background)
+            }
+            finalCtx.putImageData(imgData, 0, 0);
 
             // 5. Save and Display
             const tinyBase64 = finalCanvas.toDataURL('image/jpeg', 0.8);
@@ -3817,8 +3838,6 @@ window.processLogoUpload = function(event) {
             const preview = document.getElementById('logoPreview');
             preview.src = tinyBase64;
             preview.style.display = 'inline-block';
-            
-            // Make the preview box mold perfectly to the new image shape
             preview.style.width = "100%"; 
             preview.style.objectFit = "contain";
         };
