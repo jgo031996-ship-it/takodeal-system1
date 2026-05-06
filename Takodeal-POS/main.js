@@ -479,6 +479,27 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
       }
     }
 
+    // 🔥 NEW: REVERSE THE 1 MILLION BALLS TRACKER 🔥
+    let totalBallsToReturn = 0;
+    for (let cartItem of txData.cart) {
+        let itemName = cartItem.name || cartItem.itemName;
+        // Smart AI: Looks for "8 Pcs", "15 Pcs" etc. just like the checkout engine
+        let match = itemName.match(/(\d+)\s*Pcs/i);
+        if (match) {
+            let ballsInBox = parseInt(match[1]);
+            totalBallsToReturn += (ballsInBox * (cartItem.qty || 1));
+        }
+    }
+
+    // If they voided Takoyaki, deduct it from the Global Vault!
+    if (totalBallsToReturn > 0) {
+        const statsRef = doc(db, "settings", "global_stats");
+        // We use a negative increment to subtract the balls!
+        await setDoc(statsRef, { 
+            totalTakoyakiBalls: increment(-totalBallsToReturn) 
+        }, { merge: true });
+    }
+
     // 3. 🚨 THE MANAGER ALARM
     await addDoc(collection(db, "manager_alerts"), {
       type: "VOID_ALERT",
