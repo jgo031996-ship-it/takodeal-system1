@@ -1098,8 +1098,12 @@ window.submitAttendance = async function(type) {
     }
     // ==========================================
 
+    // ... (Your PIN checks and Anti-Double-Punch lock stay exactly the same above this) ...
+
     const branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    const targetZone = BRANCH_ZONES[branch];
+    
+    // 🌟 FIX 1: Prevent crash if a tablet is registered as 'Main Office' but missing from BRANCH_ZONES
+    const targetZone = BRANCH_ZONES[branch] || (branch === 'Main Office' ? {lat: 0, lng: 0} : null);
     if (!targetZone) { alert(`❌ GPS Configuration Missing for ${branch}.`); return; }
 
     const video = document.getElementById('clockVideo');
@@ -1115,14 +1119,22 @@ window.submitAttendance = async function(type) {
     navigator.geolocation.getCurrentPosition(async (position) => {
         const userLat = position.coords.latitude; const userLng = position.coords.longitude;
         const distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
-        if (distance > ALLOWED_RADIUS_METERS) {
+        
+        // 🌟 FIX 2: THE VIP BYPASS 🌟
+        // If they are assigned to the Main Office, or they are an Owner, ignore the GPS lock!
+        let isVIP = (staffProfile.branch === 'Main Office' || branch === 'Main Office' || (staffProfile.role && staffProfile.role.includes('Owner')));
+
+        if (distance > ALLOWED_RADIUS_METERS && !isVIP) {
             alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(distance)}m away from ${branch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
             buttons.forEach(b => b.disabled = false); return;
         }
+        
         try {
             await addDoc(collection(db, "attendance_logs"), {
                 staffName: staffName, branch: branch, type: type, timestamp: new Date(),
-                locationLat: userLat, locationLng: userLng, distanceMeters: Math.round(distance), photoBase64: photoBase64
+                locationLat: userLat, locationLng: userLng, 
+                distanceMeters: isVIP ? 0 : Math.round(distance), // Record 0 distance for VIPs so logs look clean
+                photoBase64: photoBase64
             });
             alert(`✅ ${type} SUCCESS!\nIdentity and Location Verified.`);
             window.closeTimeClock();
