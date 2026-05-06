@@ -191,6 +191,7 @@ window.processCheckout = async function (payload) {
             let itemName = cartItem.name || cartItem.itemName;
             let qtySold = cartItem.qty || 1;
 
+            // --- A. DEDUCT THE MAIN RECIPE (BOM) ---
             const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
             const bomSnap = await getDocs(bomQ);
 
@@ -207,12 +208,30 @@ window.processCheckout = async function (payload) {
                     let invData = invSnap.docs[0].data();
                     let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
 
-                    // Update quietly
                     await updateDoc(invDocRef, { currentStock: newStock });
-                    
-                    // Simple Alarm Check
-                    if (newStock <= (invData.reorderLevel || 5)) {
-                        lowStockTriggered = true;
+                    if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
+                }
+            }
+
+            // --- B. DEDUCT THE ADD-ONS ---
+            if (cartItem.addons) {
+                for (let addonKey in cartItem.addons) {
+                    let addon = cartItem.addons[addonKey];
+                    // If the addon has a linked ingredient and a deduction amount
+                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                        let totalAddonDeduct = addon.deductQty * addon.qty * qtySold;
+
+                        const addonInvQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", addon.linkedIngredient));
+                        const addonInvSnap = await getDocs(addonInvQ);
+
+                        if (!addonInvSnap.empty) {
+                            let invDocRef = addonInvSnap.docs[0].ref;
+                            let invData = addonInvSnap.docs[0].data();
+                            let newStock = (invData.currentStock || 0) - totalAddonDeduct;
+
+                            await updateDoc(invDocRef, { currentStock: newStock });
+                            if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
+                        }
                     }
                 }
             }
