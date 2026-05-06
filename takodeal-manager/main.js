@@ -5354,6 +5354,7 @@ window.generateAutoPayslips = async function() {
                 d.pagibig = profile.pagibigDeduction || 0;
                 d.philhealth = profile.philhealthDeduction || 0;
 
+                // Calculate the final summary strings for the dashboard
                 let totalDeduct = d.foodDeductions + d.cashAdvances + d.loans + d.sss + d.pagibig + d.philhealth;
 
                 let bonusLabel = d.nightBonusTotal > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonusTotal} Night Bonus</span>` : '';
@@ -5364,11 +5365,15 @@ window.generateAutoPayslips = async function() {
                 let govTotal = d.sss + d.pagibig + d.philhealth;
                 let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov Benefits)</span>` : `<br><span style="font-size:10px; color:#64748b;">Gov Benefits: Not Set</span>`;
 
+                // 🔥 THE FIX: Changed 'rate' to 'dailyRate' and passed the shifts worked!
                 let encodedData = encodeURIComponent(JSON.stringify({
                     name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal,
                     advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                     sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth,
-                    rate: rate, start: startInput, end: endInput, profile: profile
+                    shiftsWorked: d.shiftsWorked, 
+                    basicPay: d.basicPay,
+                    rate: dailyRate, // <-- This was the bug!
+                    start: startInput, end: endInput, profile: profile
                 }));
 
                 html += `
