@@ -915,6 +915,66 @@ window.submitReasonLetter = async function() {
 };
 
 // ==========================================
+// 🛡️ PHASE 4: INVENTORY VALIDATION HUB
+// ==========================================
+window.validateStockLevels = async function(cartPayload) {
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let requiredIngredients = {}; 
+
+    // 1. Calculate the TOTAL amount of every ingredient needed for this specific order
+    for (let item of cartPayload) {
+        let itemName = item.name || item.itemName;
+        let qtySold = item.qty || 1;
+
+        // A. Sum up the Main Recipe (BOM)
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
+        bomSnap.forEach(docSnap => {
+            let ing = docSnap.data().ingredientName;
+            let amountNeeded = (docSnap.data().qty || 0) * qtySold;
+            if (!requiredIngredients[ing]) requiredIngredients[ing] = 0;
+            requiredIngredients[ing] += amountNeeded;
+        });
+
+        // B. Sum up the Add-Ons
+        if (item.addons) {
+            for (let key in item.addons) {
+                let addon = item.addons[key];
+                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                    let amountNeeded = addon.deductQty * addon.qty * qtySold;
+                    let ing = addon.linkedIngredient;
+                    if (!requiredIngredients[ing]) requiredIngredients[ing] = 0;
+                    requiredIngredients[ing] += amountNeeded;
+                }
+            }
+        }
+    }
+
+    // 2. Check the requirements against the Live Branch Inventory
+    let warnings = [];
+    for (let ing in requiredIngredients) {
+        let needed = requiredIngredients[ing];
+        
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ing));
+        const invSnap = await getDocs(invQ);
+
+        if (!invSnap.empty) {
+            let currentStock = invSnap.docs[0].data().currentStock || 0;
+            let uom = invSnap.docs[0].data().uom || 'units';
+            
+            // 🚨 THE TRIGGER: If they need more than they have!
+            if (currentStock < needed) {
+                warnings.push(`- ${ing}: Need ${needed.toFixed(2)} ${uom}, but only ${currentStock.toFixed(2)} ${uom} left!`);
+            }
+        } else {
+            warnings.push(`- ${ing}: Missing entirely from ${branch} inventory!`);
+        }
+    }
+
+    return warnings; // Returns an array of warning messages
+};
+
+// ==========================================
 // 🚪 SIGN OUT ENGINE
 // ==========================================
 window.logoutCashier = function() {
