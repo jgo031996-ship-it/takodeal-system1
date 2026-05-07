@@ -2156,7 +2156,19 @@
     
         filteredItems.forEach((item, index) => {
             let safePrice = parseFloat(item.price) || 0;
-            grid.innerHTML += `<div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})"><span class="item-number">${index + 1}</span><div class="item-name">${item.name}</div><div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div></div>`;
+            
+            // Check if the item has an image from Firebase, otherwise use the soup bowl emoji
+            let imgHtml = item.image 
+                ? `<img src="${item.image}" class="item-image">` 
+                : `<div class="item-image" style="display:flex; align-items:center; justify-content:center; font-size:35px; color: #cbd5e1;">🍲</div>`;
+            
+            grid.innerHTML += `
+                <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})">
+                    ${imgHtml}
+                    <div class="item-name">${item.name}</div>
+                    <div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div>
+                </div>
+            `;
         });
     }
 
