@@ -5821,3 +5821,243 @@ window.loadCashFlowHub = async function() {
         document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow: ${e.message}</div>`;
     }
 };
+
+// ========================================================
+// 🚚 PHASE 7: SUPPLIER PAYABLES & CALENDAR ENGINE
+// ========================================================
+
+window.loadPayablesDashboard = async function() {
+    const tbody = document.getElementById('payablesTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Scanning payables...</td></tr>';
+
+    try {
+        // We only want to see Unpaid invoices
+        const q = query(collection(db, "payables"), where("status", "==", "Unpaid"), orderBy("dueDate", "asc"));
+        const snap = await getDocs(q);
+
+        let html = '';
+        let totalUnpaid = 0;
+        let overdueCount = 0;
+        let dueSoonCount = 0;
+        
+        let now = new Date();
+        now.setHours(0,0,0,0);
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let amount = parseFloat(data.amount) || 0;
+            totalUnpaid += amount;
+
+            let deliveryDate = data.deliveryDate ? data.deliveryDate.toDate() : new Date();
+            let dueDate = data.dueDate ? data.dueDate.toDate() : new Date();
+            
+            // Calculate days difference
+            let diffTime = dueDate.getTime() - now.getTime();
+            let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            let statusHtml = '';
+            let dateColor = '#334155';
+
+            if (diffDays < 0) {
+                overdueCount++;
+                statusHtml = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⚠️ OVERDUE by ${Math.abs(diffDays)} Days</span>`;
+                dateColor = '#dc2626';
+            } else if (diffDays === 0) {
+                dueSoonCount++;
+                statusHtml = `<span style="background: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🚨 DUE TODAY</span>`;
+                dateColor = '#d97706';
+            } else if (diffDays <= 7) {
+                dueSoonCount++;
+                statusHtml = `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Due in ${diffDays} Days</span>`;
+            } else {
+                statusHtml = `<span style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">Safe (${diffDays} Days)</span>`;
+            }
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td><strong style="color: var(--primary); font-size: 15px;">${data.supplier}</strong></td>
+                    <td style="font-family: monospace; color: #64748b;">${data.invoiceNum || 'N/A'}</td>
+                    <td style="font-size: 13px;">${deliveryDate.toLocaleDateString()}</td>
+                    <td style="font-weight: bold; color: ${dateColor};">${dueDate.toLocaleDateString()}</td>
+                    <td style="font-weight: bold; font-size: 15px; color: #1e293b;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td>${statusHtml}</td>
+                    <td>
+                        <button onclick="window.openSettlePayable('${docSnap.id}', '${data.supplier}', ${amount}, '${data.invoiceNum}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">💸 Pay Now</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="color: #64748b; padding: 30px;">All payables are cleared! No outstanding debts.</td></tr>';
+
+        // Update Stat Cards
+        document.getElementById('payTotalUnpaid').innerText = `₱${totalUnpaid.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('payTotalOverdue').innerText = overdueCount;
+        document.getElementById('payDueSoon').innerText = dueSoonCount;
+
+        // Auto-Trigger Security Alert if there are Overdue invoices!
+        if (overdueCount > 0) {
+            triggerPayableAlert(overdueCount);
+        }
+
+    } catch (e) {
+        console.error("Payables Error:", e);
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error fetching payables.</td></tr>';
+    }
+};
+
+async function triggerPayableAlert(count) {
+    // Only triggers an alert if we haven't already fired one today
+    const q = query(collection(db, "manager_alerts"), where("type", "==", "PAYABLE_ALERT"), orderBy("timestamp", "desc"), limit(1));
+    const snap = await getDocs(q);
+    
+    let fireAlert = true;
+    if (!snap.empty) {
+        let lastAlert = snap.docs[0].data().timestamp.toDate();
+        let diffHours = (new Date() - lastAlert) / (1000 * 60 * 60);
+        if (diffHours < 24) fireAlert = false; // Prevents spamming every time you open the tab
+    }
+
+    if (fireAlert) {
+        await addDoc(collection(db, "manager_alerts"), {
+            type: "PAYABLE_ALERT",
+            branch: "Main Office",
+            message: `URGENT: You have ${count} supplier invoice(s) that are strictly OVERDUE. Please check the Supplier Payables tab immediately.`,
+            timestamp: serverTimestamp(),
+            isRead: false
+        });
+    }
+}
+
+window.saveNewPayable = async function() {
+    let supplier = document.getElementById('paySupplierName').value.trim();
+    let invoice = document.getElementById('payInvoiceNum').value.trim();
+    let amount = parseFloat(document.getElementById('payAmount').value);
+    let terms = parseInt(document.getElementById('payTerms').value);
+
+    if (!supplier || isNaN(amount) || amount <= 0) {
+        alert("Please enter Supplier Name and a valid Amount.");
+        return;
+    }
+
+    let btn = document.getElementById('btnSavePayable');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        let deliveryDate = new Date();
+        let dueDate = new Date();
+        dueDate.setDate(deliveryDate.getDate() + terms);
+
+        await addDoc(collection(db, "payables"), {
+            supplier: supplier,
+            invoiceNum: invoice,
+            amount: amount,
+            termsDays: terms,
+            deliveryDate: deliveryDate,
+            dueDate: dueDate,
+            status: "Unpaid",
+            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: serverTimestamp()
+        });
+
+        alert(`✅ Success! Invoice logged. Payment is due on ${dueDate.toLocaleDateString()}.`);
+        document.getElementById('addPayableModal').style.display = 'none';
+        
+        // Clean form
+        document.getElementById('paySupplierName').value = '';
+        document.getElementById('payInvoiceNum').value = '';
+        document.getElementById('payAmount').value = '';
+        
+        window.loadPayablesDashboard();
+    } catch (e) {
+        console.error(e);
+        alert("Failed to save payable.");
+    } finally {
+        btn.innerText = "💾 Save & Track Deadline"; btn.disabled = false;
+    }
+};
+
+window.openSettlePayable = async function(id, supplier, amount, invoice) {
+    document.getElementById('settlePayId').value = id;
+    document.getElementById('settlePaySupplier').value = supplier;
+    document.getElementById('settlePayAmountRaw').value = amount;
+    
+    document.getElementById('settlePayTitle').innerText = `${supplier} (Inv: ${invoice || 'N/A'})`;
+    document.getElementById('settlePayAmount').innerText = `₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    let accSelect = document.getElementById('settleCashAccount');
+    accSelect.innerHTML = '<option value="">Loading accounts...</option>';
+
+    try {
+        // Fetch LIVE accounts so you can pick where the money is coming from
+        const accSnap = await getDocs(collection(db, "cash_accounts"));
+        let html = '<option value="">-- Select Cash Account --</option>';
+        window.livePayableAccounts = {}; // Memory map
+
+        accSnap.forEach(docSnap => {
+            let acc = docSnap.data();
+            window.livePayableAccounts[docSnap.id] = acc;
+            html += `<option value="${docSnap.id}">${acc.name} (${acc.branch}) - Bal: ₱${acc.balance.toLocaleString()}</option>`;
+        });
+        accSelect.innerHTML = html;
+        document.getElementById('settlePayableModal').style.display = 'flex';
+    } catch (e) {
+        console.error("Error loading accounts:", e);
+        accSelect.innerHTML = '<option value="">Error loading accounts</option>';
+    }
+};
+
+window.confirmPayableSettlement = async function() {
+    let payId = document.getElementById('settlePayId').value;
+    let supplier = document.getElementById('settlePaySupplier').value;
+    let amount = parseFloat(document.getElementById('settlePayAmountRaw').value);
+    let accountId = document.getElementById('settleCashAccount').value;
+
+    if (!accountId) { alert("Please select a Cash Account to deduct funds from."); return; }
+
+    let accData = window.livePayableAccounts[accountId];
+    if (accData.balance < amount) {
+        if(!confirm(`⚠️ WARNING: ${accData.name} only has ₱${accData.balance}. Deducting this will make the account negative. Continue anyway?`)) return;
+    }
+
+    let btn = document.getElementById('btnConfirmSettle');
+    btn.innerText = "⏳ Processing Payment..."; btn.disabled = true;
+
+    try {
+        // 1. Deduct from Cash Account
+        await updateDoc(doc(db, "cash_accounts", accountId), {
+            balance: accData.balance - amount
+        });
+
+        // 2. Mark Payable as Paid
+        await updateDoc(doc(db, "payables", payId), {
+            status: "Paid",
+            datePaid: serverTimestamp(),
+            paidFromAccount: accData.name
+        });
+
+        // 3. Log to Global Expenses (so it shows up in your Expense Feed!)
+        await addDoc(collection(db, "expenses"), {
+            branch: "Main Office",
+            amount: amount,
+            category: "Supplier Payment",
+            account: accData.name,
+            note: `Settled Invoice for ${supplier}`,
+            timestamp: serverTimestamp()
+        });
+
+        alert(`✅ Payment complete! ₱${amount.toLocaleString()} was deducted from ${accData.name}.`);
+        document.getElementById('settlePayableModal').style.display = 'none';
+        
+        window.loadPayablesDashboard();
+        // If the user happens to have the Accounts tab loaded in the background, refresh it too
+        if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
+
+    } catch (e) {
+        console.error("Error settling payment:", e);
+        alert("Payment failed. Check connection.");
+    } finally {
+        btn.innerText = "✅ Confirm Payment"; btn.disabled = false;
+    }
+};
