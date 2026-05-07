@@ -858,6 +858,8 @@ window.loadDispatchDashboard = async function() {
 // ========================================================
 // 🧠 PHASE 5: SMART BURN RATE & SUPPLY CHAIN ENGINE
 // ========================================================
+window.latestSupplyChainData = [];
+
 window.loadSmartSupplyChain = async function() {
     let branch = document.getElementById('burnRateBranch').value;
     let tbody = document.getElementById('burnRateTableBody');
@@ -865,6 +867,8 @@ window.loadSmartSupplyChain = async function() {
     if (!branch) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; font-weight: bold; color: #8b5cf6;">⏳ Crunching 7 days of sales & recipes...</td></tr>';
 
+    window.latestSupplyChainData = [];
+    
     try {
         // 1. Calculate the date exactly 7 days ago
         let endDate = new Date();
@@ -933,6 +937,7 @@ window.loadSmartSupplyChain = async function() {
             
             let currentStock = parseFloat(invItem.currentStock) || 0;
             let uom = invItem.uom || 'units';
+            let totalBurn7Days = rawBurnData[itemName] || 0;
             
             // Look up how much of this item was burned in the last 7 days
             let totalBurn7Days = rawBurnData[itemName] || 0;
@@ -941,7 +946,16 @@ window.loadSmartSupplyChain = async function() {
             
             let dailyBurn = totalBurn7Days / 7;
             let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : 999;
+
+            let suggestedRestock = Math.ceil(totalBurn7Days); 
             
+            window.latestSupplyChainData.push({
+                itemName: itemName,
+                suggestedRestock: suggestedRestock,
+                currentStock: currentStock,
+                uom: uom
+            });
+          
             // Color coding logic for Days Left
             let daysColor = "#16a34a"; // Green (Safe)
             let daysText = Math.floor(daysLeft) + " days";
@@ -5696,3 +5710,62 @@ window.generateAutoPayslips = async function() {
 
 // Run the date setter when the dashboard loads!
 window.setDefaultCutoffDates();
+
+window.autoFill7DaySupply = function() {
+    if (!window.latestSupplyChainData || window.latestSupplyChainData.length === 0) {
+        alert("⚠️ Please click 'Calculate' first to run the AI engine for a branch."); 
+        return;
+    }
+
+    // Ensure the manager has selected the destination branch
+    let toBranch = document.getElementById('dispTo').value;
+    let aiTargetBranch = document.getElementById('burnRateBranch').value;
+    
+    if (toBranch !== aiTargetBranch) {
+        alert(`⚠️ Mismatch: The AI just calculated for ${aiTargetBranch}, but your Dispatch Destination is set to ${toBranch || "Nothing"}. Please match them up!`);
+        return;
+    }
+
+    let itemsAdded = 0;
+    let missingFromHQ = [];
+
+    window.latestSupplyChainData.forEach(need => {
+        // Only pack items that are actually burning down
+        if (need.suggestedRestock > 0 && need.currentStock <= need.suggestedRestock) {
+            
+            // 1. Find the item in the Main Office Warehouse
+            let hqItem = dispatchInventoryList.find(i => i.name === need.itemName);
+            
+            if (hqItem && hqItem.currentStock > 0) {
+                // 2. Only send what the branch needs (or whatever HQ has left)
+                let amountToSend = Math.min(need.suggestedRestock, hqItem.currentStock);
+                
+                // 3. Check if it's already in the cart, if so, update it
+                let existing = dispatchCart.find(i => i.itemName === need.itemName);
+                if (existing) {
+                    existing.qty = amountToSend; 
+                    existing.displayMsg = `${amountToSend} ${hqItem.uom} (AI Auto-Fill)`;
+                } else {
+                    dispatchCart.push({
+                        itemName: hqItem.name,
+                        qty: amountToSend,
+                        uom: hqItem.uom,
+                        sourceId: hqItem.id,
+                        displayMsg: `${amountToSend} ${hqItem.uom} (AI Auto-Fill)`
+                    });
+                }
+                itemsAdded++;
+            } else {
+                missingFromHQ.push(need.itemName);
+            }
+        }
+    });
+    
+    renderDispatchCart();
+    
+    if (missingFromHQ.length > 0) {
+        alert(`✅ Auto-filled ${itemsAdded} items.\n\n⚠️ Warning: The following required items are OUT OF STOCK at the Main Office and were skipped: ${missingFromHQ.join(", ")}`);
+    } else {
+        alert(`✅ Cart loaded! ${itemsAdded} items added based on the 7-Day Burn Rate.`);
+    }
+};
