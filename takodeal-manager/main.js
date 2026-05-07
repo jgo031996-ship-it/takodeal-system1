@@ -5048,7 +5048,7 @@ window.openPayslipModal = async function(staffName) {
     document.getElementById('psEnd').innerText = data.end;
     document.getElementById('psDist').innerText = new Date().toISOString().split('T')[0];
     document.getElementById('psHired').innerText = data.profile.dateHired || '---';
-    document.getElementById('psHours').innerText = `${data.hours.toFixed(2)} hrs (${data.shiftsWorked || 0} days)`;
+    document.getElementById('psDays').innerText = `${data.shiftsWorked || 0} days @ ₱${data.rate || 0}/day`;
     
     document.getElementById('psBasicPay').innerText = (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
     
