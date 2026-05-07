@@ -944,7 +944,7 @@
         </div>
       </div>
     </div>
-
+    
     <div id="view-schedule" class="view">
         <style>
             .sched-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid var(--border); }
@@ -1363,6 +1363,113 @@
       </div>
     </div>
 
+    <div id="view-payables" class="view">
+      <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+        <div class="stat-card" style="background: #fffbeb; border: 1px solid #fde68a;">
+          <h3 style="color: #b45309;">Total Unpaid Payables</h3>
+          <div class="value" id="payTotalUnpaid" style="color: #d97706; font-size: 32px;">₱0.00</div>
+        </div>
+        <div class="stat-card" style="background: #fef2f2; border: 1px solid #fecaca;">
+          <h3 style="color: #b91c1c;">Overdue Invoices</h3>
+          <div class="value" id="payTotalOverdue" style="color: #dc2626; font-size: 32px;">0</div>
+        </div>
+        <div class="stat-card" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+          <h3 style="color: #166534;">Due within 7 Days</h3>
+          <div class="value" id="payDueSoon" style="color: #15803d; font-size: 32px;">0</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0; color: #334155;">📦 Active Deliveries & Invoices</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Track supplier terms and upcoming payment deadlines.</span>
+          </div>
+          <button onclick="document.getElementById('addPayableModal').style.display='flex'" style="background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">
+            ➕ Log Delivery / Invoice
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead style="background: #f8fafc;">
+              <tr>
+                <th>Supplier / Vendor</th>
+                <th>Ref / Invoice #</th>
+                <th>Delivery Date</th>
+                <th>Due Date</th>
+                <th>Amount (₱)</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="payablesTableBody">
+              <tr>
+                <td colspan="7" class="text-center">Loading payables...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="addPayableModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+        <div style="background: #0f766e; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+          <h2 style="margin: 0; font-size: 18px;">➕ Log Supplier Delivery</h2>
+          <span onclick="document.getElementById('addPayableModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+        </div>
+        <div style="padding: 20px;">
+          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Supplier Name</label>
+          <input type="text" id="paySupplierName" placeholder="e.g. Monterey, Coca-Cola" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div>
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">Invoice / Ref No.</label>
+              <input type="text" id="payInvoiceNum" placeholder="INV-12345" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">Total Amount (₱)</label>
+              <input type="number" id="payAmount" placeholder="0.00" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626;">
+            </div>
+          </div>
+
+          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Payment Terms</label>
+          <select id="payTerms" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+            <option value="0">C.O.D. (Due Today)</option>
+            <option value="7">7 Days</option>
+            <option value="15">15 Days</option>
+            <option value="30">30 Days</option>
+          </select>
+
+          <button onclick="window.saveNewPayable()" id="btnSavePayable" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Save & Track Deadline</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settlePayableModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+        <div style="background: #16a34a; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+          <h2 style="margin: 0; font-size: 18px;">💸 Settle Invoice</h2>
+          <span onclick="document.getElementById('settlePayableModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+        </div>
+        <div style="padding: 20px;">
+          <input type="hidden" id="settlePayId">
+          <input type="hidden" id="settlePaySupplier">
+          <input type="hidden" id="settlePayAmountRaw">
+
+          <p style="font-size: 13px; color: #475569; margin-top: 0;">You are about to pay <strong id="settlePayTitle" style="color: #1e293b;">Supplier</strong>.</p>
+          <div style="font-size: 28px; font-weight: 900; color: #16a34a; text-align: center; margin: 15px 0;" id="settlePayAmount">₱0.00</div>
+
+          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Select Cash Account to Deduct From</label>
+          <select id="settleCashAccount" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+            <option value="">Loading Accounts...</option>
+          </select>
+
+          <button onclick="window.confirmPayableSettlement()" id="btnConfirmSettle" style="width: 100%; background: #16a34a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">✅ Confirm Payment</button>
+        </div>
+      </div>
+    </div>
+    
   </main>
 
   <div id="transferModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
