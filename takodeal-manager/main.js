@@ -5763,27 +5763,33 @@ window.autoFill7DaySupply = function() {
 window.loadCashFlowHub = async function() {
     try {
         let safeCash = 0;
-        const accSnap = await window.getDocs(window.collection(window.db, "cash_accounts"));
+        // CORRECTED: Using direct imports (db, collection, getDocs)
+        const accSnap = await getDocs(collection(db, "cash_accounts"));
         accSnap.forEach(doc => { safeCash += (doc.data().balance || 0); });
 
         let branchFloating = { "Cabantian": 0, "Citygate": 0, "Maa": 0 };
         let pendingVerifications = 0;
         let totalFloating = 0;
 
-        const shiftSnap = await window.getDocs(window.query(window.collection(window.db, "shifts"), window.where("status", "==", "Closed")));
+        const shiftSnap = await getDocs(query(collection(db, "shifts"), where("status", "==", "Closed")));
         shiftSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
             if (branchFloating[branch] !== undefined) branchFloating[branch] += (data.expectedCash || 0);
         });
 
-        const remitSnap = await window.getDocs(window.collection(window.db, "remittances"));
+        const remitSnap = await getDocs(collection(db, "remittances"));
         remitSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
+            
+            // Count pending verifications globally
+            if (data.status === "Pending") {
+                pendingVerifications += (data.amount || 0);
+            }
+
             if (branchFloating[branch] !== undefined) {
                 if (data.status === "Received") branchFloating[branch] -= (data.amount || 0);
-                else if (data.status === "Pending") pendingVerifications += (data.amount || 0);
             }
         });
 
@@ -5811,6 +5817,6 @@ window.loadCashFlowHub = async function() {
 
     } catch (e) {
         console.error("Cash Flow Hub Error:", e);
-        document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow.</div>`;
+        document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow: ${e.message}</div>`;
     }
 };
