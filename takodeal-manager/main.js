@@ -619,6 +619,7 @@ window.switchView = function (viewId) {
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'ledger') title = "Staff Loans & Ledger";
+  if (viewId === 'payables') title = "Supplier Payables & Terms";
   if (viewId === 'receipt') title = "Thermal Printer Setup";
   if (viewId === 'schedule') {
         title = "Schedule & Shift Manager";
