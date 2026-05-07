@@ -111,8 +111,7 @@
     <div class="nav-menu">
       <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')">📊 Global Dashboard</a>
       <a href="#" class="nav-item" id="nav-accounts" onclick="switchView('accounts')">💼 Cash & Budget</a>
-      <a href="#" class="nav-item" id="nav-transfers" onclick="switchView('transfers'); loadCashExplorer();">💰 Cash
-        Transfers</a>
+      <a href="#" class="nav-item" id="nav-transfers" onclick="switchView('transfers'); loadCashExplorer(); window.loadCashFlowHub();">🏦 EOD Remittance Hub</a>
       <a href="#" class="nav-item" id="nav-devices" onclick="switchView('devices'); loadDeviceFleet();">💻 Device
         Fleet</a>
       <a href="#" class="nav-item" id="nav-payroll" onclick="switchView('payroll')">⏱️ HR & Payroll</a>
@@ -462,15 +461,26 @@
         </div>
       </div>
 
-      <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 20px;">
-        <div class="stat-card" style="background: #0f766e; color: white;">
-          <h3 style="color: #ccfbf1;">Total Cash Transfer (₱)</h3>
-          <div class="value" id="explorerTotalTransfer" style="color: white; font-size: 32px;">₱0.00</div>
+      <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+        <div class="stat-card" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+          <h3 style="color: #166534;">🏦 Safe Cash (In Bank / HQ)</h3>
+          <div class="value" id="hubSafeCash" style="color: #15803d; font-size: 32px;">₱0.00</div>
+          <div style="font-size: 11px; color: #166534; margin-top: 5px;">Total balance of all HQ accounts</div>
         </div>
         <div class="stat-card" style="background: #fffbeb; border: 1px solid #fde68a;">
-          <h3 style="color: #b45309;">Pending Transfers</h3>
-          <div class="value" id="explorerPendingCount" style="color: #d97706; font-size: 32px;">0</div>
+          <h3 style="color: #b45309;">💸 Floating Cash (At Branches)</h3>
+          <div class="value" id="hubFloatingCash" style="color: #d97706; font-size: 32px;">₱0.00</div>
+          <div style="font-size: 11px; color: #b45309; margin-top: 5px;">Expected Z-Reading Cash not yet remitted</div>
         </div>
+        <div class="stat-card" style="background: #eff6ff; border: 1px solid #bfdbfe;">
+          <h3 style="color: #1d4ed8;">⏳ Pending Verifications</h3>
+          <div class="value" id="hubPendingCash" style="color: #2563eb; font-size: 32px;">₱0.00</div>
+          <div style="font-size: 11px; color: #1d4ed8; margin-top: 5px;">Remittances awaiting your approval</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px;" id="branchFloatingContainer">
+          <div style="text-align: center; padding: 20px; color: #64748b; grid-column: 1/-1;">⏳ Calculating branch liabilities...</div>
       </div>
 
       <div class="card">
