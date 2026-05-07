@@ -878,12 +878,16 @@ window.loadSmartSupplyChain = async function() {
         let itemSalesCount = {};
         let rawBurnData = {};
 
-        // 3. Count exactly how many of each menu item was sold
+        // 3. Count exactly how many of each menu item was sold (WITH SAFETY CHECKS)
         txSnap.forEach(doc => {
             let tx = doc.data();
-            if (tx.status !== 'Voided') {
+            
+            // 🛡️ SAFETY SHIELD: Ensure the transaction wasn't voided AND actually has a cart array
+            if (tx.status !== 'Voided' && tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let name = item.name || item.itemName;
+                    if (!name) return; // Skip broken items
+                    
                     let qtySold = item.qty || 1;
                     itemSalesCount[name] = (itemSalesCount[name] || 0) + qtySold;
 
@@ -905,7 +909,7 @@ window.loadSmartSupplyChain = async function() {
         const bomSnap = await getDocs(collection(db, "bom"));
         bomSnap.forEach(doc => {
             let recipe = doc.data();
-            if (itemSalesCount[recipe.menuItem]) {
+            if (recipe.menuItem && recipe.ingredientName && itemSalesCount[recipe.menuItem]) {
                 let amountBurned = (recipe.qty || 0) * itemSalesCount[recipe.menuItem];
                 rawBurnData[recipe.ingredientName] = (rawBurnData[recipe.ingredientName] || 0) + amountBurned;
             }
@@ -918,57 +922,61 @@ window.loadSmartSupplyChain = async function() {
         let html = '';
         let itemsAnalyzed = 0;
 
-        invSnap.forEach(doc => {
-            let invItem = doc.data();
+        // Sort the inventory alphabetically so it's easy to read
+        let sortedInventory = [];
+        invSnap.forEach(doc => sortedInventory.push(doc.data()));
+        sortedInventory.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+        sortedInventory.forEach(invItem => {
             let itemName = invItem.name;
-            let currentStock = invItem.currentStock || 0;
+            if (!itemName) return; // Skip broken records
+            
+            let currentStock = parseFloat(invItem.currentStock) || 0;
             let uom = invItem.uom || 'units';
             
             // Look up how much of this item was burned in the last 7 days
             let totalBurn7Days = rawBurnData[itemName] || 0;
             
-            // Only show items that are actually being consumed or have low stock
-            if (totalBurn7Days > 0 || currentStock <= (invItem.reorderLevel || 5)) {
-                itemsAnalyzed++;
-                
-                let dailyBurn = totalBurn7Days / 7;
-                let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : 999;
-                
-                // Color coding logic for Days Left
-                let daysColor = "#16a34a"; // Green (Safe)
-                let daysText = Math.floor(daysLeft) + " days";
-                
-                if (daysLeft <= 0) { daysColor = "#dc2626"; daysText = "OUT OF STOCK!"; }
-                else if (daysLeft < 3) { daysColor = "#ea580c"; daysText = Math.floor(daysLeft) + " days (CRITICAL)"; }
-                else if (daysLeft === 999) { daysColor = "#94a3b8"; daysText = "No Burn Data"; }
+            itemsAnalyzed++;
+            
+            let dailyBurn = totalBurn7Days / 7;
+            let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : 999;
+            
+            // Color coding logic for Days Left
+            let daysColor = "#16a34a"; // Green (Safe)
+            let daysText = Math.floor(daysLeft) + " days";
+            
+            if (currentStock <= 0) { daysColor = "#dc2626"; daysText = "OUT OF STOCK!"; }
+            else if (daysLeft < 3) { daysColor = "#ea580c"; daysText = Math.floor(daysLeft) + " days (CRITICAL)"; }
+            else if (daysLeft === 999) { daysColor = "#94a3b8"; daysText = "No Burn Data"; }
 
-                html += `
-                    <tr style="border-bottom: 1px dashed #e2e8f0;">
-                        <td style="font-weight: bold; color: #334155;">${itemName}</td>
-                        <td style="font-weight: bold; font-size: 15px;">${currentStock.toFixed(1)} <span style="font-size:11px; color:#64748b; font-weight:normal;">${uom}</span></td>
-                        <td>${totalBurn7Days.toFixed(1)} ${uom}</td>
-                        <td style="color: #ea580c; font-weight: bold;">${dailyBurn.toFixed(2)} ${uom}/day</td>
-                        <td style="color: ${daysColor}; font-weight: bold; font-size: 15px;">${daysText}</td>
-                        <td>
-                            <button onclick="document.getElementById('dispItem').value='${itemName}'; window.updateDispatchUomLabel(); window.scrollTo(0,0);" 
-                                style="background: white; border: 1px solid #8b5cf6; color: #8b5cf6; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
-                                📦 Send Stock
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }
+            html += `
+                <tr style="border-bottom: 1px dashed #e2e8f0;">
+                    <td style="font-weight: bold; color: #334155;">${itemName}</td>
+                    <td style="font-weight: bold; font-size: 15px;">${currentStock.toFixed(1)} <span style="font-size:11px; color:#64748b; font-weight:normal;">${uom}</span></td>
+                    <td>${totalBurn7Days.toFixed(1)} ${uom}</td>
+                    <td style="color: #ea580c; font-weight: bold;">${dailyBurn.toFixed(2)} ${uom}/day</td>
+                    <td style="color: ${daysColor}; font-weight: bold; font-size: 15px;">${daysText}</td>
+                    <td>
+                        <button onclick="document.getElementById('dispItem').value='${itemName}'; window.updateDispatchUomLabel(); window.scrollTo(0,0);" 
+                            style="background: white; border: 1px solid #8b5cf6; color: #8b5cf6; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
+                            📦 Send Stock
+                        </button>
+                    </td>
+                </tr>
+            `;
         });
 
         if (itemsAnalyzed === 0) {
-            html = '<tr><td colspan="6" class="text-center" style="padding: 20px; color: #64748b;">Not enough sales data to calculate Burn Rate for this branch yet.</td></tr>';
+            html = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No inventory items found in this branch yet. Add items first!</td></tr>';
         }
 
         tbody.innerHTML = html;
 
     } catch (e) {
         console.error("Supply Chain Engine Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error calculating supply chain metrics.</td></tr>';
+        // If an index is missing, we will catch it here!
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 20px; font-weight: bold;">⚠️ Error fetching data. Open F12 Console to see if a Firebase Index is missing.</td></tr>';
     }
 };
 
