@@ -123,7 +123,7 @@ window.loginWithGoogle = async function() {
 };
 
 // --- ACCESS CONTROL ENGINE ---
-async function loadAdminDashboard() {
+window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="3" class="text-center">Loading personnel...</td></tr>';
@@ -5754,5 +5754,63 @@ window.autoFill7DaySupply = function() {
         alert(`✅ Auto-filled ${itemsAdded} items.\n\n⚠️ Warning: The following required items are OUT OF STOCK at the Main Office and were skipped: ${missingFromHQ.join(", ")}`);
     } else {
         alert(`✅ Cart loaded! ${itemsAdded} items added based on the 7-Day Burn Rate.`);
+    }
+};
+
+// ========================================================
+// 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE
+// ========================================================
+window.loadCashFlowHub = async function() {
+    try {
+        let safeCash = 0;
+        const accSnap = await window.getDocs(window.collection(window.db, "cash_accounts"));
+        accSnap.forEach(doc => { safeCash += (doc.data().balance || 0); });
+
+        let branchFloating = { "Cabantian": 0, "Citygate": 0, "Maa": 0 };
+        let pendingVerifications = 0;
+        let totalFloating = 0;
+
+        const shiftSnap = await window.getDocs(window.query(window.collection(window.db, "shifts"), window.where("status", "==", "Closed")));
+        shiftSnap.forEach(doc => {
+            let data = doc.data();
+            let branch = data.branch;
+            if (branchFloating[branch] !== undefined) branchFloating[branch] += (data.expectedCash || 0);
+        });
+
+        const remitSnap = await window.getDocs(window.collection(window.db, "remittances"));
+        remitSnap.forEach(doc => {
+            let data = doc.data();
+            let branch = data.branch;
+            if (branchFloating[branch] !== undefined) {
+                if (data.status === "Received") branchFloating[branch] -= (data.amount || 0);
+                else if (data.status === "Pending") pendingVerifications += (data.amount || 0);
+            }
+        });
+
+        let branchHtml = '';
+        for (let branch in branchFloating) {
+            let owed = branchFloating[branch] < 0 ? 0 : branchFloating[branch];
+            totalFloating += owed;
+            let alertColor = owed > 5000 ? "#dc2626" : "#475569"; 
+            let alertBg = owed > 5000 ? "#fef2f2" : "#f8fafc";
+            let alertBorder = owed > 5000 ? "#fecaca" : "#e2e8f0";
+            
+            branchHtml += `
+                <div style="background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center;">
+                    <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
+                    <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${owed.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Unremitted Cash</div>
+                </div>
+            `;
+        }
+
+        document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('hubFloatingCash').innerText = `₱${totalFloating.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('hubPendingCash').innerText = `₱${pendingVerifications.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('branchFloatingContainer').innerHTML = branchHtml;
+
+    } catch (e) {
+        console.error("Cash Flow Hub Error:", e);
+        document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow.</div>`;
     }
 };
