@@ -2362,10 +2362,57 @@
         if (pendingItem.discountType !== 'none') { 
             document.getElementById('discountValueInput').value = pendingItem.discountVal; 
         }
-    
+
         document.getElementById('variantModal').style.display = 'flex';
         document.getElementById('addonSelectDropdown').innerHTML = '<option value="">⏳ Loading Add-Ons...</option>';
         renderActiveAddons();
+    
+        // 👇 PASTE EVERYTHING BELOW THIS LINE 👇
+        // 🔥 NEW: INJECT PRE-FLIGHT STOCK WARNING UI
+        let stockWarningEl = document.getElementById('modalStockWarning');
+        if (!stockWarningEl) {
+            stockWarningEl = document.createElement('div');
+            stockWarningEl.id = 'modalStockWarning';
+            stockWarningEl.style = "background: #fef2f2; color: #dc2626; padding: 12px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; border: 1px solid #fecaca; display: none; font-size: 13px; text-align: center;";
+            document.getElementById('modalItemName').parentElement.parentElement.insertAdjacentElement('afterend', stockWarningEl);
+        }
+        stockWarningEl.style.display = 'none'; // Hide by default
+    
+        // 🔥 NEW: BACKGROUND STOCK CHECKER
+        setTimeout(async () => {
+            try {
+                const bomQ = window.query(window.collection(window.db, "bom"), window.where("menuItem", "==", pendingItem.name));
+                const bomSnap = await window.getDocs(bomQ);
+                
+                let lowestPossibleOrders = Infinity;
+                
+                for (let docSnap of bomSnap.docs) {
+                    let recipe = docSnap.data();
+                    const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH), window.where("name", "==", recipe.ingredientName));
+                    const invSnap = await window.getDocs(invQ);
+                    
+                    if (!invSnap.empty) {
+                        let currentStock = invSnap.docs[0].data().currentStock || 0;
+                        // How many more of this item can we make? (Current Stock / Recipe Requirement)
+                        let possibleOrders = currentStock / (recipe.qty || 1);
+                        if (possibleOrders < lowestPossibleOrders) lowestPossibleOrders = possibleOrders;
+                    } else {
+                        lowestPossibleOrders = 0; // Missing ingredient
+                    }
+                }
+    
+                // Trigger the visual warning if they are about to hit negative stock!
+                if (lowestPossibleOrders <= 5 && lowestPossibleOrders > 0) {
+                    stockWarningEl.innerHTML = `⚠️ Low Stock Warning: Only enough ingredients left for ~${Math.floor(lowestPossibleOrders)} more orders.`;
+                    stockWarningEl.style.display = 'block';
+                } else if (lowestPossibleOrders <= 0) {
+                    stockWarningEl.innerHTML = `🛑 OUT OF STOCK: Please log a Kitchen Prep Batch immediately before selling!`;
+                    stockWarningEl.style.display = 'block';
+                }
+    
+            } catch (e) { console.error("Live stock check failed", e); }
+        }, 100);
+        // 👆 PASTE EVERYTHING ABOVE THIS LINE 👆
     
         try {
             const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", pendingItem.name));
