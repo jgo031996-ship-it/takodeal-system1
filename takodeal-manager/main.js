@@ -858,7 +858,7 @@ window.loadDispatchDashboard = async function() {
 // ========================================================
 // 🧠 PHASE 5: SMART BURN RATE & SUPPLY CHAIN ENGINE
 // ========================================================
-window.latestSupplyChainData = [];
+window.latestSupplyChainData = []; // Add this to track the AI's math
 
 window.loadSmartSupplyChain = async function() {
     let branch = document.getElementById('burnRateBranch').value;
@@ -867,35 +867,29 @@ window.loadSmartSupplyChain = async function() {
     if (!branch) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; font-weight: bold; color: #8b5cf6;">⏳ Crunching 7 days of sales & recipes...</td></tr>';
 
-    window.latestSupplyChainData = [];
-    
+    window.latestSupplyChainData = []; // Clear old memory on every new calculation
+
     try {
-        // 1. Calculate the date exactly 7 days ago
         let endDate = new Date();
         let startDate = new Date();
         startDate.setDate(startDate.getDate() - 7);
 
-        // 2. Fetch the last 7 Days of Transactions for this branch
         const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startDate));
         const txSnap = await getDocs(txQ);
 
         let itemSalesCount = {};
         let rawBurnData = {};
 
-        // 3. Count exactly how many of each menu item was sold (WITH SAFETY CHECKS)
         txSnap.forEach(doc => {
             let tx = doc.data();
-            
-            // 🛡️ SAFETY SHIELD: Ensure the transaction wasn't voided AND actually has a cart array
             if (tx.status !== 'Voided' && tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let name = item.name || item.itemName;
-                    if (!name) return; // Skip broken items
+                    if (!name) return;
                     
                     let qtySold = item.qty || 1;
                     itemSalesCount[name] = (itemSalesCount[name] || 0) + qtySold;
 
-                    // 🔥 Calculate Add-On Consumption!
                     if (item.addons) {
                         for (let key in item.addons) {
                             let addon = item.addons[key];
@@ -909,7 +903,6 @@ window.loadSmartSupplyChain = async function() {
             }
         });
 
-        // 4. Translate Menu Items into Raw Ingredients using the BOM (Recipe Matrix)
         const bomSnap = await getDocs(collection(db, "bom"));
         bomSnap.forEach(doc => {
             let recipe = doc.data();
@@ -919,34 +912,37 @@ window.loadSmartSupplyChain = async function() {
             }
         });
 
-        // 5. Fetch the Live Inventory for the branch to compare
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
         const invSnap = await getDocs(invQ);
         
         let html = '';
         let itemsAnalyzed = 0;
 
-        // Sort the inventory alphabetically so it's easy to read
         let sortedInventory = [];
         invSnap.forEach(doc => sortedInventory.push(doc.data()));
         sortedInventory.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
         sortedInventory.forEach(invItem => {
             let itemName = invItem.name;
-            if (!itemName) return; // Skip broken records
+            if (!itemName) return; 
             
             let currentStock = parseFloat(invItem.currentStock) || 0;
             let uom = invItem.uom || 'units';
-            let totalBurn7Days = rawBurnData[itemName] || 0;
-            
-            // Look up how much of this item was burned in the last 7 days
             let totalBurn7Days = rawBurnData[itemName] || 0;
             
             itemsAnalyzed++;
             
             let dailyBurn = totalBurn7Days / 7;
             let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : 999;
+            
+            let daysColor = "#16a34a"; 
+            let daysText = Math.floor(daysLeft) + " days";
+            
+            if (currentStock <= 0) { daysColor = "#dc2626"; daysText = "OUT OF STOCK!"; }
+            else if (daysLeft < 3) { daysColor = "#ea580c"; daysText = Math.floor(daysLeft) + " days (CRITICAL)"; }
+            else if (daysLeft === 999) { daysColor = "#94a3b8"; daysText = "No Burn Data"; }
 
+            // 🔥 NEW: Save the AI's recommendation to memory
             let suggestedRestock = Math.ceil(totalBurn7Days); 
             
             window.latestSupplyChainData.push({
@@ -955,14 +951,6 @@ window.loadSmartSupplyChain = async function() {
                 currentStock: currentStock,
                 uom: uom
             });
-          
-            // Color coding logic for Days Left
-            let daysColor = "#16a34a"; // Green (Safe)
-            let daysText = Math.floor(daysLeft) + " days";
-            
-            if (currentStock <= 0) { daysColor = "#dc2626"; daysText = "OUT OF STOCK!"; }
-            else if (daysLeft < 3) { daysColor = "#ea580c"; daysText = Math.floor(daysLeft) + " days (CRITICAL)"; }
-            else if (daysLeft === 999) { daysColor = "#94a3b8"; daysText = "No Burn Data"; }
 
             html += `
                 <tr style="border-bottom: 1px dashed #e2e8f0;">
@@ -989,7 +977,6 @@ window.loadSmartSupplyChain = async function() {
 
     } catch (e) {
         console.error("Supply Chain Engine Error:", e);
-        // If an index is missing, we will catch it here!
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 20px; font-weight: bold;">⚠️ Error fetching data. Open F12 Console to see if a Firebase Index is missing.</td></tr>';
     }
 };
