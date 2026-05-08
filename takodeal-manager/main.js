@@ -5930,6 +5930,99 @@ async function triggerPayableAlert(count) {
     }
 }
 
+// ========================================================
+// 📦 SMART RECEIVE & PAYABLES ENGINE
+// ========================================================
+
+window.payableItemsCart = [];
+window.payableInventoryOptions = [];
+
+// 1. Opens the Modal & Fetches Main Office Inventory
+window.openAddPayableModal = async function() {
+    document.getElementById('addPayableModal').style.display = 'flex';
+    document.getElementById('paySupplierName').value = '';
+    document.getElementById('payInvoiceNum').value = '';
+    document.getElementById('payAmount').value = '';
+    window.payableItemsCart = [];
+    window.renderPayableItems();
+
+    let select = document.getElementById('payItemSelect');
+    select.innerHTML = '<option value="">Loading items...</option>';
+
+    try {
+        // Fetch ONLY Main Office inventory for receiving bulk deliveries
+        const q = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const snap = await getDocs(q);
+        
+        window.payableInventoryOptions = [];
+        let html = '<option value="">-- Select Item Received --</option>';
+        
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            window.payableInventoryOptions.push({ id: docSnap.id, ...data });
+            html += `<option value="${docSnap.id}">${data.name} (${data.purchaseUom || data.uom})</option>`;
+        });
+        
+        select.innerHTML = html;
+    } catch (e) {
+        console.error(e);
+        select.innerHTML = '<option value="">Error loading items</option>';
+    }
+};
+
+// 2. Adds Items to the Temporary Delivery Cart
+window.addPayableItem = function() {
+    let select = document.getElementById('payItemSelect');
+    let itemId = select.value;
+    let qty = parseFloat(document.getElementById('payItemQty').value);
+
+    if (!itemId || isNaN(qty) || qty <= 0) return;
+
+    let itemData = window.payableInventoryOptions.find(i => i.id === itemId);
+    if (!itemData) return;
+
+    // Automatically calculate Base Units from Purchase Units!
+    let convRate = parseFloat(itemData.conversionRate) || 1;
+    let baseQtyToAdd = qty * convRate;
+
+    window.payableItemsCart.push({
+        id: itemData.id,
+        name: itemData.name,
+        purchQty: qty,
+        purchUom: itemData.purchaseUom || itemData.uom,
+        baseQtyToAdd: baseQtyToAdd,
+        baseUom: itemData.uom
+    });
+
+    document.getElementById('payItemQty').value = '';
+    window.renderPayableItems();
+};
+
+window.removePayableItem = function(index) {
+    window.payableItemsCart.splice(index, 1);
+    window.renderPayableItems();
+};
+
+window.renderPayableItems = function() {
+    let container = document.getElementById('payItemsList');
+    if (window.payableItemsCart.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding: 10px; font-style: italic;">No physical items linked. This will just log the cash payable.</div>';
+        return;
+    }
+
+    let html = '';
+    window.payableItemsCart.forEach((item, index) => {
+        html += `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 6px 5px; border-bottom: 1px dashed #cbd5e1; background: white; border-radius: 4px; margin-bottom: 4px;">
+                <span><strong style="color: #0f766e;">${item.purchQty} ${item.purchUom}</strong> ${item.name} <br><span style="font-size:10px; color:#64748b;">(Adds +${item.baseQtyToAdd} ${item.baseUom} to stock)</span></span>
+                <button onclick="window.removePayableItem(${index})" style="color: #ef4444; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-weight: bold;">✖</button>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+};
+
+// 3. The Grand Double-Save (Updates Payables AND Live Inventory)
 window.saveNewPayable = async function() {
     let supplier = document.getElementById('paySupplierName').value.trim();
     let invoice = document.getElementById('payInvoiceNum').value.trim();
@@ -5942,13 +6035,14 @@ window.saveNewPayable = async function() {
     }
 
     let btn = document.getElementById('btnSavePayable');
-    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+    btn.innerText = "⏳ Saving & Updating Inventory..."; btn.disabled = true;
 
     try {
         let deliveryDate = new Date();
         let dueDate = new Date();
         dueDate.setDate(deliveryDate.getDate() + terms);
 
+        // A. Save the Financial Payable Record
         await addDoc(collection(db, "payables"), {
             supplier: supplier,
             invoiceNum: invoice,
@@ -5957,24 +6051,50 @@ window.saveNewPayable = async function() {
             deliveryDate: deliveryDate,
             dueDate: dueDate,
             status: "Unpaid",
+            hasLinkedItems: window.payableItemsCart.length > 0,
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
         });
 
-        alert(`✅ Success! Invoice logged. Payment is due on ${dueDate.toLocaleDateString()}.`);
+        // B. Update Live Inventory & Stock Logs if items were attached
+        if (window.payableItemsCart.length > 0) {
+            for (let item of window.payableItemsCart) {
+                let invRef = doc(db, "inventory", item.id);
+                let invData = window.payableInventoryOptions.find(i => i.id === item.id);
+                let currentStock = parseFloat(invData.currentStock) || 0;
+                let newStock = currentStock + item.baseQtyToAdd;
+
+                // Update the actual stock level
+                await updateDoc(invRef, { currentStock: newStock });
+
+                // Create a beautiful audit log so you know where it came from
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: "Main Office",
+                    item: item.name,
+                    uom: item.baseUom,
+                    oldQty: currentStock,
+                    newQty: newStock,
+                    variance: item.baseQtyToAdd,
+                    type: "Supplier Delivery",
+                    note: `Linked to Invoice: ${invoice || 'N/A'}, Supplier: ${supplier}`,
+                    user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+                    timestamp: new Date()
+                });
+            }
+        }
+
+        alert(`✅ Success! Invoice logged and ${window.payableItemsCart.length} inventory items added to the Main Office.`);
         document.getElementById('addPayableModal').style.display = 'none';
-        
-        // Clean form
-        document.getElementById('paySupplierName').value = '';
-        document.getElementById('payInvoiceNum').value = '';
-        document.getElementById('payAmount').value = '';
-        
         window.loadPayablesDashboard();
+        
+        // Refresh inventory if that tab happens to be loaded
+        if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
+        
     } catch (e) {
         console.error(e);
-        alert("Failed to save payable.");
+        alert("❌ Failed to save payable or update inventory.");
     } finally {
-        btn.innerText = "💾 Save & Track Deadline"; btn.disabled = false;
+        btn.innerText = "💾 Log Delivery & Track Deadline"; btn.disabled = false;
     }
 };
 
