@@ -1800,82 +1800,76 @@ window.executeBatchPrep = async function () {
   }
 };
 
-// --- THE CASH ACCOUNTS & BUDGET ENGINE ---
 window.loadAccountsAndBudget = async function() {
-    const tbody = document.getElementById('accTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading grouped accounts...</td></tr>';
-
     // ==========================================
     // 🏦 PART 1: THE COLLAPSIBLE CASH LEDGER
     // ==========================================
     try {
-        const snap = await getDocs(collection(db, "cash_accounts"));
-        let accountsByBranch = {};
-        let totalCash = 0;
+        const tbody = document.getElementById('accTableBody');
+        if (tbody) {
+            const snap = await getDocs(collection(db, "cash_accounts"));
+            let accountsByBranch = {};
+            let totalCash = 0;
+            
+            // 🔥 FIX: Reset the global memory so transfers and expenses work!
+            window.liveAccounts = []; 
 
-        // Group all accounts by their branch
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
-            data.id = docSnap.id;
-            let branch = data.branch || "Unassigned";
+            snap.forEach(docSnap => {
+                let data = docSnap.data();
+                data.id = docSnap.id;
+                let branch = data.branch || "Unassigned";
 
-            if (!accountsByBranch[branch]) accountsByBranch[branch] = [];
-            accountsByBranch[branch].push(data);
+                window.liveAccounts.push(data); // Save to memory
 
-            totalCash += (data.balance || 0);
-        });
+                if (!accountsByBranch[branch]) accountsByBranch[branch] = [];
+                accountsByBranch[branch].push(data);
+                totalCash += (data.balance || 0);
+            });
 
-        if(document.getElementById('accTotalCash')) {
-            document.getElementById('accTotalCash').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        }
+            if(document.getElementById('accTotalCash')) {
+                document.getElementById('accTotalCash').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            }
 
-        let html = '';
+            let html = '';
+            for (let branch in accountsByBranch) {
+                let branchTotal = accountsByBranch[branch].reduce((sum, acc) => sum + (acc.balance || 0), 0);
+                let safeBranchId = branch.replace(/\s+/g, ''); 
 
-        for (let branch in accountsByBranch) {
-            let branchTotal = accountsByBranch[branch].reduce((sum, acc) => sum + (acc.balance || 0), 0);
-            let safeBranchId = branch.replace(/\s+/g, ''); 
-
-            // 1. The Collapsible Branch Header Row
-            html += `
-                <tr style="background: #f8fafc; cursor: pointer; border-bottom: 2px solid #cbd5e1; transition: background 0.2s;" 
-                    onclick="window.toggleBranchAccounts('${safeBranchId}')" 
-                    onmouseover="this.style.background='#f1f5f9'" 
-                    onmouseout="this.style.background='#f8fafc'">
-                    <td colspan="2" style="font-weight: 900; color: #0f766e; font-size: 16px; padding: 15px;">
-                        <span id="icon_${safeBranchId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 🏢 ${branch}
-                    </td>
-                    <td style="font-weight: 900; color: #16a34a; font-size: 16px; padding: 15px;">
-                        ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}
-                    </td>
-                    <td style="text-align: right; padding: 15px;">
-                        <span style="font-size: 12px; color: #64748b; background: #e2e8f0; padding: 4px 8px; border-radius: 12px; font-weight: bold;">
-                            ${accountsByBranch[branch].length} Accounts
-                        </span>
-                    </td>
-                </tr>
-            `;
-
-            // 2. The Hidden Account Rows
-            accountsByBranch[branch].forEach(acc => {
                 html += `
-                    <tr class="branch-row-${safeBranchId}" style="display: none; background: white; border-bottom: 1px dashed #e2e8f0;">
-                        <td style="padding-left: 45px; color: #94a3b8; font-size: 18px;">↳</td>
-                        <td style="font-weight: bold; color: #334155;">${acc.name}</td>
-                        <td style="font-weight: bold; color: #059669;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                        <td>
-                            <button onclick="window.editAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px;">✏️ Edit</button>
-                            <button onclick="window.deleteAccount('${acc.id}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">🗑️</button>
+                    <tr style="background: #f8fafc; cursor: pointer; border-bottom: 2px solid #cbd5e1;" 
+                        onclick="window.toggleBranchAccounts('${safeBranchId}')">
+                        <td colspan="2" style="font-weight: 900; color: #0f766e; font-size: 16px; padding: 15px;">
+                            <span id="icon_${safeBranchId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 🏢 ${branch}
+                        </td>
+                        <td style="font-weight: 900; color: #16a34a; font-size: 16px; padding: 15px;">
+                            ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        </td>
+                        <td style="text-align: right; padding: 15px;">
+                            <span style="font-size: 12px; color: #64748b; background: #e2e8f0; padding: 4px 8px; border-radius: 12px; font-weight: bold;">
+                                ${accountsByBranch[branch].length} Accounts
+                            </span>
                         </td>
                     </tr>
                 `;
-            });
-        }
-        tbody.innerHTML = html;
 
+                accountsByBranch[branch].forEach(acc => {
+                    html += `
+                        <tr class="branch-row-${safeBranchId}" style="display: none; background: white; border-bottom: 1px dashed #e2e8f0;">
+                            <td style="padding-left: 45px; color: #94a3b8; font-size: 18px;">↳</td>
+                            <td style="font-weight: bold; color: #334155;">${acc.name}</td>
+                            <td style="font-weight: bold; color: #059669;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td>
+                                <button onclick="window.editCashAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px;">✏️ Edit</button>
+                                <button onclick="window.deleteCashAccount('${acc.id}', '${acc.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">🗑️</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            tbody.innerHTML = html;
+        }
     } catch (e) {
         console.error("Error loading accounts:", e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Failed to load accounts.</td></tr>';
     }
 
     // ==========================================
@@ -1886,20 +1880,23 @@ window.loadAccountsAndBudget = async function() {
         if (!budgetBody) return;
 
         const budgetSnap = await getDocs(collection(db, "budgets"));
-        
-        // Sort budgets by Branch name alphabetically in JavaScript (prevents Firebase index errors!)
-        let budgetItems = [];
-        budgetSnap.forEach(doc => { budgetItems.push({id: doc.id, ...doc.data()}) });
-        budgetItems.sort((a, b) => (a.branch || "Unassigned").localeCompare(b.branch || "Unassigned"));
-
         let bHtml = '';
         let totalB = 0;
         let totalS = 0;
+        
+        // 🔥 FIX: Reset the budget memory so the Expense logger works!
+        window.liveBudgets = []; 
+
+        let budgetItems = [];
+        budgetSnap.forEach(doc => { budgetItems.push({id: doc.id, ...doc.data()}) });
+        budgetItems.sort((a, b) => (a.branch || "Unassigned").localeCompare(b.branch || "Unassigned"));
 
         if (budgetItems.length === 0) {
             bHtml = '<div class="text-center" style="color: #64748b; padding: 20px;">No budget categories found. Click "+ Category" to start tracking.</div>';
         } else {
             budgetItems.forEach(b => {
+                window.liveBudgets.push(b); // Save to memory
+
                 let limit = parseFloat(b.limit || b.amount || 0);
                 let spent = parseFloat(b.spent || 0);
                 let branchName = b.branch || "Unassigned";
@@ -1910,7 +1907,6 @@ window.loadAccountsAndBudget = async function() {
                 let pct = limit > 0 ? (spent / limit) * 100 : 0;
                 let barColor = pct >= 90 ? '#ef4444' : (pct >= 75 ? '#f59e0b' : '#10b981');
                 
-                // 🔥 NEW: Beautiful Branch Badge
                 let branchBadge = `<span style="background: #ede9fe; color: #8b5cf6; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin-right: 10px; border: 1px solid #ddd6fe; font-weight: bold;">📍 ${branchName}</span>`;
 
                 bHtml += `
@@ -1923,8 +1919,8 @@ window.loadAccountsAndBudget = async function() {
                             <div style="display: flex; align-items: center; gap: 12px;">
                                 <span style="color: ${barColor}; font-weight: bold; font-size: 13px;">₱${spent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${limit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                 
-                                <button onclick="window.editBudget('${b.id}', '${b.category || b.name}', ${limit}, '${branchName}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Edit Limit">✏️ Edit</button>
-                                <button onclick="window.deleteBudget('${b.id}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Delete">🗑️ Delete</button>
+                                <button onclick="window.editBudgetCategory('${b.id}', '${b.category || b.name}', ${limit})" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Edit Limit">✏️ Edit</button>
+                                <button onclick="window.deleteBudgetCategory('${b.id}', '${b.category || b.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Delete">🗑️ Delete</button>
                             </div>
                         </div>
                         <div style="background: #cbd5e1; height: 10px; border-radius: 5px; overflow: hidden;">
@@ -5619,7 +5615,7 @@ window.adjustStaffLoan = async function(staffId, staffName, currentLoan, current
 };
 
 // ==========================================
-// 🟢 GRAB PERFORMANCE & LOAN RECONCILIATION ENGINE (FIXED AMOUNT + DATE FILTER)
+// 🟢 GRAB PERFORMANCE & LOAN RECONCILIATION ENGINE
 // ==========================================
 window.calculateGrabFinancials = async function() {
     let grabCommissionPercent = 0.20; 
@@ -5627,15 +5623,13 @@ window.calculateGrabFinancials = async function() {
     let currentLoanBalance = 0;
 
     try {
-        // 1. SAFELY FETCH SETTINGS
-        if (window.getDoc && window.doc && window.db) {
-            const grabSettingsDoc = await window.getDoc(window.doc(window.db, "settings", "grab_financials"));
-            if (grabSettingsDoc.exists()) {
-                let data = grabSettingsDoc.data();
-                grabCommissionPercent = data.commissionRate !== undefined ? data.commissionRate : 0.20;
-                grabDailyDeductionAmount = data.dailyLoanDeduction || 0; 
-                currentLoanBalance = data.remainingLoanBalance || 0;
-            }
+        // 🔥 FIX: Cleaned up the Firebase queries
+        const grabSettingsDoc = await getDoc(doc(db, "settings", "grab_financials"));
+        if (grabSettingsDoc.exists()) {
+            let data = grabSettingsDoc.data();
+            grabCommissionPercent = data.commissionRate !== undefined ? data.commissionRate : 0.20;
+            grabDailyDeductionAmount = data.dailyLoanDeduction || 0; 
+            currentLoanBalance = data.remainingLoanBalance || 0;
         }
     } catch (e) {
         console.warn("Could not load Grab settings, using defaults.", e);
@@ -5645,11 +5639,9 @@ window.calculateGrabFinancials = async function() {
     if(document.getElementById('grabRemainingLoan')) document.getElementById('grabRemainingLoan').innerText = `₱${currentLoanBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
     try {
-        // 🔥 2. FETCH TRANSACTIONS BASED ON DASHBOARD DATE FILTER 🔥
         let startDateInput = document.getElementById('dashStartDate').value;
         let endDateInput = document.getElementById('dashEndDate').value;
         
-        // Fallback to today if dates aren't selected
         if (!startDateInput || !endDateInput) {
             let todayStr = new Date().toISOString().split('T')[0];
             startDateInput = todayStr;
@@ -5659,21 +5651,19 @@ window.calculateGrabFinancials = async function() {
         let startOfDay = new Date(startDateInput + 'T00:00:00');
         let endOfDay = new Date(endDateInput + 'T23:59:59');
         
-        // Calculate how many days are in the filter (for the loan deduction math)
         let daysDiff = Math.max(1, Math.ceil((endOfDay - startOfDay) / (1000 * 60 * 60 * 24)));
 
-        const q = window.query(window.collection(window.db, "transactions"), 
-            window.where("timestamp", ">=", startOfDay),
-            window.where("timestamp", "<=", endOfDay)
+        const q = query(collection(db, "transactions"), 
+            where("timestamp", ">=", startOfDay),
+            where("timestamp", "<=", endOfDay)
         );
-        const snap = await window.getDocs(q);
+        const snap = await getDocs(q);
         
         let branchData = {}; 
         let totalGrabGross = 0;
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
-            // ONLY count successful Grab sales!
             if (tx.status !== 'Voided' && tx.paymentMethod === 'Grab') {
                 let branch = tx.branch || "Unknown";
                 let amount = tx.netTotal || 0;
@@ -5684,7 +5674,6 @@ window.calculateGrabFinancials = async function() {
             }
         });
 
-        // 3. RENDER THE BRANCH BREAKDOWN TABLE
         let breakdownHtml = `
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead>
@@ -5718,15 +5707,11 @@ window.calculateGrabFinancials = async function() {
         breakdownHtml += `</tbody></table>`;
         if(document.getElementById('grabBranchBreakdown')) document.getElementById('grabBranchBreakdown').innerHTML = breakdownHtml;
 
-        // 4. CALCULATE GLOBAL TOTALS
         let globalCommission = totalGrabGross * grabCommissionPercent;
-        
-        // 🚨 IMPORTANT: Multiply the daily deduction by the number of days in the filter!
         let globalLoanCut = totalGrabGross > 0 ? (grabDailyDeductionAmount * daysDiff) : 0; 
         
         let finalNetPayout = totalGrabGross - globalCommission - globalLoanCut;
 
-        // 5. UPDATE THE DOM TOTALS
         if (document.getElementById('grabTotalGross')) document.getElementById('grabTotalGross').innerText = `₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         if (document.getElementById('grabTotalLoanCut')) document.getElementById('grabTotalLoanCut').innerText = `- ₱${globalLoanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         if (document.getElementById('grabTotalNetPayout')) document.getElementById('grabTotalNetPayout').innerText = `₱${finalNetPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
