@@ -46,6 +46,20 @@
                     </div>
                 </div>
 
+                <div class="mb-6">
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Order Type</label>
+                    <select id="orderType" class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" onchange="window.toggleOrderTypeView()">
+                        <option value="Takeout">Pick-up / Take-out</option>
+                        <option value="Delivery" id="deliveryOption">Delivery (Loading status...)</option>
+                    </select>
+                </div>
+
+                <div id="deliverySection" class="hidden bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6 shadow-inner">
+                    <p class="font-bold text-purple-800 mb-2">🚚 Delivery Details</p>
+                    <p class="text-xs text-purple-600 mb-3">Your GPS location will be automatically sent to the rider. Please provide landmarks or house details.</p>
+                    <textarea id="deliveryAddress" class="block w-full rounded-lg border-gray-300 p-3 text-sm outline-none focus:border-purple-500 shadow-sm" placeholder="e.g. Green gate, beside the bakery, call upon arrival..." rows="2"></textarea>
+                </div>
+                
                 <hr class="border-gray-200 my-6">
 
                 <!-- Payment Method -->
@@ -91,6 +105,13 @@
 
             <button onclick="location.reload()" class="bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg w-full">Place New Order</button>
         </div>
+
+            <div id="cancelOrderSection" class="w-full hidden">
+                <button onclick="window.cancelMyOrder()" class="bg-red-50 text-red-600 font-bold py-3 px-6 rounded-lg w-full border border-red-200 active:bg-red-100 transition">
+                    Cancel Order (<span id="cancelTimer">05:00</span>)
+                </button>
+                <p class="text-[10px] text-gray-400 mt-2">You can only cancel before the kitchen starts preparing.</p>
+            </div>
 
         <!-- ITEM MODAL (Pops up when they click an item) -->
         <div id="itemModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-end sm:items-center justify-center">
@@ -398,12 +419,92 @@
         }
 
         // ==========================================
-        // 📍 SMART GPS & AUTO-ROUTING ENGINE
+        // 📍 SMART GPS & DELIVERY ENGINE
         // ==========================================
         const BRANCH_ZONES = {
             "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
             "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  
             "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 }
+        };
+
+        window.currentOrderId = null;
+        window.cancelInterval = null;
+
+        // 1. Listen to the Cashier's Delivery Toggle!
+        onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
+            let deliveryOpt = document.getElementById('deliveryOption');
+            let orderTypeSelect = document.getElementById('orderType');
+            
+            if(docSnap.exists()) {
+                let isEnabled = docSnap.data().enabled;
+                if(isEnabled) {
+                    deliveryOpt.text = "Delivery";
+                    deliveryOpt.disabled = false;
+                } else {
+                    deliveryOpt.text = "Delivery (Temporarily Unavailable)";
+                    deliveryOpt.disabled = true;
+                    // If they already had it selected, force them back to Takeout
+                    if(orderTypeSelect.value === 'Delivery') {
+                        orderTypeSelect.value = 'Takeout';
+                        window.toggleOrderTypeView();
+                        alert("⚠️ The store just disabled deliveries due to high order volume. Your order has been switched to Pick-up.");
+                    }
+                }
+            }
+        });
+
+        // 2. UI Toggles
+        window.toggleOrderTypeView = function() {
+            if (document.getElementById('orderType').value === 'Delivery') {
+                document.getElementById('deliverySection').classList.remove('hidden');
+            } else {
+                document.getElementById('deliverySection').classList.add('hidden');
+            }
+        }
+
+        window.togglePaymentView = function() {
+            if (document.getElementById('paymentMode').value === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
+            else document.getElementById('gcashSection').classList.add('hidden');
+        }
+
+        // 3. The 5-Minute Timer Engine
+        function startCancelTimer() {
+            let timeLeft = 300; // 5 minutes
+            let timerEl = document.getElementById('cancelTimer');
+            document.getElementById('cancelOrderSection').classList.remove('hidden');
+
+            window.cancelInterval = setInterval(() => {
+                timeLeft--;
+                let m = Math.floor(timeLeft / 60);
+                let s = timeLeft % 60;
+                timerEl.innerText = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
+
+                if (timeLeft <= 0) {
+                    clearInterval(window.cancelInterval);
+                    document.getElementById('cancelOrderSection').classList.add('hidden'); // Hide button when time is up
+                }
+            }, 1000);
+        }
+
+        window.cancelMyOrder = async function() {
+            if(!window.currentOrderId) return;
+            if(!confirm("Are you sure you want to cancel your order?")) return;
+            
+            try {
+                // Instantly mark it rejected so the cashier's app deletes it from the queue!
+                await updateDoc(doc(db, "incoming_orders", window.currentOrderId), {
+                    status: "rejected_by_customer"
+                });
+                
+                clearInterval(window.cancelInterval);
+                document.getElementById('cancelOrderSection').classList.add('hidden');
+                document.getElementById('trackerIcon').innerText = "🚫";
+                document.getElementById('trackerTitle').innerText = "Order Cancelled";
+                document.getElementById('trackerTitle').classList.replace('text-gray-800', 'text-red-600');
+                document.getElementById('trackerSubtitle').innerText = "You successfully cancelled the order.";
+            } catch(e) {
+                console.error("Cancel error", e);
+            }
         };
 
         function getDistanceInMeters(lat1, lon1, lat2, lon2) {
@@ -418,11 +519,7 @@
             document.getElementById('submitBtn').disabled = false;
         }
 
-        window.togglePaymentView = function() {
-            if (document.getElementById('paymentMode').value === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
-            else document.getElementById('gcashSection').classList.add('hidden');
-        }
-
+        // 4. THE GRAND SUBMISSION
         window.submitOrder = async function() {
             if (window.cart.length === 0) { alert("Your order is empty."); return; }
 
@@ -430,26 +527,32 @@
             if (!name) { alert("Please enter your name!"); return; }
 
             const paymentMode = document.getElementById('paymentMode').value;
+            const orderType = document.getElementById('orderType').value;
+            const deliveryNotes = document.getElementById('deliveryAddress').value.trim();
+
+            if (orderType === "Delivery" && !deliveryNotes) {
+                alert("Please provide delivery details/landmarks so our rider can find you easily!");
+                return;
+            }
+
             let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
             const btn = document.getElementById('submitBtn');
 
             if (!navigator.geolocation) {
-                alert("❌ Your browser does not support location services. We cannot route your delivery.");
+                alert("❌ Your browser does not support location services. We cannot route your order.");
                 return;
             }
 
             btn.innerHTML = '<span class="mx-auto">Finding Nearest TAKODEÁL...</span>'; 
             btn.disabled = true;
 
-            // 🌍 THE SMART ROUTER: Find their location and assign the best branch!
             navigator.geolocation.getCurrentPosition(async (position) => {
                 const userLat = position.coords.latitude; 
                 const userLng = position.coords.longitude;
                 
-                let nearestBranch = "Cabantian"; // Default fallback
+                let nearestBranch = "Cabantian"; 
                 let shortestDistance = Infinity;
 
-                // Scan all branches to find the closest one
                 for (const [branchName, zone] of Object.entries(BRANCH_ZONES)) {
                     let d = getDistanceInMeters(userLat, userLng, zone.lat, zone.lng);
                     if (d < shortestDistance) {
@@ -458,14 +561,10 @@
                     }
                 }
 
-                // Determine Order Type based on distance
-                let orderType = "Takeout / Dine-In";
-                if (shortestDistance > 200) {
-                    orderType = "Delivery";
-                }
+                // Append the order type to the name so the cashier sees it instantly in the queue!
+                let cashierVisibleName = `${name} (${orderType})`;
 
-                // Confirm with the user before blasting it to the cashier
-                let confirmMsg = `📍 We found you!\n\nRouting your order to: TAKODEÁL ${nearestBranch}\nOrder Type: ${orderType}\nDistance: ${Math.round(shortestDistance)} meters away.\n\nProceed to send order to the kitchen?`;
+                let confirmMsg = `📍 Routing your order to: TAKODEÁL ${nearestBranch}\nOrder Type: ${orderType}\n\nProceed to send order?`;
                 if (!confirm(confirmMsg)) {
                     resetSubmitButton(grandTotal);
                     return;
@@ -474,14 +573,15 @@
                 btn.innerHTML = '<span class="mx-auto">Sending to Kitchen...</span>';
 
                 const orderData = {
-                    customerName: name, 
-                    branch: nearestBranch, // Automatically assigned!
-                    orderType: orderType,  // Tells cashier if it's Delivery or Takeout
+                    customerName: cashierVisibleName, 
+                    branch: nearestBranch, 
+                    orderType: orderType,  
+                    deliveryAddress: deliveryNotes,
                     items: window.cart, 
                     totalAmount: grandTotal,
                     paymentMode: paymentMode, 
                     gcashRef: paymentMode === 'gcash' ? (document.getElementById('refNumber')?.value || "") : null,
-                    locationLat: userLat,  // Attached for the delivery rider!
+                    locationLat: userLat, 
                     locationLng: userLng,
                     status: "mobile_queue", 
                     timestamp: serverTimestamp()
@@ -489,11 +589,14 @@
 
                 try {
                     const docRef = await addDoc(collection(db, "incoming_orders"), orderData);
+                    window.currentOrderId = docRef.id; // Save ID for cancellation
                     
                     document.getElementById('orderingScreen').classList.add('hidden');
                     document.getElementById('trackerScreen').classList.remove('hidden');
                     document.getElementById('trackerScreen').classList.add('flex');
                     window.scrollTo(0,0);
+                    
+                    startCancelTimer(); // START THE 5 MINUTE CLOCK
 
                     // LIVE TRACKING LISTENER
                     onSnapshot(doc(db, "incoming_orders", docRef.id), (snapshot) => {
@@ -511,14 +614,20 @@
                                 title.classList.add('text-green-600');
                                 subtitle.innerText = "The kitchen is working on your order right now.";
                                 waitTime.innerText = "Almost Ready...";
+                                
+                                // Hide the cancel button once the cashier accepts it!
+                                clearInterval(window.cancelInterval);
+                                document.getElementById('cancelOrderSection').classList.add('hidden');
                             } 
                             else if (currentStatus === "rejected") {
                                 icon.innerText = "❌";
                                 icon.classList.remove('animate-pulse');
                                 title.innerText = "Order Cancelled";
                                 title.classList.add('text-red-600');
-                                subtitle.innerText = "We're sorry, but an ingredient ran out. Please see the cashier.";
+                                subtitle.innerText = "We're sorry, but the store had to cancel your order.";
                                 waitTime.innerText = "--";
+                                clearInterval(window.cancelInterval);
+                                document.getElementById('cancelOrderSection').classList.add('hidden');
                             }
                         }
                     });
@@ -530,7 +639,7 @@
                 }
 
             }, (error) => {
-                alert("📍 LOCATION REQUIRED\n\nPlease allow location access so we can route your delivery to the nearest branch.");
+                alert("📍 LOCATION REQUIRED\n\nPlease allow location access so we can route your order to the nearest branch.");
                 resetSubmitButton(grandTotal);
             }, { enableHighAccuracy: true }); 
         };
