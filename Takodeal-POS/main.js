@@ -98,9 +98,8 @@ console.log("🔥 Firebase Engine is LIVE!");
 // --- THE FIREBASE PIN SEARCHER ---
 window.verifyPin = async function (pin) {
   try {
-    // 🔥 CHANGED "employees" to "cashiers" so it perfectly syncs with your Manager App!
-    const q = query(collection(db, "cashiers"), where("pin", "==", pin));
-    const snapshot = await getDocs(q);
+    const q = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pin));
+    const snapshot = await window.getDocs(q);
 
     if (snapshot.empty) return null; // PIN is wrong
 
