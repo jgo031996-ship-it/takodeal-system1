@@ -1821,36 +1821,53 @@ window.loadAccountsAndBudget = async function() {
     // ==========================================
     // 💸 PART 2: THE MONTHLY BUDGET TRACKER 
     // ==========================================
-    const budgetBody = document.getElementById('budgetListBody');
-    if (!budgetBody) return;
-
     try {
-        // Fetch the Budgets
+        const budgetBody = document.getElementById('budgetListBody');
+        if (!budgetBody) return;
+
         const budgetSnap = await getDocs(collection(db, "budgets"));
+        
+        // Sort budgets by Branch name alphabetically in JavaScript (prevents Firebase index errors!)
+        let budgetItems = [];
+        budgetSnap.forEach(doc => { budgetItems.push({id: doc.id, ...doc.data()}) });
+        budgetItems.sort((a, b) => (a.branch || "Unassigned").localeCompare(b.branch || "Unassigned"));
+
         let bHtml = '';
         let totalB = 0;
         let totalS = 0;
 
-        if (budgetSnap.empty) {
+        if (budgetItems.length === 0) {
             bHtml = '<div class="text-center" style="color: #64748b; padding: 20px;">No budget categories found. Click "+ Category" to start tracking.</div>';
         } else {
-            budgetSnap.forEach(docSnap => {
-                let b = docSnap.data();
+            budgetItems.forEach(b => {
                 let limit = parseFloat(b.limit || b.amount || 0);
                 let spent = parseFloat(b.spent || 0);
+                let branchName = b.branch || "Unassigned";
+                
                 totalB += limit;
                 totalS += spent;
 
                 let pct = limit > 0 ? (spent / limit) * 100 : 0;
                 let barColor = pct >= 90 ? '#ef4444' : (pct >= 75 ? '#f59e0b' : '#10b981');
+                
+                // 🔥 NEW: Beautiful Branch Badge
+                let branchBadge = `<span style="background: #ede9fe; color: #8b5cf6; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin-right: 10px; border: 1px solid #ddd6fe; font-weight: bold;">📍 ${branchName}</span>`;
 
                 bHtml += `
-                    <div style="margin-bottom: 20px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; font-weight: bold;">
-                            <span style="color: #334155; font-size: 14px;">${b.category || b.name || 'Category'}</span>
-                            <span style="color: ${barColor};">₱${spent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${limit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    <div style="margin-bottom: 20px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div style="display: flex; align-items: center;">
+                                ${branchBadge}
+                                <span style="color: #334155; font-size: 14px; font-weight: bold;">${b.category || b.name || 'Category'}</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="color: ${barColor}; font-weight: bold; font-size: 13px;">₱${spent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${limit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                                
+                                <button onclick="window.editBudget('${b.id}', '${b.category || b.name}', ${limit}, '${branchName}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Edit Limit">✏️ Edit</button>
+                                <button onclick="window.deleteBudget('${b.id}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Delete">🗑️ Delete</button>
+                            </div>
                         </div>
-                        <div style="background: #e2e8f0; height: 12px; border-radius: 6px; overflow: hidden;">
+                        <div style="background: #cbd5e1; height: 10px; border-radius: 5px; overflow: hidden;">
                             <div style="width: ${Math.min(pct, 100)}%; height: 100%; background: ${barColor}; transition: width 0.5s;"></div>
                         </div>
                     </div>
@@ -1859,14 +1876,13 @@ window.loadAccountsAndBudget = async function() {
         }
         
         budgetBody.innerHTML = bHtml;
-
-        // Update the big total budget cards at the top of the screen
         if (document.getElementById('accTotalBudget')) document.getElementById('accTotalBudget').innerText = `₱${totalB.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         if (document.getElementById('accTotalSpent')) document.getElementById('accTotalSpent').innerText = `₱${totalS.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
     } catch (e) {
         console.error("Budget Error:", e);
-        budgetBody.innerHTML = '<div class="text-center" style="color: red; padding: 20px;">Error loading budgets.</div>';
+        const budgetBody = document.getElementById('budgetListBody');
+        if (budgetBody) budgetBody.innerHTML = '<div class="text-center" style="color: red; padding: 20px;">Error loading budgets.</div>';
     }
 };
 
@@ -2027,17 +2043,71 @@ window.openAccountHistory = function() {
     alert("Account History Logs module is coming in the next update! 🚧\n\nFor now, you can view your Cash Transfers in the 'Cash Transfers' tab on the sidebar.");
 };
 
-window.addBudgetCategory = async function () {
-  let branch = prompt("Branch (Cabantian, Citygate, Maa):", "Cabantian");
-  if (!branch) return;
-  let category = prompt("Budget Category (e.g., Rent, Electric, Packaging):");
-  if (!category) return;
-  let limit = parseFloat(prompt("Monthly Budget Limit (₱):", "0")) || 0;
+// ==========================================
+// 🛠️ BUDGET MANAGEMENT CONTROLS
+// ==========================================
 
-  try {
-    await addDoc(collection(db, "budgets"), { branch, category, limit, spent: 0 });
-    window.loadAccountsAndBudget();
-  } catch (e) { console.error(e); alert("Failed to add category."); }
+window.addBudgetCategory = async function() {
+    let branch = prompt("Enter Branch for this budget (e.g., Cabantian, Citygate, Maa, Main Office):", "Main Office");
+    if (!branch) return; // Cancelled
+    
+    let category = prompt(`Enter the new budget category name for ${branch} (e.g., Rent, Water, Marketing):`);
+    if (!category) return;
+    
+    let limitStr = prompt(`Enter the monthly budget limit for ${branch} - ${category} (₱):`, "0");
+    if (!limitStr) return;
+    
+    let limit = parseFloat(limitStr);
+    if (isNaN(limit) || limit < 0) { alert("Invalid amount."); return; }
+
+    try {
+        await addDoc(collection(db, "budgets"), {
+            branch: branch.trim(),
+            category: category.trim(),
+            limit: limit,
+            spent: 0,
+            createdAt: serverTimestamp()
+        });
+        alert(`✅ Success! Budget added for ${branch}.`);
+        window.loadAccountsAndBudget();
+    } catch (e) {
+        console.error("Error adding budget:", e);
+        alert("Failed to add category.");
+    }
+};
+
+window.editBudget = async function(id, name, currentLimit, branch) {
+    let newLimitStr = prompt(`Edit Monthly Budget Limit for ${branch} - ${name}:\n\nEnter new amount (₱):`, currentLimit);
+    if (newLimitStr === null || newLimitStr === "") return;
+    
+    let newLimit = parseFloat(newLimitStr);
+    if (isNaN(newLimit) || newLimit < 0) {
+        alert("❌ Invalid amount entered.");
+        return;
+    }
+
+    try {
+        await updateDoc(doc(db, "budgets", id), {
+            limit: newLimit,
+            amount: newLimit // Legacy fallback just in case
+        });
+        window.loadAccountsAndBudget(); // Instantly refresh UI
+    } catch (e) {
+        console.error(e);
+        alert("❌ Failed to update budget.");
+    }
+};
+
+window.deleteBudget = async function(id) {
+    if (!confirm("⚠️ Are you sure you want to permanently delete this budget category?")) return;
+    
+    try {
+        await deleteDoc(doc(db, "budgets", id));
+        window.loadAccountsAndBudget(); // Instantly refresh UI
+    } catch (e) {
+        console.error(e);
+        alert("❌ Failed to delete budget.");
+    }
 };
 
 window.logExpense = async function () {
