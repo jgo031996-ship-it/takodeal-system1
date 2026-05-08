@@ -1827,3 +1827,41 @@ window.rejectMobileOrder = async function(docId) {
         status: "rejected"
     });
 };
+
+// ==========================================
+// 🚚 GLOBAL DELIVERY TOGGLE ENGINE
+// ==========================================
+window.deliveryEnabled = true;
+
+// Listens to the cloud to see if delivery is currently on or off
+onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
+    if (docSnap.exists()) {
+        window.deliveryEnabled = docSnap.data().enabled;
+    } else {
+        window.deliveryEnabled = true; // Default to ON
+    }
+    
+    let textEl = document.getElementById('deliveryStatusText');
+    let btnEl = document.getElementById('btnToggleDelivery');
+    
+    if (textEl && btnEl) {
+        textEl.innerText = window.deliveryEnabled ? "ON" : "OFF";
+        btnEl.style.background = window.deliveryEnabled ? "#10b981" : "#ef4444"; // Green for ON, Red for OFF
+    }
+});
+
+window.toggleGlobalDelivery = async function() {
+    let newState = !window.deliveryEnabled;
+    if (!confirm(`Are you sure you want to turn Delivery ${newState ? 'ON' : 'OFF'} for all customers across all branches?`)) return;
+    
+    try {
+        await setDoc(doc(db, "settings", "global_delivery"), { 
+            enabled: newState,
+            lastChangedBy: localStorage.getItem('cashierName') || 'Cashier',
+            timestamp: serverTimestamp()
+        }, { merge: true });
+    } catch(e) {
+        console.error("Delivery Toggle Error", e);
+        alert("❌ Failed to toggle delivery. Check connection.");
+    }
+};
