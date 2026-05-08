@@ -351,9 +351,30 @@
             
             let activeAddons = {};
             let addonsTotal = 0;
-            document.querySelectorAll('#modalAddonsList input[type="checkbox"]:checked').forEach(cb => {
+
+            // 1. Grab the Selected Sauce Radio Button
+            document.querySelectorAll('#modalAddonsList .modal-addon-radio:checked').forEach(radio => {
+                let parts = radio.value.split('|');
+                activeAddons[parts[0]] = { 
+                    name: parts[0], 
+                    price: parseFloat(parts[1]), 
+                    qty: 1, 
+                    linkedIngredient: parts[2], 
+                    deductQty: parseFloat(parts[3]) 
+                };
+                addonsTotal += parseFloat(parts[1]);
+            });
+
+            // 2. Grab the Checkboxes
+            document.querySelectorAll('#modalAddonsList .modal-addon-cb:checked').forEach(cb => {
                 let parts = cb.value.split('|');
-                activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1 };
+                activeAddons[parts[0]] = { 
+                    name: parts[0], 
+                    price: parseFloat(parts[1]), 
+                    qty: 1, 
+                    linkedIngredient: parts[2], 
+                    deductQty: parseFloat(parts[3]) 
+                };
                 addonsTotal += parseFloat(parts[1]);
             });
 
@@ -370,7 +391,6 @@
             updateCartUI();
             closeItemModal();
         }
-
         function updateCartUI() {
             let grandTotal = 0; let totalItems = 0;
             window.cart.forEach(item => { grandTotal += item.lineTotalFinal; totalItems += item.quantity; });
