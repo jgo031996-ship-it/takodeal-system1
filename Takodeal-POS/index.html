@@ -2058,6 +2058,15 @@
       masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
       masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "GoTyme", "Bank", "Grab"] };
 
+      // 🔥 NEW: SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
+      masterPOSData.stockLevels = {};
+      const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
+      invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
+
+      masterPOSData.bom = [];
+      const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+      bomSnap.forEach(doc => masterPOSData.bom.push(doc.data()));
+
       buildCategories();
 
       let otHtml = ''; masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
@@ -2157,13 +2166,38 @@
         filteredItems.forEach((item, index) => {
             let safePrice = parseFloat(item.price) || 0;
             
-            // Check if the item has an image from Firebase, otherwise use the soup bowl emoji
             let imgHtml = item.image 
                 ? `<img src="${item.image}" class="item-image">` 
                 : `<div class="item-image" style="display:flex; align-items:center; justify-content:center; font-size:35px; color: #cbd5e1;">🍲</div>`;
             
+            // 🔥 NEW: CALCULATE LOW STOCK BADGE
+            let possibleOrders = Infinity;
+            
+            // Make sure the data actually loaded before doing math
+            if (masterPOSData.bom && masterPOSData.stockLevels) {
+                let recipe = masterPOSData.bom.filter(b => b.menuItem === item.name);
+                
+                if (recipe.length > 0) {
+                    recipe.forEach(r => {
+                        let stock = masterPOSData.stockLevels[r.ingredientName] || 0;
+                        let orders = stock / (r.qty || 1);
+                        if (orders < possibleOrders) possibleOrders = orders;
+                    });
+                } else {
+                    possibleOrders = Infinity; // No recipe attached, so it can't run out
+                }
+            }
+
+            let badgeHtml = '';
+            if (possibleOrders <= 0) {
+                badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #dc2626; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10;">SOLD OUT</div>`;
+            } else if (possibleOrders <= 5) {
+                badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
+            }
+            
             grid.innerHTML += `
                 <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})">
+                    ${badgeHtml}
                     ${imgHtml}
                     <div class="item-name">${item.name}</div>
                     <div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div>
