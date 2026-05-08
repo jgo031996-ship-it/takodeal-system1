@@ -5405,21 +5405,21 @@ window.adjustStaffLoan = async function(staffId, staffName, currentLoan, current
 };
 
 // ==========================================
-// 🟢 GRAB PERFORMANCE & LOAN RECONCILIATION ENGINE (FIXED AMOUNT)
+// 🟢 GRAB PERFORMANCE & LOAN RECONCILIATION ENGINE (FIXED AMOUNT + DATE FILTER)
 // ==========================================
 window.calculateGrabFinancials = async function() {
     let grabCommissionPercent = 0.20; 
-    let grabDailyDeductionAmount = 0; // CHANGED to Fixed Amount!
+    let grabDailyDeductionAmount = 0; 
     let currentLoanBalance = 0;
 
     try {
-        // 1. SAFELY FETCH SETTINGS (Won't crash if missing)
+        // 1. SAFELY FETCH SETTINGS
         if (window.getDoc && window.doc && window.db) {
             const grabSettingsDoc = await window.getDoc(window.doc(window.db, "settings", "grab_financials"));
             if (grabSettingsDoc.exists()) {
                 let data = grabSettingsDoc.data();
                 grabCommissionPercent = data.commissionRate !== undefined ? data.commissionRate : 0.20;
-                grabDailyDeductionAmount = data.dailyLoanDeduction || 0; // Pulling the fixed amount!
+                grabDailyDeductionAmount = data.dailyLoanDeduction || 0; 
                 currentLoanBalance = data.remainingLoanBalance || 0;
             }
         }
@@ -5431,10 +5431,27 @@ window.calculateGrabFinancials = async function() {
     if(document.getElementById('grabRemainingLoan')) document.getElementById('grabRemainingLoan').innerText = `₱${currentLoanBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
     try {
-        // 2. FETCH TODAY'S GRAB TRANSACTIONS
-        let today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", today));
+        // 🔥 2. FETCH TRANSACTIONS BASED ON DASHBOARD DATE FILTER 🔥
+        let startDateInput = document.getElementById('dashStartDate').value;
+        let endDateInput = document.getElementById('dashEndDate').value;
+        
+        // Fallback to today if dates aren't selected
+        if (!startDateInput || !endDateInput) {
+            let todayStr = new Date().toISOString().split('T')[0];
+            startDateInput = todayStr;
+            endDateInput = todayStr;
+        }
+
+        let startOfDay = new Date(startDateInput + 'T00:00:00');
+        let endOfDay = new Date(endDateInput + 'T23:59:59');
+        
+        // Calculate how many days are in the filter (for the loan deduction math)
+        let daysDiff = Math.max(1, Math.ceil((endOfDay - startOfDay) / (1000 * 60 * 60 * 24)));
+
+        const q = window.query(window.collection(window.db, "transactions"), 
+            window.where("timestamp", ">=", startOfDay),
+            window.where("timestamp", "<=", endOfDay)
+        );
         const snap = await window.getDocs(q);
         
         let branchData = {}; 
@@ -5468,7 +5485,7 @@ window.calculateGrabFinancials = async function() {
         `;
 
         if (Object.keys(branchData).length === 0) {
-            breakdownHtml += `<tr><td colspan="4" style="padding: 10px 0; text-align: center; color: #94a3b8;">No Grab sales yet today.</td></tr>`;
+            breakdownHtml += `<tr><td colspan="4" style="padding: 10px 0; text-align: center; color: #94a3b8;">No Grab sales found for this date range.</td></tr>`;
         } else {
             for (let branch in branchData) {
                 let gross = branchData[branch];
@@ -5490,8 +5507,8 @@ window.calculateGrabFinancials = async function() {
         // 4. CALCULATE GLOBAL TOTALS
         let globalCommission = totalGrabGross * grabCommissionPercent;
         
-        // 🚨 IMPORTANT: Only deduct the flat daily loan amount if there were actually Grab sales today!
-        let globalLoanCut = totalGrabGross > 0 ? grabDailyDeductionAmount : 0; 
+        // 🚨 IMPORTANT: Multiply the daily deduction by the number of days in the filter!
+        let globalLoanCut = totalGrabGross > 0 ? (grabDailyDeductionAmount * daysDiff) : 0; 
         
         let finalNetPayout = totalGrabGross - globalCommission - globalLoanCut;
 
@@ -6291,3 +6308,4 @@ window.exportTransactionsCSV = async function() {
         btn.disabled = false;
     }
 };
+
