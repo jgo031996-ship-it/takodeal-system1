@@ -262,17 +262,70 @@
             
             if (item.addons && item.addons.length > 0) {
                 addonsContainer.classList.remove('hidden');
-                item.addons.forEach((addon, idx) => {
-                    let aPrice = parseFloat(addon.price || 0);
-                    let priceLabel = aPrice > 0 ? `(+₱${aPrice})` : '(Free)';
-                    addonsList.innerHTML += `
-                        <label class="flex items-center justify-between p-3 border rounded-lg bg-white shadow-sm cursor-pointer active:bg-gray-50">
-                            <span class="text-sm font-bold text-gray-700">${addon.name} <span class="text-red-500 font-normal text-xs">${priceLabel}</span></span>
-                            <input type="checkbox" id="addon-${idx}" value="${addon.name}|${aPrice}" class="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500">
-                        </label>
-                    `;
+                let newUiHtml = '';
+                
+                // Group addons to prevent duplicates
+                let groupedAddons = {};
+                item.addons.forEach(a => {
+                    if (!groupedAddons[a.name]) {
+                        groupedAddons[a.name] = { name: a.name, price: parseFloat(a.price) || 0, linkedIngredient: a.linkedIngredient || '', deductQty: a.deductQty || 0 };
+                    } else {
+                        groupedAddons[a.name].price += (parseFloat(a.price) || 0);
+                    }
                 });
-            } else { addonsContainer.classList.add('hidden'); }
+
+                let addonsArr = Object.values(groupedAddons);
+                let hasSauce = addonsArr.some(a => a.name === "Regular Sauce" || a.name === "Spicy Sauce");
+
+                // 🎯 REQUIRED SAUCE RADIO BUTTONS
+                if (hasSauce) {
+                    let regAddon = addonsArr.find(a => a.name === "Regular Sauce") || { linkedIngredient: "Regular Sauce", deductQty: 1 };
+                    let spicyAddon = addonsArr.find(a => a.name === "Spicy Sauce") || { linkedIngredient: "Spicy Sauce", deductQty: 1 };
+
+                    newUiHtml += `
+                        <div class="mb-4">
+                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Base Flavor (Required)</h3>
+                            <div class="space-y-2 bg-orange-50 p-3 rounded-xl border border-orange-100">
+                                <label class="flex items-center justify-between cursor-pointer">
+                                    <div class="flex items-center gap-3">
+                                        <input type="radio" name="baseSauce" value="Regular Sauce|0|${regAddon.linkedIngredient}|${regAddon.deductQty}" checked class="w-5 h-5 text-orange-500 border-gray-300 focus:ring-orange-500 modal-addon-radio">
+                                        <span class="text-sm font-bold text-orange-900">Regular Sauce</span>
+                                    </div>
+                                    <span class="text-xs font-bold text-orange-600">Free</span>
+                                </label>
+                                <label class="flex items-center justify-between cursor-pointer">
+                                    <div class="flex items-center gap-3">
+                                        <input type="radio" name="baseSauce" value="Spicy Sauce|0|${spicyAddon.linkedIngredient}|${spicyAddon.deductQty}" class="w-5 h-5 text-red-600 border-gray-300 focus:ring-red-600 modal-addon-radio">
+                                        <span class="text-sm font-bold text-red-700">Spicy Sauce</span>
+                                    </div>
+                                    <span class="text-xs font-bold text-red-500">Free</span>
+                                </label>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 🎯 OPTIONAL EXTRA ADD-ONS (Checkboxes)
+                let extras = addonsArr.filter(a => a.name !== "Regular Sauce" && a.name !== "Spicy Sauce");
+                if (extras.length > 0) {
+                    newUiHtml += `<div class="mb-2"><h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Extra Add-ons (Optional)</h3><div class="space-y-2">`;
+                    extras.forEach(addon => {
+                        let aPrice = addon.price;
+                        let priceLabel = aPrice > 0 ? `(+₱${aPrice.toFixed(2)})` : '(Free)';
+                        newUiHtml += `
+                            <label class="flex items-center justify-between p-3 border rounded-xl bg-white shadow-sm cursor-pointer active:bg-gray-50 transition">
+                                <span class="text-sm font-bold text-gray-700">${addon.name} <span class="text-red-500 font-normal text-xs">${priceLabel}</span></span>
+                                <input type="checkbox" value="${addon.name}|${aPrice}|${addon.linkedIngredient}|${addon.deductQty}" class="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500 modal-addon-cb">
+                            </label>
+                        `;
+                    });
+                    newUiHtml += `</div></div>`;
+                }
+                
+                addonsList.innerHTML = newUiHtml;
+            } else { 
+                addonsContainer.classList.add('hidden'); 
+            }
 
             document.getElementById('itemModal').classList.remove('hidden');
         }
