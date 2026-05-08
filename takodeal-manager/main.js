@@ -1742,78 +1742,98 @@ window.executeBatchPrep = async function () {
 
 // --- THE CASH ACCOUNTS & BUDGET ENGINE ---
 window.loadAccountsAndBudget = async function() {
-  const accBody = document.getElementById('accTableBody');
-  const budBody = document.getElementById('budgetListBody');
-  if (!accBody || !budBody) return;
+    const tbody = document.getElementById('accTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading grouped accounts...</td></tr>';
 
-  try {
-    // 1. Fetch Cash Accounts
-    const accSnap = await getDocs(collection(db, "cash_accounts"));
-    let accHtml = ''; let totalCash = 0;
-    window.liveAccounts = []; // We save this in memory for the Transfer Dropdowns
+    try {
+        const snap = await getDocs(collection(db, "cash_accounts"));
+        let accountsByBranch = {};
+        let totalCash = 0;
 
-    accSnap.forEach(doc => {
-      let data = doc.data();
-      totalCash += (data.balance || 0);
-      window.liveAccounts.push({ id: doc.id, ...data });
-      
-      // 🟢 ADDED: The Edit and Delete Buttons for Cash Accounts
-      accHtml += `
-        <tr>
-            <td><span class="badge badge-closed">${data.branch}</span></td>
-            <td><strong>${data.name}</strong></td>
-            <td style="font-weight: 700; color: var(--success); font-size: 15px;">${formatMoney(data.balance || 0)}</td>
-            <td>
-                <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 4px 8px; border-radius: 4px; font-size: 11px;" onclick="editCashAccount('${doc.id}', '${data.name}', ${data.balance})">✏️ Edit</button>
-                <button class="btn-refresh" style="background: white; border: 1px solid var(--danger); color: var(--danger); padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-left: 5px;" onclick="deleteCashAccount('${doc.id}', '${data.name}')">🗑️</button>
-            </td>
-        </tr>`;
+        // Group all accounts by their branch
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            data.id = docSnap.id;
+            let branch = data.branch || "Unassigned";
+
+            if (!accountsByBranch[branch]) accountsByBranch[branch] = [];
+            accountsByBranch[branch].push(data);
+
+            totalCash += (data.balance || 0);
+        });
+
+        // Update the big total asset card
+        if(document.getElementById('accTotalCash')) {
+            document.getElementById('accTotalCash').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        }
+
+        let html = '';
+
+        for (let branch in accountsByBranch) {
+            // Calculate the sum of all accounts inside this specific branch
+            let branchTotal = accountsByBranch[branch].reduce((sum, acc) => sum + (acc.balance || 0), 0);
+            let safeBranchId = branch.replace(/\s+/g, ''); // Removes spaces for CSS IDs
+
+            // 1. The Collapsible Branch Header Row
+            html += `
+                <tr style="background: #f8fafc; cursor: pointer; border-bottom: 2px solid #cbd5e1; transition: background 0.2s;" 
+                    onclick="window.toggleBranchAccounts('${safeBranchId}')" 
+                    onmouseover="this.style.background='#f1f5f9'" 
+                    onmouseout="this.style.background='#f8fafc'">
+                    <td colspan="2" style="font-weight: 900; color: #0f766e; font-size: 16px; padding: 15px;">
+                        <span id="icon_${safeBranchId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 🏢 ${branch}
+                    </td>
+                    <td style="font-weight: 900; color: #16a34a; font-size: 16px; padding: 15px;">
+                        ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                    </td>
+                    <td style="text-align: right; padding: 15px;">
+                        <span style="font-size: 12px; color: #64748b; background: #e2e8f0; padding: 4px 8px; border-radius: 12px; font-weight: bold;">
+                            ${accountsByBranch[branch].length} Accounts
+                        </span>
+                    </td>
+                </tr>
+            `;
+
+            // 2. The Hidden Account Rows underneath it
+            accountsByBranch[branch].forEach(acc => {
+                html += `
+                    <tr class="branch-row-${safeBranchId}" style="display: none; background: white; border-bottom: 1px dashed #e2e8f0;">
+                        <td style="padding-left: 45px; color: #94a3b8; font-size: 18px;">↳</td>
+                        <td style="font-weight: bold; color: #334155;">${acc.name}</td>
+                        <td style="font-weight: bold; color: #059669;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        <td>
+                            <button onclick="window.editAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px;">✏️ Edit</button>
+                            <button onclick="window.deleteAccount('${acc.id}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">🗑️</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        tbody.innerHTML = html;
+
+    } catch (e) {
+        console.error("Error loading accounts:", e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Failed to load accounts.</td></tr>';
+    }
+};
+
+// Toggle Engine for the Accordion
+window.toggleBranchAccounts = function(branchId) {
+    let rows = document.querySelectorAll('.branch-row-' + branchId);
+    let icon = document.getElementById('icon_' + branchId);
+    if(rows.length === 0) return;
+    
+    let isHidden = rows[0].style.display === 'none';
+    rows.forEach(row => {
+        row.style.display = isHidden ? 'table-row' : 'none';
     });
-    accBody.innerHTML = accHtml || '<tr><td colspan="4" class="text-center">No accounts found.</td></tr>';
-    document.getElementById('accTotalCash').innerText = formatMoney(totalCash);
-
-    // 2. Fetch Budgets
-    const budSnap = await getDocs(collection(db, "budgets"));
-    let budHtml = ''; let totalBud = 0; let totalSpent = 0;
-    window.liveBudgets = []; // We save this in memory for the Expense Dropdowns
-
-    budSnap.forEach(doc => {
-      let data = doc.data();
-      totalBud += (data.limit || 0);
-      totalSpent += (data.spent || 0);
-      window.liveBudgets.push({ id: doc.id, ...data });
-
-      let pct = data.limit > 0 ? (data.spent / data.limit) * 100 : 0;
-      let barColor = pct >= 90 ? 'var(--danger)' : (pct >= 75 ? '#f59e0b' : 'var(--primary)');
-      if (pct > 100) pct = 100;
-
-      // 🟢 ADDED: The Edit and Delete links for Budgets
-      budHtml += `
-        <div style="margin-bottom: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; font-size: 13px;">
-            <div>
-                <strong>${data.category} <span style="color: var(--text-muted); font-weight: normal;">(${data.branch})</span></strong>
-                <div style="margin-top: 4px;">
-                    <span style="color: var(--primary); cursor: pointer; font-weight: bold; font-size: 11px; margin-right: 10px;" onclick="editBudgetCategory('${doc.id}', '${data.category}', ${data.limit})">✏️ Edit Limit</span>
-                    <span style="color: var(--danger); cursor: pointer; font-weight: bold; font-size: 11px;" onclick="deleteBudgetCategory('${doc.id}', '${data.category}')">🗑️ Delete</span>
-                </div>
-            </div>
-            <span style="color: var(--text-muted); font-weight: 600;">${formatMoney(data.spent)} / ${formatMoney(data.limit)}</span>
-          </div>
-          <div style="background: var(--bg-color); height: 10px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);">
-            <div style="background: ${barColor}; height: 100%; width: ${pct}%; transition: 0.3s ease;"></div>
-          </div>
-        </div>
-      `;
-    });
-    budBody.innerHTML = budHtml || '<div class="text-center" style="color: var(--text-muted);">No budget categories found.</div>';
-    document.getElementById('accTotalBudget').innerText = formatMoney(totalBud);
-    document.getElementById('accTotalSpent').innerText = formatMoney(totalSpent);
-
-  } catch (error) {
-    console.error("Finance Engine Error:", error);
-    accBody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading data.</td></tr>';
-  }
+    
+    if (icon) {
+        icon.innerText = isHidden ? '▲' : '▼';
+        icon.style.color = isHidden ? '#0f766e' : '#94a3b8';
+    }
 };
 
 // --- CASH ACCOUNT EDIT & DELETE ACTIONS ---
