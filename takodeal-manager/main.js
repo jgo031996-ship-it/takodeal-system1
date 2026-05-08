@@ -3870,68 +3870,64 @@ window.loadZReadingReports = async function () {
 // ========================================================
 // 💸 EXPENSE & RESTOCK FEED ENGINE (DATE FILTER UPGRADE)
 // ========================================================
-window.loadExpenseLogs = async function () {
-  const tbody = document.getElementById('expenseLogsTableBody');
-  if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Fetching live expense logs...</td></tr>';
+window.loadExpenseLogs = async function() {
+    const tbody = document.getElementById('expenseLogsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Loading logs...</td></tr>';
 
-  let dateFilter = document.getElementById('expenseDateFilter') ? document.getElementById('expenseDateFilter').value : "";
+    let dateFilter = document.getElementById('expenseDateFilter') ? document.getElementById('expenseDateFilter').value : "";
+    
+    // 🔥 NEW: Variables to track the math!
+    let totalExp = 0;
+    let countExp = 0;
 
-  try {
-    // Increased limit to 300 so date filtering works further back in time!
-    const q = query(collection(db, "expenses"), orderBy("timestamp", "desc"), limit(300));
-    const snap = await getDocs(q);
+    try {
+        const q = query(collection(db, "expenses"), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        let html = '';
 
-    let html = '';
-    let count = 0;
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let jsDate = data.timestamp ? data.timestamp.toDate() : new Date();
+            
+            // Filter by Date
+            if (dateFilter) {
+                let yyyy = jsDate.getFullYear();
+                let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
+                let dd = String(jsDate.getDate()).padStart(2, '0');
+                if (`${yyyy}-${mm}-${dd}` !== dateFilter) return;
+            }
 
-    snap.forEach(docSnap => {
-      let data = docSnap.data();
-      if (!data.timestamp) return;
-      
-      let jsDate = data.timestamp.toDate();
+            let amount = parseFloat(data.amount) || 0;
+            
+            // 🔥 NEW: Add to our running totals!
+            totalExp += amount;
+            countExp++;
 
-      // 📅 THE DATE FILTER ENGINE
-      if (dateFilter) {
-          let yyyy = jsDate.getFullYear();
-          let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
-          let dd = String(jsDate.getDate()).padStart(2, '0');
-          let formattedDate = `${yyyy}-${mm}-${dd}`;
-          
-          if (formattedDate !== dateFilter) return; 
-      }
+            let dateStr = jsDate.toLocaleString('en-PH');
+            html += `
+                <tr>
+                    <td>${dateStr}</td>
+                    <td><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
+                    <td><strong>${data.cashier || 'System'}</strong></td>
+                    <td>${data.description || data.note || data.category || 'Expense'}</td>
+                    <td style="text-align: right; color: #dc2626; font-weight: bold;">₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                </tr>
+            `;
+        });
 
-      let dateStr = jsDate.toLocaleString();
-      let amountStr = data.amount ? `₱${data.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '₱0.00';
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No expenses found for this date.</td></tr>';
+        
+        // 🔥 NEW: Update the Dashboard Cards!
+        if(document.getElementById('expSumTotal')) document.getElementById('expSumTotal').innerText = `₱${totalExp.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if(document.getElementById('expSumCount')) document.getElementById('expSumCount').innerText = countExp;
 
-      let descHtml = data.description || '';
-      if (descHtml.includes("RESTOCK")) {
-        descHtml = `<span style="color: #059669; font-weight: bold; background: #d1fae5; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 5px;">📦 RESTOCK</span> ` + descHtml.replace("RESTOCK", "");
-      }
-
-      html += `
-        <tr>
-          <td style="font-size: 13px; color: var(--text-muted);">${dateStr}</td>
-          <td><strong>${data.branch || 'Unknown'}</strong></td>
-          <td>👤 ${data.cashier || 'Unknown'}</td>
-          <td>${descHtml}</td>
-          <td style="text-align: right; font-weight: bold; color: var(--danger);">${amountStr}</td>
-        </tr>
-      `;
-      count++;
-    });
-
-    if (count === 0 && dateFilter) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center">No expenses logged on ${dateFilter}.</td></tr>`;
-    } else {
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No expenses logged yet.</td></tr>';
+    } catch (error) {
+        console.error("Expense Log Error:", error);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading logs.</td></tr>';
     }
-
-  } catch (error) {
-    console.error("Error loading expense logs:", error);
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: var(--danger);">❌ Error loading logs.</td></tr>';
-  }
 };
+
 // ==========================================
 // RECEIPT BUILDER ENGINE
 // ==========================================
