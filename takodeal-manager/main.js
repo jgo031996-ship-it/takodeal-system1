@@ -1320,12 +1320,12 @@ window.uploadMenuImage = async function(event, docId) {
     }
 };
 
-// --- DETAILED BRANCH ANALYTICS ENGINE ---
+// --- DETAILED BRANCH ANALYTICS ENGINE (UPGRADED WITH TRUE COGS) ---
 window.openBranchDetails = async function (branch) {
   document.getElementById('analyticsModal').style.display = 'flex';
   document.getElementById('modalBranchName').innerText = `📊 ${branch} Analytics`;
 
-  // Read both dates!
+  // Read both dates
   const startDateInput = document.getElementById('dashStartDate');
   const endDateInput = document.getElementById('dashEndDate');
   const startDay = new Date(startDateInput.value);
@@ -1335,18 +1335,18 @@ window.openBranchDetails = async function (branch) {
   document.getElementById('modalDateDisplay').innerText = `${startDay.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${endDay.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
   document.getElementById('mdlNet').innerText = "Loading...";
-  document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="3" class="text-center">Calculating...</td></tr>';
+  document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="5" class="text-center">Calculating Margins...</td></tr>';
 
   const startOfDay = new Date(startDay.setHours(0, 0, 0, 0));
   const endOfDay = new Date(endDay.setHours(23, 59, 59, 999));
 
   try {
-    // 2. Fetch all transactions for this specific branch and date
+    // 1. Fetch transactions for this branch and date
     const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
     const txSnap = await getDocs(txQ);
 
     let netSales = 0; let totalItems = 0; let transCount = 0; let voidCount = 0;
-    let categories = {}; // To track Best Sellers
+    let categories = {}; // To track Best Sellers and Margins
     let payments = {};   // To track Cash vs GCash
     let transHtml = '';
 
@@ -1354,6 +1354,31 @@ window.openBranchDetails = async function (branch) {
     let allTx = [];
     txSnap.forEach(doc => allTx.push(doc.data()));
     allTx.sort((a, b) => b.timestamp - a.timestamp);
+
+    // 🔥 NEW: Fetch Inventory Base Costs
+    const invSnap = await getDocs(collection(db, "inventory"));
+    let inventoryCosts = {};
+    invSnap.forEach(doc => {
+        let data = doc.data();
+        inventoryCosts[data.name] = parseFloat(data.baseCost) || 0;
+    });
+
+    // 🔥 NEW: Fetch Recipes to calculate standard COGS
+    const bomSnap = await getDocs(collection(db, "bom"));
+    let recipeCosts = {};
+    bomSnap.forEach(doc => {
+        let data = doc.data();
+        if (!recipeCosts[data.menuItem]) recipeCosts[data.menuItem] = 0;
+        let ingCost = inventoryCosts[data.ingredientName] || 0;
+        recipeCosts[data.menuItem] += (ingCost * (data.qty || 1));
+    });
+
+    // 🔥 NEW: Fetch Menu for True Categories
+    const menuSnap = await getDocs(collection(db, "menu"));
+    let menuCategories = {};
+    menuSnap.forEach(doc => {
+        menuCategories[doc.data().name] = doc.data().category || 'Uncategorized';
+    });
 
     allTx.forEach(tx => {
       let timeStr = tx.timestamp ? tx.timestamp.toDate().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
@@ -1370,18 +1395,39 @@ window.openBranchDetails = async function (branch) {
         if (!payments[payMethod]) payments[payMethod] = 0;
         payments[payMethod] += (tx.netTotal || 0);
 
-        // Track Categories & Items
+        // 🔥 NEW: Track True Categories, Sales, and Advanced COGS
         if (tx.cart && Array.isArray(tx.cart)) {
           tx.cart.forEach(item => {
             let qty = item.qty || 1;
             totalItems += qty;
 
-            // Assume category is passed from POS. If missing, label 'Uncategorized'
-            let cat = item.category || 'Food/Drink';
-            if (!categories[cat]) categories[cat] = { qty: 0, sales: 0 };
+            let itemName = item.name || item.itemName;
+            let cat = menuCategories[itemName] || item.category || 'Uncategorized';
+            
+            if (!categories[cat]) categories[cat] = { qty: 0, sales: 0, cogs: 0 };
 
             categories[cat].qty += qty;
-            categories[cat].sales += ((item.variantPrice || 0) * qty);
+            
+            // Calculate Sales (Fallback to base price if lineTotalFinal is missing)
+            let lineRevenue = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
+            categories[cat].sales += lineRevenue;
+
+            // Calculate Base Recipe COGS
+            let baseCogs = (recipeCosts[itemName] || 0) * qty;
+            let addonCogs = 0;
+            
+            // Calculate Add-on COGS exactly based on the ingredients used!
+            if (item.addons) {
+                for (let key in item.addons) {
+                    let addon = item.addons[key];
+                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                        let aCost = inventoryCosts[addon.linkedIngredient] || 0;
+                        addonCogs += (aCost * addon.deductQty * addon.qty * qty);
+                    }
+                }
+            }
+            
+            categories[cat].cogs += (baseCogs + addonCogs);
           });
         }
 
@@ -1389,21 +1435,15 @@ window.openBranchDetails = async function (branch) {
       }
     });
 
-    // ... (Your existing transaction loop finishes here) ...
-
-    // --- UPGRADED DRAWER CASH & AUDIT ENGINE ---
-
-    // 1. Fetch Expenses for today
+    // --- DRAWER CASH & AUDIT ENGINE ---
     const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
     const expSnap = await getDocs(expQ);
     let dateExpenses = 0;
     expSnap.forEach(doc => dateExpenses += (doc.data().amount || 0));
 
-    // 2. Fetch the Active Shift
     const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
     const shiftSnap = await getDocs(shiftQ);
 
-    // 3. FETCH THE PREVIOUS CLOSED SHIFT (The Audit Trail)
     const prevShiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
     const prevShiftSnap = await getDocs(prevShiftQ);
     let lastClosingCash = prevShiftSnap.empty ? 0 : (prevShiftSnap.docs[0].data().declaredCash || 0);
@@ -1422,7 +1462,6 @@ window.openBranchDetails = async function (branch) {
         <b>Expenses Paid:</b> ${formatMoney(dateExpenses)}
       `;
 
-      // 🚨 THE VALIDATION LOGIC
       const auditEl = document.getElementById('mdlAuditAlert');
       if (startingCash === lastClosingCash) {
         auditEl.innerHTML = `<span style="color: #16a34a;">✅ Matches Last Closing (₱${lastClosingCash})</span>`;
@@ -1431,39 +1470,60 @@ window.openBranchDetails = async function (branch) {
         let sign = diff > 0 ? "+" : "";
         auditEl.innerHTML = `<span style="color: #dc2626;">⚠️ DISCREPANCY: ${sign}${diff} vs Last Close</span>`;
       }
-
     } else {
       document.getElementById('mdlDrawerCash').innerText = "No Active Shift";
       document.getElementById('mdlDrawerMath').innerText = "Register is currently closed.";
       document.getElementById('mdlAuditAlert').innerText = "";
     }
 
-    // 3. Inject KPIs
+    // --- INJECT KPIs ---
     document.getElementById('mdlNet').innerText = formatMoney(netSales);
     document.getElementById('mdlItems').innerText = totalItems;
     document.getElementById('mdlTrans').innerText = transCount;
     document.getElementById('mdlVoids').innerText = voidCount;
 
-    // 4. Inject Categories
+    // --- INJECT ADVANCED CATEGORIES WITH MARGINS ---
     let catHtml = '';
-    for (let cat in categories) {
-      catHtml += `<tr><td><strong>${cat}</strong></td><td>${categories[cat].qty} items</td><td style="color: var(--primary); font-weight: 600;">${formatMoney(categories[cat].sales)}</td></tr>`;
-    }
-    document.getElementById('tbCatBody').innerHTML = catHtml || '<tr><td colspan="3" class="text-center">No items sold.</td></tr>';
+    let sortedCats = Object.keys(categories).sort((a, b) => categories[b].sales - categories[a].sales);
 
-    // 5. Inject Payments
+    sortedCats.forEach(cat => {
+        let data = categories[cat];
+        let profit = data.sales - data.cogs;
+        let margin = data.sales > 0 ? (profit / data.sales) * 100 : 0;
+        let marginColor = margin > 50 ? '#16a34a' : (margin > 30 ? '#f59e0b' : '#dc2626');
+
+        catHtml += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="font-weight: bold; color: #334155; padding: 10px;">${cat}</td>
+                <td style="padding: 10px;">${data.qty} items</td>
+                <td style="font-weight: bold; color: #d97706; padding: 10px;">${formatMoney(data.sales)}</td>
+                <td style="font-weight: bold; color: #ef4444; padding: 10px;">${formatMoney(data.cogs)}</td>
+                <td style="font-weight: 900; color: ${marginColor}; padding: 10px;">${margin.toFixed(1)}%</td>
+            </tr>
+        `;
+    });
+
+    // Dynamically update the table headers so you don't have to edit the HTML!
+    let catTableHead = document.getElementById('tbCatBody').previousElementSibling.querySelector('tr');
+    if (catTableHead) {
+        catTableHead.innerHTML = '<th style="text-align:left; padding:10px;">Category</th><th style="text-align:left; padding:10px;">Sold</th><th style="text-align:left; padding:10px;">Gross</th><th style="text-align:left; padding:10px;">Est. COGS</th><th style="text-align:left; padding:10px;">Margin</th>';
+    }
+
+    document.getElementById('tbCatBody').innerHTML = catHtml || '<tr><td colspan="5" class="text-center">No items sold.</td></tr>';
+
+    // --- INJECT PAYMENTS ---
     let payHtml = '';
     for (let p in payments) {
-      payHtml += `<tr><td><strong>${p}</strong></td><td style="color: var(--success); font-weight: 600;">${formatMoney(payments[p])}</td></tr>`;
+      payHtml += `<tr><td style="padding: 10px;"><strong>${p}</strong></td><td style="color: var(--success); font-weight: 600; padding: 10px;">${formatMoney(payments[p])}</td></tr>`;
     }
     document.getElementById('tbPayBody').innerHTML = payHtml || '<tr><td colspan="2" class="text-center">No payments logged.</td></tr>';
 
-    // 6. Inject Transactions
+    // --- INJECT TRANSACTIONS ---
     document.getElementById('tbTransBody').innerHTML = transHtml || '<tr><td colspan="5" class="text-center">No transactions on this date.</td></tr>';
 
   } catch (error) {
     console.error("Analytics Error:", error);
-    document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="3" class="text-center" style="color: red;">Error loading analytics.</td></tr>';
+    document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading analytics.</td></tr>';
   }
 };
 
