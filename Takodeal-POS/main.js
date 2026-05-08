@@ -1,37 +1,67 @@
-// 1. Check if the device knows where it is when the app loads
+// ========================================================
+// 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
+// ========================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+window.onSnapshot = onSnapshot;
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
+  authDomain: "takodeal-pos.firebaseapp.com",
+  projectId: "takodeal-pos",
+  storageBucket: "takodeal-pos.firebasestorage.app",
+  messagingSenderId: "248826111383",
+  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+enableIndexedDbPersistence(db).then(() => {
+    console.log("🚀 TAKODEÁL Offline Mode is ACTIVE!");
+}).catch((err) => {
+    if (err.code == 'failed-precondition') console.warn("Offline persistence failed: Multiple tabs open.");
+    else if (err.code == 'unimplemented') console.warn("Offline persistence is not supported.");
+});
+
+window.db = db;
+window.query = query;
+window.where = where;
+window.collection = collection;
+window.getDocs = getDocs;
+window.deleteDoc = deleteDoc;
+window.doc = doc;
+window.updateDoc = updateDoc;
+
+console.log("🔥 Firebase Engine is LIVE!");
+
+// ========================================================
+// 📱 2. DEVICE LOCK & SETUP ENGINE
+// ========================================================
 document.addEventListener("DOMContentLoaded", () => {
   let deviceBranch = localStorage.getItem('takodeal_device_branch');
 
   if (!deviceBranch) {
-    // If it doesn't know, trap the user in the setup screen!
     document.getElementById('deviceSetupOverlay').style.display = 'flex';
   } else {
-    // If it knows, show it on the login screen
     let locDisplay = document.getElementById('displayDeviceLocation');
     if (locDisplay) locDisplay.innerText = deviceBranch;
-
-    // 🔥 VERY IMPORTANT: Override the global branch variable for the POS engine!
     window.POS_BRANCH = deviceBranch;
   }
 });
 
-// 2. The function to lock the device
 window.lockDeviceToBranch = async function () {
   let selectedBranch = document.getElementById('setupBranchSelect').value;
-  let deviceName = prompt("Give this device a name (e.g., 'Counter Tablet 1' or 'Samsung S23'):", "New Tablet");
-
-  if (!deviceName) return; // Cancel if no name given
+  let deviceName = prompt("Give this device a name (e.g., 'Counter Tablet 1'):", "New Tablet");
+  if (!deviceName) return; 
 
   try {
-    // 1. Create a unique ID for this specific tablet
     let deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-
-    // 2. Save to local memory (so the tablet remembers who it is)
     localStorage.setItem('takodeal_device_branch', selectedBranch);
     localStorage.setItem('takodeal_device_id', deviceId);
     localStorage.setItem('takodeal_device_name', deviceName);
 
-    // 3. REGISTER WITH THE CLOUD (This makes it show up in the Manager App!)
     await addDoc(collection(db, "pos_devices"), {
       deviceId: deviceId,
       deviceName: deviceName,
@@ -43,57 +73,11 @@ window.lockDeviceToBranch = async function () {
 
     alert(`✅ Success! This device is now registered and locked to ${selectedBranch}.`);
     location.reload();
-
   } catch (e) {
     console.error("Registration Error:", e);
     alert("❌ Failed to register device. Check internet connection.");
   }
 };
-
-// --- TAKODEAL FIREBASE ENGINE ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-
-window.onSnapshot = onSnapshot; // Make it available globally
-
-// Your secure database keys
-const firebaseConfig = {
-  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
-  authDomain: "takodeal-pos.firebaseapp.com",
-  projectId: "takodeal-pos",
-  storageBucket: "takodeal-pos.firebasestorage.app",
-  messagingSenderId: "248826111383",
-  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
-};
-
-// Ignite the Engine
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// --- ENABLE OFFLINE PERSISTENCE ---
-enableIndexedDbPersistence(db)
-  .then(() => {
-      console.log("🚀 TAKODEÁL Offline Mode is ACTIVE!");
-  })
-  .catch((err) => {
-      if (err.code == 'failed-precondition') {
-          console.warn("Offline persistence failed: Multiple tabs open.");
-      } else if (err.code == 'unimplemented') {
-          console.warn("Offline persistence is not supported by this browser.");
-      }
-  });
-
-// Make the database available to our POS
-window.db = db;
-window.query = query;
-window.where = where;
-window.collection = collection;
-window.getDocs = getDocs;
-window.deleteDoc = deleteDoc;
-window.doc = doc;
-window.updateDoc = updateDoc;
-
-console.log("🔥 Firebase Engine is LIVE!");
 
 // --- THE FIREBASE PIN SEARCHER ---
 window.verifyPin = async function (pin) {
