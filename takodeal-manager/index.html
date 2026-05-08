@@ -1413,7 +1413,15 @@
       </div>
     </div>
 
-    <div style="padding: 20px;">
+    <div id="addPayableModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 500px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+        
+        <div style="background: #0f766e; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+          <h2 style="margin: 0; font-size: 18px;">➕ Log Supplier Delivery</h2>
+          <span onclick="document.getElementById('addPayableModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+        </div>
+        
+        <div style="padding: 20px;">
           <label style="font-size: 12px; font-weight: bold; color: #64748b;">Supplier Name</label>
           <input type="text" id="paySupplierName" placeholder="e.g. Monterey, Coca-Cola" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
           
@@ -1448,13 +1456,14 @@
           <select id="payTerms" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
             <option value="0">C.O.D. (Due Today)</option>
             <option value="7">7 Days</option>
-            <option value="10">10 Days</option>
             <option value="15">15 Days</option>
             <option value="30">30 Days</option>
           </select>
 
           <button onclick="window.saveNewPayable()" id="btnSavePayable" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Log Delivery & Track Deadline</button>
         </div>
+      </div>
+    </div>
 
     <div id="settlePayableModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
       <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
