@@ -3023,60 +3023,76 @@ window.loadCashExplorer = async function() {
     
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">Fetching remittances...</td></tr>';
 
-    // 1. Grab the current filters from the top of the page
     const branchFilter = document.getElementById('transferBranchFilter') ? document.getElementById('transferBranchFilter').value : 'All';
     
-    // Grab dates safely!
     const today = new Date().toISOString().split('T')[0];
     const startInput = document.getElementById('transferStartDate');
     const endInput = document.getElementById('transferEndDate');
     
-    // If the input exists AND is not blank, use it. Otherwise, default to today!
     const startDateRaw = (startInput && startInput.value) ? startInput.value : today;
     const endDateRaw = (endInput && endInput.value) ? endInput.value : today;
 
-    // Convert string dates to actual Date objects for Firebase comparison
     const startTimestamp = new Date(startDateRaw + 'T00:00:00');
     const endTimestamp = new Date(endDateRaw + 'T23:59:59');
 
     try {
-        let q;
+        // 🔥 THE FIX: We fetch TWO things at the same time:
+        // 1. ALL Pending Remittances (so they never get lost)
+        // 2. The standard date-filtered log for your history
+        
+        let pendingQ;
+        let logQ;
+
         if (branchFilter === 'All') {
-            q = query(collection(db, "remittances"), 
-                where("timestamp", ">=", startTimestamp),
-                where("timestamp", "<=", endTimestamp),
-                orderBy("timestamp", "desc")
-            );
+            pendingQ = query(collection(db, "remittances"), where("status", "==", "Pending"));
+            logQ = query(collection(db, "remittances"), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp), orderBy("timestamp", "desc"));
         } else {
-            q = query(collection(db, "remittances"), 
-                where("branch", "==", branchFilter),
-                where("timestamp", ">=", startTimestamp),
-                where("timestamp", "<=", endTimestamp),
-                orderBy("timestamp", "desc")
-            );
+            pendingQ = query(collection(db, "remittances"), where("branch", "==", branchFilter), where("status", "==", "Pending"));
+            logQ = query(collection(db, "remittances"), where("branch", "==", branchFilter), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp), orderBy("timestamp", "desc"));
         }
 
-        const snap = await getDocs(q);
+        const [pendingSnap, logSnap] = await Promise.all([getDocs(pendingQ), getDocs(logQ)]);
 
-        let html = '';
+        let uniqueTransfers = new Map();
         let totalCash = 0;
         let pendingCount = 0;
 
-        snap.forEach(docSnap => {
+        // Process Log (Received/Completed within date range)
+        logSnap.forEach(docSnap => {
             let data = docSnap.data();
-            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
-            
-            // The Boss Security Check!
-            let status = data.status || "Pending"; 
-            if (status === "Pending") pendingCount++;
-            if (status === "Received") totalCash += (data.amount || 0); // Only count money safely in your hands!
+            if (data.status === "Received") {
+                totalCash += (data.amount || 0);
+            }
+            uniqueTransfers.set(docSnap.id, data);
+        });
 
+        // Process Pending (Always forces them into the table so you can approve them!)
+        pendingSnap.forEach(docSnap => {
+            let data = docSnap.data();
+            pendingCount++;
+            uniqueTransfers.set(docSnap.id, data); 
+        });
+
+        // Convert our list back to an array and sort it newest-first
+        let sortedTransfers = Array.from(uniqueTransfers, ([id, data]) => ({ id, ...data }));
+        sortedTransfers.sort((a, b) => {
+            let timeA = a.timestamp ? a.timestamp.toMillis() : 0;
+            let timeB = b.timestamp ? b.timestamp.toMillis() : 0;
+            return timeB - timeA;
+        });
+
+        let html = '';
+
+        sortedTransfers.forEach(data => {
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
+            let status = data.status || "Pending"; 
+            
             let statusBadge = status === "Received"
                 ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`
                 : `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
 
             let actionBtn = status === "Pending"
-                ? `<button onclick="approveRemittance('${docSnap.id}')" style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; width: 100%;">Approve</button>`
+                ? `<button onclick="approveRemittance('${data.id}')" style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; width: 100%;">Approve</button>`
                 : `<span style="color: #94a3b8; font-size: 12px; display: block; text-align: center;">Locked</span>`;
 
             html += `
@@ -3110,7 +3126,7 @@ window.loadCashExplorer = async function() {
 
     } catch (error) {
         console.error(error);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Error fetching data. (Check Firebase Console for Index links)</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Error fetching data. Check Console.</td></tr>';
     }
 };
 
