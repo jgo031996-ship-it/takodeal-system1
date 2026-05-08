@@ -3751,7 +3751,6 @@ window.loadZReadingReports = async function () {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" class="text-center">Loading reports from cloud...</td></tr>';
 
-  // Grab the date from the new HTML input (if it exists)
   let dateFilter = document.getElementById('zReadingDateFilter') ? document.getElementById('zReadingDateFilter').value : "";
 
   try {
@@ -3763,22 +3762,22 @@ window.loadZReadingReports = async function () {
 
     snap.forEach(docSnap => {
       let data = docSnap.data();
-      if (!data.endTime) return;
+      if (!data.endTime || !data.startTime) return;
       
-      let jsDate = data.endTime.toDate();
+      // 🔥 THE FIX: We filter the calendar by when the shift STARTED, not when it ended!
+      let jsDate = data.startTime.toDate(); 
       
-      // 📅 THE DATE FILTER ENGINE
       if (dateFilter) {
-          // Format Firestore date to YYYY-MM-DD to match the HTML calendar picker
           let yyyy = jsDate.getFullYear();
           let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
           let dd = String(jsDate.getDate()).padStart(2, '0');
           let formattedDate = `${yyyy}-${mm}-${dd}`;
           
-          if (formattedDate !== dateFilter) return; // Skip if it doesn't match the selected date!
+          if (formattedDate !== dateFilter) return; 
       }
 
-      let dateStr = jsDate.toLocaleString();
+      // We still show the actual End Time on the table so you know exactly when they closed
+      let dateStr = data.endTime.toDate().toLocaleString('en-PH');
       let declared = data.declaredCash || 0;
       let declaredFormatted = `₱${declared.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
@@ -3802,7 +3801,7 @@ window.loadZReadingReports = async function () {
     });
 
     if (count === 0 && dateFilter) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center">No shifts closed on ${dateFilter}.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center">No shifts started on ${dateFilter}.</td></tr>`;
     } else {
         tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No closed shifts found.</td></tr>';
     }
