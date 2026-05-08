@@ -624,113 +624,139 @@ window.openEndShiftClearance = function () {
 };
 
 // ========================================================
-// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH ANTI-FRAUD ALARM)
+// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH AUTO-SWEEP)
 // ========================================================
 window.submitComprehensiveCloseShift = async function () {
-  // 1. Get the exact total they counted
-  let declaredCash = calculateDenominations();
+    let declaredCash = calculateDenominations();
 
-  // 2. Gather the Cash Breakdown for the history logs
-  let cashBreakdown = {};
-  denominations.forEach(d => {
-    cashBreakdown[`₱${d}`] = parseInt(document.getElementById(`qty${d}`).value) || 0;
-  });
-
-  // 3. Gather Physical Stock Counts
-  let physicalStock = {
-    '320cc Paper Bowls': parseInt(document.getElementById('count320cc').value) || 0,
-    '520cc Paper Bowls': parseInt(document.getElementById('count520cc').value) || 0,
-    'Takoyaki Boxes': parseInt(document.getElementById('countBoxes').value) || 0,
-    'Straws': parseInt(document.getElementById('countStraws').value) || 0
-  };
-
-  try {
-    let shiftId = activeShiftDetails.logId;
-    if (!shiftId) {
-      alert("No active shift found to close.");
-      return;
-    }
-    
-    let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-
-    // 🔥 STEP 4: FETCH LIVE TRANSACTIONS TO SEPARATE CASH VS DIGITAL 🔥
-    let transactions = await window.getSalesDashboardData(branchName, activeShiftDetails.startTime);
-    let totalCashSales = 0;
-    let totalDigitalSales = 0;
-
-    if (transactions && transactions.length > 0) {
-        transactions.forEach(tx => {
-            if (tx.status !== 'Voided') {
-                // If it's Cash (or missing, default to Cash), add to Cash total
-                if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                    totalCashSales += tx.netTotal;
-                } else {
-                    // GCash, BDO, GoTyme, etc. go here!
-                    totalDigitalSales += tx.netTotal;
-                }
-            }
-        });
-    }
-
-    // CALCULATE TRUE EXPECTED PHYSICAL CASH IN DRAWER
-    // Formula: Starting Float + ONLY Cash Sales - Cash Taken Out for Expenses
-    let expectedCash = activeShiftDetails.startingCash + totalCashSales - activeShiftDetails.cashOut;
-
-    // 5. Update the Shift in Firebase
-    await updateDoc(doc(db, "shifts", shiftId), {
-      active: false,
-      endTime: serverTimestamp(),
-      declaredCash: declaredCash,
-      expectedCash: expectedCash, // The true physical expected cash
-      totalCashSales: totalCashSales, // Saved for your Owner Dashboard!
-      totalDigitalSales: totalDigitalSales, // Saved for your Owner Dashboard!
-      cashBreakdown: cashBreakdown, // The exact 1000s, 500s, etc.
-      physicalStockCount: physicalStock, // The exact cups, boxes, etc.
-      status: "Closed"
+    let cashBreakdown = {};
+    denominations.forEach(d => {
+        cashBreakdown[`₱${d}`] = parseInt(document.getElementById(`qty${d}`).value) || 0;
     });
 
-    // 🔥 THE ANTI-FRAUD ALARM ENGINE 🔥
-    let variance = declaredCash - expectedCash;
+    let physicalStock = {
+        '320cc Paper Bowls': parseInt(document.getElementById('count320cc').value) || 0,
+        '520cc Paper Bowls': parseInt(document.getElementById('count520cc').value) || 0,
+        'Takoyaki Boxes': parseInt(document.getElementById('countBoxes').value) || 0,
+        'Straws': parseInt(document.getElementById('countStraws').value) || 0
+    };
 
-    if (variance !== 0) {
-      let currentCashier = localStorage.getItem('cashierName') || 'Unknown';
-      let varianceType = variance < 0 ? "SHORT" : "OVER";
-      
-      await addDoc(collection(db, "manager_alerts"), {
-        type: "VARIANCE_ALERT",
-        branch: branchName,
-        cashier: currentCashier,
-        shiftId: shiftId,
-        expected: expectedCash,
-        declared: declaredCash,
-        varianceAmount: variance,
-        stockCounts: physicalStock, // We send you their stock counts to check for cheating!
-        message: `CASH ${varianceType}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
-        explanationCause: "Awaiting Staff Letter...",
-        explanationMessage: "",
-        explanationStatus: "Pending", // You will approve this in the Manager App!
-        timestamp: serverTimestamp(),
-        isRead: false
-      });
+    try {
+        let shiftId = activeShiftDetails.logId;
+        if (!shiftId) { alert("No active shift found to close."); return; }
+        
+        let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+
+        // 1. FETCH TRANSACTIONS & SEPARATE DIGITAL FUNDS
+        let transactions = await window.getSalesDashboardData(branchName, activeShiftDetails.startTime);
+        let totalCashSales = 0;
+        let totalDigitalSales = 0;
+        let digitalBreakdown = {}; // 🔥 Tracker for Auto-Sweep
+
+        if (transactions && transactions.length > 0) {
+            transactions.forEach(tx => {
+                if (tx.status !== 'Voided') {
+                    if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                        totalCashSales += tx.netTotal;
+                    } else {
+                        totalDigitalSales += tx.netTotal;
+                        // Track exact amounts per digital channel (Grab, GCash, Bank, etc.)
+                        let method = tx.paymentMethod;
+                        if (!digitalBreakdown[method]) digitalBreakdown[method] = 0;
+                        digitalBreakdown[method] += tx.netTotal;
+                    }
+                }
+            });
+        }
+
+        let expectedCash = activeShiftDetails.startingCash + totalCashSales - activeShiftDetails.cashOut;
+
+        // 2. CLOSE THE SHIFT RECORD
+        await updateDoc(doc(db, "shifts", shiftId), {
+            active: false,
+            endTime: serverTimestamp(),
+            declaredCash: declaredCash,
+            expectedCash: expectedCash,
+            totalCashSales: totalCashSales, 
+            totalDigitalSales: totalDigitalSales,
+            digitalBreakdown: digitalBreakdown, // Saves exact Grab/GCash amounts for reports
+            cashBreakdown: cashBreakdown, 
+            physicalStockCount: physicalStock, 
+            status: "Closed"
+        });
+
+        // ========================================================
+        // 🧹 THE AUTO-SWEEP ENGINE (Secretly updates the Ledger!)
+        // ========================================================
+        for (let method in digitalBreakdown) {
+            let amountToDeposit = digitalBreakdown[method];
+            if (amountToDeposit > 0) {
+                // Find the matching ledger account (e.g. Branch: "Cabantian", Account: "Grab")
+                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", branchName), where("name", "==", method));
+                const accSnap = await getDocs(accQ);
+                
+                if (!accSnap.empty) {
+                    let accDoc = accSnap.docs[0];
+                    let currentBal = accDoc.data().balance || 0;
+                    
+                    // Silently deposit the money!
+                    await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
+                    
+                    // Create an audit log for the Manager App history tab
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: accDoc.id,
+                        accountName: method,
+                        branch: branchName,
+                        action: "Auto-Sweep (Shift Close)",
+                        amount: amountToDeposit,
+                        newBalance: currentBal + amountToDeposit,
+                        user: localStorage.getItem('cashierName') || 'System Auto-Sweep',
+                        timestamp: serverTimestamp(),
+                        note: `Auto-deposit from Shift ID: ${shiftId.substring(0,6)}...`
+                    });
+                } else {
+                    // FALLBACK: If you forgot to create a "Grab" account for Cabantian, it creates one for you!
+                    const newAccRef = await addDoc(collection(db, "cash_accounts"), {
+                        name: method,
+                        branch: branchName,
+                        balance: amountToDeposit,
+                        createdAt: serverTimestamp()
+                    });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: newAccRef.id, accountName: method, branch: branchName, action: "Auto-Sweep (New Account Generated)",
+                        amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp()
+                    });
+                }
+            }
+        }
+
+        // 3. FRAUD ALARM ENGINE (For Physical Cash Only)
+        let variance = declaredCash - expectedCash;
+        if (variance !== 0) {
+            let currentCashier = localStorage.getItem('cashierName') || 'Unknown';
+            let varianceType = variance < 0 ? "SHORT" : "OVER";
+            
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "VARIANCE_ALERT", branch: branchName, cashier: currentCashier, shiftId: shiftId,
+                expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: physicalStock, 
+                message: `CASH ${varianceType}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
+                explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
+                timestamp: serverTimestamp(), isRead: false
+            });
+        }
+
+        alert(`✅ Shift Closed & Bookkeeping Complete!\n\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}\n\n(Digital sales were automatically swept to HQ Bank ledgers).`);
+
+        localStorage.removeItem('currentShiftId');
+        if (typeof closeModal === 'function') closeModal('endShiftModal');
+        else document.getElementById('endShiftModal').style.display = 'none';
+
+        if (typeof checkCurrentShift === 'function') checkCurrentShift();
+
+    } catch (error) {
+        console.error("Error closing shift:", error);
+        alert("❌ Failed to close shift. Check your connection.");
     }
-
-    // Show a detailed success message to the cashier
-    alert(`✅ Shift Closed Successfully!\n\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}\n\nBreakdown and logs have been sent to the Manager App.`);
-
-    // Clear Local Storage
-    localStorage.removeItem('currentShiftId');
-    if (typeof closeModal === 'function') closeModal('endShiftModal');
-    else document.getElementById('endShiftModal').style.display = 'none';
-
-    // Refresh the UI to lock the register
-    if (typeof checkCurrentShift === 'function') {
-      checkCurrentShift();
-    }
-
-  } catch (error) {
-    console.error("Error closing shift:", error);
-    alert("❌ Failed to close shift. Check your connection.");
-  }
 };
 // ========================================================
 // 💸 SMART EXPENSE & INVENTORY RESTOCK ENGINE
