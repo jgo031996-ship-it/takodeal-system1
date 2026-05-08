@@ -300,13 +300,15 @@ window.loadGlobalDashboard = async function() {
         const statsSnap = await getDoc(doc(db, "settings", "global_stats"));
         if (statsSnap.exists()) {
             let totalBalls = statsSnap.data().totalTakoyakiBalls || 0;
-            console.log(`🔥 MILESTONE CHECK: You have sold ${totalBalls.toLocaleString()} Takoyaki Balls so far!`);
-            
-            // If you add a <div id="milestoneCounter"></div> to your HTML dashboard later, this will light it up!
             let milestoneDiv = document.getElementById('milestoneCounter');
             if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
         }
     } catch(e) { console.log("Tracker still waiting for first sale."); }
+
+    // 🔥 FIX: WAKE UP THE GRAB ENGINE WHEN DASHBOARD LOADS!
+    if (typeof window.calculateGrabFinancials === 'function') {
+        window.calculateGrabFinancials();
+    }
 };
 
 // --- WIRING THE BUTTONS ---
