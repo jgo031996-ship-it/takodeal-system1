@@ -6180,3 +6180,64 @@ window.confirmPayableSettlement = async function() {
         btn.innerText = "✅ Confirm Payment"; btn.disabled = false;
     }
 };
+
+window.exportTransactionsCSV = async function() {
+    let startDateInput = document.getElementById('dashStartDate').value;
+    let endDateInput = document.getElementById('dashEndDate').value;
+    
+    if (!startDateInput || !endDateInput) { 
+        alert("Please select a 'From' and 'To' date on the Dashboard first."); 
+        return; 
+    }
+
+    let startOfDay = new Date(startDateInput + 'T00:00:00');
+    let endOfDay = new Date(endDateInput + 'T23:59:59');
+
+    let btn = document.getElementById('btnExportSales');
+    let oldText = btn.innerText;
+    btn.innerText = "⏳ Exporting..."; 
+    btn.disabled = true;
+
+    try {
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+
+        // Standard CSV Headers for Bookkeeping
+        let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Net Total\n";
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            let dateStr = d.toLocaleDateString('en-PH');
+            let timeStr = d.toLocaleTimeString('en-PH');
+            
+            // Compress all items into one column
+            let itemsArr = [];
+            if (tx.cart) {
+                tx.cart.forEach(item => {
+                    itemsArr.push(`${item.qty}x ${item.name || item.itemName}`);
+                });
+            }
+            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); // Escape quotes for Excel
+            
+            csv += `"${tx.receiptId}","${dateStr}","${timeStr}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${tx.netTotal}"\n`;
+        });
+
+        // Trigger Download
+        let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        let downloadLink = document.createElement("a");
+        downloadLink.download = `Takodeal_Sales_Log_${startDateInput}_to_${endDateInput}.csv`;
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = "none";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+    } catch (e) {
+        console.error("Export Error:", e);
+        alert("Failed to export sales data.");
+    } finally {
+        btn.innerText = oldText; 
+        btn.disabled = false;
+    }
+};
