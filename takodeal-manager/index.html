@@ -1385,7 +1385,7 @@
             <h2 style="margin: 0; color: #334155;">📦 Active Deliveries & Invoices</h2>
             <span style="font-size: 12px; color: var(--text-muted);">Track supplier terms and upcoming payment deadlines.</span>
           </div>
-          <button onclick="document.getElementById('addPayableModal').style.display='flex'" style="background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">
+          <button onclick="window.openAddPayableModal()" style="background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">
             ➕ Log Delivery / Invoice
           </button>
         </div>
@@ -1412,23 +1412,33 @@
       </div>
     </div>
 
-    <div id="addPayableModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
-      <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
-        <div style="background: #0f766e; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-          <h2 style="margin: 0; font-size: 18px;">➕ Log Supplier Delivery</h2>
-          <span onclick="document.getElementById('addPayableModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
-        </div>
-        <div style="padding: 20px;">
+    <div style="padding: 20px;">
           <label style="font-size: 12px; font-weight: bold; color: #64748b;">Supplier Name</label>
           <input type="text" id="paySupplierName" placeholder="e.g. Monterey, Coca-Cola" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
           
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                  <label style="font-size: 12px; font-weight: bold; color: #0f766e;">📦 Items Received (Optional)</label>
+                  <span style="font-size: 10px; color: #64748b; font-weight: bold;">Adds to Main Office Stock</span>
+              </div>
+              <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                  <select id="payItemSelect" style="flex: 2; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; outline: none;">
+                      <option value="">Loading items...</option>
+                  </select>
+                  <input type="number" id="payItemQty" placeholder="Qty" style="flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; outline: none;">
+                  <button onclick="window.addPayableItem()" style="background: #0f766e; color: white; border: none; padding: 8px 12px; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer;">Add</button>
+              </div>
+              <div id="payItemsList" style="font-size: 12px; color: #475569; max-height: 120px; overflow-y: auto;">
+                  </div>
+          </div>
+
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
             <div>
               <label style="font-size: 12px; font-weight: bold; color: #64748b;">Invoice / Ref No.</label>
               <input type="text" id="payInvoiceNum" placeholder="INV-12345" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
             </div>
             <div>
-              <label style="font-size: 12px; font-weight: bold; color: #64748b;">Total Amount (₱)</label>
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">Total Amount Owed (₱)</label>
               <input type="number" id="payAmount" placeholder="0.00" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626;">
             </div>
           </div>
@@ -1437,14 +1447,13 @@
           <select id="payTerms" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
             <option value="0">C.O.D. (Due Today)</option>
             <option value="7">7 Days</option>
+            <option value="10">10 Days</option>
             <option value="15">15 Days</option>
             <option value="30">30 Days</option>
           </select>
 
-          <button onclick="window.saveNewPayable()" id="btnSavePayable" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Save & Track Deadline</button>
+          <button onclick="window.saveNewPayable()" id="btnSavePayable" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Log Delivery & Track Deadline</button>
         </div>
-      </div>
-    </div>
 
     <div id="settlePayableModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
       <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
