@@ -6036,10 +6036,8 @@ window.renderPayableItems = function() {
 };
 
 // 3. The Grand Double-Save (Updates Payables AND Live Inventory)
-// 3. The Grand Double-Save (Updates Payables AND Live Inventory)
 window.saveNewPayable = async function() {
-    // 🔥 NEW: AUTO-CATCH FEATURE 🔥
-    // If you forgot to click "Add", the system will do it for you!
+    // 🔥 AUTO-CATCH FEATURE
     let pendingItem = document.getElementById('payItemSelect').value;
     let pendingQty = document.getElementById('payItemQty').value;
     if (pendingItem && pendingQty) {
@@ -6064,8 +6062,8 @@ window.saveNewPayable = async function() {
         let dueDate = new Date();
         dueDate.setDate(deliveryDate.getDate() + terms);
 
-        // A. Save the Financial Payable Record
-        await window.addDoc(window.collection(window.db, "payables"), {
+        // A. Save the Financial Payable Record (CORRECTED: Removed window. prefixes from Firebase calls)
+        await addDoc(collection(db, "payables"), {
             supplier: supplier,
             invoiceNum: invoice,
             amount: amount,
@@ -6075,22 +6073,22 @@ window.saveNewPayable = async function() {
             status: "Unpaid",
             hasLinkedItems: window.payableItemsCart.length > 0,
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: window.serverTimestamp()
+            timestamp: serverTimestamp()
         });
 
         // B. Update Live Inventory & Stock Logs if items were attached
         if (window.payableItemsCart.length > 0) {
             for (let item of window.payableItemsCart) {
-                let invRef = window.doc(window.db, "inventory", item.id);
+                let invRef = doc(db, "inventory", item.id);
                 let invData = window.payableInventoryOptions.find(i => i.id === item.id);
                 let currentStock = parseFloat(invData.currentStock) || 0;
                 let newStock = currentStock + item.baseQtyToAdd;
 
                 // Update the actual stock level
-                await window.updateDoc(invRef, { currentStock: newStock });
+                await updateDoc(invRef, { currentStock: newStock });
 
                 // Create a beautiful audit log so you know where it came from
-                await window.addDoc(window.collection(window.db, "stock_logs"), {
+                await addDoc(collection(db, "stock_logs"), {
                     branch: "Main Office",
                     item: item.name,
                     uom: item.baseUom,
@@ -6113,8 +6111,8 @@ window.saveNewPayable = async function() {
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
         
     } catch (e) {
-        console.error(e);
-        alert("❌ Failed to save payable or update inventory.");
+        console.error("Save Payable Error:", e);
+        alert(`❌ Failed to save. Error: ${e.message}`);
     } finally {
         btn.innerText = "💾 Log Delivery & Track Deadline"; btn.disabled = false;
     }
