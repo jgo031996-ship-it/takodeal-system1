@@ -5779,27 +5779,25 @@ window.autoFill7DaySupply = function() {
 window.loadCashFlowHub = async function() {
     try {
         let safeCash = 0;
-        // CORRECTED: Using direct imports (db, collection, getDocs)
-        const accSnap = await getDocs(collection(db, "cash_accounts"));
+        const accSnap = await window.getDocs(window.collection(window.db, "cash_accounts"));
         accSnap.forEach(doc => { safeCash += (doc.data().balance || 0); });
 
         let branchFloating = { "Cabantian": 0, "Citygate": 0, "Maa": 0 };
         let pendingVerifications = 0;
         let totalFloating = 0;
 
-        const shiftSnap = await getDocs(query(collection(db, "shifts"), where("status", "==", "Closed")));
+        const shiftSnap = await window.getDocs(window.query(window.collection(window.db, "shifts"), window.where("status", "==", "Closed")));
         shiftSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
             if (branchFloating[branch] !== undefined) branchFloating[branch] += (data.expectedCash || 0);
         });
 
-        const remitSnap = await getDocs(collection(db, "remittances"));
+        const remitSnap = await window.getDocs(window.collection(window.db, "remittances"));
         remitSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
             
-            // Count pending verifications globally
             if (data.status === "Pending") {
                 pendingVerifications += (data.amount || 0);
             }
@@ -6038,7 +6036,16 @@ window.renderPayableItems = function() {
 };
 
 // 3. The Grand Double-Save (Updates Payables AND Live Inventory)
+// 3. The Grand Double-Save (Updates Payables AND Live Inventory)
 window.saveNewPayable = async function() {
+    // 🔥 NEW: AUTO-CATCH FEATURE 🔥
+    // If you forgot to click "Add", the system will do it for you!
+    let pendingItem = document.getElementById('payItemSelect').value;
+    let pendingQty = document.getElementById('payItemQty').value;
+    if (pendingItem && pendingQty) {
+        window.addPayableItem(); 
+    }
+
     let supplier = document.getElementById('paySupplierName').value.trim();
     let invoice = document.getElementById('payInvoiceNum').value.trim();
     let amount = parseFloat(document.getElementById('payAmount').value);
@@ -6058,7 +6065,7 @@ window.saveNewPayable = async function() {
         dueDate.setDate(deliveryDate.getDate() + terms);
 
         // A. Save the Financial Payable Record
-        await addDoc(collection(db, "payables"), {
+        await window.addDoc(window.collection(window.db, "payables"), {
             supplier: supplier,
             invoiceNum: invoice,
             amount: amount,
@@ -6068,22 +6075,22 @@ window.saveNewPayable = async function() {
             status: "Unpaid",
             hasLinkedItems: window.payableItemsCart.length > 0,
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: serverTimestamp()
+            timestamp: window.serverTimestamp()
         });
 
         // B. Update Live Inventory & Stock Logs if items were attached
         if (window.payableItemsCart.length > 0) {
             for (let item of window.payableItemsCart) {
-                let invRef = doc(db, "inventory", item.id);
+                let invRef = window.doc(window.db, "inventory", item.id);
                 let invData = window.payableInventoryOptions.find(i => i.id === item.id);
                 let currentStock = parseFloat(invData.currentStock) || 0;
                 let newStock = currentStock + item.baseQtyToAdd;
 
                 // Update the actual stock level
-                await updateDoc(invRef, { currentStock: newStock });
+                await window.updateDoc(invRef, { currentStock: newStock });
 
                 // Create a beautiful audit log so you know where it came from
-                await addDoc(collection(db, "stock_logs"), {
+                await window.addDoc(window.collection(window.db, "stock_logs"), {
                     branch: "Main Office",
                     item: item.name,
                     uom: item.baseUom,
