@@ -4769,58 +4769,67 @@ onSnapshot(query(collection(db, "staff_requests"), where("status", "==", "Pendin
 });
 
 window.loadInbox = async function() {
-    const tbody = document.getElementById('inboxTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center">📥 Fetching pending requests...</td></tr>';
+    const pendingBody = document.getElementById('inboxTableBody');
+    const resolvedBody = document.getElementById('resolvedRequestsBody');
+    if (!pendingBody) return;
+
+    pendingBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading requests...</td></tr>';
 
     try {
-        const q = query(collection(db, "staff_requests"), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
+        const q = query(collection(db, "staff_requests"), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
-        let html = '';
 
-        if (snap.empty) {
-            html = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: var(--success); font-weight: bold;">✅ All caught up! No pending requests.</td></tr>';
-        } else {
-            snap.forEach(docSnap => {
-                let data = docSnap.data();
-                let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
-                
-                let typeBadge = '';
-                let detailsHtml = '';
+        let pendingHtml = '';
+        let resolvedHtml = '';
+        let pendingCount = 0;
 
-                if (data.type === "Cash Advance") {
-                    typeBadge = `<span style="background: #dbeafe; color: #0284c7; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">💸 Vale / Advance</span>`;
-                    detailsHtml = `<strong style="color: var(--danger); font-size: 15px;">₱${data.amount}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${data.reason}</span>`;
-                } else if (data.type === "Leave") {
-                    typeBadge = `<span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">📅 Leave</span>`;
-                    detailsHtml = `<strong>${data.leaveType}</strong> (${data.startDate} to ${data.endDate})<br><span style="font-size: 11px; color: var(--text-muted);">${data.reason}</span>`;
-                } else if (data.type === "Staff Meal") {
-                    typeBadge = `<span style="background: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🍔 Meal Deduct</span>`;
-                    detailsHtml = `<strong>${data.item}</strong><br><strong style="color: var(--danger);">₱${data.amount}</strong>`;
-                } else if (data.type === "Reason Letter") {
-                    typeBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✉️ Reason Letter</span>`;
-                    detailsHtml = `<strong>Cause: ${data.cause}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${data.message}</span>`;
-                }
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Unknown';
+            let amountStr = d.amount ? `₱${d.amount.toLocaleString(undefined, {minimumFractionDigits:2})}` : (d.item || d.leaveType || d.reason || 'N/A');
+            let safeName = d.staffName ? d.staffName.replace(/'/g, "\\'") : 'Unknown';
 
-                html += `
-                    <tr>
-                        <td style="font-size: 12px; color: var(--text-muted);">${dateStr}</td>
-                        <td><strong style="color: var(--primary);">👤 ${data.staffName}</strong></td>
-                        <td>📍 ${data.branch}</td>
-                        <td>${typeBadge}</td>
-                        <td>${detailsHtml}</td>
-                        <td>
-                            <button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; margin-right: 5px;" onclick="handleRequest('${docSnap.id}', 'Approved', '${data.type}', ${data.amount || 0}, '${data.staffName}')">✓ Approve</button>
-                            <button class="btn-refresh" style="background: white; border: 1px solid var(--danger); color: var(--danger); padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;" onclick="handleRequest('${docSnap.id}', 'Rejected', '${data.type}', 0, '${data.staffName}')">✖ Reject</button>
-                        </td>
-                    </tr>
-                `;
-            });
+            let row = `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px;">${dateStr}</td>
+                    <td style="padding: 12px;"><strong>${safeName}</strong><br><span style="font-size:11px; color:#64748b;">${d.branch || 'Unknown'}</span></td>
+                    <td style="padding: 12px;"><span style="font-weight: bold; color: var(--primary);">${d.type}</span></td>
+                    <td style="padding: 12px;">${amountStr}</td>
+            `;
+
+            if (d.status === "Pending") {
+                pendingCount++;
+                row += `
+                    <td><span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending</span></td>
+                    <td>
+                        <button onclick="window.approveRequest('${docSnap.id}')" style="background: #16a34a; color: white; padding: 5px 10px; border:none; border-radius:4px; margin-right:5px; cursor:pointer;">Approve</button>
+                        <button onclick="window.rejectRequest('${docSnap.id}')" style="background: #ef4444; color: white; padding: 5px 10px; border:none; border-radius:4px; cursor:pointer;">Reject</button>
+                    </td>
+                </tr>`;
+                pendingHtml += row;
+            } else {
+                let statusColor = d.status === "Approved" ? "#16a34a" : "#dc2626";
+                let statusBg = d.status === "Approved" ? "#dcfce7" : "#fef2f2";
+                row += `
+                    <td style="padding: 12px;"><span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.status}</span></td>
+                </tr>`;
+                resolvedHtml += row;
+            }
+        });
+
+        pendingBody.innerHTML = pendingHtml || '<tr><td colspan="6" class="text-center">No pending requests! 🎉</td></tr>';
+        if (resolvedBody) resolvedBody.innerHTML = resolvedHtml || '<tr><td colspan="5" class="text-center">No resolved history yet.</td></tr>';
+
+        // Update the Notification Badge on the Sidebar!
+        let badge = document.getElementById('inboxBadge');
+        if (badge) {
+            badge.innerText = pendingCount;
+            badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
         }
-        tbody.innerHTML = html;
-    } catch (e) {
+
+    } catch(e) {
         console.error("Inbox Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading inbox.</td></tr>';
+        pendingBody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:red;">Error loading inbox. Check console.</td></tr>';
     }
 };
 
