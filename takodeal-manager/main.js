@@ -3775,12 +3775,15 @@ window.loadZReadingReports = async function () {
 
     let html = '';
     let count = 0;
+    
+    // 🔥 NEW: Variables to track the math!
+    let sumDeclared = 0;
+    let sumExpected = 0;
 
     snap.forEach(docSnap => {
       let data = docSnap.data();
       if (!data.endTime || !data.startTime) return;
       
-      // 🔥 THE FIX: We filter the calendar by when the shift STARTED, not when it ended!
       let jsDate = data.startTime.toDate(); 
       
       if (dateFilter) {
@@ -3792,11 +3795,15 @@ window.loadZReadingReports = async function () {
           if (formattedDate !== dateFilter) return; 
       }
 
-      // We still show the actual End Time on the table so you know exactly when they closed
       let dateStr = data.endTime.toDate().toLocaleString('en-PH');
       let declared = data.declaredCash || 0;
-      let declaredFormatted = `₱${declared.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+      let expected = data.expectedCash || 0;
+      
+      // Add to our running totals
+      sumDeclared += declared;
+      sumExpected += expected;
 
+      let declaredFormatted = `₱${declared.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
       let breakdownStr = encodeURIComponent(JSON.stringify(data.cashBreakdown || {}));
       let stockStr = encodeURIComponent(JSON.stringify(data.physicalStockCount || {}));
       let safeCashier = data.cashier ? data.cashier.replace(/'/g, "\\'") : 'Unknown';
@@ -3815,6 +3822,19 @@ window.loadZReadingReports = async function () {
       `;
       count++;
     });
+
+    // 🔥 NEW: Update the Dashboard Cards!
+    if (document.getElementById('zSumDeclared')) document.getElementById('zSumDeclared').innerText = `₱${sumDeclared.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    if (document.getElementById('zSumExpected')) document.getElementById('zSumExpected').innerText = `₱${sumExpected.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    
+    let variance = sumDeclared - sumExpected;
+    let varColor = variance < 0 ? "#dc2626" : (variance > 0 ? "#16a34a" : "#475569");
+    let varText = variance === 0 ? "₱0.00 (Perfect)" : `₱${variance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    
+    if (document.getElementById('zSumVariance')) {
+        document.getElementById('zSumVariance').innerText = varText;
+        document.getElementById('zSumVariance').style.color = varColor;
+    }
 
     if (count === 0 && dateFilter) {
         tbody.innerHTML = `<tr><td colspan="5" class="text-center">No shifts started on ${dateFilter}.</td></tr>`;
