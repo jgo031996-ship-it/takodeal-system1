@@ -929,6 +929,7 @@ window.loadSmartSupplyChain = async function() {
             
             let currentStock = parseFloat(invItem.currentStock) || 0;
             let uom = invItem.uom || 'units';
+            // THIS is the variable that caused the crash. It is now only declared once!
             let totalBurn7Days = rawBurnData[itemName] || 0;
             
             itemsAnalyzed++;
@@ -943,7 +944,6 @@ window.loadSmartSupplyChain = async function() {
             else if (daysLeft < 3) { daysColor = "#ea580c"; daysText = Math.floor(daysLeft) + " days (CRITICAL)"; }
             else if (daysLeft === 999) { daysColor = "#94a3b8"; daysText = "No Burn Data"; }
 
-            // 🔥 NEW: Save the AI's recommendation to memory
             let suggestedRestock = Math.ceil(totalBurn7Days); 
             
             window.latestSupplyChainData.push({
