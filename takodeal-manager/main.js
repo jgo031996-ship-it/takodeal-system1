@@ -5906,24 +5906,27 @@ window.autoFill7DaySupply = function() {
 // ========================================================
 // 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE
 // ========================================================
+// ========================================================
+// 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE
+// ========================================================
 window.loadCashFlowHub = async function() {
     try {
         let safeCash = 0;
-        const accSnap = await window.getDocs(window.collection(window.db, "cash_accounts"));
+        const accSnap = await getDocs(collection(db, "cash_accounts"));
         accSnap.forEach(doc => { safeCash += (doc.data().balance || 0); });
 
         let branchFloating = { "Cabantian": 0, "Citygate": 0, "Maa": 0 };
         let pendingVerifications = 0;
         let totalFloating = 0;
 
-        const shiftSnap = await window.getDocs(window.query(window.collection(window.db, "shifts"), window.where("status", "==", "Closed")));
+        const shiftSnap = await getDocs(query(collection(db, "shifts"), where("status", "==", "Closed")));
         shiftSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
             if (branchFloating[branch] !== undefined) branchFloating[branch] += (data.expectedCash || 0);
         });
 
-        const remitSnap = await window.getDocs(window.collection(window.db, "remittances"));
+        const remitSnap = await getDocs(collection(db, "remittances"));
         remitSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
