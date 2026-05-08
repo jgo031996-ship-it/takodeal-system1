@@ -1746,6 +1746,9 @@ window.loadAccountsAndBudget = async function() {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading grouped accounts...</td></tr>';
 
+    // ==========================================
+    // 🏦 PART 1: THE COLLAPSIBLE CASH LEDGER
+    // ==========================================
     try {
         const snap = await getDocs(collection(db, "cash_accounts"));
         let accountsByBranch = {};
@@ -1763,7 +1766,6 @@ window.loadAccountsAndBudget = async function() {
             totalCash += (data.balance || 0);
         });
 
-        // Update the big total asset card
         if(document.getElementById('accTotalCash')) {
             document.getElementById('accTotalCash').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         }
@@ -1771,9 +1773,8 @@ window.loadAccountsAndBudget = async function() {
         let html = '';
 
         for (let branch in accountsByBranch) {
-            // Calculate the sum of all accounts inside this specific branch
             let branchTotal = accountsByBranch[branch].reduce((sum, acc) => sum + (acc.balance || 0), 0);
-            let safeBranchId = branch.replace(/\s+/g, ''); // Removes spaces for CSS IDs
+            let safeBranchId = branch.replace(/\s+/g, ''); 
 
             // 1. The Collapsible Branch Header Row
             html += `
@@ -1795,7 +1796,7 @@ window.loadAccountsAndBudget = async function() {
                 </tr>
             `;
 
-            // 2. The Hidden Account Rows underneath it
+            // 2. The Hidden Account Rows
             accountsByBranch[branch].forEach(acc => {
                 html += `
                     <tr class="branch-row-${safeBranchId}" style="display: none; background: white; border-bottom: 1px dashed #e2e8f0;">
@@ -1810,12 +1811,79 @@ window.loadAccountsAndBudget = async function() {
                 `;
             });
         }
-
         tbody.innerHTML = html;
 
     } catch (e) {
         console.error("Error loading accounts:", e);
         tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Failed to load accounts.</td></tr>';
+    }
+
+    // ==========================================
+    // 💸 PART 2: THE MONTHLY BUDGET TRACKER 
+    // ==========================================
+    const budgetBody = document.getElementById('budgetListBody');
+    if (!budgetBody) return;
+
+    try {
+        // Fetch the Budgets
+        const budgetSnap = await getDocs(collection(db, "budgets"));
+        let bHtml = '';
+        let totalB = 0;
+        let totalS = 0;
+
+        if (budgetSnap.empty) {
+            bHtml = '<div class="text-center" style="color: #64748b; padding: 20px;">No budget categories found. Click "+ Category" to start tracking.</div>';
+        } else {
+            budgetSnap.forEach(docSnap => {
+                let b = docSnap.data();
+                let limit = parseFloat(b.limit || b.amount || 0);
+                let spent = parseFloat(b.spent || 0);
+                totalB += limit;
+                totalS += spent;
+
+                let pct = limit > 0 ? (spent / limit) * 100 : 0;
+                let barColor = pct >= 90 ? '#ef4444' : (pct >= 75 ? '#f59e0b' : '#10b981');
+
+                bHtml += `
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; font-weight: bold;">
+                            <span style="color: #334155; font-size: 14px;">${b.category || b.name || 'Category'}</span>
+                            <span style="color: ${barColor};">₱${spent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${limit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                        </div>
+                        <div style="background: #e2e8f0; height: 12px; border-radius: 6px; overflow: hidden;">
+                            <div style="width: ${Math.min(pct, 100)}%; height: 100%; background: ${barColor}; transition: width 0.5s;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        
+        budgetBody.innerHTML = bHtml;
+
+        // Update the big total budget cards at the top of the screen
+        if (document.getElementById('accTotalBudget')) document.getElementById('accTotalBudget').innerText = `₱${totalB.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if (document.getElementById('accTotalSpent')) document.getElementById('accTotalSpent').innerText = `₱${totalS.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    } catch (e) {
+        console.error("Budget Error:", e);
+        budgetBody.innerHTML = '<div class="text-center" style="color: red; padding: 20px;">Error loading budgets.</div>';
+    }
+};
+
+// Toggle Engine for the Accordion Ledger
+window.toggleBranchAccounts = function(branchId) {
+    let rows = document.querySelectorAll('.branch-row-' + branchId);
+    let icon = document.getElementById('icon_' + branchId);
+    if(rows.length === 0) return;
+    
+    let isHidden = rows[0].style.display === 'none';
+    rows.forEach(row => {
+        row.style.display = isHidden ? 'table-row' : 'none';
+    });
+    
+    if (icon) {
+        icon.innerText = isHidden ? '▲' : '▼';
+        icon.style.color = isHidden ? '#0f766e' : '#94a3b8';
     }
 };
 
