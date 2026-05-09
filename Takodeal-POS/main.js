@@ -597,13 +597,25 @@ window.calculateDenominations = function () {
 };
 
 // Call this when clicking your "End Shift" button to open the new UI
-window.openEndShiftClearance = function () {
+window.openEndShiftClearance = async function () {
   buildDenominationTable();
-  // Clear out old physical counts
-  ['count320cc', 'count520cc', 'countBoxes', 'countStraws'].forEach(id => {
-    if (document.getElementById(id)) document.getElementById(id).value = '';
-  });
   document.getElementById('endShiftModal').style.display = 'flex';
+
+  let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+  const q = query(collection(db, "inventory"), where("branch", "==", branch));
+  const snap = await getDocs(q);
+
+  let html = '';
+  snap.forEach(docSnap => {
+      let i = docSnap.data();
+      let cat = (i.category || "").toLowerCase();
+      // Only forces them to count high-value packaging/consumables!
+      if (cat.includes("packaging") || cat.includes("consumables")) {
+          html += `<div style="display: flex; justify-content: space-between; align-items: center;"><label style="font-size: 13px; font-weight: bold;">${i.name}:</label><input type="number" class="input-box shift-count-input" data-name="${i.name}" style="width: 100px; padding: 5px;" placeholder="Qty"></div>`;
+      }
+  });
+  if(html === '') html = '<div style="font-size:12px; color:#888;">No packaging items found.</div>';
+  document.getElementById('dynamicShiftStockCount').innerHTML = html;
 };
 
 // ========================================================
@@ -617,12 +629,12 @@ window.submitComprehensiveCloseShift = async function () {
         cashBreakdown[`₱${d}`] = parseInt(document.getElementById(`qty${d}`).value) || 0;
     });
 
-    let physicalStock = {
-        '320cc Paper Bowls': parseInt(document.getElementById('count320cc').value) || 0,
-        '520cc Paper Bowls': parseInt(document.getElementById('count520cc').value) || 0,
-        'Takoyaki Boxes': parseInt(document.getElementById('countBoxes').value) || 0,
-        'Straws': parseInt(document.getElementById('countStraws').value) || 0
-    };
+    // Replace the old physicalStock block with this:
+    let physicalStock = {};
+    document.querySelectorAll('.shift-count-input').forEach(inp => {
+        let val = parseInt(inp.value) || 0;
+        physicalStock[inp.getAttribute('data-name')] = val;
+    });
 
     try {
         let shiftId = activeShiftDetails.logId;
