@@ -2338,8 +2338,19 @@
       document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory list from Firebase...</div>'; document.getElementById('inventoryCheckModal').style.display = 'flex';
       let items = await window.getInventoryForCount(sessionUser.branch);
       let html = '';
-      if (items.length === 0) { html = '<div style="text-align:center; padding:20px; color:#888;">No inventory items setup yet.<br>Add items to your "inventory" collection in Firebase to see them here!</div>'; }
-      else { items.forEach(i => { html += `<div class="count-row"><div style="font-weight:600; color:#444; font-size:14px;">${i.name}</div><div style="color:#888; font-size:12px;">${i.uom || 'units'}</div><div><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty"></div></div>`; }); }
+      if (items.length === 0) { 
+          html = '<div style="text-align:center; padding:20px; color:#888;">No inventory items setup yet.</div>'; 
+      } else { 
+          // 🔥 Hide secret recipes and prep batches from the cashiers!
+          let filteredItems = items.filter(i => {
+              let cat = (i.category || "").toLowerCase();
+              return !cat.includes("prepared batch") && !cat.includes("prep batch") && !cat.includes("raw material");
+          });
+
+          filteredItems.forEach(i => { 
+              html += `<div class="count-row"><div style="font-weight:600; color:#444; font-size:14px;">${i.name}</div><div style="color:#888; font-size:12px;">${i.uom || 'units'}</div><div><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty"></div></div>`; 
+          }); 
+      }
       document.getElementById('invCheckListContainer').innerHTML = html;
     }
 
