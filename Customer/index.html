@@ -16,6 +16,18 @@
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans pb-24">
 
+    <!-- 🔥 NEW: FACEBOOK LOGIN SCREEN -->
+    <div id="customerLoginScreen" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center p-6">
+        <img src="banner.png" alt="TAKODEÁL" class="w-full max-w-sm mb-8 rounded-xl shadow-md object-contain">
+        <h2 class="text-2xl font-black text-gray-800 mb-2">Welcome to TAKODEÁL</h2>
+        <p class="text-gray-500 mb-8 text-center text-sm font-medium">Please log in with Facebook to place your order. This secures your transaction and helps our riders contact you.</p>
+        
+        <button onclick="window.loginWithFacebook()" class="bg-[#1877F2] text-white font-bold py-4 px-6 rounded-xl w-full max-w-xs shadow-lg flex items-center justify-center gap-3 hover:bg-[#166fe5] active:scale-95 transition-all">
+            <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+            Continue with Facebook
+        </button>
+    </div>
+
     <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative flex flex-col">
         <!-- Header -->
         <div class="sticky top-0 z-40 shadow-md bg-white flex justify-center items-center overflow-hidden">
@@ -32,10 +44,21 @@
             </div>
 
             <div class="p-6">
-                <!-- Customer Name -->
-                <div class="mb-6">
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Who is this order for?</label>
-                    <input type="text" id="customerName" required class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" placeholder="Enter your name...">
+                <!-- 🔥 NEW: FB PROFILE & CONTACT DETAILS -->
+                <div class="mb-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-4">
+                        <div class="flex items-center gap-3">
+                            <img id="fbProfilePic" src="" class="w-11 h-11 rounded-full bg-gray-200 object-cover shadow-sm">
+                            <div>
+                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Ordering As</p>
+                                <p id="displayCustomerName" class="font-black text-gray-800 text-sm">Loading...</p>
+                            </div>
+                        </div>
+                        <button onclick="window.logoutCustomer()" class="text-xs text-red-500 font-bold bg-red-50 px-3 py-2 rounded-lg border border-red-100 active:bg-red-100 transition">Sign Out</button>
+                    </div>
+                    
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Contact Number (Required) 📞</label>
+                    <input type="tel" id="customerContact" required class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800" placeholder="e.g. 0912 345 6789">
                 </div>
 
                 <!-- LIVE CATEGORY ACCORDIONS (Closed by Default) -->
@@ -182,8 +205,9 @@
     <!-- Firebase Integration -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        // IMPORT onSnapshot FOR LIVE TRACKING!
         import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot, query, where, limit, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        // 🔥 NEW: AUTH IMPORTS
+        import { getAuth, signInWithPopup, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -196,6 +220,42 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+        const fbProvider = new FacebookAuthProvider();
+        window.currentCustomer = null;
+
+        // 🔥 THE AUTH LISTENER: Controls what screen the customer sees
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // They are logged in! Hide the login screen and populate profile.
+                window.currentCustomer = user;
+                document.getElementById('customerLoginScreen').classList.add('hidden');
+                document.getElementById('displayCustomerName').innerText = user.displayName;
+                document.getElementById('fbProfilePic').src = user.photoURL || 'https://via.placeholder.com/100';
+            } else {
+                // Not logged in. Force the login screen.
+                window.currentCustomer = null;
+                document.getElementById('customerLoginScreen').classList.remove('hidden');
+            }
+        });
+
+        window.loginWithFacebook = async function() {
+            try {
+                let btn = document.querySelector('#customerLoginScreen button');
+                btn.innerHTML = 'Connecting...';
+                await signInWithPopup(auth, fbProvider);
+            } catch (error) {
+                console.error(error);
+                alert("Login failed. Please try again.");
+                location.reload();
+            }
+        };
+
+        window.logoutCustomer = async function() {
+            if(confirm("Are you sure you want to sign out?")) {
+                await signOut(auth);
+            }
+        };
 
         window.masterMenu = [];
         window.cart = [];
@@ -616,8 +676,15 @@
         window.submitOrder = async function() {
             if (window.cart.length === 0) { alert("Your order is empty."); return; }
 
-            const name = document.getElementById('customerName').value.trim();
-            if (!name) { alert("Please enter your name!"); return; }
+            // 🔥 GRAB FB NAME AND CONTACT NUMBER
+            const name = window.currentCustomer ? window.currentCustomer.displayName : "Guest";
+            const contact = document.getElementById('customerContact').value.trim();
+            
+            if (!contact) { 
+                alert("📞 Please provide a contact number so our team can reach you!"); 
+                document.getElementById('customerContact').focus();
+                return; 
+            }
 
             const paymentMode = document.getElementById('paymentMode').value;
             const orderType = document.getElementById('orderType').value;
@@ -659,7 +726,6 @@
 
                 btn.innerHTML = '<span class="mx-auto">Checking Store Status...</span>';
 
-                // 🔥 1. CHECK IF THE STORE HAS AN OPEN SHIFT BEFORE ALLOWING THE ORDER!
                 try {
                     const shiftQ = query(collection(db, "shifts"), where("branch", "==", nearestBranch), where("active", "==", true), limit(1));
                     const shiftSnap = await getDocs(shiftQ);
@@ -667,19 +733,18 @@
                     if (shiftSnap.empty) {
                         alert(`🛑 TAKODEÁL ${nearestBranch} is currently CLOSED.\n\nThey have not opened their register yet today. Please try again later.`);
                         resetSubmitButton(grandTotal);
-                        return; // BLOCKS THE ORDER!
+                        return; 
                     }
                 } catch (e) { console.error("Shift check error", e); }
 
-                // 🔥 2. DOUBLE CHECK DELIVERY SETTING
                 if (orderType === "Delivery" && document.getElementById('deliveryOption').disabled) {
                     alert("🛑 Deliveries are currently disabled by the store due to high volume. Please switch your Order Type to Pick-up or Dine-in.");
                     resetSubmitButton(grandTotal);
-                    return; // BLOCKS THE ORDER!
+                    return; 
                 }
 
-                // 3. STORE DATA & OPEN CUSTOM MODAL
-                let cashierVisibleName = `${name} (${orderType})`;
+                // 🔥 MAGIC TRICK: We format the name so the Cashier App doesn't need ANY code updates to see the Phone Number!
+                let cashierVisibleName = `${name} (${orderType}) - 📞 ${contact}`;
 
                 window.pendingOrderData = {
                     customerName: cashierVisibleName, 
