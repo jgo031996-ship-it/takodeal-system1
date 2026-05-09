@@ -122,9 +122,26 @@
                 <button onclick="window.cancelMyOrder()" class="bg-red-50 text-red-600 font-bold py-3 px-6 rounded-lg w-full border border-red-200 active:bg-red-100 transition">
                     Cancel Order (<span id="cancelTimer">05:00</span>)
                 </button>
-                <p class="text-[10px] text-gray-400 mt-2">You can only cancel before the kitchen starts preparing.</p>
+                <p class="text-sm font-medium text-gray-500 mt-3 text-center">You can only cancel before the kitchen starts preparing.</p>
             </div>
 
+        <!-- 🔥 NEW: CUSTOM CONFIRMATION MODAL -->
+        <div id="confirmOrderModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center backdrop-blur-sm px-4">
+            <div class="bg-white w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl transform transition-all">
+                <div class="bg-red-600 p-4 text-center">
+                    <h3 class="text-lg font-black text-white tracking-wide">Confirm Order</h3>
+                </div>
+                <div class="p-6 text-center">
+                    <div class="text-4xl mb-3">📍</div>
+                    <p id="confirmModalText" class="text-gray-700 font-medium text-sm leading-relaxed mb-6"></p>
+                    <div class="flex gap-3">
+                        <button onclick="document.getElementById('confirmOrderModal').classList.add('hidden'); document.getElementById('submitBtn').disabled = false;" class="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition">Cancel</button>
+                        <button onclick="window.executeConfirmedOrder()" class="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl shadow-md hover:bg-red-700 active:scale-95 transition">Yes, Send It!</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <!-- ITEM MODAL (Pops up when they click an item) -->
         <div id="itemModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-end sm:items-center justify-center">
             <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -166,7 +183,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         // IMPORT onSnapshot FOR LIVE TRACKING!
-        import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot, query, where, limit, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -431,7 +448,7 @@
         }
 
        // ==========================================
-        // 📍 SMART GPS & DELIVERY ENGINE
+        // 📍 SMART GPS, PERSISTENCE & AUTO-ROUTER
         // ==========================================
         const BRANCH_ZONES = {
             "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
@@ -441,8 +458,9 @@
 
         window.currentOrderId = null;
         window.cancelInterval = null;
+        window.pendingOrderData = null; // Holds the data while the modal is open
 
-        // 1. Listen to the Cashier's Delivery Toggle!
+        // 1. Listen to the Cashier's Delivery Toggle
         onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
             let deliveryOpt = document.getElementById('deliveryOption');
             let orderTypeSelect = document.getElementById('orderType');
@@ -455,7 +473,6 @@
                 } else {
                     deliveryOpt.text = "Delivery (Temporarily Unavailable)";
                     deliveryOpt.disabled = true;
-                    // If they already had it selected, force them back to Takeout
                     if(orderTypeSelect.value === 'Delivery') {
                         orderTypeSelect.value = 'Takeout';
                         window.toggleOrderTypeView();
@@ -465,50 +482,110 @@
             }
         });
 
-        // 2. UI Toggles
         window.toggleOrderTypeView = function() {
             let orderType = document.getElementById('orderType').value;
-            if (orderType === 'Delivery') {
-                document.getElementById('deliverySection').classList.remove('hidden');
-            } else {
-                document.getElementById('deliverySection').classList.add('hidden');
-            }
-            window.togglePaymentView(); // Re-check if COD box should show!
+            if (orderType === 'Delivery') document.getElementById('deliverySection').classList.remove('hidden');
+            else document.getElementById('deliverySection').classList.add('hidden');
+            window.togglePaymentView(); 
         }
 
         window.togglePaymentView = function() {
             let payMode = document.getElementById('paymentMode').value;
             let orderType = document.getElementById('orderType').value;
 
-            // Handle GCash Box
             if (payMode === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
             else document.getElementById('gcashSection').classList.add('hidden');
 
-            // Handle COD Change Box (Only show if Cash AND Delivery)
-            if (payMode === 'cash' && orderType === 'Delivery') {
-                document.getElementById('codChangeSection').classList.remove('hidden');
-            } else {
-                document.getElementById('codChangeSection').classList.add('hidden');
-            }
+            if (payMode === 'cash' && orderType === 'Delivery') document.getElementById('codChangeSection').classList.remove('hidden');
+            else document.getElementById('codChangeSection').classList.add('hidden');
         }
 
-        // 3. The 5-Minute Timer Engine
+        // 2. The Unbreakable Timer & Status Monitor
         function startCancelTimer() {
-            let timeLeft = 300; // 5 minutes
-            let timerEl = document.getElementById('cancelTimer');
+            // Check memory so refreshing doesn't reset the 5 minutes!
+            let expiresAt = localStorage.getItem('takodealCancelExpiresAt');
+            if (!expiresAt) {
+                expiresAt = Date.now() + 300000; // 5 mins from now
+                localStorage.setItem('takodealCancelExpiresAt', expiresAt);
+            }
+
             document.getElementById('cancelOrderSection').classList.remove('hidden');
 
             window.cancelInterval = setInterval(() => {
-                timeLeft--;
-                let m = Math.floor(timeLeft / 60);
-                let s = timeLeft % 60;
-                timerEl.innerText = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
-
+                let timeLeft = Math.floor((expiresAt - Date.now()) / 1000);
+                
                 if (timeLeft <= 0) {
                     clearInterval(window.cancelInterval);
-                    document.getElementById('cancelOrderSection').classList.add('hidden'); // Hide button when time is up
+                    document.getElementById('cancelOrderSection').classList.add('hidden'); 
+                    localStorage.removeItem('takodealCancelExpiresAt'); 
+                } else {
+                    let m = Math.floor(timeLeft / 60);
+                    let s = timeLeft % 60;
+                    document.getElementById('cancelTimer').innerText = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
                 }
             }, 1000);
+        }
+
+        window.monitorOrderStatus = function(docId) {
+            window.currentOrderId = docId;
+            onSnapshot(doc(db, "incoming_orders", docId), (snapshot) => {
+                if (snapshot.exists()) {
+                    const currentStatus = snapshot.data().status;
+                    const icon = document.getElementById('trackerIcon');
+                    const title = document.getElementById('trackerTitle');
+                    const subtitle = document.getElementById('trackerSubtitle');
+                    const waitTime = document.getElementById('waitTimeDisplay');
+
+                    if (currentStatus === "preparing") {
+                        icon.innerText = "🍳";
+                        icon.classList.remove('animate-pulse');
+                        title.innerText = "Preparing Your Food!";
+                        title.classList.add('text-green-600');
+                        subtitle.innerText = "The kitchen is working on your order right now.";
+                        waitTime.innerText = "Almost Ready...";
+                        
+                        clearInterval(window.cancelInterval);
+                        document.getElementById('cancelOrderSection').classList.add('hidden');
+                        localStorage.removeItem('takodealCancelExpiresAt');
+                        localStorage.removeItem('activeTakodealOrderId'); // Safe to clear, order is accepted
+                    } 
+                    else if (currentStatus === "rejected" || currentStatus === "rejected_by_customer") {
+                        icon.innerText = "❌";
+                        icon.classList.remove('animate-pulse');
+                        title.innerText = "Order Cancelled";
+                        title.classList.add('text-red-600');
+                        if (currentStatus === "rejected") subtitle.innerText = "We're sorry, but the store had to cancel your order.";
+                        waitTime.innerText = "--";
+                        
+                        clearInterval(window.cancelInterval);
+                        document.getElementById('cancelOrderSection').classList.add('hidden');
+                        localStorage.removeItem('activeTakodealOrderId');
+                        localStorage.removeItem('takodealCancelExpiresAt');
+                    }
+                } else {
+                    // Document was deleted (e.g. checked out by cashier)
+                    localStorage.removeItem('activeTakodealOrderId');
+                    localStorage.removeItem('takodealCancelExpiresAt');
+                }
+            });
+        };
+
+        // 3. PERSISTENCE CHECKER (Runs on load)
+        async function checkActiveOrder() {
+            let savedOrderId = localStorage.getItem('activeTakodealOrderId');
+            if (savedOrderId) {
+                document.getElementById('orderingScreen').classList.add('hidden');
+                document.getElementById('trackerScreen').classList.remove('hidden');
+                document.getElementById('trackerScreen').classList.add('flex');
+                
+                // Resume the timer if it hasn't expired
+                let expiresAt = localStorage.getItem('takodealCancelExpiresAt');
+                if (expiresAt && Date.now() < expiresAt) {
+                    startCancelTimer();
+                }
+                
+                window.monitorOrderStatus(savedOrderId);
+            }
         }
 
         window.cancelMyOrder = async function() {
@@ -516,20 +593,11 @@
             if(!confirm("Are you sure you want to cancel your order?")) return;
             
             try {
-                // Instantly mark it rejected so the cashier's app deletes it from the queue!
                 await updateDoc(doc(db, "incoming_orders", window.currentOrderId), {
                     status: "rejected_by_customer"
                 });
-                
-                clearInterval(window.cancelInterval);
-                document.getElementById('cancelOrderSection').classList.add('hidden');
-                document.getElementById('trackerIcon').innerText = "🚫";
-                document.getElementById('trackerTitle').innerText = "Order Cancelled";
-                document.getElementById('trackerTitle').classList.replace('text-gray-800', 'text-red-600');
-                document.getElementById('trackerSubtitle').innerText = "You successfully cancelled the order.";
-            } catch(e) {
-                console.error("Cancel error", e);
-            }
+                // The listener will automatically update the UI!
+            } catch(e) { console.error("Cancel error", e); }
         };
 
         function getDistanceInMeters(lat1, lon1, lat2, lon2) {
@@ -544,7 +612,7 @@
             document.getElementById('submitBtn').disabled = false;
         }
 
-        // 4. THE GRAND SUBMISSION
+        // 4. THE GRAND SUBMISSION ENGINE
         window.submitOrder = async function() {
             if (window.cart.length === 0) { alert("Your order is empty."); return; }
 
@@ -556,24 +624,19 @@
             let deliveryNotes = document.getElementById('deliveryAddress').value.trim();
 
             if (orderType === "Delivery" && !deliveryNotes) {
-                alert("Please provide delivery details/landmarks so our rider can find you easily!");
-                return;
+                alert("Please provide delivery details/landmarks so our rider can find you easily!"); return;
             }
 
-            // 🔥 Append COD instructions for the rider to the delivery notes!
             if (orderType === "Delivery" && paymentMode === "cash") {
                 let codAmount = document.getElementById('codAmount').value.trim();
-                if (codAmount) {
-                    deliveryNotes += `\n\n[RIDER: PREPARE CHANGE FOR ₱${codAmount}]`;
-                }
+                if (codAmount) deliveryNotes += `\n\n[RIDER: PREPARE CHANGE FOR ₱${codAmount}]`;
             }
 
             let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
             const btn = document.getElementById('submitBtn');
 
             if (!navigator.geolocation) {
-                alert("❌ Your browser does not support location services. We cannot route your order.");
-                return;
+                alert("❌ Your browser does not support location services. We cannot route your order."); return;
             }
 
             btn.innerHTML = '<span class="mx-auto">Finding Nearest TAKODEÁL...</span>'; 
@@ -594,18 +657,31 @@
                     }
                 }
 
-                // Append the order type to the name so the cashier sees it instantly in the queue!
-                let cashierVisibleName = `${name} (${orderType})`;
+                btn.innerHTML = '<span class="mx-auto">Checking Store Status...</span>';
 
-                let confirmMsg = `📍 Routing your order to: TAKODEÁL ${nearestBranch}\nOrder Type: ${orderType}\n\nProceed to send order?`;
-                if (!confirm(confirmMsg)) {
+                // 🔥 1. CHECK IF THE STORE HAS AN OPEN SHIFT BEFORE ALLOWING THE ORDER!
+                try {
+                    const shiftQ = query(collection(db, "shifts"), where("branch", "==", nearestBranch), where("active", "==", true), limit(1));
+                    const shiftSnap = await getDocs(shiftQ);
+                    
+                    if (shiftSnap.empty) {
+                        alert(`🛑 TAKODEÁL ${nearestBranch} is currently CLOSED.\n\nThey have not opened their register yet today. Please try again later.`);
+                        resetSubmitButton(grandTotal);
+                        return; // BLOCKS THE ORDER!
+                    }
+                } catch (e) { console.error("Shift check error", e); }
+
+                // 🔥 2. DOUBLE CHECK DELIVERY SETTING
+                if (orderType === "Delivery" && document.getElementById('deliveryOption').disabled) {
+                    alert("🛑 Deliveries are currently disabled by the store due to high volume. Please switch your Order Type to Pick-up or Dine-in.");
                     resetSubmitButton(grandTotal);
-                    return;
+                    return; // BLOCKS THE ORDER!
                 }
 
-                btn.innerHTML = '<span class="mx-auto">Sending to Kitchen...</span>';
+                // 3. STORE DATA & OPEN CUSTOM MODAL
+                let cashierVisibleName = `${name} (${orderType})`;
 
-                const orderData = {
+                window.pendingOrderData = {
                     customerName: cashierVisibleName, 
                     branch: nearestBranch, 
                     orderType: orderType,  
@@ -620,56 +696,9 @@
                     timestamp: serverTimestamp()
                 };
 
-                try {
-                    const docRef = await addDoc(collection(db, "incoming_orders"), orderData);
-                    window.currentOrderId = docRef.id; // Save ID for cancellation
-                    
-                    document.getElementById('orderingScreen').classList.add('hidden');
-                    document.getElementById('trackerScreen').classList.remove('hidden');
-                    document.getElementById('trackerScreen').classList.add('flex');
-                    window.scrollTo(0,0);
-                    
-                    startCancelTimer(); // START THE 5 MINUTE CLOCK
-
-                    // LIVE TRACKING LISTENER
-                    onSnapshot(doc(db, "incoming_orders", docRef.id), (snapshot) => {
-                        if (snapshot.exists()) {
-                            const currentStatus = snapshot.data().status;
-                            const icon = document.getElementById('trackerIcon');
-                            const title = document.getElementById('trackerTitle');
-                            const subtitle = document.getElementById('trackerSubtitle');
-                            const waitTime = document.getElementById('waitTimeDisplay');
-
-                            if (currentStatus === "preparing") {
-                                icon.innerText = "🍳";
-                                icon.classList.remove('animate-pulse');
-                                title.innerText = "Preparing Your Food!";
-                                title.classList.add('text-green-600');
-                                subtitle.innerText = "The kitchen is working on your order right now.";
-                                waitTime.innerText = "Almost Ready...";
-                                
-                                // Hide the cancel button once the cashier accepts it!
-                                clearInterval(window.cancelInterval);
-                                document.getElementById('cancelOrderSection').classList.add('hidden');
-                            } 
-                            else if (currentStatus === "rejected") {
-                                icon.innerText = "❌";
-                                icon.classList.remove('animate-pulse');
-                                title.innerText = "Order Cancelled";
-                                title.classList.add('text-red-600');
-                                subtitle.innerText = "We're sorry, but the store had to cancel your order.";
-                                waitTime.innerText = "--";
-                                clearInterval(window.cancelInterval);
-                                document.getElementById('cancelOrderSection').classList.add('hidden');
-                            }
-                        }
-                    });
-
-                } catch (error) {
-                    console.error(error); 
-                    alert("Error sending order. Please check your connection.");
-                    resetSubmitButton(grandTotal);
-                }
+                let confirmMsg = `Routing your order to: <strong>TAKODEÁL ${nearestBranch}</strong><br>Order Type: <strong>${orderType}</strong><br><br>Proceed to send order to the kitchen?`;
+                document.getElementById('confirmModalText').innerHTML = confirmMsg;
+                document.getElementById('confirmOrderModal').classList.remove('hidden');
 
             }, (error) => {
                 alert("📍 LOCATION REQUIRED\n\nPlease allow location access so we can route your order to the nearest branch.");
@@ -677,7 +706,36 @@
             }, { enableHighAccuracy: true }); 
         };
 
+        // 5. THE FINAL CONFIRMATION PUSH
+        window.executeConfirmedOrder = async function() {
+            document.getElementById('confirmOrderModal').classList.add('hidden');
+            const btn = document.getElementById('submitBtn');
+            btn.innerHTML = '<span class="mx-auto">Sending to Kitchen...</span>';
+
+            try {
+                const docRef = await addDoc(collection(db, "incoming_orders"), window.pendingOrderData);
+                
+                // 🔥 SAVE TO PHONE MEMORY SO REFRESHING DOESN'T LOSE IT!
+                localStorage.setItem('activeTakodealOrderId', docRef.id);
+                
+                document.getElementById('orderingScreen').classList.add('hidden');
+                document.getElementById('trackerScreen').classList.remove('hidden');
+                document.getElementById('trackerScreen').classList.add('flex');
+                window.scrollTo(0,0);
+                
+                startCancelTimer(); 
+                window.monitorOrderStatus(docRef.id);
+
+            } catch (error) {
+                console.error(error); 
+                alert("Error sending order. Please check your connection.");
+                resetSubmitButton(window.pendingOrderData.totalAmount);
+            }
+        };
+
+        // Initialize the app
         loadLiveMenu();
+        checkActiveOrder(); // Check if they refreshed the page!
     </script>
 </body>
 </html>
