@@ -605,16 +605,40 @@ window.openEndShiftClearance = async function () {
   const q = query(collection(db, "inventory"), where("branch", "==", branch));
   const snap = await getDocs(q);
 
+  // 🔥 THE VIP LIST: Type the EXACT names of the items you want them to count here!
+  // Make sure the spelling matches your Firebase inventory perfectly.
+  const itemsToCount = [
+      "320cc Paper Bowl", 
+      "520cc Paper Bowl", 
+      "LB1 Box", 
+      "Burger Box",
+      "Hotdog Box",
+      "Boba Straw",
+      "Thin Straw",
+      "U-Cup M",
+      "U-Cup L",
+      "Coffee Cup L",
+      "Coffee Cup M",
+      "Coffee Lid",
+      "Y-Cup M",
+      "Y-Cup L",
+      "Flat Lid",
+  ];
+
   let html = '';
   snap.forEach(docSnap => {
       let i = docSnap.data();
-      let cat = (i.category || "").toLowerCase();
-      // Only forces them to count high-value packaging/consumables!
-      if (cat.includes("packaging") || cat.includes("consumables")) {
-          html += `<div style="display: flex; justify-content: space-between; align-items: center;"><label style="font-size: 13px; font-weight: bold;">${i.name}:</label><input type="number" class="input-box shift-count-input" data-name="${i.name}" style="width: 100px; padding: 5px;" placeholder="Qty"></div>`;
+      
+      // Only render the input box if the item's name is in our VIP list above
+      if (itemsToCount.includes(i.name)) {
+          html += `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #fcd34d; padding-bottom: 8px; margin-bottom: 8px;">
+                      <label style="font-size: 13px; font-weight: bold; color: #444;">${i.name}:</label>
+                      <input type="number" class="input-box shift-count-input" data-name="${i.name}" style="width: 80px; padding: 6px; text-align: center; border: 1px solid #ccc; border-radius: 6px;" placeholder="Qty">
+                   </div>`;
       }
   });
-  if(html === '') html = '<div style="font-size:12px; color:#888;">No packaging items found.</div>';
+  
+  if(html === '') html = '<div style="font-size:12px; color:#888; text-align: center; padding: 10px;">No tracking items found. Please check spelling in the VIP List.</div>';
   document.getElementById('dynamicShiftStockCount').innerHTML = html;
 };
 
