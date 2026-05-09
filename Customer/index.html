@@ -207,7 +207,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot, query, where, limit, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         // 🔥 NEW: AUTH IMPORTS
-        import { getAuth, signInWithRedirect, getRedirectResult, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, signInWithPopup, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -224,46 +224,59 @@
         const fbProvider = new FacebookAuthProvider();
         window.currentCustomer = null;
 
-        // 🔥 NEW: CATCHES THE REDIRECT DATA ON MOBILE
-        getRedirectResult(auth).then((result) => {
-            if (result) {
-                console.log("Successfully logged in via redirect!");
-            }
-        }).catch((error) => {
-            console.error("Redirect Error:", error);
-            alert("⚠️ Facebook's built-in browser blocked the login.\n\nPlease click the 3 dots (•••) at the top right of your screen and select 'Open in Chrome' or 'Open in System Browser' to order!");
-            let btn = document.querySelector('#customerLoginScreen button');
-            if (btn) btn.innerHTML = 'Continue with Facebook';
-        });
+        // 🔥 NEW: DETECT FACEBOOK/MESSENGER IN-APP BROWSER
+        function isFacebookApp() {
+            var ua = navigator.userAgent || navigator.vendor || window.opera;
+            return (ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Instagram") > -1);
+        }
 
-        // 🔥 THE AUTH LISTENER: Controls what screen the customer sees
+        // If they are trapped in Facebook, show the escape guide!
+        if (isFacebookApp()) {
+            document.getElementById('customerLoginScreen').innerHTML = `
+                <div class="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center border-t-4 border-red-500 z-50">
+                    <div class="text-4xl mb-4">⚠️</div>
+                    <h3 class="text-xl font-black text-gray-800 mb-2">Action Required</h3>
+                    <p class="text-gray-600 mb-6 text-sm font-medium">Facebook's built-in browser blocks secure ordering. You need to open this in your normal browser.</p>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 text-left mb-2">
+                        <p class="font-bold text-gray-800 text-sm mb-2">How to fix it instantly:</p>
+                        <ol class="text-sm text-gray-600 space-y-3">
+                            <li>1. Tap the <b>3 dots (•••)</b> at the top right of your screen.</li>
+                            <li>2. Select <b>"Open in browser"</b> or <b>"Open in Chrome"</b>.</li>
+                        </ol>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- NORMAL AUTH LOGIC ---
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // They are logged in! Hide the login screen and populate profile.
                 window.currentCustomer = user;
                 document.getElementById('customerLoginScreen').classList.add('hidden');
                 document.getElementById('displayCustomerName').innerText = user.displayName;
                 document.getElementById('fbProfilePic').src = user.photoURL || 'https://via.placeholder.com/100';
             } else {
-                // Not logged in. Force the login screen.
                 window.currentCustomer = null;
-                document.getElementById('customerLoginScreen').classList.remove('hidden');
+                // Only show login screen if they are NOT trapped in the Facebook app
+                if (!isFacebookApp()) {
+                    document.getElementById('customerLoginScreen').classList.remove('hidden');
+                }
             }
         });
 
         window.loginWithFacebook = async function() {
             try {
                 let btn = document.querySelector('#customerLoginScreen button');
-                btn.innerHTML = 'Connecting...';
+                if(btn) btn.innerHTML = 'Connecting...';
                 
-                // 🔥 THE FIX: We use Redirect instead of Popup for Mobile compatibility!
-                await signInWithRedirect(auth, fbProvider);
+                // Use Popup so modern mobile browsers don't wipe the memory!
+                await signInWithPopup(auth, fbProvider);
                 
             } catch (error) {
-                console.error("Login initiation error:", error);
-                alert("Login failed to start. Please try again.");
+                console.error("Login Error:", error);
+                alert("Login failed or was cancelled. Please try again.");
                 let btn = document.querySelector('#customerLoginScreen button');
-                btn.innerHTML = 'Continue with Facebook';
+                if(btn) btn.innerHTML = 'Continue with Facebook';
             }
         };
 
