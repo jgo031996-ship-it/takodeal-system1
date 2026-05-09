@@ -309,6 +309,11 @@ window.loadGlobalDashboard = async function() {
     if (typeof window.calculateGrabFinancials === 'function') {
         window.calculateGrabFinancials();
     }
+
+    // 🔥 NEW: WAKE UP THE PRODUCT ANALYTICS ENGINE!
+    if (typeof window.loadProductAnalytics === 'function') {
+        window.loadProductAnalytics(startOfDay, endOfDay);
+    }
 };
 
 // --- WIRING THE BUTTONS ---
@@ -6513,3 +6518,109 @@ window.exportTransactionsCSV = async function() {
     }
 };
 
+// ========================================================
+// 📈 PRODUCT OPTIMIZATION & ANALYTICS ENGINE
+// ========================================================
+window.loadProductAnalytics = async function(startOfDay, endOfDay) {
+    const tbody = document.getElementById('productAnalyticsBody');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #0ea5e9; font-weight: bold;">⏳ Crunching big data & COGS...</td></tr>';
+
+    try {
+        // 1. Fetch Latest Inventory Unit Costs
+        const invSnap = await getDocs(collection(db, "inventory"));
+        let invCosts = {};
+        invSnap.forEach(d => invCosts[d.data().name] = parseFloat(d.data().baseCost) || 0);
+
+        // 2. Fetch Recipes to calculate Base COGS
+        const bomSnap = await getDocs(collection(db, "bom"));
+        let recipeCosts = {};
+        bomSnap.forEach(d => {
+            let bom = d.data();
+            if(!recipeCosts[bom.menuItem]) recipeCosts[bom.menuItem] = 0;
+            recipeCosts[bom.menuItem] += (invCosts[bom.ingredientName] || 0) * (bom.qty || 1);
+        });
+
+        // 3. Fetch Transactions within the Date Range
+        const txQ = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        const txSnap = await getDocs(txQ);
+
+        let productStats = {};
+
+        // 4. Rip through every transaction and build the stats
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if(tx.status === "Voided" || !tx.cart) return; // Ignore voided items
+
+            tx.cart.forEach(item => {
+                let name = item.name || item.itemName;
+                if (!name) return;
+                
+                let qty = item.qty || 1;
+                if (!productStats[name]) productStats[name] = { qty: 0, sales: 0, cogs: 0 };
+
+                // Tally Quantity and Sales
+                productStats[name].qty += qty;
+                let revenue = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
+                productStats[name].sales += revenue;
+
+                // Tally Base COGS
+                let baseCogs = (recipeCosts[name] || 0) * qty;
+
+                // Tally Add-on COGS (If they added extra cheese, we must track the cost of that cheese!)
+                let addonCogs = 0;
+                if (item.addons) {
+                    for (let key in item.addons) {
+                        let addon = item.addons[key];
+                        if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                            addonCogs += (invCosts[addon.linkedIngredient] || 0) * addon.deductQty * addon.qty * qty;
+                        }
+                    }
+                }
+
+                productStats[name].cogs += (baseCogs + addonCogs);
+            });
+        });
+
+        // 5. Render the Beautiful Table
+        let html = '';
+        // Sort by Highest Sales first
+        let sortedProducts = Object.keys(productStats).sort((a, b) => productStats[b].sales - productStats[a].sales); 
+
+        sortedProducts.forEach(name => {
+            let stats = productStats[name];
+            let margin = stats.sales - stats.cogs;
+            let cogsPct = stats.sales > 0 ? (stats.cogs / stats.sales) * 100 : 0;
+
+            // 🧠 The AI Health Tagger
+            let statusBadge = '';
+            if (cogsPct > 55) {
+                statusBadge = '<span style="background:#fef2f2; color:#b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🚨 Bleeder (High Cost)</span>';
+            } else if (cogsPct < 35 && stats.qty >= 5) {
+                statusBadge = '<span style="background:#f0fdf4; color:#15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🏆 Top Performer</span>';
+            } else {
+                statusBadge = '<span style="background:#f8fafc; color:#475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">⚖️ Average</span>';
+            }
+
+            let cogsColor = cogsPct > 50 ? '#b91c1c' : (cogsPct < 35 ? '#15803d' : '#d97706');
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="font-weight: bold; color: #0f172a; font-size: 14px;">${name}</td>
+                    <td style="font-weight: 900; color: #475569;">${stats.qty}</td>
+                    <td style="font-weight: bold; color: var(--primary);">₱${stats.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="color: var(--danger); font-weight: 500;">₱${stats.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="font-weight: 900; color: ${cogsColor};">${cogsPct.toFixed(1)}%</td>
+                    <td style="color: #15803d; font-weight: 900; font-size: 15px;">₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #64748b;">No sales data available for this period.</td></tr>';
+
+    } catch(e) {
+        console.error("Product Analytics Error:", e);
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading analytics. Check console.</td></tr>';
+    }
+};
