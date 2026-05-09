@@ -46,28 +46,19 @@
                     </div>
                 </div>
 
+                <!-- 🔥 NEW: ORDER TYPE & DELIVERY -->
                 <div class="mb-6">
                     <label class="block text-sm font-bold text-gray-700 mb-1">Order Type</label>
                     <select id="orderType" class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" onchange="window.toggleOrderTypeView()">
+                        <option value="Dine-In">Dine-In (Order Now)</option>
                         <option value="Takeout">Pick-up / Take-out</option>
+                        <option value="Advance Dine-In">Advance Order (Dine-In)</option>
+                        <option value="Advance Pick-up">Advance Order (Pick-up)</option>
                         <option value="Delivery" id="deliveryOption">Delivery (Loading status...)</option>
                     </select>
                 </div>
 
-                <div id="deliverySection" class="hidden bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6 shadow-inner">
-                    <p class="font-bold text-purple-800 mb-2">🚚 Delivery Details</p>
-                    <p class="text-xs text-purple-600 mb-3">Your GPS location will be automatically sent to the rider. Please provide landmarks or house details.</p>
-                    <textarea id="deliveryAddress" class="block w-full rounded-lg border-gray-300 p-3 text-sm outline-none focus:border-purple-500 shadow-sm" placeholder="e.g. Green gate, beside the bakery, call upon arrival..." rows="2"></textarea>
-                </div>
-                
-                <div class="mb-6">
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Order Type</label>
-                    <select id="orderType" class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" onchange="window.toggleOrderTypeView()">
-                        <option value="Takeout">Pick-up / Take-out</option>
-                        <option value="Delivery" id="deliveryOption">Delivery (Loading status...)</option>
-                    </select>
-                </div>
-
+                <!-- Hidden Delivery Details Section -->
                 <div id="deliverySection" class="hidden bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6 shadow-inner">
                     <p class="font-bold text-purple-800 mb-2">🚚 Delivery Details</p>
                     <p class="text-xs text-purple-600 mb-3">Your GPS location will be automatically sent to the rider. Please provide landmarks or house details.</p>
@@ -79,8 +70,8 @@
                 <!-- Payment Method -->
                 <div class="mb-6">
                     <label class="block text-sm font-bold text-gray-700 mb-1">Mode of Payment</label>
-                    <select id="paymentMode" class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" onchange="togglePaymentView()">
-                        <option value="cash">Cash (Pay at counter)</option>
+                    <select id="paymentMode" class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none" onchange="window.togglePaymentView()">
+                        <option value="cash">Cash (Pay at counter / COD)</option>
                         <option value="gcash">GCash</option>
                     </select>
                 </div>
@@ -94,6 +85,13 @@
                     <p class="text-sm font-bold text-gray-800">Account: JOSTUART O.</p>
                     <p class="text-sm text-gray-600 mb-3">No: 09629721305</p>
                     <input type="text" id="refNumber" class="block w-full rounded-lg border-gray-300 p-2 text-center text-sm outline-none focus:border-blue-500" placeholder="Enter Ref No. (Optional)">
+                </div>
+
+                <!-- 🔥 NEW: Hidden COD Change Section -->
+                <div id="codChangeSection" class="hidden bg-orange-50 p-5 rounded-xl border border-orange-200 mb-6">
+                    <p class="font-bold text-orange-800 mb-1">💵 Cash on Delivery (COD)</p>
+                    <p class="text-xs text-orange-600 mb-3">How much cash will you give the rider so they can prepare your change?</p>
+                    <input type="number" id="codAmount" class="block w-full rounded-lg border-orange-300 p-3 text-sm outline-none focus:border-orange-500 shadow-sm" placeholder="e.g. 500 or 1000">
                 </div>
             </div>
 
@@ -469,16 +467,29 @@
 
         // 2. UI Toggles
         window.toggleOrderTypeView = function() {
-            if (document.getElementById('orderType').value === 'Delivery') {
+            let orderType = document.getElementById('orderType').value;
+            if (orderType === 'Delivery') {
                 document.getElementById('deliverySection').classList.remove('hidden');
             } else {
                 document.getElementById('deliverySection').classList.add('hidden');
             }
+            window.togglePaymentView(); // Re-check if COD box should show!
         }
 
         window.togglePaymentView = function() {
-            if (document.getElementById('paymentMode').value === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
+            let payMode = document.getElementById('paymentMode').value;
+            let orderType = document.getElementById('orderType').value;
+
+            // Handle GCash Box
+            if (payMode === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
             else document.getElementById('gcashSection').classList.add('hidden');
+
+            // Handle COD Change Box (Only show if Cash AND Delivery)
+            if (payMode === 'cash' && orderType === 'Delivery') {
+                document.getElementById('codChangeSection').classList.remove('hidden');
+            } else {
+                document.getElementById('codChangeSection').classList.add('hidden');
+            }
         }
 
         // 3. The 5-Minute Timer Engine
@@ -542,11 +553,19 @@
 
             const paymentMode = document.getElementById('paymentMode').value;
             const orderType = document.getElementById('orderType').value;
-            const deliveryNotes = document.getElementById('deliveryAddress').value.trim();
+            let deliveryNotes = document.getElementById('deliveryAddress').value.trim();
 
             if (orderType === "Delivery" && !deliveryNotes) {
                 alert("Please provide delivery details/landmarks so our rider can find you easily!");
                 return;
+            }
+
+            // 🔥 Append COD instructions for the rider to the delivery notes!
+            if (orderType === "Delivery" && paymentMode === "cash") {
+                let codAmount = document.getElementById('codAmount').value.trim();
+                if (codAmount) {
+                    deliveryNotes += `\n\n[RIDER: PREPARE CHANGE FOR ₱${codAmount}]`;
+                }
             }
 
             let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
