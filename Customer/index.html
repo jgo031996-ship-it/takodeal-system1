@@ -273,11 +273,13 @@
                 await signInWithPopup(auth, fbProvider);
                 
             } catch (error) {
-                console.error("Login Error:", error);
-                alert("Login failed or was cancelled. Please try again.");
-                let btn = document.querySelector('#customerLoginScreen button');
-                if(btn) btn.innerHTML = 'Continue with Facebook';
-            }
+            console.error("Login Error:", error);
+            // 🔥 NEW: This will print the exact technical error to your phone screen!
+            alert("System Error: " + error.code + "\n\nDetails: " + error.message);
+            
+            let btn = document.querySelector('#customerLoginScreen button');
+            if(btn) btn.innerHTML = 'Continue with Facebook';
+        }
         };
 
         window.logoutCustomer = async function() {
