@@ -9,12 +9,35 @@
     <link rel="apple-touch-icon" href="customer-logo.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* 🔥 NEW ANIMATIONS */
+        @keyframes floatUp {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-float { animation: floatUp 0.3s ease-out forwards; }
+        
+        .toast-notification {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background: #16a34a; color: white; font-weight: bold; padding: 12px 24px;
+            border-radius: 50px; box-shadow: 0 10px 25px rgba(22, 163, 74, 0.4);
+            z-index: 9999; display: flex; align-items: center; gap: 10px;
+            opacity: 0; transition: opacity 0.3s, top 0.3s; pointer-events: none;
+        }
+        .toast-notification.show { opacity: 1; top: 40px; }
+        
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
         .search-bar-container { position: sticky; top: 76px; z-index: 30; background: white; padding: 10px 24px; border-bottom: 1px solid #f3f4f6; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans pb-24">
+
+    <body class="bg-gray-50 text-gray-800 font-sans pb-24">
+
+    <div id="cartToast" class="toast-notification">
+        <span class="text-xl">🐙</span> 
+        <span>Added to your cart!</span>
+    </div>
 
     <!-- 🔥 NEW: FACEBOOK LOGIN SCREEN -->
     <div id="customerLoginScreen" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center p-6">
@@ -326,16 +349,22 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    let imgHtml = item.image ? `<img src="${item.image}" class="w-20 h-20 object-cover rounded-lg">` : `<div class="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center text-2xl border border-gray-200">🍲</div>`;
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-20 h-20 object-cover rounded-xl shadow-sm">` : `<div class="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center text-2xl border border-gray-200 shadow-sm">🍲</div>`;
+
+                    // 🔥 THE AI BADGE ENGINE: Automatically tags "Cheesy" items!
+                    let badgeHtml = '';
+                    if (item.name.toLowerCase().includes('cheesy')) {
+                        badgeHtml = `<span class="bg-red-500 text-white text-[9px] px-2 py-0.5 rounded-full ml-2 animate-pulse shadow-sm tracking-widest uppercase">🔥 Best Seller</span>`;
+                    }
 
                     return `
-                        <div class="menu-item-row flex items-center p-3 bg-white border border-gray-100 rounded-xl shadow-sm mb-3 cursor-pointer active:scale-95 transition" onclick="openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="menu-item-row flex items-center p-3 bg-white border border-gray-100 rounded-2xl shadow-sm mb-3 cursor-pointer active:scale-95 transition-all hover:border-red-200 hover:shadow-md animate-float" onclick="openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
                             <div class="ml-3 flex-1">
-                                <h4 class="font-bold text-sm text-gray-800">${item.name}</h4>
+                                <h4 class="font-black text-sm text-gray-800 leading-tight">${item.name} ${badgeHtml}</h4>
                                 <p class="text-xs font-bold text-red-600 mt-1">₱${price.toFixed(2)}</p>
                             </div>
-                            <div class="text-red-500 font-bold bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">+</div>
+                            <div class="text-red-500 font-bold bg-red-50 w-8 h-8 rounded-full flex items-center justify-center border border-red-100">✚</div>
                         </div>
                     `;
                 }).join('');
@@ -531,6 +560,11 @@
 
             updateCartUI();
             closeItemModal();
+            // 🔥 TRIGGER THE ENTERTAINMENT!
+            const toast = document.getElementById('cartToast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+            
         }
         function updateCartUI() {
             let grandTotal = 0; let totalItems = 0;
