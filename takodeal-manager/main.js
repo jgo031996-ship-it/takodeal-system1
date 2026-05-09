@@ -5014,8 +5014,8 @@ window.loadInbox = async function() {
                 row += `
                     <td><span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending</span></td>
                     <td>
-                        <button onclick="window.approveRequest('${docSnap.id}')" style="background: #16a34a; color: white; padding: 5px 10px; border:none; border-radius:4px; margin-right:5px; cursor:pointer;">Approve</button>
-                        <button onclick="window.rejectRequest('${docSnap.id}')" style="background: #ef4444; color: white; padding: 5px 10px; border:none; border-radius:4px; cursor:pointer;">Reject</button>
+                        <button onclick="window.handleRequest('${docSnap.id}', 'Approved', '${d.type}', ${d.amount || 0}, '${safeName}')" style="background: #16a34a; color: white; padding: 5px 10px; border:none; border-radius:4px; margin-right:5px; cursor:pointer;">Approve</button>
+                        <button onclick="window.handleRequest('${docSnap.id}', 'Rejected', '${d.type}', ${d.amount || 0}, '${safeName}')" style="background: #ef4444; color: white; padding: 5px 10px; border:none; border-radius:4px; cursor:pointer;">Reject</button>
                     </td>
                 </tr>`;
                 pendingHtml += row;
