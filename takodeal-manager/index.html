@@ -246,35 +246,6 @@
               <span style="font-size: 12px; background: #e2e8f0; padding: 4px 8px; border-radius: 4px; color: #475569;">Today</span>
           </div>
 
-          <div class="card" style="margin-top: 20px; border-top: 4px solid #0ea5e9;">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-              <div>
-                <h2 style="margin: 0; color: #0369a1;">📈 Product Optimization Report</h2>
-                <span style="font-size: 12px; color: var(--text-muted);">Analyzing Sales, COGS, and Profit Margins to find your best and worst items.</span>
-              </div>
-            </div>
-            <div class="table-responsive">
-              <table class="data-table">
-                <thead style="background: #f0f9ff;">
-                  <tr>
-                    <th style="color: #0369a1;">Product Name</th>
-                    <th style="color: #0369a1;">Qty Sold</th>
-                    <th style="color: #0369a1;">Gross Sales (₱)</th>
-                    <th style="color: #0369a1;">Est. COGS (₱)</th>
-                    <th style="color: #0369a1;">COGS (%)</th>
-                    <th style="color: #0369a1;">Net Margin (₱)</th>
-                    <th style="color: #0369a1;">Health Status</th>
-                  </tr>
-                </thead>
-                <tbody id="productAnalyticsBody">
-                  <tr>
-                    <td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">Waiting for dashboard to refresh...</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-      
           <!-- Branch Breakdown Table -->
           <div id="grabBranchBreakdown" style="margin-bottom: 15px;">
               <div style="text-align: center; color: #64748b; font-size: 13px;">Loading branch data...</div>
@@ -308,6 +279,36 @@
           </div>
       
       </div>
+
+      <div class="card" style="margin-top: 20px; border-top: 4px solid #0ea5e9;">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h2 style="margin: 0; color: #0369a1;">📈 Product Optimization Report</h2>
+                <span style="font-size: 12px; color: var(--text-muted);">Analyzing Sales, COGS, and Profit Margins to find your best and worst items.</span>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead style="background: #f0f9ff;">
+                  <tr>
+                    <th style="color: #0369a1;">Product Name</th>
+                    <th style="color: #0369a1;">Qty Sold</th>
+                    <th style="color: #0369a1;">Gross Sales (₱)</th>
+                    <th style="color: #0369a1;">Est. COGS (₱)</th>
+                    <th style="color: #0369a1;">COGS (%)</th>
+                    <th style="color: #0369a1;">Net Margin (₱)</th>
+                    <th style="color: #0369a1;">Health Status</th>
+                  </tr>
+                </thead>
+                <tbody id="productAnalyticsBody">
+                  <tr>
+                    <td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">Waiting for dashboard to refresh...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+      
 
     </div>
 
