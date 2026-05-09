@@ -207,7 +207,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot, query, where, limit, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         // 🔥 NEW: AUTH IMPORTS
-        import { getAuth, signInWithRedirect, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, signInWithRedirect, getRedirectResult, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -223,6 +223,18 @@
         const auth = getAuth(app);
         const fbProvider = new FacebookAuthProvider();
         window.currentCustomer = null;
+
+        // 🔥 NEW: CATCHES THE REDIRECT DATA ON MOBILE
+        getRedirectResult(auth).then((result) => {
+            if (result) {
+                console.log("Successfully logged in via redirect!");
+            }
+        }).catch((error) => {
+            console.error("Redirect Error:", error);
+            alert("⚠️ Facebook's built-in browser blocked the login.\n\nPlease click the 3 dots (•••) at the top right of your screen and select 'Open in Chrome' or 'Open in System Browser' to order!");
+            let btn = document.querySelector('#customerLoginScreen button');
+            if (btn) btn.innerHTML = 'Continue with Facebook';
+        });
 
         // 🔥 THE AUTH LISTENER: Controls what screen the customer sees
         onAuthStateChanged(auth, (user) => {
