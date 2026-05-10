@@ -1238,6 +1238,11 @@
   <div class="sidebar" id="mainSidebar">
     <div class="sidebar-header">
       <style>
+        
+        .item-card-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center; opacity: 0.85; transition: 0.2s; }
+        .item-card:hover .item-card-bg { opacity: 1; transform: scale(1.05); }
+        .item-name-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(0, 0, 0, 0.75); color: white; padding: 8px 5px; font-size: 13px; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,0.8); z-index: 2; }
+        
           /* This rule forces the text to hide when the sidebar shrinks! */
           .sidebar.collapsed .brand-text { display: none !important; }
           .sidebar.collapsed .sidebar-header { justify-content: center !important; padding: 15px 0 !important; }
@@ -1596,15 +1601,13 @@
                   <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Items consumed during your shift will be recorded here for inventory and payroll deduction.</p>
                   
                   <label style="font-size: 12px; font-weight: bold; color: #334155;">Food/Drink Item Consumed</label>
-                  <input type="text" id="reqMealItem" placeholder="e.g. 1pc Cheesy Takoyaki, 1 Blue Lemonade" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
+                  <input type="text" id="reqMealItem" placeholder="e.g. 1pc Cheesy Takoyaki" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
 
                   <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount to Deduct (₱)</label>
                   <input type="number" id="reqMealCost" placeholder="Staff discounted price..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #f59e0b; outline: none;">
 
                   <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt/POS Proof 📸</label>
-                  <input type="file" id="reqMealProof" accept="image/*" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; background: white;">
-                  
-                  <input type="number" id="reqMealCost" placeholder="Staff discounted price..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #f59e0b; outline: none;">
+                  <input type="file" id="reqMealProof" accept="image/*" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; background: white;">
 
                   <button onclick="submitStaffRequest('Staff Meal')" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Log Staff Meal</button>
               </div>
@@ -1770,71 +1773,42 @@
   </div>
 
   <div class="overlay" id="endShiftModal" style="display: none;">
-    <div class="modal" style="width: 800px; max-width: 95%;">
+    <div class="modal" style="width: 800px; max-width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+      
       <div class="modal-head">
         <span id="endShiftTitle">End of Shift Clearance</span>
         <span class="close-modal" onclick="closeModal('endShiftModal')">✖</span>
       </div>
 
-      <div class="modal-body"
-        style="display: flex; flex-direction: row; gap: 20px; align-items: flex-start; padding-top: 15px; overflow-y: auto; max-height: 65vh;">
-
-        <div
-          style="flex: 1; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; min-width: 250px;">
-          <h3
-            style="margin-top: 0; color: var(--primary); border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; font-size: 16px;">
-            💵 Cash Drawer Count</h3>
+      <div class="modal-body" style="display: flex; flex-direction: row; gap: 20px; align-items: flex-start; padding: 20px; overflow-y: auto; flex: 1;">
+        
+        <div style="flex: 1; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; min-width: 250px;">
+          <h3 style="margin-top: 0; color: var(--primary); border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; font-size: 16px;">💵 Cash Drawer Count</h3>
           <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
-            <thead>
-              <tr style="border-bottom: 1px solid #ccc;">
-                <th style="padding: 5px 0;">Bill/Coin</th>
-                <th style="padding: 5px 0; width: 80px;">Pieces</th>
-                <th style="padding: 5px 0; text-align: right;">Total</th>
-              </tr>
-            </thead>
+            <thead><tr style="border-bottom: 1px solid #ccc;"><th style="padding: 5px 0;">Bill/Coin</th><th style="padding: 5px 0; width: 80px;">Pieces</th><th style="padding: 5px 0; text-align: right;">Total</th></tr></thead>
             <tbody id="denominationTable"></tbody>
             <tfoot>
-              <tr style="font-weight: bold; font-size: 16px; background: #e2e8f0;">
-                <td colspan="2" style="padding: 10px;">GRAND TOTAL:</td>
-                <td id="grandTotalCash" style="text-align: right; padding: 10px; color: var(--primary);">₱0.00</td>
-              </tr>
+              <tr style="font-weight: bold; font-size: 16px; background: #e2e8f0;"><td colspan="2" style="padding: 10px;">GRAND TOTAL:</td><td id="grandTotalCash" style="text-align: right; padding: 10px; color: var(--primary);">₱0.00</td></tr>
             </tfoot>
           </table>
         </div>
 
-        <div
-          style="flex: 1; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; min-width: 250px;">
+        <div style="flex: 1; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; min-width: 250px;">
           <h3 style="margin-top: 0; color: #d97706; border-bottom: 2px solid #fcd34d; padding-bottom: 5px; font-size: 16px;">📦 Physical Stock Count</h3>
           <p style="font-size: 12px; color: #92400e; margin-bottom: 15px;">Enter the exact remaining physical count.</p>
-          
           <div id="dynamicShiftStockCount" style="display: flex; flex-direction: column; gap: 10px;">
               <div style="text-align:center; font-size: 13px; color: #888;">Loading tracking items...</div>
-          </div>
-          
-            <div style="display: flex; justify-content: space-between; align-items: center;"><label
-                style="font-size: 13px; font-weight: bold;">320cc Paper Bowls:</label><input type="number"
-                id="count320cc" class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
-            <div style="display: flex; justify-content: space-between; align-items: center;"><label
-                style="font-size: 13px; font-weight: bold;">520cc Paper Bowls:</label><input type="number"
-                id="count520cc" class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
-            <div style="display: flex; justify-content: space-between; align-items: center;"><label
-                style="font-size: 13px; font-weight: bold;">Takoyaki Boxes:</label><input type="number" id="countBoxes"
-                class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
-            <div style="display: flex; justify-content: space-between; align-items: center;"><label
-                style="font-size: 13px; font-weight: bold;">Straws:</label><input type="number" id="countStraws"
-                class="input-box" style="width: 100px; padding: 5px;" placeholder="Qty"></div>
           </div>
         </div>
       </div>
 
-      <div style="padding: 15px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #eee; background: #fff; border-radius: 0 0 12px 12px; width: 100%; box-sizing: border-box;">
+      <div style="padding: 15px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #eee; background: #fff;">
         <button class="btn-clear" onclick="closeModal('endShiftModal')" style="padding: 12px 25px;">Cancel</button>
-
-        <button class="btn-place" onclick="safeSubmitComprehensiveCloseShift()"
-          style="background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; padding: 12px 25px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2);">🛑
-          Confirm & End Shift</button>
+        <button class="btn-place" onclick="safeSubmitComprehensiveCloseShift()" style="background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; padding: 12px 25px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2);">🛑 Confirm & End Shift</button>
       </div>
+
     </div>
+  </div>
   </div>
 
   <div class="overlay" id="expenseModal"
@@ -2208,11 +2182,10 @@
             }
             
             grid.innerHTML += `
-                <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})">
+                <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})" style="height: 140px; border: none;">
                     ${badgeHtml}
-                    ${imgHtml}
-                    <div class="item-name">${item.name}</div>
-                    <div class="item-price-tag">₱ ${safePrice.toFixed(2)}</div>
+                    <div class="item-card-bg" style="${bgStyle}"></div>
+                    <div class="item-name-overlay">${item.name}</div>
                 </div>
             `;
         });
@@ -2507,7 +2480,7 @@
                     document.getElementById('modalItemName').parentElement.parentElement.insertAdjacentElement('beforebegin', imgContainer);
                 }
                 if (itemData.image) {
-                    imgContainer.innerHTML = `<div style="text-align: center; margin-bottom: 15px; display: flex; justify-content: center;"><img src="${itemData.image}" style="width: 150px; height: 150px; object-fit: cover; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.15);"></div>`;
+                    imgContainer.innerHTML = `<div style="text-align: center; margin-bottom: 15px; display: flex; justify-content: center; background: #f8fafc; border-radius: 12px;"><img src="${itemData.image}" style="width: 100%; max-height: 160px; object-fit: contain; border-radius: 12px;"></div>`;
                 } else {
                     imgContainer.innerHTML = '';
                 }
@@ -2774,24 +2747,10 @@
 
     async function submitFinalOrder() {
       const btn = document.getElementById('btnSubmitFinal'); 
-      btn.innerText = "⏳ Checking Live Stock..."; 
+      btn.innerText = "Processing Payment..."; 
       btn.disabled = true;
 
-      // 🔥 NEW: PHASE 4 PRE-FLIGHT CHECK (RECIPE HIDDEN) 🔥
-      let stockWarnings = await window.validateStockLevels(cart);
-      
-      if (stockWarnings.length > 0) {
-          // Cashier gets a strict warning, but NO ingredient details are shown!
-          let proceed = confirm("⚠️ LOW STOCK WARNING ⚠️\n\nProcessing this order will result in negative inventory for certain ingredients.\n\nDo you want to force proceed? (You will need to log a Kitchen Prep Batch immediately after).");
-          
-          if (!proceed) {
-              btn.innerText = "Complete checkout"; 
-              btn.disabled = false;
-              return; // Aborts the checkout!
-          }
-      }
-
-      btn.innerText = "Processing Payment...";
+      // We removed the slow validateStockLevels() check here! The system will just warn you AFTER checkout.
 
       const payload = {
         branch: sessionUser.branch,
@@ -2807,10 +2766,9 @@
 
       let receiptId = await window.processCheckout(payload);
       if (receiptId) {
-        
         if (window.activeMobileOrderId) {
             await window.deleteDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId));
-            window.activeMobileOrderId = null; // Clear the memory for the next order
+            window.activeMobileOrderId = null; 
         }
         lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
