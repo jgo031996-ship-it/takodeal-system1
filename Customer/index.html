@@ -39,18 +39,6 @@
         <span>Added to your cart!</span>
     </div>
 
-    <!-- 🔥 NEW: FACEBOOK LOGIN SCREEN -->
-    <div id="customerLoginScreen" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center p-6">
-        <img src="banner.png" alt="TAKODEÁL" class="w-full max-w-sm mb-8 rounded-xl shadow-md object-contain">
-        <h2 class="text-2xl font-black text-gray-800 mb-2">Welcome to TAKODEÁL</h2>
-        <p class="text-gray-500 mb-8 text-center text-sm font-medium">Please log in with Facebook to place your order. This secures your transaction and helps our riders contact you.</p>
-        
-        <button onclick="window.loginWithFacebook()" class="bg-[#1877F2] text-white font-bold py-4 px-6 rounded-xl w-full max-w-xs shadow-lg flex items-center justify-center gap-3 hover:bg-[#166fe5] active:scale-95 transition-all">
-            <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-            Continue with Facebook
-        </button>
-    </div>
-
     <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative flex flex-col">
         <!-- Header -->
         <div class="sticky top-0 z-40 shadow-md bg-white flex justify-center items-center overflow-hidden">
@@ -67,21 +55,14 @@
             </div>
 
             <div class="p-6">
-                <!-- 🔥 NEW: FB PROFILE & CONTACT DETAILS -->
-                <div class="mb-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                    <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-4">
-                        <div class="flex items-center gap-3">
-                            <img id="fbProfilePic" src="" class="w-11 h-11 rounded-full bg-gray-200 object-cover shadow-sm">
-                            <div>
-                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Ordering As</p>
-                                <p id="displayCustomerName" class="font-black text-gray-800 text-sm">Loading...</p>
-                            </div>
-                        </div>
-                        <button onclick="window.logoutCustomer()" class="text-xs text-red-500 font-bold bg-red-50 px-3 py-2 rounded-lg border border-red-100 active:bg-red-100 transition">Sign Out</button>
-                    </div>
+                <div class="mb-6 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                    <h3 class="text-sm font-black text-gray-800 mb-4 border-b border-gray-100 pb-2">👤 Your Details</h3>
                     
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Contact Number (Required) 📞</label>
-                    <input type="tel" id="customerContact" required class="block w-full rounded-lg border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800" placeholder="e.g. 0912 345 6789">
+                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Full Name (Required)</label>
+                    <input type="text" id="customerName" required class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 mb-4 transition-colors" placeholder="e.g. Juan Dela Cruz">
+
+                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Contact Number (Required) 📞</label>
+                    <input type="tel" id="customerContact" required class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 transition-colors" placeholder="e.g. 0912 345 6789">
                 </div>
 
                 <!-- LIVE CATEGORY ACCORDIONS (Closed by Default) -->
@@ -104,11 +85,13 @@
                     </select>
                 </div>
 
-                <!-- Hidden Delivery Details Section -->
                 <div id="deliverySection" class="hidden bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6 shadow-inner">
                     <p class="font-bold text-purple-800 mb-2">🚚 Delivery Details</p>
                     <p class="text-xs text-purple-600 mb-3">Your GPS location will be automatically sent to the rider. Please provide landmarks or house details.</p>
-                    <textarea id="deliveryAddress" class="block w-full rounded-lg border-gray-300 p-3 text-sm outline-none focus:border-purple-500 shadow-sm" placeholder="e.g. Green gate, beside the bakery, call upon arrival..." rows="2"></textarea>
+                    <textarea id="deliveryAddress" class="block w-full rounded-lg border-purple-200 p-3 text-sm outline-none focus:border-purple-500 shadow-sm mb-4" placeholder="e.g. Green gate, beside the bakery, call upon arrival..." rows="2"></textarea>
+                    
+                    <label class="block text-xs font-bold text-purple-700 mb-2 uppercase tracking-wider">📸 Photo of your House/Gate (Helpful for Rider!)</label>
+                    <input type="file" id="locationImage" accept="image/*" class="block w-full text-sm text-purple-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer">
                 </div>
                 
                 <hr class="border-gray-200 my-6">
@@ -249,10 +232,9 @@
  
     <!-- Firebase Integration -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot, query, where, limit, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-        // 🔥 NEW: AUTH IMPORTS
-        import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -265,86 +247,7 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const auth = getAuth(app);
-        const fbProvider = new FacebookAuthProvider();
-        window.currentCustomer = null;
-
-        // 🔥 NEW: Catch iOS users returning from Facebook Redirect
-        getRedirectResult(auth).catch((error) => {
-            console.error("Redirect Error:", error);
-        });
-        
-        // 🔥 NEW: DETECT FACEBOOK/MESSENGER IN-APP BROWSER
-        function isFacebookApp() {
-            var ua = navigator.userAgent || navigator.vendor || window.opera;
-            return (ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Instagram") > -1);
-        }
-
-        // If they are trapped in Facebook, show the escape guide!
-        if (isFacebookApp()) {
-            document.getElementById('customerLoginScreen').innerHTML = `
-                <div class="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center border-t-4 border-red-500 z-50">
-                    <div class="text-4xl mb-4">⚠️</div>
-                    <h3 class="text-xl font-black text-gray-800 mb-2">Action Required</h3>
-                    <p class="text-gray-600 mb-6 text-sm font-medium">Facebook's built-in browser blocks secure ordering. You need to open this in your normal browser.</p>
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 text-left mb-2">
-                        <p class="font-bold text-gray-800 text-sm mb-2">How to fix it instantly:</p>
-                        <ol class="text-sm text-gray-600 space-y-3">
-                            <li>1. Tap the <b>3 dots (•••)</b> at the top right of your screen.</li>
-                            <li>2. Select <b>"Open in browser"</b> or <b>"Open in Chrome"</b>.</li>
-                        </ol>
-                    </div>
-                </div>
-            `;
-        }
-
-        // --- NORMAL AUTH LOGIC ---
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                window.currentCustomer = user;
-                document.getElementById('customerLoginScreen').classList.add('hidden');
-                document.getElementById('displayCustomerName').innerText = user.displayName;
-                document.getElementById('fbProfilePic').src = user.photoURL || 'https://via.placeholder.com/100';
-            } else {
-                window.currentCustomer = null;
-                // Only show login screen if they are NOT trapped in the Facebook app
-                if (!isFacebookApp()) {
-                    document.getElementById('customerLoginScreen').classList.remove('hidden');
-                }
-            }
-        });
-
-        window.loginWithFacebook = async function() {
-            try {
-                let btn = document.querySelector('#customerLoginScreen button');
-                if(btn) btn.innerHTML = 'Connecting...';
-                
-                // Try Popup first (Works perfectly on Android & Desktop)
-                await signInWithPopup(auth, fbProvider);
-                
-            } catch (error) {
-                console.error("Login Error:", error);
-                
-                // 🍎 THE APPLE FIX: If the iPhone blocks the popup, fall back to Redirect!
-                if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/popup-blocked') {
-                    let btn = document.querySelector('#customerLoginScreen button');
-                    if(btn) btn.innerHTML = 'Redirecting to Facebook...';
-                    
-                    await signInWithRedirect(auth, fbProvider);
-                } else {
-                    // Show standard error if it's something else
-                    alert("System Error: " + error.code + "\n\nDetails: " + error.message);
-                    let btn = document.querySelector('#customerLoginScreen button');
-                    if(btn) btn.innerHTML = 'Continue with Facebook';
-                }
-            }
-        };
-
-        window.logoutCustomer = async function() {
-            if(confirm("Are you sure you want to sign out?")) {
-                await signOut(auth);
-            }
-        };
+        const storage = getStorage(app); // 🔥 Ignites the Image Uploader!
 
         window.masterMenu = [];
         window.cart = [];
@@ -850,10 +753,15 @@
         window.submitOrder = async function() {
             if (window.cart.length === 0) { alert("Your order is empty."); return; }
 
-            // 🔥 GRAB FB NAME AND CONTACT NUMBER
-            const name = window.currentCustomer ? window.currentCustomer.displayName : "Guest";
+            // 🔥 GRAB MANUAL NAME AND CONTACT NUMBER
+            const name = document.getElementById('customerName').value.trim();
             const contact = document.getElementById('customerContact').value.trim();
             
+            if (!name) { 
+                alert("👤 Please provide your name so we know who is ordering!"); 
+                document.getElementById('customerName').focus();
+                return; 
+            }
             if (!contact) { 
                 alert("📞 Please provide a contact number so our team can reach you!"); 
                 document.getElementById('customerContact').focus();
@@ -880,8 +788,28 @@
                 alert("❌ Your browser does not support location services. We cannot route your order."); return;
             }
 
-            btn.innerHTML = '<span class="mx-auto">Finding Nearest TAKODEÁL...</span>'; 
+            btn.innerHTML = '<span class="mx-auto">Securing Order Data...</span>'; 
             btn.disabled = true;
+
+            // 🔥 UPLOAD THE IMAGE TO FIREBASE STORAGE (If attached)
+            let locationPicUrl = "";
+            let imageFile = document.getElementById('locationImage').files[0];
+            
+            if (orderType === "Delivery" && imageFile) {
+                try {
+                    btn.innerHTML = '<span class="mx-auto">Uploading Photo...</span>';
+                    const fileExt = imageFile.name.split('.').pop();
+                    const fileName = `location_pics/delivery_${Date.now()}.${fileExt}`;
+                    const storageRef = ref(storage, fileName);
+                    const snapshot = await uploadBytes(storageRef, imageFile);
+                    locationPicUrl = await getDownloadURL(snapshot.ref);
+                } catch (e) {
+                    console.error("Image upload failed", e);
+                    alert("Warning: Could not upload your picture, but we will still send your order.");
+                }
+            }
+
+            btn.innerHTML = '<span class="mx-auto">Finding Nearest TAKODEÁL...</span>'; 
 
             navigator.geolocation.getCurrentPosition(async (position) => {
                 const userLat = position.coords.latitude; 
@@ -925,6 +853,7 @@
                     branch: nearestBranch, 
                     orderType: orderType,  
                     deliveryAddress: deliveryNotes,
+                    locationImage: locationPicUrl, // 📸 PASSES THE IMAGE TO THE CASHIER!
                     items: window.cart, 
                     totalAmount: grandTotal,
                     paymentMode: paymentMode, 
