@@ -96,6 +96,12 @@
 
             <div class="p-6">
                 <div class="mb-6 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                    <h3 class="text-sm font-black text-gray-800 mb-4 border-b border-gray-100 pb-2">🏪 Select Branch</h3>
+                    <select id="selectedBranch" class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 transition-colors cursor-pointer">
+                        <option value="Cabantian">TAKODEÁL Cabantian</option>
+                        <option value="Citygate">TAKODEÁL Citygate</option>
+                        <option value="Maa">TAKODEÁL Maa</option>
+                    </select>
                     <h3 class="text-sm font-black text-gray-800 mb-4 border-b border-gray-100 pb-2">👤 Your Details</h3>
                     
                     <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Full Name (Required)</label>
@@ -185,6 +191,13 @@
                 <span id="trackerBranchDisplay">Locating...</span>
             </div>
             
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 w-full mb-4 text-left relative overflow-hidden">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 border-b border-gray-100 pb-2">Your Order Summary</h3>
+                <div id="trackerOrderDetails" class="text-sm text-gray-700 space-y-2 max-h-32 overflow-y-auto mb-2 relative z-10">
+                    </div>
+                <div class="text-right font-black text-red-600 text-lg border-t border-gray-100 pt-2 relative z-10" id="trackerOrderTotal">₱0.00</div>
+            </div>
+
             <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 w-full mb-8 relative overflow-hidden">
                 <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Estimated Wait Time</div>
                 <div id="waitTimeDisplay" class="text-2xl font-black text-red-600">10 - 15 Mins</div>
@@ -763,6 +776,9 @@
                 if (savedBranch) {
                      document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + savedBranch;
                 }
+
+                // 🔥 NEW: LOAD THE ORDER SUMMARY
+                window.renderTrackerOrderDetails();
                 
                 window.monitorOrderStatus(savedOrderId);
             }
@@ -791,6 +807,8 @@
             localStorage.removeItem('activeTakodealOrderId');
             localStorage.removeItem('activeTakodealBranch');
             localStorage.removeItem('takodealCancelExpiresAt');
+            ocalStorage.removeItem('activeTakodealCart');       // 🔥 NEW
+            localStorage.removeItem('activeTakodealTotal');    // 🔥 NEW
             
             // 2. Empty the shopping cart
             window.cart = [];
@@ -800,24 +818,29 @@
         };
 
         // 4. THE GRAND SUBMISSION ENGINE
+        window.renderTrackerOrderDetails = function() {
+            let savedCartStr = localStorage.getItem('activeTakodealCart');
+            let savedTotal = localStorage.getItem('activeTakodealTotal');
+            if(savedCartStr) {
+                let savedCart = JSON.parse(savedCartStr);
+                let html = '';
+                savedCart.forEach(item => {
+                    html += `<div class="flex justify-between border-b border-gray-50 pb-1"><span>${item.quantity}x ${item.name}</span><span class="font-bold text-gray-900">₱${item.lineTotalFinal.toFixed(2)}</span></div>`;
+                });
+                document.getElementById('trackerOrderDetails').innerHTML = html;
+                document.getElementById('trackerOrderTotal').innerText = `Total: ₱${parseFloat(savedTotal).toFixed(2)}`;
+            }
+        };
+
         window.submitOrder = async function() {
             if (window.cart.length === 0) { alert("Your order is empty."); return; }
 
             const name = document.getElementById('customerName').value.trim();
             const contact = document.getElementById('customerContact').value.trim();
+            const selectedBranch = document.getElementById('selectedBranch').value; // 🔥 GRABS BRANCH FROM DROPDOWN
             
-            if (!name) { 
-                alert("👤 Please provide your name so we know who is ordering!"); 
-                window.closeCartModal(); 
-                document.getElementById('customerName').focus();
-                return; 
-            }
-            if (!contact) { 
-                alert("📞 Please provide a contact number so our team can reach you!"); 
-                window.closeCartModal();
-                document.getElementById('customerContact').focus();
-                return; 
-            }
+            if (!name) { alert("👤 Please provide your name!"); window.closeCartModal(); document.getElementById('customerName').focus(); return; }
+            if (!contact) { alert("📞 Please provide a contact number!"); window.closeCartModal(); document.getElementById('customerContact').focus(); return; }
 
             const paymentMode = document.getElementById('paymentMode').value;
             const orderType = document.getElementById('orderType').value;
@@ -837,10 +860,6 @@
             let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
             const btn = document.getElementById('submitBtn');
 
-            if (!navigator.geolocation) {
-                alert("❌ Your browser does not support location services. We cannot route your order."); return;
-            }
-
             btn.innerHTML = '<span class="mx-auto">Uploading Photo...</span>'; 
             btn.disabled = true;
 
@@ -854,46 +873,18 @@
                     const storageRef = ref(storage, fileName);
                     const snapshot = await uploadBytes(storageRef, imageFile);
                     locationPicUrl = await getDownloadURL(snapshot.ref);
-                } catch (e) {
-                    console.error("Image upload failed", e);
-                }
+                } catch (e) { console.error("Image upload failed", e); }
             }
 
             btn.innerHTML = '<span class="mx-auto">Routing Order...</span>'; 
 
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                const userLat = position.coords.latitude; 
-                const userLng = position.coords.longitude;
-                
-                let nearestBranch = "Cabantian"; 
-                let shortestDistance = Infinity;
-
-                for (const [branchName, zone] of Object.entries(BRANCH_ZONES)) {
-                    let d = getDistanceInMeters(userLat, userLng, zone.lat, zone.lng);
-                    if (d < shortestDistance) {
-                        shortestDistance = d;
-                        nearestBranch = branchName;
-                    }
-                }
-
-                btn.innerHTML = '<span class="mx-auto">Checking Store...</span>';
-
-                try {
-                    const shiftQ = query(collection(db, "shifts"), where("branch", "==", nearestBranch), where("active", "==", true), limit(1));
-                    const shiftSnap = await getDocs(shiftQ);
-                    
-                    if (shiftSnap.empty) {
-                        alert(`🛑 TAKODEÁL ${nearestBranch} is currently CLOSED.`);
-                        window.resetSubmitButton(grandTotal);
-                        return; 
-                    }
-                } catch (e) { console.error("Shift check error", e); }
-
+            // Function to actually send the data to Firebase
+            const finalizeSubmission = async (userLat, userLng) => {
                 let cashierVisibleName = `${name} (${orderType}) - 📞 ${contact}`;
 
                 window.pendingOrderData = {
                     customerName: cashierVisibleName, 
-                    branch: nearestBranch, 
+                    branch: selectedBranch, // 🔥 USES THE DROPDOWN VALUE
                     orderType: orderType,  
                     deliveryAddress: deliveryNotes,
                     locationImage: locationPicUrl, 
@@ -907,13 +898,15 @@
                     timestamp: serverTimestamp()
                 };
 
-                btn.innerHTML = '<span class="mx-auto">Sending to Kitchen...</span>';
-
                 try {
                     const docRef = await addDoc(collection(db, "incoming_orders"), window.pendingOrderData);
                     
                     localStorage.setItem('activeTakodealOrderId', docRef.id);
-                    localStorage.setItem('activeTakodealBranch', nearestBranch);
+                    localStorage.setItem('activeTakodealBranch', selectedBranch);
+                    
+                    // 🔥 SAVE CART DETAILS FOR TRACKER SCREEN
+                    localStorage.setItem('activeTakodealCart', JSON.stringify(window.cart));
+                    localStorage.setItem('activeTakodealTotal', grandTotal);
                     
                     document.getElementById('cartModal').classList.add('hidden');
                     document.getElementById('orderingScreen').classList.add('hidden');
@@ -921,23 +914,30 @@
                     document.getElementById('trackerScreen').classList.remove('hidden');
                     document.getElementById('trackerScreen').classList.add('flex');
                     
-                    document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + nearestBranch;
+                    document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + selectedBranch;
+                    window.renderTrackerOrderDetails();
                     
                     window.scrollTo(0,0);
-                    
                     window.startCancelTimer(); 
                     window.monitorOrderStatus(docRef.id);
 
                 } catch (error) {
                     console.error(error); 
                     alert("Error sending order. Please check your connection.");
-                    window.resetSubmitButton(window.pendingOrderData.totalAmount);
+                    window.resetSubmitButton(grandTotal);
                 }
+            };
 
-            }, (error) => {
-                alert("📍 LOCATION REQUIRED\n\nPlease allow location access so we can route your order to the nearest branch.");
-                window.resetSubmitButton(grandTotal);
-            }, { enableHighAccuracy: true }); 
+            // Grab GPS if possible for the rider, but don't force it to fail if they block it!
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => finalizeSubmission(position.coords.latitude, position.coords.longitude), 
+                    (error) => finalizeSubmission("Unknown", "Unknown"), 
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+            } else {
+                finalizeSubmission("Unknown", "Unknown");
+            }
         };
 
         // 🔥 WAKE UP THE APP AND LOAD MENU
