@@ -1851,6 +1851,10 @@ window.acceptMobileOrder = async function(docId) {
         status: "preparing"
     });
 
+    // 🔥 YOU MISSED THIS CRITICAL LINE RIGHT HERE! 🔥
+    // The Cashier App needs to remember this ID so it can delete it after they pay!
+    window.activeMobileOrderId = docId;
+
     if (typeof renderCart === 'function') renderCart();
     closeModal('mobileOrdersModal');
 };
