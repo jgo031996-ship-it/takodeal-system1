@@ -191,7 +191,7 @@
                 <div class="absolute -right-4 -bottom-4 opacity-5 text-6xl">⏱️</div>
             </div>
 
-            <button onclick="location.reload()" class="bg-gray-200 text-gray-800 font-bold py-4 px-6 rounded-xl w-full hover:bg-gray-300 transition-colors">Place New Order</button>
+            <button onclick="window.startNewOrder()" class="bg-gray-200 text-gray-800 font-bold py-4 px-6 rounded-xl w-full hover:bg-gray-300 transition-colors">Place New Order</button>
         </div>
 
             <div id="cancelOrderSection" class="w-full hidden">
@@ -785,6 +785,19 @@
             const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
+
+        window.startNewOrder = function() {
+            // 1. Wipe the tracker memory clean
+            localStorage.removeItem('activeTakodealOrderId');
+            localStorage.removeItem('activeTakodealBranch');
+            localStorage.removeItem('takodealCancelExpiresAt');
+            
+            // 2. Empty the shopping cart
+            window.cart = [];
+            
+            // 3. Refresh the page to load the fresh menu!
+            location.reload();
+        };
 
         // 4. THE GRAND SUBMISSION ENGINE
         window.submitOrder = async function() {
