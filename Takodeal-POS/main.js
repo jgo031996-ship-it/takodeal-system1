@@ -3,6 +3,8 @@
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+// 🔥 NEW: Import Firebase Storage
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 window.onSnapshot = onSnapshot;
 
@@ -17,6 +19,9 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app); // 🔥 Turn on the engine
+
+window.storage = storage; // Export it for the staff meal function!
 
 enableIndexedDbPersistence(db).then(() => {
     console.log("🚀 TAKODEÁL Offline Mode is ACTIVE!");
@@ -222,7 +227,7 @@ window.processCheckout = async function (payload) {
         
         // 🚨 Simple, non-blocking alarm
         if (lowStockTriggered) {
-             alert(`⚠️ LOW STOCK ALERT\n\nSome ingredients used in the last order are running low. Please notify the Manager to check the Live Inventory dashboard.`);
+             window.pendingLowStockAlarm = true;
         }
 
         // 🔥 THE 1 MILLION TAKOYAKI TRACKER 🔥
@@ -1902,5 +1907,16 @@ window.toggleGlobalDelivery = async function() {
     } catch(e) {
         console.error("Delivery Toggle Error", e);
         alert("❌ Failed to toggle delivery. Check connection.");
+    }
+};
+
+window.closeAndNextOrder = function() {
+    // 1. Close the modal
+    document.getElementById('receiptModal').style.display = 'none';
+    
+    // 2. Check if the alarm was tripped during checkout
+    if (window.pendingLowStockAlarm) {
+        alert("⚠️ LOW STOCK ALERT\n\nSome ingredients used in the last order are running low. Please notify the Manager to check the Live Inventory dashboard.");
+        window.pendingLowStockAlarm = false; // Reset the alarm
     }
 };
