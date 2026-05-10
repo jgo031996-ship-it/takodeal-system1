@@ -2802,6 +2802,11 @@
 
       let receiptId = await window.processCheckout(payload);
       if (receiptId) {
+        
+        if (window.activeMobileOrderId) {
+            await window.deleteDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId));
+            window.activeMobileOrderId = null; // Clear the memory for the next order
+        }
         lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
         let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${window.currentGrandTotal.toFixed(2)}`;
