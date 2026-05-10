@@ -987,6 +987,21 @@
         // Initialize the app
         loadLiveMenu();
         checkActiveOrder(); // Check if they refreshed the page!
+
+        // 🔥 WAKE UP THE APP (Bypass Facebook!)
+        document.addEventListener("DOMContentLoaded", async () => {
+            // 1. Check if they are already waiting for an order
+            await checkActiveOrder();
+            
+            // 2. If no active order, trigger the menu fetch!
+            // (Note: If your menu loading function is named something else like 'fetchMenu()' or 'initApp()', use that here instead!)
+            if (typeof loadMenu === 'function') {
+                loadMenu(); 
+            } else if (typeof fetchAndRenderMenu === 'function') {
+                fetchAndRenderMenu();
+            }
+        });
+        
     </script>
 </body>
 </html>
