@@ -1458,10 +1458,26 @@ window.submitStaffRequest = async function(requestType) {
         payload.leaveType = document.getElementById('reqLeaveType').value; 
         payload.reason = document.getElementById('reqLeaveReason').value.trim();
         if (!payload.startDate || !payload.endDate || !payload.reason) { alert("❌ Dates and reason required."); return; }
-    } else if (requestType === "Staff Meal") {
+    } } else if (requestType === "Staff Meal") {
         payload.item = document.getElementById('reqMealItem').value.trim(); 
         payload.amount = parseFloat(document.getElementById('reqMealCost').value);
         if (!payload.item || isNaN(payload.amount) || payload.amount < 0) { alert("❌ Item and cost required."); return; }
+        
+        // 🔥 UPLOAD THE PROOF IMAGE
+        let imageFile = document.getElementById('reqMealProof').files[0];
+        if (imageFile) {
+            try {
+                // Change button text so they know it's working
+                let btns = document.querySelectorAll('#formReqMeal button');
+                if(btns.length > 0) btns[0].innerText = "Uploading proof...";
+                
+                const fileExt = imageFile.name.split('.').pop();
+                const fileName = `staff_requests/meal_${Date.now()}.${fileExt}`;
+                const storageRef = ref(window.storage, fileName); 
+                const snapshot = await uploadBytes(storageRef, imageFile);
+                payload.proofImageUrl = await getDownloadURL(snapshot.ref);
+            } catch (e) { console.error("Upload failed", e); }
+        }
     } else if (requestType === "Reason Letter") {
         // Adding safety for Reason Letters just in case!
         let alertId = document.getElementById('explainAlertId').value;
