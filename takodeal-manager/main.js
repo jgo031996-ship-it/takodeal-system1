@@ -2506,24 +2506,23 @@ window.saveAdvancedInventoryItem = async function () {
   try {
     // Math Time!
     let totalBaseStock = conv * initQty;
-    let baseCost = cost / conv; // This is the micro-cost used for Menu Costing!
+    let baseCost = cost / conv; 
+    let showCashier = document.getElementById('newInvShowCashier').checked; // 🔥 NEW
 
     await addDoc(collection(db, "inventory"), {
       branch: branch,
       name: name,
       category: category,
-
-      // We save both so the system remembers how you bought it
       purchaseUom: purchUom,
-      uom: baseUom, // This is the Base UOM used everywhere else in the app
+      uom: baseUom, 
       conversionRate: conv,
       purchaseCost: cost,
-
-      baseCost: baseCost, // What 1 gram costs
-      currentStock: totalBaseStock, // We store 25000 grams, not 1 Sack
-      reorderLevel: reorder
+      baseCost: baseCost, 
+      currentStock: totalBaseStock, 
+      reorderLevel: reorder,
+      showToCashier: showCashier // 🔥 NEW
     });
-
+    
     alert(`✅ Success! Added ${name} to ${branch}.`);
     document.getElementById('addInvModal').style.display = 'none';
     window.loadInventoryData();
@@ -3066,6 +3065,7 @@ window.openEditInv = async function(encodedData) {
             
             document.getElementById('editInvLowStock').value = data.reorderLevel || 0;
             document.getElementById('editInvOldQty').value = data.currentStock || 0;
+            document.getElementById('editInvShowCashier').checked = data.showToCashier !== false;
             
             // Reset Variance inputs
             document.getElementById('editInvNewQty').value = '';
@@ -3109,6 +3109,7 @@ window.saveInventoryEdit = async function () {
     let newQtyInput = document.getElementById('editInvNewQty').value;
     let newQty = newQtyInput === '' ? oldQty : parseFloat(newQtyInput);
     let note = document.getElementById('editInvNote').value.trim();
+    let showCashier = document.getElementById('editInvShowCashier').checked;
     
     let variance = newQty - oldQty;
     if (variance !== 0 && !note) {
@@ -3135,6 +3136,7 @@ window.saveInventoryEdit = async function () {
             cost: newBaseCost,
             baseCost: newBaseCost,
             currentStock: newQty 
+            showToCashier: showCashier
         });
         
         // Log Variance if physical stock was changed
@@ -3981,12 +3983,12 @@ window.processBulkUpload = function (event) {
 };
 
 // ========================================================
-// 📊 Z-READING REPORTS ENGINE (DATE FILTER UPGRADE)
+// 📊 Z-READING & VARIANCE AUDIT DASHBOARD
 // ========================================================
 window.loadZReadingReports = async function () {
   const tbody = document.getElementById('zReadingTableBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center">Loading reports from cloud...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading audit reports from cloud...</td></tr>';
 
   let dateFilter = document.getElementById('zReadingDateFilter') ? document.getElementById('zReadingDateFilter').value : "";
 
@@ -3997,9 +3999,9 @@ window.loadZReadingReports = async function () {
     let html = '';
     let count = 0;
     
-    // 🔥 NEW: Variables to track the math!
     let sumDeclared = 0;
     let sumExpected = 0;
+    let sumVariance = 0;
 
     snap.forEach(docSnap => {
       let data = docSnap.data();
@@ -4012,19 +4014,26 @@ window.loadZReadingReports = async function () {
           let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
           let dd = String(jsDate.getDate()).padStart(2, '0');
           let formattedDate = `${yyyy}-${mm}-${dd}`;
-          
           if (formattedDate !== dateFilter) return; 
       }
 
       let dateStr = data.endTime.toDate().toLocaleString('en-PH');
       let declared = data.declaredCash || 0;
       let expected = data.expectedCash || 0;
+      let variance = declared - expected;
       
       // Add to our running totals
       sumDeclared += declared;
       sumExpected += expected;
+      sumVariance += variance;
 
+      let expectedFormatted = `₱${expected.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
       let declaredFormatted = `₱${declared.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+      
+      let varColor = variance < 0 ? "#dc2626" : (variance > 0 ? "#16a34a" : "#64748b");
+      let varText = variance === 0 ? `<span style="color:#16a34a; font-weight:bold;">Perfect</span>` : `<span style="color:${varColor}; font-weight:bold;">${variance > 0 ? '+' : ''}₱${variance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>`;
+
+      // Safely encode the JSON strings so they don't break the HTML button
       let breakdownStr = encodeURIComponent(JSON.stringify(data.cashBreakdown || {}));
       let stockStr = encodeURIComponent(JSON.stringify(data.physicalStockCount || {}));
       let safeCashier = data.cashier ? data.cashier.replace(/'/g, "\\'") : 'Unknown';
@@ -4033,38 +4042,37 @@ window.loadZReadingReports = async function () {
       html += `
         <tr>
           <td>${dateStr}</td>
-          <td><strong>${safeCashier}</strong></td>
           <td><span class="badge badge-closed">${safeBranch}</span></td>
-          <td style="color: var(--success); font-weight: bold;">${declaredFormatted}</td>
+          <td><strong>${safeCashier}</strong></td>
+          <td style="font-size: 13px;">Exp: <strong>${expectedFormatted}</strong><br>Dec: <strong style="color:var(--primary);">${declaredFormatted}</strong></td>
+          <td>${varText}</td>
           <td>
-            <button onclick="viewZReadingDetails('${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared})" class="btn-refresh" style="background: #0ea5e9; color: white; border: none; padding: 6px 12px;">🔍 View Details</button>
+            <button onclick="viewZReadingDetails('${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared})" class="btn-refresh" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px;">🔍 Full Audit</button>
           </td>
         </tr>
       `;
       count++;
     });
 
-    // 🔥 NEW: Update the Dashboard Cards!
     if (document.getElementById('zSumDeclared')) document.getElementById('zSumDeclared').innerText = `₱${sumDeclared.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
     if (document.getElementById('zSumExpected')) document.getElementById('zSumExpected').innerText = `₱${sumExpected.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
     
-    let variance = sumDeclared - sumExpected;
-    let varColor = variance < 0 ? "#dc2626" : (variance > 0 ? "#16a34a" : "#475569");
-    let varText = variance === 0 ? "₱0.00 (Perfect)" : `₱${variance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    let gVarColor = sumVariance < 0 ? "#dc2626" : (sumVariance > 0 ? "#16a34a" : "#0f172a");
+    let gVarText = sumVariance === 0 ? "₱0.00 (Balanced)" : `${sumVariance > 0 ? '+' : ''}₱${sumVariance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
     
     if (document.getElementById('zSumVariance')) {
-        document.getElementById('zSumVariance').innerText = varText;
-        document.getElementById('zSumVariance').style.color = varColor;
+        document.getElementById('zSumVariance').innerText = gVarText;
+        document.getElementById('zSumVariance').style.color = gVarColor;
     }
 
     if (count === 0 && dateFilter) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center">No shifts started on ${dateFilter}.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center">No shifts started on ${dateFilter}.</td></tr>`;
     } else {
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No closed shifts found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center">No closed shifts found.</td></tr>';
     }
   } catch (error) {
     console.error("Error loading Z-Readings:", error);
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading reports. Check console.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading reports. Check console.</td></tr>';
   }
 };
 
