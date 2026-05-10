@@ -14,6 +14,12 @@
     /* 📱 ULTIMATE RESPONSIVE MOBILE ENGINE      */
     /* ========================================= */
     
+    body {
+      height: 100vh; /* Fallback */
+      height: 100dvh; /* Adapts to mobile URL bars */
+      overflow: hidden; 
+    }
+
     .mobile-menu-btn {
       display: none;
       background: none;
@@ -24,32 +30,51 @@
       margin-right: 15px;
     }
 
+    /* 📱 TABLET MODE (iPads / Galaxy Tabs) */
     @media (max-width: 1024px) {
-      body {
-        display: block !important; /* Kills the desktop flexbox bully */
-        overflow-x: hidden !important; 
-      }
+        .sidebar { width: 80px !important; }
+        .sidebar .text, .sidebar .brand .text, .user-profile .details { display: none !important; }
+        .main-content { margin-left: 80px !important; width: calc(100% - 80px) !important; }
+        
+        /* Wrap Top Bar controls */
+        #globalDateControls, .card-header div { flex-wrap: wrap; gap: 10px; }
+        
+        /* Make 3-column grids turn into 2-columns on tablets */
+        .stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        div[style*="grid-template-columns: repeat(3"] { grid-template-columns: repeat(2, 1fr) !important; }
+        div[style*="grid-template-columns: repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
+        
+        /* Ensure modals don't blow up the screen */
+        .modal { max-width: 95% !important; }
+        .modal-body { overflow-y: auto !important; max-height: 75vh !important; }
+    }
 
+    /* 📱 PHONE MODE (Mobile Devices) */
+    @media (max-width: 768px) {
+      body { display: block !important; overflow-x: hidden !important; }
       .mobile-menu-btn { display: block !important; }
       
-      /* 1. Force sidebar completely off-screen and above everything */
+      /* 1. Force sidebar completely off-screen (Hamburger Menu mode) */
       .sidebar {
         position: fixed !important;
         left: -320px !important; 
         top: 0 !important;
-        height: 100vh !important;
+        height: 100dvh !important;
         width: 280px !important;
         z-index: 99999 !important;
         transition: left 0.3s ease-in-out !important;
         box-shadow: 4px 0 20px rgba(0,0,0,0.5) !important;
       }
       .sidebar.show-mobile { left: 0 !important; }
+      
+      /* Bring the text back when the menu slides out! */
+      .sidebar .text, .sidebar .brand .text, .user-profile .details { display: block !important; }
 
       /* 2. Main content takes exactly 100% of the phone screen */
       .main-content {
         margin-left: 0 !important;
         width: 100% !important;
-        padding: 10px !important;
+        padding: 15px !important;
         box-sizing: border-box !important;
       }
 
@@ -59,21 +84,19 @@
       div[style*="grid-template-columns"] {
         display: flex !important;
         flex-direction: column !important;
-        grid-template-columns: 1fr !important;
         gap: 15px !important;
       }
 
-      /* Allow side-by-side flex items (like buttons) to wrap naturally */
-      div[style*="display: flex"] {
-        flex-wrap: wrap !important;
-      }
+      div[style*="display: flex"] { flex-wrap: wrap !important; }
       
       /* 4. Fix topbar wrapping */
       #globalDateControls {
         margin-top: 15px !important;
         width: 100% !important;
-        justify-content: flex-start !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
       }
+      #globalDateControls button { width: 100% !important; margin-left: 0 !important; }
 
       /* 5. Force ALL tables to scroll horizontally so they don't break the screen */
       .table-responsive, table.data-table {
@@ -82,21 +105,6 @@
         overflow-x: auto !important;
         -webkit-overflow-scrolling: touch !important;
         white-space: nowrap !important;
-      }
-      
-      /* 6. Force ALL hard-coded Modals/Popups to shrink to fit the phone */
-      .modal, 
-      div[style*="width: 700px"], 
-      div[style*="width: 850px"], 
-      div[style*="width: 800px"],
-      div[style*="width: 600px"],
-      div[style*="width: 900px"] {
-        width: 95% !important;
-        max-width: 95% !important;
-        min-width: 0 !important;
-        margin: 10px auto !important;
-        height: auto !important;
-        max-height: 90vh !important;
       }
     }
   </style>
