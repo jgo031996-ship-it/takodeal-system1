@@ -71,7 +71,6 @@
         .search-bar-container { position: sticky; top: 76px; z-index: 30; background: white; padding: 10px 24px; border-bottom: 1px solid #f3f4f6; }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans pb-24">
 
     <body class="bg-gray-50 text-gray-800 font-sans pb-24">
 
@@ -280,7 +279,7 @@
  
     <!-- Firebase Integration -->
     <script type="module">
-       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot, query, where, limit, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -303,7 +302,7 @@
 
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
 
-        async function loadLiveMenu() {
+        window.loadLiveMenu = async function() {
             try {
                 const snap = await getDocs(collection(db, "menu"));
                 let categoriesMap = {};
@@ -323,7 +322,7 @@
                 renderAccordions(categoriesMap);
             } catch (error) {
                 console.error(error);
-                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-400">Failed to load menu.</div>';
+                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-400">Failed to load menu. Check connection.</div>';
             }
         }
 
@@ -344,7 +343,7 @@
                     }
 
                     return `
-                        <div class="menu-item-row flex items-center p-3 bg-white border border-gray-100 rounded-2xl shadow-sm mb-3 cursor-pointer active:scale-95 transition-all hover:border-red-200 hover:shadow-md animate-float" onclick="openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="menu-item-row flex items-center p-3 bg-white border border-gray-100 rounded-2xl shadow-sm mb-3 cursor-pointer active:scale-95 transition-all hover:border-red-200 hover:shadow-md animate-float" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
                             <div class="ml-3 flex-1">
                                 <h4 class="font-black text-sm text-gray-800 leading-tight">${item.name} ${badgeHtml}</h4>
@@ -355,7 +354,6 @@
                     `;
                 }).join('');
 
-                // Removed the "open" attribute so it is CLOSED by default!
                 container.innerHTML += `
                     <details class="category-accordion bg-white rounded-xl shadow-sm border border-gray-200 group overflow-hidden mb-3">
                         <summary class="font-black p-4 cursor-pointer flex justify-between items-center bg-gray-50 select-none">
@@ -389,10 +387,7 @@
                     }
                 });
 
-                // If searching, automatically open the accordion. If empty, hide the whole category.
-                if (input.length > 0) {
-                    acc.open = true;
-                }
+                if (input.length > 0) acc.open = true;
                 acc.style.display = hasVisibleItems ? 'block' : 'none';
             });
         }
@@ -420,7 +415,6 @@
                 addonsContainer.classList.remove('hidden');
                 let newUiHtml = '';
                 
-                // Group addons to prevent duplicates
                 let groupedAddons = {};
                 item.addons.forEach(a => {
                     if (!groupedAddons[a.name]) {
@@ -433,7 +427,6 @@
                 let addonsArr = Object.values(groupedAddons);
                 let hasSauce = addonsArr.some(a => a.name === "Regular Sauce" || a.name === "Spicy Sauce");
 
-                // 🎯 REQUIRED SAUCE RADIO BUTTONS
                 if (hasSauce) {
                     let regAddon = addonsArr.find(a => a.name === "Regular Sauce") || { linkedIngredient: "Regular Sauce", deductQty: 1 };
                     let spicyAddon = addonsArr.find(a => a.name === "Spicy Sauce") || { linkedIngredient: "Spicy Sauce", deductQty: 1 };
@@ -461,7 +454,6 @@
                     `;
                 }
 
-                // 🎯 OPTIONAL EXTRA ADD-ONS (Checkboxes)
                 let extras = addonsArr.filter(a => a.name !== "Regular Sauce" && a.name !== "Spicy Sauce");
                 if (extras.length > 0) {
                     newUiHtml += `<div class="mb-2"><h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Extra Add-ons (Optional)</h3><div class="space-y-2">`;
@@ -477,12 +469,10 @@
                     });
                     newUiHtml += `</div></div>`;
                 }
-                
                 addonsList.innerHTML = newUiHtml;
             } else { 
                 addonsContainer.classList.add('hidden'); 
             }
-
             document.getElementById('itemModal').classList.remove('hidden');
         }
 
@@ -508,29 +498,15 @@
             let activeAddons = {};
             let addonsTotal = 0;
 
-            // 1. Grab the Selected Sauce Radio Button
             document.querySelectorAll('#modalAddonsList .modal-addon-radio:checked').forEach(radio => {
                 let parts = radio.value.split('|');
-                activeAddons[parts[0]] = { 
-                    name: parts[0], 
-                    price: parseFloat(parts[1]), 
-                    qty: 1, 
-                    linkedIngredient: parts[2], 
-                    deductQty: parseFloat(parts[3]) 
-                };
+                activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1, linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) };
                 addonsTotal += parseFloat(parts[1]);
             });
 
-            // 2. Grab the Checkboxes
             document.querySelectorAll('#modalAddonsList .modal-addon-cb:checked').forEach(cb => {
                 let parts = cb.value.split('|');
-                activeAddons[parts[0]] = { 
-                    name: parts[0], 
-                    price: parseFloat(parts[1]), 
-                    qty: 1, 
-                    linkedIngredient: parts[2], 
-                    deductQty: parseFloat(parts[3]) 
-                };
+                activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1, linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) };
                 addonsTotal += parseFloat(parts[1]);
             });
 
@@ -544,15 +520,16 @@
                 notes: notes
             });
 
-            updateCartUI();
-            closeItemModal();
+            window.updateCartUI();
+            window.closeItemModal();
+
             // 🔥 TRIGGER THE ENTERTAINMENT!
             const toast = document.getElementById('cartToast');
             toast.classList.add('show');
             setTimeout(() => toast.classList.remove('show'), 2500);
-            
         }
-        function updateCartUI() {
+
+        window.updateCartUI = function() {
             let grandTotal = 0; let totalItems = 0;
             window.cart.forEach(item => { grandTotal += item.lineTotalFinal; totalItems += item.quantity; });
             document.getElementById('floatingTotal').innerText = `₱${grandTotal.toFixed(2)} (${totalItems})`;
@@ -564,7 +541,7 @@
                 alert("Your cart is empty! Add some delicious Takoyaki first.");
                 return;
             }
-            renderCartModal();
+            window.renderCartModal();
             document.getElementById('cartModal').classList.remove('hidden');
         };
 
@@ -606,7 +583,7 @@
                             ${notesText}
                             <div class="text-red-600 font-bold text-sm mt-1">₱${item.lineTotalFinal.toFixed(2)}</div>
                         </div>
-                        <button onclick="removeCartItem(${index})" class="w-8 h-8 flex items-center justify-center bg-red-50 text-red-500 rounded-full font-bold active:bg-red-100 transition-colors ml-3 border border-red-100">✖</button>
+                        <button onclick="window.removeCartItem(${index})" class="w-8 h-8 flex items-center justify-center bg-red-50 text-red-500 rounded-full font-bold active:bg-red-100 transition-colors ml-3 border border-red-100">✖</button>
                     </div>
                 `;
             });
@@ -617,13 +594,11 @@
 
         window.removeCartItem = function(index) {
             window.cart.splice(index, 1);
-            updateCartUI();
-            renderCartModal();
-            // If they delete the last item, close the modal automatically
-            if (window.cart.length === 0) closeCartModal();
+            window.updateCartUI();
+            window.renderCartModal();
+            if (window.cart.length === 0) window.closeCartModal();
         };
 
-        // Update the reset button logic so it fixes the new modal button if an error occurs
         window.resetSubmitButton = function(grandTotal) {
             let submitBtn = document.getElementById('submitBtn');
             let reviewBtn = document.getElementById('reviewBtn');
@@ -632,7 +607,7 @@
             if(reviewBtn) { reviewBtn.disabled = false; }
         }
 
-       // ==========================================
+        // ==========================================
         // 📍 SMART GPS, PERSISTENCE & AUTO-ROUTER
         // ==========================================
         const BRANCH_ZONES = {
@@ -643,9 +618,8 @@
 
         window.currentOrderId = null;
         window.cancelInterval = null;
-        window.pendingOrderData = null; // Holds the data while the modal is open
+        window.pendingOrderData = null; 
 
-        // 1. Listen to the Cashier's Delivery Toggle
         onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
             let deliveryOpt = document.getElementById('deliveryOption');
             let orderTypeSelect = document.getElementById('orderType');
@@ -653,12 +627,10 @@
             if(docSnap.exists()) {
                 let isEnabled = docSnap.data().enabled;
                 if(isEnabled) {
-                    deliveryOpt.text = "Delivery";
-                    deliveryOpt.disabled = false;
+                    if(deliveryOpt) { deliveryOpt.text = "Delivery"; deliveryOpt.disabled = false; }
                 } else {
-                    deliveryOpt.text = "Delivery (Temporarily Unavailable)";
-                    deliveryOpt.disabled = true;
-                    if(orderTypeSelect.value === 'Delivery') {
+                    if(deliveryOpt) { deliveryOpt.text = "Delivery (Temporarily Unavailable)"; deliveryOpt.disabled = true; }
+                    if(orderTypeSelect && orderTypeSelect.value === 'Delivery') {
                         orderTypeSelect.value = 'Takeout';
                         window.toggleOrderTypeView();
                         alert("⚠️ The store just disabled deliveries due to high order volume. Your order has been switched to Pick-up.");
@@ -685,9 +657,7 @@
             else document.getElementById('codChangeSection').classList.add('hidden');
         }
 
-        // 2. The Unbreakable Timer & Status Monitor
-        function startCancelTimer() {
-            // Check memory so refreshing doesn't reset the 5 minutes!
+        window.startCancelTimer = function() {
             let expiresAt = localStorage.getItem('takodealCancelExpiresAt');
             if (!expiresAt) {
                 expiresAt = Date.now() + 300000; // 5 mins from now
@@ -716,14 +686,21 @@
             onSnapshot(doc(db, "incoming_orders", docId), (snapshot) => {
                 if (snapshot.exists()) {
                     const currentStatus = snapshot.data().status;
-                    const icon = document.getElementById('trackerIcon');
+                    
+                    // We check if the elements exist so the animation doesn't break
+                    const chefContainer = document.querySelector('.chef-container');
+                    const imgTracker = document.getElementById('trackerIconImg');
+                    const oldIcon = document.getElementById('trackerIcon');
+                    
                     const title = document.getElementById('trackerTitle');
                     const subtitle = document.getElementById('trackerSubtitle');
                     const waitTime = document.getElementById('waitTimeDisplay');
 
                     if (currentStatus === "preparing") {
-                        icon.innerText = "🍳";
-                        icon.classList.remove('animate-pulse');
+                        if (chefContainer) chefContainer.classList.add('hidden');
+                        if (imgTracker) imgTracker.classList.add('hidden');
+                        if (oldIcon) { oldIcon.classList.remove('hidden'); oldIcon.innerText = "🍳"; oldIcon.classList.remove('animate-pulse'); }
+                        
                         title.innerText = "Preparing Your Food!";
                         title.classList.add('text-green-600');
                         subtitle.innerText = "The kitchen is working on your order right now.";
@@ -732,11 +709,13 @@
                         clearInterval(window.cancelInterval);
                         document.getElementById('cancelOrderSection').classList.add('hidden');
                         localStorage.removeItem('takodealCancelExpiresAt');
-                        localStorage.removeItem('activeTakodealOrderId'); // Safe to clear, order is accepted
+                        localStorage.removeItem('activeTakodealOrderId'); 
                     } 
                     else if (currentStatus === "rejected" || currentStatus === "rejected_by_customer") {
-                        icon.innerText = "❌";
-                        icon.classList.remove('animate-pulse');
+                        if (chefContainer) chefContainer.classList.add('hidden');
+                        if (imgTracker) imgTracker.classList.add('hidden');
+                        if (oldIcon) { oldIcon.classList.remove('hidden'); oldIcon.innerText = "❌"; oldIcon.classList.remove('animate-pulse'); }
+                        
                         title.innerText = "Order Cancelled";
                         title.classList.add('text-red-600');
                         if (currentStatus === "rejected") subtitle.innerText = "We're sorry, but the store had to cancel your order.";
@@ -751,25 +730,35 @@
                     // Document was deleted (e.g. checked out by cashier)
                     localStorage.removeItem('activeTakodealOrderId');
                     localStorage.removeItem('takodealCancelExpiresAt');
+                    
+                    const chefContainer = document.querySelector('.chef-container');
+                    const imgTracker = document.getElementById('trackerIconImg');
+                    const oldIcon = document.getElementById('trackerIcon');
+                    
+                    if (chefContainer) chefContainer.classList.add('hidden');
+                    if (imgTracker) imgTracker.classList.add('hidden');
+                    if (oldIcon) { oldIcon.classList.remove('hidden'); oldIcon.innerText = "✅"; oldIcon.classList.remove('animate-pulse'); }
+                    
+                    const title = document.getElementById('trackerTitle');
+                    const subtitle = document.getElementById('trackerSubtitle');
+                    const waitTime = document.getElementById('waitTimeDisplay');
+
+                    title.innerText = "Order Complete!";
+                    title.classList.replace('text-gray-800', 'text-green-600');
+                    subtitle.innerText = "Thank you for ordering! Please pick up your food at the counter.";
+                    waitTime.innerText = "Ready!";
+                    document.getElementById('cancelOrderSection').classList.add('hidden');
                 }
             });
         };
 
-        // 3. PERSISTENCE CHECKER (Runs on load)
-        async function checkActiveOrder() {
+        window.checkActiveOrder = async function() {
             let savedOrderId = localStorage.getItem('activeTakodealOrderId');
             if (savedOrderId) {
                 document.getElementById('orderingScreen').classList.add('hidden');
                 document.getElementById('trackerScreen').classList.remove('hidden');
                 document.getElementById('trackerScreen').classList.add('flex');
                 
-                // 🔥 NEW: LOAD THE BRANCH FROM MEMORY IF THEY REFRESH
-                let savedBranch = localStorage.getItem('activeTakodealBranch');
-                if (savedBranch) {
-                     document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + savedBranch;
-                }
-                
-                // 🔥 NEW: LOAD THE BRANCH FROM MEMORY IF THEY REFRESH
                 let savedBranch = localStorage.getItem('activeTakodealBranch');
                 if (savedBranch) {
                      document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + savedBranch;
@@ -787,7 +776,6 @@
                 await updateDoc(doc(db, "incoming_orders", window.currentOrderId), {
                     status: "rejected_by_customer"
                 });
-                // The listener will automatically update the UI!
             } catch(e) { console.error("Cancel error", e); }
         };
 
@@ -798,28 +786,22 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        function resetSubmitButton(grandTotal) {
-            document.getElementById('submitBtn').innerHTML = `<span>Send Order</span><span id="floatingTotal">₱${grandTotal.toFixed(2)}</span>`;
-            document.getElementById('submitBtn').disabled = false;
-        }
-
         // 4. THE GRAND SUBMISSION ENGINE
         window.submitOrder = async function() {
             if (window.cart.length === 0) { alert("Your order is empty."); return; }
 
-            // 🔥 GRAB MANUAL NAME AND CONTACT NUMBER
             const name = document.getElementById('customerName').value.trim();
             const contact = document.getElementById('customerContact').value.trim();
             
             if (!name) { 
                 alert("👤 Please provide your name so we know who is ordering!"); 
-                closeCartModal(); // Close cart so they can type
+                window.closeCartModal(); 
                 document.getElementById('customerName').focus();
                 return; 
             }
             if (!contact) { 
                 alert("📞 Please provide a contact number so our team can reach you!"); 
-                closeCartModal();
+                window.closeCartModal();
                 document.getElementById('customerContact').focus();
                 return; 
             }
@@ -830,7 +812,7 @@
 
             if (orderType === "Delivery" && !deliveryNotes) {
                 alert("Please provide delivery details/landmarks so our rider can find you easily!"); 
-                closeCartModal();
+                window.closeCartModal();
                 return;
             }
 
@@ -849,7 +831,6 @@
             btn.innerHTML = '<span class="mx-auto">Uploading Photo...</span>'; 
             btn.disabled = true;
 
-            // 🔥 UPLOAD THE IMAGE TO FIREBASE STORAGE (If attached)
             let locationPicUrl = "";
             let imageFile = document.getElementById('locationImage').files[0];
             
@@ -902,7 +883,7 @@
                     branch: nearestBranch, 
                     orderType: orderType,  
                     deliveryAddress: deliveryNotes,
-                    locationImage: locationPicUrl, // 📸 PASSES THE IMAGE
+                    locationImage: locationPicUrl, 
                     items: window.cart, 
                     totalAmount: grandTotal,
                     paymentMode: paymentMode, 
@@ -913,15 +894,12 @@
                     timestamp: serverTimestamp()
                 };
 
-                // 🔥 BYPASS THE CONFIRMATION AND SEND STRAIGHT TO KITCHEN!
                 btn.innerHTML = '<span class="mx-auto">Sending to Kitchen...</span>';
 
                 try {
                     const docRef = await addDoc(collection(db, "incoming_orders"), window.pendingOrderData);
                     
                     localStorage.setItem('activeTakodealOrderId', docRef.id);
-                    
-                    // 🔥 NEW: SAVE THE BRANCH TO MEMORY!
                     localStorage.setItem('activeTakodealBranch', nearestBranch);
                     
                     document.getElementById('cartModal').classList.add('hidden');
@@ -930,12 +908,11 @@
                     document.getElementById('trackerScreen').classList.remove('hidden');
                     document.getElementById('trackerScreen').classList.add('flex');
                     
-                    // 🔥 NEW: PRINT THE BRANCH ON THE SCREEN!
                     document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + nearestBranch;
                     
                     window.scrollTo(0,0);
                     
-                    startCancelTimer(); 
+                    window.startCancelTimer(); 
                     window.monitorOrderStatus(docRef.id);
 
                 } catch (error) {
@@ -950,56 +927,10 @@
             }, { enableHighAccuracy: true }); 
         };
 
-        // 5. THE FINAL CONFIRMATION PUSH
-        window.executeConfirmedOrder = async function() {
-            document.getElementById('confirmOrderModal').classList.add('hidden');
-            const btn = document.getElementById('submitBtn');
-            btn.innerHTML = '<span class="mx-auto">Sending to Kitchen...</span>';
-
-            try {
-                    const docRef = await addDoc(collection(db, "incoming_orders"), window.pendingOrderData);
-                    
-                    localStorage.setItem('activeTakodealOrderId', docRef.id);
-                    // 🔥 NEW: SAVE THE BRANCH TO MEMORY!
-                    localStorage.setItem('activeTakodealBranch', nearestBranch);
-                    
-                    document.getElementById('cartModal').classList.add('hidden');
-                    document.getElementById('orderingScreen').classList.add('hidden');
-                    
-                    document.getElementById('trackerScreen').classList.remove('hidden');
-                    document.getElementById('trackerScreen').classList.add('flex');
-                    
-                    // 🔥 NEW: PRINT THE BRANCH ON THE SCREEN!
-                    document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + nearestBranch;
-                    
-                    window.scrollTo(0,0);
-                
-                startCancelTimer(); 
-                window.monitorOrderStatus(docRef.id);
-
-            } catch (error) {
-                console.error(error); 
-                alert("Error sending order. Please check your connection.");
-                resetSubmitButton(window.pendingOrderData.totalAmount);
-            }
-        };
-
-        // Initialize the app
-        loadLiveMenu();
-        checkActiveOrder(); // Check if they refreshed the page!
-
-        // 🔥 WAKE UP THE APP (Bypass Facebook!)
+        // 🔥 WAKE UP THE APP AND LOAD MENU
         document.addEventListener("DOMContentLoaded", async () => {
-            // 1. Check if they are already waiting for an order
-            await checkActiveOrder();
-            
-            // 2. If no active order, trigger the menu fetch!
-            // (Note: If your menu loading function is named something else like 'fetchMenu()' or 'initApp()', use that here instead!)
-            if (typeof loadMenu === 'function') {
-                loadMenu(); 
-            } else if (typeof fetchAndRenderMenu === 'function') {
-                fetchAndRenderMenu();
-            }
+            await window.checkActiveOrder();
+            window.loadLiveMenu(); 
         });
         
     </script>
