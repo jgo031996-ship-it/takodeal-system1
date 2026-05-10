@@ -1458,7 +1458,7 @@ window.submitStaffRequest = async function(requestType) {
         payload.leaveType = document.getElementById('reqLeaveType').value; 
         payload.reason = document.getElementById('reqLeaveReason').value.trim();
         if (!payload.startDate || !payload.endDate || !payload.reason) { alert("❌ Dates and reason required."); return; }
-    } } else if (requestType === "Staff Meal") {
+    } else if (requestType === "Staff Meal") {
         payload.item = document.getElementById('reqMealItem').value.trim(); 
         payload.amount = parseFloat(document.getElementById('reqMealCost').value);
         if (!payload.item || isNaN(payload.amount) || payload.amount < 0) { alert("❌ Item and cost required."); return; }
@@ -1467,7 +1467,6 @@ window.submitStaffRequest = async function(requestType) {
         let imageFile = document.getElementById('reqMealProof').files[0];
         if (imageFile) {
             try {
-                // Change button text so they know it's working
                 let btns = document.querySelectorAll('#formReqMeal button');
                 if(btns.length > 0) btns[0].innerText = "Uploading proof...";
                 
@@ -1479,7 +1478,6 @@ window.submitStaffRequest = async function(requestType) {
             } catch (e) { console.error("Upload failed", e); }
         }
     } else if (requestType === "Reason Letter") {
-        // Adding safety for Reason Letters just in case!
         let alertId = document.getElementById('explainAlertId').value;
         if (!alertId || alertId.includes("Loading")) {
              alert("❌ Please select a specific variance or shift to explain."); return;
@@ -1494,10 +1492,18 @@ window.submitStaffRequest = async function(requestType) {
         document.getElementById('reqAdvAmount').value = ''; document.getElementById('reqAdvReason').value = '';
         document.getElementById('reqLeaveStart').value = ''; document.getElementById('reqLeaveEnd').value = '';
         document.getElementById('reqLeaveReason').value = ''; document.getElementById('reqMealItem').value = '';
-        document.getElementById('reqMealCost').value = ''; document.getElementById('staffRequestsModal').style.display = 'none';
+        document.getElementById('reqMealCost').value = ''; 
+        
+        // Reset the button text if it was changed
+        let btns = document.querySelectorAll('#formReqMeal button');
+        if(btns.length > 0) btns[0].innerText = "Log Staff Meal";
+
+        document.getElementById('staffRequestsModal').style.display = 'none';
     } catch (error) { 
         console.error(error); 
         alert("❌ Failed to submit."); 
+        let btns = document.querySelectorAll('#formReqMeal button');
+        if(btns.length > 0) btns[0].innerText = "Log Staff Meal";
     }
 };
 
