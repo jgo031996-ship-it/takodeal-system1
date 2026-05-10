@@ -759,11 +759,13 @@
             
             if (!name) { 
                 alert("👤 Please provide your name so we know who is ordering!"); 
+                closeCartModal(); // Close cart so they can type
                 document.getElementById('customerName').focus();
                 return; 
             }
             if (!contact) { 
                 alert("📞 Please provide a contact number so our team can reach you!"); 
+                closeCartModal();
                 document.getElementById('customerContact').focus();
                 return; 
             }
@@ -773,7 +775,9 @@
             let deliveryNotes = document.getElementById('deliveryAddress').value.trim();
 
             if (orderType === "Delivery" && !deliveryNotes) {
-                alert("Please provide delivery details/landmarks so our rider can find you easily!"); return;
+                alert("Please provide delivery details/landmarks so our rider can find you easily!"); 
+                closeCartModal();
+                return;
             }
 
             if (orderType === "Delivery" && paymentMode === "cash") {
@@ -788,7 +792,7 @@
                 alert("❌ Your browser does not support location services. We cannot route your order."); return;
             }
 
-            btn.innerHTML = '<span class="mx-auto">Securing Order Data...</span>'; 
+            btn.innerHTML = '<span class="mx-auto">Uploading Photo...</span>'; 
             btn.disabled = true;
 
             // 🔥 UPLOAD THE IMAGE TO FIREBASE STORAGE (If attached)
@@ -797,7 +801,6 @@
             
             if (orderType === "Delivery" && imageFile) {
                 try {
-                    btn.innerHTML = '<span class="mx-auto">Uploading Photo...</span>';
                     const fileExt = imageFile.name.split('.').pop();
                     const fileName = `location_pics/delivery_${Date.now()}.${fileExt}`;
                     const storageRef = ref(storage, fileName);
@@ -805,11 +808,10 @@
                     locationPicUrl = await getDownloadURL(snapshot.ref);
                 } catch (e) {
                     console.error("Image upload failed", e);
-                    alert("Warning: Could not upload your picture, but we will still send your order.");
                 }
             }
 
-            btn.innerHTML = '<span class="mx-auto">Finding Nearest TAKODEÁL...</span>'; 
+            btn.innerHTML = '<span class="mx-auto">Routing Order...</span>'; 
 
             navigator.geolocation.getCurrentPosition(async (position) => {
                 const userLat = position.coords.latitude; 
@@ -826,26 +828,19 @@
                     }
                 }
 
-                btn.innerHTML = '<span class="mx-auto">Checking Store Status...</span>';
+                btn.innerHTML = '<span class="mx-auto">Checking Store...</span>';
 
                 try {
                     const shiftQ = query(collection(db, "shifts"), where("branch", "==", nearestBranch), where("active", "==", true), limit(1));
                     const shiftSnap = await getDocs(shiftQ);
                     
                     if (shiftSnap.empty) {
-                        alert(`🛑 TAKODEÁL ${nearestBranch} is currently CLOSED.\n\nThey have not opened their register yet today. Please try again later.`);
-                        resetSubmitButton(grandTotal);
+                        alert(`🛑 TAKODEÁL ${nearestBranch} is currently CLOSED.`);
+                        window.resetSubmitButton(grandTotal);
                         return; 
                     }
                 } catch (e) { console.error("Shift check error", e); }
 
-                if (orderType === "Delivery" && document.getElementById('deliveryOption').disabled) {
-                    alert("🛑 Deliveries are currently disabled by the store due to high volume. Please switch your Order Type to Pick-up or Dine-in.");
-                    resetSubmitButton(grandTotal);
-                    return; 
-                }
-
-                // 🔥 MAGIC TRICK: We format the name so the Cashier App doesn't need ANY code updates to see the Phone Number!
                 let cashierVisibleName = `${name} (${orderType}) - 📞 ${contact}`;
 
                 window.pendingOrderData = {
@@ -853,7 +848,7 @@
                     branch: nearestBranch, 
                     orderType: orderType,  
                     deliveryAddress: deliveryNotes,
-                    locationImage: locationPicUrl, // 📸 PASSES THE IMAGE TO THE CASHIER!
+                    locationImage: locationPicUrl, // 📸 PASSES THE IMAGE
                     items: window.cart, 
                     totalAmount: grandTotal,
                     paymentMode: paymentMode, 
@@ -864,13 +859,34 @@
                     timestamp: serverTimestamp()
                 };
 
-                let confirmMsg = `Routing your order to: <strong>TAKODEÁL ${nearestBranch}</strong><br>Order Type: <strong>${orderType}</strong><br><br>Proceed to send order to the kitchen?`;
-                document.getElementById('confirmModalText').innerHTML = confirmMsg;
-                document.getElementById('confirmOrderModal').classList.remove('hidden');
+                // 🔥 BYPASS THE CONFIRMATION AND SEND STRAIGHT TO KITCHEN!
+                btn.innerHTML = '<span class="mx-auto">Sending to Kitchen...</span>';
+
+                try {
+                    const docRef = await addDoc(collection(db, "incoming_orders"), window.pendingOrderData);
+                    
+                    localStorage.setItem('activeTakodealOrderId', docRef.id);
+                    
+                    // 🎯 THE FIX: HIDE THE CART MODAL AND SHOW THE TRACKER!
+                    document.getElementById('cartModal').classList.add('hidden');
+                    document.getElementById('orderingScreen').classList.add('hidden');
+                    
+                    document.getElementById('trackerScreen').classList.remove('hidden');
+                    document.getElementById('trackerScreen').classList.add('flex');
+                    window.scrollTo(0,0);
+                    
+                    startCancelTimer(); 
+                    window.monitorOrderStatus(docRef.id);
+
+                } catch (error) {
+                    console.error(error); 
+                    alert("Error sending order. Please check your connection.");
+                    window.resetSubmitButton(window.pendingOrderData.totalAmount);
+                }
 
             }, (error) => {
                 alert("📍 LOCATION REQUIRED\n\nPlease allow location access so we can route your order to the nearest branch.");
-                resetSubmitButton(grandTotal);
+                window.resetSubmitButton(grandTotal);
             }, { enableHighAccuracy: true }); 
         };
 
