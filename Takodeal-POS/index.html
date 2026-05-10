@@ -1601,6 +1601,11 @@
                   <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount to Deduct (₱)</label>
                   <input type="number" id="reqMealCost" placeholder="Staff discounted price..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #f59e0b; outline: none;">
 
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt/POS Proof 📸</label>
+                  <input type="file" id="reqMealProof" accept="image/*" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; background: white;">
+                  
+                  <input type="number" id="reqMealCost" placeholder="Staff discounted price..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #f59e0b; outline: none;">
+
                   <button onclick="submitStaffRequest('Staff Meal')" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Log Staff Meal</button>
               </div>
 
@@ -1708,7 +1713,7 @@
             style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🥤
             Print Bar</button>
         </div>
-        <button class="btn-clear" onclick="closeModal('receiptModal')"
+        <button class="btn-clear" onclick="window.closeAndNextOrder()"
           style="width:100%; padding:14px; border:2px solid #e74c3c; color:#e74c3c; background:transparent; font-weight:bold; border-radius:8px; margin-top: 5px;">Close
           & Next Order</button>
       </div>
