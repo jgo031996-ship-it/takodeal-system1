@@ -252,7 +252,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, onSnapshot, query, where, limit, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         // 🔥 NEW: AUTH IMPORTS
-        import { getAuth, signInWithPopup, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, FacebookAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -269,6 +269,11 @@
         const fbProvider = new FacebookAuthProvider();
         window.currentCustomer = null;
 
+        // 🔥 NEW: Catch iOS users returning from Facebook Redirect
+        getRedirectResult(auth).catch((error) => {
+            console.error("Redirect Error:", error);
+        });
+        
         // 🔥 NEW: DETECT FACEBOOK/MESSENGER IN-APP BROWSER
         function isFacebookApp() {
             var ua = navigator.userAgent || navigator.vendor || window.opera;
@@ -314,17 +319,25 @@
                 let btn = document.querySelector('#customerLoginScreen button');
                 if(btn) btn.innerHTML = 'Connecting...';
                 
-                // Use Popup so modern mobile browsers don't wipe the memory!
+                // Try Popup first (Works perfectly on Android & Desktop)
                 await signInWithPopup(auth, fbProvider);
                 
             } catch (error) {
-            console.error("Login Error:", error);
-            // 🔥 NEW: This will print the exact technical error to your phone screen!
-            alert("System Error: " + error.code + "\n\nDetails: " + error.message);
-            
-            let btn = document.querySelector('#customerLoginScreen button');
-            if(btn) btn.innerHTML = 'Continue with Facebook';
-        }
+                console.error("Login Error:", error);
+                
+                // 🍎 THE APPLE FIX: If the iPhone blocks the popup, fall back to Redirect!
+                if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/popup-blocked') {
+                    let btn = document.querySelector('#customerLoginScreen button');
+                    if(btn) btn.innerHTML = 'Redirecting to Facebook...';
+                    
+                    await signInWithRedirect(auth, fbProvider);
+                } else {
+                    // Show standard error if it's something else
+                    alert("System Error: " + error.code + "\n\nDetails: " + error.message);
+                    let btn = document.querySelector('#customerLoginScreen button');
+                    if(btn) btn.innerHTML = 'Continue with Facebook';
+                }
+            }
         };
 
         window.logoutCustomer = async function() {
