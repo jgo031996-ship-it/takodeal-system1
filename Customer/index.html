@@ -25,11 +25,44 @@
         }
         .toast-notification.show { opacity: 1; top: 40px; }
 
-        /* 👨‍🍳 CHEF COOKING ANIMATION */
-        @keyframes cookBounce {
-            0% { transform: translateY(0) rotate(-3deg); }
-            50% { transform: translateY(-15px) rotate(3deg); }
-            100% { transform: translateY(0) rotate(-3deg); }
+        /* 👨‍🍳 ADVANCED CHEF ANIMATION ENGINE */
+        /* 1. Body Bounce */
+        @keyframes chefBodyBob {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        
+        /* 2. Cooking Pick Wiggle (Flipping) */
+        @keyframes pickWiggle {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(-20deg) translateX(-2px); }
+        }
+        
+        /* 3. Sauce Brush Bob (Dipping) */
+        @keyframes brushBob {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(12px) rotate(5deg); }
+        }
+
+        .chef-container { position: relative; width: 220px; height: 220px; margin-bottom: 20px; }
+        
+        .chef-body { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: url('cooking-chef.png') no-repeat center center; background-size: contain;
+            animation: chefBodyBob 1s infinite ease-in-out;
+        }
+
+        /* Create invisible areas for the hands based on your PNG structure */
+        .chef-body::before { /* The Cooking Pick */
+            content: "🧑‍🍳"; font-size: 3rem; color: transparent; /* Makes the area interactable, not visible */
+            position: absolute; top: 56%; left: 33%; width: 40px; height: 40px;
+            animation: pickWiggle 0.4s infinite ease-in-out;
+        }
+
+        .chef-body::after { /* The Sauce Jar Hand */
+            content: "🧑‍🍳"; font-size: 3rem; color: transparent;
+            position: absolute; top: 56%; right: 28%; width: 50px; height: 50px;
+            animation: brushBob 1.2s infinite ease-in-out;
         }
         .animate-cooking { animation: cookBounce 0.8s infinite ease-in-out; }
         
@@ -736,6 +769,12 @@
                      document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + savedBranch;
                 }
                 
+                // 🔥 NEW: LOAD THE BRANCH FROM MEMORY IF THEY REFRESH
+                let savedBranch = localStorage.getItem('activeTakodealBranch');
+                if (savedBranch) {
+                     document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + savedBranch;
+                }
+                
                 window.monitorOrderStatus(savedOrderId);
             }
         }
@@ -882,12 +921,18 @@
                     
                     localStorage.setItem('activeTakodealOrderId', docRef.id);
                     
-                    // 🎯 THE FIX: HIDE THE CART MODAL AND SHOW THE TRACKER!
+                    // 🔥 NEW: SAVE THE BRANCH TO MEMORY!
+                    localStorage.setItem('activeTakodealBranch', nearestBranch);
+                    
                     document.getElementById('cartModal').classList.add('hidden');
                     document.getElementById('orderingScreen').classList.add('hidden');
                     
                     document.getElementById('trackerScreen').classList.remove('hidden');
                     document.getElementById('trackerScreen').classList.add('flex');
+                    
+                    // 🔥 NEW: PRINT THE BRANCH ON THE SCREEN!
+                    document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + nearestBranch;
+                    
                     window.scrollTo(0,0);
                     
                     startCancelTimer(); 
