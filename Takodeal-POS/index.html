@@ -36,7 +36,8 @@
       box-sizing: border-box; 
       background-color: var(--bg-color);
       display: flex;
-      height: 100vh;
+      height: 100vh; /* Fallback for old devices */
+      height: 100dvh; /* 🔥 THE FIX: Adapts automatically to mobile browser bars! */
       overflow: hidden;
       color: var(--text-main);
       user-select: none;
@@ -264,9 +265,10 @@
     .view-container {
       display: none;
       width: 100%;
-      height: calc(100vh - 88px); /* 👈 60px top bar + 28px clock bar */
+      height: calc(100vh - 88px); /* Fallback */
+      height: calc(100dvh - 88px); /* 🔥 THE FIX */
       flex: 1;
-      overflow: hidden; /* 👈 Lets the inside panels do the scrolling */
+      overflow: hidden; 
       background: var(--bg-color);
     }
 
@@ -295,13 +297,25 @@
 
     .category-header {
       display: flex;
-      flex-wrap: nowrap; /* 👈 Stops them from stacking */
-      gap: 10px;
-      padding: 15px;
+      flex-wrap: wrap; /* 🔥 THE FIX: Makes them stack automatically! */
+      gap: 8px;
+      padding: 10px 15px;
       border-bottom: 1px solid var(--border);
       background: var(--card-bg);
-      overflow-x: auto; /* 👈 Allows sideways scrolling */
-      -webkit-overflow-scrolling: touch; /* Smooth touch scrolling */
+    }
+
+    /* 👈 We don't need the webkit-scrollbar hiding rule anymore, you can delete it if you see it! */
+
+    .cat-btn {
+      padding: 10px 15px; /* Made padding smaller */
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: white;
+      font-weight: bold;
+      color: #666;
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 12px; /* Made text smaller to fit more buttons */
     }
 
     /* 👈 Hides the horizontal scrollbar for a clean look */
@@ -991,20 +1005,21 @@
     }
 
     @media screen and (max-width: 1024px) {
-        .sidebar { 
-            width: 180px; 
-        }
-        body, button, input {
-            font-size: 14px; 
-        }
-        .item-card, .menu-toggle-card { 
-            padding: 10px;
-            min-height: 100px; 
-        }
-        .item-grid {
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); 
-            gap: 10px;
-        }
+        .sidebar { width: 75px; } /* Automatically shrinks sidebar to save space */
+        .sidebar .brand-container, .sidebar .nav-item-text, .sidebar .sidebar-footer { display: none; }
+        .sidebar .brand-icon { display: block; }
+
+        body, button, input { font-size: 13px; }
+        .item-card, .menu-toggle-card { padding: 10px; min-height: 100px; height: 130px; }
+        .item-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+        
+        /* 🔥 Shrink the cart slightly to give the menu more room */
+        .ticket-panel { min-width: 320px; max-width: 350px; }
+        
+        /* 🔥 Fix the bottom spacing so the Place Order button is always safe! */
+        .ticket-footer { padding: 10px 15px; }
+        .total-line.grand { margin-top: 10px; margin-bottom: 10px; padding-top: 10px; font-size: 18px; }
+        .btn-place { padding: 12px; font-size: 16px; }
     }
     
     @media (max-width: 768px) {
