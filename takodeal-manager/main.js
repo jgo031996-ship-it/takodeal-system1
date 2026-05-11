@@ -3135,8 +3135,8 @@ window.saveInventoryEdit = async function () {
             costPerBaseUOM: newBaseCost,
             cost: newBaseCost,
             baseCost: newBaseCost,
-            currentStock: newQty 
-            showToCashier: showCashier
+            currentStock: newQty,       // <--- THE MISSING COMMA IS HERE!
+            showToCashier: showCashier 
         });
         
         // Log Variance if physical stock was changed
