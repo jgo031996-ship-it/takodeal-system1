@@ -11,101 +11,98 @@
 
   <style>
     /* ========================================= */
-    /* 📱 ULTIMATE RESPONSIVE MOBILE ENGINE      */
+    /* 📱 ULTIMATE RESPONSIVE MOBILE & TABLET ENGINE */
     /* ========================================= */
     
+    /* 1. Global Scroll Fix (Locks the background, unlocks the content!) */
     body {
-      height: 100vh; /* Fallback */
-      height: 100dvh; /* Adapts to mobile URL bars */
-      overflow: hidden; 
+        height: 100dvh !important;
+        overflow: hidden !important; 
+        display: flex;
+        margin: 0;
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        background-color: var(--bg-color, #F8F6F0);
+    }
+
+    .main-content {
+        flex: 1;
+        height: 100dvh !important;
+        overflow-y: auto !important; /* 🔥 This makes the dashboard scrollable again! */
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    /* 2. Auto-Adaptive Grids (Automatically wraps cards without squishing them!) */
+    .stat-grid {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
+        gap: 15px !important;
+    }
+
+    /* 3. Table Scroll Protector (Keeps wide tables from breaking the screen) */
+    .table-responsive {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 8px;
     }
 
     .mobile-menu-btn {
-      display: none;
-      background: none;
-      border: none;
-      font-size: 28px;
-      color: #333;
-      cursor: pointer;
-      margin-right: 15px;
+        display: none;
+        background: none;
+        border: none;
+        font-size: 28px;
+        color: #333;
+        cursor: pointer;
+        margin-right: 15px;
     }
 
     /* 📱 TABLET MODE (iPads / Galaxy Tabs) */
     @media (max-width: 1024px) {
-        .sidebar { width: 80px !important; }
+        /* Shrink sidebar to icons only to give tables more room */
+        .sidebar { width: 80px !important; transition: width 0.3s; }
         .sidebar .text, .sidebar .brand .text, .user-profile .details { display: none !important; }
-        .main-content { margin-left: 80px !important; width: calc(100% - 80px) !important; }
+        .main-content { padding: 15px !important; }
         
-        /* Wrap Top Bar controls */
-        #globalDateControls, .card-header div { flex-wrap: wrap; gap: 10px; }
-        
-        /* Make 3-column grids turn into 2-columns on tablets */
-        .stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
-        div[style*="grid-template-columns: repeat(3"] { grid-template-columns: repeat(2, 1fr) !important; }
-        div[style*="grid-template-columns: repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
-        
-        /* Ensure modals don't blow up the screen */
-        .modal { max-width: 95% !important; }
-        .modal-body { overflow-y: auto !important; max-height: 75vh !important; }
+        /* Keep modals safely inside the screen */
+        .modal { width: 90% !important; max-width: 90% !important; }
+        .modal-body { max-height: 75vh !important; overflow-y: auto !important; }
     }
 
     /* 📱 PHONE MODE (Mobile Devices) */
     @media (max-width: 768px) {
-      body { display: block !important; overflow-x: hidden !important; }
-      .mobile-menu-btn { display: block !important; }
-      
-      /* 1. Force sidebar completely off-screen (Hamburger Menu mode) */
-      .sidebar {
-        position: fixed !important;
-        left: -320px !important; 
-        top: 0 !important;
-        height: 100dvh !important;
-        width: 280px !important;
-        z-index: 99999 !important;
-        transition: left 0.3s ease-in-out !important;
-        box-shadow: 4px 0 20px rgba(0,0,0,0.5) !important;
-      }
-      .sidebar.show-mobile { left: 0 !important; }
-      
-      /* Bring the text back when the menu slides out! */
-      .sidebar .text, .sidebar .brand .text, .user-profile .details { display: block !important; }
+        /* Turn sidebar into a sliding hamburger menu */
+        .mobile-menu-btn { display: block !important; }
+        .sidebar {
+            position: fixed !important;
+            left: -300px !important;
+            top: 0 !important;
+            height: 100dvh !important;
+            width: 260px !important;
+            z-index: 99999 !important;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.5) !important;
+        }
+        .sidebar.show-mobile { left: 0 !important; }
+        .sidebar .text, .sidebar .brand .text, .user-profile .details { display: block !important; } 
 
-      /* 2. Main content takes exactly 100% of the phone screen */
-      .main-content {
-        margin-left: 0 !important;
-        width: 100% !important;
-        padding: 15px !important;
-        box-sizing: border-box !important;
-      }
+        /* Main content takes 100% of the screen */
+        .main-content { width: 100% !important; margin-left: 0 !important; padding: 10px !important; padding-bottom: 40px !important; }
 
-      /* 3. Stack ALL stat cards and grids vertically */
-      .stat-grid,
-      div[style*="display: grid"],
-      div[style*="grid-template-columns"] {
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 15px !important;
-      }
+        /* Un-crowd the top bar */
+        .topbar { flex-direction: column !important; align-items: flex-start !important; gap: 10px; }
+        
+        /* Stack date filters and buttons so they are easy to thumb-tap */
+        #globalDateControls { width: 100% !important; flex-direction: column !important; align-items: stretch !important; gap: 10px !important; margin-top: 10px !important; }
+        #globalDateControls input, #globalDateControls button { width: 100% !important; margin: 0 !important; }
+        
+        /* Prevent iOS zoom-in glitch by forcing 16px font on inputs */
+        input, select, button { padding: 12px !important; font-size: 16px !important; }
 
-      div[style*="display: flex"] { flex-wrap: wrap !important; }
-      
-      /* 4. Fix topbar wrapping */
-      #globalDateControls {
-        margin-top: 15px !important;
-        width: 100% !important;
-        flex-direction: column !important;
-        align-items: stretch !important;
-      }
-      #globalDateControls button { width: 100% !important; margin-left: 0 !important; }
-
-      /* 5. Force ALL tables to scroll horizontally so they don't break the screen */
-      .table-responsive, table.data-table {
-        display: block !important;
-        width: 100% !important;
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch !important;
-        white-space: nowrap !important;
-      }
+        /* Fix modal sizing for small phone screens */
+        .modal { width: 95% !important; max-width: 95% !important; margin: 0 auto !important; }
+        .modal-body { padding: 15px !important; }
     }
   </style>
 </head>
