@@ -1185,48 +1185,80 @@ async function loadDispatchLogs() {
 // --- THE MENU EDITOR ENGINE ---
 window.loadMenuEditor = async function() {
   const tbody = document.getElementById('menuTableBody');
+  if(!tbody) return;
   tbody.innerHTML = '<tr><td colspan="4" class="text-center">Fetching global menu...</td></tr>';
+
+  // Grab the selected filter category
+  let catFilterEl = document.getElementById('menuEditorCatFilter');
+  let selectedCat = catFilterEl ? catFilterEl.value : 'All';
 
   try {
     const snap = await getDocs(collection(db, "menu"));
     let html = '';
 
     if (snap.empty) {
-      html = '<tr><td colspan="4" class="text-center">Menu is empty. Click "Add Menu Item" to start.</td></tr>';
-    } else {
-      let items = [];
-      snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-      items.sort((a, b) => a.name.localeCompare(b.name));
-
-      items.forEach(data => {
-        let safePrice = parseFloat(data.price) || 0;
-        
-        // 🖼️ Generate Thumbnail or Placeholder
-        let imgHtml = data.image 
-            ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">` 
-            : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">🍲</div>`;
-
-        html += `
-          <tr>
-            <td>${imgHtml}<strong> ${data.name}</strong></td>
-            <td><span class="badge badge-closed">${data.category || 'Uncategorized'}</span></td>
-            <td style="font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
-            <td style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-              <button class="btn-refresh" onclick="editMenuItem('${data.id}', '${data.name}', ${safePrice}); setTimeout(function(){ if(window.loadCloneDropdown) window.loadCloneDropdown(); }, 200);">✏️ Edit Price</button>
-              
-              <label style="cursor: pointer; background: #f0fdf4; border: 1px solid #16a34a; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin: 0; display: inline-flex; align-items: center;">
-                  📷 Upload Pic
-                  <input type="file" accept="image/jpeg, image/png, image/webp" style="display:none;" onchange="window.uploadMenuImage(event, '${data.id}')">
-              </label>
-
-              <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${data.name}')">🗑️ Delete</button>
-            </td>
-          </tr>
-        `;
-      });
-    }
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center">Menu is empty. Click "Add Menu Item" to start.</td></tr>';
+      return;
+    } 
     
-    tbody.innerHTML = html;
+    let items = [];
+    let uniqueCategories = new Set();
+
+    // Collect all items and dynamically find all categories
+    snap.forEach(doc => {
+        let data = doc.data();
+        items.push({ id: doc.id, ...data });
+        if (data.category) uniqueCategories.add(data.category.trim());
+    });
+
+    // Populate the dropdown with the categories found in the database
+    if (catFilterEl) {
+        let optionsHtml = '<option value="All">All Categories</option>';
+        Array.from(uniqueCategories).sort().forEach(cat => {
+            let isSelected = (cat === selectedCat) ? 'selected' : '';
+            optionsHtml += `<option value="${cat}" ${isSelected}>${cat}</option>`;
+        });
+        catFilterEl.innerHTML = optionsHtml;
+    }
+
+    // Sort items alphabetically
+    items.sort((a, b) => a.name.localeCompare(b.name));
+
+    let count = 0;
+    items.forEach(data => {
+      let cat = data.category || 'Uncategorized';
+      
+      // 🔥 THE FILTER: Skip items that don't match the selected category
+      if (selectedCat !== 'All' && cat !== selectedCat) return;
+      
+      count++;
+      let safePrice = parseFloat(data.price) || 0;
+      
+      // 🖼️ Generate Thumbnail or Placeholder
+      let imgHtml = data.image 
+          ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">` 
+          : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">🍲</div>`;
+
+      html += `
+        <tr>
+          <td>${imgHtml}<strong> ${data.name}</strong></td>
+          <td><span class="badge badge-closed">${cat}</span></td>
+          <td style="font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
+          <td style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button class="btn-refresh" onclick="editMenuItem('${data.id}', '${data.name}', ${safePrice}); setTimeout(function(){ if(window.loadCloneDropdown) window.loadCloneDropdown(); }, 200);">✏️ Edit Price</button>
+            
+            <label style="cursor: pointer; background: #f0fdf4; border: 1px solid #16a34a; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin: 0; display: inline-flex; align-items: center;">
+                📷 Upload Pic
+                <input type="file" accept="image/jpeg, image/png, image/webp" style="display:none;" onchange="window.uploadMenuImage(event, '${data.id}')">
+            </label>
+
+            <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${data.name}')">🗑️ Delete</button>
+          </td>
+        </tr>
+      `;
+    });
+    
+    tbody.innerHTML = count > 0 ? html : `<tr><td colspan="4" class="text-center">No items found in category: ${selectedCat}.</td></tr>`;
   } catch (error) {
     console.error("Menu Engine Error:", error);
     tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error loading menu.</td></tr>';
