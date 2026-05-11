@@ -81,13 +81,30 @@
 
     /* 📱 TABLET MODE (iPads / Galaxy Tabs) */
     @media (max-width: 1024px) {
-        /* Shrink sidebar to icons only to give tables more room */
         .sidebar { width: 80px !important; transition: width 0.3s; }
         .sidebar .text, .sidebar .brand .text, .user-profile .details { display: none !important; }
-        .main-content { padding: 15px !important; }
+        .main-content { padding: 15px !important; width: calc(100% - 80px) !important; margin-left: 80px !important; }
         
-        /* Keep modals safely inside the screen */
-        .modal { width: 90% !important; max-width: 90% !important; }
+        /* 🔥 FIX 1: Make the Top Bar and Buttons wrap beautifully */
+        .topbar { flex-wrap: wrap !important; height: auto !important; padding-bottom: 10px; }
+        #globalDateControls { width: 100%; margin-top: 10px; justify-content: flex-start !important; }
+
+        /* 🔥 FIX 2: Force side-by-side split screens to STACK vertically on tablets! */
+        div[style*="grid-template-columns: 1fr 1fr; gap: 20px;"],
+        div[style*="grid-template-columns: 2fr 1fr; gap: 20px;"] {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        /* 🔥 FIX 3: Stop table text from squishing and wrapping awkwardly */
+        table.data-table th, table.data-table td { white-space: nowrap !important; }
+
+        /* Stat cards stay in a grid, but reduced to 2 columns */
+        .stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        div[style*="grid-template-columns: repeat(3"] { grid-template-columns: repeat(2, 1fr) !important; }
+        div[style*="grid-template-columns: repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
+        
+        .modal { width: 95% !important; max-width: 95% !important; }
         .modal-body { max-height: 75vh !important; overflow-y: auto !important; }
     }
 
