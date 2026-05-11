@@ -2,7 +2,7 @@
   "name": "Takodeal OWNER",
   "short_name": "Takodeal",
   "start_url": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#ffffff",
   "theme_color": "#127c67",
   "icons": [
