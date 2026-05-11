@@ -352,29 +352,32 @@
     </div>
 
     <div id="view-zreadings" class="view">
-      <div class="card"> <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+      <div class="card">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
           <div>
-            <h3 style="margin: 0;"><span style="font-size: 20px;">📊</span> End of Shift Z-Readings</h3>
+            <h3 style="margin: 0;"><span style="font-size: 20px;">📊</span> Shift Variance Audit</h3>
+            <span style="font-size: 12px; color: var(--text-muted);">Compare Expected vs Actual Cash and System vs Physical Stock.</span>
           </div>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <input type="date" id="zReadingDateFilter" onchange="loadZReadingReports()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; outline: none; cursor: pointer;">
             <button onclick="downloadExcel('zReadingTableBody', 'TAKODEAL_ZReadings')" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">📥 Export Excel</button>
             <button onclick="loadZReadingReports()" class="btn-refresh">🔄 Refresh</button>
           </div>
+        </div>
 
-          <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 15px; margin-bottom: 20px;">
-            <div class="stat-card" style="background: #f8fafc; border: 1px solid #e2e8f0;">
-              <h3 style="color: #475569;">Total Expected Cash</h3>
-              <div class="value" id="zSumExpected" style="color: #334155; font-size: 28px;">₱0.00</div>
-            </div>
-            <div class="stat-card" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
-              <h3 style="color: #166534;">Total Declared Cash</h3>
-              <div class="value" id="zSumDeclared" style="color: #15803d; font-size: 28px;">₱0.00</div>
-            </div>
-            <div class="stat-card" style="background: #fff; border: 1px solid #cbd5e1;">
-              <h3 style="color: #0f172a;">Net Variance (Short/Over)</h3>
-              <div class="value" id="zSumVariance" style="color: #0f172a; font-size: 28px;">₱0.00</div>
-            </div>
+        <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 15px; margin-bottom: 20px;">
+          <div class="stat-card" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+            <h3 style="color: #475569;">Total Expected Cash</h3>
+            <div class="value" id="zSumExpected" style="color: #334155; font-size: 28px;">₱0.00</div>
+          </div>
+          <div class="stat-card" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+            <h3 style="color: #166534;">Total Declared Cash</h3>
+            <div class="value" id="zSumDeclared" style="color: #15803d; font-size: 28px;">₱0.00</div>
+          </div>
+          <div class="stat-card" style="background: #fff; border: 1px solid #cbd5e1;">
+            <h3 style="color: #0f172a;">Net Cash Variance</h3>
+            <div class="value" id="zSumVariance" style="color: #0f172a; font-size: 28px;">₱0.00</div>
           </div>
         </div>
         
@@ -382,23 +385,26 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>Date & Time</th>
-                <th>Cashier</th>
+                <th>Date & Time Closed</th>
                 <th>Branch</th>
-                <th>Declared Cash</th>
+                <th>Cashier</th>
+                <th>Expected / Declared Cash</th>
+                <th>Cash Variance</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody id="zReadingTableBody">
               <tr>
-                <td colspan="5" class="text-center">Loading reports...</td>
+                <td colspan="6" class="text-center">Loading audit reports...</td>
               </tr>
             </tbody>
           </table>
         </div>
-      </div> </div> <div id="view-expenses" class="view">
+        
+      <div id="view-expenses" class="view">
       <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
           <div>
             <h3 style="margin: 0;"><span style="font-size: 20px;">💸</span> Expense & Restock Feed</h3>
           </div>
@@ -407,19 +413,19 @@
             <button onclick="downloadExcel('expenseLogsTableBody', 'TAKODEAL_Expenses')" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">📥 Export Excel</button>
             <button onclick="loadExpenseLogs()" class="btn-refresh">🔄 Refresh</button>
           </div>
-
-          <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr); margin-top: 15px; margin-bottom: 20px;">
-            <div class="stat-card" style="background: #fef2f2; border: 1px solid #fecaca;">
-              <h3 style="color: #b91c1c;">Total Filtered Expenses</h3>
-              <div class="value" id="expSumTotal" style="color: #dc2626; font-size: 32px;">₱0.00</div>
-            </div>
-            <div class="stat-card" style="background: #f8fafc; border: 1px solid #e2e8f0;">
-              <h3 style="color: #475569;">Transaction Count</h3>
-              <div class="value" id="expSumCount" style="color: #334155; font-size: 32px;">0</div>
-            </div>
-          </div>
-          
         </div>
+
+        <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr); margin-top: 15px; margin-bottom: 20px;">
+          <div class="stat-card" style="background: #fef2f2; border: 1px solid #fecaca;">
+            <h3 style="color: #b91c1c;">Total Filtered Expenses</h3>
+            <div class="value" id="expSumTotal" style="color: #dc2626; font-size: 32px;">₱0.00</div>
+          </div>
+          <div class="stat-card" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+            <h3 style="color: #475569;">Transaction Count</h3>
+            <div class="value" id="expSumCount" style="color: #334155; font-size: 32px;">0</div>
+          </div>
+        </div>
+        
         <div class="table-responsive">
           <table class="data-table">
             <thead>
