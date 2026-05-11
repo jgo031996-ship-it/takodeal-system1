@@ -297,25 +297,33 @@
 
     .category-header {
       display: flex;
-      flex-wrap: wrap; /* 🔥 THE FIX: Makes them stack automatically! */
-      gap: 8px;
-      padding: 10px 15px;
+      flex-wrap: nowrap !important; /* 🔥 Forces them to stay on ONE single line */
+      gap: 10px;
+      padding: 12px 15px;
       border-bottom: 1px solid var(--border);
       background: var(--card-bg);
+      overflow-x: auto !important; /* 🔥 Allows you to swipe left and right! */
+      -webkit-overflow-scrolling: touch; /* Silky smooth swiping on tablets */
+      scrollbar-width: none; /* Hides the scrollbar on Firefox */
     }
 
-    /* 👈 We don't need the webkit-scrollbar hiding rule anymore, you can delete it if you see it! */
+    /* 🔥 Hides the ugly scrollbar on Chrome/Safari but keeps it swipeable */
+    .category-header::-webkit-scrollbar { 
+      display: none; 
+    }
 
     .cat-btn {
-      padding: 10px 15px; /* Made padding smaller */
+      padding: 10px 18px;
       border: 1px solid #ddd;
       border-radius: 8px;
       background: white;
       font-weight: bold;
       color: #666;
       cursor: pointer;
-      white-space: nowrap;
-      font-size: 12px; /* Made text smaller to fit more buttons */
+      white-space: nowrap; /* Keeps the text inside the button from breaking */
+      font-size: 13px;
+      flex-shrink: 0; /* 🔥 Prevents the buttons from squishing together when you swipe */
+      transition: all 0.2s;
     }
 
     /* 👈 Hides the horizontal scrollbar for a clean look */
