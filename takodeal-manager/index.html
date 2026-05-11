@@ -205,24 +205,21 @@
   </div>
 
   <main class="main-content">
-    <header class="topbar" style="display: flex; align-items: center; flex-wrap: wrap;">
-      <button class="mobile-menu-btn" onclick="toggleManagerSidebar()" style="margin-top: 5px;">☰</button>
-      
-      <h1 id="pageTitle" style="flex-grow: 1; margin: 0;">Global Dashboard</h1>
+    <header class="topbar" style="display: flex; align-items: center; flex-wrap: wrap; gap: 15px; padding-bottom: 10px;">
+      <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+        <button class="mobile-menu-btn" onclick="toggleManagerSidebar()">☰</button>
+        <h1 id="pageTitle" style="margin: 0; font-size: 22px;">Global Dashboard</h1>
+      </div>
       
       <div id="globalDateControls" class="actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <span style="font-size: 13px; font-weight: bold; color: var(--text-muted);">From:</span>
-        <input type="date" id="dashStartDate" class="date-display"
-          style="padding: 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
+        <input type="date" id="dashStartDate" class="date-display" style="padding: 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
         <span style="font-size: 13px; font-weight: bold; color: var(--text-muted);">To:</span>
-        <input type="date" id="dashEndDate" class="date-display"
-          style="padding: 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
-        <button class="btn-refresh" id="btnRefreshData"
-          style="background: var(--primary); color: white; border: none;">🔄 Refresh Live Data</button>
-        <button id="btnExportSales" class="btn-refresh" style="background: #0ea5e9; color: white; border: none; margin-left: 10px;" onclick="window.exportTransactionsCSV()">📥 Export Sales CSV</button>
+        <input type="date" id="dashEndDate" class="date-display" style="padding: 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
+        <button class="btn-refresh" id="btnRefreshData" style="background: var(--primary); color: white; border: none;">🔄 Refresh Live Data</button>
+        <button id="btnExportSales" class="btn-refresh" style="background: #0ea5e9; color: white; border: none;" onclick="window.exportTransactionsCSV()">📥 Export Sales CSV</button>
 
-        <button id="btnWipeData" class="btn-refresh" style="background: #ef4444; color: white; border: none; margin-left: auto;" onclick="openSelectiveResetModal()">🧹 Factory Reset</button>
-        
+        <button id="btnWipeData" class="btn-refresh" style="background: #ef4444; color: white; border: none;" onclick="openSelectiveResetModal()">🧹 Factory Reset</button>
       </div>
     </header>
     
@@ -676,10 +673,15 @@
 
     <div id="view-menu" class="view">
       <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <h2>Central Menu Editor</h2>
-          <button class="btn-refresh" style="background: var(--primary); color: white; border: none;"
-            onclick="addMenuItem()">➕ Add Menu Item</button>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+          <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+            <h2 style="margin: 0;">Central Menu Editor</h2>
+            
+            <select id="menuEditorCatFilter" onchange="window.loadMenuEditor()" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; cursor: pointer; color: #334155; background: #f8fafc;">
+                <option value="All">All Categories</option>
+            </select>
+          </div>
+          <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="addMenuItem()">➕ Add Menu Item</button>
         </div>
         <div class="table-responsive">
           <table class="data-table">
