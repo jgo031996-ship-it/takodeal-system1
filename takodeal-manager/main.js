@@ -2536,24 +2536,27 @@ window.saveAdvancedInventoryItem = async function () {
   btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
   try {
-    // Math Time!
-    let totalBaseStock = conv * initQty;
-    let baseCost = cost / conv; 
-    let showCashier = document.getElementById('newInvShowCashier').checked; // 🔥 NEW
+        // Math Time!
+        let totalBaseStock = conv * initQty;
+        let baseCost = cost / conv; 
+        
+        // 🔥 THE FAIL-SAFE FIX: Check if the box exists before reading it!
+        let checkboxEl = document.getElementById('newInvShowCashier');
+        let showCashier = checkboxEl ? checkboxEl.checked : true; 
 
-    await addDoc(collection(db, "inventory"), {
-      branch: branch,
-      name: name,
-      category: category,
-      purchaseUom: purchUom,
-      uom: baseUom, 
-      conversionRate: conv,
-      purchaseCost: cost,
-      baseCost: baseCost, 
-      currentStock: totalBaseStock, 
-      reorderLevel: reorder,
-      showToCashier: showCashier // 🔥 NEW
-    });
+        await addDoc(collection(db, "inventory"), {
+          branch: branch,
+          name: name,
+          category: category,
+          purchaseUom: purchUom,
+          uom: baseUom, 
+          conversionRate: conv,
+          purchaseCost: cost,
+          baseCost: baseCost, 
+          currentStock: totalBaseStock, 
+          reorderLevel: reorder,
+          showToCashier: showCashier
+        });
     
     alert(`✅ Success! Added ${name} to ${branch}.`);
     document.getElementById('addInvModal').style.display = 'none';
@@ -3141,7 +3144,10 @@ window.saveInventoryEdit = async function () {
     let newQtyInput = document.getElementById('editInvNewQty').value;
     let newQty = newQtyInput === '' ? oldQty : parseFloat(newQtyInput);
     let note = document.getElementById('editInvNote').value.trim();
-    let showCashier = document.getElementById('editInvShowCashier').checked;
+    
+    // 🔥 THE FAIL-SAFE FIX: Check if the box exists before reading it!
+    let checkboxEl = document.getElementById('editInvShowCashier');
+    let showCashier = checkboxEl ? checkboxEl.checked : true; 
     
     let variance = newQty - oldQty;
     if (variance !== 0 && !note) {
