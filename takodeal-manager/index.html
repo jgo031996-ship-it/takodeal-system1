@@ -24,6 +24,26 @@
         background-color: var(--bg-color, #F8F6F0);
     }
 
+    /* 🔥 FIX: MAKE THE SIDEBAR TABS SCROLLABLE */
+    .sidebar {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+    }
+    
+    .nav-menu {
+        flex: 1;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch; /* Super smooth swiping on tablets */
+        padding-bottom: 30px !important; /* Breathing room at the bottom */
+    }
+
+    /* Make the scrollbar look sleek, thin, and professional */
+    .nav-menu::-webkit-scrollbar { width: 4px; }
+    .nav-menu::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+
     .main-content {
         flex: 1;
         height: 100dvh !important;
