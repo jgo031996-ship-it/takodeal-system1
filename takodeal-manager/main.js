@@ -2017,15 +2017,48 @@ window.toggleBranchAccounts = function(branchId) {
 };
 
 // --- CASH ACCOUNT EDIT & DELETE ACTIONS ---
-window.editCashAccount = async function(docId, accName, currentBal) {
-    let newBalStr = prompt(`Update exact balance for ${accName} (₱):`, currentBal);
-    if (newBalStr === null) return; 
-    let newBal = parseFloat(newBalStr);
-    if (isNaN(newBal)) { alert("❌ Invalid amount."); return; }
+window.editCashAccount = function(docId, accName, currentBal) {
+    // Fill the beautiful UI Modal instead of using an ugly prompt!
+    document.getElementById('editAccId').value = docId;
+    document.getElementById('editAccOldBalance').value = currentBal || 0;
+    document.getElementById('editAccName').value = accName;
+    document.getElementById('editAccBalance').value = currentBal || 0;
+    document.getElementById('editAccReason').value = '';
+    document.getElementById('editAccountModal').style.display = 'flex';
+};
+
+window.saveAccountEdit = async function() {
+    let docId = document.getElementById('editAccId').value;
+    let oldBal = parseFloat(document.getElementById('editAccOldBalance').value) || 0;
+    let newName = document.getElementById('editAccName').value.trim();
+    let newBal = parseFloat(document.getElementById('editAccBalance').value);
+    let reason = document.getElementById('editAccReason').value.trim();
+
+    if (!newName) { alert("❌ Account name cannot be blank."); return; }
+    if (isNaN(newBal)) { alert("❌ Invalid balance amount."); return; }
+    if (oldBal !== newBal && !reason) { alert("⚠️ SECURITY ALERT: You are changing the balance. You MUST provide a Reason for Update!"); return; }
 
     try {
-        await updateDoc(doc(db, "cash_accounts", docId), { balance: newBal });
-        alert(`✅ ${accName} balance successfully updated to ₱${newBal.toLocaleString()}!`);
+        // 1. Update the Account
+        await updateDoc(doc(db, "cash_accounts", docId), { name: newName, balance: newBal });
+        
+        // 2. Log the Action if the money changed!
+        let difference = newBal - oldBal;
+        if (difference !== 0) {
+            await addDoc(collection(db, "account_logs"), {
+                accountId: docId,
+                accountName: newName,
+                action: "Manager Manual Adjustment",
+                amount: difference,
+                newBalance: newBal,
+                user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
+                timestamp: serverTimestamp(),
+                note: reason
+            });
+        }
+
+        alert(`✅ Account successfully updated!`);
+        document.getElementById('editAccountModal').style.display = 'none';
         window.loadAccountsAndBudget();
     } catch(e) { console.error(e); alert("Failed to update account."); }
 };
@@ -2120,9 +2153,27 @@ window.submitCashTransfer = async function() {
     btn.innerText = "⏳ Transferring..."; btn.disabled = true;
 
     try {
+        // 1. Update both balances
         await updateDoc(doc(db, "cash_accounts", fromAcc.id), { balance: fromAcc.balance - amt });
         await updateDoc(doc(db, "cash_accounts", toAcc.id), { balance: toAcc.balance + amt });
         
+        // 2. Write the Audit Trail!
+        let currentUser = window.sessionUser ? window.sessionUser.cashierName : 'Owner';
+        
+        // Log the Deduction
+        await addDoc(collection(db, "account_logs"), {
+            accountId: fromAcc.id, accountName: fromAcc.name, branch: fromAcc.branch,
+            action: "Fund Transfer (Out)", amount: -amt, newBalance: fromAcc.balance - amt,
+            user: currentUser, timestamp: serverTimestamp(), note: `Transferred to ${toAcc.name}`
+        });
+
+        // Log the Deposit
+        await addDoc(collection(db, "account_logs"), {
+            accountId: toAcc.id, accountName: toAcc.name, branch: toAcc.branch,
+            action: "Fund Transfer (In)", amount: amt, newBalance: toAcc.balance + amt,
+            user: currentUser, timestamp: serverTimestamp(), note: `Received from ${fromAcc.name}`
+        });
+
         alert(`✅ Successfully transferred ₱${amt.toLocaleString()} from ${fromAcc.name} to ${toAcc.name}.`);
         document.getElementById('transferModal').style.display = 'none';
         window.loadAccountsAndBudget();
@@ -2135,8 +2186,57 @@ window.submitCashTransfer = async function() {
 };
 
 // 🛠️ THE FIX FOR THE LOGS BUTTON ERROR 
-window.openAccountHistory = function() {
-    alert("Account History Logs module is coming in the next update! 🚧\n\nFor now, you can view your Cash Transfers in the 'Cash Transfers' tab on the sidebar.");
+// ==========================================
+// 📜 ACCOUNT AUDIT LOGS ENGINE
+// ==========================================
+window.openAccountHistory = async function() {
+    document.getElementById('accountHistoryModal').style.display = 'flex';
+    const tbody = document.getElementById('accHistoryTableBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px;">⏳ Fetching secure audit logs...</td></tr>';
+
+    try {
+        // Fetch the 50 most recent logs to keep the app lightning fast!
+        const q = query(collection(db, "account_logs"), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocs(q);
+
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            
+            let amount = parseFloat(data.amount) || 0;
+            let balance = parseFloat(data.newBalance) || 0;
+            
+            // Color code the money based on if it went UP or DOWN
+            let actionColor = amount > 0 ? '#16a34a' : (amount < 0 ? '#dc2626' : '#64748b');
+            let amountSign = amount > 0 ? '+' : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                    <td style="padding: 12px 10px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">👤 ${data.user || 'System'}</td>
+                    <td style="padding: 12px 10px;">
+                        <span style="font-weight: bold; color: var(--primary);">${data.action || 'Manual Edit'}</span><br>
+                        <span style="font-size: 12px; color: ${actionColor}; font-weight: bold;">${amountSign}₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </td>
+                    <td style="padding: 12px 10px;">
+                        <strong>${data.accountName || 'Unknown'}</strong><br>
+                        <span style="font-size: 11px; color: #64748b;">New Bal: ₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </td>
+                    <td style="padding: 12px 10px; font-size: 12px; color: #475569; font-style: italic; max-width: 200px;">
+                        ${data.note || data.reason || 'No notes provided.'}
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = snap.empty ? '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No account logs found.</td></tr>' : html;
+
+    } catch (e) {
+        console.error("Audit Log Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 30px;">❌ Error loading audit logs. Check connection.</td></tr>';
+    }
 };
 
 // ==========================================
