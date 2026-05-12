@@ -2685,7 +2685,7 @@
         .ps-input::-webkit-outer-spin-button, .ps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     } /* <--- THIS CURLY BRACKET SAFELY CLOSES THE PRINTER SECTION! */
 
-    /* ========================================= */
+   /* ========================================= */
     /* 🔥 THE REAL SCREEN FIX (OUTSIDE PRINT!)   */
     /* ========================================= */
     
@@ -2706,10 +2706,10 @@
 
     /* Safety net to ensure cards NEVER turn invisible again */
     .card {
-        display: block;
-        width: 100%;
-        box-sizing: border-box;
-        min-height: 150px; 
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        min-height: 500px !important; 
     }
 
     @keyframes fadeIn {
