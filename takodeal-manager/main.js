@@ -333,7 +333,6 @@ document.addEventListener("DOMContentLoaded", () => {
       refreshBtn.style.opacity = "1";
     });
   }
-});
 
 // --- THE HR & SECURITY ENGINE (ENTERPRISE UPGRADE) ---
 window.loadHRModule = async function() {
