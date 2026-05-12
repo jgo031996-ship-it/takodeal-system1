@@ -2222,11 +2222,14 @@
             // 🔥 THE FIX: bgStyle is safely locked INSIDE the loop!
             let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
             
+            // 🔥 THE NEW PRICE LABEL LOGIC
+            let priceLabel = item.isGrouped ? `<span style="color: #10b981; font-weight: bold;">Select Size ➡</span>` : `₱${safePrice.toFixed(2)}`;
+    
             grid.innerHTML += `
                 <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})" style="height: 140px; border: none;">
                     ${badgeHtml}
                     <div class="item-card-bg" style="${bgStyle}"></div>
-                    <div class="item-name-overlay">${item.name}<br><span style="color:#fcd34d; font-size: 11px;">₱${safePrice.toFixed(2)}</span></div>
+                    <div class="item-name-overlay">${item.name}<br><span style="color:#fcd34d; font-size: 11px;">${priceLabel}</span></div>
                 </div>
             `;
         });
