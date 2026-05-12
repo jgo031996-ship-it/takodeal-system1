@@ -983,8 +983,10 @@
       <div class="card" style="margin-bottom: 20px;">
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
               <h2 style="margin: 0;">⏱️ Live Attendance Feed</h2>
-              <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="loadAttendanceLogs()">🔄 Refresh Feed</button>
-          </div>
+              <div style="display: flex; gap: 10px;">
+                  <button class="btn-refresh" style="background: white; color: var(--primary); border: 1px solid var(--primary);" onclick="window.openManualAttendanceModal()">➕ Add Manual Log</button>
+                  <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="loadAttendanceLogs()">🔄 Refresh Feed</button>
+              </div>
           <div class="table-responsive">
               <table class="data-table">
                   <thead>
@@ -1634,7 +1636,48 @@
         </div>
       </div>
     </div>
-    
+
+    <div id="manualAttendanceModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #f59e0b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">📝 Manual Attendance Override</h2>
+              <span onclick="document.getElementById('manualAttendanceModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+          </div>
+          <div style="padding: 25px; background: #f8fafc;">
+              <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Use this to fix missing logs if a staff member forgot to Time In or Time Out.</p>
+
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Staff Name</label>
+              <select id="manAttStaff" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;"></select>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #334155;">Branch</label>
+                      <select id="manAttBranch" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+                          <option value="Cabantian">Cabantian</option>
+                          <option value="Citygate">Citygate</option>
+                          <option value="Maa">Maa</option>
+                          <option value="Main Office">Main Office</option>
+                      </select>
+                  </div>
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #334155;">Log Type</label>
+                      <select id="manAttType" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+                          <option value="TIME IN">TIME IN</option>
+                          <option value="TIME OUT">TIME OUT</option>
+                      </select>
+                  </div>
+              </div>
+
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Exact Date & Time of Log</label>
+              <input type="datetime-local" id="manAttDateTime" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold;">
+
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Remarks / Reason</label>
+              <input type="text" id="manAttRemarks" placeholder="e.g. Forgot to clock out, battery died" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+
+              <button id="btnSaveManualAtt" onclick="window.submitManualAttendance()" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Save Override Log</button>
+          </div>
+      </div>
+  </div>  
   </main>
 
   <div id="transferModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
