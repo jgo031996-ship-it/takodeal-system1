@@ -109,8 +109,7 @@ window.verifyPin = async function (pin) {
   }
 };
 
-// --- THE FIREBASE MENU FETCHER ---
-// --- THE FIREBASE MENU FETCHER & GROUPER ---
+// --- THE SMART FIREBASE MENU GROUPER ---
 window.fetchMenu = async function () {
   try {
     const snapshot = await getDocs(collection(db, "menu"));
@@ -121,14 +120,14 @@ window.fetchMenu = async function () {
 
     rawItems.forEach(item => {
         let name = item.name;
-        // Check if the name ends with a number followed by "Pcs" (e.g., " 8 Pcs")
-        let match = name.match(/^(.*?)\s*(\d+\s*Pcs)$/i);
+        // 🧠 Smart Regex: Looks for " 8 Pcs", " L", " M", " Duo" at the end of the name
+        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio)$/i);
         
         if (match) {
             let baseName = match[1].trim(); // e.g., "Bonito Takoyaki Original"
             let sizeName = match[2].trim(); // e.g., "8 Pcs"
             
-            // If we haven't seen this base name yet, create a card for it
+            // If we haven't seen this base name yet, create ONE card for it
             let existingBase = groupedMenu.find(i => i.name === baseName && i.category === item.category);
             if (!existingBase) {
                 let baseItem = { ...item, name: baseName, isGrouped: true };
@@ -136,7 +135,7 @@ window.fetchMenu = async function () {
                 masterPOSData.phantomVariants[baseName] = [];
             }
             
-            // Store the specific size, price, and real DB name in memory
+            // Store the specific size, price, and REAL database name in memory
             masterPOSData.phantomVariants[baseName].push({
                 realName: item.name,
                 sizeLabel: sizeName,
@@ -144,11 +143,11 @@ window.fetchMenu = async function () {
                 id: item.id
             });
             
-            // Sort the variants by price so they appear in order (e.g., 4 Pcs -> 6 Pcs -> 8 Pcs)
+            // Sort the variants from cheapest to most expensive (e.g. 4 Pcs -> 6 Pcs)
             masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
             
         } else {
-            // It's a normal item (like a drink), just add it normally
+            // It's a normal item with no sizes, add it normally
             groupedMenu.push(item);
         }
     });
