@@ -1700,20 +1700,54 @@ window.startMobileOrdersListener = function(branch) {
 };
 
 // Generates a simple, loud browser "ding" without needing an audio file
+// --- THE LOUD NOTIFICATION PING FIX ---
+window.audioCtx = null;
+
 window.playNotificationPing = function() {
     try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'bell';
-        osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch notification
-        gain.gain.setValueAtTime(1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.5);
-    } catch (e) { console.log("Audio ping blocked by browser auto-play policy"); }
+        // 1. Wake up the audio engine (forces Chrome/Android to allow sound)
+        if (!window.audioCtx) {
+            window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (window.audioCtx.state === 'suspended') {
+            window.audioCtx.resume();
+        }
+
+        // 2. Create the FIRST loud "DING!" (Note B5)
+        const osc1 = window.audioCtx.createOscillator();
+        const gain1 = window.audioCtx.createGain();
+        osc1.connect(gain1);
+        gain1.connect(window.audioCtx.destination);
+        
+        osc1.type = 'sine'; // Uses a smooth sine wave
+        osc1.frequency.setValueAtTime(987.77, window.audioCtx.currentTime); 
+        gain1.gain.setValueAtTime(1, window.audioCtx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.01, window.audioCtx.currentTime + 0.4);
+        
+        osc1.start(window.audioCtx.currentTime);
+        osc1.stop(window.audioCtx.currentTime + 0.4);
+
+        // 3. Create the SECOND higher "DING!" (Note E6) just a millisecond later
+        setTimeout(() => {
+            try {
+                const osc2 = window.audioCtx.createOscillator();
+                const gain2 = window.audioCtx.createGain();
+                osc2.connect(gain2);
+                gain2.connect(window.audioCtx.destination);
+                
+                osc2.type = 'sine';
+                osc2.frequency.setValueAtTime(1318.51, window.audioCtx.currentTime); 
+                gain2.gain.setValueAtTime(1, window.audioCtx.currentTime);
+                gain2.gain.exponentialRampToValueAtTime(0.01, window.audioCtx.currentTime + 0.6);
+                
+                osc2.start(window.audioCtx.currentTime);
+                osc2.stop(window.audioCtx.currentTime + 0.6);
+            } catch(e){}
+        }, 150);
+
+    } catch (e) { 
+        console.error("Audio ping error:", e); 
+    }
 };
 
 window.showMobileOrders = function() {
