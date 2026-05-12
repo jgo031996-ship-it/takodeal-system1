@@ -2415,14 +2415,25 @@
       window.printReceipt('receipt');
     }
 
-    // --- 7. CART & VARIANT LOGIC ---
+    // --- 7. CART & VARIANT LOGIC (UPGRADED FOR PHANTOM SIZES) ---
     window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
         if (existingItem) { 
             pendingItem = JSON.parse(JSON.stringify(existingItem)); 
             editIndex = cart.indexOf(existingItem); 
         } else { 
-            pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 }; 
+            pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
             editIndex = -1; 
+        }
+    
+        // Check if this item has Phantom Variants (Size groupings)
+        let phantomSizes = masterPOSData.phantomVariants ? masterPOSData.phantomVariants[name] : null;
+        
+        if (phantomSizes && phantomSizes.length > 0 && !existingItem) {
+            // Default to the smallest size initially
+            pendingItem.isGrouped = true;
+            pendingItem.realName = phantomSizes[0].realName;
+            pendingItem.basePrice = phantomSizes[0].price;
+            pendingItem.variantPrice = phantomSizes[0].price;
         }
     
         document.getElementById('modalItemName').innerText = pendingItem.name;
@@ -2434,16 +2445,45 @@
         if (pendingItem.discountType !== 'none') { 
             document.getElementById('discountValueInput').value = pendingItem.discountVal; 
         }
-
+    
         document.getElementById('variantModal').style.display = 'flex';
-
+    
         // Hide the old Add-on dropdown & active container
         let oldDropdown = document.getElementById('addonSelectDropdown');
         if(oldDropdown) oldDropdown.style.display = 'none';
         let oldActive = document.getElementById('activeAddonsContainer');
         if(oldActive) oldActive.style.display = 'none';
     
-        // 🔥 PRE-FLIGHT STOCK WARNING UI
+        // 🔥 THE NEW PHANTOM SIZE UI GENERATOR 🔥
+        let variantContainer = document.getElementById('variantOptions');
+        if (variantContainer) variantContainer.innerHTML = '';
+        
+        // We un-hide the variant grid container if there are phantom sizes
+        let variantSection = variantContainer ? variantContainer.parentElement : null;
+        
+        if (phantomSizes && phantomSizes.length > 0) {
+            if (variantSection) variantSection.style.display = 'block';
+            if (variantContainer) {
+                let sizeHtml = '<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">SELECT SIZE</label><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-bottom: 15px;">';
+                
+                phantomSizes.forEach((sizeObj, idx) => {
+                    let isChecked = (pendingItem.realName === sizeObj.realName) ? 'checked' : '';
+                    sizeHtml += `
+                        <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155;">
+                            <span><input type="radio" name="phantomSize" value="${sizeObj.realName}|${sizeObj.price}" ${isChecked} style="accent-color: var(--primary); transform: scale(1.2); margin-right: 8px;" onchange="updatePhantomSize(this)"> ${sizeObj.sizeLabel}</span>
+                            <span style="color: var(--primary);">₱${sizeObj.price.toFixed(2)}</span>
+                        </label>
+                    `;
+                });
+                sizeHtml += '</div>';
+                variantContainer.innerHTML = sizeHtml;
+            }
+        } else {
+            if (variantSection) variantSection.style.display = 'none'; // Hide if normal item
+        }
+    
+    
+        // 🔥 PRE-FLIGHT STOCK WARNING UI (Checks realName now!)
         let stockWarningEl = document.getElementById('modalStockWarning');
         if (!stockWarningEl) {
             stockWarningEl = document.createElement('div');
@@ -2453,10 +2493,10 @@
         }
         stockWarningEl.style.display = 'none'; 
     
-        // 🔥 BACKGROUND STOCK CHECKER
+        // 🔥 BACKGROUND STOCK CHECKER (Checks realName now!)
         setTimeout(async () => {
             try {
-                const bomQ = window.query(window.collection(window.db, "bom"), window.where("menuItem", "==", pendingItem.name));
+                const bomQ = window.query(window.collection(window.db, "bom"), window.where("menuItem", "==", pendingItem.realName));
                 const bomSnap = await window.getDocs(bomQ);
                 
                 let lowestPossibleOrders = Infinity;
@@ -2481,18 +2521,20 @@
                 } else if (lowestPossibleOrders <= 0) {
                     stockWarningEl.innerHTML = `🛑 OUT OF STOCK: Please log a Kitchen Prep Batch immediately before selling!`;
                     stockWarningEl.style.display = 'block';
+                } else {
+                    stockWarningEl.style.display = 'none';
                 }
             } catch (e) { console.error("Live stock check failed", e); }
         }, 100);
     
-        // 🔥 FETCH IMAGE AND ADDONS
+        // 🔥 FETCH IMAGE AND ADDONS (Checks realName now!)
         try {
-            const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", pendingItem.name));
+            const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", pendingItem.realName));
             const snap = await window.getDocs(q);
     
             if (!snap.empty) {
                 let itemData = snap.docs[0].data();
-
+    
                 // 1. INJECT FOOD IMAGE
                 let imgContainer = document.getElementById('modalDynamicImage');
                 if (!imgContainer) {
@@ -2505,11 +2547,11 @@
                 } else {
                     imgContainer.innerHTML = '';
                 }
-
-                // 2. BUILD NEW ADDON UI (Radios & Checkboxes)
+    
+                // 2. BUILD NEW ADDON UI
                 let addonContainer = document.getElementById('addonSelectDropdown').parentElement;
                 let newUiHtml = '';
-
+    
                 if (itemData.addons && itemData.addons.length > 0) {
                     let groupedAddons = {};
                     itemData.addons.forEach(a => {
@@ -2519,20 +2561,18 @@
                             groupedAddons[a.name].price += (parseFloat(a.price) || 0);
                         }
                     });
-
+    
                     let addonsList = Object.values(groupedAddons);
                     let hasSauce = addonsList.some(a => a.name === "Regular Sauce" || a.name === "Spicy Sauce");
-
-                    // 🎯 REQUIRED SAUCE RADIO BUTTONS (Forces them to pick exactly 1)
+    
                     if (hasSauce) {
-                        // 🔥 THE UPGRADE: We pull YOUR exact linked ingredients and deduction quantities!
                         let regAddon = addonsList.find(a => a.name === "Regular Sauce") || { linkedIngredient: "Regular Sauce", deductQty: 1 };
                         let spicyAddon = addonsList.find(a => a.name === "Spicy Sauce") || { linkedIngredient: "Spicy Sauce", deductQty: 1 };
-
+    
                         let regChecked = (!existingItem || (existingItem && existingItem.addons["Regular Sauce"])) ? 'checked' : '';
                         let spicyChecked = (existingItem && existingItem.addons["Spicy Sauce"]) ? 'checked' : '';
-                        if(!regChecked && !spicyChecked) regChecked = 'checked'; // Default to regular
-
+                        if(!regChecked && !spicyChecked) regChecked = 'checked'; // Default
+    
                         newUiHtml += `
                             <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">BASE FLAVOR (Required)</label>
                             <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
@@ -2547,8 +2587,7 @@
                             </div>
                         `;
                     }
-
-                    // 🎯 OPTIONAL EXTRA ADD-ONS
+    
                     let extras = addonsList.filter(a => a.name !== "Regular Sauce" && a.name !== "Spicy Sauce");
                     if (extras.length > 0) {
                         newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
@@ -2564,7 +2603,7 @@
                         newUiHtml += `</div>`;
                     }
                 }
-
+    
                 if (newUiHtml === '') newUiHtml = '<div style="font-size:12px; color:#94a3b8; text-align:center; padding:10px; width:100%;">No add-ons available.</div>';
                 
                 let dynamicAddonDiv = document.getElementById('dynamicAddonUI');
@@ -2578,25 +2617,23 @@
             }
         } catch (error) { console.error("Error loading specific addons:", error); }
     
-        const varContainer = document.getElementById('variantOptions'); 
-        varContainer.innerHTML = '';
-        const itemVariants = masterPOSData.variants[pendingItem.name];
-        if (itemVariants && itemVariants.length > 0) {
-            itemVariants.forEach((v, index) => {
-                let activeClass = v.name === pendingItem.variantName ? 'active' : '';
-                if (!existingItem && index === 0) { 
-                    pendingItem.variantName = v.name; 
-                    pendingItem.variantPrice = basePrice + v.priceAdj; 
-                    activeClass = 'active'; 
-                }
-                varContainer.innerHTML += `<button class="var-btn ${activeClass}" onclick="selectVariant(this, '${v.name}', ${basePrice + v.priceAdj})">${v.name}</button>`;
-            });
-        } else {
-            pendingItem.variantName = 'Standard'; 
-            pendingItem.variantPrice = basePrice;
-            varContainer.innerHTML = `<button class="var-btn active">Standard</button>`;
-        }
         updateModalTotals(); 
+    };
+    
+    // Handle Phantom Size Changes
+    window.updatePhantomSize = function(radioBtn) {
+        let parts = radioBtn.value.split('|');
+        let realName = parts[0];
+        let newPrice = parseFloat(parts[1]);
+        
+        pendingItem.realName = realName;
+        pendingItem.basePrice = newPrice;
+        pendingItem.variantPrice = newPrice;
+        
+        document.getElementById('modalItemPrice').innerText = '₱ ' + newPrice.toFixed(2);
+        
+        // We must rapidly re-trigger the open modal function to reload the correct addons and stock warnings for this specific size!
+        window.openAddOrderModal(pendingItem.name, newPrice, pendingItem);
     };
     
     function selectVariant(btn, vName, vPrice) {
@@ -2676,6 +2713,9 @@
     window.confirmAddOrUpdateToCart = function() {
       let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
       pendingItem.notes = document.getElementById('orderNotesInput').value;
+      
+      // 🔥 Make sure the exact size (e.g. 8 Pcs) goes into the cart!
+      pendingItem.name = pendingItem.realName || pendingItem.name;
       
       pendingItem.addons = {}; 
 
