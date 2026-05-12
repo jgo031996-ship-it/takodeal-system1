@@ -345,23 +345,57 @@
 
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
 
+        window.phantomVariants = {}; // 🔥 Stores the hidden mobile sizes
+
         window.loadLiveMenu = async function() {
             try {
                 const snap = await getDocs(collection(db, "menu"));
                 let categoriesMap = {};
-
+                let rawItems = [];
                 snap.forEach(docSnap => {
-                    const item = docSnap.data();
+                    let item = docSnap.data();
                     item.id = docSnap.id;
+                    rawItems.push(item);
+                });
+
+                window.phantomVariants = {};
+
+                rawItems.forEach(item => {
                     let catName = item.category || "Other";
                     let isHidden = hiddenCategories.includes(catName.toLowerCase());
 
                     if (item.isAvailable !== false && !isHidden) {
-                        window.masterMenu.push(item);
-                        if (!categoriesMap[catName]) categoriesMap[catName] = [];
-                        categoriesMap[catName].push(item);
+                        let name = item.name;
+                        // 🧠 Smart Regex (Includes Squad/Platter/etc)
+                        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad|Platter|Family)$/i);
+
+                        if (match) {
+                            let baseName = match[1].trim();
+                            let sizeName = match[2].trim();
+
+                            if (!window.phantomVariants[baseName]) {
+                                window.phantomVariants[baseName] = [];
+                                let baseItem = { ...item, name: baseName, isGrouped: true };
+                                window.masterMenu.push(baseItem);
+                                if (!categoriesMap[catName]) categoriesMap[catName] = [];
+                                categoriesMap[catName].push(baseItem);
+                            }
+
+                            window.phantomVariants[baseName].push({
+                                realName: item.name,
+                                sizeLabel: sizeName,
+                                price: parseFloat(item.price || item.basePrice) || 0,
+                                id: item.id
+                            });
+                            window.phantomVariants[baseName].sort((a, b) => a.price - b.price);
+                        } else {
+                            window.masterMenu.push(item);
+                            if (!categoriesMap[catName]) categoriesMap[catName] = [];
+                            categoriesMap[catName].push(item);
+                        }
                     }
                 });
+
                 renderAccordions(categoriesMap);
             } catch (error) {
                 console.error(error);
@@ -379,18 +413,20 @@
                     let safeData = encodeURIComponent(JSON.stringify(item));
                     let imgHtml = item.image ? `<img src="${item.image}" class="w-20 h-20 object-cover rounded-xl shadow-sm">` : `<div class="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center text-2xl border border-gray-200 shadow-sm">🍲</div>`;
 
-                    // 🔥 THE AI BADGE ENGINE: Automatically tags "Cheesy" items!
                     let badgeHtml = '';
                     if (item.name.toLowerCase().includes('cheesy')) {
                         badgeHtml = `<span class="bg-red-500 text-white text-[9px] px-2 py-0.5 rounded-full ml-2 animate-pulse shadow-sm tracking-widest uppercase">🔥 Best Seller</span>`;
                     }
+
+                    // 🔥 NEW: Hides the price and shows "Select Size" if it's grouped!
+                    let priceLabel = item.isGrouped ? `<span class="text-green-600 font-black">Select Size ➡</span>` : `₱${price.toFixed(2)}`;
 
                     return `
                         <div class="menu-item-row flex items-center p-3 bg-white border border-gray-100 rounded-2xl shadow-sm mb-3 cursor-pointer active:scale-95 transition-all hover:border-red-200 hover:shadow-md animate-float" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
                             <div class="ml-3 flex-1">
                                 <h4 class="font-black text-sm text-gray-800 leading-tight">${item.name} ${badgeHtml}</h4>
-                                <p class="text-xs font-bold text-red-600 mt-1">₱${price.toFixed(2)}</p>
+                                <p class="text-xs font-bold text-red-600 mt-1">${priceLabel}</p>
                             </div>
                             <div class="text-red-500 font-bold bg-red-50 w-8 h-8 rounded-full flex items-center justify-center border border-red-100">✚</div>
                         </div>
@@ -436,19 +472,68 @@
         }
 
         // --- MODAL LOGIC ---
+        // --- MODAL LOGIC WITH SMART SIZES ---
         window.openItemModal = function(encodedData) {
             const item = JSON.parse(decodeURIComponent(encodedData));
+            
+            // Check if this item has grouped sizes
+            let phantomSizes = window.phantomVariants ? window.phantomVariants[item.name] : null;
+            let hasSizes = phantomSizes && phantomSizes.length > 0;
+
+            if (hasSizes) {
+                item.isGrouped = true;
+                item.realName = phantomSizes[0].realName;
+                item.basePrice = phantomSizes[0].price;
+                item.price = phantomSizes[0].price;
+            } else {
+                item.realName = item.name;
+            }
+
             window.activeModalItem = { ...item, selectedQty: 1 };
             let price = parseFloat(item.price || item.basePrice || 0);
 
             document.getElementById('modalItemName').innerText = item.name;
-            document.getElementById('modalItemPrice').innerText = '₱' + price.toFixed(2);
             document.getElementById('modalQty').innerText = '1';
             document.getElementById('modalNotes').value = '';
+
+            let priceHeader = document.getElementById('modalItemPrice');
+            if (hasSizes) priceHeader.style.display = 'none';
+            else { priceHeader.style.display = 'block'; priceHeader.innerText = '₱' + price.toFixed(2); }
 
             const imgContainer = document.getElementById('modalImage');
             if (item.image) imgContainer.innerHTML = `<img src="${item.image}" class="w-full h-full object-cover">`;
             else imgContainer.innerHTML = '🍲';
+
+            // 🔥 INJECT BEAUTIFUL GRID SIZE BUTTONS
+            let variantContainer = document.getElementById('modalVariantContainer');
+            if (!variantContainer) {
+                variantContainer = document.createElement('div');
+                variantContainer.id = 'modalVariantContainer';
+                variantContainer.className = 'w-full mt-4 mb-2';
+                document.getElementById('modalItemName').parentElement.insertAdjacentElement('afterend', variantContainer);
+            }
+
+            if (hasSizes) {
+                let sizeHtml = '<label class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">Select Size / Quantity</label>';
+                sizeHtml += '<div class="grid grid-cols-2 gap-3 w-full box-border">';
+
+                phantomSizes.forEach(sizeObj => {
+                    let isActive = (window.activeModalItem.realName === sizeObj.realName) ? 'bg-orange-50 border-orange-500 shadow-md' : 'bg-gray-50 border-gray-200 shadow-sm';
+
+                    sizeHtml += `
+                        <div class="modal-size-btn ${isActive} border-2 rounded-xl p-3 text-center cursor-pointer transition-all active:scale-95 flex flex-col justify-center items-center w-full"
+                             onclick="window.selectMobileVariant('${sizeObj.realName}', ${sizeObj.price}, this)">
+                            <div class="font-black text-gray-800 text-sm mb-1">${sizeObj.sizeLabel}</div>
+                            <div class="font-bold text-red-600 text-xs">₱${sizeObj.price.toFixed(2)}</div>
+                        </div>
+                    `;
+                });
+                sizeHtml += '</div>';
+                variantContainer.innerHTML = sizeHtml;
+                variantContainer.style.display = 'block';
+            } else {
+                variantContainer.style.display = 'none';
+            }
 
             const addonsContainer = document.getElementById('modalAddonsContainer');
             const addonsList = document.getElementById('modalAddonsList');
@@ -519,6 +604,24 @@
             document.getElementById('itemModal').classList.remove('hidden');
         }
 
+        // 🔥 HANDLES CLICKING THE MOBILE SIZE BUTTONS
+        window.selectMobileVariant = function(realName, vPrice, clickedBtn) {
+            document.querySelectorAll('.modal-size-btn').forEach(b => {
+                b.classList.remove('bg-orange-50', 'border-orange-500', 'shadow-md');
+                b.classList.add('bg-gray-50', 'border-gray-200', 'shadow-sm');
+            });
+            clickedBtn.classList.remove('bg-gray-50', 'border-gray-200', 'shadow-sm');
+            clickedBtn.classList.add('bg-orange-50', 'border-orange-500', 'shadow-md');
+
+            window.activeModalItem.realName = realName;
+            window.activeModalItem.price = vPrice;
+            window.activeModalItem.basePrice = vPrice;
+
+            let priceHeader = document.getElementById('modalItemPrice');
+            priceHeader.style.display = 'block';
+            priceHeader.innerText = '₱' + vPrice.toFixed(2);
+        };
+
         window.closeItemModal = function() {
             document.getElementById('itemModal').classList.add('hidden');
             window.activeModalItem = null;
@@ -554,7 +657,7 @@
             });
 
             window.cart.push({
-                name: window.activeModalItem.name,
+                name: window.activeModalItem.realName || window.activeModalItem.name, // 🔥 FORCES IT TO SEND THE EXACT SIZE (e.g. 8 Pcs)!
                 quantity: qty,
                 price: basePrice,
                 variantName: 'Standard',
