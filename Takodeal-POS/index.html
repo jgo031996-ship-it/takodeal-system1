@@ -29,6 +29,26 @@
       --border: #E8E3DB;
     }
 
+    /* 🔥 BEAUTIFUL SIZE BUTTONS */
+    .size-btn {
+        flex: 1;
+        min-width: 80px;
+        background: #f8fafc;
+        border: 2px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 15px 10px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .size-btn.active {
+        background: #fffbeb;
+        border-color: var(--primary);
+        box-shadow: 0 4px 10px rgba(229, 169, 61, 0.2);
+    }
+    .size-btn .sz-name { font-size: 15px; font-weight: 900; color: #334155; margin-bottom: 5px; }
+    .size-btn .sz-price { font-size: 13px; font-weight: bold; color: var(--primary); }
+    
     body {
       font-family: 'Segoe UI', Tahoma, sans-serif;
       margin: 0;
