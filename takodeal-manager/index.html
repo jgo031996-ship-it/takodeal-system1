@@ -2682,6 +2682,26 @@
         }
         .ps-input::-webkit-outer-spin-button, .ps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     }
+
+    /* Forces the inactive views to hide */
+    .view { 
+        display: none; 
+    }
+
+    /* Forces the active view to expand and reveal the cards */
+    .view.active { 
+        display: block; 
+        flex: 1; 
+        width: 100%; 
+        min-height: 100vh; /* 🔥 This prevents the 0-pixel collapse! */
+        animation: fadeIn 0.3s ease-in-out; 
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+  
 </style>
 
   <script type="module" src="main.js"></script>
