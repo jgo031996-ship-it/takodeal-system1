@@ -1651,13 +1651,13 @@ window.logPrepBatch = async function(invId, itemName, branch) {
 // ==========================================
 window.mobileOrdersList = [];
 window.mobileOrdersUnsubscribe = null;
+window.hasLoadedMobileOrdersOnce = false; // Memory to track logins
 
 window.startMobileOrdersListener = function(branch) {
     if (window.mobileOrdersUnsubscribe) {
-        window.mobileOrdersUnsubscribe(); // Clear old listener
+        window.mobileOrdersUnsubscribe(); 
     }
 
-    // Listen ONLY for orders meant for this specific branch
     const q = window.query(
         window.collection(window.db, "incoming_orders"),
         window.where("branch", "==", branch),
@@ -1665,7 +1665,6 @@ window.startMobileOrdersListener = function(branch) {
     );
 
     window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
-        let initialLoad = window.mobileOrdersList.length === 0;
         window.mobileOrdersList = [];
         let newOrdersFound = false;
 
@@ -1673,9 +1672,11 @@ window.startMobileOrdersListener = function(branch) {
             window.mobileOrdersList.push({ id: doc.id, ...doc.data() });
         });
 
-        // Check if a brand new order arrived while the app was already running
+        // Check if a brand new order arrived while they were staring at the screen
         snapshot.docChanges().forEach((change) => {
-            if (change.type === "added" && !initialLoad) newOrdersFound = true;
+            if (change.type === "added" && window.hasLoadedMobileOrdersOnce) {
+                newOrdersFound = true;
+            }
         });
 
         // Update the Red Notification Badge
@@ -1694,8 +1695,13 @@ window.startMobileOrdersListener = function(branch) {
             window.showMobileOrders();
         }
 
-        // PLAY SOUND PING!
-        if (newOrdersFound) window.playNotificationPing();
+        // 🔥 THE NEW RING LOGIC: 
+        // Ring if a new order arrives OR if they just logged in and an order is waiting!
+        if (newOrdersFound || (!window.hasLoadedMobileOrdersOnce && window.mobileOrdersList.length > 0)) {
+            window.playNotificationPing();
+        }
+
+        window.hasLoadedMobileOrdersOnce = true; // Mark that they have officially logged in
     });
 };
 
