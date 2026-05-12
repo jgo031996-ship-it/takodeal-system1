@@ -319,7 +319,8 @@ window.loadGlobalDashboard = async function() {
 // --- WIRING THE BUTTONS ---
 // Run the radar the moment the page loads
 document.addEventListener("DOMContentLoaded", () => {
-  window.loadGlobalDashboard();
+    if (typeof window.setDefaultCutoffDates === 'function') { try { window.setDefaultCutoffDates(); } catch(e) {} }
+});
 
   // Wire up the Refresh Button
   const refreshBtn = document.getElementById('btnRefreshData');
