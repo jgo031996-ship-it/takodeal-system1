@@ -1716,15 +1716,21 @@ window.showMobileOrders = function() {
         let paymentColor = o.paymentMode === 'gcash' ? '#3b82f6' : '#f59e0b';
         let paymentLabel = o.paymentMode === 'gcash' ? 'GCash (Verify Ref: ' + (o.gcashRef || 'No Ref') + ')' : 'Cash (Pay at Counter)';
 
+        // 🔥 THE NEW DELIVERY DETAILS
+        let locText = o.exactLocation ? `<div style="font-size:12px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0;">📍 <strong>Delivery Address:</strong><br>${o.exactLocation}</div>` : '';
+        let photoBtn = o.landmarkImage ? `<div style="margin-top:8px;"><a href="${o.landmarkImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; border:1px solid #c7d2fe;">📸 View Landmark Photo</a></div>` : '';
+
         html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
                         <strong style="font-size:16px;">👤 ${o.customerName}</strong>
                         <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
                     </div>
-                    <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; margin-bottom: 10px; text-align: center;">
+                    <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; text-align: center;">
                         ${paymentLabel}
                     </div>
-                    <div style="margin-bottom:15px;">${itemsHtml}</div>
+                    ${locText}
+                    ${photoBtn}
+                    <div style="margin-bottom:15px; margin-top:15px;">${itemsHtml}</div>
                     <div style="display:flex; gap:10px;">
                         <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
                         <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
@@ -1832,15 +1838,20 @@ window.filterMenuToggle = function() {
     window.renderMenuToggleList(filteredItems);
 };
 
-// --- THIS IS THE MISSING FUNCTION CAUSING THE ERROR! ---
+// --- THE SMART TOGGLE FIX ---
 window.toggleItemStatus = async function(docId, makeAvailable) {
     try {
+        // 1. Update Cloud
         await window.updateDoc(window.doc(window.db, "menu", docId), {
             isAvailable: makeAvailable
         });
         
-        // Refresh the data to stay synced with Firebase
-        window.loadMenuManager(); 
+        // 2. 🔥 Update local memory immediately!
+        let item = window.globalMenuToggleList.find(i => i.id === docId);
+        if (item) item.isAvailable = makeAvailable;
+        
+        // 3. Re-apply the search filter WITHOUT reloading the whole page!
+        window.filterMenuToggle(); 
         
     } catch (e) {
         console.error("Error updating status:", e);
