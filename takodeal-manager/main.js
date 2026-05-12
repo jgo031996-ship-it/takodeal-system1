@@ -4509,6 +4509,14 @@ window.loadAttendanceLogs = async function () {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
             }
 
+            // 🔥 NEW: Check if this was a Manager Override!
+            let actionHtml = `<button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: none; border: 1px solid #cbd5e1; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 16px;">📷</button>`;
+            
+            if (data.isManual) {
+                locationText = `📍 ${data.branch} <br><span style="color:#d97706; font-size:11px; font-weight:bold;">⚠️ Manual Edit: ${data.remarks}</span>`;
+                actionHtml = `<span style="font-size: 11px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">By Manager</span>`;
+            }
+
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px; font-size: 13px; color: #64748b;">${timeStr}</td>
@@ -4518,7 +4526,7 @@ window.loadAttendanceLogs = async function () {
                         <span style="background: ${badgeColor}; color: ${textColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${data.type}</span>
                     </td>
                     <td style="padding: 12px; text-align: center; vertical-align: middle;">
-                        <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: none; border: 1px solid #cbd5e1; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 16px;">📷</button>
+                        ${actionHtml}
                     </td>
                 </tr>
             `;
@@ -6789,5 +6797,78 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay) {
     } catch(e) {
         console.error("Product Analytics Error:", e);
         tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading analytics. Check console.</td></tr>';
+    }
+};
+
+// ==========================================
+// 📝 MANUAL ATTENDANCE OVERRIDE ENGINE
+// ==========================================
+window.openManualAttendanceModal = async function() {
+    document.getElementById('manualAttendanceModal').style.display = 'flex';
+    let select = document.getElementById('manAttStaff');
+    select.innerHTML = '<option value="">Loading Staff...</option>';
+    
+    // Auto-set the datetime picker to right now to save time
+    let now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('manAttDateTime').value = now.toISOString().slice(0,16);
+    document.getElementById('manAttRemarks').value = '';
+
+    try {
+        const snap = await getDocs(collection(db, "cashiers"));
+        let html = '<option value="">-- Select Staff --</option>';
+        let staffList = [];
+        snap.forEach(doc => staffList.push(doc.data().cashierName));
+        staffList.sort().forEach(name => {
+            html += `<option value="${name}">${name}</option>`;
+        });
+        select.innerHTML = html;
+    } catch (e) {
+        console.error(e);
+        select.innerHTML = '<option value="">Error loading staff</option>';
+    }
+};
+
+window.submitManualAttendance = async function() {
+    let staffName = document.getElementById('manAttStaff').value;
+    let branch = document.getElementById('manAttBranch').value;
+    let type = document.getElementById('manAttType').value;
+    let dateTimeRaw = document.getElementById('manAttDateTime').value;
+    let remarks = document.getElementById('manAttRemarks').value.trim();
+
+    if (!staffName || !dateTimeRaw || !remarks) {
+        alert("❌ Please fill out Staff Name, Exact Time, and Manager Remarks.");
+        return;
+    }
+
+    let btn = document.getElementById('btnSaveManualAtt');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        // Convert the HTML datetime-local input into a proper Javascript Date object
+        let logDate = new Date(dateTimeRaw);
+
+        await addDoc(collection(db, "attendance_logs"), {
+            staffName: staffName,
+            branch: branch,
+            type: type,
+            timestamp: logDate, // Saves it at the exact time you selected!
+            isManual: true, // Flags it so the system knows there's no GPS/Selfie
+            remarks: remarks,
+            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
+        });
+
+        alert(`✅ Success! Manual ${type} for ${staffName} has been recorded.`);
+        document.getElementById('manualAttendanceModal').style.display = 'none';
+        window.loadAttendanceLogs(); // Refresh the feed
+
+        // If they had the Payroll tab open, this will nudge them to refresh it
+        alert("Reminder: If you are calculating payroll, click 'Generate List' again to apply this new time punch.");
+
+    } catch (error) {
+        console.error("Manual Log Error:", error);
+        alert("❌ Failed to save manual log.");
+    } finally {
+        btn.innerText = "💾 Save Override Log"; btn.disabled = false;
     }
 };
