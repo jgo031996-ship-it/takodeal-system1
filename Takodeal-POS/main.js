@@ -110,15 +110,78 @@ window.verifyPin = async function (pin) {
 };
 
 // --- THE FIREBASE MENU FETCHER ---
+// --- THE FIREBASE MENU FETCHER & GROUPER ---
 window.fetchMenu = async function () {
   try {
-    // 🔥 CHANGED from "products" to "menu" to sync with Manager HQ!
     const snapshot = await getDocs(collection(db, "menu"));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    let groupedMenu = [];
+    masterPOSData.phantomVariants = {}; // Stores the hidden sizes!
+
+    rawItems.forEach(item => {
+        let name = item.name;
+        // Check if the name ends with a number followed by "Pcs" (e.g., " 8 Pcs")
+        let match = name.match(/^(.*?)\s*(\d+\s*Pcs)$/i);
+        
+        if (match) {
+            let baseName = match[1].trim(); // e.g., "Bonito Takoyaki Original"
+            let sizeName = match[2].trim(); // e.g., "8 Pcs"
+            
+            // If we haven't seen this base name yet, create a card for it
+            let existingBase = groupedMenu.find(i => i.name === baseName && i.category === item.category);
+            if (!existingBase) {
+                let baseItem = { ...item, name: baseName, isGrouped: true };
+                groupedMenu.push(baseItem);
+                masterPOSData.phantomVariants[baseName] = [];
+            }
+            
+            // Store the specific size, price, and real DB name in memory
+            masterPOSData.phantomVariants[baseName].push({
+                realName: item.name,
+                sizeLabel: sizeName,
+                price: parseFloat(item.price) || 0,
+                id: item.id
+            });
+            
+            // Sort the variants by price so they appear in order (e.g., 4 Pcs -> 6 Pcs -> 8 Pcs)
+            masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
+            
+        } else {
+            // It's a normal item (like a drink), just add it normally
+            groupedMenu.push(item);
+        }
+    });
+
+    return groupedMenu;
   } catch (error) {
     console.error("Error fetching menu:", error);
     return [];
   }
+};
+
+window.loadPOSData = async function() {
+    let products = await window.fetchMenu();
+    masterPOSData.items = products;
+    masterPOSData.variants = {}; // Legacy variants
+    masterPOSData.addons = [];
+    let cats = [...new Set(products.map(p => p.category))].filter(Boolean);
+    masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
+    masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "GoTyme", "Bank", "Grab"] };
+
+    // 🔥 SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
+    masterPOSData.stockLevels = {};
+    const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
+    invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
+
+    masterPOSData.bom = [];
+    const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+    bomSnap.forEach(doc => masterPOSData.bom.push(doc.data()));
+
+    buildCategories();
+
+    let otHtml = ''; masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
+    let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
 };
 
 // --- THE SHIFT ENGINE ---
