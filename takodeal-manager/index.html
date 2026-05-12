@@ -2688,13 +2688,22 @@
         display: none; 
     }
 
-    /* Forces the active view to expand and reveal the cards */
+    /* Forces the active view to expand and stretch the cards inside it */
     .view.active { 
-        display: block; 
+        display: flex !important; 
+        flex-direction: column;
         flex: 1; 
         width: 100%; 
-        min-height: 100vh; /* 🔥 This prevents the 0-pixel collapse! */
+        min-height: 100vh; 
         animation: fadeIn 0.3s ease-in-out; 
+    }
+
+    /* Safety net to ensure cards NEVER turn invisible again */
+    .card {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 150px; /* Forces it to stay open even if empty */
     }
 
     @keyframes fadeIn {
