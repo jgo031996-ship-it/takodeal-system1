@@ -1100,7 +1100,6 @@ window.loadHqAccountsForRemittance = async function() {
 };
 
 window.submitRemittance = async function() {
-    // 🛡️ Bulletproof branch and cashier grabbers
     let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     let safeCashier = localStorage.getItem('cashierName') || 'Unknown';
 
@@ -1123,10 +1122,32 @@ window.submitRemittance = async function() {
 
     try {
         await addDoc(collection(db, "remittances"), payload);
-        alert("✅ Remittance securely sent to HQ!");
+        
+        // 🔥 THE FIX: Deduct this money from the active Cash Drawer!
+        if (activeShiftDetails && activeShiftDetails.logId) {
+            const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
+            const shiftSnap = await getDoc(shiftRef);
+            if (shiftSnap.exists()) {
+                let currentExp = shiftSnap.data().cashOut || 0;
+                await updateDoc(shiftRef, { cashOut: currentExp + payload.amount, expenses: currentExp + payload.amount });
+                
+                // Add it to the Expense logs so it shows up on the Z-Reading breakdown!
+                await addDoc(collection(db, "expenses"), {
+                    branch: safeBranch,
+                    shiftId: activeShiftDetails.logId,
+                    cashier: safeCashier,
+                    amount: payload.amount,
+                    description: `Remittance to ${payload.recipient} (${payload.channel})`,
+                    timestamp: serverTimestamp()
+                });
+            }
+        }
+
+        alert("✅ Remittance securely sent to HQ and deducted from Drawer!");
         document.getElementById('remitAmount').value = '';
         document.getElementById('remitRefNum').value = '';
         window.switchRemittanceTab('history');
+        if (typeof checkCurrentShift === 'function') checkCurrentShift(); // Refresh drawer UI
     } catch (e) { console.error(e); alert("❌ Failed to send remittance."); }
 };
 
