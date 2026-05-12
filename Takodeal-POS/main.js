@@ -121,7 +121,7 @@ window.fetchMenu = async function () {
     rawItems.forEach(item => {
         let name = item.name;
         // 🧠 Smart Regex: Looks for " 8 Pcs", " L", " M", " Duo" at the end of the name
-        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio)$/i);
+        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad)$/i);
         
         if (match) {
             let baseName = match[1].trim(); // e.g., "Bonito Takoyaki Original"
