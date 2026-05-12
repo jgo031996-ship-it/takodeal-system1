@@ -2683,8 +2683,12 @@
             padding: 0;
         }
         .ps-input::-webkit-outer-spin-button, .ps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    }
+    } /* <--- THIS CURLY BRACKET SAFELY CLOSES THE PRINTER SECTION! */
 
+    /* ========================================= */
+    /* 🔥 THE REAL SCREEN FIX (OUTSIDE PRINT!)   */
+    /* ========================================= */
+    
     /* Forces the inactive views to hide */
     .view { 
         display: none; 
@@ -2705,15 +2709,14 @@
         display: block;
         width: 100%;
         box-sizing: border-box;
-        min-height: 150px; /* Forces it to stay open even if empty */
+        min-height: 150px; 
     }
 
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
     }
-  
-</style>
+  </style>
 
   <script type="module" src="main.js"></script>
   <script>
