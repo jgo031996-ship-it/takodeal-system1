@@ -2517,8 +2517,12 @@ window.loadMenuCosting = async function() {
     });
 
     // Inject the new tabs into the HTML
-    let tabContainer = document.getElementById('costingTabsContainer');
-    if (tabContainer) tabContainer.innerHTML = tabsHtml;
+    // Inject the new tabs and PROTECT them from getting squished by Flexbox!
+    document.querySelectorAll('#costingTabsContainer').forEach(container => {
+        container.style.minHeight = "45px"; 
+        container.style.flexShrink = "0";
+        container.innerHTML = tabsHtml;
+    });
 
     // 4. Sort and Filter the Table
     items.sort((a, b) => (a.category || '').localeCompare(b.category || '') || (a.name || '').localeCompare(b.name || ''));
