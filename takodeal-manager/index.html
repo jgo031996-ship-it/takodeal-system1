@@ -2705,16 +2705,12 @@
         display: none; 
     }
 
-    /* Forces the active view to expand and stretch the cards inside it */
-    /* Forces the active view to expand and stretch the cards inside it */
+    /* Forces the active view to expand naturally inside the main scrolling area */
     .view.active { 
         display: flex !important; 
         flex-direction: column;
-        flex: 1; 
         width: 100%; 
-        min-height: 100vh;
-        overflow-y: auto !important; /* 🔥 THIS UNLOCKS THE SCROLLING! */
-        padding-bottom: 100px !important; /* 🔥 BREATHING ROOM AT THE BOTTOM! */
+        padding-bottom: 150px !important; /* 🔥 MASSIVE BREATHING ROOM AT THE BOTTOM! */
         animation: fadeIn 0.3s ease-in-out; 
     }
     /* Safety net to ensure cards NEVER turn invisible again */
