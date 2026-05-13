@@ -2950,7 +2950,6 @@ window.processRecipeCsvUpload = function (event) {
   reader.onload = async function (e) {
     const text = e.target.result;
 
-    // Smart CSV Parser
     function parseCSV(str) {
       let arr = []; let quote = false; let row = 0; let col = 0;
       for (let c = 0; c < str.length; c++) {
@@ -2970,10 +2969,14 @@ window.processRecipeCsvUpload = function (event) {
     const rows = parseCSV(text);
     let successCount = 0; let errorCount = 0;
     const uploadBtn = document.querySelector('button[onclick*="csvRecipeInput"]');
-    uploadBtn.innerText = "⏳ Uploading Recipes..."; uploadBtn.disabled = true;
+    
+    // ✅ THE BULLETPROOF FIX (TOP)
+    if (uploadBtn) {
+        uploadBtn.innerText = "⏳ Uploading Recipes..."; 
+        uploadBtn.disabled = true;
+    }
 
     try {
-      // Expected CSV Format: Menu Item, Ingredient Name, Qty
       for (let i = 1; i < rows.length; i++) {
         let cols = rows[i];
         if (cols.length === 1 && cols[0].trim() === "") continue;
@@ -2987,8 +2990,6 @@ window.processRecipeCsvUpload = function (event) {
           errorCount++; continue;
         }
 
-        // We assume you are appending/creating recipes. 
-        // Note: If you upload the same file twice, it will duplicate ingredients!
         await addDoc(collection(db, "bom"), {
           menuItem: menuItem,
           ingredientName: ingredientName,
@@ -3002,7 +3003,12 @@ window.processRecipeCsvUpload = function (event) {
     } catch (error) {
       console.error(error); alert("❌ Fatal Error.");
     } finally {
-      uploadBtn.innerText = "📂 Upload CSV Recipes"; uploadBtn.disabled = false; event.target.value = '';
+      // ✅ THE BULLETPROOF FIX (BOTTOM)
+      if (uploadBtn) { 
+          uploadBtn.innerText = "📂 Upload CSV Recipes"; 
+          uploadBtn.disabled = false; 
+      }
+      event.target.value = '';
     }
   };
   reader.readAsText(file);
@@ -3038,7 +3044,12 @@ window.processCsvUpload = function (event) {
     const rows = parseCSV(text);
     let successCount = 0; let errorCount = 0;
     const uploadBtn = document.querySelector('button[onclick*="csvFileInput"]');
-    uploadBtn.innerText = "⏳ Cleaning & Uploading..."; uploadBtn.disabled = true;
+    
+    // ✅ THE BULLETPROOF FIX (TOP)
+    if (uploadBtn) {
+        uploadBtn.innerText = "⏳ Cleaning & Uploading..."; 
+        uploadBtn.disabled = true;
+    }
 
     try {
       for (let i = 1; i < rows.length; i++) {
@@ -3047,8 +3058,6 @@ window.processCsvUpload = function (event) {
         if (cols.length < 9) { errorCount++; continue; }
 
         let name = cols[2].trim();
-
-        // ✨ THE AUTO-CLEANER: Removes ₱, commas, and spaces from numbers
         const cleanNum = (val) => parseFloat(val.replace(/[₱, ]/g, ''));
 
         let conv = cleanNum(cols[5]);
@@ -3080,7 +3089,11 @@ window.processCsvUpload = function (event) {
     } catch (error) {
       console.error(error); alert("❌ Fatal Error.");
     } finally {
-      uploadBtn.innerText = "📂 Bulk Upload CSV"; uploadBtn.disabled = false;
+      // ✅ THE BULLETPROOF FIX (BOTTOM)
+      if (uploadBtn) { 
+          uploadBtn.innerText = "📂 Bulk Upload CSV"; 
+          uploadBtn.disabled = false; 
+      }
     }
   };
   reader.readAsText(file);
