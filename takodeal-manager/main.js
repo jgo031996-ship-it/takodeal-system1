@@ -3204,7 +3204,9 @@ window.openEditInv = async function(encodedData) {
             
             document.getElementById('editInvLowStock').value = data.reorderLevel || 0;
             document.getElementById('editInvOldQty').value = data.currentStock || 0;
-            document.getElementById('editInvShowCashier').checked = data.showToCashier !== false;
+            // Safely check if the box exists before trying to tick it!
+            let cashierCheck = document.getElementById('editInvShowCashier');
+            if (cashierCheck) cashierCheck.checked = data.showToCashier !== false;
             
             // Reset Variance inputs
             document.getElementById('editInvNewQty').value = '';
