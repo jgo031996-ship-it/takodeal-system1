@@ -1815,7 +1815,7 @@ window.startMobileOrderAlarm = function() {
     window.stopMobileOrderAlarm(); // Clear any existing alarm
     window.playNotificationPing(); // Play the first ring immediately
     
-    // Repeat the ring every 2 seconds
+    // Repeat the ring every 2 seconds FOREVER until they check the order!
     window.orderAlarmInterval = setInterval(() => {
         // Auto-stop if the cashier opens the menu!
         if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
@@ -1824,11 +1824,11 @@ window.startMobileOrderAlarm = function() {
         }
         window.playNotificationPing();
     }, 2000);
+};
 
-    // Force stop after exactly 10 seconds
-    window.orderAlarmTimeout = setTimeout(() => {
-        window.stopMobileOrderAlarm();
-    }, 10000);
+window.stopMobileOrderAlarm = function() {
+    if (window.orderAlarmInterval) clearInterval(window.orderAlarmInterval);
+    // Removed the timeout clearer since the timeout no longer exists!
 };
 
 window.stopMobileOrderAlarm = function() {
