@@ -710,7 +710,7 @@ window.openEndShiftClearance = async function () {
 };
 
 // ========================================================
-// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH AUTO-SWEEP)
+// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH AUTO-SWEEP & SECURITY LOCK)
 // ========================================================
 window.submitComprehensiveCloseShift = async function () {
     let declaredCash = calculateDenominations();
@@ -720,7 +720,6 @@ window.submitComprehensiveCloseShift = async function () {
         cashBreakdown[`₱${d}`] = parseInt(document.getElementById(`qty${d}`).value) || 0;
     });
 
-    // Replace the old physicalStock block with this:
     let physicalStock = {};
     document.querySelectorAll('.shift-count-input').forEach(inp => {
         let val = parseInt(inp.value) || 0;
@@ -756,6 +755,15 @@ window.submitComprehensiveCloseShift = async function () {
         }
 
         let expectedCash = activeShiftDetails.startingCash + totalCashSales - activeShiftDetails.cashOut;
+
+        // 🚨 ========================================================
+        // 🔒 THE "ZERO CASH" SECURITY LOCK
+        // ========================================================
+        if (expectedCash > 0 && declaredCash === 0) {
+            alert(`⛔ SECURITY LOCKOUT!\n\nThe system expects ₱${expectedCash.toFixed(2)} in your drawer.\n\nYou cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`);
+            return; // Stops the shift from closing!
+        }
+        // ========================================================
 
         // 2. CLOSE THE SHIFT RECORD
         await updateDoc(doc(db, "shifts", shiftId), {
