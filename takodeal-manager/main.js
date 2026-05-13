@@ -2558,7 +2558,12 @@ window.loadMenuCosting = async function() {
           <td style="font-weight: 600;">${formatMoney(price)}</td>
           <td style="color: var(--danger); font-weight: 600;">${cogsDisplay}</td>
           <td style="color: ${marginColor}; font-weight: 700;">${recipe.length > 0 ? formatMoney(margin) + ` <span style="font-size:11px; color:var(--text-muted);">(${marginPct.toFixed(0)}%)</span>` : '-'}</td>
-          <td><button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 6px 12px; font-size: 12px;" onclick="openBomEditor('${item.name}')">✏️ Update</button></td>
+          <td>
+              <div style="display: flex; gap: 5px;">
+                  <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 6px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;" onclick="openBomEditor('${item.name}')">✏️ Update</button>
+                  <button style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 6px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;" onclick="window.deleteMenuAndBom('${item.id}', '${item.name}')">🗑️</button>
+              </div>
+          </td>
         </tr>
       `;
     });
@@ -4528,12 +4533,22 @@ window.loadAttendanceLogs = async function () {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
             }
 
-            // 🔥 NEW: Check if this was a Manager Override!
-            let actionHtml = `<button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: none; border: 1px solid #cbd5e1; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 16px;">📷</button>`;
+            // 🔥 NEW: Beautiful side-by-side Action Buttons!
+            let actionHtml = `
+                <div style="display: flex; gap: 5px; justify-content: center;">
+                    <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="View Selfie">📷</button>
+                    <button onclick="window.deleteAttendanceLog('${docSnap.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
+                </div>
+            `;
             
             if (data.isManual) {
                 locationText = `📍 ${data.branch} <br><span style="color:#d97706; font-size:11px; font-weight:bold;">⚠️ Manual Edit: ${data.remarks}</span>`;
-                actionHtml = `<span style="font-size: 11px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">By Manager</span>`;
+                actionHtml = `
+                <div style="display: flex; gap: 5px; justify-content: center; align-items: center;">
+                    <span style="font-size: 10px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">Manual</span>
+                    <button onclick="window.deleteAttendanceLog('${docSnap.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
+                </div>
+                `;
             }
 
             html += `
@@ -5125,6 +5140,43 @@ window.downloadExcel = function(tbodyId, fileName) {
     document.body.appendChild(tempLink);
     tempLink.click();
     document.body.removeChild(tempLink);
+};
+
+// ==========================================
+// 🗑️ MASTER DELETE FUNCTIONS (ATTENDANCE & BOM)
+// ==========================================
+window.deleteAttendanceLog = async function(docId, staffName) {
+    if(!confirm(`⚠️ Are you sure you want to permanently delete this time punch for ${staffName}?`)) return;
+    try {
+        await deleteDoc(doc(db, "attendance_logs", docId));
+        window.loadAttendanceLogs(); // Refresh the table instantly!
+    } catch(e) { console.error(e); alert("Failed to delete log."); }
+};
+
+window.deleteMenuAndBom = async function(docId, name) {
+    if (!confirm(`⚠️ Are you absolutely sure you want to delete "${name}"?\n\nThis will remove it from the POS and delete its Recipe/BOM forever.`)) return;
+    
+    try {
+        // 1. Delete the Menu Item
+        await deleteDoc(doc(db, "menu", docId));
+        
+        // 2. Find and delete all Recipe items attached to it
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", name));
+        const bomSnap = await getDocs(bomQ);
+        for (let b of bomSnap.docs) { 
+            await deleteDoc(doc(db, "bom", b.id)); 
+        }
+
+        alert(`✅ "${name}" has been completely deleted.`);
+        
+        // 3. Smart Refresh: Reload whichever tab you are currently looking at!
+        if (document.getElementById('view-menu') && document.getElementById('view-menu').classList.contains('active')) window.loadMenuEditor();
+        if (document.getElementById('view-products') && document.getElementById('view-products').classList.contains('active')) window.loadMenuCosting();
+        
+    } catch(e) { 
+        console.error("Delete Error:", e); 
+        alert("❌ Failed to delete item."); 
+    }
 };
 
 // Modals safety catch
