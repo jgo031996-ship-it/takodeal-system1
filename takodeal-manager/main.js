@@ -5770,13 +5770,13 @@ window.adjustStaffLoan = async function(staffId, staffName, currentLoan, current
     try {
         // 3. Update the exact staff document in Firebase (forces the new numbers)
         // Note: Change "cashiers" to "employees" or "staff" if your database collection is named differently
-        await window.updateDoc(window.doc(window.db, "cashiers", staffId), {
+        await updateDoc(doc(db, "cashiers", staffId), {
             totalLoaned: newLoan,
             totalPaid: newPaid
         });
 
         // 4. Create an audit log so you remember you made this adjustment
-        await window.addDoc(window.collection(window.db, "manager_alerts"), {
+        await addDoc(collection(db, "manager_alerts"), {
             type: "LOAN_ADJUSTMENT",
             branch: "Main Office",
             message: `Manual ledger override for ${staffName}. New Balance forced to ₱${newBalance.toFixed(2)}.`,
@@ -5927,7 +5927,7 @@ window.editGrabLoanSettings = async function() {
     let commRateNum = (parseFloat(newCommissionRate) || 0) / 100;
 
     try {
-        await window.setDoc(window.doc(window.db, "settings", "grab_financials"), {
+        await setDoc(doc(db, "settings", "grab_financials"), {
             remainingLoanBalance: loanNum,
             dailyLoanDeduction: dedAmountNum, // Saving the flat amount
             commissionRate: commRateNum,
