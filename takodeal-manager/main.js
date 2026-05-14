@@ -4519,13 +4519,10 @@ window.loadAttendanceLogs = async function () {
             logsArray.sort((a, b) => {
                 let nameA = a.staffName || "";
                 let nameB = b.staffName || "";
-                // If it's the same person, sort their punches by time (Newest first)
-                if (nameA === nameB) return b.timestamp - a.timestamp; 
-                // Otherwise, sort alphabetically
-                return nameA.localeCompare(nameB);
+                if (nameA === nameB) return b.timestamp - a.timestamp; // Sort punches by time
+                return nameA.localeCompare(nameB); // Sort alphabetically
             });
         } else {
-            // Default: Sort strictly by Time
             logsArray.sort((a, b) => b.timestamp - a.timestamp);
         }
 
