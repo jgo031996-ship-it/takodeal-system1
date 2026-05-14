@@ -2145,3 +2145,57 @@ window.submitGrabEarnings = async function() {
         btn.innerText = "💾 Save Earnings"; btn.disabled = false;
     }
 };
+
+// ==========================================
+// 🚦 BUSY MODE / PREP TIME ENGINE
+// ==========================================
+window.isBusyMode = false;
+
+window.toggleBusyMode = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) { alert("Branch not set!"); return; }
+
+    window.isBusyMode = !window.isBusyMode;
+    let btn = document.getElementById('btnToggleBusy');
+    
+    // Update UI
+    if (window.isBusyMode) {
+        btn.innerHTML = "🔴 BUSY MODE (+30m)";
+        btn.style.background = "#ef4444";
+    } else {
+        btn.innerHTML = "🟢 Normal Prep (15m)";
+        btn.style.background = "#10b981";
+    }
+
+    // Save to Firebase so the Customer App can see it!
+    try {
+        await window.setDoc(window.doc(window.db, "settings", "status_" + branch), { 
+            busyMode: window.isBusyMode,
+            lastUpdated: window.serverTimestamp()
+        }, { merge: true });
+    } catch(e) {
+        console.error("Error setting busy mode:", e);
+    }
+};
+
+// Check current status on load
+setTimeout(async () => {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (branch) {
+        window.onSnapshot(window.doc(window.db, "settings", "status_" + branch), (docSnap) => {
+            if (docSnap.exists()) {
+                window.isBusyMode = docSnap.data().busyMode || false;
+                let btn = document.getElementById('btnToggleBusy');
+                if (btn) {
+                    if (window.isBusyMode) {
+                        btn.innerHTML = "🔴 BUSY MODE (+30m)";
+                        btn.style.background = "#ef4444";
+                    } else {
+                        btn.innerHTML = "🟢 Normal Prep (15m)";
+                        btn.style.background = "#10b981";
+                    }
+                }
+            }
+        });
+    }
+}, 3000);
