@@ -2064,7 +2064,7 @@
           <input type="date" id="grabEarnDate" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
           
           <label style="font-size: 12px; font-weight: bold; color: #334155;">Net Earnings (₱)</label>
-          <input type="number" id="grabEarnAmount" placeholder="e.g. 2500.50" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #00b14f;">
+          <input type="number" id="grabEarnAmount" placeholder="e.g. 2500.50" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #00b14f; outline: none;">
           
           <div style="display: flex; gap: 10px; justify-content: flex-end;">
               <button onclick="document.getElementById('grabEarningsModal').style.display='none'" style="padding: 10px 15px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
@@ -2072,9 +2072,6 @@
           </div>
       </div>
   </div>
-
-  <script>
-    sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
 
   <script>
     sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
