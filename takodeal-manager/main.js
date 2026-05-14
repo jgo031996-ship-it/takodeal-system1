@@ -631,7 +631,7 @@ window.switchView = function (viewId) {
   if (viewId === 'products') title = "Menu Costing & BOM";
   if (viewId === 'purchases') title = "Purchases & Alerts";
   if (viewId === 'dispatch') title = "Logistics & Dispatch";
-  if (viewId === 'zreading') title = "Z-Reading Reports";
+  if (viewId === 'zreadings') title = "Z-Reading Reports";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'ledger') title = "Staff Loans & Ledger";
