@@ -3749,11 +3749,68 @@ window.deleteDevice = async function (deviceId) {
 // ========================================================
 // 🔍 THE BEAUTIFUL VARIANCE & BREAKDOWN MODAL
 // ========================================================
-window.viewZReadingDetails = async function (breakdownStr, stockStr, cashierName, branchName, declaredCash) {
+window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, cashierName, branchName, declaredCash) {
   // 1. Open the UI
   document.getElementById('breakdownModal').style.display = 'flex';
   document.getElementById('bdTitle').innerText = `Z-Reading: ${cashierName.toUpperCase()} (${branchName})`;
   document.getElementById('bdTotalCash').innerText = `Declared Total: ₱${parseFloat(declaredCash).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  // --- 🚀 NEW: THE ENTERPRISE SALES MATH ENGINE ---
+  document.getElementById('bdNetSalesTotal').innerText = "⏳ Loading...";
+  document.getElementById('bdPaymentBreakdown').innerHTML = "Loading...";
+  document.getElementById('bdOrderTypeBreakdown').innerHTML = "Loading...";
+
+  try {
+      // 1. Get the exact start and end time of this specific shift
+      const shiftSnap = await getDoc(doc(db, "shifts", shiftId));
+      if (shiftSnap.exists()) {
+          let sTime = shiftSnap.data().startTime.toDate();
+          let eTime = shiftSnap.data().endTime.toDate();
+
+          // 2. Query ALL transactions that happened exactly within that time block
+          const txQ = query(collection(db, "transactions"), 
+              where("branch", "==", branchName), 
+              where("timestamp", ">=", sTime), 
+              where("timestamp", "<=", eTime)
+          );
+          const txSnap = await getDocs(txQ);
+
+          let totalNet = 0;
+          let payments = {};
+          let orderTypes = {};
+
+          // 3. Crunch the numbers!
+          txSnap.forEach(tDoc => {
+              let tx = tDoc.data();
+              if (tx.status !== "Voided") {
+                  totalNet += (tx.netTotal || 0);
+
+                  let payMeth = tx.paymentMethod || "Cash";
+                  payments[payMeth] = (payments[payMeth] || 0) + (tx.netTotal || 0);
+
+                  let oType = tx.orderType || "Dine-In";
+                  orderTypes[oType] = (orderTypes[oType] || 0) + (tx.netTotal || 0);
+              }
+          });
+
+          // 4. Inject the data into your beautiful new UI
+          document.getElementById('bdNetSalesTotal').innerText = "₱" + totalNet.toLocaleString(undefined, {minimumFractionDigits: 2});
+
+          let payHtml = '';
+          for (let p in payments) {
+              payHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:4px 0;"><span>${p}</span><strong style="color:#0f766e;">₱${payments[p].toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>`;
+          }
+          document.getElementById('bdPaymentBreakdown').innerHTML = payHtml || "<i style='color:#94a3b8;'>No sales</i>";
+
+          let typeHtml = '';
+          for (let t in orderTypes) {
+              typeHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:4px 0;"><span>${t}</span><strong style="color:#0f766e;">₱${orderTypes[t].toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>`;
+          }
+          document.getElementById('bdOrderTypeBreakdown').innerHTML = typeHtml || "<i style='color:#94a3b8;'>No sales</i>";
+      }
+  } catch(e) {
+      console.error("Sales Math Error:", e);
+  }
+  // --- END OF SALES MATH ENGINE ---
 
   let breakdown = JSON.parse(decodeURIComponent(breakdownStr));
   let physicalStock = JSON.parse(decodeURIComponent(stockStr));
@@ -4228,7 +4285,7 @@ window.loadZReadingReports = async function () {
           </td>
           <td>${varText}</td>
           <td>
-            <button onclick="viewZReadingDetails('${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared})" class="btn-refresh" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px;">🔍 Full Audit</button>
+            <button onclick="viewZReadingDetails('${docSnap.id}', '${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared})" class="btn-refresh" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px;">🔍 Full Audit</button>
           </td>
         </tr>
       `;
