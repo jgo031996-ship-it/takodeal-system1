@@ -1654,14 +1654,20 @@ window.logPrepBatch = async function(invId, itemName, branch) {
     try {
         const invRef = doc(db, "inventory", invId);
         
-        // 1. ADD TO PREP BATCH INVENTORY (This "Refreshes" the negative numbers!)
+        // 1. ADD TO PREP BATCH INVENTORY 
         const invSnap = await getDoc(invRef);
-        let currentStock = invSnap.data().currentStock || 0;
+        let invData = invSnap.data();
+        let currentStock = invData.currentStock || 0;
+        
+        // 🔥 THE FIX: Multiply by the Conversion Rate so it adds Grams, not just "1"!
+        let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
+        let baseQtyToAdd = qty * convRate;
+
         await updateDoc(invRef, {
-            currentStock: currentStock + qty
+            currentStock: currentStock + baseQtyToAdd
         });
 
-        // 2. 🔥 THE MAGIC: AUTO-DEDUCT RAW INGREDIENTS VIA BOM 🔥
+        // 2. AUTO-DEDUCT RAW INGREDIENTS VIA BOM
         const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
         const bomSnap = await getDocs(bomQ);
         
@@ -1671,9 +1677,10 @@ window.logPrepBatch = async function(invId, itemName, branch) {
             for (let bomDoc of bomSnap.docs) {
                 let recipe = bomDoc.data();
                 let rawIngredient = recipe.ingredientName;
-                let totalAmountToDeduct = (recipe.qty || 0) * qty;
+                
+                // Deduct the ingredients based on how many BATCHES they made
+                let totalAmountToDeduct = (recipe.qty || 0) * qty; 
 
-                // Find this raw ingredient in the branch's live inventory
                 const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
                 const rawSnap = await getDocs(rawQ);
 
@@ -1681,10 +1688,8 @@ window.logPrepBatch = async function(invId, itemName, branch) {
                     let rawRef = rawSnap.docs[0].ref;
                     let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
                     
-                    // Secretly deduct the raw ingredient!
                     await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
                 } else {
-                    // Keep track if they forgot to add a raw material to the warehouse
                     missingItems.push(rawIngredient);
                 }
             }
@@ -1695,14 +1700,14 @@ window.logPrepBatch = async function(invId, itemName, branch) {
         await addDoc(collection(db, "stock_logs"), {
             branch: branch,
             item: itemName,
-            variance: qty,
+            variance: baseQtyToAdd, // 🔥 Logs the actual Grams added!
             type: "End-of-Shift Kitchen Prep",
-            note: `Prepared by ${safeCashierName}`,
+            note: `Prepared ${qty} batch(es) by ${safeCashierName}`,
             timestamp: new Date()
         });
 
         // 4. SHOW SUCCESS MESSAGE
-        let msg = `✅ Successfully logged ${qty} batch(es) of ${itemName}!\nPrep Batch stocks have been refreshed.`;
+        let msg = `✅ Successfully logged ${qty} batch(es) of ${itemName}!\nAdded +${baseQtyToAdd.toLocaleString()} ${invData.uom || invData.baseUom} to the vault.`;
         if (missingItems.length > 0) {
             msg += `\n\n⚠️ Warning: The following raw ingredients are missing from the ${branch} warehouse and were not deducted: ${missingItems.join(", ")}`;
         }
