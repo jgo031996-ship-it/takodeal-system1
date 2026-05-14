@@ -4221,7 +4221,10 @@ window.loadZReadingReports = async function () {
           <td>${dateStr}</td>
           <td><span class="badge badge-closed">${safeBranch}</span></td>
           <td><strong>${safeCashier}</strong></td>
-          <td style="font-size: 13px;">Exp: <strong>${expectedFormatted}</strong><br>Dec: <strong style="color:var(--primary);">${declaredFormatted}</strong></td>
+          <td style="font-size: 13px;">
+          <span style="color: #64748b;">Start: ₱${formatMoney(data.startingCash || 0)}</span><br>
+          Exp: <strong>${expectedFormatted}</strong><br>
+          Dec: <span style="color:${varianceColor}; font-weight:bold;">₱${formatMoney(data.declaredCash)}</span></td>
           <td>${varText}</td>
           <td>
             <button onclick="viewZReadingDetails('${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared})" class="btn-refresh" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px;">🔍 Full Audit</button>
