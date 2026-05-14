@@ -5880,7 +5880,6 @@ window.calculateGrabFinancials = async function() {
     let currentLoanBalance = 0;
 
     try {
-        // 🔥 FIX: Cleaned up the Firebase queries
         const grabSettingsDoc = await getDoc(doc(db, "settings", "grab_financials"));
         if (grabSettingsDoc.exists()) {
             let data = grabSettingsDoc.data();
@@ -5888,11 +5887,8 @@ window.calculateGrabFinancials = async function() {
             grabDailyDeductionAmount = data.dailyLoanDeduction || 0; 
             currentLoanBalance = data.remainingLoanBalance || 0;
         }
-    } catch (e) {
-        console.warn("Could not load Grab settings, using defaults.", e);
-    }
+    } catch (e) { console.warn("Could not load Grab settings", e); }
 
-    // Update UI Loan Balance
     if(document.getElementById('grabRemainingLoan')) document.getElementById('grabRemainingLoan').innerText = `₱${currentLoanBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
     try {
@@ -5901,19 +5897,15 @@ window.calculateGrabFinancials = async function() {
         
         if (!startDateInput || !endDateInput) {
             let todayStr = new Date().toISOString().split('T')[0];
-            startDateInput = todayStr;
-            endDateInput = todayStr;
+            startDateInput = todayStr; endDateInput = todayStr;
         }
 
         let startOfDay = new Date(startDateInput + 'T00:00:00');
         let endOfDay = new Date(endDateInput + 'T23:59:59');
-        
         let daysDiff = Math.max(1, Math.ceil((endOfDay - startOfDay) / (1000 * 60 * 60 * 24)));
 
-        const q = query(collection(db, "transactions"), 
-            where("timestamp", ">=", startOfDay),
-            where("timestamp", "<=", endOfDay)
-        );
+        // 1. Fetch Sales
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const snap = await getDocs(q);
         
         let branchData = {}; 
@@ -5924,28 +5916,45 @@ window.calculateGrabFinancials = async function() {
             if (tx.status !== 'Voided' && tx.paymentMethod === 'Grab') {
                 let branch = tx.branch || "Unknown";
                 let amount = tx.netTotal || 0;
-                
                 if(!branchData[branch]) branchData[branch] = 0;
                 branchData[branch] += amount;
                 totalGrabGross += amount;
             }
         });
 
+        // 2. Fetch Actual Payouts Logged by Cashier
+        const payoutQ = query(collection(db, "grab_payouts"), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
+        const payoutSnap = await getDocs(payoutQ);
+        
+        let actualGrabPayout = 0;
+        let payoutLogsHtml = '';
+        
+        if (payoutSnap.empty) {
+            payoutLogsHtml = '<div style="color:#94a3b8; font-size:12px; font-style:italic;">No manual Grab earnings logged by cashiers yet.</div>';
+        } else {
+            payoutSnap.forEach(docSnap => {
+                let p = docSnap.data();
+                actualGrabPayout += (p.amount || 0);
+                payoutLogsHtml += `<div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #e2e8f0; padding:4px 0; color:#334155;"><span>📅 ${p.dateStr} (${p.branch})</span><span style="font-weight:bold; color:#00b14f;">₱${p.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>`;
+            });
+        }
+
+        // 3. Build UI
         let breakdownHtml = `
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead>
                     <tr style="border-bottom: 2px solid #e2e8f0; color: #64748b; text-align: left;">
                         <th style="padding: 8px 0;">Branch</th>
-                        <th style="padding: 8px 0; text-align: right;">Grab Gross</th>
+                        <th style="padding: 8px 0; text-align: right;">System Gross</th>
                         <th style="padding: 8px 0; text-align: right;">Comm (-${(grabCommissionPercent*100).toFixed(0)}%)</th>
-                        <th style="padding: 8px 0; text-align: right; color: #00b14f;">Net Sales</th>
+                        <th style="padding: 8px 0; text-align: right; color: #00b14f;">Expected Net</th>
                     </tr>
                 </thead>
                 <tbody>
         `;
 
         if (Object.keys(branchData).length === 0) {
-            breakdownHtml += `<tr><td colspan="4" style="padding: 10px 0; text-align: center; color: #94a3b8;">No Grab sales found for this date range.</td></tr>`;
+            breakdownHtml += `<tr><td colspan="4" style="padding: 10px 0; text-align: center; color: #94a3b8;">No Grab sales found.</td></tr>`;
         } else {
             for (let branch in branchData) {
                 let gross = branchData[branch];
@@ -5962,20 +5971,51 @@ window.calculateGrabFinancials = async function() {
             }
         }
         breakdownHtml += `</tbody></table>`;
+        
         if(document.getElementById('grabBranchBreakdown')) document.getElementById('grabBranchBreakdown').innerHTML = breakdownHtml;
 
+        // 4. Calculate Final Variances
         let globalCommission = totalGrabGross * grabCommissionPercent;
         let globalLoanCut = totalGrabGross > 0 ? (grabDailyDeductionAmount * daysDiff) : 0; 
+        let finalExpectedPayout = totalGrabGross - globalCommission - globalLoanCut;
         
-        let finalNetPayout = totalGrabGross - globalCommission - globalLoanCut;
+        let variance = actualGrabPayout - finalExpectedPayout;
+        let varianceColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#10b981' : '#475569');
+        let varianceText = variance === 0 ? "Perfect Match" : `₱${variance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
+        // Inject data into the cards
         if (document.getElementById('grabTotalGross')) document.getElementById('grabTotalGross').innerText = `₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         if (document.getElementById('grabTotalLoanCut')) document.getElementById('grabTotalLoanCut').innerText = `- ₱${globalLoanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        if (document.getElementById('grabTotalNetPayout')) document.getElementById('grabTotalNetPayout').innerText = `₱${finalNetPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        
+        let netPayoutEl = document.getElementById('grabTotalNetPayout');
+        if (netPayoutEl) {
+            // We rewrite this entire bottom section to include the Reconciliation UI
+            netPayoutEl.parentElement.innerHTML = `
+                <div style="display: flex; flex-direction: column; width: 100%;">
+                    <div style="display: flex; justify-content: space-between; padding-top: 8px; margin-bottom: 10px;">
+                        <span style="font-weight: bold; color: #0f172a; font-size: 14px;">Calculated Expected Payout:</span>
+                        <span style="font-weight: bold; color: #00b14f; font-size: 15px;">₱${finalExpectedPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </div>
+                    
+                    <div style="background: #f1f5f9; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px;">
+                        <div style="font-size: 11px; font-weight: bold; color: #475569; margin-bottom: 5px;">ACTUAL PAYOUTS LOGGED BY CASHIER:</div>
+                        ${payoutLogsHtml}
+                        <div style="display: flex; justify-content: space-between; margin-top: 5px; padding-top: 5px; border-top: 1px solid #cbd5e1;">
+                            <span style="font-weight: bold; font-size: 13px; color: #0f172a;">Total Actual Remittance:</span>
+                            <span style="font-weight: bold; font-size: 14px; color: #0f172a;">₱${actualGrabPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; background: ${variance < 0 ? '#fef2f2' : (variance > 0 ? '#f0fdf4' : '#f8fafc')}; padding: 10px; border-radius: 6px; border: 1px solid ${variance < 0 ? '#fecaca' : (variance > 0 ? '#bbf7d0' : '#e2e8f0')};">
+                        <span style="font-weight: bold; color: ${varianceColor}; font-size: 15px;">RECONCILIATION VARIANCE:</span>
+                        <span style="font-weight: 900; color: ${varianceColor}; font-size: 16px;">${varianceText}</span>
+                    </div>
+                </div>
+            `;
+        }
 
     } catch (error) {
         console.error("Error calculating Grab financials:", error);
-        if(document.getElementById('grabBranchBreakdown')) document.getElementById('grabBranchBreakdown').innerHTML = `<div style="text-align:center; color:red;">Failed to load data. Check console.</div>`;
     }
 };
 
