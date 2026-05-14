@@ -3610,20 +3610,27 @@ window.exportInventoryCSV = async function () {
 };
 
 
+// ========================================================
 // 2. READS AND UPDATES THE DATABASE WITHOUT DUPLICATING
+// ========================================================
 window.smartImportCSV = function (event) {
   const file = event.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
+  
+  // 🔥 GRAB THE LABEL SAFELY
+  const uploadLabel = event.target.parentElement;
+  const originalText = uploadLabel.innerHTML;
+  uploadLabel.innerHTML = "⏳ Syncing..."; 
+  uploadLabel.style.pointerEvents = "none"; // Disable clicking safely
+
   reader.onload = async function (e) {
     const text = e.target.result;
     const rows = text.split('\n');
 
     let updatedCount = 0;
     let addedCount = 0;
-    const btn = document.querySelector('button[onclick*="csvInvUpload"]');
-    btn.innerText = "⏳ Syncing..."; btn.disabled = true;
 
     try {
       // Loop through every row (Skip row 0 because it's the header)
@@ -3642,13 +3649,13 @@ window.smartImportCSV = function (event) {
         if (!name) continue; // If there is no item name, ignore the row
 
         if (docId !== "") {
-          // 🔥 MAGIC: If it has an ID, UPDATE the existing item!
+          // UPDATE existing item
           await updateDoc(doc(db, "inventory", docId), {
             branch: branch, category: category, name: name, uom: uom, baseCost: baseCost, currentStock: currentStock
           });
           updatedCount++;
         } else {
-          // 🔥 If the ID is blank, it's a new row you added in Excel. CREATE IT!
+          // CREATE brand new item
           await addDoc(collection(db, "inventory"), {
             branch: branch, category: category, name: name, uom: uom, baseCost: baseCost, currentStock: currentStock
           });
@@ -3657,16 +3664,15 @@ window.smartImportCSV = function (event) {
       }
 
       alert(`✅ Smart Sync Complete!\n\nUpdated: ${updatedCount} existing items.\nAdded: ${addedCount} brand new items.`);
-
-      // Refresh your Live Inventory table so you can see the changes!
       if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
       else location.reload();
 
     } catch (error) {
       console.error(error); alert("❌ Fatal Error syncing CSV data.");
     } finally {
-      btn.innerText = "📥 Smart Sync Upload"; btn.disabled = false;
       event.target.value = ''; // Reset the file input
+      uploadLabel.innerHTML = originalText; // Restore original button text
+      uploadLabel.style.pointerEvents = "auto";
     }
   };
   reader.readAsText(file);
