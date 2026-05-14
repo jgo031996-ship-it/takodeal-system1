@@ -1240,8 +1240,16 @@
           }
 
           sessionUser = identity;
+          
+          // 🔥 THE MASTER FIX: Force the system to use the Tablet's Physical Location!
+          // This prevents Roving Managers from accidentally deducting from the HQ warehouse.
+          let lockedDeviceBranch = localStorage.getItem('takodeal_device_branch');
+          if (lockedDeviceBranch) {
+              sessionUser.branch = lockedDeviceBranch;
+          }
+
           localStorage.setItem('cashierName', identity.cashierName);
-          document.getElementById('displayBranch').innerText = "📍 " + identity.branch;
+          document.getElementById('displayBranch').innerText = "📍 " + sessionUser.branch;
           document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
           document.getElementById('loginOverlay').style.display = 'none';
           
@@ -1249,8 +1257,8 @@
           if (typeof checkCurrentShift === 'function') await checkCurrentShift();
           if (typeof updateParkedBadge === 'function') await updateParkedBadge();
 
-          // ADD THIS LINE HERE: Turn on the mobile order listener!
-          if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(identity.branch);
+          // Turn on the mobile order listener for THIS specific branch!
+          if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
       }
   </script>
   <div class="login-overlay" id="loginOverlay">
