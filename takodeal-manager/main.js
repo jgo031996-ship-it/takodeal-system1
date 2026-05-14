@@ -318,6 +318,11 @@ window.loadGlobalDashboard = async function() {
     if (typeof window.loadProductAnalytics === 'function') {
         window.loadProductAnalytics(startOfDay, endOfDay);
     }
+  
+    // 📈 WAKE UP THE ADVANCED CHARTS!
+    if (typeof window.renderDashboardCharts === 'function') {
+        window.renderDashboardCharts();
+    }
 };
 
 // --- WIRING THE BUTTONS ---
@@ -7015,5 +7020,136 @@ window.submitManualAttendance = async function() {
         alert("❌ Failed to save manual log.");
     } finally {
         btn.innerText = "💾 Save Override Log"; btn.disabled = false;
+    }
+};
+
+// ========================================================
+// 📈 ADVANCED CHART.JS ANALYTICS ENGINE
+// ========================================================
+window.revenueChartInstance = null;
+window.categoryChartInstance = null;
+
+window.renderDashboardCharts = async function() {
+    try {
+        // 1. Setup Dates for the 7-Day Trend
+        let today = new Date();
+        today.setHours(23, 59, 59, 999);
+        let sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(today.getDate() - 6); // Look back 6 days + today
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+
+        // 2. Fetch the last 7 days of transactions
+        const txQ = query(collection(db, "transactions"), where("timestamp", ">=", sevenDaysAgo), where("timestamp", "<=", today));
+        const txSnap = await getDocs(txQ);
+
+        // --- DATA BUCKETS ---
+        let dailyTotals = {};
+        let categoryTotals = {};
+        
+        // Pre-fill the last 7 days with 0 so the chart doesn't skip empty days!
+        for(let i = 6; i >= 0; i--) {
+            let d = new Date(today);
+            d.setDate(today.getDate() - i);
+            let dateString = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            dailyTotals[dateString] = 0;
+        }
+
+        let todayString = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        // 3. Crunch the numbers
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (tx.status === "Voided") return;
+
+            let txDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            let dateLabel = txDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            
+            // Add to the 7-Day Line Chart
+            let grossTx = 0;
+            if (tx.cart) { 
+                tx.cart.forEach(item => { 
+                    grossTx += ((item.variantPrice || 0) * (item.qty || 1)); 
+                    
+                    // Add to the Today's Mix Doughnut Chart (Only if the transaction happened TODAY)
+                    if (dateLabel === todayString) {
+                        let cat = item.category || "Uncategorized";
+                        if(!categoryTotals[cat]) categoryTotals[cat] = 0;
+                        categoryTotals[cat] += ((item.variantPrice || 0) * (item.qty || 1));
+                    }
+                }); 
+            } else { 
+                grossTx = tx.netTotal || 0; 
+            }
+
+            if (dailyTotals[dateLabel] !== undefined) {
+                dailyTotals[dateLabel] += grossTx;
+            }
+        });
+
+        // ==========================================
+        // 📉 DRAW THE 7-DAY LINE CHART
+        // ==========================================
+        const revCtx = document.getElementById('revenueTrendChart');
+        if (window.revenueChartInstance) window.revenueChartInstance.destroy(); // Prevent ghosting on refresh!
+
+        window.revenueChartInstance = new Chart(revCtx, {
+            type: 'line',
+            data: {
+                labels: Object.keys(dailyTotals),
+                datasets: [{
+                    label: 'Gross Sales (₱)',
+                    data: Object.values(dailyTotals),
+                    borderColor: '#E5A93D', // Takodeal Gold
+                    backgroundColor: 'rgba(229, 169, 61, 0.2)', // Transparent Gold
+                    borderWidth: 3,
+                    pointBackgroundColor: '#0f766e',
+                    pointRadius: 4,
+                    fill: true,
+                    tension: 0.3 // Smooth curves
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { 
+                    y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+
+        // ==========================================
+        // 🍩 DRAW THE TODAY'S MIX DOUGHNUT CHART
+        // ==========================================
+        const catCtx = document.getElementById('categoryMixChart');
+        if (window.categoryChartInstance) window.categoryChartInstance.destroy();
+
+        // Default if no sales today
+        let catLabels = Object.keys(categoryTotals);
+        let catData = Object.values(categoryTotals);
+        if (catLabels.length === 0) { catLabels = ["No Sales Yet"]; catData = [1]; }
+
+        window.categoryChartInstance = new Chart(catCtx, {
+            type: 'doughnut',
+            data: {
+                labels: catLabels,
+                datasets: [{
+                    data: catData,
+                    backgroundColor: ['#E5A93D', '#0f766e', '#0ea5e9', '#8b5cf6', '#f43f5e', '#94a3b8'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                cutout: '70%', // Makes the doughnut ring thinner/thicker
+                plugins: {
+                    legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } }
+                }
+            }
+        });
+
+    } catch (e) {
+        console.error("Chart Rendering Error:", e);
     }
 };
