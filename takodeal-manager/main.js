@@ -4452,9 +4452,26 @@ window.loadAttendanceLogs = async function () {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">Fetching logs & checking schedules...</td></tr>';
 
+    let dateFilter = document.getElementById('attendanceDateFilter') ? document.getElementById('attendanceDateFilter').value : "";
+    let sortBy = document.getElementById('attendanceSort') ? document.getElementById('attendanceSort').value : "time";
+
+    // Auto-set the date picker to TODAY if it is blank
+    if (!dateFilter) {
+        let today = new Date();
+        today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+        dateFilter = today.toISOString().split('T')[0];
+        if(document.getElementById('attendanceDateFilter')) document.getElementById('attendanceDateFilter').value = dateFilter;
+    }
+
+    let startOfDay = new Date(dateFilter + 'T00:00:00');
+    let endOfDay = new Date(dateFilter + 'T23:59:59');
+
     try {
-        // 🔥 FIX 1: Removed ALL "window." prefixes from Firebase commands!
-        const q = query(collection(db, "attendance_logs"), orderBy("timestamp", "desc"), limit(30));
+        // Only grab logs for the specific day selected
+        const q = query(collection(db, "attendance_logs"), 
+            where("timestamp", ">=", startOfDay), 
+            where("timestamp", "<=", endOfDay)
+        );
         const snap = await getDocs(q);
 
         let scheduleData = null;
@@ -4474,28 +4491,41 @@ window.loadAttendanceLogs = async function () {
             let t = timeStr.toLowerCase().replace(/\s/g, '');
             let isPM = t.includes('pm');
             let isNN = t.includes('nn');
-            
             let timePart = t.replace(/(am|pm|nn)/, '');
             let parts = timePart.split(':');
             let hour = parseInt(parts[0]) || 0;
             let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
-            
             if ((isPM || isNN) && hour < 12) hour += 12;
             if (t.includes('am') && hour === 12) hour = 0;
-            
             return hour + (minute / 60);
         };
 
+        let logsArray = [];
+        snap.forEach(docSnap => { logsArray.push({ id: docSnap.id, ...docSnap.data() }); });
+
+        // 🧠 SMART IN-MEMORY SORTING
+        if (sortBy === 'name') {
+            logsArray.sort((a, b) => {
+                let nameA = a.staffName || "";
+                let nameB = b.staffName || "";
+                // If it's the same person, sort their punches by time (Newest first)
+                if (nameA === nameB) return b.timestamp - a.timestamp; 
+                // Otherwise, sort alphabetically
+                return nameA.localeCompare(nameB);
+            });
+        } else {
+            // Default: Sort strictly by Time
+            logsArray.sort((a, b) => b.timestamp - a.timestamp);
+        }
+
         let html = '';
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
-            let timeStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
+        logsArray.forEach(data => {
+            let timeStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH') : 'Just now';
             let badgeColor = data.type === "TIME IN" ? "#dcfce7" : "#fee2e2";
             let textColor = data.type === "TIME IN" ? "#16a34a" : "#b91c1c";
             let logDate = data.timestamp ? data.timestamp.toDate() : new Date();
             
             let lateTag = '';
-
             if (data.type === "TIME IN" && scheduleData && scheduleData.currentSchedule) {
                 let logDay = logDate.getDate();
                 let logMonth = logDate.getMonth() + 1;
@@ -4503,24 +4533,20 @@ window.loadAttendanceLogs = async function () {
 
                 if (scheduleData.currentYear === logYear && scheduleData.currentMonth === logMonth) {
                     let branchSched = scheduleData.currentSchedule[logDay] ? scheduleData.currentSchedule[logDay][data.branch] : null;
-                    
                     if (branchSched && branchSched.scheduled) {
                         let nickname = staffProfiles[data.staffName] || data.staffName;
                         let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
                         
                         if (assignedShiftId && scheduleData.branchConfig[data.branch]) {
                             let shiftConfig = scheduleData.branchConfig[data.branch].find(s => s.id === assignedShiftId);
-                            
                             if (shiftConfig) {
                                 let match = shiftConfig.name.match(/\((.*?)-/);
                                 if (match && match[1]) {
                                     let expectedStartHour = parseTimeStr(match[1]); 
-                                    
                                     if (expectedStartHour !== null) {
                                         let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
                                         let diffHours = actualHour - expectedStartHour;
                                         let lateMinutes = Math.floor(diffHours * 60);
-                                        
                                         if (lateMinutes > 5) {
                                             lateTag = `<br><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">⏰ LATE (${lateMinutes} mins)</span>`;
                                         }
@@ -4537,11 +4563,10 @@ window.loadAttendanceLogs = async function () {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
             }
 
-            // 🔥 NEW: Beautiful side-by-side Action Buttons!
             let actionHtml = `
                 <div style="display: flex; gap: 5px; justify-content: center;">
                     <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="View Selfie">📷</button>
-                    <button onclick="window.deleteAttendanceLog('${docSnap.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
+                    <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
                 </div>
             `;
             
@@ -4550,7 +4575,7 @@ window.loadAttendanceLogs = async function () {
                 actionHtml = `
                 <div style="display: flex; gap: 5px; justify-content: center; align-items: center;">
                     <span style="font-size: 10px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">Manual</span>
-                    <button onclick="window.deleteAttendanceLog('${docSnap.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
+                    <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
                 </div>
                 `;
             }
@@ -4570,13 +4595,12 @@ window.loadAttendanceLogs = async function () {
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 20px;">No logs found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 20px;">No logs found for this date.</td></tr>';
     } catch (error) {
         console.error("Error loading attendance:", error);
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error processing feed. Check Console.</td></tr>';
     }
 };
-
 window.viewSelfie = function(base64Data, detailsText) {
     if (!base64Data || base64Data === 'undefined') { alert("No photo attached."); return; }
     document.getElementById('viewedSelfie').src = base64Data;
