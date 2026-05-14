@@ -264,7 +264,7 @@ window.loadGlobalDashboard = async function() {
       globalGross += branchGross; globalNet += branchNet; globalExp += branchExp;
 
       if (txSnap.empty && expSnap.empty && !shiftData) {
-        tableHtml += `<tr><td><strong style="cursor:pointer; color:var(--primary); text-decoration:underline;" onclick="openBranchDetails('${branch}')">${branch} </strong></td><td><span class="badge badge-closed"><span class="status-dot gray"></span> No Data</span></td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td></tr>`;
+        tableHtml += `<tr><td><strong style="cursor:pointer; color:var(--primary); text-decoration:underline;" onclick="openBranchDetails('${branch}')">${branch} </strong></td><td><span class="badge badge-closed"><span class="status-dot gray"></span> No Data</span></td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td></tr>`;
         continue;
       }
 
@@ -272,11 +272,15 @@ window.loadGlobalDashboard = async function() {
         ? '<span class="badge badge-active"><span class="status-dot green"></span> Active</span>'
         : (isClosed ? '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>' : '<span class="badge badge-closed">No Shift</span>');
 
+      // Grab the starting cash safely
+      let displayStartingCash = (isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-';
+
       tableHtml += `
         <tr>
           <td><strong style="cursor:pointer; color:var(--primary); text-decoration:underline;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
           <td>${shiftBadge}</td>
           <td>${displayCashier}</td>
+          <td style="color: #64748b; font-weight: 500;">${displayStartingCash}</td>
           <td style="font-weight: 600; color: var(--primary);">${formatMoney(branchNet)}</td>
           <td style="color: var(--danger);">${formatMoney(branchExp)}</td>
           <td style="font-weight: 700;">${(isActive || isClosed) ? formatMoney(expectedCash) : '-'}</td>
