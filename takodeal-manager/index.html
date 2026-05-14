@@ -996,12 +996,20 @@
 
       <div class="card" style="margin-bottom: 20px;">
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-              <h2 style="margin: 0;">⏱️ Live Attendance Feed</h2>
-              <div style="display: flex; gap: 10px;">
-                      <button class="btn-refresh" style="background: white; color: var(--primary); border: 1px solid var(--primary);" onclick="window.openManualAttendanceModal()">➕ Add Manual Log</button>
-                      <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="loadAttendanceLogs()">🔄 Refresh Feed</button>
-                  </div>
-              </div> <div class="table-responsive">
+              <div>
+                  <h2 style="margin: 0;">⏱️ Live Attendance Feed</h2>
+                  <span style="font-size: 12px; color: var(--text-muted);">Daily logs for staff Time In and Time Out.</span>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                  <select id="attendanceSort" onchange="loadAttendanceLogs()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; outline: none; cursor: pointer; min-width: 140px;">
+                      <option value="time">Sort by Time</option>
+                      <option value="name">Sort by Staff Name</option>
+                  </select>
+                  <input type="date" id="attendanceDateFilter" onchange="loadAttendanceLogs()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; outline: none; cursor: pointer;">
+                  <button onclick="downloadExcel('attendanceTableBody', 'TAKODEAL_Attendance')" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">📥 Export Excel</button>
+                  <button class="btn-refresh" style="background: white; color: var(--primary); border: 1px solid var(--primary);" onclick="window.openManualAttendanceModal()">➕ Add Manual Log</button>
+              </div>
+          </div> <div class="table-responsive">
               <table class="data-table">
                   <thead>
                       <tr>
