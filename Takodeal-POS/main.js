@@ -2095,3 +2095,36 @@ window.closeAndNextOrder = function() {
         window.pendingLowStockAlarm = false; // Reset the alarm
     }
 };
+
+window.openGrabEarningsModal = function() {
+    document.getElementById('grabEarningsModal').style.display = 'flex';
+    // Auto-set date to today based on their local time zone!
+    let now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('grabEarnDate').value = now.toISOString().split('T')[0];
+    document.getElementById('grabEarnAmount').value = '';
+};
+
+window.submitGrabEarnings = async function() {
+    let dateVal = document.getElementById('grabEarnDate').value;
+    let amount = parseFloat(document.getElementById('grabEarnAmount').value);
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let cashier = localStorage.getItem('cashierName') || 'Unknown';
+
+    if (!dateVal || isNaN(amount)) { alert("Please fill out the date and amount."); return; }
+
+    let btn = document.getElementById('btnSaveGrabEarn');
+    btn.innerText = "Saving..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "grab_payouts"), {
+            dateStr: dateVal, amount: amount, branch: branch, cashier: cashier, timestamp: serverTimestamp()
+        });
+        alert(`✅ Grab Net Earnings of ₱${amount.toFixed(2)} logged for ${dateVal}!`);
+        document.getElementById('grabEarningsModal').style.display = 'none';
+    } catch (e) {
+        console.error(e); alert("Failed to log earnings.");
+    } finally {
+        btn.innerText = "💾 Save Earnings"; btn.disabled = false;
+    }
+};
