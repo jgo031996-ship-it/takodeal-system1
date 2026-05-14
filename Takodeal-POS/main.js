@@ -1095,13 +1095,14 @@ window.validateStockLevels = async function(cartPayload) {
 };
 
 // ==========================================
-// 🚪 SIGN OUT ENGINE
+// 🚪 SIGN OUT ENGINE (WITH CACHE BUSTING)
 // ==========================================
 window.logoutCashier = function() {
     if (confirm("Are you sure you want to sign out of this account?")) {
         localStorage.removeItem('cashierName'); 
         window.sessionUser = null;
-        location.reload(); 
+        // 🔥 THE FIX: Forces the browser to completely dump the cache and reload fresh!
+        window.location.href = window.location.pathname + "?t=" + new Date().getTime(); 
     }
 };
 
@@ -1947,7 +1948,8 @@ window.renderMenuToggleList = function(itemsToRender) {
     }
 
     itemsToRender.forEach(item => {
-        let isAvail = item.isAvailable !== false; // Default to true
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let isAvail = !(item.unavailableAt && item.unavailableAt.includes(branch));
         let statusColor = isAvail ? '#16a34a' : '#ef4444';
         let statusText = isAvail ? 'Available' : 'Sold Out';
         let bgClass = isAvail ? 'white' : '#f8fafc';
@@ -1985,19 +1987,29 @@ window.filterMenuToggle = function() {
     window.renderMenuToggleList(filteredItems);
 };
 
-// --- THE SMART TOGGLE FIX ---
+// --- THE SMART BRANCH-SPECIFIC TOGGLE ---
 window.toggleItemStatus = async function(docId, makeAvailable) {
     try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        const itemRef = window.doc(window.db, "menu", docId);
+        const itemSnap = await window.getDoc(itemRef);
+        let unavailableBranches = itemSnap.data().unavailableAt || [];
+
+        // Add or remove this specific branch from the "Sold Out" list
+        if (makeAvailable) {
+            unavailableBranches = unavailableBranches.filter(b => b !== branch);
+        } else {
+            if (!unavailableBranches.includes(branch)) unavailableBranches.push(branch);
+        }
+
         // 1. Update Cloud
-        await window.updateDoc(window.doc(window.db, "menu", docId), {
-            isAvailable: makeAvailable
-        });
+        await window.updateDoc(itemRef, { unavailableAt: unavailableBranches });
         
-        // 2. 🔥 Update local memory immediately!
+        // 2. Update local memory immediately!
         let item = window.globalMenuToggleList.find(i => i.id === docId);
-        if (item) item.isAvailable = makeAvailable;
+        if (item) item.unavailableAt = unavailableBranches;
         
-        // 3. Re-apply the search filter WITHOUT reloading the whole page!
+        // 3. Re-apply the search filter instantly
         window.filterMenuToggle(); 
         
     } catch (e) {
