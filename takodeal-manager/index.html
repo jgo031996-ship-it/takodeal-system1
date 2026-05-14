@@ -2696,26 +2696,36 @@
         }
         .ps-input::-webkit-outer-spin-button, .ps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     } /* <--- THIS CURLY BRACKET SAFELY CLOSES THE PRINTER SECTION! */
-
-   /* ========================================= */
-    /* 🔥 THE REAL SCREEN FIX (OUTSIDE PRINT!)   */
+  
     /* ========================================= */
+    /* 🚀 THE ULTIMATE FRANKENSTEIN SCROLL FIX 🚀 */
+    /* ========================================= */
+    body { overflow: hidden !important; }
     
-    /* Forces the inactive views to hide */
-    .view { 
-        display: none; 
+    .main-content { 
+        overflow-y: auto !important; 
+        overflow-x: hidden !important; 
+        height: 100dvh !important; 
+        padding-bottom: 250px !important; 
     }
-
-    /* Forces the active view to expand naturally inside the main scrolling area */
-    .view.active { 
-        display: flex !important; 
-        flex-direction: column;
-        flex: 1; 
-        width: 100%; 
-        height: auto !important; /* 🔥 Let it stretch naturally! */
-        min-height: 100%;
-        animation: fadeIn 0.3s ease-in-out; 
+    
+    /* This completely strips away the Cashier App restrictions that snuck in! */
+    .view { display: none; }
+    
+    .view.active, .view-container.active {
+        display: block !important; /* 🔥 THIS IS THE MAGIC WORD! No more Flexbox squishing! */
+        width: 100%;
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+        animation: fadeIn 0.3s ease-in-out;
     }
+    
+    .pos-layout, .dashboard-layout {
+        height: auto !important;
+        overflow: visible !important;
+    }
+    
     /* Safety net to ensure cards NEVER turn invisible again */
     .card {
         display: block !important;
@@ -2723,38 +2733,10 @@
         box-sizing: border-box !important;
         min-height: 500px !important; 
     }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
+  
   </style>
 
   <script type="module" src="main.js"></script>
-  <script>
-    // --- MOBILE SIDEBAR LOGIC ---
-    function toggleManagerSidebar() {
-      const sidebar = document.querySelector('.sidebar');
-      const overlay = document.getElementById('mobileSidebarOverlay');
-      
-      sidebar.classList.toggle('show-mobile');
-      
-      if (sidebar.classList.contains('show-mobile')) {
-          overlay.style.display = 'block';
-      } else {
-          overlay.style.display = 'none';
-      }
-    }
-
-    document.querySelectorAll('.sidebar .nav-item').forEach(link => {
-      link.addEventListener('click', () => {
-        if (window.innerWidth <= 1024) {
-          document.querySelector('.sidebar').classList.remove('show-mobile');
-          document.getElementById('mobileSidebarOverlay').style.display = 'none';
-        }
-      });
-    });
-  </script>
   
 </body>
 
