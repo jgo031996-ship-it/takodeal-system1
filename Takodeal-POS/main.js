@@ -587,6 +587,7 @@ window.viewReceiptDetails = async function (receiptId) {
             <div style="font-weight: bold; font-size: 16px;">OR# ${tx.receiptId}</div>
             <div style="font-size: 12px; color: #666;">Date: ${tx.timestamp ? tx.timestamp.toDate().toLocaleString() : 'Unknown'}</div>
             <div style="font-size: 12px; color: #666;">Cashier: ${tx.cashier || 'Unknown'}</div>
+            <div style="font-size: 12px; color: #666;">Order Type: <strong style="color:var(--primary);">${tx.orderType || 'N/A'}</strong></div>
             <div style="font-size: 12px; color: #666;">Method: ${tx.paymentMethod || 'Cash'}</div>
             <div style="font-size: 12px; color: #666; margin-top:5px; font-weight:bold;">Status: <span style="color:${tx.status==='Voided' ? 'red' : 'green'};">${tx.status || 'Paid'}</span></div>
         </div>
