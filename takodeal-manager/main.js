@@ -7090,7 +7090,7 @@ window.submitManualAttendance = async function() {
 };
 
 // ========================================================
-// 📈 ADVANCED CHART.JS ANALYTICS ENGINE
+// 📈 ADVANCED CHART.JS ANALYTICS ENGINE (BRANCH WARS)
 // ========================================================
 window.revenueChartInstance = null;
 window.categoryChartInstance = null;
@@ -7104,113 +7104,135 @@ window.renderDashboardCharts = async function() {
         sevenDaysAgo.setDate(today.getDate() - 6); // Look back 6 days + today
         sevenDaysAgo.setHours(0, 0, 0, 0);
 
-        // 2. Fetch the last 7 days of transactions
         const txQ = query(collection(db, "transactions"), where("timestamp", ">=", sevenDaysAgo), where("timestamp", "<=", today));
         const txSnap = await getDocs(txQ);
 
-        // --- DATA BUCKETS ---
-        let dailyTotals = {};
-        let categoryTotals = {};
-        
-        // Pre-fill the last 7 days with 0 so the chart doesn't skip empty days!
+        // 2. Setup Date Labels for the X-Axis
+        let dateLabels = [];
         for(let i = 6; i >= 0; i--) {
             let d = new Date(today);
             d.setDate(today.getDate() - i);
-            let dateString = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            dailyTotals[dateString] = 0;
+            dateLabels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
         }
+        let todayString = dateLabels[6]; // The last one in the array is today
 
-        let todayString = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        // --- DATA BUCKETS ---
+        let branchDailyTrend = {}; // Tracks 7 days of sales per branch
+        let todayBranchMix = {};   // Tracks today's pie chart split
 
-        // 3. Crunch the numbers
+        // 3. Crunch the numbers dynamically
         txSnap.forEach(doc => {
             let tx = doc.data();
             if (tx.status === "Voided") return;
 
             let txDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
             let dateLabel = txDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            
-            // Add to the 7-Day Line Chart
+            let branch = tx.branch || "Unknown";
+
+            // Calculate transaction gross
             let grossTx = 0;
             if (tx.cart) { 
-                tx.cart.forEach(item => { 
-                    grossTx += ((item.variantPrice || 0) * (item.qty || 1)); 
-                    
-                    // Add to the Today's Mix Doughnut Chart (Only if the transaction happened TODAY)
-                    if (dateLabel === todayString) {
-                        let cat = item.category || "Uncategorized";
-                        if(!categoryTotals[cat]) categoryTotals[cat] = 0;
-                        categoryTotals[cat] += ((item.variantPrice || 0) * (item.qty || 1));
-                    }
-                }); 
+                tx.cart.forEach(item => { grossTx += ((item.variantPrice || item.basePrice || 0) * (item.qty || 1)); }); 
             } else { 
                 grossTx = tx.netTotal || 0; 
             }
 
-            if (dailyTotals[dateLabel] !== undefined) {
-                dailyTotals[dateLabel] += grossTx;
+            // A. Populate the Line Chart Data (Initialize the branch array with 7 zeros if it's new)
+            if (!branchDailyTrend[branch]) {
+                branchDailyTrend[branch] = [0, 0, 0, 0, 0, 0, 0]; 
+            }
+            let dayIndex = dateLabels.indexOf(dateLabel);
+            if (dayIndex !== -1) {
+                branchDailyTrend[branch][dayIndex] += grossTx;
+            }
+
+            // B. Populate the Doughnut Chart Data (Only if the transaction happened TODAY)
+            if (dateLabel === todayString) {
+                if (!todayBranchMix[branch]) todayBranchMix[branch] = 0;
+                todayBranchMix[branch] += grossTx;
             }
         });
 
+        // 🎨 Beautiful Auto-Assigned Colors for the Branches
+        const themeColors = ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#f43f5e', '#64748b'];
+
         // ==========================================
-        // 📉 DRAW THE 7-DAY LINE CHART
+        // 📉 DRAW THE 7-DAY LINE CHART (BRANCH WARS)
         // ==========================================
         const revCtx = document.getElementById('revenueTrendChart');
-        if (window.revenueChartInstance) window.revenueChartInstance.destroy(); // Prevent ghosting on refresh!
+        if (window.revenueChartInstance) window.revenueChartInstance.destroy(); // Prevent ghosting!
+
+        let lineDatasets = [];
+        let colorIndex = 0;
+        
+        for (let branch in branchDailyTrend) {
+            let c = themeColors[colorIndex % themeColors.length];
+            lineDatasets.push({
+                label: branch,
+                data: branchDailyTrend[branch],
+                borderColor: c,
+                backgroundColor: c, 
+                borderWidth: 3,
+                pointBackgroundColor: 'white',
+                pointBorderColor: c,
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                fill: false,
+                tension: 0.4 // Smooth curves
+            });
+            colorIndex++;
+        }
 
         window.revenueChartInstance = new Chart(revCtx, {
             type: 'line',
-            data: {
-                labels: Object.keys(dailyTotals),
-                datasets: [{
-                    label: 'Gross Sales (₱)',
-                    data: Object.values(dailyTotals),
-                    borderColor: '#E5A93D', // Takodeal Gold
-                    backgroundColor: 'rgba(229, 169, 61, 0.2)', // Transparent Gold
-                    borderWidth: 3,
-                    pointBackgroundColor: '#0f766e',
-                    pointRadius: 4,
-                    fill: true,
-                    tension: 0.3 // Smooth curves
-                }]
-            },
+            data: { labels: dateLabels, datasets: lineDatasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
+                plugins: { 
+                    legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } } 
+                },
                 scales: { 
-                    y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                    y: { beginAtZero: true, grid: { color: '#f8fafc' } },
                     x: { grid: { display: false } }
-                }
+                },
+                interaction: { mode: 'index', intersect: false } // Shows tooltip for all branches on hover!
             }
         });
 
         // ==========================================
-        // 🍩 DRAW THE TODAY'S MIX DOUGHNUT CHART
+        // 🐙 Today's Branch Mix CHART (BY BRANCH)
         // ==========================================
         const catCtx = document.getElementById('categoryMixChart');
         if (window.categoryChartInstance) window.categoryChartInstance.destroy();
 
-        // Default if no sales today
-        let catLabels = Object.keys(categoryTotals);
-        let catData = Object.values(categoryTotals);
-        if (catLabels.length === 0) { catLabels = ["No Sales Yet"]; catData = [1]; }
+        let mixLabels = Object.keys(todayBranchMix);
+        let mixData = Object.values(todayBranchMix);
+        
+        // Failsafe if there are no sales today
+        let doughnutColors = themeColors.slice(0, mixLabels.length);
+        if (mixLabels.length === 0) { 
+            mixLabels = ["No Sales Yet"]; 
+            mixData = [1]; 
+            doughnutColors = ['#e2e8f0']; 
+        }
 
         window.categoryChartInstance = new Chart(catCtx, {
             type: 'doughnut',
             data: {
-                labels: catLabels,
+                labels: mixLabels,
                 datasets: [{
-                    data: catData,
-                    backgroundColor: ['#E5A93D', '#0f766e', '#0ea5e9', '#8b5cf6', '#f43f5e', '#94a3b8'],
-                    borderWidth: 0,
-                    hoverOffset: 4
+                    data: mixData,
+                    backgroundColor: doughnutColors,
+                    borderWidth: 2,
+                    borderColor: 'white',
+                    hoverOffset: 6
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                cutout: '70%', // Makes the doughnut ring thinner/thicker
+                cutout: '75%', // Sleek thin ring
                 plugins: {
-                    legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } }
+                    legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } }
                 }
             }
         });
