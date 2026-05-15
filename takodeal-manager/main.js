@@ -3797,7 +3797,15 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
 
           let payHtml = '';
           for (let p in payments) {
-              payHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:4px 0;"><span>${p}</span><strong style="color:#0f766e;">₱${payments[p].toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>`;
+              let amountVal = payments[p];
+              payHtml += `
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #cbd5e1; padding:4px 0;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0; font-size:13px; color:#334155;">
+                        <input type="checkbox" class="pay-toggle-chk" value="${amountVal}" checked onchange="window.recalcModalNetSales()" style="width:16px; height:16px; cursor:pointer;">
+                        ${p}
+                    </label>
+                    <strong style="color:#0f766e;">₱${amountVal.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+                </div>`;
           }
           document.getElementById('bdPaymentBreakdown').innerHTML = payHtml || "<i style='color:#94a3b8;'>No sales</i>";
 
@@ -7210,4 +7218,20 @@ window.renderDashboardCharts = async function() {
     } catch (e) {
         console.error("Chart Rendering Error:", e);
     }
+};
+
+// ==========================================
+// 🧮 MODAL NET SALES RECALCULATOR
+// ==========================================
+window.recalcModalNetSales = function() {
+    let checkboxes = document.querySelectorAll('.pay-toggle-chk');
+    let newTotal = 0;
+    
+    checkboxes.forEach(chk => {
+        if (chk.checked) {
+            newTotal += parseFloat(chk.value) || 0;
+        }
+    });
+    
+    document.getElementById('bdNetSalesTotal').innerText = "₱" + newTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
 };
