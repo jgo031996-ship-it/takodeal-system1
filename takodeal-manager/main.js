@@ -5348,6 +5348,11 @@ window.loadInbox = async function() {
             } else {
                 detailsStr = d.amount ? `₱${d.amount.toLocaleString(undefined, {minimumFractionDigits:2})}` : (d.item || d.reason || 'N/A');
             }
+            // 🔥 NEW: Check if the staff attached a photo, and add a View button!
+            let attachedImage = d.photoBase64 || d.proofImageUrl || d.imageUrl || d.image;
+            if (attachedImage) {
+                detailsStr += `<br><button onclick="window.viewSelfie('${attachedImage}', 'Attached Photo from ${safeName}')" style="margin-top: 8px; background: #f0f9ff; border: 1px solid #bae6fd; color: #0284c7; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📷 View Attached Photo</button>`;
+            }
 
             if (d.status === "Pending") {
                 pendingCount++;
