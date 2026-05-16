@@ -212,28 +212,7 @@ window.loadGlobalDashboard = async function() {
 
   try {
     for (let branch of branches) {
-      // 1. Fetch Sales & Expenses (Same as before)
-      const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-      const txSnap = await getDocs(txQ);
-      let branchGross = 0; let branchNet = 0; let branchCashIn = 0;
-
-      txSnap.forEach(tDoc => {
-        let tx = tDoc.data();
-        if (tx.status !== "Voided") {
-          branchNet += (tx.netTotal || 0);
-          let txGross = 0;
-          if (tx.cart) { tx.cart.forEach(item => { txGross += ((item.variantPrice || 0) * (item.qty || 1)); }); } else { txGross = tx.netTotal; }
-          branchGross += txGross;
-          if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
-        }
-      });
-
-      const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-      const expSnap = await getDocs(expQ);
-      let branchExp = 0;
-      expSnap.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
-
-      // 2. FETCH SHIFT DATA (The missing link)
+      // 1. FETCH SHIFT DATA FIRST (True Shift Logic)
       const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"), limit(1));
       const shiftSnap = await getDocs(shiftQ);
 
@@ -242,6 +221,33 @@ window.loadGlobalDashboard = async function() {
       let isClosed = shiftData && shiftData.status === "Closed";
 
       let displayCashier = shiftData ? (shiftData.cashier || '-') : '-';
+      let branchGross = 0; let branchNet = 0; let branchCashIn = 0; let branchExp = 0;
+
+      // 2. ONLY FETCH SALES IF A SHIFT EXISTS
+      if (shiftData) {
+          // Grab the exact millisecond the shift started
+          let shiftStart = shiftData.startTime.toDate();
+          // If active, calculate up to right NOW. If closed, calculate up to when they clocked out.
+          let shiftEnd = isActive ? new Date() : shiftData.endTime.toDate();
+
+          const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
+          const txSnap = await getDocs(txQ);
+
+          txSnap.forEach(tDoc => {
+              let tx = tDoc.data();
+              if (tx.status !== "Voided") {
+                  branchNet += (tx.netTotal || 0);
+                  let txGross = 0;
+                  if (tx.cart) { tx.cart.forEach(item => { txGross += ((item.variantPrice || 0) * (item.qty || 1)); }); } else { txGross = tx.netTotal; }
+                  branchGross += txGross;
+                  if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
+              }
+          });
+
+          const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
+          const expSnap = await getDocs(expQ);
+          expSnap.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
+      }
 
       // Calculate Live Expected Cash for Active shifts
       let expectedCash = 0;
@@ -1389,8 +1395,25 @@ window.openBranchDetails = async function (branch) {
   const endOfDay = new Date(endDay.setHours(23, 59, 59, 999));
 
   try {
-    // 1. Fetch transactions for this branch and date
-    const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+    // 1. FETCH SHIFT FIRST (True Shift Logic)
+    const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"), limit(1));
+    const shiftSnap = await getDocs(shiftQ);
+
+    if (shiftSnap.empty) {
+        document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No shift found for this date.</td></tr>';
+        document.getElementById('modalDateDisplay').innerText = "No Active Shift";
+        return; // Stop running if there's no shift to look at!
+    }
+
+    let shiftData = shiftSnap.docs[0].data();
+    let sTime = shiftData.startTime.toDate();
+    let eTime = shiftData.active ? new Date() : shiftData.endTime.toDate();
+
+    // Update the subtitle to show the EXACT shift hours!
+    document.getElementById('modalDateDisplay').innerText = `Shift: ${sTime.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'})} to ${shiftData.active ? 'Present' : eTime.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'})}`;
+
+    // 2. Fetch transactions for THIS EXACT SHIFT
+    const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
     const txSnap = await getDocs(txQ);
 
     let netSales = 0; let totalItems = 0; let transCount = 0; let voidCount = 0;
@@ -1484,7 +1507,7 @@ window.openBranchDetails = async function (branch) {
     });
 
     // --- DRAWER CASH & AUDIT ENGINE ---
-    const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+    const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
     const expSnap = await getDocs(expQ);
     let dateExpenses = 0;
     expSnap.forEach(doc => dateExpenses += (doc.data().amount || 0));
