@@ -269,7 +269,7 @@ window.loadGlobalDashboard = async function() {
 
       globalGross += branchGross; globalNet += branchNet; globalExp += branchExp;
 
-      if (txSnap.empty && expSnap.empty && !shiftData) {
+      if (branchGross === 0 && branchExp === 0 && !shiftData) {
         tableHtml += `<tr><td><strong style="cursor:pointer; color:var(--primary); text-decoration:underline;" onclick="openBranchDetails('${branch}')">${branch} </strong></td><td><span class="badge badge-closed"><span class="status-dot gray"></span> No Data</span></td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td></tr>`;
         continue;
       }
