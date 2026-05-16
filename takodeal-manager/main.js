@@ -1512,18 +1512,19 @@ window.openBranchDetails = async function (branch) {
     let dateExpenses = 0;
     expSnap.forEach(doc => dateExpenses += (doc.data().amount || 0));
 
-    const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
-    const shiftSnap = await getDocs(shiftQ);
+    // 🔥 THE FIX: Renamed to activeShiftQ to avoid clashing with the top variable!
+    const activeShiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
+    const activeShiftSnap = await getDocs(activeShiftQ);
 
     const prevShiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
     const prevShiftSnap = await getDocs(prevShiftQ);
     let lastClosingCash = prevShiftSnap.empty ? 0 : (prevShiftSnap.docs[0].data().declaredCash || 0);
 
     let startingCash = 0;
-    let isActive = !shiftSnap.empty;
+    let isActive = !activeShiftSnap.empty;
 
     if (isActive) {
-      startingCash = shiftSnap.docs[0].data().startingCash || 0;
+      startingCash = activeShiftSnap.docs[0].data().startingCash || 0;
       let cashSales = payments['Cash'] || 0;
       let expectedDrawerCash = startingCash + cashSales - dateExpenses;
 
