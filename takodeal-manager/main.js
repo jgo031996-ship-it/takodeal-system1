@@ -5777,19 +5777,46 @@ window.finalizePayslip = async function() {
     let data = window.currentPayslipData;
     if (!data) return;
     
-    let confirmMsg = `Are you sure you want to mark ${data.name}'s payslip as PAID?\n\n`;
-    if (data.loans > 0) {
-        confirmMsg += `This will AUTOMATICALLY deduct ₱${data.loans} from their Ledger Balance!\n\n`;
-    }
-    confirmMsg += `⚠️ Only click this ONCE per cutoff when you physically hand them the cash!`;
+    // Grab the final net pay from the UI (in case you manually edited the numbers)
+    let netPayStr = document.getElementById('psNetPay').innerText.replace(/,/g, '');
+    let finalNetPay = parseFloat(netPayStr) || 0;
 
-    if (!confirm(confirmMsg)) return;
-    
+    // Load Cash Accounts if they aren't loaded yet
+    if (!window.liveAccounts || window.liveAccounts.length === 0) {
+        if(typeof window.loadAccountsAndBudget === 'function') await window.loadAccountsAndBudget();
+    }
+
+    // Build a menu of your bank accounts (e.g. GoTyme, BDO, Petty Cash)
+    let accList = window.liveAccounts.map((a, i) => `[${i}] ${a.name} (Bal: ₱${a.balance.toLocaleString()})`).join('\n');
+    let accIdx = prompt(`DISBURSE PAYROLL\nNet Pay: ₱${finalNetPay.toLocaleString()}\n\nSelect Account to deduct this payment from (Enter Number):\n\n${accList}`);
+
+    if (accIdx === null || accIdx === "") return; // Cancelled
+    let selAcc = window.liveAccounts[parseInt(accIdx)];
+    if (!selAcc) { alert("❌ Invalid account selected."); return; }
+
+    // Warn if they don't have enough money in GoTyme!
+    if (selAcc.balance < finalNetPay) {
+        if(!confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance.toLocaleString()}. Deducting this will make it negative. Continue?`)) return;
+    }
+
     let btn = document.getElementById('btnFinalizePayslip');
     btn.innerText = "⏳ Processing..."; btn.disabled = true;
     
     try {
-        // Automatically deduct the loan in the ledger!
+        // 1. Deduct money from GoTyme / Selected Cash Account
+        await updateDoc(doc(db, "cash_accounts", selAcc.id), { balance: selAcc.balance - finalNetPay });
+
+        // 2. Log it as an official Expense in your dashboard feed
+        await addDoc(collection(db, "expenses"), {
+            branch: data.branch,
+            amount: finalNetPay,
+            category: "Payroll",
+            account: selAcc.name,
+            note: `Payslip for ${data.name} (${data.start} to ${data.end})`,
+            timestamp: new Date()
+        });
+
+        // 3. Automatically deduct the loan in the ledger!
         if (data.loans > 0 && data.ledgerId) {
             const ledgerRef = doc(db, "staff_ledger", data.ledgerId);
             const ledgerSnap = await getDoc(ledgerRef);
@@ -5799,12 +5826,20 @@ window.finalizePayslip = async function() {
             }
         }
         
-        alert(`✅ ${data.name}'s payslip finalized and ledger updated!`);
+        // 4. 🔥 NEW: Mark all Vales & Meals as "Paid" so they disappear next cutoff!
+        const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", data.name), where("status", "==", "Unpaid"));
+        const deductSnap = await getDocs(deductQ);
+        for (let dDoc of deductSnap.docs) {
+            await updateDoc(doc(db, "staff_deductions", dDoc.id), { status: "Paid", paidAt: new Date() });
+        }
+
+        alert(`✅ Payroll Disbursed! ₱${finalNetPay.toLocaleString()} was deducted from ${selAcc.name}.\nAll Vales and Loans have been updated.`);
         document.getElementById('payslipModal').style.display = 'none';
         
         // Refresh screens so the new balances show instantly
         window.loadLedger(); 
         window.loadPayrollGenerator(); 
+        window.loadAccountsAndBudget();
     } catch (e) {
         console.error(e); alert("❌ Failed to finalize payslip.");
     } finally {
@@ -5823,13 +5858,22 @@ window.printPayslip = function() {
 window.loadLedger = async function() {
     const tbody = document.getElementById('ledgerTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center">⏳ Calculating running balances...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center">⏳ Calculating running balances...</td></tr>';
 
     try {
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
-        let ledgerData = {};
+        
+        // 🔥 NEW: Fetch ALL Unpaid Vales & Meals
+        const deductSnap = await getDocs(query(collection(db, "staff_deductions"), where("status", "==", "Unpaid")));
+        let valesData = {};
+        deductSnap.forEach(doc => {
+            let d = doc.data();
+            if (!valesData[d.staffName]) valesData[d.staffName] = 0;
+            valesData[d.staffName] += (parseFloat(d.amount) || 0);
+        });
 
+        let ledgerData = {};
         ledgerSnap.forEach(doc => {
             let data = doc.data();
             ledgerData[data.staffName] = { id: doc.id, ...data };
@@ -5844,9 +5888,11 @@ window.loadLedger = async function() {
             let record = ledgerData[name] || { totalLoaned: 0, totalPaid: 0, cutoffDeduction: 0 };
             let balance = record.totalLoaned - record.totalPaid;
             let cutoffDed = record.cutoffDeduction || 0;
+            let unpaidVales = valesData[name] || 0;
 
             let balColor = balance > 0 ? 'var(--danger)' : 'var(--text-muted)';
             let balWeight = balance > 0 ? 'bold' : 'normal';
+            let valeColor = unpaidVales > 0 ? '#ea580c' : 'var(--text-muted)';
 
             html += `
                 <tr>
@@ -5855,10 +5901,11 @@ window.loadLedger = async function() {
                     <td style="font-weight: bold; color: #0284c7;">₱${record.totalLoaned.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="font-weight: bold; color: #16a34a;">₱${record.totalPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="font-weight: ${balWeight}; color: ${balColor}; font-size: 15px;">₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="font-weight: bold; color: ${valeColor};">₱${unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="font-weight: bold; color: #8b5cf6;">₱${cutoffDed.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td>
                         <button class="btn-refresh" style="background: #f3e8ff; color: #7c3aed; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.setAutoDeduct('${record.id}', '${name}', ${cutoffDed}, ${balance})">⚙️ Set Deduct</button>
-                        <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${staff.id}', '${staff.cashierName}', ${staff.totalLoaned || 0}, ${staff.totalPaid || 0})">✏️ Adjust</button>
+                        <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${staff.id}', '${staff.cashierName}', ${record.totalLoaned || 0}, ${record.totalPaid || 0})">✏️ Adjust</button>
                         <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Loan</button>
                         <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance})">💸 Pay</button>
                     </td>
@@ -5866,11 +5913,11 @@ window.loadLedger = async function() {
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center">No staff found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center">No staff found.</td></tr>';
 
     } catch (e) {
         console.error("Ledger Error:", e);
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error loading ledger.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color: red;">Error loading ledger.</td></tr>';
     }
 };
 
