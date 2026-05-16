@@ -1453,10 +1453,14 @@ window.openBranchDetails = async function (branch) {
 
     allTx.forEach(tx => {
       let timeStr = tx.timestamp ? tx.timestamp.toDate().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+      
+      // 🔥 NEW: Grab customer name and encode the cart data for the modal!
+      let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
+      let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
 
       if (tx.status === "Voided") {
         voidCount++;
-        transHtml += `<tr style="opacity: 0.5;"><td>${timeStr}</td><td>${tx.receiptId}</td><td>-</td><td><span class="badge badge-closed"><span class="status-dot red"></span> VOID</span></td><td style="text-decoration: line-through;">${formatMoney(tx.netTotal)}</td></tr>`;
+        transHtml += `<tr style="opacity: 0.5;"><td>${timeStr}</td><td>${tx.receiptId}</td><td>${safeCustomer}</td><td>-</td><td><span class="badge badge-closed"><span class="status-dot red"></span> VOID</span></td><td style="text-decoration: line-through;">${formatMoney(tx.netTotal)}</td><td></td></tr>`;
       } else {
         transCount++;
         netSales += (tx.netTotal || 0);
@@ -1466,7 +1470,7 @@ window.openBranchDetails = async function (branch) {
         if (!payments[payMethod]) payments[payMethod] = 0;
         payments[payMethod] += (tx.netTotal || 0);
 
-        // 🔥 NEW: Track True Categories, Sales, and Advanced COGS
+        // Track True Categories, Sales, and Advanced COGS
         if (tx.cart && Array.isArray(tx.cart)) {
           tx.cart.forEach(item => {
             let qty = item.qty || 1;
@@ -1479,7 +1483,7 @@ window.openBranchDetails = async function (branch) {
 
             categories[cat].qty += qty;
             
-            // Calculate Sales (Fallback to base price if lineTotalFinal is missing)
+            // Calculate Sales
             let lineRevenue = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
             categories[cat].sales += lineRevenue;
 
@@ -1487,7 +1491,7 @@ window.openBranchDetails = async function (branch) {
             let baseCogs = (recipeCosts[itemName] || 0) * qty;
             let addonCogs = 0;
             
-            // Calculate Add-on COGS exactly based on the ingredients used!
+            // Calculate Add-on COGS
             if (item.addons) {
                 for (let key in item.addons) {
                     let addon = item.addons[key];
@@ -1502,7 +1506,18 @@ window.openBranchDetails = async function (branch) {
           });
         }
 
-        transHtml += `<tr><td>${timeStr}</td><td><strong>${tx.receiptId}</strong></td><td>${payMethod}</td><td><span class="badge badge-active"><span class="status-dot green"></span> PAID</span></td><td style="font-weight: 600; color: var(--primary);">${formatMoney(tx.netTotal)}</td></tr>`;
+        // 🔥 UPGRADED ROW WITH CUSTOMER NAME AND VIEW BUTTON
+        transHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px;">${timeStr}</td>
+            <td style="padding: 10px;"><strong>${tx.receiptId}</strong></td>
+            <td style="padding: 10px; color: #475569; font-weight: bold;">${safeCustomer}</td>
+            <td style="padding: 10px;">${payMethod}</td>
+            <td style="padding: 10px;"><span class="badge badge-active"><span class="status-dot green"></span> PAID</span></td>
+            <td style="font-weight: 600; color: var(--primary); padding: 10px;">${formatMoney(tx.netTotal)}</td>
+            <td style="padding: 10px; text-align: center;">
+                <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${payMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+            </td>
+        </tr>`;
       }
     });
 
@@ -1591,7 +1606,13 @@ window.openBranchDetails = async function (branch) {
     document.getElementById('tbPayBody').innerHTML = payHtml || '<tr><td colspan="2" class="text-center">No payments logged.</td></tr>';
 
     // --- INJECT TRANSACTIONS ---
-    document.getElementById('tbTransBody').innerHTML = transHtml || '<tr><td colspan="5" class="text-center">No transactions on this date.</td></tr>';
+    // Dynamically update the headers to include Customer and Action!
+    let transTableHead = document.getElementById('tbTransBody').previousElementSibling.querySelector('tr');
+    if (transTableHead) {
+        transTableHead.innerHTML = '<th style="text-align:left; padding:10px;">Time</th><th style="text-align:left; padding:10px;">Receipt ID</th><th style="text-align:left; padding:10px; color: #0284c7;">Customer</th><th style="text-align:left; padding:10px;">Payment</th><th style="text-align:left; padding:10px;">Status</th><th style="text-align:left; padding:10px;">Total</th><th style="text-align:center; padding:10px;">Action</th>';
+    }
+    
+    document.getElementById('tbTransBody').innerHTML = transHtml || '<tr><td colspan="7" class="text-center">No transactions on this date.</td></tr>';
 
   } catch (error) {
     console.error("Analytics Error:", error);
@@ -7285,4 +7306,77 @@ window.recalcModalNetSales = function() {
     });
     
     document.getElementById('bdNetSalesTotal').innerText = "₱" + newTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
+};
+
+// ==========================================
+// 🧾 DYNAMIC DIGITAL RECEIPT VIEWER
+// ==========================================
+window.viewReceiptDetails = function(receiptId, customer, time, payment, total, cartEncoded) {
+    let cart = JSON.parse(decodeURIComponent(cartEncoded));
+    let itemsHtml = '';
+
+    cart.forEach(item => {
+        let qty = item.qty || 1;
+        let price = item.variantPrice || item.basePrice || 0;
+        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : (qty * price);
+        
+        // Unpack Add-ons if they exist
+        let addonsHtml = '';
+        if (item.addons) {
+            for (let key in item.addons) {
+                let addon = item.addons[key];
+                if (addon.qty > 0) {
+                    addonsHtml += `<div style="font-size: 11px; color: #64748b; margin-left: 10px;">+ ${addon.name} (₱${addon.price} x ${addon.qty})</div>`;
+                }
+            }
+        }
+
+        itemsHtml += `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 8px 0;">
+                <div>
+                    <strong style="color: #334155; font-size: 13px;">${qty}x ${item.name || item.itemName}</strong>
+                    ${addonsHtml}
+                </div>
+                <strong style="color: #0f766e; font-size: 13px;">₱${lineTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>
+        `;
+    });
+
+    const modalHtml = `
+        <div id="dynamicReceiptModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 400px; max-width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 80vh; display: flex; flex-direction: column;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0; color: #0f172a; font-size: 18px;">🧾 Receipt Details</h3>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace;">${receiptId}</div>
+                    </div>
+                    <button onclick="document.getElementById('dynamicReceiptModal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #94a3b8;">&times;</button>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    <div>
+                        <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Customer</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #0284c7;">${customer}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Time & Payment</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #334155;">${time} • ${payment}</div>
+                    </div>
+                </div>
+
+                <div style="flex: 1; overflow-y: auto; margin-bottom: 15px; padding-right: 5px;">
+                    <div style="font-size: 11px; font-weight: bold; color: #94a3b8; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; margin-bottom: 5px;">ORDER ITEMS</div>
+                    ${itemsHtml || '<i style="color: #94a3b8; font-size: 12px;">No items recorded.</i>'}
+                </div>
+
+                <div style="border-top: 2px dashed #cbd5e1; padding-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 14px; font-weight: bold; color: #334155;">TOTAL PAID</span>
+                    <span style="font-size: 22px; font-weight: 900; color: #16a34a;">₱${total.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                </div>
+                
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
 };
