@@ -1073,15 +1073,39 @@
                 }
             };
 
-            // Grab GPS if possible for the rider, but don't force it to fail if they block it!
+            // 🔥 HARD GEOFENCE: Require GPS and verify distance!
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
-                    (position) => finalizeSubmission(position.coords.latitude, position.coords.longitude), 
-                    (error) => finalizeSubmission("Unknown", "Unknown"), 
+                    async (position) => {
+                        let userLat = position.coords.latitude;
+                        let userLng = position.coords.longitude;
+                        
+                        // Check distance to the branch they selected
+                        let targetZone = BRANCH_ZONES[selectedBranch];
+                        if (targetZone) {
+                            let distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+                            
+                            // 20000 meters = 20 Kilometers radius max!
+                            if (distance > 20000) {
+                                alert("📍 Out of Delivery Zone!\n\nSorry! TAKODEÁL currently only serves within Davao City.\n\nHang tight, we will have a branch in your area soon!");
+                                window.resetSubmitButton(grandTotal);
+                                window.closeCartModal();
+                                return; // ⛔ BLOCKS THE ORDER!
+                            }
+                        }
+                        
+                        // If they pass the radar check, send the order!
+                        finalizeSubmission(userLat, userLng);
+                    }, 
+                    (error) => {
+                        alert("📍 Location Required!\n\nPlease allow GPS access so we can verify you are within our Davao City delivery zones.");
+                        window.resetSubmitButton(grandTotal);
+                    }, 
                     { enableHighAccuracy: true, timeout: 5000 }
                 );
             } else {
-                finalizeSubmission("Unknown", "Unknown");
+                alert("📍 Location Required!\n\nYour device does not support GPS tracking.");
+                window.resetSubmitButton(grandTotal);
             }
         };
 
