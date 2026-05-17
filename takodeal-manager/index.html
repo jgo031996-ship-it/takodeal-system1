@@ -2738,7 +2738,7 @@
     </div>
 </div>
 
-<!-- ========================================== -->
+  <!-- ========================================== -->
   <!-- 🧹 SELECTIVE FACTORY RESET MODAL -->
   <!-- ========================================== -->
   <div id="selectiveResetModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
@@ -2794,77 +2794,7 @@
       </div>
   </div>  
 
-<style>
-    /* MAGIC CSS: Makes inputs look like text when printing! */
-    .ps-input { 
-        width: 75px; 
-        text-align: right; 
-        border: 1px solid #cbd5e1; 
-        border-radius: 4px;
-        outline: none; 
-        background: #f8fafc; 
-        font-weight: bold;
-        font-family: inherit;
-        padding: 2px 4px;
-    }
-    .ps-input:focus { background: white; border-color: #3b82f6; }
-    
-    @media print {
-        body * { visibility: hidden; }
-        #printablePayslip, #printablePayslip * { visibility: visible; }
-        #printablePayslip { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
-        .no-print { display: none !important; }
-        
-        /* Hides the boxes on the printed paper */
-        .ps-input { 
-            border: none !important; 
-            background: transparent !important; 
-            appearance: none; 
-            -moz-appearance: textfield; 
-            padding: 0;
-        }
-        .ps-input::-webkit-outer-spin-button, .ps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    } /* <--- THIS CURLY BRACKET SAFELY CLOSES THE PRINTER SECTION! */
-  
-    /* ========================================= */
-    /* 🚀 THE ULTIMATE FRANKENSTEIN SCROLL FIX 🚀 */
-    /* ========================================= */
-    body { overflow: hidden !important; }
-    
-    .main-content { 
-        overflow-y: auto !important; 
-        overflow-x: hidden !important; 
-        height: 100dvh !important; 
-        padding-bottom: 250px !important; 
-    }
-    
-    /* This completely strips away the Cashier App restrictions that snuck in! */
-    .view { display: none; }
-    
-    .view.active, .view-container.active {
-        display: block !important; /* 🔥 THIS IS THE MAGIC WORD! No more Flexbox squishing! */
-        width: 100%;
-        height: auto !important;
-        min-height: auto !important;
-        overflow: visible !important;
-        animation: fadeIn 0.3s ease-in-out;
-    }
-    
-    .pos-layout, .dashboard-layout {
-        height: auto !important;
-        overflow: visible !important;
-    }
-    
-    /* Safety net to ensure cards NEVER turn invisible again */
-    .card {
-        display: block !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-        min-height: 500px !important; 
-    }
-  </style>
-
-    <div id="addBudgetModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+  <div id="addBudgetModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
       <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
           <div style="background: #0f172a; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
               <h2 style="margin: 0; font-size: 18px;">➕ Add Budget Category</h2>
@@ -2958,8 +2888,77 @@
       </div>
   </div>
 
+  <style>
+    /* MAGIC CSS: Makes inputs look like text when printing! */
+    .ps-input { 
+        width: 75px; 
+        text-align: right; 
+        border: 1px solid #cbd5e1; 
+        border-radius: 4px;
+        outline: none; 
+        background: #f8fafc; 
+        font-weight: bold;
+        font-family: inherit;
+        padding: 2px 4px;
+    }
+    .ps-input:focus { background: white; border-color: #3b82f6; }
+    
+    @media print {
+        body * { visibility: hidden; }
+        #printablePayslip, #printablePayslip * { visibility: visible; }
+        #printablePayslip { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+        .no-print { display: none !important; }
+        
+        /* Hides the boxes on the printed paper */
+        .ps-input { 
+            border: none !important; 
+            background: transparent !important; 
+            appearance: none; 
+            -moz-appearance: textfield; 
+            padding: 0;
+        }
+        .ps-input::-webkit-outer-spin-button, .ps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    } /* <--- THIS CURLY BRACKET SAFELY CLOSES THE PRINTER SECTION! */
+  
+    /* ========================================= */
+    /* 🚀 THE ULTIMATE FRANKENSTEIN SCROLL FIX 🚀 */
+    /* ========================================= */
+    body { overflow: hidden !important; }
+    
+    .main-content { 
+        overflow-y: auto !important; 
+        overflow-x: hidden !important; 
+        height: 100dvh !important; 
+        padding-bottom: 250px !important; 
+    }
+    
+    /* This completely strips away the Cashier App restrictions that snuck in! */
+    .view { display: none; }
+    
+    .view.active, .view-container.active {
+        display: block !important; /* 🔥 THIS IS THE MAGIC WORD! No more Flexbox squishing! */
+        width: 100%;
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+        animation: fadeIn 0.3s ease-in-out;
+    }
+    
+    .pos-layout, .dashboard-layout {
+        height: auto !important;
+        overflow: visible !important;
+    }
+    
+    /* Safety net to ensure cards NEVER turn invisible again */
+    .card {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        min-height: 500px !important; 
+    }
+  </style>
+
   <script type="module" src="main.js"></script>
   
 </body>
-
 </html>
