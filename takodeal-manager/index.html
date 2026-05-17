@@ -163,6 +163,20 @@
         /* Prevent iOS zoom-in glitch by forcing 16px font on inputs */
         input, select, button { padding: 12px !important; font-size: 16px !important; }
 
+        /* 🔥 FIX: Un-squish the Analytics Modal stat cards on phones */
+        div[style*="grid-template-columns: repeat(5"] { 
+            grid-template-columns: 1fr 1fr !important; 
+        }
+        /* Make Est. Drawer Cash span the whole top row so the text fits */
+        #analyticsModal .stat-grid .stat-card:nth-child(1) {
+            grid-column: 1 / -1 !important;
+        }
+        /* Ensure the Best Sellers & Payment tables stack vertically */
+        #analyticsModal div[style*="grid-template-columns: 2fr 1fr"] {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 15px !important;
+        }
         /* Fix modal sizing for small phone screens */
         .modal { width: 95% !important; max-width: 95% !important; margin: 0 auto !important; }
         .modal-body { padding: 15px !important; }
