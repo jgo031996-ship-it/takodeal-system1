@@ -510,36 +510,35 @@ window.saveEmployeeProfile = async function() {
 };
 
 // ========================================================
-// 🔐 STAFF PIN RESET ENGINE
+// 🔐 STAFF PASSWORD RESET ENGINE
 // ========================================================
 window.resetStaffPin = async function (staffId, staffName) {
-  // 1. Ask the manager for the new PIN
-  let newPin = prompt(`Enter a new 4-digit PIN for ${staffName}:`);
+  // 1. Ask the manager for the new Password
+  let newPin = prompt(`Enter a new Login Password for ${staffName} (Min 4 characters):`);
 
   // If they click Cancel or leave it blank, do nothing
   if (!newPin) return;
 
-  // 2. Strict Security: Make sure it is exactly 4 numbers
-  if (!/^\d{4}$/.test(newPin.trim())) {
-    alert("❌ Invalid format. The PIN must be exactly 4 digits (e.g., 1234).");
+  // 2. Strict Security: Make sure it is at least 4 characters long (letters or numbers!)
+  if (newPin.trim().length < 4) {
+    alert("❌ Invalid format. The password must be at least 4 characters long.");
     return;
   }
 
   // 3. Send it to the Cloud Database
   try {
-    // NOTE: Change "staff" to whatever your database folder is actually called!
     await updateDoc(doc(db, "cashiers", staffId), {
       pin: newPin.trim()
     });
 
-    alert(`✅ Security PIN for ${staffName} has been successfully updated!`);
+    alert(`✅ Security Password for ${staffName} has been successfully updated!`);
 
     // Refresh the table to show the update
     window.loadHRModule();
     
   } catch (error) {
-    console.error("PIN Reset Error:", error);
-    alert("❌ Failed to update the PIN in the database.");
+    console.error("Password Reset Error:", error);
+    alert("❌ Failed to update the password in the database.");
   }
 };
 
