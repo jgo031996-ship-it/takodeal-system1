@@ -1065,10 +1065,10 @@
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h2>💸 Monthly Budget Tracker</h2>
             <div style="display: flex; gap: 10px;">
-              <button class="btn-refresh" style="background: var(--surface); color: var(--text-main);"
-                onclick="addBudgetCategory()">➕ Category</button>
-              <button class="btn-refresh" style="background: var(--danger); color: white; border: none;"
-                onclick="logExpense()">🧾 Log Expense</button>
+              <div style="display: flex; gap: 10px;">
+              <button class="btn-refresh" style="background: #3b82f6; color: white; border: none;" onclick="window.openBudgetLogsModal()">📜 Logs</button>
+              <button class="btn-refresh" style="background: var(--surface); color: var(--text-main);" onclick="window.openAddBudgetModal()">➕ Category</button>
+              <button class="btn-refresh" style="background: var(--danger); color: white; border: none;" onclick="window.openLogExpenseModal()">🧾 Log Expense</button>
             </div>
           </div>
           <div class="table-responsive" style="padding: 24px;" id="budgetListBody">
@@ -2863,7 +2863,99 @@
         min-height: 500px !important; 
     }
 
-    
+    <div id="addBudgetModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #0f172a; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">➕ Add Budget Category</h2>
+              <span onclick="document.getElementById('addBudgetModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
+          </div>
+          <div style="padding: 25px; background: #f8fafc;">
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">Assigned Branch</label>
+              <select id="newBudgetBranch" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155;">
+                  <option value="Main Office">🏢 Main Office</option>
+                  <option value="Cabantian">📍 Cabantian</option>
+                  <option value="Citygate">📍 Citygate</option>
+                  <option value="Maa">📍 Maa</option>
+              </select>
+
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">Category Name</label>
+              <input type="text" id="newBudgetCategory" placeholder="e.g. Electric Bill, Rent, Internet" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">Monthly Limit (₱)</label>
+              <input type="number" id="newBudgetLimit" placeholder="0.00" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #0f172a; font-size: 18px;">
+
+              <button id="btnSubmitNewBudget" onclick="window.submitNewBudget()" style="width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Save Category</button>
+          </div>
+      </div>
+  </div>
+
+  <div id="editBudgetModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #eab308; padding: 15px 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px; color: white;">✏️ Edit Monthly Limit</h2>
+              <span onclick="document.getElementById('editBudgetModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
+          </div>
+          <div style="padding: 25px; background: #f8fafc;">
+              <input type="hidden" id="editBudgetId">
+              <p id="editBudgetTitle" style="font-size: 13px; font-weight: bold; color: #334155; margin-top: 0;">Updating Limit for...</p>
+              
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">New Monthly Limit (₱)</label>
+              <input type="number" id="editBudgetLimit" style="width: 100%; padding: 12px; margin: 5px 0 20px; border: 1px solid #fcd34d; border-radius: 6px; outline: none; font-weight: bold; color: #b45309; font-size: 18px; background: #fffbeb;">
+
+              <button id="btnSubmitEditBudget" onclick="window.submitEditBudget()" style="width: 100%; background: #eab308; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Update Limit</button>
+          </div>
+      </div>
+  </div>
+
+  <div id="logExpenseModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #dc2626; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">🧾 Log Budget Expense</h2>
+              <span onclick="document.getElementById('logExpenseModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
+          </div>
+          <div style="padding: 25px; background: #f8fafc;">
+              
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">1. Select Budget Category to Hit</label>
+              <select id="logExpBudgetSelect" style="width: 100%; padding: 12px; margin: 5px 0 15px; border: 1px solid #fca5a5; border-radius: 6px; outline: none; font-weight: bold; color: #991b1b; background: #fef2f2;"></select>
+
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">2. Select Cash Account to Deduct From</label>
+              <select id="logExpAccSelect" style="width: 100%; padding: 12px; margin: 5px 0 15px; border: 1px solid #86efac; border-radius: 6px; outline: none; font-weight: bold; color: #166534; background: #f0fdf4;"></select>
+
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">3. Expense Amount (₱)</label>
+              <input type="number" id="logExpAmount" placeholder="0.00" style="width: 100%; padding: 12px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: 900; color: #dc2626; font-size: 20px;">
+
+              <label style="font-size: 12px; font-weight: bold; color: #64748b;">4. Notes / Description</label>
+              <input type="text" id="logExpNote" placeholder="e.g. August Rent, PLDT Bill" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+
+              <button id="btnSubmitLogExpense" onclick="window.submitLogExpense()" style="width: 100%; background: #dc2626; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💸 Confirm & Deduct</button>
+          </div>
+      </div>
+  </div>
+
+  <div id="budgetLogsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 700px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 85vh; display: flex; flex-direction: column;">
+          <div style="background: #3b82f6; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px; color: white;">📜 Recent Budget Expenses</h2>
+              <button onclick="document.getElementById('budgetLogsModal').style.display='none'" style="background: none; border: none; font-size: 24px; cursor: pointer; color: white;">✖</button>
+          </div>
+          <div style="padding: 20px; overflow-y: auto; background: #f8fafc; flex: 1;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; background: white; border: 1px solid #e2e8f0;">
+                  <thead style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+                      <tr>
+                          <th style="padding: 12px 10px; color: #475569;">Date</th>
+                          <th style="padding: 12px 10px; color: #475569;">Branch</th>
+                          <th style="padding: 12px 10px; color: #475569;">Category & Notes</th>
+                          <th style="padding: 12px 10px; color: #475569;">Account Deducted</th>
+                          <th style="padding: 12px 10px; color: #475569; text-align: right;">Amount</th>
+                      </tr>
+                  </thead>
+                  <tbody id="budgetLogsBody">
+                      <tr><td colspan="5" class="text-center">Loading logs...</td></tr>
+                  </tbody>
+              </table>
+          </div>
+      </div>
+  </div>
   
   </style>
 
