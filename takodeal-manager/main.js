@@ -7581,3 +7581,51 @@ window.toggleManagerSidebar = function() {
         if (overlay) overlay.style.display = 'block';
     }
 };
+
+// ==========================================
+// 📜 ACCOUNT AUDIT LOGS ENGINE
+// ==========================================
+window.openAccountHistory = async function() {
+    document.getElementById('accountHistoryModal').style.display = 'flex';
+    const tbody = document.getElementById('accHistoryTableBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">⏳ Fetching secure audit logs...</td></tr>';
+
+    try {
+        // Fetch the 50 most recent account logs
+        const q = query(collection(db, "account_logs"), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let timeStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            
+            // Color code the actions! (Green for money IN, Red for money OUT, Blue for Transfers)
+            let actionColor = (d.action.includes('Deposit') || d.action.includes('Received') || d.action.includes('Remittance')) ? '#16a34a' : '#dc2626';
+            if(d.action.includes('Transfer') || d.action.includes('Sweep')) actionColor = '#2563eb';
+
+            html += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${timeStr}</td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #334155;">${d.user || 'System'}</td>
+                <td style="padding: 12px 10px; color: ${actionColor}; font-weight: bold;">
+                    ${d.action} <br>
+                    <span style="font-size: 11px; color: #64748b;">Amount: ₱${(d.amount || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #0284c7;">
+                    ${d.accountName} <br>
+                    <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">📍 ${d.branch}</span>
+                </td>
+                <td style="padding: 12px 10px; font-size: 12px; color: #475569;">
+                    ${d.note || '-'} <br>
+                    <strong style="color: #0f766e; font-size: 13px;">New Bal: ₱${(d.newBalance || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong>
+                </td>
+            </tr>`;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 20px;">No account logs found.</td></tr>';
+    } catch(e) {
+        console.error("Audit Log Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 20px;">Failed to fetch logs. Check console.</td></tr>';
+    }
+};
