@@ -7562,3 +7562,22 @@ window.loadSalesHistoryTab = async function() {
         tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px; color: red;">Failed to fetch history. Check F12 console.</td></tr>';
     }
 };
+
+// ==========================================
+// 📱 MOBILE SIDEBAR SLIDE ENGINE
+// ==========================================
+window.toggleManagerSidebar = function() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('mobileSidebarOverlay');
+    
+    // Check if the sidebar is currently open
+    if (sidebar.classList.contains('show-mobile')) {
+        // Close it
+        sidebar.classList.remove('show-mobile');
+        if (overlay) overlay.style.display = 'none';
+    } else {
+        // Open it
+        sidebar.classList.add('show-mobile');
+        if (overlay) overlay.style.display = 'block';
+    }
+};
