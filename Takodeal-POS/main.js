@@ -1175,52 +1175,104 @@ window.submitRemittance = async function() {
     let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     let safeCashier = localStorage.getItem('cashierName') || 'Unknown';
 
+    let amountStr = document.getElementById('remitAmount').value;
+    let remitAmount = parseFloat(amountStr);
+    let channel = document.getElementById('remitChannel').value;
+    let recipient = document.getElementById('remitRecipient').value.trim();
+    let refNum = document.getElementById('remitRefNum').value.trim();
+    let startDate = document.getElementById('remitStartDate').value;
+    let endDate = document.getElementById('remitEndDate').value;
+
+    if (isNaN(remitAmount) || remitAmount <= 0 || !channel || !recipient) {
+        alert("❌ Please fill out the Amount, Channel, and Recipient correctly."); 
+        return;
+    }
+
+    if (!activeShiftDetails || !activeShiftDetails.logId) {
+        alert("❌ You must have an Active Shift open to remit cash!");
+        return;
+    }
+
+    // 🔒 1. EXACT MATH SECURITY CHECK
+    // Get live, up-to-the-second transaction data
+    let transactions = await window.getSalesDashboardData(safeBranch, activeShiftDetails.startTime);
+    let currentCashInDrawer = activeShiftDetails.startingCash - activeShiftDetails.cashOut;
+
+    if (transactions && transactions.length > 0) {
+        transactions.forEach(tx => {
+            if (tx.status !== 'Voided' && (tx.paymentMethod === 'Cash' || !tx.paymentMethod)) {
+                currentCashInDrawer += tx.netTotal;
+            }
+        });
+    }
+
+    // Is the cashier trying to remit MORE cash than what should exist in their drawer?
+    if (remitAmount > currentCashInDrawer) {
+        alert(`⛔ REMITTANCE BLOCKED (SHORTAGE DETECTED)\n\nSystem Expected Cash: ₱${currentCashInDrawer.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more cash than what is supposed to be in your drawer! Please double-check your physical cash count.`);
+        return;
+    }
+
+    // 🔒 2. SECURITY PIN AUTHORIZATION
+    let userPin = prompt(`SECURITY CHECK:\nRemitting ₱${remitAmount.toLocaleString()} to ${recipient}.\n\nPlease enter your 4-Digit PIN to authorize this transfer:`);
+    if (!userPin) return; // Cancelled
+
+    let identity = await window.verifyPin(userPin);
+    if (!identity) {
+        alert("❌ Unauthorized. Incorrect PIN.");
+        return;
+    }
+
     let payload = {
         branch: safeBranch,
-        cashier: safeCashier,
-        salesPeriodStart: document.getElementById('remitStartDate').value,
-        salesPeriodEnd: document.getElementById('remitEndDate').value,
-        amount: parseFloat(document.getElementById('remitAmount').value),
-        channel: document.getElementById('remitChannel').value,
-        recipient: document.getElementById('remitRecipient').value.trim(),
-        referenceNumber: document.getElementById('remitRefNum').value.trim(),
+        cashier: identity.cashierName, // Use the name of the person whose PIN authorized it!
+        salesPeriodStart: startDate,
+        salesPeriodEnd: endDate,
+        amount: remitAmount,
+        channel: channel,
+        recipient: recipient,
+        referenceNumber: refNum,
         status: "Pending", 
         timestamp: serverTimestamp()
     };
 
-    if (isNaN(payload.amount) || payload.amount <= 0 || !payload.channel || !payload.recipient) {
-        alert("❌ Please fill out Amount, Channel, and Recipient."); return;
-    }
-
     try {
+        // 3. Move it to the Pending Hub
         await addDoc(collection(db, "remittances"), payload);
         
-        // 🔥 THE FIX: Deduct this money from the active Cash Drawer!
-        if (activeShiftDetails && activeShiftDetails.logId) {
-            const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
-            const shiftSnap = await getDoc(shiftRef);
-            if (shiftSnap.exists()) {
-                let currentExp = shiftSnap.data().cashOut || 0;
-                await updateDoc(shiftRef, { cashOut: currentExp + payload.amount, expenses: currentExp + payload.amount });
-                
-                // Add it to the Expense logs so it shows up on the Z-Reading breakdown!
-                await addDoc(collection(db, "expenses"), {
-                    branch: safeBranch,
-                    shiftId: activeShiftDetails.logId,
-                    cashier: safeCashier,
-                    amount: payload.amount,
-                    description: `Remittance to ${payload.recipient} (${payload.channel})`,
-                    timestamp: serverTimestamp()
-                });
-            }
+        // 4. 🔥 TRUE DRAWER DEDUCTION
+        // We log it in the shift record so their Expected Cash at EOD balances perfectly
+        const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
+        const shiftSnap = await getDoc(shiftRef);
+        if (shiftSnap.exists()) {
+            let currentExp = shiftSnap.data().cashOut || 0;
+            // It adds to "cashOut", which lowers the final Expected Drawer Cash for Z-Reading
+            await updateDoc(shiftRef, { cashOut: currentExp + remitAmount });
         }
 
-        alert("✅ Remittance securely sent to HQ and deducted from Drawer!");
+        // 5. Create an Audit Log in the Expenses feed (So the Manager can trace where the drawer cash went)
+        await addDoc(collection(db, "expenses"), {
+            branch: safeBranch,
+            shiftId: activeShiftDetails.logId,
+            cashier: identity.cashierName,
+            amount: remitAmount,
+            description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`,
+            timestamp: serverTimestamp()
+        });
+
+        alert("✅ Security Cleared! Remittance securely sent to the HQ Hub and deducted from your active drawer.");
+        
+        // Clean up UI
         document.getElementById('remitAmount').value = '';
         document.getElementById('remitRefNum').value = '';
         window.switchRemittanceTab('history');
-        if (typeof checkCurrentShift === 'function') checkCurrentShift(); // Refresh drawer UI
-    } catch (e) { console.error(e); alert("❌ Failed to send remittance."); }
+        
+        // Force the POS UI to recalculate the new Expected Cash instantly!
+        if (typeof checkCurrentShift === 'function') checkCurrentShift(); 
+        
+    } catch (e) { 
+        console.error(e); 
+        alert("❌ Network Error: Failed to send remittance."); 
+    }
 };
 
 window.loadRemittanceHistory = async function() {
