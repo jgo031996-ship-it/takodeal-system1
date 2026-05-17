@@ -2406,7 +2406,11 @@ window.openLogExpenseModal = function() {
 
     accSelect.innerHTML = '<option value="">-- Select Cash Account --</option>';
     window.liveAccounts.forEach(a => {
-        accSelect.innerHTML += `<option value="${a.id}">${a.name} (${a.branch}) - Bal: ₱${a.balance.toLocaleString()}</option>`;
+        // 🔥 STRICT FILTER: Only show Main Office accounts!
+        if (a.branch === "Main Office") {
+            // I also removed the (Branch) text since it will always be Main Office now!
+            accSelect.innerHTML += `<option value="${a.id}">${a.name} - Bal: ₱${a.balance.toLocaleString()}</option>`;
+        }
     });
 
     document.getElementById('logExpAmount').value = '';
@@ -7073,7 +7077,11 @@ window.openSettlePayable = async function(id, supplier, amount, invoice) {
         accSnap.forEach(docSnap => {
             let acc = docSnap.data();
             window.livePayableAccounts[docSnap.id] = acc;
-            html += `<option value="${docSnap.id}">${acc.name} (${acc.branch}) - Bal: ₱${acc.balance.toLocaleString()}</option>`;
+            
+            // 🔥 STRICT FILTER: Only show Main Office accounts for paying suppliers!
+            if (acc.branch === "Main Office") {
+                html += `<option value="${docSnap.id}">${acc.name} - Bal: ₱${acc.balance.toLocaleString()}</option>`;
+            }
         });
         accSelect.innerHTML = html;
         document.getElementById('settlePayableModal').style.display = 'flex';
