@@ -205,6 +205,7 @@
       <a href="#" class="nav-item" id="nav-purchases" onclick="switchView('purchases')">⚠️ Purchases & Alerts</a>
       <a href="#" class="nav-item" id="nav-dispatch" onclick="switchView('dispatch')">🚚 Dispatch Stock</a>
       <a href="#" class="nav-item" id="nav-zreadings" onclick="switchView('zreadings')">📊 Z-Reading Reports</a>
+      <a href="#" class="nav-item" id="nav-history" onclick="switchView('history')">🧾 Sales History</a>
       <a href="#" class="nav-item" id="nav-expenses" onclick="switchView('expenses')">💸 Expense & Restock Feed</a>
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')">👥 Staff & Security</a>
       <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')">🍔 Menu Editor</a>
@@ -407,6 +408,50 @@
 
     </div>
 
+    <div id="view-history" class="view">
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0;">🧾 Master Sales History</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">View, filter, and export all past receipts for your bookkeeper.</span>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <select id="histBranchFilter" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
+                <option value="All">All Branches</option>
+                <option value="Cabantian">Cabantian</option>
+                <option value="Citygate">Citygate</option>
+                <option value="Maa">Maa</option>
+            </select>
+            <input type="date" id="histStartDate" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
+            <span style="font-weight: bold; color: #64748b;">to</span>
+            <input type="date" id="histEndDate" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
+            
+            <button onclick="downloadExcel('historyTableBody', 'TAKODEAL_Master_Sales')" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">📥 Export Excel</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead style="background: #f8fafc;">
+              <tr>
+                <th>Date & Time</th>
+                <th>Receipt ID</th>
+                <th>Branch</th>
+                <th>Cashier</th>
+                <th style="color: #0284c7;">Customer</th>
+                <th>Payment</th>
+                <th>Net Total</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr><td colspan="8" class="text-center" style="padding: 30px;">Select a date range to load receipts...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    
     <div id="view-zreadings" class="view">
       <div class="card">
         
