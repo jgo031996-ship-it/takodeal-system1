@@ -7366,9 +7366,12 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
     let itemsHtml = '';
 
     cart.forEach(item => {
-        let qty = item.qty || 1;
-        let price = item.variantPrice || item.basePrice || 0;
-        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : (qty * price);
+        // 🔥 UPGRADE: Safely catch both POS (qty/variantPrice) AND Mobile App (quantity/price) data formats!
+        let qty = item.qty || item.quantity || 1;
+        let price = parseFloat(item.variantPrice || item.basePrice || item.price) || 0;
+        
+        let lineTotal = parseFloat(item.lineTotalFinal);
+        if (isNaN(lineTotal)) lineTotal = (qty * price);
         
         // Unpack Add-ons if they exist
         let addonsHtml = '';
@@ -7548,11 +7551,11 @@ window.loadSalesHistoryTab = async function() {
         let tMargin = tNet - tCogs;
         let marginPct = tNet > 0 ? (tMargin / tNet) * 100 : 0;
 
-        document.getElementById('histSumGross').innerText = `₱${tGross.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('histSumNet').innerText = `₱${tNet.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('histSumMargin').innerText = `₱${tMargin.toLocaleString(undefined, {minimumFractionDigits:2})} (${marginPct.toFixed(1)}%)`;
-        document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('histSumGross').innerText = `₱${tGross.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        document.getElementById('histSumNet').innerText = `₱${tNet.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        document.getElementById('histSumMargin').innerText = `₱${tMargin.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${marginPct.toFixed(1)}%)`;
+        document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
     } catch (e) {
         console.error("History Error:", e);
