@@ -7431,3 +7431,71 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
     `;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 };
+
+// ==========================================
+// 🧾 MASTER SALES HISTORY ENGINE
+// ==========================================
+window.loadSalesHistoryTab = async function() {
+    const tbody = document.getElementById('historyTableBody');
+    if (!tbody) return;
+
+    let branchFilter = document.getElementById('histBranchFilter').value;
+    let startInput = document.getElementById('histStartDate').value;
+    let endInput = document.getElementById('histEndDate').value;
+
+    // Auto-fill dates if empty
+    if (!startInput || !endInput) {
+        let today = new Date().toISOString().split('T')[0];
+        document.getElementById('histStartDate').value = today;
+        document.getElementById('histEndDate').value = today;
+        startInput = today; endInput = today;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Fetching receipts from the cloud...</td></tr>';
+
+    let startOfDay = new Date(startInput + 'T00:00:00');
+    let endOfDay = new Date(endInput + 'T23:59:59');
+
+    try {
+        let q;
+        if (branchFilter === "All") {
+            q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        } else {
+            q = query(collection(db, "transactions"), where("branch", "==", branchFilter), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        }
+
+        const snap = await getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            let timeStr = tx.timestamp ? tx.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
+            let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
+            
+            let statusStyle = tx.status === "Voided" ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
+            let voidBadge = tx.status === "Voided" ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:5px;">VOID</span>` : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${timeStr}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">${tx.receiptId} ${voidBadge}</td>
+                    <td style="padding: 12px 10px;"><span class="badge badge-open">${tx.branch}</span></td>
+                    <td style="padding: 12px 10px; font-weight: 500;">${tx.cashier}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #0284c7;">${safeCustomer}</td>
+                    <td style="padding: 12px 10px;">${tx.paymentMethod || 'Unknown'}</td>
+                    <td style="padding: 12px 10px; ${statusStyle}">₱${(tx.netTotal || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px 10px; text-align: center;">
+                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this period.</td></tr>';
+
+    } catch (e) {
+        console.error("History Error:", e);
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px; color: red;">Failed to fetch history. Check F12 console.</td></tr>';
+    }
+};
