@@ -7432,7 +7432,7 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
 };
 
 // ==========================================
-// 🧾 MASTER SALES HISTORY ENGINE
+// 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE
 // ==========================================
 window.loadSalesHistoryTab = async function() {
     const tbody = document.getElementById('historyTableBody');
@@ -7442,7 +7442,6 @@ window.loadSalesHistoryTab = async function() {
     let startInput = document.getElementById('histStartDate').value;
     let endInput = document.getElementById('histEndDate').value;
 
-    // Auto-fill dates if empty
     if (!startInput || !endInput) {
         let today = new Date().toISOString().split('T')[0];
         document.getElementById('histStartDate').value = today;
@@ -7450,12 +7449,27 @@ window.loadSalesHistoryTab = async function() {
         startInput = today; endInput = today;
     }
 
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Fetching receipts from the cloud...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating financials and fetching receipts...</td></tr>';
 
     let startOfDay = new Date(startInput + 'T00:00:00');
     let endOfDay = new Date(endInput + 'T23:59:59');
 
     try {
+        // 1. FETCH INVENTORY & RECIPES FOR COGS CALCULATION
+        const invSnap = await getDocs(collection(db, "inventory"));
+        let inventoryCosts = {};
+        invSnap.forEach(doc => { let data = doc.data(); inventoryCosts[data.name] = parseFloat(data.baseCost) || 0; });
+
+        const bomSnap = await getDocs(collection(db, "bom"));
+        let recipeCosts = {};
+        bomSnap.forEach(doc => {
+            let data = doc.data();
+            if (!recipeCosts[data.menuItem]) recipeCosts[data.menuItem] = 0;
+            let ingCost = inventoryCosts[data.ingredientName] || 0;
+            recipeCosts[data.menuItem] += (ingCost * (data.qty || 1));
+        });
+
+        // 2. FETCH TRANSACTIONS
         let q;
         if (branchFilter === "All") {
             q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
@@ -7466,12 +7480,49 @@ window.loadSalesHistoryTab = async function() {
         const snap = await getDocs(q);
         let html = '';
 
+        // Financial Trackers
+        let tGross = 0; let tNet = 0; let tCogs = 0; let tGrab = 0;
+
         snap.forEach(docSnap => {
             let tx = docSnap.data();
             let timeStr = tx.timestamp ? tx.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
             let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
             
+            // CALCULATE FINANCIALS (Skip voided items)
+            if (tx.status !== "Voided") {
+                tNet += (tx.netTotal || 0);
+                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += (tx.netTotal || 0);
+
+                let txGross = 0;
+                if (tx.cart && Array.isArray(tx.cart)) {
+                    tx.cart.forEach(item => {
+                        let qty = item.qty || 1;
+                        let price = item.variantPrice || item.basePrice || 0;
+                        txGross += (price * qty);
+
+                        // COGS Math
+                        let itemName = item.name || item.itemName;
+                        let baseCogs = (recipeCosts[itemName] || 0) * qty;
+                        let addonCogs = 0;
+                        if (item.addons) {
+                            for (let key in item.addons) {
+                                let addon = item.addons[key];
+                                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                    let aCost = inventoryCosts[addon.linkedIngredient] || 0;
+                                    addonCogs += (aCost * addon.deductQty * addon.qty * qty);
+                                }
+                            }
+                        }
+                        tCogs += (baseCogs + addonCogs);
+                    });
+                } else {
+                    txGross = tx.netTotal; // fallback
+                }
+                tGross += txGross;
+            }
+
+            // BUILD TABLE ROW
             let statusStyle = tx.status === "Voided" ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
             let voidBadge = tx.status === "Voided" ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:5px;">VOID</span>` : '';
 
@@ -7492,6 +7543,16 @@ window.loadSalesHistoryTab = async function() {
         });
 
         tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this period.</td></tr>';
+
+        // 3. UPDATE THE DASHBOARD UI
+        let tMargin = tNet - tCogs;
+        let marginPct = tNet > 0 ? (tMargin / tNet) * 100 : 0;
+
+        document.getElementById('histSumGross').innerText = `₱${tGross.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('histSumNet').innerText = `₱${tNet.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('histSumMargin').innerText = `₱${tMargin.toLocaleString(undefined, {minimumFractionDigits:2})} (${marginPct.toFixed(1)}%)`;
+        document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits:2})}`;
 
     } catch (e) {
         console.error("History Error:", e);
