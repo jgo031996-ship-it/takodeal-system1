@@ -90,7 +90,26 @@
             <!-- Change 'banner.png' to 'banner.jpg' if your file is a JPG -->
             <img src="banner.png" alt="TAKODEÁL Banner" class="w-full h-auto max-h-32 object-contain">
         </div>
-        <div id="orderingScreen" class="flex-1">
+        <div id="greetingScreen" class="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white z-30">
+            
+            <div class="animate-cooking text-7xl mb-4 drop-shadow-lg">🐙</div>
+            
+            <h1 class="text-4xl font-black text-gray-800 mb-2 tracking-tight">TAKODEÁL</h1>
+            <p class="text-gray-500 font-medium mb-8 text-sm">Davao's Premium Takoyaki & Refreshments</p>
+            
+            <div class="bg-red-50 border border-red-100 p-4 rounded-2xl mb-10 w-full max-w-xs shadow-sm relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 text-4xl opacity-10">📍</div>
+                <p class="text-sm font-black text-red-700 mb-1 uppercase tracking-wider">Delivery Zone</p>
+                <p class="text-xs text-red-600 font-medium">Currently serving Davao City area only.<br>(Max 15km Radius)</p>
+            </div>
+
+            <button onclick="window.enterOrderingScreen()" class="w-full max-w-xs bg-red-600 text-white font-black py-4 px-6 rounded-2xl shadow-[0_10px_20px_rgba(220,38,38,0.3)] hover:bg-red-700 active:scale-95 transition-all text-lg flex items-center justify-center gap-3">
+                <span>Start Ordering</span>
+                <span class="text-xl">➡</span>
+            </button>
+            
+        </div>
+        <div id="orderingScreen" class="flex-1 hidden">
             <!-- Search Bar -->
             <div class="search-bar-container shadow-sm">
                 <div class="relative">
@@ -402,6 +421,22 @@
                 document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-400">Failed to load menu. Check connection.</div>';
             }
         }
+
+        // ==========================================
+        // 🚪 GREETING PAGE TRANSITION ENGINE
+        // ==========================================
+        window.enterOrderingScreen = function() {
+            // Hide the greeting page
+            document.getElementById('greetingScreen').classList.add('hidden');
+            
+            // Show the ordering screen with a smooth fade-in
+            let orderScreen = document.getElementById('orderingScreen');
+            orderScreen.classList.remove('hidden');
+            orderScreen.classList.add('animate-float');
+            
+            // Scroll to the top just in case
+            window.scrollTo(0, 0);
+        };
 
         function renderAccordions(categoriesMap) {
             const container = document.getElementById('liveMenuContainer');
