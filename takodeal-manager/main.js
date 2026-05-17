@@ -6516,9 +6516,6 @@ window.autoFill7DaySupply = function() {
 // ========================================================
 // 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE
 // ========================================================
-// ========================================================
-// 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE
-// ========================================================
 window.loadCashFlowHub = async function() {
     try {
         let safeCash = 0;
@@ -6533,7 +6530,14 @@ window.loadCashFlowHub = async function() {
         shiftSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
-            if (branchFloating[branch] !== undefined) branchFloating[branch] += (data.expectedCash || 0);
+            
+            // 🔥 NEW: Only track the PHYSICAL cash they took out of the drawer to remit!
+            // (What they counted) MINUS (What they left in the drawer for tomorrow)
+            let physicalCashToRemit = (data.declaredCash || 0) - (data.startingCash || 0);
+            
+            if (physicalCashToRemit > 0 && branchFloating[branch] !== undefined) {
+                branchFloating[branch] += physicalCashToRemit;
+            }
         });
 
         const remitSnap = await getDocs(collection(db, "remittances"));
