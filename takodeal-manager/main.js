@@ -3589,12 +3589,13 @@ window.approveRemittance = async function (docId) {
         }
 
         // 3. Find that matching account in your Master Cash & Budget database
-        const accQuery = query(collection(db, "cash_accounts"), where("name", "==", targetAccountName));
+        // 🔥 FIX: We MUST specify "Main Office" so it doesn't accidentally deposit into a branch's account!
+        const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", targetAccountName));
         const accSnap = await getDocs(accQuery);
 
         if (accSnap.empty) {
             // SAFETY LOCK: If they remitted to "BDO" but you haven't created a "BDO" account yet!
-            alert(`⚠️ Routing Error: No cash account named "${targetAccountName}" found in your Cash & Budget tab!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}", and try approving this again.`);
+            alert(`⚠️ Routing Error: No cash account named "${targetAccountName}" found in the Main Office!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}" for the Main Office, and try approving this again.`);
             return; 
         }
 
@@ -3604,6 +3605,19 @@ window.approveRemittance = async function (docId) {
         const newBalance = currentBalance + amountToDeposit;
         
         await updateDoc(doc(db, "cash_accounts", targetAccDoc.id), { balance: newBalance });
+
+        // 🔥 FIX: Create the Audit Log so it shows up in your history!
+        await addDoc(collection(db, "account_logs"), {
+            accountId: targetAccDoc.id,
+            accountName: targetAccountName,
+            branch: "Main Office",
+            action: "Remittance Received",
+            amount: amountToDeposit,
+            newBalance: newBalance,
+            user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
+            timestamp: serverTimestamp(),
+            note: `Remitted by ${data.cashier} from ${data.branch}`
+        });
 
         // 5. Finally, mark the remittance as safely Received
         await updateDoc(remitRef, { status: "Received" });
