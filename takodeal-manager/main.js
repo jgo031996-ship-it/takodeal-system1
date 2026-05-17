@@ -1965,7 +1965,7 @@ window.loadAccountsAndBudget = async function() {
     }
 
     // ==========================================
-    // 💸 PART 2: THE MONTHLY BUDGET TRACKER 
+    // 💸 PART 2: THE MONTHLY BUDGET TRACKER (WITH AUTO-RESET)
     // ==========================================
     try {
         const budgetBody = document.getElementById('budgetListBody');
@@ -1976,8 +1976,13 @@ window.loadAccountsAndBudget = async function() {
         let totalB = 0;
         let totalS = 0;
         
-        // 🔥 FIX: Reset the budget memory so the Expense logger works!
         window.liveBudgets = []; 
+
+        // 🔥 MONTHLY RESET MATH
+        let today = new Date();
+        let currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        let displayMonth = `${monthNames[today.getMonth()]} ${today.getFullYear()}`;
 
         let budgetItems = [];
         budgetSnap.forEach(doc => { budgetItems.push({id: doc.id, ...doc.data()}) });
@@ -1987,18 +1992,26 @@ window.loadAccountsAndBudget = async function() {
             bHtml = '<div class="text-center" style="color: #64748b; padding: 20px;">No budget categories found. Click "+ Category" to start tracking.</div>';
         } else {
             budgetItems.forEach(b => {
-                window.liveBudgets.push(b); // Save to memory
-
                 let limit = parseFloat(b.limit || b.amount || 0);
                 let spent = parseFloat(b.spent || 0);
+                let budgetMonth = b.currentMonth || "";
                 let branchName = b.branch || "Unassigned";
-                
+
+                // 🔄 AUTO-RESET DETECTOR: If this budget is from an old month, wipe it clean!
+                if (budgetMonth !== currentMonthStr) {
+                    spent = 0; // Visually reset it
+                    // Quietly update the database in the background without lagging the screen
+                    updateDoc(doc(db, "budgets", b.id), { spent: 0, currentMonth: currentMonthStr });
+                }
+
+                // Push clean data to memory for the dropdowns
+                window.liveBudgets.push({ ...b, spent: spent, limit: limit });
+
                 totalB += limit;
                 totalS += spent;
 
                 let pct = limit > 0 ? (spent / limit) * 100 : 0;
                 let barColor = pct >= 90 ? '#ef4444' : (pct >= 75 ? '#f59e0b' : '#10b981');
-                
                 let branchBadge = `<span style="background: #ede9fe; color: #8b5cf6; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin-right: 10px; border: 1px solid #ddd6fe; font-weight: bold;">📍 ${branchName}</span>`;
 
                 bHtml += `
@@ -2006,13 +2019,13 @@ window.loadAccountsAndBudget = async function() {
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                             <div style="display: flex; align-items: center;">
                                 ${branchBadge}
-                                <span style="color: #334155; font-size: 14px; font-weight: bold;">${b.category || b.name || 'Category'}</span>
+                                <span style="color: #334155; font-size: 14px; font-weight: bold;">${b.category || b.name || 'Category'} <span style="font-size:10px; color:#94a3b8; font-weight:normal; margin-left:5px;">(${displayMonth})</span></span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 12px;">
                                 <span style="color: ${barColor}; font-weight: bold; font-size: 13px;">₱${spent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${limit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                 
-                                <button onclick="window.editBudgetCategory('${b.id}', '${b.category || b.name}', ${limit})" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Edit Limit">✏️ Edit</button>
-                                <button onclick="window.deleteBudgetCategory('${b.id}', '${b.category || b.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Delete">🗑️ Delete</button>
+                                <button onclick="window.openEditBudgetModal('${b.id}', '${b.category || b.name}', ${limit}, '${branchName}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Edit Limit">✏️ Edit</button>
+                                <button onclick="window.deleteBudgetCategory('${b.id}', '${b.category || b.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Delete">🗑️</button>
                             </div>
                         </div>
                         <div style="background: #cbd5e1; height: 10px; border-radius: 5px; overflow: hidden;">
@@ -2292,35 +2305,197 @@ window.openAccountHistory = async function() {
 };
 
 // ==========================================
-// 🛠️ BUDGET MANAGEMENT CONTROLS
+// 🛠️ BUDGET MANAGEMENT (MODAL CONTROL)
 // ==========================================
 
-window.addBudgetCategory = async function() {
-    let branch = prompt("Enter Branch for this budget (e.g., Cabantian, Citygate, Maa, Main Office):", "Main Office");
-    if (!branch) return; // Cancelled
-    
-    let category = prompt(`Enter the new budget category name for ${branch} (e.g., Rent, Water, Marketing):`);
-    if (!category) return;
-    
-    let limitStr = prompt(`Enter the monthly budget limit for ${branch} - ${category} (₱):`, "0");
-    if (!limitStr) return;
-    
-    let limit = parseFloat(limitStr);
-    if (isNaN(limit) || limit < 0) { alert("Invalid amount."); return; }
+window.openAddBudgetModal = function() {
+    document.getElementById('addBudgetModal').style.display = 'flex';
+    document.getElementById('newBudgetBranch').value = 'Main Office';
+    document.getElementById('newBudgetCategory').value = '';
+    document.getElementById('newBudgetLimit').value = '';
+};
+
+window.submitNewBudget = async function() {
+    let branch = document.getElementById('newBudgetBranch').value;
+    let category = document.getElementById('newBudgetCategory').value.trim();
+    let limit = parseFloat(document.getElementById('newBudgetLimit').value);
+
+    if (!category || isNaN(limit) || limit < 0) {
+        alert("Please provide a valid category name and limit amount."); return;
+    }
+
+    let btn = document.getElementById('btnSubmitNewBudget');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    let today = new Date();
+    let currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
     try {
         await addDoc(collection(db, "budgets"), {
-            branch: branch.trim(),
-            category: category.trim(),
+            branch: branch,
+            category: category,
             limit: limit,
             spent: 0,
+            currentMonth: currentMonthStr,
             createdAt: serverTimestamp()
         });
         alert(`✅ Success! Budget added for ${branch}.`);
+        document.getElementById('addBudgetModal').style.display = 'none';
         window.loadAccountsAndBudget();
     } catch (e) {
         console.error("Error adding budget:", e);
         alert("Failed to add category.");
+    } finally {
+        btn.innerText = "💾 Save Category"; btn.disabled = false;
+    }
+};
+
+window.openEditBudgetModal = function(id, name, currentLimit, branch) {
+    document.getElementById('editBudgetId').value = id;
+    document.getElementById('editBudgetTitle').innerText = `Updating Limit for: ${branch} - ${name}`;
+    document.getElementById('editBudgetLimit').value = currentLimit;
+    document.getElementById('editBudgetModal').style.display = 'flex';
+};
+
+window.submitEditBudget = async function() {
+    let id = document.getElementById('editBudgetId').value;
+    let newLimit = parseFloat(document.getElementById('editBudgetLimit').value);
+
+    if (isNaN(newLimit) || newLimit < 0) {
+        alert("❌ Invalid amount entered."); return;
+    }
+
+    let btn = document.getElementById('btnSubmitEditBudget');
+    btn.innerText = "⏳ Updating..."; btn.disabled = true;
+
+    try {
+        await updateDoc(doc(db, "budgets", id), {
+            limit: newLimit,
+            amount: newLimit // Legacy fallback just in case
+        });
+        document.getElementById('editBudgetModal').style.display = 'none';
+        window.loadAccountsAndBudget(); // Instantly refresh UI
+    } catch (e) {
+        console.error(e); alert("❌ Failed to update budget.");
+    } finally {
+        btn.innerText = "💾 Update Limit"; btn.disabled = false;
+    }
+};
+
+window.deleteBudgetCategory = async function(docId, catName) {
+    if (!confirm(`⚠️ ARE YOU SURE?\n\nDelete budget category: ${catName}?\nThis cannot be undone.`)) return;
+    try {
+        await deleteDoc(doc(db, "budgets", docId));
+        alert(`🗑️ ${catName} budget category deleted.`);
+        window.loadAccountsAndBudget();
+    } catch(e) { console.error(e); alert("Failed to delete budget."); }
+};
+
+window.openLogExpenseModal = function() {
+    if (!window.liveBudgets || window.liveBudgets.length === 0) { alert("Add a Budget Category first."); return; }
+    if (!window.liveAccounts || window.liveAccounts.length === 0) { alert("Add a Cash Account first."); return; }
+
+    let budgetSelect = document.getElementById('logExpBudgetSelect');
+    let accSelect = document.getElementById('logExpAccSelect');
+
+    budgetSelect.innerHTML = '<option value="">-- Select Budget Category --</option>';
+    window.liveBudgets.forEach(b => {
+        let avail = b.limit - b.spent;
+        budgetSelect.innerHTML += `<option value="${b.id}">${b.category} (${b.branch}) - Avail: ₱${avail.toLocaleString()}</option>`;
+    });
+
+    accSelect.innerHTML = '<option value="">-- Select Cash Account --</option>';
+    window.liveAccounts.forEach(a => {
+        accSelect.innerHTML += `<option value="${a.id}">${a.name} (${a.branch}) - Bal: ₱${a.balance.toLocaleString()}</option>`;
+    });
+
+    document.getElementById('logExpAmount').value = '';
+    document.getElementById('logExpNote').value = '';
+    document.getElementById('logExpenseModal').style.display = 'flex';
+};
+
+window.submitLogExpense = async function() {
+    let budId = document.getElementById('logExpBudgetSelect').value;
+    let accId = document.getElementById('logExpAccSelect').value;
+    let amt = parseFloat(document.getElementById('logExpAmount').value);
+    let note = document.getElementById('logExpNote').value.trim();
+
+    if (!budId || !accId) { alert("Please select a budget and a cash account."); return; }
+    if (isNaN(amt) || amt <= 0) { alert("Please enter a valid amount."); return; }
+
+    let selBud = window.liveBudgets.find(b => b.id === budId);
+    let selAcc = window.liveAccounts.find(a => a.id === accId);
+
+    if (selAcc.balance < amt) {
+        if (!confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance}. Deducting this will make the account negative. Continue?`)) return;
+    }
+
+    let btn = document.getElementById('btnSubmitLogExpense');
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+
+    try {
+        // 1. Deduct from Cash Account
+        await updateDoc(doc(db, "cash_accounts", selAcc.id), { balance: selAcc.balance - amt });
+        
+        // 2. Add to Budget Spent
+        await updateDoc(doc(db, "budgets", selBud.id), { spent: selBud.spent + amt });
+
+        // 3. Log to Global "expenses" collection
+        await addDoc(collection(db, "expenses"), {
+            branch: selBud.branch,
+            amount: amt,
+            category: selBud.category,
+            account: selAcc.name,
+            note: note,
+            timestamp: new Date()
+        });
+
+        alert(`🧾✅ Expense Logged! ₱${amt.toLocaleString()} deducted from ${selAcc.name}.`);
+        document.getElementById('logExpenseModal').style.display = 'none';
+        window.loadAccountsAndBudget();
+    } catch (e) {
+        console.error(e); alert("Failed to log expense.");
+    } finally {
+        btn.innerText = "💸 Confirm & Deduct"; btn.disabled = false;
+    }
+};
+
+window.openBudgetLogsModal = async function() {
+    document.getElementById('budgetLogsModal').style.display = 'flex';
+    const tbody = document.getElementById('budgetLogsBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">⏳ Fetching recent budget expenses...</td></tr>';
+
+    try {
+        // Grab the 30 most recent expenses (ignoring Payroll to keep it clean)
+        const q = query(collection(db, "expenses"), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            if (d.category === "Payroll" || d.category === "Supplier Payment") return; // Keep it focused on Budgets
+
+            let timeStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            
+            html += `
+            <tr style="border-bottom: 1px dashed #e2e8f0;">
+                <td style="padding: 12px 10px; color: #64748b; font-size: 12px;">${timeStr}</td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #334155;">📍 ${d.branch || 'Unknown'}</td>
+                <td style="padding: 12px 10px;">
+                    <strong style="color: #0f766e;">${d.category || 'Expense'}</strong><br>
+                    <span style="font-size: 11px; color: #64748b; font-style: italic;">${d.note || '-'}</span>
+                </td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #b45309;">${d.account || 'Unknown'}</td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #dc2626; text-align: right; font-size: 15px;">
+                    -₱${(d.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                </td>
+            </tr>`;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 20px;">No recent budget logs found.</td></tr>';
+    } catch(e) {
+        console.error("Log Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 20px;">Failed to fetch logs.</td></tr>';
     }
 };
 
