@@ -2004,7 +2004,6 @@ window.loadAccountsAndBudget = async function() {
                     updateDoc(doc(db, "budgets", b.id), { spent: 0, currentMonth: currentMonthStr });
                 }
 
-                // Push clean data to memory for the dropdowns
                 window.liveBudgets.push({ ...b, spent: spent, limit: limit });
 
                 totalB += limit;
