@@ -1212,41 +1212,30 @@
   </div>
 
   <script>
-      let pinBuffer = "";
-      let sessionUser = null;
-  
-      function loginPin(num) { 
-          if (pinBuffer.length < 4) { 
-              pinBuffer += num; 
-              document.getElementById('pinDisplay').innerText = "*".repeat(pinBuffer.length); 
-          } 
-      }
-  
-      function clearLoginPin() { 
-          pinBuffer = ""; 
-          document.getElementById('pinDisplay').innerText = "****"; 
-      }
-  
       async function submitLoginPin() {
-          let btn = document.getElementById('btnSubmitPin'); btn.innerText = "..."; btn.disabled = true;
-          let identity = await window.verifyPin(pinBuffer);
+          let passInput = document.getElementById('loginPasswordInput');
+          let password = passInput.value.trim();
+          
+          if (!password) { alert("Please enter your password."); return; }
+
+          let btn = document.getElementById('btnSubmitPin'); 
+          btn.innerText = "Verifying..."; btn.disabled = true;
+          
+          // It still calls verifyPin, but now it passes the typed word instead of numbers!
+          let identity = await window.verifyPin(password);
           
           if (!identity) { 
-              alert("Invalid PIN."); 
-              clearLoginPin(); 
-              btn.innerText = "OK"; 
+              alert("Invalid Password."); 
+              passInput.value = ""; 
+              btn.innerText = "Secure Login"; 
               btn.disabled = false; 
               return; 
           }
 
           sessionUser = identity;
           
-          // 🔥 THE MASTER FIX: Force the system to use the Tablet's Physical Location!
-          // This prevents Roving Managers from accidentally deducting from the HQ warehouse.
           let lockedDeviceBranch = localStorage.getItem('takodeal_device_branch');
-          if (lockedDeviceBranch) {
-              sessionUser.branch = lockedDeviceBranch;
-          }
+          if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
 
           localStorage.setItem('cashierName', identity.cashierName);
           document.getElementById('displayBranch').innerText = "📍 " + sessionUser.branch;
@@ -1256,8 +1245,6 @@
           if (typeof loadPOSData === 'function') await loadPOSData();
           if (typeof checkCurrentShift === 'function') await checkCurrentShift();
           if (typeof updateParkedBadge === 'function') await updateParkedBadge();
-
-          // Turn on the mobile order listener for THIS specific branch!
           if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
       }
   </script>
@@ -1267,22 +1254,16 @@
     </div>
     <div class="login-box">
       <h2 style="margin: 0 0 10px 0; color: #555;">Cashier Login</h2>
-      <div class="pin-display" id="pinDisplay">****</div>
-      <div class="login-numpad">
-        <button class="log-btn" onclick="loginPin('1')">1</button>
-        <button class="log-btn" onclick="loginPin('2')">2</button>
-        <button class="log-btn" onclick="loginPin('3')">3</button>
-        <button class="log-btn" onclick="loginPin('4')">4</button>
-        <button class="log-btn" onclick="loginPin('5')">5</button>
-        <button class="log-btn" onclick="loginPin('6')">6</button>
-        <button class="log-btn" onclick="loginPin('7')">7</button>
-        <button class="log-btn" onclick="loginPin('8')">8</button>
-        <button class="log-btn" onclick="loginPin('9')">9</button>
-        <button class="log-btn action" onclick="clearLoginPin()">CLR</button>
-        <button class="log-btn" onclick="loginPin('0')">0</button>
-        <button class="log-btn action" style="background: var(--primary); color: white; border-color: var(--primary);"
-          onclick="submitLoginPin()" id="btnSubmitPin">OK</button>
-      </div>
+      <p style="font-size: 13px; color: #888; margin-bottom: 20px;">Enter your secure password to continue.</p>
+      
+      <input type="password" id="loginPasswordInput" placeholder="Enter Password" 
+        style="width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 8px; font-size: 18px; text-align: center; letter-spacing: 2px; outline: none; box-sizing: border-box;" 
+        onkeypress="if(event.key === 'Enter') submitLoginPin()">
+      
+      <button onclick="submitLoginPin()" id="btnSubmitPin" 
+        style="width: 100%; padding: 15px; font-size: 18px; font-weight: bold; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s;">
+        Secure Login
+      </button>
     </div>
   </div>
 
