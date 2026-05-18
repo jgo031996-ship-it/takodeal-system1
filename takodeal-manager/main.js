@@ -4523,9 +4523,9 @@ window.loadZReadingReports = async function () {
           <td><span class="badge badge-closed">${safeBranch}</span></td>
           <td><strong>${safeCashier}</strong></td>
           <td style="font-size: 13px;">
-              <span style="color: #64748b;">Start: ₱${formatMoney(data.startingCash || 0)}</span><br>
-              Exp: ₱${formatMoney(data.expectedCash)}<br>
-              Dec: <span style="color:${(data.declaredCash - data.expectedCash) < 0 ? '#dc2626' : '#16a34a'}; font-weight:bold;">₱${formatMoney(data.declaredCash)}</span>
+              <span style="color: #64748b;">Start: ${formatMoney(data.startingCash || 0)}</span><br>
+              Exp: ${formatMoney(data.expectedCash)}<br>
+              Dec: <span style="color:${(data.declaredCash - data.expectedCash) < 0 ? '#dc2626' : '#16a34a'}; font-weight:bold;">${formatMoney(data.declaredCash)}</span>
           </td>
           <td>${varText}</td>
           <td>
