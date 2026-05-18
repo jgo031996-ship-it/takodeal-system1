@@ -6514,6 +6514,7 @@ window.generateAutoPayslips = async function() {
 
             if (log.type === "TIME IN") {
                 // 🛑 SECURITY CHECK: Only accept Time Ins that happened ON or BEFORE the exact cutoff end date!
+                // This permanently stops May 16th daytime shifts from leaking into the May 15th cutoff!
                 if (log.timestamp.toDate() <= trueEndDate) {
                     activeShifts[name] = log.timestamp.toDate();
                 }
@@ -6524,9 +6525,15 @@ window.generateAutoPayslips = async function() {
                 // EVEN IF TIMEOUT IS THE NEXT DAY (e.g. 3 AM), IT STILL COUNTS BECAUSE TIME IN WAS VALID!
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
-                // Auto-Remarks Engine
+                // 🧠 AUTO-REMARKS & STRAIGHT DUTY ENGINE
                 let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
-                if (hoursWorked < 8) {
+                let shiftMultiplier = 1;
+
+                if (hoursWorked >= 13.5) {
+                    // 🔥 If they work 13.5+ hours straight, auto-credit them 2 shifts!
+                    shiftMultiplier = 2;
+                    remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
+                } else if (hoursWorked < 8) {
                     let missingHours = (8 - hoursWorked).toFixed(1);
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
@@ -6541,7 +6548,7 @@ window.generateAutoPayslips = async function() {
                 });
 
                 staffData[name].totalHours += hoursWorked;
-                staffData[name].shiftsWorked += 1; 
+                staffData[name].shiftsWorked += shiftMultiplier; 
 
                 let outHour = timeOut.getHours();
                 // If they clock out between midnight and 4 AM, give them a Night Bonus!
