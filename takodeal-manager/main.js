@@ -3936,24 +3936,42 @@ window.loadDeviceFleet = async function () {
       return;
     }
 
-    snap.forEach(docSnap => {
-      let d = docSnap.data();
-      let statusBadge = d.status === 'Blocked'
-        ? `<span class="badge" style="background: var(--danger); color: white;">🚫 Blocked</span>`
-        : `<span class="badge badge-active">✅ Active</span>`;
+    // Sort in memory so we don't need to create a complex Firebase Index!
+    let devices = [];
+    snap.forEach(doc => devices.push({ id: doc.id, ...doc.data() }));
+    devices.sort((a, b) => (b.registeredAt?.toDate() || 0) - (a.registeredAt?.toDate() || 0));
+
+    devices.forEach(d => {
+      let statusBadge = '';
+      if (d.status === 'Blocked') {
+          statusBadge = `<span class="badge" style="background: var(--danger); color: white; padding: 4px 8px; border-radius: 6px;">🚫 Blocked</span>`;
+      } else if (d.status === 'Pending') {
+          statusBadge = `<span class="badge" style="background: #f59e0b; color: white; padding: 4px 8px; border-radius: 6px; animation: pulse 2s infinite;">⏳ Pending Approval</span>`;
+      } else {
+          statusBadge = `<span class="badge badge-active" style="padding: 4px 8px; border-radius: 6px;">✅ Active</span>`;
+      }
 
       let dateStr = d.registeredAt ? d.registeredAt.toDate().toLocaleDateString() : 'Unknown';
 
+      // Build the dynamic action buttons!
+      let actionsHtml = '';
+      if (d.status === 'Pending') {
+          actionsHtml += `<button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 5px 10px; margin-right: 5px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Approve</button>`;
+          actionsHtml += `<button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 5px 10px; margin-right: 5px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Reject</button>`;
+      } else if (d.status === 'Active') {
+          actionsHtml += `<button class="btn-refresh" style="background: #fef2f2; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; margin-right: 5px; border-radius: 4px; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Block</button>`;
+      } else {
+          actionsHtml += `<button class="btn-refresh" style="background: #f0fdf4; border: 1px solid var(--success); color: var(--success); padding: 5px 10px; margin-right: 5px; border-radius: 4px; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Unblock</button>`;
+      }
+      actionsHtml += `<button class="btn-refresh" style="background: white; border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 10px; border-radius: 4px; cursor: pointer;" onclick="deleteDevice('${d.id}')">🗑️ Delete</button>`;
+
       html += `
-        <tr>
-          <td><strong>${d.deviceName || 'Unnamed Tablet'}</strong><br><span style="font-size: 11px; color: gray;">ID: ${docSnap.id}</span></td>
+        <tr style="${d.status === 'Pending' ? 'background: #fffbeb;' : ''}">
+          <td><strong>${d.deviceName || 'Unnamed Tablet'}</strong><br><span style="font-size: 11px; color: gray;">ID: ${d.id}</span></td>
           <td>📍 ${d.branch}</td>
           <td>${dateStr}</td>
           <td>${statusBadge}</td>
-          <td>
-            ${d.status !== 'Blocked' ? `<button class="btn-refresh" style="background: #fef2f2; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; margin-right: 5px;" onclick="toggleDeviceStatus('${docSnap.id}', 'Blocked')">🚫 Block</button>` : `<button class="btn-refresh" style="background: #f0fdf4; border: 1px solid var(--success); color: var(--success); padding: 5px 10px; margin-right: 5px;" onclick="toggleDeviceStatus('${docSnap.id}', 'Active')">✅ Unblock</button>`}
-            <button class="btn-refresh" style="background: white; border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 10px;" onclick="deleteDevice('${docSnap.id}')">🗑️ Delete</button>
-          </td>
+          <td>${actionsHtml}</td>
         </tr>
       `;
     });
