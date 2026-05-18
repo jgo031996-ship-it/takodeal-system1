@@ -328,10 +328,13 @@ window.getSalesDashboardData = async function (branch, shiftStartTime) {
     // ANTI-FRAUD: If there is no shift start time, refuse to show sales!
     if (!shiftStartTime) return [];
 
+    // 🔥 THE FIX: Ensure the time is a proper Date object so Firebase can read it!
+    let validStartTime = shiftStartTime instanceof Date ? shiftStartTime : new Date(shiftStartTime);
+
     // Search for transactions ONLY from this branch, and ONLY after the shift started
     const q = query(collection(db, "transactions"),
       where("branch", "==", branch),
-      where("timestamp", ">=", shiftStartTime)
+      where("timestamp", ">=", validStartTime)
     );
     const snapshot = await getDocs(q);
 
@@ -367,14 +370,15 @@ window.getLiveShiftDetails = async function (branch) {
     txSnap.forEach(d => {
       let tx = d.data();
       // Only count cash that wasn't voided!
-      if (tx.status !== "Voided" && tx.paymentMethod === "Cash") {
+      if (tx.status !== "Voided" && (tx.paymentMethod === "Cash" || !tx.paymentMethod)) {
         cashIn += tx.netTotal || 0;
       }
     });
 
     return {
       logId: shiftDoc.id, startedBy: shiftData.cashier,
-      startTime: shiftData.startTime.toDate().toISOString(),
+      // 🔥 THE FIX: Keep this as a true Date Object!
+      startTime: shiftData.startTime.toDate(), 
       startingCash: shiftData.startingCash || 0,
       cashIn: cashIn,
       cashOut: totalExpenses, // Now we track expenses!
