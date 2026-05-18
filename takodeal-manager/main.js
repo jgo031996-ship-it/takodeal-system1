@@ -5728,25 +5728,28 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
 };
 
 // ==========================================
-// 💸 AUTO-PAYSLIP GENERATOR ENGINE
+// 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH NIGHT SHIFT SUPPORT)
 // ==========================================
 
-// Run this when the page loads to automatically set the Cutoff Dates
 window.setDefaultCutoffDates = function() {
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
-    
-    let startDate = `${yyyy}-${mm}-03`;
-    let endDate = `${yyyy}-${mm}-17`;
-    
-    if (today.getDate() > 17) {
-        startDate = `${yyyy}-${mm}-18`;
-        let nextMonth = new Date(yyyy, today.getMonth() + 1, 2);
-        endDate = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-02`;
+
+    let startDate, endDate;
+
+    // 🔥 SMART CUTOFF FOR 5TH/20TH PAY CYCLE!
+    if (today.getDate() <= 15) {
+        // It's the first half of the month (1st to 15th)
+        startDate = `${yyyy}-${mm}-01`;
+        endDate = `${yyyy}-${mm}-15`;
+    } else {
+        // It's the second half of the month (16th to End of Month)
+        startDate = `${yyyy}-${mm}-16`;
+        let lastDay = new Date(yyyy, today.getMonth() + 1, 0).getDate();
+        endDate = `${yyyy}-${mm}-${String(lastDay).padStart(2, '0')}`;
     }
 
-    // 🔥 FIX 1: Strict safety checks so it never crashes if the HTML is slow to load!
     const startEl = document.getElementById('payrollStart');
     const endEl = document.getElementById('payrollEnd');
     if (startEl) startEl.value = startDate;
@@ -5756,11 +5759,7 @@ window.setDefaultCutoffDates = function() {
 // Safe trigger that waits for the HTML to finish loading!
 document.addEventListener("DOMContentLoaded", () => {
     if (typeof window.setDefaultCutoffDates === 'function') {
-        try { 
-            window.setDefaultCutoffDates(); 
-        } catch(e) { 
-            console.warn("Date setter skipped: UI not ready."); 
-        }
+        try { window.setDefaultCutoffDates(); } catch(e) {}
     }
 });
 
@@ -6456,23 +6455,27 @@ window.generateAutoPayslips = async function() {
     let endInput = document.getElementById('payrollEnd').value;
     let tableBody = document.getElementById('payrollGeneratorBody'); 
 
-    if (!tableBody) {
-        alert("Error: Cannot find the table. Make sure your tbody has the ID 'payrollGeneratorBody'.");
-        return;
-    }
-
+    if (!tableBody) return;
     if (!startInput || !endInput) {
-        alert("Please select both Cutoff Start and End dates.");
-        return;
+        alert("Please select both Cutoff Start and End dates."); return;
     }
 
     tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Payroll Data & Ledgers...</td></tr>`;
 
-    let startDate = new Date(startInput); startDate.setHours(0, 0, 0, 0);
-    let endDate = new Date(endInput); endDate.setHours(23, 59, 59, 999);
+    // 🛡️ BULLETPROOF DATE PARSING (Kills the Timezone Leaking Bug)
+    let sParts = startInput.split('-');
+    let eParts = endInput.split('-');
+
+    // Force exact local time: Month is 0-indexed in Javascript (e.g., May is 4)
+    let trueStartDate = new Date(sParts[0], sParts[1] - 1, sParts[2], 0, 0, 0, 0);
+    let trueEndDate = new Date(eParts[0], eParts[1] - 1, eParts[2], 23, 59, 59, 999);
+
+    // 🌙 THE NIGHT SHIFT BUFFER
+    // We extend the fetch time to 12:00 NOON of the NEXT day to catch 3 AM Time-Outs!
+    let fetchEndDate = new Date(trueEndDate);
+    fetchEndDate.setHours(fetchEndDate.getHours() + 12);
 
     try {
-        // 🔥 FIX 2: Removed "window." from the Firebase commands for the Manager App!
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         
@@ -6482,14 +6485,14 @@ window.generateAutoPayslips = async function() {
         let ledgerDict = {};
         ledgerSnap.forEach(docSnap => { ledgerDict[docSnap.data().staffName] = { id: docSnap.id, ...docSnap.data() }; });
 
-        // Removed "window." from query, collection, where, and orderBy
+        // Query using our new extended Night Shift fetch date
         const attQ = query(collection(db, "attendance_logs"), 
-            where("timestamp", ">=", startDate), where("timestamp", "<=", endDate), orderBy("timestamp", "asc")
+            where("timestamp", ">=", trueStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc")
         );
         const attSnap = await getDocs(attQ);
 
         const reqQ = query(collection(db, "staff_requests"), 
-            where("timestamp", ">=", startDate), where("timestamp", "<=", endDate)
+            where("timestamp", ">=", trueStartDate), where("timestamp", "<=", trueEndDate)
         );
         const reqSnap = await getDocs(reqQ);
 
@@ -6505,27 +6508,30 @@ window.generateAutoPayslips = async function() {
                 staffData[name] = { 
                     branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, 
                     foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0,
-                    logs: [] // Array to hold their exact time punches
+                    logs: [] 
                 };
             }
 
             if (log.type === "TIME IN") {
-                activeShifts[name] = log.timestamp.toDate();
+                // 🛑 SECURITY CHECK: Only accept Time Ins that happened ON or BEFORE the exact cutoff end date!
+                if (log.timestamp.toDate() <= trueEndDate) {
+                    activeShifts[name] = log.timestamp.toDate();
+                }
             } else if (log.type === "TIME OUT" && activeShifts[name]) {
                 let timeIn = activeShifts[name];
                 let timeOut = log.timestamp.toDate();
+                
+                // EVEN IF TIMEOUT IS THE NEXT DAY (e.g. 3 AM), IT STILL COUNTS BECAUSE TIME IN WAS VALID!
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
-                // 🧠 AUTO-REMARKS ENGINE (UPDATED: Late/Short Only, No Overtime)
+                // Auto-Remarks Engine
                 let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
-                
-                // Only flag if they worked LESS than 8 hours
                 if (hoursWorked < 8) {
                     let missingHours = (8 - hoursWorked).toFixed(1);
-                    remark = `<span style="color:#ef4444; font-weight:bold;">Late / Short (${missingHours}h)</span>`;
+                    remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
-                // ⏱️ Save the exact log for the payslip summary
+                // Save log for the Payslip Printout
                 staffData[name].logs.push({
                     date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
                     in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
@@ -6538,7 +6544,8 @@ window.generateAutoPayslips = async function() {
                 staffData[name].shiftsWorked += 1; 
 
                 let outHour = timeOut.getHours();
-                if (outHour >= 0 && outHour <= 3) {
+                // If they clock out between midnight and 4 AM, give them a Night Bonus!
+                if (outHour >= 0 && outHour <= 4) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += 50; 
                 }
