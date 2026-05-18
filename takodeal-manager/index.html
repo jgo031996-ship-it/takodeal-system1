@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>TAKODEÁL Control Center</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -2616,8 +2617,8 @@
           <div style="background: #1e293b; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;" class="no-print">
               <h2 style="margin: 0; font-size: 16px; color: white;">Digital Payslip Generator</h2>
               <div style="display: flex; gap: 10px;">
-                  <button onclick="window.finalizePayslip()" id="btnFinalizePayslip" style="background: #3b82f6; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✅ Mark Paid & Auto-Deduct</button>
-                  <button onclick="printPayslip()" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">🖨️ Print / Save PDF</button>
+                  <button onclick="window.finalizePayslip()" id="btnFinalizePayslip" style="background: #3b82f6; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.3s;">✅ Mark Paid & Auto-Deduct</button>
+                  <button onclick="window.downloadPayslipImage()" id="btnDownloadPayslip" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">⬇️ Download Image</button>
                   <button onclick="document.getElementById('payslipModal').style.display='none'" style="background: transparent; color: white; border: 1px solid white; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✖ Close</button>
               </div>
           </div>
