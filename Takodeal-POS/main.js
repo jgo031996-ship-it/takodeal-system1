@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 window.lockDeviceToBranch = async function () {
   let selectedBranch = document.getElementById('setupBranchSelect').value;
-  let deviceName = prompt("Give this device a name (e.g., 'Counter Tablet 1'):", "New Tablet");
+  let deviceName = prompt("Give this device a name (e.g., 'Counter Tablet 1' or 'Dianne Phone'):", "New Device");
   if (!deviceName) return; 
 
   try {
@@ -71,12 +71,12 @@ window.lockDeviceToBranch = async function () {
       deviceId: deviceId,
       deviceName: deviceName,
       branch: selectedBranch,
-      status: 'Active',
+      status: 'Pending', // 🔥 DEFAULTS TO PENDING NOW!
       registeredAt: serverTimestamp(),
       lastSeen: serverTimestamp()
     });
 
-    alert(`✅ Success! This device is now registered and locked to ${selectedBranch}.`);
+    alert(`⏳ Device Registered!\n\nPlease tell the Manager to approve "${deviceName}" in the HQ Control Center before you can log in.`);
     location.reload();
   } catch (e) {
     console.error("Registration Error:", e);
@@ -87,6 +87,29 @@ window.lockDeviceToBranch = async function () {
 // --- THE FIREBASE PIN SEARCHER ---
 window.verifyPin = async function (pin) {
   try {
+    // 🚨 1. NEW DEVICE SECURITY CHECK 🚨
+    let deviceId = localStorage.getItem('takodeal_device_id');
+    if (deviceId) {
+        const devQ = query(collection(db, "pos_devices"), where("deviceId", "==", deviceId));
+        const devSnap = await getDocs(devQ);
+        
+        if (!devSnap.empty) {
+            let devStatus = devSnap.docs[0].data().status;
+            if (devStatus === 'Pending') {
+                alert("⏳ DEVICE PENDING APPROVAL\n\nThe Manager has not approved this device yet. Please ask them to approve it in the Device Fleet tab.");
+                return null; // Blocks login!
+            }
+            if (devStatus === 'Blocked') {
+                alert("🚫 DEVICE BLOCKED\n\nThis device has been blocked by the Manager.");
+                return null; // Blocks login!
+            }
+        } else {
+            alert("❌ UNREGISTERED DEVICE\n\nThis device was removed from the HQ. Please clear your browser data and re-register.");
+            return null;
+        }
+    }
+
+    // 2. PROCEED WITH NORMAL PIN CHECK
     const q = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pin));
     const snapshot = await window.getDocs(q);
 
