@@ -1356,7 +1356,7 @@ const BRANCH_ZONES = {
     "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 },        
     "Main Office": { lat: 7.1539090939416266, lng: 125.59588373531139 }
 };
-const ALLOWED_RADIUS_METERS = 100; 
+const ALLOWED_RADIUS_METERS = 30; 
 let cameraStream = null;
 let currentBranchStaffCache = []; // DECLARED ONLY ONCE HERE!
 
