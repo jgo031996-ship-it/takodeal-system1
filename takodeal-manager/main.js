@@ -5897,9 +5897,18 @@ window.loadPayrollGenerator = async function() {
 window.openPayslipModal = async function(staffName) {
     let data = window.globalPayrollCache[staffName];
     if (!data) return;
-    
+
     window.currentPayslipData = data; 
     
+    // 🔥 NEW: Reset the button so it's ready for a new payslip!
+    let finalizeBtn = document.getElementById('btnFinalizePayslip');
+    if (finalizeBtn) {
+        finalizeBtn.innerText = "✅ Mark Paid & Auto-Deduct";
+        finalizeBtn.disabled = false;
+        finalizeBtn.style.background = "#3b82f6";
+        finalizeBtn.style.cursor = "pointer";
+    }
+  
     if (!data.rate || data.rate === 0) {
         alert(`⚠️ Warning: ${data.name} does not have a Daily Rate set in their profile!`);
     }
@@ -6042,21 +6051,58 @@ window.finalizePayslip = async function() {
         }
 
         alert(`✅ Payroll Disbursed! ₱${finalNetPay.toLocaleString()} was deducted from ${selAcc.name}.\nAll Vales and Loans have been updated.`);
-        document.getElementById('payslipModal').style.display = 'none';
         
-        // Refresh screens so the new balances show instantly
+        // 🔥 NEW: Change the button to "Done" and LOCK it, but DO NOT close the modal!
+        let btnFinalize = document.getElementById('btnFinalizePayslip');
+        if (btnFinalize) {
+            btnFinalize.innerText = "✅ Paid & Done!";
+            btnFinalize.style.background = "#16a34a"; // Turn it green
+            btnFinalize.style.cursor = "not-allowed";
+        }
+        
+        // Refresh screens so the new balances show instantly in the background
         window.loadLedger(); 
         window.loadPayrollGenerator(); 
         window.loadAccountsAndBudget();
     } catch (e) {
         console.error(e); alert("❌ Failed to finalize payslip.");
-    } finally {
-        btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false;
-    }
+        btn.innerText = "✅ Mark Paid & Auto-Deduct"; 
+        btn.disabled = false;
+    } 
 };
 
-window.printPayslip = function() {
-    window.print(); 
+// ==========================================
+// 📸 PAYSLIP IMAGE DOWNLOADER
+// ==========================================
+window.downloadPayslipImage = function() {
+    const payslipElement = document.getElementById('printablePayslip');
+    const btn = document.getElementById('btnDownloadPayslip');
+    let originalText = btn.innerText;
+    
+    btn.innerText = "⏳ Generating Image...";
+    btn.disabled = true;
+
+    // Use html2canvas to take a high-quality screenshot of the div
+    html2canvas(payslipElement, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+        let imgData = canvas.toDataURL("image/png");
+        let link = document.createElement('a');
+        
+        // Name the file beautifully: "Payslip_Dianne_2026-05-15.png"
+        let staffName = document.getElementById('psName').innerText.replace(/\s+/g, '_');
+        let endDate = document.getElementById('psEnd').innerText;
+        link.download = `Payslip_${staffName}_${endDate}.png`;
+        
+        link.href = imgData;
+        link.click();
+
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }).catch(err => {
+        console.error("Error generating image:", err);
+        alert("❌ Failed to generate image. Please try again.");
+        btn.innerText = originalText;
+        btn.disabled = false;
+    });
 };
 
 // ==========================================
