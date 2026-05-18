@@ -781,45 +781,45 @@ window.submitComprehensiveCloseShift = async function () {
         });
 
         // ========================================================
-        // 🧹 THE AUTO-SWEEP ENGINE (Secretly updates the Ledger!)
+        // 🧹 THE AUTO-SWEEP ENGINE (Teleports Digital Funds to HQ!)
         // ========================================================
         for (let method in digitalBreakdown) {
             let amountToDeposit = digitalBreakdown[method];
             if (amountToDeposit > 0) {
-                // Find the matching ledger account (e.g. Branch: "Cabantian", Account: "Grab")
-                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", branchName), where("name", "==", method));
+                // 🔥 THE FIX: We force the search to look ONLY in the "Main Office" branch!
+                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
                 const accSnap = await getDocs(accQ);
                 
                 if (!accSnap.empty) {
                     let accDoc = accSnap.docs[0];
                     let currentBal = accDoc.data().balance || 0;
                     
-                    // Silently deposit the money!
+                    // Silently deposit the money into the Main Office!
                     await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
                     
                     // Create an audit log for the Manager App history tab
                     await addDoc(collection(db, "account_logs"), {
                         accountId: accDoc.id,
                         accountName: method,
-                        branch: branchName,
+                        branch: "Main Office",
                         action: "Auto-Sweep (Shift Close)",
                         amount: amountToDeposit,
                         newBalance: currentBal + amountToDeposit,
                         user: localStorage.getItem('cashierName') || 'System Auto-Sweep',
                         timestamp: serverTimestamp(),
-                        note: `Auto-deposit from Shift ID: ${shiftId.substring(0,6)}...`
+                        note: `Auto-deposit from ${branchName} Shift ID: ${shiftId.substring(0,6)}...`
                     });
                 } else {
-                    // FALLBACK: If you forgot to create a "Grab" account for Cabantian, it creates one for you!
+                    // FALLBACK: If you forgot to create a "GCash" account in the Main Office, it creates one for you!
                     const newAccRef = await addDoc(collection(db, "cash_accounts"), {
                         name: method,
-                        branch: branchName,
+                        branch: "Main Office",
                         balance: amountToDeposit,
                         createdAt: serverTimestamp()
                     });
                     await addDoc(collection(db, "account_logs"), {
-                        accountId: newAccRef.id, accountName: method, branch: branchName, action: "Auto-Sweep (New Account Generated)",
-                        amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp()
+                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account Generated)",
+                        amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
                     });
                 }
             }
@@ -1184,72 +1184,77 @@ window.submitRemittance = async function() {
     let endDate = document.getElementById('remitEndDate').value;
 
     if (isNaN(remitAmount) || remitAmount <= 0 || !channel || !recipient) {
-        alert("❌ Please fill out the Amount, Channel, and Recipient correctly."); 
-        return;
+        alert("❌ Please fill out the Amount, Channel, and Recipient correctly."); return;
     }
 
     if (!activeShiftDetails || !activeShiftDetails.logId) {
-        alert("❌ You must have an Active Shift open to remit cash!");
-        return;
+        alert("❌ You must have an Active Shift open to remit cash!"); return;
     }
 
-    // 🔒 1. EXACT MATH SECURITY CHECK
-    // Get live, up-to-the-second transaction data
-    let transactions = await window.getSalesDashboardData(safeBranch, activeShiftDetails.startTime);
-    let currentCashInDrawer = activeShiftDetails.startingCash - activeShiftDetails.cashOut;
-
-    if (transactions && transactions.length > 0) {
-        transactions.forEach(tx => {
-            if (tx.status !== 'Voided' && (tx.paymentMethod === 'Cash' || !tx.paymentMethod)) {
-                currentCashInDrawer += tx.netTotal;
-            }
-        });
-    }
-
-    // Is the cashier trying to remit MORE cash than what should exist in their drawer?
-    if (remitAmount > currentCashInDrawer) {
-        alert(`⛔ REMITTANCE BLOCKED (SHORTAGE DETECTED)\n\nSystem Expected Cash: ₱${currentCashInDrawer.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more cash than what is supposed to be in your drawer! Please double-check your physical cash count.`);
-        return;
-    }
-
-    // 🔒 2. SECURITY PIN AUTHORIZATION
-    let userPin = prompt(`SECURITY CHECK:\nRemitting ₱${remitAmount.toLocaleString()} to ${recipient}.\n\nPlease enter your 4-Digit PIN to authorize this transfer:`);
-    if (!userPin) return; // Cancelled
-
-    let identity = await window.verifyPin(userPin);
-    if (!identity) {
-        alert("❌ Unauthorized. Incorrect PIN.");
-        return;
-    }
-
-    let payload = {
-        branch: safeBranch,
-        cashier: identity.cashierName, // Use the name of the person whose PIN authorized it!
-        salesPeriodStart: startDate,
-        salesPeriodEnd: endDate,
-        amount: remitAmount,
-        channel: channel,
-        recipient: recipient,
-        referenceNumber: refNum,
-        status: "Pending", 
-        timestamp: serverTimestamp()
-    };
+    let btn = document.querySelector("button[onclick='submitRemittance()']");
+    if(btn) { btn.innerText = "⏳ Verifying Drawer..."; btn.disabled = true; }
 
     try {
-        // 3. Move it to the Pending Hub
+        // 🔒 1. EXACT MATH SECURITY CHECK (PHYSICAL CASH ONLY)
+        let transactions = await window.getSalesDashboardData(safeBranch, activeShiftDetails.startTime);
+        let currentCashInDrawer = activeShiftDetails.startingCash - activeShiftDetails.cashOut;
+
+        if (transactions && transactions.length > 0) {
+            transactions.forEach(tx => {
+                // ONLY count 'Cash' sales! Digital sales are ignored.
+                if (tx.status !== 'Voided' && (tx.paymentMethod === 'Cash' || !tx.paymentMethod)) {
+                    currentCashInDrawer += tx.netTotal;
+                }
+            });
+        }
+
+        // Block them if they try to send MORE cash than they should have!
+        if (remitAmount > currentCashInDrawer) {
+            alert(`⛔ REMITTANCE BLOCKED (SHORTAGE DETECTED)\n\nSystem Expected Cash: ₱${currentCashInDrawer.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what is supposed to be in your drawer!`);
+            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
+            return;
+        }
+
+        // 🔒 2. SECURITY PIN AUTHORIZATION
+        let userPin = prompt(`SECURITY CHECK:\nRemitting ₱${remitAmount.toLocaleString()} to ${recipient}.\n\nPlease enter your 4-Digit PIN to authorize this transfer:`);
+        if (!userPin) {
+            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
+            return;
+        }
+
+        let identity = await window.verifyPin(userPin);
+        if (!identity) {
+            alert("❌ Unauthorized. Incorrect PIN.");
+            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
+            return;
+        }
+
+        let payload = {
+            branch: safeBranch,
+            cashier: identity.cashierName, // Use the authorized person's name
+            salesPeriodStart: startDate,
+            salesPeriodEnd: endDate,
+            amount: remitAmount,
+            channel: channel,
+            recipient: recipient,
+            referenceNumber: refNum,
+            status: "Pending", 
+            timestamp: serverTimestamp()
+        };
+
+        // 3. Save to HQ Hub
         await addDoc(collection(db, "remittances"), payload);
         
         // 4. 🔥 TRUE DRAWER DEDUCTION
-        // We log it in the shift record so their Expected Cash at EOD balances perfectly
         const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
         const shiftSnap = await getDoc(shiftRef);
         if (shiftSnap.exists()) {
             let currentExp = shiftSnap.data().cashOut || 0;
             // It adds to "cashOut", which lowers the final Expected Drawer Cash for Z-Reading
-            await updateDoc(shiftRef, { cashOut: currentExp + remitAmount });
+            await updateDoc(shiftRef, { cashOut: currentExp + remitAmount, expenses: currentExp + remitAmount });
         }
 
-        // 5. Create an Audit Log in the Expenses feed (So the Manager can trace where the drawer cash went)
+        // 5. Audit Log (So the Manager can trace where the drawer cash went)
         await addDoc(collection(db, "expenses"), {
             branch: safeBranch,
             shiftId: activeShiftDetails.logId,
@@ -1259,19 +1264,16 @@ window.submitRemittance = async function() {
             timestamp: serverTimestamp()
         });
 
-        alert("✅ Security Cleared! Remittance securely sent to the HQ Hub and deducted from your active drawer.");
-        
-        // Clean up UI
+        alert("✅ Security Cleared! Cash Drop successfully recorded and deducted from your active drawer.");
         document.getElementById('remitAmount').value = '';
         document.getElementById('remitRefNum').value = '';
         window.switchRemittanceTab('history');
-        
-        // Force the POS UI to recalculate the new Expected Cash instantly!
         if (typeof checkCurrentShift === 'function') checkCurrentShift(); 
-        
+
     } catch (e) { 
-        console.error(e); 
-        alert("❌ Network Error: Failed to send remittance."); 
+        console.error(e); alert("❌ Failed to send remittance."); 
+    } finally {
+        if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
     }
 };
 
