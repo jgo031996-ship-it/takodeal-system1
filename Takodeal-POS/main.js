@@ -325,13 +325,11 @@ window.processCheckout = async function (payload) {
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
   try {
-    // ANTI-FRAUD: If there is no shift start time, refuse to show sales!
     if (!shiftStartTime) return [];
 
-    // 🔥 THE FIX: Ensure the time is a proper Date object so Firebase can read it!
-    let validStartTime = shiftStartTime instanceof Date ? shiftStartTime : new Date(shiftStartTime);
+    // 🔥 FIX 1: Force the time into a proper object so Firebase can read it!
+    let validStartTime = shiftStartTime instanceof Date ? shiftStartTime : (shiftStartTime && shiftStartTime.toDate ? shiftStartTime.toDate() : new Date(shiftStartTime));
 
-    // Search for transactions ONLY from this branch, and ONLY after the shift started
     const q = query(collection(db, "transactions"),
       where("branch", "==", branch),
       where("timestamp", ">=", validStartTime)
@@ -356,35 +354,48 @@ window.getLiveShiftDetails = async function (branch) {
     const shiftDoc = shiftSnap.docs[0];
     const shiftData = shiftDoc.data();
 
+    // 🔥 FIX 1: Force the time into a proper object so Firebase can read it!
+    let validStartTime = shiftData.startTime && shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
+
     // 1. Get Transactions
-    const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", shiftData.startTime));
+    const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", validStartTime));
     const txSnap = await getDocs(txQ);
 
     // 2. Get Expenses (Cash Out)
-    const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", shiftData.startTime));
+    // 🔥 FIX 2: ONLY look for expenses that were explicitly linked to THIS exact drawer shift!
+    const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftDoc.id));
     const expSnap = await getDocs(expQ);
+    
     let totalExpenses = 0;
     expSnap.forEach(e => { totalExpenses += (e.data().amount || 0); });
 
     let cashIn = 0;
     txSnap.forEach(d => {
       let tx = d.data();
-      // Only count cash that wasn't voided!
+      // Only count physical cash that wasn't voided
       if (tx.status !== "Voided" && (tx.paymentMethod === "Cash" || !tx.paymentMethod)) {
         cashIn += tx.netTotal || 0;
       }
     });
 
     return {
-      logId: shiftDoc.id, startedBy: shiftData.cashier,
-      // 🔥 THE FIX: Keep this as a true Date Object!
-      startTime: shiftData.startTime.toDate(), 
+      logId: shiftDoc.id, 
+      startedBy: shiftData.cashier,
+      startTime: validStartTime, 
       startingCash: shiftData.startingCash || 0,
       cashIn: cashIn,
-      cashOut: totalExpenses, // Now we track expenses!
+      cashOut: totalExpenses, // Now strictly isolated to this drawer!
       expectedCash: (shiftData.startingCash || 0) + cashIn - totalExpenses
     };
   } catch (e) { console.error(e); return null; }
+};
+
+window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
+  try {
+    const shiftRef = doc(db, "shifts", shiftId);
+    await updateDoc(shiftRef, { active: false, endTime: serverTimestamp(), actualCash: actualCash, expectedCash: expectedCash, difference: diff });
+    return true;
+  } catch (e) { console.error(e); throw e; }
 };
 
 window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
