@@ -7251,16 +7251,21 @@ window.confirmPayableSettlement = async function() {
 };
 
 window.exportTransactionsCSV = async function() {
-    let startDateInput = document.getElementById('dashStartDate').value;
-    let endDateInput = document.getElementById('dashEndDate').value;
+    // 🔥 NEW: Read from the specific Sales History Exact Time Pickers!
+    let startInput = document.getElementById('histStartDate').value;
+    let endInput = document.getElementById('histEndDate').value;
     
-    if (!startDateInput || !endDateInput) { 
-        alert("Please select a 'From' and 'To' date on the Dashboard first."); 
+    if (!startInput || !endInput) { 
+        alert("Please select the exact Start and End times first."); 
         return; 
     }
 
-    let startOfDay = new Date(startDateInput + 'T00:00:00');
-    let endOfDay = new Date(endDateInput + 'T23:59:59');
+    let startOfDay = new Date(startInput);
+    let endOfDay = new Date(endInput);
+
+    let btn = document.getElementById('btnExportSales') || document.querySelector('button[onclick="exportTransactionsCSV()"]');
+    let oldText = btn ? btn.innerText : "Export Excel";
+    if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
 
     let btn = document.getElementById('btnExportSales');
     let oldText = btn.innerText;
@@ -7748,16 +7753,26 @@ window.loadSalesHistoryTab = async function() {
     let endInput = document.getElementById('histEndDate').value;
 
     if (!startInput || !endInput) {
-        let today = new Date().toISOString().split('T')[0];
-        document.getElementById('histStartDate').value = today;
-        document.getElementById('histEndDate').value = today;
-        startInput = today; endInput = today;
+        // 🔥 SMART DEFAULT: 6:00 AM Today to 4:00 AM Tomorrow (Perfect for Night Shifts!)
+        let today = new Date();
+        let sDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 6, 0, 0);
+        let eDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 4, 0, 0);
+
+        sDate.setMinutes(sDate.getMinutes() - sDate.getTimezoneOffset());
+        eDate.setMinutes(eDate.getMinutes() - eDate.getTimezoneOffset());
+
+        startInput = sDate.toISOString().slice(0, 16);
+        endInput = eDate.toISOString().slice(0, 16);
+
+        document.getElementById('histStartDate').value = startInput;
+        document.getElementById('histEndDate').value = endInput;
     }
 
     tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating financials and fetching receipts...</td></tr>';
 
-    let startOfDay = new Date(startInput + 'T00:00:00');
-    let endOfDay = new Date(endInput + 'T23:59:59');
+    // 🔥 NEW: Capture the EXACT time, not just the midnight day!
+    let startOfDay = new Date(startInput);
+    let endOfDay = new Date(endInput);
 
     try {
         // 1. FETCH INVENTORY & RECIPES FOR COGS CALCULATION
