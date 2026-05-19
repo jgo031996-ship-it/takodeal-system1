@@ -5963,7 +5963,7 @@ window.openPayslipModal = async function(staffName) {
 
     // Open Modal
     document.getElementById('payslipModal').style.display = 'flex';
-}; // <--- THIS BEAUTIFUL BRACKET SAVES THE DAY!
+}; // <--- THIS BRACKET WAS MISSING!
 
 // 🧮 LIVE MATH CALCULATOR FOR PAYSLIPS
 window.recalcPayslip = function() {
@@ -7270,13 +7270,6 @@ window.exportTransactionsCSV = async function() {
 
     try {
         const q = query(collection(db, "transactions"), where("branch", "==", shiftBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-
-    let btn = document.getElementById('btnExportSales') || document.querySelector('button[onclick="exportTransactionsCSV()"]');
-    let oldText = btn ? btn.innerText : "Export Excel";
-    if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
-
-    try {
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
 
         // Standard CSV Headers for Bookkeeping
@@ -7303,7 +7296,7 @@ window.exportTransactionsCSV = async function() {
         // Trigger Download
         let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         let downloadLink = document.createElement("a");
-        downloadLink.download = `Takodeal_Sales_Log_${startDateInput}_to_${endDateInput}.csv`;
+        downloadLink.download = `Takodeal_Sales_${safeName}.csv`;
         downloadLink.href = window.URL.createObjectURL(csvFile);
         downloadLink.style.display = "none";
         document.body.appendChild(downloadLink);
@@ -7314,8 +7307,7 @@ window.exportTransactionsCSV = async function() {
         console.error("Export Error:", e);
         alert("Failed to export sales data.");
     } finally {
-        btn.innerText = oldText; 
-        btn.disabled = false;
+        if (btn) { btn.innerText = oldText; btn.disabled = false; }
     }
 };
 
