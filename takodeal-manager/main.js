@@ -7777,13 +7777,13 @@ window.loadSalesHistoryTab = async function() {
             recipeCosts[data.menuItem] += (ingCost * (data.qty || 1));
         });
 
-        // 2. FETCH TRANSACTIONS
-        let q;
-        if (branchFilter === "All") {
-            q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-        } else {
-            q = query(collection(db, "transactions"), where("branch", "==", branchFilter), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-        }
+        // 2. FETCH TRANSACTIONS (🔥 FIXED: Now uses the exact branch from the shift!)
+        const q = query(collection(db, "transactions"), 
+            where("branch", "==", shiftBranch), 
+            where("timestamp", ">=", startOfDay), 
+            where("timestamp", "<=", endOfDay), 
+            orderBy("timestamp", "desc")
+        );
 
         const snap = await getDocs(q);
         let html = '';
@@ -7850,7 +7850,7 @@ window.loadSalesHistoryTab = async function() {
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this period.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this shift.</td></tr>';
 
         // 3. UPDATE THE DASHBOARD UI
         let tMargin = tNet - tCogs;
