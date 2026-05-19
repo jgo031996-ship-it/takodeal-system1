@@ -5920,6 +5920,51 @@ window.openPayslipModal = async function(staffName) {
         alert(`⚠️ Warning: ${data.name} does not have a Daily Rate set in their profile!`);
     }
 
+    // --- 🛠️ RESTORED UI POPULATORS ---
+    document.getElementById('psName').innerText = data.name || "Unknown";
+    document.getElementById('psBranch').innerText = data.branch || "Unassigned";
+    document.getElementById('psStart').innerText = data.start || "";
+    document.getElementById('psEnd').innerText = data.end || "";
+
+    document.getElementById('psBasicPay').innerText = (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('psOvertime').value = 0;
+    document.getElementById('psHoliday').value = data.nightBonus || 0;
+
+    document.getElementById('psLate').value = data.lateDeduction || 0;
+    document.getElementById('psSSS').value = data.sss || 0;
+    document.getElementById('psPhil').value = data.philhealth || 0;
+    document.getElementById('psPagibig').value = data.pagibig || 0;
+    document.getElementById('psAdvance').value = data.advances || 0;
+    document.getElementById('psLoans').value = data.loans || 0;
+    document.getElementById('psFoods').value = data.meals || 0;
+    
+    let wifiBox = document.getElementById('psWifi');
+    if(wifiBox) wifiBox.value = 0;
+
+    let attHtml = '';
+    if (data.logs && data.logs.length > 0) {
+        data.logs.forEach(log => {
+            attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px;">${log.date}</td>
+                <td style="padding: 8px; font-weight: bold; color: #16a34a;">${log.in}</td>
+                <td style="padding: 8px; font-weight: bold; color: #dc2626;">${log.out}</td>
+                <td style="padding: 8px; font-weight: bold;">${log.hrs}h</td>
+                <td style="padding: 8px;">${log.remark}</td>
+            </tr>`;
+        });
+    } else {
+        attHtml = '<tr><td colspan="5" style="text-align:center; padding: 15px; color: #94a3b8;">No attendance logs found.</td></tr>';
+    }
+    let attBody = document.getElementById('psAttendanceBody');
+    if (attBody) attBody.innerHTML = attHtml;
+
+    // Trigger math recalculation
+    if (typeof window.recalcPayslip === 'function') window.recalcPayslip();
+
+    // Open Modal
+    document.getElementById('payslipModal').style.display = 'flex';
+}; // <--- THIS BEAUTIFUL BRACKET SAVES THE DAY!
+
 // 🧮 LIVE MATH CALCULATOR FOR PAYSLIPS
 window.recalcPayslip = function() {
     let basic = parseFloat(document.getElementById('psBasicPay').innerText.replace(/,/g, '')) || 0;
