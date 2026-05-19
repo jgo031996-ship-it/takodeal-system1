@@ -5900,70 +5900,25 @@ window.openPayslipModal = async function(staffName) {
 
     window.currentPayslipData = data; 
     
-    // 🔥 NEW: Reset the button so it's ready for a new payslip!
+    // 🔥 NEW: Check if this was a frozen/paid record, and lock the button!
     let finalizeBtn = document.getElementById('btnFinalizePayslip');
     if (finalizeBtn) {
-        finalizeBtn.innerText = "✅ Mark Paid & Auto-Deduct";
-        finalizeBtn.disabled = false;
-        finalizeBtn.style.background = "#3b82f6";
-        finalizeBtn.style.cursor = "pointer";
+        if (data.isPaid) {
+            finalizeBtn.innerText = "✅ Paid & Done!";
+            finalizeBtn.disabled = true;
+            finalizeBtn.style.background = "#16a34a"; // Green
+            finalizeBtn.style.cursor = "not-allowed";
+        } else {
+            finalizeBtn.innerText = "✅ Mark Paid & Auto-Deduct";
+            finalizeBtn.disabled = false;
+            finalizeBtn.style.background = "#3b82f6"; // Blue
+            finalizeBtn.style.cursor = "pointer";
+        }
     }
-  
+
     if (!data.rate || data.rate === 0) {
         alert(`⚠️ Warning: ${data.name} does not have a Daily Rate set in their profile!`);
     }
-
-    try {
-        const logoSnap = await getDoc(doc(db, "settings", "global_receipt"));
-        if (logoSnap.exists() && logoSnap.data().logoBase64) {
-            document.getElementById('psLogoImg').src = logoSnap.data().logoBase64;
-            document.getElementById('psLogoImg').style.display = 'block';
-            document.getElementById('psLogoText').style.display = 'none';
-        }
-    } catch(e) { console.warn("No logo found in settings."); }
-
-    document.getElementById('psName').innerText = data.name;
-    document.getElementById('psBranch').innerText = data.branch;
-    document.getElementById('psStart').innerText = data.start;
-    document.getElementById('psEnd').innerText = data.end;
-    document.getElementById('psDist').innerText = new Date().toISOString().split('T')[0];
-    document.getElementById('psHired').innerText = data.profile.dateHired || '---';
-    document.getElementById('psDays').innerText = `${data.shiftsWorked || 0} days @ ₱${data.rate || 0}/day`;
-    
-    document.getElementById('psBasicPay').innerText = (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
-    
-    // 🧠 USING .VALUE INJECTS IT DIRECTLY INTO THE EDITABLE BOXES
-    document.getElementById('psLate').value = (data.lateDeduction || 0).toFixed(2);
-    document.getElementById('psOvertime').value = (data.nightBonus || 0).toFixed(2);
-    document.getElementById('psAdvance').value = (data.advances || 0).toFixed(2);
-    document.getElementById('psFoods').value = (data.meals || 0).toFixed(2);
-    document.getElementById('psLoans').value = (data.loans || 0).toFixed(2);
-    document.getElementById('psSSS').value = (data.sss || 0).toFixed(2);
-    document.getElementById('psPhil').value = (data.philhealth || 0).toFixed(2);
-    document.getElementById('psPagibig').value = (data.pagibig || 0).toFixed(2);
-
-    document.getElementById('psHoliday').value = "0.00";
-    document.getElementById('psWifi').value = "0.00";
-
-    let logsHtml = '';
-    if (data.logs && data.logs.length > 0) {
-        data.logs.forEach(l => {
-            logsHtml += `<tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 6px 4px;">${l.date}</td>
-                <td style="padding: 6px 4px;">${l.in}</td>
-                <td style="padding: 6px 4px;">${l.out}</td>
-                <td style="padding: 6px 4px; font-weight: bold;">${l.hrs} hrs</td>
-                <td style="padding: 6px 4px; font-size: 10px;">${l.remark}</td>
-            </tr>`;
-        });
-    } else {
-        logsHtml = `<tr><td colspan="5" style="padding: 15px; color: #94a3b8; text-align:center;">No exact time logs found.</td></tr>`;
-    }
-    document.getElementById('psAttendanceBody').innerHTML = logsHtml;
-
-    window.recalcPayslip();
-    document.getElementById('payslipModal').style.display = 'flex';
-};
 
 // 🧮 LIVE MATH CALCULATOR FOR PAYSLIPS
 window.recalcPayslip = function() {
@@ -6043,31 +5998,46 @@ window.finalizePayslip = async function() {
             }
         }
         
-        // 4. 🔥 NEW: Mark all Vales & Meals as "Paid" so they disappear next cutoff!
+        // 4. Mark all Vales & Meals as "Paid" so they disappear next cutoff!
         const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", data.name), where("status", "==", "Unpaid"));
         const deductSnap = await getDocs(deductQ);
         for (let dDoc of deductSnap.docs) {
             await updateDoc(doc(db, "staff_deductions", dDoc.id), { status: "Paid", paidAt: new Date() });
         }
 
+        // 5. 🔥 FREEZE THE PAYSLIP DATA IN FIREBASE 🔥
+        data.isPaid = true; // Mark it as officially paid
+        await addDoc(collection(db, "payroll_records"), {
+            staffName: data.name,
+            startDate: data.start,
+            endDate: data.end,
+            frozenData: data, // Stores the exact snapshot of the math
+            finalNetPay: finalNetPay,
+            processedAt: serverTimestamp()
+        });
+
         alert(`✅ Payroll Disbursed! ₱${finalNetPay.toLocaleString()} was deducted from ${selAcc.name}.\nAll Vales and Loans have been updated.`);
         
-        // 🔥 NEW: Change the button to "Done" and LOCK it, but DO NOT close the modal!
+        // Change the button to Done and Lock It!
         let btnFinalize = document.getElementById('btnFinalizePayslip');
         if (btnFinalize) {
             btnFinalize.innerText = "✅ Paid & Done!";
-            btnFinalize.style.background = "#16a34a"; // Turn it green
+            btnFinalize.style.background = "#16a34a";
             btnFinalize.style.cursor = "not-allowed";
+            btnFinalize.disabled = true;
         }
         
-        // Refresh screens so the new balances show instantly in the background
+        // Refresh the background screens so the table turns gray and says "View Paid Payslip"
         window.loadLedger(); 
         window.loadPayrollGenerator(); 
         window.loadAccountsAndBudget();
     } catch (e) {
         console.error(e); alert("❌ Failed to finalize payslip.");
-        btn.innerText = "✅ Mark Paid & Auto-Deduct"; 
-        btn.disabled = false;
+        let btnFinalize = document.getElementById('btnFinalizePayslip');
+        if (btnFinalize) {
+            btnFinalize.innerText = "✅ Mark Paid & Auto-Deduct"; 
+            btnFinalize.disabled = false;
+        }
     } 
 };
 
@@ -6526,20 +6496,25 @@ window.generateAutoPayslips = async function() {
 
     tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Payroll Data & Ledgers...</td></tr>`;
 
-    // 🛡️ BULLETPROOF DATE PARSING (Kills the Timezone Leaking Bug)
     let sParts = startInput.split('-');
     let eParts = endInput.split('-');
 
-    // Force exact local time: Month is 0-indexed in Javascript (e.g., May is 4)
     let trueStartDate = new Date(sParts[0], sParts[1] - 1, sParts[2], 0, 0, 0, 0);
     let trueEndDate = new Date(eParts[0], eParts[1] - 1, eParts[2], 23, 59, 59, 999);
 
-    // 🌙 THE NIGHT SHIFT BUFFER
-    // We extend the fetch time to 12:00 NOON of the NEXT day to catch 3 AM Time-Outs!
     let fetchEndDate = new Date(trueEndDate);
     fetchEndDate.setHours(fetchEndDate.getHours() + 12);
 
     try {
+        // 🔥 NEW: Check for FROZEN/PAID records first!
+        const prQ = query(collection(db, "payroll_records"), where("startDate", "==", startInput), where("endDate", "==", endInput));
+        const prSnap = await getDocs(prQ);
+        let paidRecords = {};
+        prSnap.forEach(docSnap => { 
+            let d = docSnap.data(); 
+            paidRecords[d.staffName] = d.frozenData; 
+        });
+
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         
@@ -6549,7 +6524,6 @@ window.generateAutoPayslips = async function() {
         let ledgerDict = {};
         ledgerSnap.forEach(docSnap => { ledgerDict[docSnap.data().staffName] = { id: docSnap.id, ...docSnap.data() }; });
 
-        // Query using our new extended Night Shift fetch date
         const attQ = query(collection(db, "attendance_logs"), 
             where("timestamp", ">=", trueStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc")
         );
@@ -6563,7 +6537,6 @@ window.generateAutoPayslips = async function() {
         let staffData = {}; 
         let activeShifts = {}; 
 
-        // --- PART A: CALCULATE SHIFTS, HOURS & LOGS ---
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
             let name = log.staffName;
@@ -6577,8 +6550,6 @@ window.generateAutoPayslips = async function() {
             }
 
             if (log.type === "TIME IN") {
-                // 🛑 SECURITY CHECK: Only accept Time Ins that happened ON or BEFORE the exact cutoff end date!
-                // This permanently stops May 16th daytime shifts from leaking into the May 15th cutoff!
                 if (log.timestamp.toDate() <= trueEndDate) {
                     activeShifts[name] = log.timestamp.toDate();
                 }
@@ -6586,15 +6557,12 @@ window.generateAutoPayslips = async function() {
                 let timeIn = activeShifts[name];
                 let timeOut = log.timestamp.toDate();
                 
-                // EVEN IF TIMEOUT IS THE NEXT DAY (e.g. 3 AM), IT STILL COUNTS BECAUSE TIME IN WAS VALID!
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
-                // 🧠 AUTO-REMARKS & STRAIGHT DUTY ENGINE
                 let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
                 let shiftMultiplier = 1;
 
                 if (hoursWorked >= 13.5) {
-                    // 🔥 If they work 13.5+ hours straight, auto-credit them 2 shifts!
                     shiftMultiplier = 2;
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
                 } else if (hoursWorked < 8) {
@@ -6602,7 +6570,6 @@ window.generateAutoPayslips = async function() {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
-                // Save log for the Payslip Printout
                 staffData[name].logs.push({
                     date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
                     in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
@@ -6615,7 +6582,6 @@ window.generateAutoPayslips = async function() {
                 staffData[name].shiftsWorked += shiftMultiplier; 
 
                 let outHour = timeOut.getHours();
-                // If they clock out between midnight and 4 AM, give them a Night Bonus!
                 if (outHour >= 0 && outHour <= 4) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += 50; 
@@ -6624,7 +6590,6 @@ window.generateAutoPayslips = async function() {
             }
         });
 
-        // --- PART B: CALCULATE APPROVED DEDUCTIONS ---
         reqSnap.forEach(docSnap => {
             let req = docSnap.data();
             let name = req.staffName;
@@ -6637,76 +6602,94 @@ window.generateAutoPayslips = async function() {
             }
         });
 
-        // --- PART C: APPLY LEDGER AUTO-DEDUCTS & GOV BENEFITS ---
         let html = '';
-        if (Object.keys(staffData).length === 0) {
+        let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
+
+        if (allStaffNames.size === 0) {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
-            for (let name in staffData) {
-                let d = staffData[name];
-                let profile = staffDict[name] || {};
-                let dailyRate = profile.hourlyRate || 0; 
-                
-                d.basicPay = d.shiftsWorked * dailyRate;
+            for (let name of allStaffNames) {
+                let d;
+                let isPaid = false;
 
-                // 🧠 AUTO-LATE / UNDERTIME MATH
-                let expectedHours = d.shiftsWorked * 8;
-                let hourlyEquivalent = dailyRate / 8;
-                let lateDeduction = 0;
-                
-                if (d.totalHours < expectedHours) {
-                    let missedHours = expectedHours - d.totalHours;
-                    lateDeduction = missedHours * hourlyEquivalent;
-                }
-                d.lateDeduction = lateDeduction;
+                // 🔥 IF THEY ALREADY PAID, USE THE FROZEN SNAPSHOT
+                if (paidRecords[name]) {
+                    d = paidRecords[name];
+                    isPaid = true;
+                    window.globalPayrollCache[name] = d; 
+                } else {
+                    // OTHERWISE, DO THE LIVE MATH
+                    d = staffData[name];
+                    let profile = staffDict[name] || {};
+                    let dailyRate = profile.hourlyRate || 0; 
+                    
+                    d.basicPay = d.shiftsWorked * dailyRate;
 
-                let loanData = ledgerDict[name];
-                let autoLoanDeduction = 0;
-                if (loanData) {
-                    let currentBalance = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
-                    if (currentBalance > 0) {
-                        let setRate = loanData.cutoffDeduction || 0;
-                        autoLoanDeduction = Math.min(setRate, currentBalance); 
-                        d.ledgerId = loanData.id;
+                    let expectedHours = d.shiftsWorked * 8;
+                    let hourlyEquivalent = dailyRate / 8;
+                    let lateDeduction = 0;
+                    
+                    if (d.totalHours < expectedHours) {
+                        let missedHours = expectedHours - d.totalHours;
+                        lateDeduction = missedHours * hourlyEquivalent;
                     }
+                    d.lateDeduction = lateDeduction;
+
+                    let loanData = ledgerDict[name];
+                    let autoLoanDeduction = 0;
+                    if (loanData) {
+                        let currentBalance = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
+                        if (currentBalance > 0) {
+                            let setRate = loanData.cutoffDeduction || 0;
+                            autoLoanDeduction = Math.min(setRate, currentBalance); 
+                            d.ledgerId = loanData.id;
+                        }
+                    }
+                    d.loans = autoLoanDeduction;
+                    d.sss = profile.sssDeduction || 0;
+                    d.pagibig = profile.pagibigDeduction || 0;
+                    d.philhealth = profile.philhealthDeduction || 0;
+
+                    // Save to Global Memory
+                    window.globalPayrollCache[name] = {
+                        name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal,
+                        advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
+                        sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth, lateDeduction: d.lateDeduction,
+                        shiftsWorked: d.shiftsWorked, basicPay: d.basicPay, rate: dailyRate,
+                        start: startInput, end: endInput, profile: profile, logs: d.logs, isPaid: false
+                    };
+                    d = window.globalPayrollCache[name]; // Re-reference
                 }
-                d.loans = autoLoanDeduction;
-                d.sss = profile.sssDeduction || 0;
-                d.pagibig = profile.pagibigDeduction || 0;
-                d.philhealth = profile.philhealthDeduction || 0;
 
-                let totalDeduct = d.foodDeductions + d.cashAdvances + d.loans + d.sss + d.pagibig + d.philhealth + d.lateDeduction;
+                // Render UI Variables
+                let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
 
-                let bonusLabel = d.nightBonusTotal > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonusTotal} Night Bonus</span>` : '';
-                let foodLabel = d.foodDeductions > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.foodDeductions.toFixed(2)} (Meals)</span>` : '';
-                let valeLabel = d.cashAdvances > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.cashAdvances.toFixed(2)} (Vale)</span>` : '';
+                let bonusLabel = d.nightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonus} Night Bonus</span>` : '';
+                let foodLabel = d.meals > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.meals.toFixed(2)} (Meals)</span>` : '';
+                let valeLabel = d.advances > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.advances.toFixed(2)} (Vale)</span>` : '';
                 let loanLabel = d.loans > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.loans.toFixed(2)} (Ledger Auto-Deduct)</span>` : '';
                 let lateLabel = d.lateDeduction > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.lateDeduction.toFixed(2)} (Auto-Late)</span>` : '';
-                let govTotal = d.sss + d.pagibig + d.philhealth;
+                let govTotal = (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0);
                 let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov Benefits)</span>` : `<br><span style="font-size:10px; color:#64748b;">Gov Benefits: Not Set</span>`;
 
-                // 💾 SAVE TO GLOBAL MEMORY
-                window.globalPayrollCache[name] = {
-                    name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal,
-                    advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
-                    sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth, lateDeduction: d.lateDeduction,
-                    shiftsWorked: d.shiftsWorked, basicPay: d.basicPay, rate: dailyRate,
-                    start: startInput, end: endInput, profile: profile, logs: d.logs
-                };
+                // 🔥 The UI changes based on if they are already paid!
+                let buttonHtml = isPaid 
+                    ? `<button onclick="window.openPayslipModal('${name}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
+                    : `<button onclick="window.openPayslipModal('${name}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
+
+                let rowStyle = isPaid ? "background: #f8fafc; opacity: 0.85;" : "";
 
                 html += `
-                    <tr style="border-bottom: 1px dashed #e2e8f0;">
+                    <tr style="border-bottom: 1px dashed #e2e8f0; ${rowStyle}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${d.totalHours.toFixed(2)} hrs ${bonusLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">
                             Total: ₱${totalDeduct.toFixed(2)}
                             ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel} ${govLabel}
                         </td>
                         <td style="padding: 12px;">
-                            <button onclick="window.openPayslipModal('${name}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold;">
-                                Generate PDF Payslip
-                            </button>
+                            ${buttonHtml}
                         </td>
                     </tr>
                 `;
