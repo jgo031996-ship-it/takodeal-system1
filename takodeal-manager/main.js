@@ -7267,11 +7267,6 @@ window.exportTransactionsCSV = async function() {
     let oldText = btn ? btn.innerText : "Export Excel";
     if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
 
-    let btn = document.getElementById('btnExportSales');
-    let oldText = btn.innerText;
-    btn.innerText = "⏳ Exporting..."; 
-    btn.disabled = true;
-
     try {
         const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
