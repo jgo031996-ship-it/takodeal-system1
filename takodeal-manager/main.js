@@ -7251,17 +7251,25 @@ window.confirmPayableSettlement = async function() {
 };
 
 window.exportTransactionsCSV = async function() {
-    // 🔥 NEW: Read from the specific Sales History Exact Time Pickers!
-    let startInput = document.getElementById('histStartDate').value;
-    let endInput = document.getElementById('histEndDate').value;
+    let select = document.getElementById('histShiftSelect');
     
-    if (!startInput || !endInput) { 
-        alert("Please select the exact Start and End times first."); 
+    if (!select || select.selectedIndex <= 0) { 
+        alert("Please select a specific shift to export."); 
         return; 
     }
 
-    let startOfDay = new Date(startInput);
-    let endOfDay = new Date(endInput);
+    let selectedOption = select.options[select.selectedIndex];
+    let startOfDay = new Date(selectedOption.getAttribute('data-start'));
+    let endOfDay = new Date(selectedOption.getAttribute('data-end'));
+    let shiftBranch = selectedOption.getAttribute('data-branch');
+    let safeName = selectedOption.innerText.replace(/[^a-zA-Z0-9]/g, '_'); // Makes a safe file name
+
+    let btn = document.getElementById('btnExportSales') || document.querySelector('button[onclick*="exportTransactionsCSV"]');
+    let oldText = btn ? btn.innerText : "Export Excel";
+    if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
+
+    try {
+        const q = query(collection(db, "transactions"), where("branch", "==", shiftBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
 
     let btn = document.getElementById('btnExportSales') || document.querySelector('button[onclick="exportTransactionsCSV()"]');
     let oldText = btn ? btn.innerText : "Export Excel";
@@ -7743,31 +7751,24 @@ window.loadSalesHistoryTab = async function() {
     const tbody = document.getElementById('historyTableBody');
     if (!tbody) return;
 
-    let branchFilter = document.getElementById('histBranchFilter').value;
-    let startInput = document.getElementById('histStartDate').value;
-    let endInput = document.getElementById('histEndDate').value;
-
-    if (!startInput || !endInput) {
-        // 🔥 SMART DEFAULT: 6:00 AM Today to 4:00 AM Tomorrow (Perfect for Night Shifts!)
-        let today = new Date();
-        let sDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 6, 0, 0);
-        let eDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 4, 0, 0);
-
-        sDate.setMinutes(sDate.getMinutes() - sDate.getTimezoneOffset());
-        eDate.setMinutes(eDate.getMinutes() - eDate.getTimezoneOffset());
-
-        startInput = sDate.toISOString().slice(0, 16);
-        endInput = eDate.toISOString().slice(0, 16);
-
-        document.getElementById('histStartDate').value = startInput;
-        document.getElementById('histEndDate').value = endInput;
+    let select = document.getElementById('histShiftSelect');
+    
+    // If no shift is selected, empty the screen
+    if (!select || select.selectedIndex <= 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 40px; color: #64748b; font-size: 16px;">👈 Please select a specific shift from the dropdown above.</td></tr>';
+        ['histSumGross', 'histSumNet', 'histSumCogs', 'histSumMargin', 'histSumGrab'].forEach(id => {
+            if(document.getElementById(id)) document.getElementById(id).innerText = "₱0.00";
+        });
+        return;
     }
 
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating financials and fetching receipts...</td></tr>';
+    // Grab the exact time data secretly hidden in the dropdown
+    let selectedOption = select.options[select.selectedIndex];
+    let startOfDay = new Date(selectedOption.getAttribute('data-start'));
+    let endOfDay = new Date(selectedOption.getAttribute('data-end'));
+    let shiftBranch = selectedOption.getAttribute('data-branch');
 
-    // 🔥 NEW: Capture the EXACT time, not just the midnight day!
-    let startOfDay = new Date(startInput);
-    let endOfDay = new Date(endInput);
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating shift financials and fetching receipts...</td></tr>';
 
     try {
         // 1. FETCH INVENTORY & RECIPES FOR COGS CALCULATION
@@ -7941,3 +7942,50 @@ window.openAccountHistory = async function() {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 20px;">Failed to fetch logs. Check console.</td></tr>';
     }
 };
+
+// ==========================================
+// 🕒 SMART SHIFT FINDER ENGINE
+// ==========================================
+window.loadHistoryShiftDropdown = async function() {
+    let branchFilter = document.getElementById('histBranchFilter');
+    let select = document.getElementById('histShiftSelect');
+    if (!select || !branchFilter) return;
+
+    select.innerHTML = '<option value="">⏳ Scanning for shifts...</option>';
+
+    try {
+        // Fetch the 50 most recent shifts for this branch
+        let q = query(collection(db, "shifts"), orderBy("startTime", "desc"), limit(50));
+        if (branchFilter.value !== "All") {
+            q = query(collection(db, "shifts"), where("branch", "==", branchFilter.value), orderBy("startTime", "desc"), limit(50));
+        }
+        
+        const snap = await getDocs(q);
+        let html = '<option value="">-- Select a Specific Shift --</option>';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.startTime ? d.startTime.toDate().toLocaleDateString('en-PH', {month: 'short', day: 'numeric'}) : 'Unknown';
+            let sTime = d.startTime ? d.startTime.toDate().toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : '';
+            let eTime = d.active ? 'Present' : (d.endTime ? d.endTime.toDate().toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : 'Active');
+            
+            let label = `${dateStr} | ${d.cashier} (${sTime} to ${eTime})`;
+            
+            // We secretly store the exact millisecond timestamps inside the HTML option!
+            let startISO = d.startTime ? d.startTime.toDate().toISOString() : '';
+            let endISO = d.active ? new Date().toISOString() : (d.endTime ? d.endTime.toDate().toISOString() : new Date().toISOString());
+
+            html += `<option value="${docSnap.id}" data-start="${startISO}" data-end="${endISO}" data-branch="${d.branch}">${label}</option>`;
+        });
+
+        select.innerHTML = html;
+    } catch(e) {
+        console.error(e);
+        select.innerHTML = '<option value="">❌ Error loading shifts</option>';
+    }
+};
+
+// Wake it up automatically when the dashboard loads!
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => { if (document.getElementById('histShiftSelect')) window.loadHistoryShiftDropdown(); }, 1500);
+});
