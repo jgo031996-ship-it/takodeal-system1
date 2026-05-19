@@ -418,15 +418,15 @@
             <span style="font-size: 12px; color: var(--text-muted);">View, filter, and export all past receipts for your bookkeeper.</span>
           </div>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <select id="histBranchFilter" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
+            <select id="histBranchFilter" onchange="window.loadHistoryShiftDropdown()" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
                 <option value="All">All Branches</option>
                 <option value="Cabantian">Cabantian</option>
                 <option value="Citygate">Citygate</option>
                 <option value="Maa">Maa</option>
             </select>
-            <input type="date" id="histStartDate" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
-            <span style="font-weight: bold; color: #64748b;">to</span>
-            <input type="datetime-local" id="histStartDate" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
+            <select id="histShiftSelect" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f172a; min-width: 300px; cursor: pointer;" onchange="window.loadSalesHistoryTab()">
+                <option value="">Loading shifts...</option>
+            </select>
             
             <button onclick="downloadExcel('historyTableBody', 'TAKODEAL_Master_Sales')" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">📥 Export Excel</button>
           </div>
