@@ -2292,3 +2292,61 @@ setTimeout(async () => {
         });
     }
 }, 3000);
+
+// ==========================================
+// 🐙 TAKOYAKI MIX & MATCH ENGINE
+// ==========================================
+window.mixMatchState = {
+    'Pork': 0,
+    'Shrimp': 0,
+    'Octopus': 0,
+    'Ham & Cheese': 0,
+    'Bacon & Cheese': 0
+};
+window.maxMixMatch = 8;
+
+window.toggleMixMatchUI = function() {
+    let panel = document.getElementById('mixMatchPanel');
+    let icon = document.getElementById('mixMatchToggleIcon');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        icon.innerText = '▲';
+    } else {
+        panel.style.display = 'none';
+        icon.innerText = '▼';
+    }
+};
+
+window.adjustMixMatch = function(flavor, delta) {
+    let currentTotal = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+    if (delta > 0 && currentTotal >= window.maxMixMatch) {
+        alert(`You can only select up to ${window.maxMixMatch} pieces for this size!`);
+        return;
+    }
+    if (window.mixMatchState[flavor] + delta >= 0) {
+        window.mixMatchState[flavor] += delta;
+        window.renderMixMatchList();
+    }
+};
+
+window.renderMixMatchList = function() {
+    let list = document.getElementById('mixMatchList');
+    let currentTotal = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+    document.getElementById('mixMatchCounter').innerText = `${currentTotal} / ${window.maxMixMatch} Pcs`;
+
+    let html = '';
+    for (let flavor in window.mixMatchState) {
+        let count = window.mixMatchState[flavor];
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px 12px; border-radius: 6px; border: 1px solid #fde68a;">
+                <span style="font-size: 13px; font-weight: bold; color: #92400e;">${flavor}</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706;" onclick="window.adjustMixMatch('${flavor}', -1)">-</button>
+                    <span style="font-weight: bold; width: 20px; text-align: center; color: #92400e;">${count}</span>
+                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706;" onclick="window.adjustMixMatch('${flavor}', 1)">+</button>
+                </div>
+            </div>
+        `;
+    }
+    list.innerHTML = html;
+};

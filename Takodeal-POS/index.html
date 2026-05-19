@@ -1545,6 +1545,20 @@
               onclick="adjustModalMainQty(1)">+</button>
           </div>
         </div>
+        <div id="takoyakiCustomizationArea" style="display: none; margin-bottom: 15px;">
+          <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+              <span>🐙 Customize Fillings (Mix & Match)</span>
+              <span id="mixMatchToggleIcon">▼</span>
+          </button>
+          
+          <div id="mixMatchPanel" style="display: none; background: #fffcf0; border: 1px solid #fde68a; border-top: none; padding: 15px; border-radius: 0 0 8px 8px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                  <span style="font-size: 12px; font-weight: bold; color: #b45309;">Select Flavors:</span>
+                  <span id="mixMatchCounter" style="font-size: 12px; font-weight: bold; color: #b45309;">0 / 8 Pcs</span>
+              </div>
+              <div id="mixMatchList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          </div>
+        </div>
         <div style="margin-bottom:15px;">
           <div class="section-title">Apply Discount</div>
           <div class="discount-grid">
@@ -2617,7 +2631,21 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             dynamicAddonDiv.innerHTML = newUiHtml;
         }
     } catch (error) { console.error("Error loading item details:", error); }
-
+            if (typeof window.mixMatchState !== 'undefined') {
+                for (let f in window.mixMatchState) window.mixMatchState[f] = 0; 
+                let isTakoyaki = pendingItem.name.toLowerCase().includes('takoyaki') || pendingItem.name.toLowerCase().includes('grilled');
+                let customArea = document.getElementById('takoyakiCustomizationArea');
+                if (customArea) {
+                    if (isTakoyaki) {
+                        customArea.style.display = 'block';
+                        document.getElementById('mixMatchPanel').style.display = 'none';
+                        document.getElementById('mixMatchToggleIcon').innerText = '▼';
+                        let sizeMatch = pendingItem.realName ? pendingItem.realName.match(/(\d+)\s*Pcs/i) : pendingItem.name.match(/(\d+)\s*Pcs/i);
+                        window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
+                        window.renderMixMatchList();
+                    } else { customArea.style.display = 'none'; }
+                }
+            }
     updateModalTotals(); 
 };
 
@@ -2625,15 +2653,17 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 window.selectRealVariant = function(realName, vPrice, clickedBtn) {
     document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
     clickedBtn.classList.add('active');
-    
     pendingItem.realName = realName;
     pendingItem.variantPrice = vPrice;
     pendingItem.basePrice = vPrice;
-    
-    // Un-hide the top price now that they made a selection
     let priceHeader = document.getElementById('modalItemPrice').parentElement;
     priceHeader.style.display = 'flex';
     document.getElementById('modalItemPrice').innerText = '₱ ' + vPrice.toFixed(2);
+    
+    let sizeMatch = realName.match(/(\d+)\s*Pcs/i);
+    window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8;
+    for (let f in window.mixMatchState) window.mixMatchState[f] = 0; 
+    if (typeof window.renderMixMatchList === 'function') window.renderMixMatchList();
     
     updateModalTotals();
 };
@@ -2729,14 +2759,25 @@ window.selectRealVariant = function(realName, vPrice, clickedBtn) {
     };
 
     window.confirmAddOrUpdateToCart = function() {
-      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
-      pendingItem.notes = document.getElementById('orderNotesInput').value;
-      pendingItem.name = pendingItem.realName || pendingItem.name;
-      
-      // 🔥 Make sure the exact size (e.g. 8 Pcs) goes into the cart!
-      pendingItem.name = pendingItem.realName || pendingItem.name;
-      
-      pendingItem.addons = {}; 
+    let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
+    pendingItem.notes = document.getElementById('orderNotesInput').value;
+    pendingItem.name = pendingItem.realName || pendingItem.name;
+    pendingItem.addons = {}; 
+
+    if (typeof window.mixMatchState !== 'undefined') {
+        let totalCustomPcs = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+        if (totalCustomPcs > 0) {
+            pendingItem.notes = pendingItem.notes ? pendingItem.notes + " | MIX: " : "MIX: ";
+            for (let flavor in window.mixMatchState) {
+                let count = window.mixMatchState[flavor];
+                if (count > 0) {
+                    pendingItem.addons[`${flavor} Filling`] = { price: 0, qty: count, linkedIngredient: flavor, deductQty: 1 };
+                    pendingItem.notes += `${count} ${flavor}, `;
+                }
+            }
+            pendingItem.notes = pendingItem.notes.replace(/, $/, '');
+        }
+    } 
 
       // Save Radio Button Addons
       document.querySelectorAll('.addon-radio:checked').forEach(radio => {
