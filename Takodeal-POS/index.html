@@ -1545,6 +1545,20 @@
               onclick="adjustModalMainQty(1)">+</button>
           </div>
         </div>
+        <div id="takoyakiCustomizationArea" style="display: none; margin-bottom: 15px;">
+          <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+              <span>🐙 Customize Fillings (Mix & Match)</span>
+              <span id="mixMatchToggleIcon">▼</span>
+          </button>
+          
+          <div id="mixMatchPanel" style="display: none; background: #fffcf0; border: 1px solid #fde68a; border-top: none; padding: 15px; border-radius: 0 0 8px 8px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                  <span style="font-size: 12px; font-weight: bold; color: #b45309;">Select Flavors:</span>
+                  <span id="mixMatchCounter" style="font-size: 12px; font-weight: bold; color: #b45309;">0 / 8 Pcs</span>
+              </div>
+              <div id="mixMatchList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          </div>
+        </div>
         <div style="margin-bottom:15px;">
           <div class="section-title">Apply Discount</div>
           <div class="discount-grid">
