@@ -41,6 +41,18 @@ window.updateDoc = updateDoc;
 
 console.log("🔥 Firebase Engine is LIVE!");
 
+// ==========================================
+// 🏷️ SMART TAB TITLE ENGINE
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+    let savedBranch = localStorage.getItem('takodeal_device_branch');
+    if (savedBranch) {
+        document.title = "TAKODEÁL (" + savedBranch + ")";
+    } else {
+        document.title = "TAKODEÁL - Device Setup";
+    }
+});
+
 // ========================================================
 // 📱 2. DEVICE LOCK & SETUP ENGINE
 // ========================================================
