@@ -5914,7 +5914,8 @@ window.openPayslipModal = async function(staffName) {
             finalizeBtn.style.background = "#3b82f6"; // Blue
             finalizeBtn.style.cursor = "pointer";
         }
-    }
+    };
+  };
 
     if (!data.rate || data.rate === 0) {
         alert(`⚠️ Warning: ${data.name} does not have a Daily Rate set in their profile!`);
