@@ -199,49 +199,19 @@ window.loadPOSData = async function() {
     masterPOSData.items = products;
     masterPOSData.variants = {}; // Legacy variants
     masterPOSData.addons = [];
-    let cats = [...new Set(products.map(p => p.category))].filter(Boolean);
-    masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
-    masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "GoTyme", "Bank", "Grab"] };
-
-    // 🔥 SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
-    masterPOSData.stockLevels = {};
-    const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
-    invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
-
-    masterPOSData.bom = [];
-    const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-    bomSnap.forEach(doc => masterPOSData.bom.push(doc.data()));
-
-    buildCategories();
-
-    let otHtml = ''; masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
-    let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
-};
-
-window.loadPOSData = async function() {
-    let products = await window.fetchMenu();
-    masterPOSData.items = products;
-    masterPOSData.variants = {}; // Legacy variants
-    masterPOSData.addons = [];
 
     // 🔥 PHASE 2: FETCH GLOBAL SETTINGS FROM MANAGER HUB 🔥
     try {
         const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
         if (configSnap.exists()) {
             let configData = configSnap.data();
-            
-            // 1. Sync Payment Methods and Order Types
             masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
-            
-            // 2. Sync POS Layout Tabs (Fallback to database categories if left blank)
             let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
             masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
-            
         } else {
-            // Failsafe if the cloud file is somehow missing
             let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
             masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
             masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "Bank"] };
@@ -250,7 +220,6 @@ window.loadPOSData = async function() {
         console.warn("Could not load global config, using defaults", e);
     }
 
-    // 🔥 SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
     masterPOSData.stockLevels = {};
     const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", window.POS_BRANCH)));
     invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
@@ -261,18 +230,70 @@ window.loadPOSData = async function() {
 
     buildCategories();
 
-    // Dynamically draw the Order Type dropdown and Payment buttons based on the Manager App's rules!
     let otHtml = ''; 
     masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
     document.getElementById('mainOrderType').innerHTML = otHtml;
     
+    // 🔀 INJECT SPLIT PAYMENT BUTTON
     let pmHtml = ''; 
+    let optHtml = ''; // For the dropdowns
     masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; 
-        if (idx === 0) selectedPaymentMethod = m; 
-        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; 
+        if (idx === 0) window.selectedPaymentMethod = m; 
+        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
+        optHtml += `<option value="${m}">${m}</option>`;
     }); 
-    document.querySelector('.payment-grid').innerHTML = pmHtml;
+    pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
+    
+    let payGrid = document.querySelector('.payment-grid');
+    if (payGrid) {
+        payGrid.innerHTML = pmHtml;
+        
+        // Inject the Split Inputs right below the buttons!
+        if (!document.getElementById('splitPaymentContainer')) {
+            payGrid.insertAdjacentHTML('afterend', `
+                <div id="splitPaymentContainer" style="display:none; margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 2px dashed #8b5cf6;">
+                    <div style="font-size:12px; font-weight:bold; color:#8b5cf6; margin-bottom:10px;">SPLIT PAYMENT DETAILS</div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
+                        <select id="splitMethod1" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
+                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
+                        <select id="splitMethod2" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
+                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                    </div>
+                    <div style="text-align: right; font-size: 14px; font-weight: 900; color: #ef4444;" id="splitRemainingAlert">Total Split Entered: ₱0.00</div>
+                </div>
+            `);
+        } else {
+            // Update dropdowns if they already exist
+            document.getElementById('splitMethod1').innerHTML = optHtml;
+            document.getElementById('splitMethod2').innerHTML = optHtml;
+        }
+    }
+};
+
+window.toggleSplitPaymentUI = function(event) {
+    let container = document.getElementById('splitPaymentContainer');
+    if (container.style.display === 'none') {
+        container.style.display = 'block';
+        window.selectedPaymentMethod = 'Split';
+        document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active'));
+        event.target.classList.add('active');
+        window.calcSplitRemaining();
+    } else {
+        container.style.display = 'none';
+        document.getElementById('splitAmount1').value = '';
+        document.getElementById('splitAmount2').value = '';
+    }
+};
+
+window.calcSplitRemaining = function() {
+    let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
+    let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
+    let totalInput = a1 + a2;
+    document.getElementById('splitRemainingAlert').innerText = `Total Split Entered: ₱${totalInput.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    document.getElementById('splitRemainingAlert').style.color = "#8b5cf6";
 };
 
 // --- THE SHIFT ENGINE ---
@@ -311,6 +332,27 @@ window.openNewShift = async function (branch, cashier, startCash) {
 // --- THE CHECKOUT ENGINE (STREAMLINED & FAST) ---
 window.processCheckout = async function (payload) {
   try {
+    // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
+    let splitContainer = document.getElementById('splitPaymentContainer');
+    if (splitContainer && splitContainer.style.display !== 'none') {
+        let m1 = document.getElementById('splitMethod1').value;
+        let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
+        let m2 = document.getElementById('splitMethod2').value;
+        let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
+        
+        // Strict Math Check!
+        if (Math.abs((a1 + a2) - payload.netTotal) > 0.01) {
+            alert(`❌ ERROR: The Split Amounts (₱${a1+a2}) do not match the Order Total (₱${payload.netTotal})!\n\nPlease adjust the split amounts.`);
+            return null; // Abort checkout!
+        }
+        
+        payload.paymentMethod = `Split (${m1} & ${m2})`;
+        payload.splitDetails = [
+            { method: m1, amount: a1 },
+            { method: m2, amount: a2 }
+        ];
+    }
+
     let d = new Date();
     let dateStr = d.getFullYear().toString() + (d.getMonth() + 1).toString().padStart(2, '0') + d.getDate().toString().padStart(2, '0');
     let shiftCode = payload.shiftId ? payload.shiftId.slice(-4).toUpperCase() : "0000";
@@ -320,44 +362,36 @@ window.processCheckout = async function (payload) {
     let orderNum = (snap.size + 1).toString().padStart(3, '0');
     const receiptId = `${dateStr}-${shiftCode}-${orderNum}`;
 
-    // 1. Immediately save the transaction so the UI doesn't lag!
     addDoc(collection(db, "transactions"), {
       ...payload, receiptId: receiptId, timestamp: serverTimestamp()
     });
 
     // ==========================================
-    // 🏦 AUTO-ROUTE SALES TO MANAGER LEDGER
+    // 🏦 AUTO-ROUTE SALES TO MANAGER LEDGER (SPLIT READY)
     // ==========================================
     try {
-        let payMethod = payload.paymentMethod || 'Cash'; // Default to Cash if missing
-        const accQuery = query(collection(db, "cash_accounts"), 
-            where("branch", "==", payload.branch), 
-            where("name", "==", payMethod)
-        );
-        const accSnap = await getDocs(accQuery);
+        let paymentsToRoute = payload.splitDetails ? payload.splitDetails : [{ method: payload.paymentMethod || 'Cash', amount: payload.netTotal || 0 }];
 
-        if (!accSnap.empty) {
-            // Account exists! Add the money to the current balance
-            let accDoc = accSnap.docs[0];
-            let currentBal = parseFloat(accDoc.data().balance) || 0;
+        for (let p of paymentsToRoute) {
+            if (p.amount <= 0) continue; // Skip if they put 0 for one method
             
-            await updateDoc(doc(db, "cash_accounts", accDoc.id), { 
-                balance: currentBal + (payload.netTotal || 0)
-            });
-        } else {
-            // Account doesn't exist? Create it automatically!
-            await addDoc(collection(db, "cash_accounts"), { 
-                branch: payload.branch, 
-                name: payMethod, 
-                balance: payload.netTotal || 0
-            });
-        }
-    } catch (ledgerError) {
-        console.error("Ledger Auto-Route Error: ", ledgerError);
-    }
-    // ==========================================
+            const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", payload.branch), where("name", "==", p.method));
+            const accSnap = await getDocs(accQuery);
 
-    // 2. Offload Inventory Updates to the background (Async execution without await blocking)
+            if (!accSnap.empty) {
+                let accDoc = accSnap.docs[0];
+                await updateDoc(doc(db, "cash_accounts", accDoc.id), { 
+                    balance: (parseFloat(accDoc.data().balance) || 0) + p.amount 
+                });
+            } else {
+                await addDoc(collection(db, "cash_accounts"), { 
+                    branch: payload.branch, name: p.method, balance: p.amount 
+                });
+            }
+        }
+    } catch (ledgerError) { console.error("Ledger Auto-Route Error: ", ledgerError); }
+
+    // 2. Offload Inventory Updates
     setTimeout(async () => {
         let lowStockTriggered = false;
         
@@ -365,45 +399,32 @@ window.processCheckout = async function (payload) {
             let itemName = cartItem.name || cartItem.itemName;
             let qtySold = cartItem.qty || 1;
 
-            // --- A. DEDUCT THE MAIN RECIPE (BOM) ---
             const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
             const bomSnap = await getDocs(bomQ);
-
             for (let bomDoc of bomSnap.docs) {
                 let recipeData = bomDoc.data();
-                let ingredientName = recipeData.ingredientName;
                 let totalAmountToDeduct = (recipeData.qty || 0) * qtySold;
-
-                const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", ingredientName));
+                const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", recipeData.ingredientName));
                 const invSnap = await getDocs(invQ);
-
                 if (!invSnap.empty) {
-                    let invDocRef = invSnap.docs[0].ref;
                     let invData = invSnap.docs[0].data();
                     let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
-
-                    await updateDoc(invDocRef, { currentStock: newStock });
+                    await updateDoc(invSnap.docs[0].ref, { currentStock: newStock });
                     if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                 }
             }
 
-            // --- B. DEDUCT THE ADD-ONS ---
             if (cartItem.addons) {
                 for (let addonKey in cartItem.addons) {
                     let addon = cartItem.addons[addonKey];
-                    // If the addon has a linked ingredient and a deduction amount
                     if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
                         let totalAddonDeduct = addon.deductQty * addon.qty * qtySold;
-
                         const addonInvQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", addon.linkedIngredient));
                         const addonInvSnap = await getDocs(addonInvQ);
-
                         if (!addonInvSnap.empty) {
-                            let invDocRef = addonInvSnap.docs[0].ref;
                             let invData = addonInvSnap.docs[0].data();
                             let newStock = (invData.currentStock || 0) - totalAddonDeduct;
-
-                            await updateDoc(invDocRef, { currentStock: newStock });
+                            await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
                             if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                         }
                     }
@@ -411,40 +432,24 @@ window.processCheckout = async function (payload) {
             }
         }
         
-        // 🚨 Simple, non-blocking alarm
-        if (lowStockTriggered) {
-             window.pendingLowStockAlarm = true;
-        }
+        if (lowStockTriggered) window.pendingLowStockAlarm = true;
 
-        // 🔥 THE 1 MILLION TAKOYAKI TRACKER 🔥
         let totalBallsInOrder = 0;
         for (let cartItem of payload.cart) {
-            let itemName = cartItem.name || cartItem.itemName;
-            
-            // Smart AI: Looks for "8 Pcs", "15 Pcs", "6 Pcs" in your item names!
-            let match = itemName.match(/(\d+)\s*Pcs/i);
-            if (match) {
-                let ballsInBox = parseInt(match[1]);
-                totalBallsInOrder += (ballsInBox * (cartItem.qty || 1));
-            }
+            let match = (cartItem.name || cartItem.itemName).match(/(\d+)\s*Pcs/i);
+            if (match) totalBallsInOrder += (parseInt(match[1]) * (cartItem.qty || 1));
         }
-
-        // If they bought Takoyaki, send the count to the Global Vault!
         if (totalBallsInOrder > 0) {
-            const statsRef = doc(db, "settings", "global_stats");
-            // setDoc with merge creates the file if it's the very first time!
-            await setDoc(statsRef, { 
-                totalTakoyakiBalls: increment(totalBallsInOrder) 
-            }, { merge: true });
+            await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: increment(totalBallsInOrder) }, { merge: true });
         }
-    }, 100); // 100ms delay lets the receipt screen pop up instantly!
+    }, 100); 
+
+    // Auto-close split container after successful checkout
+    if (splitContainer) splitContainer.style.display = 'none';
 
     return receiptId;
-  } catch (error) {
-    console.error(error);
-    return null;
-  }
-}; // <--- This bracket is safe and sound!
+  } catch (error) { console.error(error); return null; }
+};
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
@@ -496,9 +501,14 @@ window.getLiveShiftDetails = async function (branch) {
     let cashIn = 0;
     txSnap.forEach(d => {
       let tx = d.data();
-      // Only count physical cash that wasn't voided
-      if (tx.status !== "Voided" && (tx.paymentMethod === "Cash" || !tx.paymentMethod)) {
-        cashIn += tx.netTotal || 0;
+      if (tx.status !== "Voided") {
+        // 🔥 NEW: Calculate Cash perfectly, even if it's split!
+        if (tx.splitDetails) {
+            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+            if (cashSplit) cashIn += cashSplit.amount;
+        } else if (tx.paymentMethod === "Cash" || !tx.paymentMethod) {
+            cashIn += tx.netTotal || 0;
+        }
       }
     });
 
@@ -881,11 +891,21 @@ window.submitComprehensiveCloseShift = async function () {
         if (transactions && transactions.length > 0) {
             transactions.forEach(tx => {
                 if (tx.status !== 'Voided') {
-                    if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    // 🔥 NEW: Process Split Breakdowns for Shift Closing!
+                    if (tx.splitDetails) {
+                        tx.splitDetails.forEach(split => {
+                            if (split.method === 'Cash') {
+                                totalCashSales += split.amount;
+                            } else {
+                                totalDigitalSales += split.amount;
+                                if (!digitalBreakdown[split.method]) digitalBreakdown[split.method] = 0;
+                                digitalBreakdown[split.method] += split.amount;
+                            }
+                        });
+                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
                         totalCashSales += tx.netTotal;
                     } else {
                         totalDigitalSales += tx.netTotal;
-                        // Track exact amounts per digital channel (Grab, GCash, Bank, etc.)
                         let method = tx.paymentMethod;
                         if (!digitalBreakdown[method]) digitalBreakdown[method] = 0;
                         digitalBreakdown[method] += tx.netTotal;
