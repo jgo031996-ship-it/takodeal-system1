@@ -8009,11 +8009,15 @@ window.loadPosConfigHub = async function() {
             document.getElementById('configPayMethods').value = (data.paymentMethods || []).join(', ');
             document.getElementById('configOrderTypes').value = (data.orderTypes || []).join(', ');
             document.getElementById('configPosTabs').value = (data.posTabs || []).join(', ');
+            document.getElementById('configKitchenPrep').value = (data.kitchenPrepCats || ["Prepared Batch"]).join(', ');
+            document.getElementById('configAuditList').value = (data.auditItems || []).join(', ');
         } else {
-            // If the file doesn't exist yet, put in the Takodeal defaults!
+            // Default Takodeal Values if empty
             document.getElementById('configPayMethods').value = "Cash, GCash, Bank, Grab";
             document.getElementById('configOrderTypes').value = "Dine-In, Take-Out, Delivery, Grab";
             document.getElementById('configPosTabs').value = "Takoyaki, Milk Tea, Coffee, Add-ons";
+            document.getElementById('configKitchenPrep').value = "Prepared Batch";
+            document.getElementById('configAuditList').value = "320cc Paper Bowl, 520cc Paper Bowl, LB1 Box, Burger Box";
         }
     } catch (error) {
         console.error("Error loading config:", error);
@@ -8033,12 +8037,16 @@ window.saveGlobalPosConfig = async function() {
         let payMethods = document.getElementById('configPayMethods').value.split(',').map(s => s.trim()).filter(Boolean);
         let orderTypes = document.getElementById('configOrderTypes').value.split(',').map(s => s.trim()).filter(Boolean);
         let posTabs = document.getElementById('configPosTabs').value.split(',').map(s => s.trim()).filter(Boolean);
+        let prepCats = document.getElementById('configKitchenPrep').value.split(',').map(s => s.trim()).filter(Boolean);
+        let auditList = document.getElementById('configAuditList').value.split(',').map(s => s.trim()).filter(Boolean);
 
         // Blast it to the Cloud Vault!
         await setDoc(doc(db, "settings", "global_pos_config"), {
             paymentMethods: payMethods,
             orderTypes: orderTypes,
             posTabs: posTabs,
+            kitchenPrepCats: prepCats,
+            auditItems: auditList,
             lastUpdatedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
         }, { merge: true });
