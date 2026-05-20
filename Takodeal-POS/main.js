@@ -218,6 +218,63 @@ window.loadPOSData = async function() {
     let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
 };
 
+window.loadPOSData = async function() {
+    let products = await window.fetchMenu();
+    masterPOSData.items = products;
+    masterPOSData.variants = {}; // Legacy variants
+    masterPOSData.addons = [];
+
+    // 🔥 PHASE 2: FETCH GLOBAL SETTINGS FROM MANAGER HUB 🔥
+    try {
+        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+        if (configSnap.exists()) {
+            let configData = configSnap.data();
+            
+            // 1. Sync Payment Methods and Order Types
+            masterPOSData.settings = {
+                orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
+                payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
+            };
+            
+            // 2. Sync POS Layout Tabs (Fallback to database categories if left blank)
+            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+            masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
+            
+        } else {
+            // Failsafe if the cloud file is somehow missing
+            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+            masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
+            masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "Bank"] };
+        }
+    } catch (e) {
+        console.warn("Could not load global config, using defaults", e);
+    }
+
+    // 🔥 SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
+    masterPOSData.stockLevels = {};
+    const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", window.POS_BRANCH)));
+    invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
+
+    masterPOSData.bom = [];
+    const bomSnap = await getDocs(collection(db, "bom"));
+    bomSnap.forEach(doc => masterPOSData.bom.push(doc.data()));
+
+    buildCategories();
+
+    // Dynamically draw the Order Type dropdown and Payment buttons based on the Manager App's rules!
+    let otHtml = ''; 
+    masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
+    document.getElementById('mainOrderType').innerHTML = otHtml;
+    
+    let pmHtml = ''; 
+    masterPOSData.settings.payMethods.forEach((m, idx) => { 
+        let act = idx === 0 ? 'active' : ''; 
+        if (idx === 0) selectedPaymentMethod = m; 
+        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; 
+    }); 
+    document.querySelector('.payment-grid').innerHTML = pmHtml;
+};
+
 // --- THE SHIFT ENGINE ---
 window.checkShiftStatus = async function (branch) {
   try {
