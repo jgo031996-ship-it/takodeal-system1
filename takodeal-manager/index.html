@@ -212,6 +212,7 @@
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')">👥 Staff & Security</a>
       <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')">🍔 Menu Editor</a>
       <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();">⚙️ POS Config Hub</a>
+      <a href="#" class="nav-item" id="nav-appeditor" onclick="switchView('appeditor'); window.loadAppEditorDrafts();">🧩 App Editor</a>
       <a href="#" class="nav-item" id="nav-receipt" onclick="switchView('receipt')">🖨️ Printer Setup</a>
       <a href="#" class="nav-item" id="nav-inventory" onclick="switchView('inventory'); loadInventoryData();">📦 Live
         Inventory</a>
@@ -906,6 +907,81 @@
           </div>
 
         </div>
+      </div>
+    </div>
+
+    <div id="view-appeditor" class="view">
+      <div class="card" style="border-top: 4px solid #0f766e;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h2 style="margin:0; color:#0f766e;">🧩 App Editor Control Room</h2>
+            <span style="font-size:12px; color:var(--text-muted);">Draft-only settings. Cashier and Customer apps do not read this yet.</span>
+          </div>
+          <button class="btn-refresh" onclick="window.loadAppEditorDrafts()">🔄 Load Drafts</button>
+        </div>
+    
+        <div style="padding:20px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; margin:20px;">
+          <strong style="color:#92400e;">Safe Mode:</strong>
+          <span style="color:#92400e; font-size:13px;">Saving here will not interrupt active store apps. Publish writes to new v2 documents only.</span>
+        </div>
+    
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:20px; padding:20px;">
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px;">
+            <h3 style="margin-top:0;">Customer App Draft</h3>
+    
+            <label>Announcement</label>
+            <textarea id="appEditCustomerAnnouncement" rows="3" style="width:100%; box-sizing:border-box;"></textarea>
+    
+            <label>Banner Image URL</label>
+            <input id="appEditCustomerBanner" type="text" style="width:100%; box-sizing:border-box; margin-bottom:10px;">
+    
+            <label>GCash Account Name</label>
+            <input id="appEditGcashName" type="text" style="width:100%; box-sizing:border-box; margin-bottom:10px;">
+    
+            <label>GCash Number</label>
+            <input id="appEditGcashNumber" type="text" style="width:100%; box-sizing:border-box; margin-bottom:10px;">
+    
+            <label>GCash QR Image URL</label>
+            <input id="appEditGcashQr" type="text" style="width:100%; box-sizing:border-box; margin-bottom:10px;">
+    
+            <label>Hidden Categories</label>
+            <input id="appEditHiddenCategories" type="text" placeholder="Consumables, Prep Batch, Raw Materials" style="width:100%; box-sizing:border-box; margin-bottom:10px;">
+    
+            <label style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+              <input id="appEditDeliveryEnabled" type="checkbox"> Delivery Enabled
+            </label>
+    
+            <label>Delivery Radius KM</label>
+            <input id="appEditDeliveryRadius" type="number" style="width:100%; box-sizing:border-box; margin-bottom:14px;">
+    
+            <button onclick="window.saveCustomerAppDraft()" style="background:#0f766e; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold;">💾 Save Customer Draft</button>
+            <button onclick="window.publishCustomerAppDraft()" style="background:#16a34a; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; margin-left:8px;">🚀 Publish v2</button>
+          </div>
+    
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px;">
+            <h3 style="margin-top:0;">POS App Draft</h3>
+    
+            <label>Payment Methods</label>
+            <textarea id="appEditPosPayments" rows="3" style="width:100%; box-sizing:border-box;"></textarea>
+    
+            <label>Order Types</label>
+            <textarea id="appEditPosOrderTypes" rows="3" style="width:100%; box-sizing:border-box;"></textarea>
+    
+            <label>POS Tabs</label>
+            <textarea id="appEditPosTabs" rows="3" style="width:100%; box-sizing:border-box;"></textarea>
+    
+            <label>Kitchen Prep Categories</label>
+            <textarea id="appEditKitchenPrep" rows="3" style="width:100%; box-sizing:border-box;"></textarea>
+    
+            <label>Audit Items</label>
+            <textarea id="appEditAuditItems" rows="3" style="width:100%; box-sizing:border-box; margin-bottom:14px;"></textarea>
+    
+            <button onclick="window.savePosAppDraft()" style="background:#0f766e; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold;">💾 Save POS Draft</button>
+            <button onclick="window.publishPosAppDraft()" style="background:#16a34a; color:white; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; margin-left:8px;">🚀 Publish v2</button>
+          </div>
+        </div>
+    
+        <div id="appEditorStatus" style="margin:0 20px 20px; font-size:13px; color:#64748b;">Ready.</div>
       </div>
     </div>
     
