@@ -211,6 +211,7 @@
       <a href="#" class="nav-item" id="nav-expenses" onclick="switchView('expenses')">💸 Expense & Restock Feed</a>
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')">👥 Staff & Security</a>
       <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')">🍔 Menu Editor</a>
+      <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();">⚙️ POS Config Hub</a>
       <a href="#" class="nav-item" id="nav-receipt" onclick="switchView('receipt')">🖨️ Printer Setup</a>
       <a href="#" class="nav-item" id="nav-inventory" onclick="switchView('inventory'); loadInventoryData();">📦 Live
         Inventory</a>
@@ -857,6 +858,43 @@
       </div>
     </div>
 
+    <div id="view-posconfig" class="view">
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+          <div>
+            <h2 style="margin: 0; color: var(--primary);">⚙️ Master POS Configuration</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Control payment methods, order types, and POS layouts globally.</span>
+          </div>
+          <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="saveGlobalPosConfig()">💾 Save Changes to Cloud</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; padding: 20px;">
+          
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">💳 Payment Methods</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of accepted payments.</p>
+            <textarea id="configPayMethods" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Cash, GCash, Bank, Maya</div>
+          </div>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">🛍️ Order Types</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of order categories.</p>
+            <textarea id="configOrderTypes" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Dine-In, Take-Out, Delivery, Grab</div>
+          </div>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📑 POS Layout Tabs</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of menu categories to display as tabs on the POS.</p>
+            <textarea id="configPosTabs" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Takoyaki, Milk Tea, Add-ons</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    
     <div id="view-receipt" class="view">
         <div class="card" style="max-width: 600px; margin: 0 auto;">
             <h2 style="margin-top: 0;">🖨️ Thermal Receipt Settings</h2>
