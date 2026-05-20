@@ -7981,3 +7981,68 @@ window.loadHistoryShiftDropdown = async function() {
 document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => { if (document.getElementById('histShiftSelect')) window.loadHistoryShiftDropdown(); }, 1500);
 });
+
+// ========================================================
+// ⚙️ MASTER POS CONFIGURATION ENGINE
+// ========================================================
+
+window.loadPosConfigHub = async function() {
+    let btn = document.querySelector("#view-posconfig .btn-refresh");
+    let originalText = btn ? btn.innerText : "💾 Save Changes to Cloud";
+    if (btn) btn.innerText = "⏳ Loading Data...";
+
+    try {
+        const docRef = doc(db, "settings", "global_pos_config");
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            let data = docSnap.data();
+            
+            // Join the cloud arrays into comma-separated strings for the text boxes
+            document.getElementById('configPayMethods').value = (data.paymentMethods || []).join(', ');
+            document.getElementById('configOrderTypes').value = (data.orderTypes || []).join(', ');
+            document.getElementById('configPosTabs').value = (data.posTabs || []).join(', ');
+        } else {
+            // If the file doesn't exist yet, put in the Takodeal defaults!
+            document.getElementById('configPayMethods').value = "Cash, GCash, Bank, Grab";
+            document.getElementById('configOrderTypes').value = "Dine-In, Take-Out, Delivery, Grab";
+            document.getElementById('configPosTabs').value = "Takoyaki, Milk Tea, Coffee, Add-ons";
+        }
+    } catch (error) {
+        console.error("Error loading config:", error);
+        alert("Failed to load POS Configuration.");
+    } finally {
+        if (btn) btn.innerText = originalText;
+    }
+};
+
+window.saveGlobalPosConfig = async function() {
+    let btn = document.querySelector("#view-posconfig .btn-refresh");
+    btn.innerText = "⏳ Saving...";
+    btn.disabled = true;
+
+    try {
+        // Grab the text, split by commas, and trim any accidental extra spaces
+        let payMethods = document.getElementById('configPayMethods').value.split(',').map(s => s.trim()).filter(Boolean);
+        let orderTypes = document.getElementById('configOrderTypes').value.split(',').map(s => s.trim()).filter(Boolean);
+        let posTabs = document.getElementById('configPosTabs').value.split(',').map(s => s.trim()).filter(Boolean);
+
+        // Blast it to the Cloud Vault!
+        await setDoc(doc(db, "settings", "global_pos_config"), {
+            paymentMethods: payMethods,
+            orderTypes: orderTypes,
+            posTabs: posTabs,
+            lastUpdatedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: serverTimestamp()
+        }, { merge: true });
+
+        alert("✅ Success! The POS configurations have been updated globally. All Cashier tablets will update on their next refresh.");
+        
+    } catch (error) {
+        console.error("Error saving config:", error);
+        alert("❌ Failed to save. Check your connection.");
+    } finally {
+        btn.innerText = "💾 Save Changes to Cloud";
+        btn.disabled = false;
+    }
+};
