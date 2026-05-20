@@ -1894,7 +1894,7 @@ window.executeBatchPrep = async function () {
 
 window.loadAccountsAndBudget = async function() {
     // ==========================================
-    // 🏦 PART 1: THE COLLAPSIBLE CASH LEDGER
+    // 🏦 PART 1: THE SLEEK CASH LEDGER
     // ==========================================
     try {
         const tbody = document.getElementById('accTableBody');
@@ -1903,7 +1903,6 @@ window.loadAccountsAndBudget = async function() {
             let accountsByBranch = {};
             let totalCash = 0;
             
-            // 🔥 FIX: Reset the global memory so transfers and expenses work!
             window.liveAccounts = []; 
 
             snap.forEach(docSnap => {
@@ -1925,38 +1924,25 @@ window.loadAccountsAndBudget = async function() {
             let html = '';
             for (let branch in accountsByBranch) {
                 let branchTotal = accountsByBranch[branch].reduce((sum, acc) => sum + (acc.balance || 0), 0);
-                let safeBranchId = branch.replace(/\s+/g, ''); 
-
+                
+                // 🔥 NEW: Clean summary row that opens the modal on click!
                 html += `
-                    <tr style="background: #f8fafc; cursor: pointer; border-bottom: 2px solid #cbd5e1;" 
-                        onclick="window.toggleBranchAccounts('${safeBranchId}')">
-                        <td colspan="2" style="font-weight: 900; color: #0f766e; font-size: 16px; padding: 15px;">
-                            <span id="icon_${safeBranchId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 🏢 ${branch}
+                    <tr style="background: white; cursor: pointer; border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" 
+                        onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'"
+                        onclick="window.openBranchAccountsModal('${branch}')">
+                        <td colspan="2" style="font-weight: 900; color: #0f766e; font-size: 16px; padding: 18px;">
+                            🏢 ${branch}
                         </td>
-                        <td style="font-weight: 900; color: #16a34a; font-size: 16px; padding: 15px;">
+                        <td style="font-weight: 900; color: #16a34a; font-size: 16px; padding: 18px;">
                             ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}
                         </td>
-                        <td style="text-align: right; padding: 15px;">
-                            <span style="font-size: 12px; color: #64748b; background: #e2e8f0; padding: 4px 8px; border-radius: 12px; font-weight: bold;">
-                                ${accountsByBranch[branch].length} Accounts
+                        <td style="text-align: right; padding: 18px;">
+                            <span style="font-size: 12px; color: white; background: var(--primary); padding: 6px 12px; border-radius: 20px; font-weight: bold; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);">
+                                🔍 View ${accountsByBranch[branch].length} Accounts
                             </span>
                         </td>
                     </tr>
                 `;
-
-                accountsByBranch[branch].forEach(acc => {
-                    html += `
-                        <tr class="branch-row-${safeBranchId}" style="display: none; background: white; border-bottom: 1px dashed #e2e8f0;">
-                            <td style="padding-left: 45px; color: #94a3b8; font-size: 18px;">↳</td>
-                            <td style="font-weight: bold; color: #334155;">${acc.name}</td>
-                            <td style="font-weight: bold; color: #059669;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                            <td>
-                                <button onclick="window.editCashAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px;">✏️ Edit</button>
-                                <button onclick="window.deleteCashAccount('${acc.id}', '${acc.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">🗑️</button>
-                            </td>
-                        </tr>
-                    `;
-                });
             }
             tbody.innerHTML = html;
         }
@@ -2046,38 +2032,39 @@ window.loadAccountsAndBudget = async function() {
     }
 };
 
-// Toggle Engine for the Accordion Ledger
-window.toggleBranchAccounts = function(branchId) {
-    let rows = document.querySelectorAll('.branch-row-' + branchId);
-    let icon = document.getElementById('icon_' + branchId);
-    if(rows.length === 0) return;
+// ==========================================
+// 🏢 NEW: BRANCH ACCOUNTS MODAL ENGINE
+// ==========================================
+window.openBranchAccountsModal = function(branch) {
+    let branchAccounts = window.liveAccounts.filter(acc => acc.branch === branch);
+    let branchTotal = branchAccounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
     
-    let isHidden = rows[0].style.display === 'none';
-    rows.forEach(row => {
-        row.style.display = isHidden ? 'table-row' : 'none';
-    });
+    document.getElementById('branchAccModalTitle').innerHTML = `🏢 ${branch} Ledger`;
+    document.getElementById('branchAccModalTotal').innerText = `Total: ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
     
-    if (icon) {
-        icon.innerText = isHidden ? '▲' : '▼';
-        icon.style.color = isHidden ? '#0f766e' : '#94a3b8';
+    let html = '';
+    if (branchAccounts.length === 0) {
+        html = '<tr><td colspan="3" class="text-center" style="padding: 20px; color: #64748b;">No accounts found for this branch.</td></tr>';
+    } else {
+        // Sort by balance (highest first)
+        branchAccounts.sort((a, b) => (b.balance || 0) - (a.balance || 0));
+        
+        branchAccounts.forEach(acc => {
+            html += `
+                <tr style="border-bottom: 1px dashed #e2e8f0;">
+                    <td style="font-weight: bold; color: #334155; font-size: 15px; padding: 12px;">${acc.name}</td>
+                    <td style="font-weight: 900; color: #059669; font-size: 15px; padding: 12px;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="text-align: right; padding: 12px;">
+                        <button onclick="window.editCashAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
+                        <button onclick="window.deleteCashAccount('${acc.id}', '${acc.name}'); document.getElementById('branchAccountsModal').style.display='none';" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🗑️</button>
+                    </td>
+                </tr>
+            `;
+        });
     }
-};
-
-// Toggle Engine for the Accordion
-window.toggleBranchAccounts = function(branchId) {
-    let rows = document.querySelectorAll('.branch-row-' + branchId);
-    let icon = document.getElementById('icon_' + branchId);
-    if(rows.length === 0) return;
     
-    let isHidden = rows[0].style.display === 'none';
-    rows.forEach(row => {
-        row.style.display = isHidden ? 'table-row' : 'none';
-    });
-    
-    if (icon) {
-        icon.innerText = isHidden ? '▲' : '▼';
-        icon.style.color = isHidden ? '#0f766e' : '#94a3b8';
-    }
+    document.getElementById('branchAccModalBody').innerHTML = html;
+    document.getElementById('branchAccountsModal').style.display = 'flex';
 };
 
 // --- CASH ACCOUNT EDIT & DELETE ACTIONS ---
@@ -2159,17 +2146,37 @@ window.deleteBudgetCategory = async function(docId, catName) {
     } catch(e) { console.error(e); alert("Failed to delete budget."); }
 };
 
-window.addCashAccount = async function () {
-  let branch = prompt("Enter Branch (Main Office, Cabantian, Citygate, Maa):", "Main Office");
-  if (!branch) return;
-  let name = prompt("Account Name (e.g., Petty Cash, BDO, GCash):");
-  if (!name) return;
-  let bal = parseFloat(prompt("Initial Balance (₱):", "0")) || 0;
+// ==========================================
+// ➕ NEW: ADD ACCOUNT MODAL CONTROLLER
+// ==========================================
+window.addCashAccount = function() {
+    document.getElementById('newAccBranch').value = 'Main Office';
+    document.getElementById('newAccName').value = '';
+    document.getElementById('newAccBalance').value = '';
+    document.getElementById('addAccountModal').style.display = 'flex';
+};
 
-  try {
-    await addDoc(collection(db, "cash_accounts"), { branch, name, balance: bal });
-    window.loadAccountsAndBudget();
-  } catch (e) { console.error(e); alert("Failed to add account."); }
+window.saveNewCashAccount = async function() {
+    let branch = document.getElementById('newAccBranch').value;
+    let name = document.getElementById('newAccName').value.trim();
+    let bal = parseFloat(document.getElementById('newAccBalance').value) || 0;
+
+    if (!name) { alert("Please enter an Account Name."); return; }
+
+    let btn = document.getElementById('btnSaveNewAcc');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "cash_accounts"), { branch, name, balance: bal });
+        alert(`✅ ${name} Account successfully created for ${branch}!`);
+        document.getElementById('addAccountModal').style.display = 'none';
+        window.loadAccountsAndBudget();
+    } catch (e) { 
+        console.error(e); 
+        alert("Failed to add account."); 
+    } finally {
+        btn.innerText = "💾 Save Account"; btn.disabled = false;
+    }
 };
 
 // ==========================================
