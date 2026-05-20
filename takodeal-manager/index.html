@@ -2920,6 +2920,62 @@
       </div>
   </div>
 
+  <div id="addAccountModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: var(--bg-color); width: 95%; max-width: 400px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+      <div style="background: var(--primary); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; font-size: 18px; color: white;">➕ Add Cash Account</h2>
+        <button onclick="document.getElementById('addAccountModal').style.display='none'" style="background: none; border: none; font-size: 24px; cursor: pointer; color: white;">✖</button>
+      </div>
+      <div style="padding: 20px; background: white;">
+        <div style="margin-bottom: 15px;">
+          <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Branch Assignment</label>
+          <select id="newAccBranch" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none; background: #f8fafc; font-weight: bold; color: #334155;">
+            <option value="Main Office">Main Office</option>
+            <option value="Cabantian">Cabantian</option>
+            <option value="Citygate">Citygate</option>
+            <option value="Maa">Maa</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 15px;">
+          <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Account Name (e.g. BDO, GCash, Petty Cash)</label>
+          <input type="text" id="newAccName" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Initial Balance (₱)</label>
+          <input type="number" id="newAccBalance" placeholder="0.00" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-weight: 900; font-size: 20px; color: #16a34a; outline: none;">
+        </div>
+        <button onclick="saveNewCashAccount()" id="btnSaveNewAcc" style="width: 100%; background: var(--primary); color: white; border: none; padding: 14px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">💾 Save Account</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="branchAccountsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: var(--bg-color); width: 95%; max-width: 600px; max-height: 85vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+      <div style="background: var(--surface); padding: 20px 25px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h2 id="branchAccModalTitle" style="margin: 0; color: var(--text-main); font-size: 20px;">🏢 Branch Accounts</h2>
+          <span id="branchAccModalTotal" style="font-size: 14px; font-weight: bold; color: #16a34a;">Total: ₱0.00</span>
+        </div>
+        <button onclick="document.getElementById('branchAccountsModal').style.display='none'" style="background: none; border: none; font-size: 28px; cursor: pointer; color: var(--text-muted);">✖</button>
+      </div>
+      <div style="padding: 20px; overflow-y: auto; background: #f8fafc; flex: 1;">
+        <div class="table-responsive">
+          <table class="data-table" style="background: white; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+            <thead style="background: #f1f5f9;">
+              <tr>
+                <th style="color: #475569;">Account Name</th>
+                <th style="color: #475569;">Balance</th>
+                <th style="text-align: right; color: #475569;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="branchAccModalBody">
+              </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  
   <style>
     /* MAGIC CSS: Makes inputs look like text when printing! */
     .ps-input { 
