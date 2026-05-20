@@ -301,6 +301,93 @@ window.processCheckout = async function (payload) {
     // ==========================================
 
     // 2. Offload Inventory Updates to the background (Async execution without await blocking)
+    setTimeout(async () => {
+        let lowStockTriggered = false;
+        
+        for (let cartItem of payload.cart) {
+            let itemName = cartItem.name || cartItem.itemName;
+            let qtySold = cartItem.qty || 1;
+
+            // --- A. DEDUCT THE MAIN RECIPE (BOM) ---
+            const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+            const bomSnap = await getDocs(bomQ);
+
+            for (let bomDoc of bomSnap.docs) {
+                let recipeData = bomDoc.data();
+                let ingredientName = recipeData.ingredientName;
+                let totalAmountToDeduct = (recipeData.qty || 0) * qtySold;
+
+                const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", ingredientName));
+                const invSnap = await getDocs(invQ);
+
+                if (!invSnap.empty) {
+                    let invDocRef = invSnap.docs[0].ref;
+                    let invData = invSnap.docs[0].data();
+                    let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
+
+                    await updateDoc(invDocRef, { currentStock: newStock });
+                    if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
+                }
+            }
+
+            // --- B. DEDUCT THE ADD-ONS ---
+            if (cartItem.addons) {
+                for (let addonKey in cartItem.addons) {
+                    let addon = cartItem.addons[addonKey];
+                    // If the addon has a linked ingredient and a deduction amount
+                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                        let totalAddonDeduct = addon.deductQty * addon.qty * qtySold;
+
+                        const addonInvQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", addon.linkedIngredient));
+                        const addonInvSnap = await getDocs(addonInvQ);
+
+                        if (!addonInvSnap.empty) {
+                            let invDocRef = addonInvSnap.docs[0].ref;
+                            let invData = addonInvSnap.docs[0].data();
+                            let newStock = (invData.currentStock || 0) - totalAddonDeduct;
+
+                            await updateDoc(invDocRef, { currentStock: newStock });
+                            if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 🚨 Simple, non-blocking alarm
+        if (lowStockTriggered) {
+             window.pendingLowStockAlarm = true;
+        }
+
+        // 🔥 THE 1 MILLION TAKOYAKI TRACKER 🔥
+        let totalBallsInOrder = 0;
+        for (let cartItem of payload.cart) {
+            let itemName = cartItem.name || cartItem.itemName;
+            
+            // Smart AI: Looks for "8 Pcs", "15 Pcs", "6 Pcs" in your item names!
+            let match = itemName.match(/(\d+)\s*Pcs/i);
+            if (match) {
+                let ballsInBox = parseInt(match[1]);
+                totalBallsInOrder += (ballsInBox * (cartItem.qty || 1));
+            }
+        }
+
+        // If they bought Takoyaki, send the count to the Global Vault!
+        if (totalBallsInOrder > 0) {
+            const statsRef = doc(db, "settings", "global_stats");
+            // setDoc with merge creates the file if it's the very first time!
+            await setDoc(statsRef, { 
+                totalTakoyakiBalls: increment(totalBallsInOrder) 
+            }, { merge: true });
+        }
+    }, 100); // 100ms delay lets the receipt screen pop up instantly!
+
+    return receiptId;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}; // <--- This bracket is safe and sound!
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
