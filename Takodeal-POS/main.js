@@ -1326,17 +1326,22 @@ window.submitRemittance = async function() {
         alert("❌ Please fill out the Amount, Channel, and Recipient correctly."); return;
     }
 
-    if (!activeShiftDetails || !activeShiftDetails.logId) {
-        alert("❌ You must have an Active Shift open to remit cash!"); return;
-    }
-
     let btn = document.querySelector("button[onclick='submitRemittance()']");
     if(btn) { btn.innerText = "⏳ Verifying Drawer..."; btn.disabled = true; }
 
     try {
+        // 🔥 FIX: FETCH THE SHIFT DIRECTLY FROM CLOUD SO IT NEVER FAILS ON REFRESH!
+        let liveShift = await window.getLiveShiftDetails(safeBranch);
+        
+        if (!liveShift || !liveShift.logId) {
+            alert("❌ You must have an Active Shift open to remit cash!\n\n(If you just opened a shift, ensure your internet is connected)."); 
+            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
+            return;
+        }
+
         // 🔒 1. EXACT MATH SECURITY CHECK (PHYSICAL CASH ONLY)
-        let transactions = await window.getSalesDashboardData(safeBranch, activeShiftDetails.startTime);
-        let currentCashInDrawer = activeShiftDetails.startingCash - activeShiftDetails.cashOut;
+        let transactions = await window.getSalesDashboardData(safeBranch, liveShift.startTime);
+        let currentCashInDrawer = liveShift.startingCash - liveShift.cashOut;
 
         if (transactions && transactions.length > 0) {
             transactions.forEach(tx => {
@@ -1385,7 +1390,7 @@ window.submitRemittance = async function() {
         await addDoc(collection(db, "remittances"), payload);
         
         // 4. 🔥 TRUE DRAWER DEDUCTION
-        const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
+        const shiftRef = doc(db, "shifts", liveShift.logId);
         const shiftSnap = await getDoc(shiftRef);
         if (shiftSnap.exists()) {
             let currentExp = shiftSnap.data().cashOut || 0;
@@ -1396,7 +1401,7 @@ window.submitRemittance = async function() {
         // 5. Audit Log (So the Manager can trace where the drawer cash went)
         await addDoc(collection(db, "expenses"), {
             branch: safeBranch,
-            shiftId: activeShiftDetails.logId,
+            shiftId: liveShift.logId,
             cashier: identity.cashierName,
             amount: remitAmount,
             description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`,
@@ -1536,22 +1541,22 @@ window.submitAttendance = async function(type) {
             
             let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
 
-            if (type === "TIME IN" && lastType === "TIME IN" && hoursSinceLastLog < 8) {
-                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
+            // 🛑 STRICT LOCK: If you are Timed In, you MUST Time Out next. No exceptions.
+            if (type === "TIME IN" && lastType === "TIME IN") {
+                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.\n\n(If you forgot to Time Out yesterday, please use the 'Manual Log' in the Manager App to fix your records.)`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
             if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
                 alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.1) {
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.05) {
                 alert(`❌ You just Timed In a few minutes ago!\n\nWait until your shift is over to Time Out.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
         }
     } catch(e) {
-        console.warn("Fast query failed (Missing Firebase Index). Using fallback lock method...");
-        // 🛡️ FALLBACK LOCK: If the fast query fails, we fetch their logs manually to guarantee they don't double punch!
+        console.warn("Fast query failed. Using fallback lock method...");
         const fallbackQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
         const fallbackSnap = await getDocs(fallbackQ);
         let latestLog = null;
@@ -1562,10 +1567,8 @@ window.submitAttendance = async function(type) {
         });
         
         if (latestLog) {
-            let lastTime = latestLog.timestamp.toDate();
-            let hoursSinceLastLog = (new Date() - lastTime) / (1000 * 60 * 60);
-            if (type === "TIME IN" && latestLog.type === "TIME IN" && hoursSinceLastLog < 8) {
-                alert(`❌ You are already Timed In!`);
+            if (type === "TIME IN" && latestLog.type === "TIME IN") {
+                alert(`❌ You are already Timed In! You must Time Out first.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
         }
