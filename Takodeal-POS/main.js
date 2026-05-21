@@ -943,12 +943,13 @@ window.submitComprehensiveCloseShift = async function () {
         // 🧹 THE AUTO-SWEEP ENGINE (Teleports Digital Funds to HQ!)
         // ========================================================
         for (let method in digitalBreakdown) {
+            if (method.toLowerCase() === "gcash") continue; 
             let amountToDeposit = digitalBreakdown[method];
             if (amountToDeposit > 0) {
                 // 🔥 THE FIX: We force the search to look ONLY in the "Main Office" branch!
                 const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
                 const accSnap = await getDocs(accQ);
-                
+         
                 if (!accSnap.empty) {
                     let accDoc = accSnap.docs[0];
                     let currentBal = accDoc.data().balance || 0;
@@ -1380,12 +1381,12 @@ window.submitRemittance = async function() {
         }
 
         // 🔒 2. SECURITY PIN AUTHORIZATION
-        let userPin = prompt(`SECURITY CHECK:\nRemitting ₱${remitAmount.toLocaleString()} to ${recipient}.\n\nPlease enter your 4-Digit PIN to authorize this transfer:`);
+        let userPin = document.getElementById('remitPinCode').value;
         if (!userPin) {
+            alert("❌ Please enter your 4-Digit PIN to authorize this transfer.");
             if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
             return;
         }
-
         let identity = await window.verifyPin(userPin);
         if (!identity) {
             alert("❌ Unauthorized. Incorrect PIN.");
