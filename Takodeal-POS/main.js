@@ -354,13 +354,14 @@ window.processCheckout = async function (payload) {
     }
 
     let d = new Date();
-    let dateStr = d.getFullYear().toString() + (d.getMonth() + 1).toString().padStart(2, '0') + d.getDate().toString().padStart(2, '0');
-    let shiftCode = payload.shiftId ? payload.shiftId.slice(-4).toUpperCase() : "0000";
+    let dateStr = d.getFullYear().toString() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 
-    const q = query(collection(db, "transactions"), where("shiftId", "==", payload.shiftId || ""));
-    const snap = await getDocs(q);
-    let orderNum = (snap.size + 1).toString().padStart(3, '0');
-    const receiptId = `${dateStr}-${shiftCode}-${orderNum}`;
+    // 🔥 FIX: Global Continuous Receipt Counter
+    const txSnap = await getDocs(collection(db, "transactions"));
+    let globalCount = txSnap.size + 1;
+    
+    // Format: 20260521-00001 (Removes shift text completely)
+    const receiptId = `${dateStr}-${globalCount.toString().padStart(5, '0')}`;
 
     addDoc(collection(db, "transactions"), {
       ...payload, receiptId: receiptId, timestamp: serverTimestamp()
