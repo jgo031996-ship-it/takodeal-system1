@@ -4496,9 +4496,10 @@ window.loadZReadingReports = async function () {
   tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading audit reports from cloud...</td></tr>';
 
   let dateFilter = document.getElementById('zReadingDateFilter') ? document.getElementById('zReadingDateFilter').value : "";
+  let branchFilter = document.getElementById('zReadingBranchFilter') ? document.getElementById('zReadingBranchFilter').value : "All";
 
   try {
-    const q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"));
+    let q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"));
     const snap = await getDocs(q);
 
     let html = '';
@@ -4513,7 +4514,11 @@ window.loadZReadingReports = async function () {
       if (!data.endTime || !data.startTime) return;
       
       let jsDate = data.startTime.toDate(); 
-      
+
+      if (branchFilter !== "All") {
+          q = query(collection(db, "shifts"), where("branch", "==", branchFilter), where("status", "==", "Closed"), orderBy("endTime", "desc"));
+      }
+        
       if (dateFilter) {
           let yyyy = jsDate.getFullYear();
           let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
