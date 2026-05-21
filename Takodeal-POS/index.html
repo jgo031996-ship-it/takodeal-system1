@@ -2050,6 +2050,8 @@
                   <div style="margin-bottom: 20px;">
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Bank/GCash Reference Number (Optional)</label>
                       <input type="text" id="remitRefNum" placeholder="Enter Ref. No." style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+                      <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px; margin-top: 15px;">Security PIN *</label>
+                      <input type="password" id="remitPinCode" placeholder="****" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; text-align: center; font-weight: bold; letter-spacing: 5px; font-size: 18px;">
                   </div>
   
                   <button onclick="submitRemittance()" style="width: 100%; background: #047857; color: white; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer;">
@@ -3628,6 +3630,18 @@ window.printParkedReceipt = function(docId) {
       };
 };
   </script>
-  <script type="module" src="main.js?v=2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        window.nativeAlert = window.alert;
+        window.alert = function(message) {
+            Swal.fire({
+                html: String(message).replace(/\n/g, '<br>'),
+                icon: String(message).includes('❌') || String(message).includes('⛔') || String(message).includes('WARNING') ? 'error' : (String(message).includes('✅') ? 'success' : 'info'),
+                confirmButtonColor: '#dc2626',
+                position: 'center'
+            });
+        };
+    </script>
+    <script type="module" src="main.js"></script>
 </body>
 </html>
