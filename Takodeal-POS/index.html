@@ -29,6 +29,14 @@
       --border: #E8E3DB;
     }
 
+
+    /* 🔥 FIX: Forces SweetAlert to the absolute front */
+    .swal2-container { z-index: 30000 !important; }
+        
+    /* 🔥 FIX: Hides bottom tabs when on-screen keyboard pops up */
+    @media screen and (max-height: 600px) {
+        #dynamicBottomTabs { display: none !important; }
+    }    
     /* 🔥 BEAUTIFUL SIZE BUTTONS */
     .size-btn {
         flex: 1;
