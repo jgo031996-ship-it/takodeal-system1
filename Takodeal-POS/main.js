@@ -271,36 +271,6 @@ window.loadPOSData = async function() {
             document.getElementById('splitMethod2').innerHTML = optHtml;
         }
     }
-    // ==========================================
-    // 🔥 DYNAMIC POS BOTTOM TABS (AUTO-GENERATED)
-    // ==========================================
-    setTimeout(() => {
-        let bottomNav = document.getElementById('dynamicBottomTabs');
-        if (!bottomNav) {
-            bottomNav = document.createElement('div');
-            bottomNav.id = 'dynamicBottomTabs';
-            // Styles it perfectly to fit between the sidebar and the cart!
-            bottomNav.style.cssText = "position: fixed; bottom: 0; left: 260px; width: calc(100% - 660px); background: #1e293b; display: flex; z-index: 50; overflow-x: auto; box-shadow: 0 -4px 10px rgba(0,0,0,0.1); border-top-left-radius: 12px; border-top-right-radius: 12px;";
-            document.body.appendChild(bottomNav);
-        }
-        
-        let tabsHtml = '';
-        masterPOSData.categories.forEach(cat => {
-            tabsHtml += `<button onclick="window.scrollToPosCategory('${cat}')" style="flex:1; min-width: 120px; padding:15px; font-weight:bold; color: white; border:none; border-right:1px solid #334155; background:transparent; cursor:pointer; text-transform: uppercase; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'">${cat}</button>`;
-        });
-        bottomNav.innerHTML = tabsHtml;
-    }, 1000);
-
-    window.scrollToPosCategory = function(catName) {
-        // Finds the category header on the screen and scrolls smoothly to it
-        let headers = document.querySelectorAll('h2, h3, .category-title, .category-header');
-        for (let h of headers) {
-            if (h.innerText.toUpperCase().includes(catName.toUpperCase())) {
-                h.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                break;
-            }
-        }
-    };
 };
 
 window.toggleSplitPaymentUI = function(event) {
