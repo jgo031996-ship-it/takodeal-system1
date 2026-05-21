@@ -962,9 +962,15 @@ window.loadSmartSupplyChain = async function() {
             let itemName = invItem.name;
             if (!itemName) return; 
             
+            // 🔥 NEW: Category Filter for Consumables & Packaging!
+            let catFilter = document.getElementById('burnRateCategory') ? document.getElementById('burnRateCategory').value : "All";
+            let itemCat = invItem.category || "Ingredients";
+            
+            if (catFilter === "Packaging" && itemCat !== "Packaging" && itemCat !== "Consumables") return;
+            if (catFilter === "Ingredients" && (itemCat === "Packaging" || itemCat === "Consumables")) return;
+            
             let currentStock = parseFloat(invItem.currentStock) || 0;
             let uom = invItem.uom || 'units';
-            // THIS is the variable that caused the crash. It is now only declared once!
             let totalBurn7Days = rawBurnData[itemName] || 0;
             
             itemsAnalyzed++;
@@ -990,7 +996,7 @@ window.loadSmartSupplyChain = async function() {
 
             html += `
                 <tr style="border-bottom: 1px dashed #e2e8f0;">
-                    <td style="font-weight: bold; color: #334155;">${itemName}</td>
+                    <td style="font-weight: bold; color: #334155;">${itemName} <br><span style="font-size:10px; color:#94a3b8;">(${itemCat})</span></td>
                     <td style="font-weight: bold; font-size: 15px;">${currentStock.toFixed(1)} <span style="font-size:11px; color:#64748b; font-weight:normal;">${uom}</span></td>
                     <td>${totalBurn7Days.toFixed(1)} ${uom}</td>
                     <td style="color: #ea580c; font-weight: bold;">${dailyBurn.toFixed(2)} ${uom}/day</td>
