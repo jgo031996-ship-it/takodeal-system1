@@ -6102,7 +6102,9 @@ window.finalizePayslip = async function() {
             btnFinalize.style.cursor = "not-allowed";
             btnFinalize.disabled = true;
         }
-        
+
+        window.downloadPayslipImage();
+      
         // Refresh the background screens so the table turns gray and says "View Paid Payslip"
         window.loadLedger(); 
         window.loadPayrollGenerator(); 
