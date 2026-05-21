@@ -1271,21 +1271,37 @@ window.logoutCashier = function() {
 // ==========================================
 // 💸 REMIT CASH TO HQ ENGINE
 // ==========================================
-window.openRemittanceModal = function() {
-  // 🛡️ 1. BULLETPROOF NAME GRABBER 
+window.openRemittanceModal = async function() {
     let safeCashierName = localStorage.getItem('cashierName');
     if (!safeCashierName && typeof window.sessionUser !== 'undefined' && window.sessionUser) {
         safeCashierName = window.sessionUser.cashierName;
     }
-    if (!safeCashierName) {
-        safeCashierName = "Unknown Staff"; 
-    }
+    if (!safeCashierName) safeCashierName = "Unknown Staff"; 
+    
     document.getElementById('remittanceModal').style.display = 'flex';
     document.getElementById('remitCashier').value = safeCashierName;
     
     let today = new Date().toISOString().split('T')[0];
-    document.getElementById('remitStartDate').value = today;
     document.getElementById('remitEndDate').value = today;
+    document.getElementById('remitStartDate').value = "Loading..."; // Visual cue
+
+    try {
+        let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        // 🔥 Fetch the exact date of the last successful remittance!
+        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(1));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            let lastDate = snap.docs[0].data().timestamp.toDate();
+            // We set the start date to the exact date they last sent money
+            document.getElementById('remitStartDate').value = lastDate.toISOString().split('T')[0];
+        } else {
+            document.getElementById('remitStartDate').value = today; // Fallback
+        }
+    } catch (e) {
+        console.error("Error fetching last remittance:", e);
+        document.getElementById('remitStartDate').value = today;
+    }
     
     window.switchRemittanceTab('form');
     window.loadHqAccountsForRemittance();
