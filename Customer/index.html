@@ -840,16 +840,11 @@
         window.toggleOrderTypeView = function() {
             let orderType = document.getElementById('orderType').value;
             
-            // Show Delivery Section
             if (orderType === 'Delivery') document.getElementById('deliverySection').classList.remove('hidden');
             else document.getElementById('deliverySection').classList.add('hidden');
 
-            // Show Preferred Time Picker for specific types
-            if (orderType.includes('Advance') || orderType === 'Takeout' || orderType === 'Delivery') {
-                document.getElementById('preferredTimeSection').classList.remove('hidden');
-            } else {
-                document.getElementById('preferredTimeSection').classList.add('hidden');
-            }
+            // 🔥 ALWAYS show Preferred Time!
+            document.getElementById('preferredTimeSection').classList.remove('hidden');
 
             window.togglePaymentView(); 
         }
