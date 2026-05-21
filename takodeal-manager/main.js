@@ -52,7 +52,9 @@ auth.onAuthStateChanged(async (user) => {
         email: user.email,
         branch: 'Main Office',
         cashierName: user.displayName || 'Manager',
-        isOwner: (user.email === MASTER_EMAIL)
+        isOwner: (user.email === MASTER_EMAIL),
+        // Grab their custom permissions, default to 'all' if owner
+        permissions: (user.email === MASTER_EMAIL) ? ['all'] : (snap.docs[0]?.data().permissions || ['all'])
       };
 
       let brDisp = document.getElementById('displayBranch');
@@ -99,7 +101,9 @@ window.loginWithGoogle = async function() {
         email: user.email,
         branch: 'Main Office',
         cashierName: user.displayName || 'Manager',
-        isOwner: (user.email === MASTER_EMAIL)
+        isOwner: (user.email === MASTER_EMAIL),
+        // Grab their custom permissions, default to 'all' if owner
+        permissions: (user.email === MASTER_EMAIL) ? ['all'] : (snap.docs[0]?.data().permissions || ['all'])
       };
 
       let brDisp = document.getElementById('displayBranch');
@@ -140,11 +144,19 @@ window.loadAdminDashboard = async function() {
 
     snap.forEach(docSnap => {
       let data = docSnap.data();
+      let perms = data.permissions ? data.permissions.join(', ') : 'all';
+      
       html += `
-        <tr>
-          <td><strong>${data.email}</strong></td>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td>
+            <strong>${data.email}</strong><br>
+            <span style="font-size: 11px; color: #64748b;">Access: [${perms}]</span>
+          </td>
           <td><span class="badge badge-closed">Appointed Manager</span></td>
-          <td><button class="btn-refresh" style="color:var(--danger); border-color:var(--danger); padding:4px 8px; font-size:11px;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke Access</button></td>
+          <td style="display: flex; gap: 5px;">
+            <button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:4px 8px; font-size:11px;" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}')">⚙️ Edit Permissions</button>
+            <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:4px 8px; font-size:11px;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button>
+          </td>
         </tr>
       `;
     });
@@ -8163,4 +8175,49 @@ window.publishPosAppDraft = async function() {
   }, { merge: true });
 
   setAppEditorStatus("POS app v2 config published. Current cashier tablets are still safe.");
+};
+
+// ==========================================
+// 🔐 ROLE-BASED ACCESS CONTROL ENGINE
+// ==========================================
+window.applyPermissions = function() {
+    if (!window.sessionUser) return;
+    
+    // If they are the Master Owner or have 'all' permissions, show everything!
+    if (window.sessionUser.isOwner || window.sessionUser.permissions.includes('all')) {
+        document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
+        return;
+    }
+    
+    // 1. Hide ALL tabs first
+    document.querySelectorAll('.nav-item').forEach(el => {
+        // Keep Dashboard visible as the default landing page
+        if (el.id !== 'nav-dashboard') el.style.display = 'none';
+    });
+    
+    // 2. Show only the tabs they were granted
+    window.sessionUser.permissions.forEach(tabName => {
+        let el = document.getElementById('nav-' + tabName);
+        if (el) el.style.display = 'block';
+    });
+
+    // 3. STRICT LOCK: Never let non-owners see the Admin Security tab
+    document.getElementById('nav-admin').style.display = 'none'; 
+};
+
+window.editManagerPermissions = async function(docId, email) {
+    let currentPerms = prompt(`Edit permissions for ${email}.\n\nType the EXACT names of the tabs they can see, separated by commas (no spaces).\n\nAvailable Options:\naccounts, transfers, payables, devices, payroll, inbox, ledger, schedule, products, purchases, dispatch, zreadings, history, expenses, branches, menu, receipt, inventory, alerts\n\nType 'all' to grant full access.`, "all");
+    
+    if (!currentPerms) return;
+    
+    // Clean up their typing
+    let permArray = currentPerms.split(',').map(t => t.trim().toLowerCase());
+    
+    try {
+        await updateDoc(doc(db, "hq_managers", docId), { permissions: permArray });
+        alert(`✅ Permissions updated for ${email}! They must refresh their app for changes to take effect.`);
+        window.loadAdminDashboard();
+    } catch (e) {
+        console.error(e); alert("Failed to update permissions.");
+    }
 };
