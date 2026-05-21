@@ -2423,6 +2423,9 @@ window.openLogExpenseModal = function() {
 
     document.getElementById('logExpAmount').value = '';
     document.getElementById('logExpNote').value = '';
+    let now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('logExpDate').value = now.toISOString().split('T')[0];
     document.getElementById('logExpenseModal').style.display = 'flex';
 };
 
@@ -2431,6 +2434,8 @@ window.submitLogExpense = async function() {
     let accId = document.getElementById('logExpAccSelect').value;
     let amt = parseFloat(document.getElementById('logExpAmount').value);
     let note = document.getElementById('logExpNote').value.trim();
+    let expDateVal = document.getElementById('logExpDate').value;
+    let finalDate = expDateVal ? new Date(expDateVal + 'T12:00:00') : new Date();
 
     if (!budId || !accId) { alert("Please select a budget and a cash account."); return; }
     if (isNaN(amt) || amt <= 0) { alert("Please enter a valid amount."); return; }
@@ -2459,7 +2464,7 @@ window.submitLogExpense = async function() {
             category: selBud.category,
             account: selAcc.name,
             note: note,
-            timestamp: new Date()
+            timestamp: finalDate // 🔥 SAVES THE EXACT DATE YOU CHOSE
         });
 
         alert(`🧾✅ Expense Logged! ₱${amt.toLocaleString()} deducted from ${selAcc.name}.`);
