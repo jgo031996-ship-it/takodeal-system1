@@ -1,11 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-// 🖼️ NEW: Storage Imports for Menu Pictures!
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
-console.log("HEARTBEAT 1: File started reading!");
-// Your secure database keys
 const firebaseConfig = {
   apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
   authDomain: "takodeal-pos.firebaseapp.com",
@@ -15,22 +12,42 @@ const firebaseConfig = {
   appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 export const db = getFirestore(app);
-const storage = getStorage(app); // Ignite the Storage Engine!
+const storage = getStorage(app);
 
-window.storage = storage; // Make it global so the upload function can use it
-console.log("🔥 Manager Control Center is LIVE!");
+window.storage = storage;
+window.db = db;
 
-// --- HELPER: FORMAT CURRENCY ---
-const formatMoney = (amount) => '₱' + parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-// --- THE SECURITY BOUNCER (UPGRADED) ---
-// This is your un-deletable Master Key. You will ALWAYS be able to log in.
+// Your secure Master Key
 const MASTER_EMAIL = "jgo031996@gmail.com";
+
+// --- ACCESS CONTROL ENGINE ---
+window.applyPermissions = function() {
+    if (!window.sessionUser) return;
+    
+    // If they are the Master Owner or have 'all' permissions, show everything!
+    if (window.sessionUser.isOwner || window.sessionUser.permissions.includes('all')) {
+        document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
+        return;
+    }
+    
+    // 1. Hide ALL tabs first
+    document.querySelectorAll('.nav-item').forEach(el => {
+        if (el.id !== 'nav-dashboard') el.style.display = 'none';
+    });
+    
+    // 2. Show only the tabs they were granted
+    window.sessionUser.permissions.forEach(tabName => {
+        let el = document.getElementById('nav-' + tabName);
+        if (el) el.style.display = 'block';
+    });
+
+    // 3. STRICT LOCK: Never let non-owners see the Admin Security tab
+    document.getElementById('nav-admin').style.display = 'none'; 
+};
 
 // --- PERSISTENT LOGIN LISTENER (THE MEMORY) ---
 auth.onAuthStateChanged(async (user) => {
@@ -40,12 +57,10 @@ auth.onAuthStateChanged(async (user) => {
     let userPerms = ['all'];
 
     try {
-        // 🔥 FIX: Check the MASTER_EMAIL FIRST! If it's you, instantly let you in.
         if (user.email === MASTER_EMAIL) {
             isAuthorized = true;
             userPerms = ['all'];
         } else {
-            // Check if this email is in the HQ Managers list
             const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
             const snap = await getDocs(q);
             
@@ -53,7 +68,6 @@ auth.onAuthStateChanged(async (user) => {
                 isAuthorized = true;
                 userPerms = snap.docs[0].data().permissions || ['all'];
             } else {
-                // 🛡️ FAILSAFE: If the database is completely empty, let the first person in.
                 const checkAny = await getDocs(query(collection(db, "hq_managers"), limit(1)));
                 if (checkAny.empty) {
                     await addDoc(collection(db, "hq_managers"), {
@@ -79,8 +93,7 @@ auth.onAuthStateChanged(async (user) => {
         permissions: userPerms
       };
       
-      // Unlock the tabs based on roles!
-      if (typeof window.applyPermissions === 'function') window.applyPermissions();
+      window.applyPermissions();
 
       let brDisp = document.getElementById('displayBranch');
       if (brDisp) brDisp.innerText = "📍 " + window.sessionUser.branch;
@@ -109,6 +122,7 @@ window.loginWithGoogle = async function() {
     alert("Login failed: " + error.message);
   }
 };
+
 // --- ACCESS CONTROL ENGINE ---
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
