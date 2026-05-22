@@ -24,7 +24,9 @@ window.db = db;
 // Your secure Master Key
 const MASTER_EMAIL = "jgo031996@gmail.com";
 
-// --- ACCESS CONTROL ENGINE ---
+// ==========================================
+// 🔐 ROLE-BASED ACCESS CONTROL ENGINE
+// ==========================================
 window.applyPermissions = function() {
     if (!window.sessionUser) return;
     
@@ -36,6 +38,7 @@ window.applyPermissions = function() {
     
     // 1. Hide ALL tabs first
     document.querySelectorAll('.nav-item').forEach(el => {
+        // Keep Dashboard visible as the default landing page
         if (el.id !== 'nav-dashboard') el.style.display = 'none';
     });
     
