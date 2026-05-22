@@ -3412,180 +3412,137 @@ window.loadStockLogs = async function() {
 // ==========================================
 // ✏️ UPGRADED INVENTORY EDIT ENGINE
 // ==========================================
+window.openEditInvModal = async function(docId) {
+    try {
+        const docSnap = await getDoc(doc(db, "inventory", docId));
+        if (!docSnap.exists()) { alert("Item not found!"); return; }
+        let d = docSnap.data();
+
+        // Bind data to the NEW HTML IDs
+        document.getElementById('editInvId').value = docId;
+        document.getElementById('editInvBranch').value = d.branch || "Main Office";
+        
+        let catSelect = document.getElementById('editInvCat');
+        let foundCat = Array.from(catSelect.options).find(opt => opt.value === d.category);
+        if (foundCat) { catSelect.value = d.category; } 
+        else if (d.category === "Prepared") { catSelect.value = "Prepared Batch"; } // Auto-fix old "Prepared" typo
+        else { catSelect.value = "Ingredients"; }
+
+        document.getElementById('editInvName').value = d.name || "";
+        document.getElementById('editInvPurchUom').value = d.purchUom || d.uom || "";
+        document.getElementById('editInvBaseUom').value = d.baseUom || "";
+        document.getElementById('editInvConversion').value = d.conversion || d.conversionRate || 1;
+        document.getElementById('editInvPurchCost').value = d.purchCost || d.cost || d.unitCost || 0;
+        document.getElementById('editInvLowStock').value = d.lowStockAlert || d.reorderLevel || 0;
+        document.getElementById('editInvOldQty').value = d.currentStock || 0;
+        
+        // Reset the manual adjustment fields
+        document.getElementById('editInvNewQty').value = ""; 
+        document.getElementById('editInvNote').value = ""; 
+        document.getElementById('editInvVariance').innerText = "0";
+
+        window.calcEditCost();
+        document.getElementById('editInvModal').style.display = 'flex';
+    } catch (e) {
+        console.error(e); alert("Error opening item.");
+    }
+};
+
 window.calcEditCost = function() {
-    let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
-    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
-    let baseUom = document.getElementById('editInvBaseUom').value || 'Unit';
-    let baseCost = purchCost / conversion;
+    let cost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
+    let conv = parseFloat(document.getElementById('editInvConversion').value) || 1;
+    let baseCost = cost / conv;
+    let baseUom = document.getElementById('editInvBaseUom').value || 'unit';
     let summaryEl = document.getElementById('editInvCostSummary');
-    if(summaryEl) summaryEl.innerHTML = `Calculated Base Cost: <strong style="color:#d97706;">₱${baseCost.toFixed(4)}</strong> per ${baseUom}`;
+    if (summaryEl) summaryEl.innerText = `Calculated Base Cost: ₱${baseCost.toFixed(4)} per ${baseUom}`;
 };
 
 window.calcEditVariance = function() {
     let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQInput = document.getElementById('editInvNewQty').value;
-    let varEl = document.getElementById('editInvVariance');
-
-    if (newQInput === '') {
-        varEl.innerText = '0';
-        varEl.style.color = '#64748b';
+    let newQ = document.getElementById('editInvNewQty').value;
+    let varianceEl = document.getElementById('editInvVariance');
+    
+    if (newQ === "") {
+        varianceEl.innerText = "0";
+        varianceEl.style.color = "#d97706";
         return;
     }
-
-    let newQ = parseFloat(newQInput) || 0;
-    let diff = newQ - oldQ;
     
-    varEl.innerText = diff > 0 ? '+' + diff : diff;
-    if (diff < 0) varEl.style.color = '#ef4444';
-    else if (diff > 0) varEl.style.color = '#10b981';
-    else varEl.style.color = '#64748b';
+    let diff = parseFloat(newQ) - oldQ;
+    varianceEl.innerText = (diff > 0 ? "+" : "") + diff;
+    varianceEl.style.color = diff < 0 ? "#ef4444" : "#16a34a";
 };
 
-window.openEditInv = async function(encodedData) {
-    let passedData = JSON.parse(decodeURIComponent(encodedData));
-    let id = passedData.id;
-
-    if (!id) {
-        alert("❌ Error: Cannot find item ID.");
-        return;
-    }
-
-    // Open the modal immediately so the user sees action
-    document.getElementById('editInvModal').style.display = 'flex';
-    
-    // Show a loading indicator in the name field while it fetches from the cloud
-    document.getElementById('editInvName').value = "⏳ Loading fresh data from Cloud...";
-
-    try {
-        // 🔥 DIRECT CLOUD FETCH: Grab the absolute newest data directly from Firebase!
-        const docRef = doc(db, "inventory", id);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-            let data = docSnap.data();
-
-            // Fill all the detailed info directly from the Cloud!
-            document.getElementById('editInvId').value = id;
-            document.getElementById('editInvBranch').value = data.branch || passedData.branch || 'Main Office';
-            document.getElementById('editInvName').value = data.name || '';
-            document.getElementById('editInvCat').value = data.category || 'Ingredients';
-            
-            document.getElementById('editInvPurchUom').value = data.purchUom || '';
-            document.getElementById('editInvBaseUom').value = data.uom || data.baseUom || '';
-            document.getElementById('editInvConversion').value = data.conversion || 1;
-            
-            // Calculate the Purchase Cost if it's missing
-            let purchCost = data.purchCost;
-            if (purchCost === undefined) {
-                purchCost = (data.costPerBaseUOM || data.cost || 0) * (data.conversion || 1);
-            }
-            document.getElementById('editInvPurchCost').value = purchCost.toFixed(2);
-            
-            document.getElementById('editInvLowStock').value = data.reorderLevel || 0;
-            document.getElementById('editInvOldQty').value = data.currentStock || 0;
-            // Safely check if the box exists before trying to tick it!
-            let cashierCheck = document.getElementById('editInvShowCashier');
-            if (cashierCheck) cashierCheck.checked = data.showToCashier !== false;
-            
-            // Reset Variance inputs
-            document.getElementById('editInvNewQty').value = '';
-            document.getElementById('editInvNote').value = '';
-            document.getElementById('editInvVariance').innerText = '0';
-            document.getElementById('editInvVariance').style.color = '#64748b';
-
-            // Trigger the cost math visually
-            window.calcEditCost();
-        } else {
-            alert("❌ Item not found in database.");
-            document.getElementById('editInvModal').style.display = 'none';
-        }
-    } catch (e) {
-        console.error("Error fetching item details:", e);
-        alert("❌ Failed to load item details from cloud. Check your connection.");
-        document.getElementById('editInvModal').style.display = 'none';
-    }
-};
-
-window.saveInventoryEdit = async function () {
-    let id = document.getElementById('editInvId').value;
-    if (!id) { alert("❌ Error: Missing Document ID."); return; }
-
-    let newName = document.getElementById('editInvName').value.trim();
-    if (!newName) { alert("❌ Item Name cannot be empty."); return; }
-    
-    // Grab all the new form values
-    let newCat = document.getElementById('editInvCat').value;
+window.saveInventoryEdit = async function() {
+    let docId = document.getElementById('editInvId').value;
     let branch = document.getElementById('editInvBranch').value;
+    let category = document.getElementById('editInvCat').value;
+    let name = document.getElementById('editInvName').value.trim();
     let purchUom = document.getElementById('editInvPurchUom').value.trim();
     let baseUom = document.getElementById('editInvBaseUom').value.trim();
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
-    let reorderLevel = parseFloat(document.getElementById('editInvLowStock').value) || 0;
+    let lowStock = parseFloat(document.getElementById('editInvLowStock').value) || 0;
     
-    // Calculate the mathematical Base Cost
-    let newBaseCost = purchCost / conversion;
-
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQtyInput = document.getElementById('editInvNewQty').value;
-    let newQty = newQtyInput === '' ? oldQty : parseFloat(newQtyInput);
+    let newQtyRaw = document.getElementById('editInvNewQty').value;
     let note = document.getElementById('editInvNote').value.trim();
-    
-    // 🔥 THE FAIL-SAFE FIX: Check if the box exists before reading it!
-    let checkboxEl = document.getElementById('editInvShowCashier');
-    let showCashier = checkboxEl ? checkboxEl.checked : true; 
-    
-    let variance = newQty - oldQty;
-    if (variance !== 0 && !note) {
-        alert("❌ VARIANCE DETECTED: You must provide an Adjustment Note/Reason.");
-        return;
+
+    if (!name) { alert("Item name is required!"); return; }
+
+    let finalQty = oldQty;
+    let isAdjusting = false;
+
+    if (newQtyRaw !== "") {
+        finalQty = parseFloat(newQtyRaw);
+        isAdjusting = true;
+        if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
 
     let btn = document.getElementById('btnSaveInvEdit');
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
-        // 🔥 Save EVERYTHING with the Brute-Force Base Cost update!
-        await updateDoc(doc(db, "inventory", id), { 
-            name: newName,
-            category: newCat,
+        await updateDoc(doc(db, "inventory", docId), {
             branch: branch,
+            category: category,
+            name: name,
             purchUom: purchUom,
-            uom: baseUom,         // legacy compatibility
-            baseUom: baseUom,     // modern variable
+            uom: purchUom, // Legacy support so nothing breaks
+            baseUom: baseUom,
             conversion: conversion,
+            conversionRate: conversion, // Legacy support
             purchCost: purchCost,
-            reorderLevel: reorderLevel,
-            costPerBaseUOM: newBaseCost,
-            cost: newBaseCost,
-            baseCost: newBaseCost,
-            currentStock: newQty,       // <--- THE MISSING COMMA IS HERE!
-            showToCashier: showCashier 
+            cost: purchCost, // Legacy support
+            lowStockAlert: lowStock,
+            reorderLevel: lowStock, // Legacy support
+            currentStock: finalQty
         });
-        
-        // Log Variance if physical stock was changed
-        if (variance !== 0) {
+
+        // Log the manual edit if they physically changed the quantity!
+        if (isAdjusting && finalQty !== oldQty) {
+            let variance = finalQty - oldQty;
+            let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
             await addDoc(collection(db, "stock_logs"), {
-                branch: branch, 
-                item: newName, 
-                uom: baseUom, 
-                oldQty: oldQty, 
-                newQty: newQty, 
-                variance: variance, 
-                type: "Manual Variance Adjustment",
+                branch: branch,
+                item: name,
+                oldQty: oldQty,
+                newQty: finalQty,
+                variance: variance,
+                type: "Manual Adjustment",
                 note: note,
-                user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-                timestamp: new Date()
+                user: safeCashierName,
+                timestamp: serverTimestamp()
             });
         }
-        
-        alert(`✅ Item completely updated successfully!`);
+
+        alert("✅ Item updated successfully!");
         document.getElementById('editInvModal').style.display = 'none';
         window.loadInventoryData();
-        
-    } catch (e) { 
-        console.error(e); alert("❌ Failed to save."); 
-    } finally { 
-        btn.innerText = "💾 Save All Changes"; btn.disabled = false; 
+    } catch (e) {
+        console.error(e); alert("Failed to save changes.");
+    } finally {
+        btn.innerText = "💾 Save All Changes"; btn.disabled = false;
     }
 };
 
