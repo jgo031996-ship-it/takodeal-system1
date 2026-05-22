@@ -3525,16 +3525,16 @@ window.saveInventoryEdit = async function() {
             category: category,
             name: name,
             purchUom: purchUom,
-            uom: purchUom, // Legacy support so nothing breaks
+            uom: purchUom, 
             baseUom: baseUom,
             conversion: conversion,
-            conversionRate: conversion, // Legacy support
+            conversionRate: conversion, 
             purchCost: purchCost,
-            cost: purchCost, // Legacy support
+            cost: purchCost, 
             lowStockAlert: lowStock,
-            reorderLevel: lowStock, // Legacy support
-            currentStock: finalQty
-            showInPrep: document.getElementById('editInvShowPrep').checked
+            reorderLevel: lowStock, 
+            currentStock: finalQty, // <--- THIS WAS THE MISSING COMMA!
+            showInPrep: document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true
         });
 
         // Log the manual edit if they physically changed the quantity!
