@@ -37,11 +37,12 @@ auth.onAuthStateChanged(async (user) => {
   const loginScreen = document.getElementById('loginOverlay');
   if (user) {
     let isAuthorized = false;
-    let userPerms = ['all']; // Default to all
+    let userPerms = ['all']; 
 
     if (user.email === MASTER_EMAIL) {
       isAuthorized = true;
     } else {
+      // 🔥 FIX: Actually fetch the 'snap' from Firebase so it doesn't crash!
       const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
       const snap = await getDocs(q);
       if (!snap.empty) {
@@ -59,7 +60,7 @@ auth.onAuthStateChanged(async (user) => {
         permissions: userPerms
       };
       
-      window.applyPermissions(); // 🔥 Lock down the tabs based on roles!
+      window.applyPermissions(); 
 
       let brDisp = document.getElementById('displayBranch');
       if (brDisp) brDisp.innerText = "📍 " + sessionUser.branch;
@@ -105,7 +106,7 @@ window.loginWithGoogle = async function() {
         permissions: userPerms
       };
       
-      window.applyPermissions(); // 🔥 Lock down the tabs!
+      window.applyPermissions(); 
 
       let brDisp = document.getElementById('displayBranch');
       if (brDisp) brDisp.innerText = "📍 " + sessionUser.branch;
