@@ -5618,15 +5618,14 @@ window.loadInbox = async function() {
         const snap = await getDocs(q);
 
         let pendingHtml = '';
-        let resolvedHtml = '';
         let pendingCount = 0;
+        let resolvedByStaff = {}; // 🔥 NEW: Grouping object for the Accordion!
 
         snap.forEach(docSnap => {
             let d = docSnap.data();
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Unknown';
             let safeName = d.staffName ? d.staffName.replace(/'/g, "\\'") : 'Unknown';
 
-            // 🧠 THE UPGRADE: Smart details extractor!
             let detailsStr = "";
             if (d.type === "Leave") {
                 detailsStr = `<strong style="color: #1e293b;">${d.leaveType || 'Leave'}</strong><br><span style="font-size:11px; font-weight:bold; color:var(--primary);">${d.startDate || '?'} to ${d.endDate || '?'}</span><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
@@ -5639,15 +5638,14 @@ window.loadInbox = async function() {
             } else {
                 detailsStr = d.amount ? `₱${d.amount.toLocaleString(undefined, {minimumFractionDigits:2})}` : (d.item || d.reason || 'N/A');
             }
-            // 🔥 NEW: Check if the staff attached a photo, and add a View button!
+
             let attachedImage = d.photoBase64 || d.proofImageUrl || d.imageUrl || d.image;
             if (attachedImage) {
-                detailsStr += `<br><button onclick="window.viewSelfie('${attachedImage}', 'Attached Photo from ${safeName}')" style="margin-top: 8px; background: #f0f9ff; border: 1px solid #bae6fd; color: #0284c7; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📷 View Attached Photo</button>`;
+                detailsStr += `<br><button onclick="window.viewSelfie('${attachedImage}', 'Attached Photo from ${safeName}')" style="margin-top: 8px; background: #f0f9ff; border: 1px solid #bae6fd; color: #0284c7; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📷 View Photo</button>`;
             }
 
             if (d.status === "Pending") {
                 pendingCount++;
-                // 🔥 PERFECTLY ALIGNED COLUMNS FOR PENDING
                 pendingHtml += `
                     <tr style="border-bottom: 1px solid #f1f5f9;">
                         <td style="padding: 12px; color: #64748b;">${dateStr}</td>
@@ -5665,26 +5663,53 @@ window.loadInbox = async function() {
                     </tr>
                 `;
             } else {
-                let statusColor = d.status === "Approved" ? "#16a34a" : "#dc2626";
-                let statusBg = d.status === "Approved" ? "#dcfce7" : "#fef2f2";
-                
-                // 🔥 PERFECTLY ALIGNED COLUMNS FOR HISTORY
-                resolvedHtml += `
-                    <tr style="border-bottom: 1px solid #f1f5f9;">
-                        <td style="padding: 12px; color: #64748b;">${dateStr}</td>
-                        <td style="padding: 12px;"><strong>${safeName}</strong><br><span style="font-size:11px; color:#64748b;">${d.branch || 'Unknown'}</span></td>
-                        <td style="padding: 12px;"><span style="font-weight: bold; color: var(--primary);">${d.type}</span></td>
-                        <td style="padding: 12px; max-width: 250px; white-space: normal;">${detailsStr}</td>
-                        <td style="padding: 12px;"><span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.status}</span></td>
-                    </tr>
-                `;
+                // 🔥 NEW: Store resolved items into the group memory
+                if (!resolvedByStaff[safeName]) resolvedByStaff[safeName] = [];
+                d.dateStr = dateStr;
+                d.detailsStr = detailsStr;
+                resolvedByStaff[safeName].push(d);
             }
         });
+
+        // 🔥 NEW: Build the Accordion UI for Resolved Items!
+        let resolvedHtml = '';
+        for (let staff in resolvedByStaff) {
+            let reqs = resolvedByStaff[staff];
+            let safeStaffId = staff.replace(/[^a-zA-Z0-9]/g, ''); // Removes spaces for HTML IDs
+            
+            resolvedHtml += `
+                <tr style="background: white; cursor: pointer; border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" 
+                    onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'"
+                    onclick="window.toggleResolvedStaff('${safeStaffId}')">
+                    <td colspan="4" style="font-weight: 900; color: #334155; font-size: 15px; padding: 18px;">
+                        <span id="icon_res_${safeStaffId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 👤 ${staff}
+                    </td>
+                    <td style="text-align: right; padding: 18px;">
+                        <span style="font-size: 12px; color: white; background: var(--primary); padding: 6px 12px; border-radius: 20px; font-weight: bold; display: inline-flex; align-items: center; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);">
+                            🔍 View ${reqs.length} Records
+                        </span>
+                    </td>
+                </tr>
+            `;
+            
+            reqs.forEach(d => {
+                let statusColor = d.status === "Approved" ? "#16a34a" : "#dc2626";
+                let statusBg = d.status === "Approved" ? "#dcfce7" : "#fef2f2";
+                resolvedHtml += `
+                    <tr class="res-row-${safeStaffId}" style="display: none; background: #f8fafc; border-bottom: 1px dashed #cbd5e1;">
+                        <td style="padding: 12px; padding-left: 45px; color: #64748b;">${d.dateStr}</td>
+                        <td style="padding: 12px;"><span style="font-size:11px; color:#64748b; font-weight:bold;">📍 ${d.branch || 'Unknown'}</span></td>
+                        <td style="padding: 12px;"><span style="font-weight: bold; color: var(--primary);">${d.type}</span></td>
+                        <td style="padding: 12px; max-width: 250px; white-space: normal;">${d.detailsStr}</td>
+                        <td style="padding: 12px; text-align:right;"><span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.status}</span></td>
+                    </tr>
+                `;
+            });
+        }
 
         pendingBody.innerHTML = pendingHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #16a34a; font-weight: bold;">No pending requests! 🎉</td></tr>';
         if (resolvedBody) resolvedBody.innerHTML = resolvedHtml || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No resolved history yet.</td></tr>';
 
-        // Update the Notification Badge on the Sidebar!
         let badge = document.getElementById('inboxBadge');
         if (badge) {
             badge.innerText = pendingCount;
@@ -5694,6 +5719,23 @@ window.loadInbox = async function() {
     } catch(e) {
         console.error("Inbox Error:", e);
         pendingBody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:red; padding: 20px;">Error loading inbox. Check console.</td></tr>';
+    }
+};
+
+// 🔥 NEW: Toggle Function for the Resolved Accordion
+window.toggleResolvedStaff = function(staffId) {
+    let rows = document.querySelectorAll('.res-row-' + staffId);
+    let icon = document.getElementById('icon_res_' + staffId);
+    if(rows.length === 0) return;
+    
+    let isHidden = rows[0].style.display === 'none';
+    rows.forEach(row => {
+        row.style.display = isHidden ? 'table-row' : 'none';
+    });
+    
+    if (icon) {
+        icon.innerText = isHidden ? '▲' : '▼';
+        icon.style.color = isHidden ? '#0f766e' : '#94a3b8';
     }
 };
 
@@ -6108,12 +6150,16 @@ window.finalizePayslip = async function() {
             btnFinalize.style.cursor = "not-allowed";
             btnFinalize.disabled = true;
         }
+        
+        // 🔥 FIX 1: Auto-close the modal!
+        document.getElementById('payslipModal').style.display = 'none';
 
+        // 🔥 FIX 2: Trigger the image download automatically!
         window.downloadPayslipImage();
-      
-        // Refresh the background screens so the table turns gray and says "View Paid Payslip"
+        
+        // 🔥 FIX 3: Run the NEW generator so the buttons don't freeze!
         window.loadLedger(); 
-        window.loadPayrollGenerator(); 
+        window.generateAutoPayslips(); // <-- This was the culprit!
         window.loadAccountsAndBudget();
     } catch (e) {
         console.error(e); alert("❌ Failed to finalize payslip.");
