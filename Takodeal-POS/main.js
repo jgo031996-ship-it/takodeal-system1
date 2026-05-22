@@ -1368,17 +1368,17 @@ window.submitRemittance = async function() {
     if(btn) { btn.innerText = "⏳ Verifying Drawer..."; btn.disabled = true; }
 
     try {
-        // 🔥 DIRECT CLOUD FETCH TO AVOID MATH CRASHES
+        // 🔥 FIX: Renamed 'shiftSnap' to 'activeShiftSnap' to prevent the duplicate declaration crash!
         const shiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
-        const shiftSnap = await getDocs(shiftQ);
+        const activeShiftSnap = await getDocs(shiftQ);
         
-        if (shiftSnap.empty) {
+        if (activeShiftSnap.empty) {
             alert("❌ You must have an Active Shift open to remit cash!\n\n(If you just opened a shift, ensure your internet is connected)."); 
             if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
             return;
         }
 
-        let shiftDoc = shiftSnap.docs[0];
+        let shiftDoc = activeShiftSnap.docs[0];
         let liveShift = shiftDoc.data();
         let shiftId = shiftDoc.id;
         
@@ -1404,7 +1404,6 @@ window.submitRemittance = async function() {
             });
         }
 
-        // Block them if they try to send MORE cash than they should have!
         if (remitAmount > currentCashInDrawer) {
             alert(`⛔ REMITTANCE BLOCKED (SHORTAGE DETECTED)\n\nSystem Expected Cash: ₱${currentCashInDrawer.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what is supposed to be in your drawer!`);
             if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
