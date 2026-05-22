@@ -3642,11 +3642,15 @@ window.printParkedReceipt = function(docId) {
     <script>
         window.nativeAlert = window.alert;
         window.alert = function(message) {
+            let isError = String(message).includes('❌') || String(message).includes('⛔') || String(message).includes('WARNING') || String(message).includes('🚨');
             Swal.fire({
-                html: String(message).replace(/\n/g, '<br>'),
-                icon: String(message).includes('❌') || String(message).includes('⛔') || String(message).includes('WARNING') ? 'error' : (String(message).includes('✅') ? 'success' : 'info'),
-                confirmButtonColor: '#dc2626',
-                position: 'center'
+                html: `<div style="font-size: 15px; font-weight: 600; color: #334155; line-height: 1.5;">${String(message).replace(/\n/g, '<br>')}</div>`,
+                icon: isError ? 'error' : (String(message).includes('✅') ? 'success' : 'info'),
+                confirmButtonColor: isError ? '#ef4444' : '#10b981',
+                confirmButtonText: 'Understood',
+                background: '#ffffff',
+                backdrop: `rgba(0,0,0,0.5)`,
+                customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
             });
         };
     </script>
