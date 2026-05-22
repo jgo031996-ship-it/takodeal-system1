@@ -24,29 +24,12 @@ window.db = db;
 // Your secure Master Key
 const MASTER_EMAIL = "jgo031996@gmail.com";
 
+// --- HELPER: FORMAT CURRENCY (THIS WAS MISSING!) ---
+window.formatMoney = (amount) => '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatMoney = window.formatMoney;
+
 window.applyPermissions = function() {
     if (!window.sessionUser) return;
-    
-    // If they are the Master Owner or have 'all' permissions, show everything!
-    if (window.sessionUser.isOwner || window.sessionUser.permissions.includes('all')) {
-        document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
-        return;
-    }
-    
-    // 1. Hide ALL tabs first
-    document.querySelectorAll('.nav-item').forEach(el => {
-        if (el.id !== 'nav-dashboard') el.style.display = 'none';
-    });
-    
-    // 2. Show only the tabs they were granted
-    window.sessionUser.permissions.forEach(tabName => {
-        let el = document.getElementById('nav-' + tabName);
-        if (el) el.style.display = 'block';
-    });
-
-    // 3. STRICT LOCK: Never let non-owners see the Admin Security tab
-    document.getElementById('nav-admin').style.display = 'none'; 
-};
 
 // --- PERSISTENT LOGIN LISTENER ---
 auth.onAuthStateChanged(async (user) => {
