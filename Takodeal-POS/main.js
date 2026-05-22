@@ -1880,6 +1880,8 @@ window.loadKitchenPrep = async function() {
         } else {
             snap.forEach(docSnap => {
                 let d = docSnap.data();
+                if (d.showInPrep === false) return;
+             
                 html += `
                     <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; background: #ffffff; text-align: center;">
                         <h3 style="margin: 0 0 10px 0; color: #0f172a; font-size: 16px;">${d.name}</h3>
