@@ -1,67 +1,39 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-// 🖼️ NEW: Storage Imports for Menu Pictures!
+import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
-console.log("HEARTBEAT 1: File started reading!");
-// Your secure database keys
-const firebaseConfig = {
-  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
-  authDomain: "takodeal-pos.firebaseapp.com",
-  projectId: "takodeal-pos",
-  storageBucket: "takodeal-pos.firebasestorage.app",
-  messagingSenderId: "248826111383",
-  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
-};
-
-// Initialize Firebase
+const firebaseConfig = { /* KEEP YOUR EXISTING CONFIG HERE */ };
 const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
-export const db = getFirestore(app);
-const storage = getStorage(app); // Ignite the Storage Engine!
+window.db = db;
 
-window.storage = storage; // Make it global so the upload function can use it
-console.log("🔥 Manager Control Center is LIVE!");
+// 🔥 CRITICAL: Define the owner email here to stop the login crash
+const MASTER_EMAIL = "your-email@gmail.com"; // <--- CHANGE THIS TO YOUR ACTUAL EMAIL
 
-// --- HELPER: FORMAT CURRENCY ---
-const formatMoney = (amount) => '₱' + parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// --- ACCESS CONTROL ENGINE ---
+window.applyPermissions = function() {
+    if (!window.sessionUser) return;
+    document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
+    if (!window.sessionUser.isOwner) {
+        document.getElementById('nav-admin').style.display = 'none';
+    }
+};
 
-// --- THE SECURITY BOUNCER (UPGRADED) ---
-// This is your un-deletable Master Key. You will ALWAYS be able to log in.
-const MASTER_EMAIL = "jgo031996@gmail.com";
-
-// --- PERSISTENT LOGIN LISTENER (THE MEMORY) ---
 auth.onAuthStateChanged(async (user) => {
   const loginScreen = document.getElementById('loginOverlay');
   if (user) {
     let isAuthorized = false;
     let userPerms = ['all'];
 
-    try {
-        // Check if this email is in the HQ Managers list
-        const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
-        const snap = await getDocs(q);
-        
-        if (!snap.empty) {
-            isAuthorized = true;
-            userPerms = snap.docs[0].data().permissions || ['all'];
-        } else {
-            // 🛡️ FAILSAFE: If the hq_managers database is completely empty, make the first person who logs in the Owner!
-            const checkAny = await getDocs(query(collection(db, "hq_managers"), limit(1)));
-            if (checkAny.empty) {
-                await addDoc(collection(db, "hq_managers"), {
-                    email: user.email, 
-                    role: 'Owner', 
-                    permissions: ['all']
-                });
-                isAuthorized = true;
-                userPerms = ['all'];
-            }
-        }
-    } catch (error) {
-        console.error("Auth Database Error:", error);
+    const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
+    const snap = await getDocs(q);
+    
+    if (!snap.empty || user.email === MASTER_EMAIL) {
+        isAuthorized = true;
+        userPerms = !snap.empty ? (snap.docs[0].data().permissions || ['all']) : ['all'];
     }
 
     if (isAuthorized) {
@@ -69,24 +41,15 @@ auth.onAuthStateChanged(async (user) => {
         email: user.email,
         branch: 'Main Office',
         cashierName: user.displayName || 'Manager',
-        isOwner: userPerms.includes('all'), 
+        isOwner: (user.email === MASTER_EMAIL),
         permissions: userPerms
       };
       
-      // Unlock the tabs based on roles!
-      if (typeof window.applyPermissions === 'function') window.applyPermissions();
-
-      let brDisp = document.getElementById('displayBranch');
-      if (brDisp) brDisp.innerText = "📍 " + window.sessionUser.branch;
-      let caDisp = document.getElementById('displayCashier');
-      if (caDisp) caDisp.innerText = "👤 " + window.sessionUser.cashierName;
-
+      window.applyPermissions();
       if (loginScreen) loginScreen.style.display = 'none';
       if (typeof window.switchView === 'function') window.switchView('dashboard');
-      if (typeof loadGlobalDashboard === 'function') loadGlobalDashboard();
-      
     } else {
-      alert(`Access Denied.\n\n${user.email} is not authorized in the HQ Access Control list.`);
+      await signOut(auth);
       if (loginScreen) loginScreen.style.display = 'flex';
     }
   } else {
@@ -95,13 +58,7 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 window.loginWithGoogle = async function() {
-  try {
-    // We only need to trigger the popup. The onAuthStateChanged function above will automatically catch the success and log you in!
-    await signInWithPopup(auth, provider);
-  } catch (error) {
-    console.error(error);
-    alert("Login failed: " + error.message);
-  }
+  await signInWithPopup(auth, provider);
 };
 
 // --- ACCESS CONTROL ENGINE ---
