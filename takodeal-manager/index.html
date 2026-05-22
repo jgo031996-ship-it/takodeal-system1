@@ -1028,16 +1028,17 @@
         style="background: white; padding: 15px 20px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
 
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-          <span
-            style="font-size: 13px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">Branch:</span>
-          <select id="invBranchFilter"
-            style="height: 42px; padding: 0 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: #334155; background: #f8fafc; cursor: pointer; min-width: 180px; outline: none;"
-            onchange="refreshInventoryView()">
-            <option value="All">🌐 All Branches</option>
-            <option value="Main Office">🏢 Main Office</option>
-            <option value="Cabantian">📍 Cabantian</option>
-            <option value="Citygate">📍 Citygate</option>
-            <option value="Maa">📍 Maa</option>
+          <span style="font-size: 13px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; margin-left: 5px;">Category:</span>
+          <select id="invCategoryFilter" 
+            style="height: 42px; padding: 0 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: #334155; background: #f8fafc; cursor: pointer; min-width: 160px; outline: none;" 
+            onchange="window.loadInventoryData()">
+            <option value="All">All Categories</option>
+            <option value="Ingredients">Ingredients</option>
+            <option value="Packaging">Packaging</option>
+            <option value="Beverage">Beverage</option>
+            <option value="Prepared Batch">Prepared Batch</option>
+            <option value="Consumables">Consumables</option>
+            <option value="Cleaning Supplies">Cleaning Supplies</option>
           </select>
           <div style="position: relative; flex: 1; min-width: 250px; margin-left: 10px;">
             <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
