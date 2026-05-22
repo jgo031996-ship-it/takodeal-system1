@@ -1,27 +1,38 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+// 🖼️ NEW: Storage Imports for Menu Pictures!
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
-const firebaseConfig = { /* KEEP YOUR EXISTING CONFIG HERE */ };
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
-window.db = db;
-
-// 🔥 CRITICAL: Define the owner email here to stop the login crash
-const MASTER_EMAIL = "your-email@gmail.com"; // <--- CHANGE THIS TO YOUR ACTUAL EMAIL
-
-// --- ACCESS CONTROL ENGINE ---
-window.applyPermissions = function() {
-    if (!window.sessionUser) return;
-    document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
-    if (!window.sessionUser.isOwner) {
-        document.getElementById('nav-admin').style.display = 'none';
-    }
+console.log("HEARTBEAT 1: File started reading!");
+// Your secure database keys
+const firebaseConfig = {
+  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
+  authDomain: "takodeal-pos.firebaseapp.com",
+  projectId: "takodeal-pos",
+  storageBucket: "takodeal-pos.firebasestorage.app",
+  messagingSenderId: "248826111383",
+  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
 };
 
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+export const db = getFirestore(app);
+const storage = getStorage(app); // Ignite the Storage Engine!
+
+window.storage = storage; // Make it global so the upload function can use it
+console.log("🔥 Manager Control Center is LIVE!");
+
+// --- HELPER: FORMAT CURRENCY ---
+const formatMoney = (amount) => '₱' + parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// --- THE SECURITY BOUNCER (UPGRADED) ---
+// This is your un-deletable Master Key. You will ALWAYS be able to log in.
+const MASTER_EMAIL = "jgo031996@gmail.com";
+
+// --- PERSISTENT LOGIN LISTENER (THE MEMORY) ---
 auth.onAuthStateChanged(async (user) => {
   const loginScreen = document.getElementById('loginOverlay');
   if (user) {
@@ -98,7 +109,6 @@ window.loginWithGoogle = async function() {
     alert("Login failed: " + error.message);
   }
 };
-
 // --- ACCESS CONTROL ENGINE ---
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
