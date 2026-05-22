@@ -2883,56 +2883,55 @@ window.updateInvSummary = function () {
 };
 
 window.saveAdvancedInventoryItem = async function () {
-  let branch = document.getElementById('newInvBranch').value;
-  let category = document.getElementById('newInvCat').value;
-  let name = document.getElementById('newInvName').value.trim();
-  let purchUom = document.getElementById('newInvPurchUom').value.trim();
-  let baseUom = document.getElementById('newInvBaseUom').value.trim();
+    let branch = document.getElementById('newInvBranch').value;
+    let category = document.getElementById('newInvCat').value;
+    let name = document.getElementById('newInvName').value.trim();
+    let purchUom = document.getElementById('newInvPurchUom').value.trim();
+    let baseUom = document.getElementById('newInvBaseUom').value.trim();
 
-  let conv = parseFloat(document.getElementById('newInvConv').value);
-  let cost = parseFloat(document.getElementById('newInvCost').value);
-  let initQty = parseFloat(document.getElementById('newInvInitQty').value);
-  let reorder = parseFloat(document.getElementById('newInvReorder').value) || 5000;
+    let conv = parseFloat(document.getElementById('newInvConv').value);
+    let cost = parseFloat(document.getElementById('newInvCost').value);
+    let initQty = parseFloat(document.getElementById('newInvInitQty').value);
+    let reorder = parseFloat(document.getElementById('newInvReorder').value) || 5000;
 
-  if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
-    alert("❌ Error: Please fill out all required fields with valid numbers."); return;
-  }
+    if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
+        alert("❌ Error: Please fill out all required fields with valid numbers."); return;
+    }
 
-  let btn = document.getElementById('btnSaveInv');
-  btn.innerText = "⏳ Saving..."; btn.disabled = true;
+    let btn = document.getElementById('btnSaveInv');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
-  try {
-        // Math Time!
+    try {
         let totalBaseStock = conv * initQty;
         let baseCost = cost / conv; 
         
-        // 🔥 THE FAIL-SAFE FIX: Check if the box exists before reading it!
-        let checkboxEl = document.getElementById('newInvShowCashier');
-        let showCashier = checkboxEl ? checkboxEl.checked : true; 
+        let showCashier = document.getElementById('newInvShowCashier') ? document.getElementById('newInvShowCashier').checked : true;
+        // 🔥 FIX: Use the correct ID for NEW items ('newInvShowPrep') and add the missing comma
+        let showPrep = document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true;
 
         await addDoc(collection(db, "inventory"), {
-          branch: branch,
-          name: name,
-          category: category,
-          purchaseUom: purchUom,
-          uom: baseUom, 
-          conversionRate: conv,
-          purchaseCost: cost,
-          baseCost: baseCost, 
-          currentStock: totalBaseStock, 
-          reorderLevel: reorder,
-          showToCashier: showCashier
-          showInPrep: document.getElementById('editInvShowPrep').checked
+            branch: branch,
+            category: category,
+            name: name,
+            purchaseUom: purchUom,
+            uom: baseUom, 
+            conversionRate: conv,
+            purchaseCost: cost,
+            baseCost: baseCost, 
+            currentStock: totalBaseStock, 
+            reorderLevel: reorder,
+            showToCashier: showCashier,
+            showInPrep: showPrep // 🔥 Comma added here!
         });
     
-    alert(`✅ Success! Added ${name} to ${branch}.`);
-    document.getElementById('addInvModal').style.display = 'none';
-    window.loadInventoryData();
-  } catch (error) {
-    console.error(error); alert("❌ Failed to add item.");
-  } finally {
-    btn.innerText = "💾 Save Item to Cloud"; btn.disabled = false;
-  }
+        alert(`✅ Success! Added ${name} to ${branch}.`);
+        document.getElementById('addInvModal').style.display = 'none';
+        window.loadInventoryData();
+    } catch (error) {
+        console.error(error); alert("❌ Failed to add item.");
+    } finally {
+        btn.innerText = "💾 Save Item to Cloud"; btn.disabled = false;
+    }
 };
 
 // ========================================================
