@@ -31,31 +31,35 @@ const formatMoney = (amount) => '₱' + parseFloat(amount).toLocaleString('en-PH
 // --- THE SECURITY BOUNCER (UPGRADED) ---
 // This is your un-deletable Master Key. You will ALWAYS be able to log in.
 const MASTER_EMAIL = "jgo031996@gmail.com";
+
 // --- PERSISTENT LOGIN LISTENER (THE MEMORY) ---
 auth.onAuthStateChanged(async (user) => {
   const loginScreen = document.getElementById('loginOverlay');
-
   if (user) {
-    // Google remembers them! But we must double-check the VIP list just in case you fired them yesterday.
     let isAuthorized = false;
+    let userPerms = ['all']; // Default to all
+
     if (user.email === MASTER_EMAIL) {
       isAuthorized = true;
     } else {
       const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
       const snap = await getDocs(q);
-      if (!snap.empty) isAuthorized = true;
+      if (!snap.empty) {
+        isAuthorized = true;
+        userPerms = snap.docs[0].data().permissions || ['all'];
+      }
     }
 
     if (isAuthorized) {
-      // Still authorized! Let them straight in.
       window.sessionUser = {
         email: user.email,
         branch: 'Main Office',
         cashierName: user.displayName || 'Manager',
         isOwner: (user.email === MASTER_EMAIL),
-        // Grab their custom permissions, default to 'all' if owner
-        permissions: (user.email === MASTER_EMAIL) ? ['all'] : (snap.docs[0]?.data().permissions || ['all'])
+        permissions: userPerms
       };
+      
+      window.applyPermissions(); // 🔥 Lock down the tabs based on roles!
 
       let brDisp = document.getElementById('displayBranch');
       if (brDisp) brDisp.innerText = "📍 " + sessionUser.branch;
@@ -66,12 +70,10 @@ auth.onAuthStateChanged(async (user) => {
       window.switchView('dashboard');
       loadGlobalDashboard();
     } else {
-      // They are logged into Google, but their HQ access was revoked! Kick them out.
       await signOut(auth);
       if (loginScreen) loginScreen.style.display = 'flex';
     }
   } else {
-    // Nobody is logged in. Ensure the bouncer screen is visible.
     if (loginScreen) loginScreen.style.display = 'flex';
   }
 });
@@ -80,31 +82,30 @@ window.loginWithGoogle = async function() {
   try {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
-
     let isAuthorized = false;
+    let userPerms = ['all'];
 
-    // 1. Check if it's the Master Owner
     if (user.email === MASTER_EMAIL) {
       isAuthorized = true;
     } else {
-      // 2. If not the owner, check the Firebase VIP List
       const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
       const snap = await getDocs(q);
       if (!snap.empty) {
         isAuthorized = true;
+        userPerms = snap.docs[0].data().permissions || ['all'];
       }
     }
 
     if (isAuthorized) {
-      // SUCCESS! Open the gates.
       window.sessionUser = {
         email: user.email,
         branch: 'Main Office',
         cashierName: user.displayName || 'Manager',
         isOwner: (user.email === MASTER_EMAIL),
-        // Grab their custom permissions, default to 'all' if owner
-        permissions: (user.email === MASTER_EMAIL) ? ['all'] : (snap.docs[0]?.data().permissions || ['all'])
+        permissions: userPerms
       };
+      
+      window.applyPermissions(); // 🔥 Lock down the tabs!
 
       let brDisp = document.getElementById('displayBranch');
       if (brDisp) brDisp.innerText = "📍 " + sessionUser.branch;
@@ -116,7 +117,6 @@ window.loginWithGoogle = async function() {
       loadGlobalDashboard();
 
     } else {
-      // INTRUDER!
       await signOut(auth);
       alert(`Access Denied.\n\n${user.email} is not on the VIP list.`);
     }
