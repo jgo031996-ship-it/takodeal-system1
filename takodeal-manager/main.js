@@ -654,7 +654,6 @@ window.switchView = function (viewId) {
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'ledger') title = "Staff Loans & Ledger";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
-  if (viewId === 'appeditor') title = "App Editor Control Room";
   if (viewId === 'receipt') title = "Thermal Printer Setup";
   if (viewId === 'schedule') {
         title = "Schedule & Shift Manager";
@@ -675,7 +674,6 @@ window.switchView = function (viewId) {
   if (viewId === 'dispatch') window.loadDispatchDashboard();
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
-  if (viewId === 'appeditor') window.loadAppEditorDrafts();
   if (viewId === 'ledger') window.loadLedger();
   if (viewId === 'admin') window.loadAdminDashboard();
 };
