@@ -3435,6 +3435,7 @@ window.openEditInvModal = async function(docId) {
         document.getElementById('editInvPurchCost').value = d.purchCost || d.cost || d.unitCost || 0;
         document.getElementById('editInvLowStock').value = d.lowStockAlert || d.reorderLevel || 0;
         document.getElementById('editInvOldQty').value = d.currentStock || 0;
+        document.getElementById('editInvShowPrep').checked = d.showInPrep !== false;
         
         // Reset the manual adjustment fields
         document.getElementById('editInvNewQty').value = ""; 
@@ -3517,6 +3518,7 @@ window.saveInventoryEdit = async function() {
             lowStockAlert: lowStock,
             reorderLevel: lowStock, // Legacy support
             currentStock: finalQty
+            showInPrep: document.getElementById('editInvShowPrep').checked
         });
 
         // Log the manual edit if they physically changed the quantity!
