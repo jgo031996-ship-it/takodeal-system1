@@ -1368,24 +1368,38 @@ window.submitRemittance = async function() {
     if(btn) { btn.innerText = "⏳ Verifying Drawer..."; btn.disabled = true; }
 
     try {
-        // 🔥 FIX: FETCH THE SHIFT DIRECTLY FROM CLOUD SO IT NEVER FAILS ON REFRESH!
-        let liveShift = await window.getLiveShiftDetails(safeBranch);
+        // 🔥 DIRECT CLOUD FETCH TO AVOID MATH CRASHES
+        const shiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
+        const shiftSnap = await getDocs(shiftQ);
         
-        if (!liveShift || !liveShift.logId) {
+        if (shiftSnap.empty) {
             alert("❌ You must have an Active Shift open to remit cash!\n\n(If you just opened a shift, ensure your internet is connected)."); 
             if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
             return;
         }
 
-        // 🔒 1. EXACT MATH SECURITY CHECK (PHYSICAL CASH ONLY)
-        let transactions = await window.getSalesDashboardData(safeBranch, liveShift.startTime);
-        let currentCashInDrawer = liveShift.startingCash - liveShift.cashOut;
+        let shiftDoc = shiftSnap.docs[0];
+        let liveShift = shiftDoc.data();
+        let shiftId = shiftDoc.id;
+        
+        let validStartTime = liveShift.startTime && liveShift.startTime.toDate ? liveShift.startTime.toDate() : new Date(liveShift.startTime);
 
-        if (transactions && transactions.length > 0) {
-            transactions.forEach(tx => {
-                // ONLY count 'Cash' sales! Digital sales are ignored.
-                if (tx.status !== 'Voided' && (tx.paymentMethod === 'Cash' || !tx.paymentMethod)) {
-                    currentCashInDrawer += tx.netTotal;
+        // 🔒 1. EXACT MATH SECURITY CHECK (PHYSICAL CASH ONLY)
+        const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch), where("timestamp", ">=", validStartTime));
+        const txSnap = await getDocs(txQ);
+        
+        let currentCashInDrawer = (liveShift.startingCash || 0) - (liveShift.cashOut || 0);
+
+        if (!txSnap.empty) {
+            txSnap.forEach(d => {
+                let tx = d.data();
+                if (tx.status !== 'Voided') {
+                    if (tx.splitDetails) {
+                        let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                        if (cashSplit) currentCashInDrawer += cashSplit.amount;
+                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                        currentCashInDrawer += (tx.netTotal || 0);
+                    }
                 }
             });
         }
