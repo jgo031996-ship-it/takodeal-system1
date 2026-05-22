@@ -8188,34 +8188,6 @@ window.publishPosAppDraft = async function() {
   setAppEditorStatus("POS app v2 config published. Current cashier tablets are still safe.");
 };
 
-// ==========================================
-// 🔐 ROLE-BASED ACCESS CONTROL ENGINE
-// ==========================================
-window.applyPermissions = function() {
-    if (!window.sessionUser) return;
-    
-    // If they are the Master Owner or have 'all' permissions, show everything!
-    if (window.sessionUser.isOwner || window.sessionUser.permissions.includes('all')) {
-        document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
-        return;
-    }
-    
-    // 1. Hide ALL tabs first
-    document.querySelectorAll('.nav-item').forEach(el => {
-        // Keep Dashboard visible as the default landing page
-        if (el.id !== 'nav-dashboard') el.style.display = 'none';
-    });
-    
-    // 2. Show only the tabs they were granted
-    window.sessionUser.permissions.forEach(tabName => {
-        let el = document.getElementById('nav-' + tabName);
-        if (el) el.style.display = 'block';
-    });
-
-    // 3. STRICT LOCK: Never let non-owners see the Admin Security tab
-    document.getElementById('nav-admin').style.display = 'none'; 
-};
-
 window.editManagerPermissions = async function(docId, email) {
     let currentPerms = prompt(`Edit permissions for ${email}.\n\nType the EXACT names of the tabs they can see, separated by commas (no spaces).\n\nAvailable Options:\naccounts, transfers, payables, devices, payroll, inbox, ledger, schedule, products, purchases, dispatch, zreadings, history, expenses, branches, menu, receipt, inventory, alerts\n\nType 'all' to grant full access.`, "all");
     
