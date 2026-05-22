@@ -28,12 +28,35 @@ auth.onAuthStateChanged(async (user) => {
     let isAuthorized = false;
     let userPerms = ['all'];
 
-    const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
-    const snap = await getDocs(q);
-    
-    if (!snap.empty || user.email === MASTER_EMAIL) {
-        isAuthorized = true;
-        userPerms = !snap.empty ? (snap.docs[0].data().permissions || ['all']) : ['all'];
+    try {
+        // 🔥 FIX: Check the MASTER_EMAIL FIRST! If it's you, instantly let you in.
+        if (user.email === MASTER_EMAIL) {
+            isAuthorized = true;
+            userPerms = ['all'];
+        } else {
+            // Check if this email is in the HQ Managers list
+            const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
+            const snap = await getDocs(q);
+            
+            if (!snap.empty) {
+                isAuthorized = true;
+                userPerms = snap.docs[0].data().permissions || ['all'];
+            } else {
+                // 🛡️ FAILSAFE: If the database is completely empty, let the first person in.
+                const checkAny = await getDocs(query(collection(db, "hq_managers"), limit(1)));
+                if (checkAny.empty) {
+                    await addDoc(collection(db, "hq_managers"), {
+                        email: user.email, 
+                        role: 'Owner', 
+                        permissions: ['all']
+                    });
+                    isAuthorized = true;
+                    userPerms = ['all'];
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Auth Database Error:", error);
     }
 
     if (isAuthorized) {
@@ -41,15 +64,25 @@ auth.onAuthStateChanged(async (user) => {
         email: user.email,
         branch: 'Main Office',
         cashierName: user.displayName || 'Manager',
-        isOwner: (user.email === MASTER_EMAIL),
+        isOwner: (user.email === MASTER_EMAIL || userPerms.includes('all')), 
         permissions: userPerms
       };
       
-      window.applyPermissions();
+      // Unlock the tabs based on roles!
+      if (typeof window.applyPermissions === 'function') window.applyPermissions();
+
+      let brDisp = document.getElementById('displayBranch');
+      if (brDisp) brDisp.innerText = "📍 " + window.sessionUser.branch;
+      let caDisp = document.getElementById('displayCashier');
+      if (caDisp) caDisp.innerText = "👤 " + window.sessionUser.cashierName;
+
       if (loginScreen) loginScreen.style.display = 'none';
       if (typeof window.switchView === 'function') window.switchView('dashboard');
+      if (typeof loadGlobalDashboard === 'function') loadGlobalDashboard();
+      
     } else {
       await signOut(auth);
+      alert(`Access Denied.\n\n${user.email} is not authorized in the HQ Access Control list.`);
       if (loginScreen) loginScreen.style.display = 'flex';
     }
   } else {
@@ -58,7 +91,12 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 window.loginWithGoogle = async function() {
-  await signInWithPopup(auth, provider);
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error(error);
+    alert("Login failed: " + error.message);
+  }
 };
 
 // --- ACCESS CONTROL ENGINE ---
