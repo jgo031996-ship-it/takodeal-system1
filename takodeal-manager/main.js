@@ -24,9 +24,6 @@ window.db = db;
 // Your secure Master Key
 const MASTER_EMAIL = "jgo031996@gmail.com";
 
-// ==========================================
-// 🔐 ROLE-BASED ACCESS CONTROL ENGINE
-// ==========================================
 window.applyPermissions = function() {
     if (!window.sessionUser) return;
     
@@ -38,7 +35,6 @@ window.applyPermissions = function() {
     
     // 1. Hide ALL tabs first
     document.querySelectorAll('.nav-item').forEach(el => {
-        // Keep Dashboard visible as the default landing page
         if (el.id !== 'nav-dashboard') el.style.display = 'none';
     });
     
@@ -52,7 +48,7 @@ window.applyPermissions = function() {
     document.getElementById('nav-admin').style.display = 'none'; 
 };
 
-// --- PERSISTENT LOGIN LISTENER (THE MEMORY) ---
+// --- PERSISTENT LOGIN LISTENER ---
 auth.onAuthStateChanged(async (user) => {
   const loginScreen = document.getElementById('loginOverlay');
   if (user) {
@@ -64,6 +60,7 @@ auth.onAuthStateChanged(async (user) => {
             isAuthorized = true;
             userPerms = ['all'];
         } else {
+            // 🔥 FIX: Defined 'snap' inside the try block so it is always available
             const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
             const snap = await getDocs(q);
             
@@ -96,7 +93,7 @@ auth.onAuthStateChanged(async (user) => {
         permissions: userPerms
       };
       
-      window.applyPermissions();
+      window.applyPermissions(); // Run the tab hider!
 
       let brDisp = document.getElementById('displayBranch');
       if (brDisp) brDisp.innerText = "📍 " + window.sessionUser.branch;
