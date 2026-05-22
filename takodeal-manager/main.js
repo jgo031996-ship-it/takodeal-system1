@@ -2883,75 +2883,54 @@ window.updateInvSummary = function () {
 };
 
 window.saveAdvancedInventoryItem = async function () {
-    let docId = document.getElementById('editInvId').value;
-    let branch = document.getElementById('editInvBranch').value;
-    let category = document.getElementById('editInvCat').value;
-    let name = document.getElementById('editInvName').value.trim();
-    let purchUom = document.getElementById('editInvPurchUom').value.trim();
-    let baseUom = document.getElementById('editInvBaseUom').value.trim();
-    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
-    let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
-    let lowStock = parseFloat(document.getElementById('editInvLowStock').value) || 0;
-    let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQtyRaw = document.getElementById('editInvNewQty').value;
-    let note = document.getElementById('editInvNote').value.trim();
+  let branch = document.getElementById('newInvBranch').value;
+  let category = document.getElementById('newInvCat').value;
+  let name = document.getElementById('newInvName').value.trim();
+  let purchUom = document.getElementById('newInvPurchUom').value.trim();
+  let baseUom = document.getElementById('newInvBaseUom').value.trim();
 
-    if (!name) { alert("Item name is required!"); return; }
+  let conv = parseFloat(document.getElementById('newInvConv').value);
+  let cost = parseFloat(document.getElementById('newInvCost').value);
+  let initQty = parseFloat(document.getElementById('newInvInitQty').value);
+  let reorder = parseFloat(document.getElementById('newInvReorder').value) || 5000;
 
-    let finalQty = oldQty;
-    let isAdjusting = false;
+  if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
+    alert("❌ Error: Please fill out all required fields with valid numbers."); return;
+  }
 
-    if (newQtyRaw !== "") {
-        finalQty = parseFloat(newQtyRaw);
-        isAdjusting = true;
-        if (!note) { alert("You must provide an Adjustment Note/Reason."); return; }
-    }
+  let btn = document.getElementById('btnSaveInv');
+  btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
-    let btn = document.getElementById('btnSaveInvEdit');
-    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+  try {
+        let totalBaseStock = conv * initQty;
+        let baseCost = cost / conv; 
+        
+        let checkboxEl = document.getElementById('newInvShowCashier');
+        let showCashier = checkboxEl ? checkboxEl.checked : true; 
 
-    try {
-        await updateDoc(doc(db, "inventory", docId), {
-            branch: branch,
-            category: category,
-            name: name,
-            purchUom: purchUom,
-            uom: purchUom, 
-            baseUom: baseUom,
-            conversion: conversion,
-            conversionRate: conversion, 
-            purchCost: purchCost,
-            cost: purchCost, 
-            lowStockAlert: lowStock,
-            reorderLevel: lowStock, 
-            currentStock: finalQty,
-            showInPrep: document.getElementById('editInvShowPrep').checked // <--- Added the missing comma above!
+        await addDoc(collection(db, "inventory"), {
+          branch: branch,
+          name: name,
+          category: category,
+          purchaseUom: purchUom,
+          uom: baseUom, 
+          conversionRate: conv,
+          purchaseCost: cost,
+          baseCost: baseCost, 
+          currentStock: totalBaseStock, 
+          reorderLevel: reorder,
+          showToCashier: showCashier, // 🔥 THIS COMMA WAS MISSING!
+          showInPrep: document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true
         });
-
-        if (isAdjusting && finalQty !== oldQty) {
-            let variance = finalQty - oldQty;
-            let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
-            await addDoc(collection(db, "stock_logs"), {
-                branch: branch,
-                item: name,
-                oldQty: oldQty,
-                newQty: finalQty,
-                variance: variance,
-                type: "Manual Adjustment",
-                note: note,
-                user: safeCashierName,
-                timestamp: serverTimestamp()
-            });
-        }
-
-        alert("✅ Item updated successfully!");
-        document.getElementById('editInvModal').style.display = 'none';
-        window.loadInventoryData();
-    } catch (e) {
-        console.error(e); alert("Failed to save changes.");
-    } finally {
-        btn.innerText = "💾 Save All Changes"; btn.disabled = false;
-    }
+    
+    alert(`✅ Success! Added ${name} to ${branch}.`);
+    document.getElementById('addInvModal').style.display = 'none';
+    window.loadInventoryData();
+  } catch (error) {
+    console.error(error); alert("❌ Failed to add item.");
+  } finally {
+    btn.innerText = "💾 Save Item to Cloud"; btn.disabled = false;
+  }
 };
 
 // ========================================================
