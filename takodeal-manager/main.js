@@ -37,18 +37,31 @@ auth.onAuthStateChanged(async (user) => {
   const loginScreen = document.getElementById('loginOverlay');
   if (user) {
     let isAuthorized = false;
-    let userPerms = ['all']; 
+    let userPerms = ['all'];
 
-    if (user.email === MASTER_EMAIL) {
-      isAuthorized = true;
-    } else {
-      // 🔥 FIX: Actually fetch the 'snap' from Firebase so it doesn't crash!
-      const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        isAuthorized = true;
-        userPerms = snap.docs[0].data().permissions || ['all'];
-      }
+    try {
+        // Check if this email is in the HQ Managers list
+        const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            isAuthorized = true;
+            userPerms = snap.docs[0].data().permissions || ['all'];
+        } else {
+            // 🛡️ FAILSAFE: If the hq_managers database is completely empty, make the first person who logs in the Owner!
+            const checkAny = await getDocs(query(collection(db, "hq_managers"), limit(1)));
+            if (checkAny.empty) {
+                await addDoc(collection(db, "hq_managers"), {
+                    email: user.email, 
+                    role: 'Owner', 
+                    permissions: ['all']
+                });
+                isAuthorized = true;
+                userPerms = ['all'];
+            }
+        }
+    } catch (error) {
+        console.error("Auth Database Error:", error);
     }
 
     if (isAuthorized) {
@@ -56,22 +69,24 @@ auth.onAuthStateChanged(async (user) => {
         email: user.email,
         branch: 'Main Office',
         cashierName: user.displayName || 'Manager',
-        isOwner: (user.email === MASTER_EMAIL),
+        isOwner: userPerms.includes('all'), 
         permissions: userPerms
       };
       
-      window.applyPermissions(); 
+      // Unlock the tabs based on roles!
+      if (typeof window.applyPermissions === 'function') window.applyPermissions();
 
       let brDisp = document.getElementById('displayBranch');
-      if (brDisp) brDisp.innerText = "📍 " + sessionUser.branch;
+      if (brDisp) brDisp.innerText = "📍 " + window.sessionUser.branch;
       let caDisp = document.getElementById('displayCashier');
-      if (caDisp) caDisp.innerText = "👤 " + sessionUser.cashierName;
+      if (caDisp) caDisp.innerText = "👤 " + window.sessionUser.cashierName;
 
       if (loginScreen) loginScreen.style.display = 'none';
-      window.switchView('dashboard');
-      loadGlobalDashboard();
+      if (typeof window.switchView === 'function') window.switchView('dashboard');
+      if (typeof loadGlobalDashboard === 'function') loadGlobalDashboard();
+      
     } else {
-      await signOut(auth);
+      alert(`Access Denied.\n\n${user.email} is not authorized in the HQ Access Control list.`);
       if (loginScreen) loginScreen.style.display = 'flex';
     }
   } else {
@@ -81,46 +96,8 @@ auth.onAuthStateChanged(async (user) => {
 
 window.loginWithGoogle = async function() {
   try {
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-    let isAuthorized = false;
-    let userPerms = ['all'];
-
-    if (user.email === MASTER_EMAIL) {
-      isAuthorized = true;
-    } else {
-      const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        isAuthorized = true;
-        userPerms = snap.docs[0].data().permissions || ['all'];
-      }
-    }
-
-    if (isAuthorized) {
-      window.sessionUser = {
-        email: user.email,
-        branch: 'Main Office',
-        cashierName: user.displayName || 'Manager',
-        isOwner: (user.email === MASTER_EMAIL),
-        permissions: userPerms
-      };
-      
-      window.applyPermissions(); 
-
-      let brDisp = document.getElementById('displayBranch');
-      if (brDisp) brDisp.innerText = "📍 " + sessionUser.branch;
-      let caDisp = document.getElementById('displayCashier');
-      if (caDisp) caDisp.innerText = "👤 " + sessionUser.cashierName;
-
-      document.getElementById('loginOverlay').style.display = 'none';
-      window.switchView('dashboard');
-      loadGlobalDashboard();
-
-    } else {
-      await signOut(auth);
-      alert(`Access Denied.\n\n${user.email} is not on the VIP list.`);
-    }
+    // We only need to trigger the popup. The onAuthStateChanged function above will automatically catch the success and log you in!
+    await signInWithPopup(auth, provider);
   } catch (error) {
     console.error(error);
     alert("Login failed: " + error.message);
