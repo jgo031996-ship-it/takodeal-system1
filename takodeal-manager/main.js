@@ -2903,6 +2903,7 @@ window.saveAdvancedInventoryItem = async function () {
           currentStock: totalBaseStock, 
           reorderLevel: reorder,
           showToCashier: showCashier
+          showInPrep: document.getElementById('editInvShowPrep').checked
         });
     
     alert(`✅ Success! Added ${name} to ${branch}.`);
