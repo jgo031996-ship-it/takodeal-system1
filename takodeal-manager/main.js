@@ -1641,76 +1641,73 @@ window.openBranchDetails = async function (branch) {
 };
 
 // --- THE LIVE INVENTORY ENGINE (UPGRADED WITH FILTERING) ---
+window.refreshInventoryView = function() { window.loadInventoryData(); };
+
 window.loadInventoryData = async function() {
-  // Force the UI back to the Live Tab when this is called (e.g., from sidebar)
-  let liveTab = document.getElementById('invTabLiveContent');
-  let logsTab = document.getElementById('invTabLogsContent');
-  if (liveTab) liveTab.style.display = 'block';
-  if (logsTab) logsTab.style.display = 'none';
+    let branchFilter = document.getElementById('invBranchFilter').value;
+    let catFilter = document.getElementById('invCategoryFilter') ? document.getElementById('invCategoryFilter').value : "All";
+    let search = document.getElementById('liveInvSearch').value.toLowerCase();
+    
+    let tbody = document.getElementById('inventoryTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 20px;">Loading inventory...</td></tr>';
+    
+    try {
+        let q = branchFilter === "All" ? query(collection(db, "inventory")) : query(collection(db, "inventory"), where("branch", "==", branchFilter));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        let totalItems = 0;
+        let totalValue = 0;
 
-  const tbody = document.getElementById('inventoryTableBody');
-  if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="8" class="text-center">Scanning warehouse...</td></tr>';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let itemName = (d.name || "").toLowerCase();
+            let itemCat = d.category || "Uncategorized";
+            
+            // 🔥 THE SMART CATEGORY & SEARCH FILTER LOGIC
+            if (catFilter !== "All" && itemCat !== catFilter) return; // Skips if category doesn't match!
+            if (search && !itemName.includes(search)) return; // Skips if search text doesn't match!
+            
+            totalItems++;
+            let cost = parseFloat(d.cost || d.purchCost || d.unitCost || 0);
+            let stock = parseFloat(d.currentStock || 0);
+            let conv = parseFloat(d.conversion || d.conversionRate || 1);
+            
+            let baseCost = cost / conv;
+            if (stock > 0 && !isNaN(baseCost)) totalValue += (baseCost * stock);
+            
+            let isLow = stock <= parseFloat(d.reorderLevel || d.lowStockAlert || 5);
+            let statusHtml = isLow ? `<span style="color:#ef4444; background:#fef2f2; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Low Stock</span>` : `<span style="color:#16a34a; font-weight:bold; font-size:11px;">In Stock</span>`;
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 12px; font-weight:bold; color:#64748b; font-size:12px;">${d.branch}</td>
+                    <td style="padding: 12px; font-weight:900; color:#1e293b;">${d.name}</td>
+                    <td style="padding: 12px; font-size:12px; font-weight:bold; color:var(--primary);">${itemCat}</td>
+                    <td style="padding: 12px; font-weight:900; color:${isLow ? '#ef4444' : '#334155'}; font-size:15px;">${stock.toFixed(1)} <span style="font-size:11px; font-weight:normal; color:#64748b;">${d.baseUom || ''}</span></td>
+                    <td style="padding: 12px; color:#94a3b8; font-size:12px; text-align:center;">--</td>
+                    <td style="padding: 12px;">${statusHtml}</td>
+                    <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
+                    <td style="padding: 12px; display:flex; gap:5px;">
+                        <button onclick="window.openEditInvModal('${docSnap.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
+                        <button onclick="window.deleteInventoryItem('${docSnap.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🗑️</button>
+                    </td>
+                </tr>
+            `;
+        });
 
-  let branchFilter = document.getElementById('invBranchFilter').value;
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b; font-weight: bold;">No items match your filters.</td></tr>';
+        
+        let tItemsEl = document.getElementById('invTotalItems');
+        let tValEl = document.getElementById('invTotalValue');
+        if (tItemsEl) tItemsEl.innerText = totalItems;
+        if (tValEl) tValEl.innerText = '₱' + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-  // THE FIX: Check if search element exists before trying to read .value
-  const searchEl = document.getElementById('liveInvSearch');
-  let searchQuery = searchEl ? searchEl.value.toLowerCase() : '';
-
-  try {
-    const snap = await getDocs(collection(db, "inventory"));
-    let html = '';
-    let totalItems = 0;
-    let totalValue = 0;
-
-    let items = [];
-    snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-    items.sort((a, b) => a.name.localeCompare(b.name));
-
-    items.forEach(data => {
-      // 1. Filter by Branch
-      if (branchFilter !== "All" && data.branch !== branchFilter) return;
-
-      // 2. Filter by Search (Only if search bar is added back later, otherwise ignored)
-      if (searchQuery && !data.name.toLowerCase().includes(searchQuery)) return;
-
-      totalItems++;
-      let stock = parseFloat(data.currentStock) || 0;
-      let cost = parseFloat(data.baseCost) || 0;
-      totalValue += (stock * cost);
-
-      let statusBadge = '<span class="badge" style="background:#e8f5e9; color:#15803d;">In Stock</span>';
-      if (stock <= 0) statusBadge = '<span class="badge" style="background:#fef2f2; color:#b91c1c;">Out of Stock</span>';
-      else if (stock <= (data.reorderLevel || 5)) statusBadge = '<span class="badge" style="background:#fffbeb; color:#b45309;">Low Stock</span>';
-
-      let editData = encodeURIComponent(JSON.stringify({ id: data.id, name: data.name, branch: data.branch, stock: stock, uom: data.uom }));
-
-      html += `
-        <tr>
-          <td><strong style="color: var(--text-muted);">${data.branch}</strong></td>
-          <td style="font-weight: 700; font-size: 15px;">${data.name}</td>
-          <td style="color: var(--text-muted);">${data.category || '-'}</td>
-          <td style="font-size: 15px;"><strong>${stock.toLocaleString()}</strong> <span style="font-size: 12px; color: var(--text-muted);">${data.uom || ''}</span></td>
-          <td style="color: var(--danger); font-weight: bold;">0 <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">(--)</span></td>
-          <td>${statusBadge}</td>
-          <td>${formatMoney(cost)}</td>
-          <td>
-            <button class="btn-refresh" style="background: white; color: var(--text-main); border: 1px solid var(--border); padding: 4px 10px; border-radius: 4px;" onclick="window.openEditInv('${editData}')">✏️ Edit</button> 
-            <button onclick="window.deleteInventoryItem('${data.id}', '${data.name}')" style="color: #ef4444; border: 1px solid #ef4444; background: transparent; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 5px;">🗑️ Delete</button>
-          </td>
-        </tr>
-      `;
-    });
-
-    tbody.innerHTML = html || '<tr><td colspan="8" class="text-center">No items found for this branch.</td></tr>';
-    document.getElementById('invTotalItems').innerText = totalItems;
-    document.getElementById('invTotalValue').innerText = formatMoney(totalValue);
-
-  } catch (error) {
-    console.error("Inventory Error:", error);
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color: red;">Error loading inventory.</td></tr>';
-  }
+    } catch (e) {
+        console.error("Inventory Load Error: ", e);
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color:red; padding:20px;">Error loading inventory. Check connection.</td></tr>';
+    }
 };
 
 window.openInventoryLogs = function() {
