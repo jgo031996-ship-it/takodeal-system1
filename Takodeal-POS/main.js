@@ -1850,12 +1850,10 @@ window.submitStaffRequest = async function(requestType) {
 // ==========================================
 // 🔪 KITCHEN PREP ENGINE
 // ==========================================
-
 window.loadKitchenPrep = async function() {
     let container = document.getElementById('kitchenPrepList');
     if (!container) return;
     
-    // Safety check for branch
     let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : null);
     if (!branch) {
         container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Error: Cannot detect your branch.</div>`;
@@ -1865,20 +1863,27 @@ window.loadKitchenPrep = async function() {
     container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
 
     try {
-        // Fetch only "Prep Batch" category items for THIS specific branch
-        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("category", "==", "Prepared Batch"));
+        // 🔥 FIX: Read directly from your Manager App's POS Config Hub!
+        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+        let allowedCats = ["Prepared Batch"]; // Default fallback
+        if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
+            allowedCats = configSnap.data().kitchenPrepCats;
+        }
+
+        // Search inventory using the exact categories you typed in the Manager App
+        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("category", "in", allowedCats));
         const snap = await getDocs(q);
         
         let html = '';
         if (snap.empty) {
-            html = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">No Prep Batch items found for this branch.</div>`;
+            html = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">No Kitchen Prep items found. Make sure your items' categories match what you typed in the POS Config Hub.</div>`;
         } else {
             snap.forEach(docSnap => {
                 let d = docSnap.data();
                 html += `
                     <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; background: #ffffff; text-align: center;">
                         <h3 style="margin: 0 0 10px 0; color: #0f172a; font-size: 16px;">${d.name}</h3>
-                        <p style="margin: 0 0 15px 0; color: #64748b; font-size: 12px;">Current Stock: <strong style="color:#0f172a;">${d.currentStock || 0} ${d.baseUom || 'batch'}</strong></p>
+                        <p style="margin: 0 0 15px 0; color: #64748b; font-size: 12px;">Current Stock: <strong style="color:#0f172a;">${(d.currentStock||0).toFixed(1)} ${d.baseUom || 'batch'}</strong></p>
                         <button onclick="window.logPrepBatch('${docSnap.id}', '${d.name}', '${branch}')" style="background: #f59e0b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);">
                             + Log 1 Batch Made
                         </button>
@@ -1888,7 +1893,7 @@ window.loadKitchenPrep = async function() {
         }
         container.innerHTML = html;
     } catch (e) {
-        console.error(e);
+        console.error("Prep Load Error:", e);
         container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Failed to load items. Check connection.</div>`;
     }
 };
