@@ -2518,61 +2518,102 @@ window.renderMixMatchList = function() {
 };
 
 // ========================================================
-// 🚚 DISPATCH RECEIVER ENGINE
+// 🚚 INCOMING DISPATCH RECEIVER (SMART TAB ENGINE)
 // ========================================================
+window.incomingDeliveriesList = [];
+
 setTimeout(() => {
     let safeBranch = localStorage.getItem('takodeal_device_branch');
     if (!safeBranch) return;
 
-    // Listen for Incoming Deliveries
+    // Listens silently in the background
     onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "==", "In Transit")), (snap) => {
-        let incomingDeliveries = [];
-        snap.forEach(doc => incomingDeliveries.push({ id: doc.id, ...doc.data() }));
+        window.incomingDeliveriesList = [];
+        snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
-        let existingModal = document.getElementById('deliveryReceiverModal');
-        if (incomingDeliveries.length > 0) {
-            if (!existingModal) {
-                // Dynamically inject the UI
-                document.body.insertAdjacentHTML('beforeend', `
-                    <div id="deliveryReceiverModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:99999; display:flex; justify-content:center; align-items:center;">
-                        <div style="background:white; padding:25px; border-radius:12px; width:450px; max-height:80vh; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.3);">
-                            <h2 style="color:#d97706; margin-top:0;">🚚 Delivery Arrived!</h2>
-                            <p style="color:#64748b; font-size:13px; margin-bottom:15px;">Please physically count the items received and compare them against the dispatch manifest.</p>
-                            <div id="deliveryItemsContainer"></div>
-                        </div>
-                    </div>
-                `);
+        // 1. Light up the Notification Badge on the Sidebar
+        let badge = document.getElementById('deliveryBadge');
+        if (badge) {
+            if (window.incomingDeliveriesList.length > 0) {
+                badge.innerText = window.incomingDeliveriesList.length;
+                badge.style.display = 'inline-block';
+                badge.style.animation = 'pulse 2s infinite';
+            } else {
+                badge.style.display = 'none';
+                badge.style.animation = 'none';
             }
-            
-            let html = '';
-            incomingDeliveries.forEach(del => {
-                html += `
-                    <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:15px; border-radius:8px; margin-bottom:10px;">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                            <strong style="color:#0f172a; font-size:15px;">${del.item}</strong>
-                            <span style="background:#fef9c3; color:#ca8a04; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold;">Driver: ${del.driver}</span>
-                        </div>
-                        <div style="font-size:12px; color:#64748b; margin-bottom:5px;">Expected: <strong style="color:#0284c7;">${del.qty} ${del.uom}</strong></div>
-                        <div style="display:flex; gap:10px; align-items:center;">
-                            <input type="number" id="recv_qty_${del.id}" placeholder="Actual Qty Received" style="flex:1; padding:8px; border:1px solid #94a3b8; border-radius:4px;">
-                            <button onclick="window.receiveDeliveryItem('${del.id}', '${del.item}', ${del.qty}, '${del.uom}')" style="background:#16a34a; color:white; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">Confirm</button>
-                        </div>
-                    </div>
-                `;
-            });
-            document.getElementById('deliveryItemsContainer').innerHTML = html;
-            document.getElementById('deliveryReceiverModal').style.display = 'flex';
-        } else {
-            if (existingModal) existingModal.style.display = 'none';
         }
+
+        // 2. Render the items into the new HTML Tab
+        window.renderDeliveriesTab();
     });
 }, 3000);
 
-window.receiveDeliveryItem = async function(logId, itemName, expectedQty, uom) {
-    let actualQty = parseFloat(document.getElementById(`recv_qty_${logId}`).value);
-    if (isNaN(actualQty) || actualQty < 0) { alert("Enter a valid received quantity."); return; }
+window.renderDeliveriesTab = function() {
+    let container = document.getElementById('deliveriesContainer');
+    if (!container) return;
 
-    let variance = actualQty - expectedQty;
+    if (window.incomingDeliveriesList.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #94a3b8; font-size: 16px; background: white; border-radius: 8px;">No incoming deliveries at this time.</div>';
+        return;
+    }
+
+    let html = '';
+    window.incomingDeliveriesList.forEach(del => {
+        // Look! It uses the friendly CANS display data instead of Grams!
+        let friendlyQty = del.displayQty || del.qty;
+        let friendlyUom = del.displayUom || del.uom;
+        let convRate = del.convRate || 1;
+        let baseUom = del.uom;
+
+        html += `
+            <div style="background: white; border: 1px solid #cbd5e1; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 10px;">
+                    <div>
+                        <h3 style="margin: 0; color: #0f172a; font-size: 18px;">${del.item}</h3>
+                        <span style="font-size: 12px; color: #64748b;">Dispatched: ${del.date} ${del.time}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="background:#fef9c3; color:#ca8a04; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold;">🚚 In Transit</span><br>
+                        <span style="font-size: 11px; color: #64748b; font-weight: bold; margin-top: 5px; display: inline-block;">Driver: ${del.driver || 'Unknown'}</span>
+                    </div>
+                </div>
+                
+                <div style="display:flex; align-items:center; gap: 15px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 150px; background: #f8fafc; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;">
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Expected</div>
+                        <div style="font-size: 18px; font-weight: 900; color: #0284c7;">${friendlyQty} ${friendlyUom}</div>
+                    </div>
+                    
+                    <div style="flex: 1.5; min-width: 250px; display: flex; flex-direction: column; gap: 5px;">
+                        <label style="font-size: 12px; font-weight: bold; color: #334155;">Actual Received (${friendlyUom}):</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" id="recv_qty_${del.id}" placeholder="e.g. ${friendlyQty}" style="flex: 1; padding: 12px; border: 1px solid #94a3b8; border-radius: 6px; font-size: 16px; font-weight: bold; outline: none;">
+                            <button onclick="window.receiveDeliveryItem('${del.id}', '${del.item}', ${friendlyQty}, '${friendlyUom}', ${convRate}, '${baseUom}')" style="background: #16a34a; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.2);">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+};
+
+window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty, displayUom, convRate, baseUom) {
+    let actualDisplayQty = parseFloat(document.getElementById(`recv_qty_${logId}`).value);
+    if (isNaN(actualDisplayQty) || actualDisplayQty < 0) { 
+        alert(`Enter a valid number for ${displayUom}.`); 
+        return; 
+    }
+
+    // 🧮 MATH MAGIC: Convert what they typed back into Base Units (e.g. 48 Cans * 410g = 19680g)
+    let actualBaseQty = actualDisplayQty * convRate;
+    let expectedBaseQty = expectedDisplayQty * convRate;
+    let varianceBase = actualBaseQty - expectedBaseQty;
+
+    let btn = document.querySelector(`button[onclick*="${logId}"]`);
+    if(btn) { btn.innerText = "⏳ Saving..."; btn.disabled = true; }
+
     let safeBranch = localStorage.getItem('takodeal_device_branch');
 
     try {
@@ -2581,26 +2622,31 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedQty, uom) {
         const targetSnap = await getDocs(targetQ);
 
         if (targetSnap.empty) {
-            await addDoc(collection(db, "inventory"), { branch: safeBranch, name: itemName, uom: uom, currentStock: actualQty, category: "Ingredients" });
+            await addDoc(collection(db, "inventory"), { branch: safeBranch, name: itemName, uom: baseUom, currentStock: actualBaseQty, category: "Ingredients" });
         } else {
             let tRef = targetSnap.docs[0].ref;
             let tStock = targetSnap.docs[0].data().currentStock || 0;
-            await updateDoc(tRef, { currentStock: tStock + actualQty });
+            await updateDoc(tRef, { currentStock: tStock + actualBaseQty });
         }
 
-        // 2. Mark Dispatch as Received (and log variance if driver stole/lost some!)
+        // 2. Mark Dispatch as Received (Log base variance for the audit logs)
         await updateDoc(doc(db, "dispatch_logs", logId), {
             status: "Received",
-            receivedQty: actualQty,
-            variance: variance,
+            receivedQty: actualBaseQty, // Log base units for math
+            variance: varianceBase,     // Log base variance for math
+            receivedDisplayQty: actualDisplayQty, // Log what cashier typed
             receivedAt: serverTimestamp(),
             receivedBy: localStorage.getItem('cashierName') || 'Cashier'
         });
 
-        if (variance !== 0) {
-            alert(`⚠️ Variance Flagged: You received ${variance > 0 ? '+' : ''}${variance} ${uom} compared to what was dispatched. The manager has been notified.`);
+        if (varianceBase !== 0) {
+            alert(`⚠️ Variance Flagged: You received ${actualDisplayQty} ${displayUom}, which causes a variance of ${varianceBase} ${baseUom} from the expected amount. The manager has been notified.`);
         } else {
-            alert(`✅ Stock securely received and added to inventory!`);
+            alert(`✅ Delivery Confirmed! ${actualDisplayQty} ${displayUom} securely added to inventory.`);
         }
-    } catch(e) { console.error(e); alert("Failed to process receipt."); }
+    } catch(e) { 
+        console.error(e); 
+        alert("Failed to process receipt."); 
+        if(btn) { btn.innerText = "Confirm"; btn.disabled = false; }
+    }
 };
