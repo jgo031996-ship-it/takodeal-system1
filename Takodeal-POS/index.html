@@ -1501,8 +1501,8 @@
           </div>
       </div>
     </div>
-    <div class="view-container" id="view-deliveries" style="display: none; padding: 20px; width: 100%; overflow-y: auto;">
-        <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid var(--border);">
+    <div class="view-container" id="view-deliveries" style="padding: 20px; width: 100%; overflow-y: auto; background: var(--bg-color);">
+        <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
               <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🚚 Incoming Deliveries</h2>
               <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Verify and receive stock dispatched from the Main Office.</p>
               
@@ -2135,6 +2135,8 @@
       if (viewName === 'pos') topBar.innerText = "🖥️ Point of Sale";
       else if (viewName === 'sales') { topBar.innerText = "🧾 Shift Sales"; loadSalesDashboard(); }
       else if (viewName === 'prep') { topBar.innerText = "🔪 Kitchen Prep"; } 
+      else if (viewName === 'deliveries') { topBar.innerText = "🚚 Incoming Stock"; }
+      else if (viewName === 'menumgr') { topBar.innerText = "🍔 Menu Toggle"; }
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
