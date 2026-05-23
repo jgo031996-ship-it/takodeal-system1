@@ -1327,11 +1327,6 @@
         <div class="nav-item-text">Kitchen Prep</div>
       </div>
 
-      <div class="nav-item" onclick="switchTab('deliveries')" id="nav-deliveries" style="display: flex; justify-content: space-between; align-items: center;">
-           <span>🚚 Incoming Stock</span>
-           <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:50%; padding:2px 6px; font-size:11px; font-weight:bold;">0</span>
-      </div
-
       <div class="nav-item" id="nav-menumgr" onclick="switchView('menumgr'); window.loadMenuManager();">
         <span style="font-size: 18px;">🍔</span>
         <div class="nav-item-text">Menu Toggle</div>
@@ -1510,12 +1505,6 @@
               </div>
               <p style="color: #64748b; font-size: 13px; margin: 0;">Turn items Sold Out here to instantly hide them from the Customer App.</p>
           </div>
-
-    <div id="view-deliveries" class="view" style="display: none; padding: 20px;">
-        <h2 style="color: #0f172a; margin-top: 0;">🚚 Incoming Deliveries</h2>
-        <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Verify and receive stock dispatched from the Main Office.</p>
-        <div id="deliveriesContainer"></div>
-    </div>
 
           <!-- NEW: SEARCH & DROPDOWN FILTER BAR -->
           <div id="menuToggleHeader" style="display: flex; justify-content: center; align-items: center; gap: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 20px;">
