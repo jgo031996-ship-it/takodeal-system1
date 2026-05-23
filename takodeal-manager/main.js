@@ -1113,10 +1113,15 @@ window.addToDispatchCart = function () {
           uom: invItem.uom, 
           sourceId: invItem.id,
           displayMsg: displayMsg,
-          rawQty: rawQty,           // Friendly number (e.g., 48)
-          friendlyUom: friendlyUom, // Friendly text (e.g., "Can")
-          convRate: convRate        // Secret multiplier
-      }); 
+          rawQty: rawQty,           
+          friendlyUom: friendlyUom, 
+          convRate: convRate,
+          // 🔥 NEW: Grab the DNA for the Perfect Clone!
+          category: invItem.category || "Ingredients",
+          purchaseUom: invItem.purchaseUom || invItem.uom,
+          cost: invItem.cost || 0,
+          reorderLevel: invItem.reorderLevel || 10
+      });
   }
 
   document.getElementById('dispQty').value = '';
@@ -1153,15 +1158,20 @@ window.submitMultiDispatch = async function () {
         time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
         timestamp: new Date(),
         item: item.itemName,
-        qty: item.qty, // Database grams
-        uom: item.uom, // Database "gram"
+        qty: item.qty, 
+        uom: item.uom, 
         details: `${fromBranch} ➡️ ${toBranch}`,
         toBranch: toBranch,
         driver: driverName,
         status: "In Transit",
-        displayQty: item.rawQty || item.qty,      // Cashier sees Cans
-        displayUom: item.friendlyUom || item.uom, // Cashier sees "Can"
-        convRate: item.convRate || 1              // Cashier translates back
+        displayQty: item.rawQty || item.qty,      
+        displayUom: item.friendlyUom || item.uom, 
+        convRate: item.convRate || 1,
+        // 🔥 NEW: Pass the DNA to the Cashier!
+        category: item.category,
+        purchaseUom: item.purchaseUom,
+        cost: item.cost,
+        reorderLevel: item.reorderLevel
       });
     }
 
