@@ -2614,7 +2614,7 @@ setTimeout(() => {
     let safeBranch = localStorage.getItem('takodeal_device_branch');
     if (!safeBranch) return;
 
-    // Listens silently in the background for "In Transit" items for THIS branch
+    // Listens silently in the background
     onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "==", "In Transit")), (snap) => {
         window.incomingDeliveriesList = [];
         snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
@@ -2650,7 +2650,7 @@ window.renderDeliveriesTab = function() {
 
     let html = '';
     window.incomingDeliveriesList.forEach(del => {
-        // 🔥 The Cashier sees the FRIENDLY units!
+        // Cashier sees the FRIENDLY units!
         let friendlyQty = del.displayQty || del.qty;
         let friendlyUom = del.displayUom || del.uom;
         let convRate = del.convRate || 1;
@@ -2691,10 +2691,7 @@ window.renderDeliveriesTab = function() {
 
 window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty, displayUom, convRate, baseUom) {
     let actualDisplayQty = parseFloat(document.getElementById(`recv_qty_${logId}`).value);
-    if (isNaN(actualDisplayQty) || actualDisplayQty < 0) { 
-        alert(`Enter a valid number for ${displayUom}.`); 
-        return; 
-    }
+    if (isNaN(actualDisplayQty) || actualDisplayQty < 0) { alert(`Enter a valid number for ${displayUom}.`); return; }
 
     // 🧮 MATH MAGIC: Convert what they typed back into Base Units!
     let actualBaseQty = actualDisplayQty * convRate;
@@ -2707,7 +2704,6 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
     let safeBranch = localStorage.getItem('takodeal_device_branch');
 
     try {
-        // 1. Add to Branch Inventory
         const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", itemName));
         const targetSnap = await getDocs(targetQ);
 
@@ -2719,12 +2715,11 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
             await updateDoc(tRef, { currentStock: tStock + actualBaseQty });
         }
 
-        // 2. Mark Dispatch as Received (Log base variance for the audit logs)
         await updateDoc(doc(db, "dispatch_logs", logId), {
             status: "Received",
-            receivedQty: actualBaseQty, // Log base units for math
-            variance: varianceBase,     // Log base variance for math
-            receivedDisplayQty: actualDisplayQty, // Log what cashier actually typed
+            receivedQty: actualBaseQty, 
+            variance: varianceBase,     
+            receivedDisplayQty: actualDisplayQty, 
             receivedAt: serverTimestamp(),
             receivedBy: localStorage.getItem('cashierName') || 'Cashier'
         });
@@ -2735,8 +2730,7 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
             alert(`✅ Delivery Confirmed! ${actualDisplayQty} ${displayUom} securely added to inventory.`);
         }
     } catch(e) { 
-        console.error(e); 
-        alert("Failed to process receipt."); 
+        console.error(e); alert("Failed to process receipt."); 
         if(btn) { btn.innerText = "Confirm"; btn.disabled = false; }
     }
 };
