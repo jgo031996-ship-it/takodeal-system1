@@ -1074,21 +1074,24 @@ window.updateDispatchUomLabel = function() {
 window.addToDispatchCart = function () {
   let itemName = document.getElementById('dispItem').value;
   let rawQty = parseFloat(document.getElementById('dispQty').value);
-  let selectedUomType = document.getElementById('dispUomSelect').value;
+  let selectedUomType = document.getElementById('dispUomSelect').value; // 🔥 Fixed this to grab the value properly
 
   if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
 
   let invItem = dispatchInventoryList.find(i => i.name === itemName);
   if (!invItem) return;
 
-  // 🟢 NEW: THE CONVERSION MAGIC!
   let finalBaseQty = rawQty;
   let displayMsg = `${rawQty} ${invItem.uom}`;
+  let convRate = 1;
+  let friendlyUom = invItem.uom;
 
+  // 🟢 CONVERSION MAGIC
   if (selectedUomType === 'purch') {
-      let convRate = parseFloat(invItem.conversionRate) || 1;
-      finalBaseQty = rawQty * convRate; // Multiply 1 Pack x 2000 grams!
-      displayMsg = `${rawQty} ${invItem.purchaseUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
+      convRate = parseFloat(invItem.conversionRate) || 1;
+      finalBaseQty = rawQty * convRate; 
+      friendlyUom = invItem.purchaseUom || "Bulk";
+      displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
   }
 
   // Prevent sending more than we have
@@ -1100,7 +1103,8 @@ window.addToDispatchCart = function () {
   let existing = dispatchCart.find(i => i.itemName === itemName);
   if (existing) { 
       existing.qty += finalBaseQty; 
-      existing.displayMsg = `${existing.qty} ${invItem.uom}`; // Updates text if added twice
+      existing.rawQty += rawQty;
+      existing.displayMsg = `${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
   } else { 
       dispatchCart.push({ 
           itemName: itemName, 
@@ -1108,10 +1112,9 @@ window.addToDispatchCart = function () {
           uom: invItem.uom, 
           sourceId: invItem.id,
           displayMsg: displayMsg,
-          // 🔥 NEW: Store the friendly units for the cashier!
-          rawQty: rawQty,
-          selectedUom: selectedUomType === 'purch' ? invItem.purchaseUom : invItem.uom,
-          convRate: selectedUomType === 'purch' ? (parseFloat(invItem.conversionRate) || 1) : 1
+          rawQty: rawQty,           // 🔥 Friendly number (e.g., 48)
+          friendlyUom: friendlyUom, // 🔥 Friendly text (e.g., "Can")
+          convRate: convRate        // 🔥 Secret multiplier for later
       }); 
   }
 
@@ -1154,37 +1157,42 @@ window.submitMultiDispatch = async function () {
 
   try {
     let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
-    if (!driverName) return; // Cancel if no driver
+    if (!driverName) {
+        btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
+        return; 
+    }
 
     for (let item of dispatchCart) {
-      // 1. Deduct from Source (Main Office)
+      // 1. Deduct from Main Office
       let sourceRef = doc(db, "inventory", item.sourceId);
       let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
       await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
 
-      // 2. 🔥 DO NOT ADD TO DESTINATION YET. Log it as "In Transit"!
+      // 2. Log it as "In Transit"!
       await addDoc(collection(db, "dispatch_logs"), {
         date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
         time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
         timestamp: new Date(),
         item: item.itemName,
-        qty: item.qty,
-        uom: item.uom,
+        qty: item.qty, // Database grams
+        uom: item.uom, // Database "gram"
         details: `${fromBranch} ➡️ ${toBranch}`,
         toBranch: toBranch,
         driver: driverName,
         status: "In Transit",
-        // 🔥 NEW: Pass the friendly units to the Cashier App!
-        displayQty: item.rawQty || item.qty,
-        displayUom: item.selectedUom || item.uom,
-        convRate: item.convRate || 1
+        displayQty: item.rawQty,      // Cashier sees Cans
+        displayUom: item.friendlyUom, // Cashier sees "Can"
+        convRate: item.convRate       // So the Cashier App can translate it back
       });
     }
 
     alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
     dispatchCart = []; renderDispatchCart(); window.loadDispatchInventory(); loadDispatchLogs();
     btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
-  } catch (e) { console.error(e); alert("Dispatch failed."); btn.disabled = false; }
+  } catch (e) { 
+      console.error(e); alert("Dispatch failed."); 
+      btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
+  }
 };
 
 async function loadDispatchLogs() {
