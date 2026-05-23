@@ -1327,9 +1327,11 @@
         <div class="nav-item-text">Kitchen Prep</div>
       </div>
 
-      <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries')">
-          <span style="font-size: 18px;">🚚</span>
-          <div class="nav-item-text">Incoming Stock</div>
+      <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries'); window.renderDeliveriesTab();">
+        <span style="font-size: 18px;">🚚</span>
+        <div class="nav-item-text">
+            Incoming Stock <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
+        </div>
       </div>
       
       <div class="nav-item" id="nav-menumgr" onclick="switchView('menumgr'); window.loadMenuManager();">
@@ -1503,6 +1505,8 @@
         <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid var(--border);">
               <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🚚 Incoming Deliveries</h2>
               <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Verify and receive stock dispatched from the Main Office.</p>
+              
+              <div id="deliveriesContainer"></div>
         </div>
     </div>
     
