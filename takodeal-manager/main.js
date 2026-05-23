@@ -1074,7 +1074,8 @@ window.updateDispatchUomLabel = function() {
 window.addToDispatchCart = function () {
   let itemName = document.getElementById('dispItem').value;
   let rawQty = parseFloat(document.getElementById('dispQty').value);
-  let selectedUomType = document.getElementById('dispUomSelect').value; // 🔥 Fixed this to grab the value properly
+  // 🔥 FIX: Correctly grab the 'purch' or 'base' value from the dropdown
+  let selectedUomType = document.getElementById('dispUomSelect').value; 
 
   if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
 
@@ -1112,9 +1113,9 @@ window.addToDispatchCart = function () {
           uom: invItem.uom, 
           sourceId: invItem.id,
           displayMsg: displayMsg,
-          rawQty: rawQty,           // 🔥 Friendly number (e.g., 48)
-          friendlyUom: friendlyUom, // 🔥 Friendly text (e.g., "Can")
-          convRate: convRate        // 🔥 Secret multiplier for later
+          rawQty: rawQty,           // Friendly number (e.g., 48)
+          friendlyUom: friendlyUom, // Friendly text (e.g., "Can")
+          convRate: convRate        // Secret multiplier
       }); 
   }
 
