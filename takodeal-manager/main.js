@@ -1107,7 +1107,11 @@ window.addToDispatchCart = function () {
           qty: finalBaseQty, 
           uom: invItem.uom, 
           sourceId: invItem.id,
-          displayMsg: displayMsg // Store the beautiful breakdown for the table
+          displayMsg: displayMsg,
+          // 🔥 NEW: Store the friendly units for the cashier!
+          rawQty: rawQty,
+          selectedUom: selectedUomType === 'purch' ? invItem.purchaseUom : invItem.uom,
+          convRate: selectedUomType === 'purch' ? (parseFloat(invItem.conversionRate) || 1) : 1
       }); 
   }
 
@@ -1169,7 +1173,11 @@ window.submitMultiDispatch = async function () {
         details: `${fromBranch} ➡️ ${toBranch}`,
         toBranch: toBranch,
         driver: driverName,
-        status: "In Transit" // 🔥 Tells the Cashier App this is arriving soon!
+        status: "In Transit",
+        // 🔥 NEW: Pass the friendly units to the Cashier App!
+        displayQty: item.rawQty || item.qty,
+        displayUom: item.selectedUom || item.uom,
+        convRate: item.convRate || 1
       });
     }
 
