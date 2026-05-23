@@ -1149,29 +1149,16 @@ window.submitMultiDispatch = async function () {
   btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
   try {
+    let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
+    if (!driverName) return; // Cancel if no driver
+
     for (let item of dispatchCart) {
-      // 1. Deduct from Source
+      // 1. Deduct from Source (Main Office)
       let sourceRef = doc(db, "inventory", item.sourceId);
       let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
       await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
 
-      // 2. Add to Destination (Find it or Create it)
-      const targetQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", item.itemName));
-      const targetSnap = await getDocs(targetQ);
-
-      if (targetSnap.empty) {
-        // Create new item in target branch
-        await addDoc(collection(db, "inventory"), {
-          branch: toBranch, name: item.itemName, category: invItem.category, uom: invItem.uom, baseCost: invItem.baseCost, currentStock: item.qty, reorderLevel: 5
-        });
-      } else {
-        // Update existing item
-        let tRef = targetSnap.docs[0].ref;
-        let tStock = targetSnap.docs[0].data().currentStock || 0;
-        await updateDoc(tRef, { currentStock: tStock + item.qty });
-      }
-
-      // 3. Log the dispatch
+      // 2. 🔥 DO NOT ADD TO DESTINATION YET. Log it as "In Transit"!
       await addDoc(collection(db, "dispatch_logs"), {
         date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
         time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
@@ -1179,18 +1166,17 @@ window.submitMultiDispatch = async function () {
         item: item.itemName,
         qty: item.qty,
         uom: item.uom,
-        details: `${fromBranch} ➡️ ${toBranch}`
+        details: `${fromBranch} ➡️ ${toBranch}`,
+        toBranch: toBranch,
+        driver: driverName,
+        status: "In Transit" // 🔥 Tells the Cashier App this is arriving soon!
       });
     }
 
-    alert(`✅ Success! Dispatched ${dispatchCart.length} items to ${toBranch}.`);
-    dispatchCart = [];
-    renderDispatchCart();
-    window.loadDispatchInventory();
-    loadDispatchLogs();
+    alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
+    dispatchCart = []; renderDispatchCart(); window.loadDispatchInventory(); loadDispatchLogs();
     btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
-
-  } catch (e) { console.error(e); alert("Dispatch failed."); btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
+  } catch (e) { console.error(e); alert("Dispatch failed."); btn.disabled = false; }
 };
 
 async function loadDispatchLogs() {
