@@ -825,21 +825,16 @@ window.openEndShiftClearance = async function () {
 
   // 🔥 THE VIP LIST: Type the EXACT names of the items you want them to count here!
   // Make sure the spelling matches your Firebase inventory perfectly.
-  const itemsToCount = [
-      "Egg L",
-      "LB1 Box", 
-      "Burger Box",
-      "Hotdog Box",
-      "Boba Straw",
-      "Thin Straw",
-      "U-Cup M",
-      "U-Cup L",
-      "Coffee Cup L",
-      "Coffee Cup M",
-      "Coffee Lid",
-      "Y-Cup M",
-      "Y-Cup L",
-  ];
+  // 🔥 Reads directly from your Manager App's POS Config Hub!
+  let itemsToCount = [];
+  try {
+      const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+      if (configSnap.exists() && configSnap.data().auditItems) {
+          itemsToCount = configSnap.data().auditItems;
+      }
+  } catch (e) {
+      console.error("Failed to fetch audit items from cloud", e);
+  }
 
   let html = '';
   snap.forEach(docSnap => {
