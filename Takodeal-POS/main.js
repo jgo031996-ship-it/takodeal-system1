@@ -2518,94 +2518,6 @@ window.renderMixMatchList = function() {
 };
 
 // ========================================================
-// 🚚 DISPATCH RECEIVER ENGINE
-// ========================================================
-setTimeout(() => {
-    let safeBranch = localStorage.getItem('takodeal_device_branch');
-    if (!safeBranch) return;
-
-    // Listen for Incoming Deliveries
-    onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "==", "In Transit")), (snap) => {
-        let incomingDeliveries = [];
-        snap.forEach(doc => incomingDeliveries.push({ id: doc.id, ...doc.data() }));
-
-        let existingModal = document.getElementById('deliveryReceiverModal');
-        if (incomingDeliveries.length > 0) {
-            if (!existingModal) {
-                // Dynamically inject the UI
-                document.body.insertAdjacentHTML('beforeend', `
-                    <div id="deliveryReceiverModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:99999; display:flex; justify-content:center; align-items:center;">
-                        <div style="background:white; padding:25px; border-radius:12px; width:450px; max-height:80vh; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.3);">
-                            <h2 style="color:#d97706; margin-top:0;">🚚 Delivery Arrived!</h2>
-                            <p style="color:#64748b; font-size:13px; margin-bottom:15px;">Please physically count the items received and compare them against the dispatch manifest.</p>
-                            <div id="deliveryItemsContainer"></div>
-                        </div>
-                    </div>
-                `);
-            }
-            
-            let html = '';
-            incomingDeliveries.forEach(del => {
-                html += `
-                    <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:15px; border-radius:8px; margin-bottom:10px;">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                            <strong style="color:#0f172a; font-size:15px;">${del.item}</strong>
-                            <span style="background:#fef9c3; color:#ca8a04; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold;">Driver: ${del.driver}</span>
-                        </div>
-                        <div style="font-size:12px; color:#64748b; margin-bottom:5px;">Expected: <strong style="color:#0284c7;">${del.qty} ${del.uom}</strong></div>
-                        <div style="display:flex; gap:10px; align-items:center;">
-                            <input type="number" id="recv_qty_${del.id}" placeholder="Actual Qty Received" style="flex:1; padding:8px; border:1px solid #94a3b8; border-radius:4px;">
-                            <button onclick="window.receiveDeliveryItem('${del.id}', '${del.item}', ${del.qty}, '${del.uom}')" style="background:#16a34a; color:white; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">Confirm</button>
-                        </div>
-                    </div>
-                `;
-            });
-            document.getElementById('deliveryItemsContainer').innerHTML = html;
-            document.getElementById('deliveryReceiverModal').style.display = 'flex';
-        } else {
-            if (existingModal) existingModal.style.display = 'none';
-        }
-    });
-}, 3000);
-
-window.receiveDeliveryItem = async function(logId, itemName, expectedQty, uom) {
-    let actualQty = parseFloat(document.getElementById(`recv_qty_${logId}`).value);
-    if (isNaN(actualQty) || actualQty < 0) { alert("Enter a valid received quantity."); return; }
-
-    let variance = actualQty - expectedQty;
-    let safeBranch = localStorage.getItem('takodeal_device_branch');
-
-    try {
-        // 1. Add to Branch Inventory
-        const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", itemName));
-        const targetSnap = await getDocs(targetQ);
-
-        if (targetSnap.empty) {
-            await addDoc(collection(db, "inventory"), { branch: safeBranch, name: itemName, uom: uom, currentStock: actualQty, category: "Ingredients" });
-        } else {
-            let tRef = targetSnap.docs[0].ref;
-            let tStock = targetSnap.docs[0].data().currentStock || 0;
-            await updateDoc(tRef, { currentStock: tStock + actualQty });
-        }
-
-        // 2. Mark Dispatch as Received (and log variance if driver stole/lost some!)
-        await updateDoc(doc(db, "dispatch_logs", logId), {
-            status: "Received",
-            receivedQty: actualQty,
-            variance: variance,
-            receivedAt: serverTimestamp(),
-            receivedBy: localStorage.getItem('cashierName') || 'Cashier'
-        });
-
-        if (variance !== 0) {
-            alert(`⚠️ Variance Flagged: You received ${variance > 0 ? '+' : ''}${variance} ${uom} compared to what was dispatched. The manager has been notified.`);
-        } else {
-            alert(`✅ Stock securely received and added to inventory!`);
-        }
-    } catch(e) { console.error(e); alert("Failed to process receipt."); }
-};
-
-// ========================================================
 // 🚚 INCOMING DISPATCH RECEIVER (SMART TAB ENGINE)
 // ========================================================
 window.incomingDeliveriesList = [];
@@ -2693,7 +2605,6 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
     let actualDisplayQty = parseFloat(document.getElementById(`recv_qty_${logId}`).value);
     if (isNaN(actualDisplayQty) || actualDisplayQty < 0) { alert(`Enter a valid number for ${displayUom}.`); return; }
 
-    // 🧮 MATH MAGIC: Convert what they typed back into Base Units!
     let actualBaseQty = actualDisplayQty * convRate;
     let expectedBaseQty = expectedDisplayQty * convRate;
     let varianceBase = actualBaseQty - expectedBaseQty;
@@ -2704,17 +2615,36 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
     let safeBranch = localStorage.getItem('takodeal_device_branch');
 
     try {
+        // 🔥 Fetch the Delivery Log to get the Master DNA!
+        const logSnap = await getDoc(doc(db, "dispatch_logs", logId));
+        let logData = logSnap.exists() ? logSnap.data() : {};
+
+        // 1. Check the Branch Inventory
         const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", itemName));
         const targetSnap = await getDocs(targetQ);
 
         if (targetSnap.empty) {
-            await addDoc(collection(db, "inventory"), { branch: safeBranch, name: itemName, uom: baseUom, currentStock: actualBaseQty, category: "Ingredients" });
+            // 🔥 THE PERFECT CLONER: Builds the item with ALL details so the Manager App doesn't glitch!
+            await addDoc(collection(db, "inventory"), { 
+                branch: safeBranch, 
+                name: itemName, 
+                uom: baseUom, 
+                currentStock: actualBaseQty, 
+                category: logData.category || "Ingredients",
+                purchaseUom: logData.purchaseUom || baseUom,
+                conversionRate: convRate,
+                conversion: convRate, // Fallback for old code
+                cost: logData.cost || 0,
+                reorderLevel: logData.reorderLevel || 10,
+                showInPrep: true
+            });
         } else {
             let tRef = targetSnap.docs[0].ref;
             let tStock = targetSnap.docs[0].data().currentStock || 0;
             await updateDoc(tRef, { currentStock: tStock + actualBaseQty });
         }
 
+        // 2. Mark Dispatch as Received 
         await updateDoc(doc(db, "dispatch_logs", logId), {
             status: "Received",
             receivedQty: actualBaseQty, 
@@ -2725,7 +2655,7 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
         });
 
         if (varianceBase !== 0) {
-            alert(`⚠️ Variance Flagged: You received ${actualDisplayQty} ${displayUom}, which causes a variance of ${varianceBase} ${baseUom} from the expected amount. The manager has been notified.`);
+            alert(`⚠️ Variance Flagged: You received ${actualDisplayQty} ${displayUom}, creating a variance of ${varianceBase} ${baseUom}.`);
         } else {
             alert(`✅ Delivery Confirmed! ${actualDisplayQty} ${displayUom} securely added to inventory.`);
         }
