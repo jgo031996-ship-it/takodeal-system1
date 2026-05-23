@@ -2697,7 +2697,6 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
     }
 
     // 🧮 MATH MAGIC: Convert what they typed back into Base Units!
-    // Example: Cashier types 48 (Cans). Code multiplies by 410 = 19,680 Grams saved to DB.
     let actualBaseQty = actualDisplayQty * convRate;
     let expectedBaseQty = expectedDisplayQty * convRate;
     let varianceBase = actualBaseQty - expectedBaseQty;
