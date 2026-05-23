@@ -826,8 +826,7 @@ window.openEndShiftClearance = async function () {
   // 🔥 THE VIP LIST: Type the EXACT names of the items you want them to count here!
   // Make sure the spelling matches your Firebase inventory perfectly.
   const itemsToCount = [
-      "320cc Paper Bowl", 
-      "520cc Paper Bowl", 
+      "Egg L",
       "LB1 Box", 
       "Burger Box",
       "Hotdog Box",
@@ -840,7 +839,6 @@ window.openEndShiftClearance = async function () {
       "Coffee Lid",
       "Y-Cup M",
       "Y-Cup L",
-      "Flat Lid",
   ];
 
   let html = '';
