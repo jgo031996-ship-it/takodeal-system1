@@ -1327,12 +1327,12 @@
         <div class="nav-item-text">Kitchen Prep</div>
       </div>
 
-      <div class="nav-item" onclick="switchView('deliveries')" id="nav-deliveries" style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
-              <span style="font-size: 18px;">🚚</span>
-              <div class="nav-item-text">Incoming Stock</div>
+      <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries')">
+          <span style="font-size: 18px;">🚚</span>
+          <div class="nav-item-text" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <span>Incoming Stock</span>
+              <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold;">0</span>
           </div>
-          <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:50%; padding:2px 6px; font-size:11px; font-weight:bold;">0</span>
       </div>
       
       <div class="nav-item" id="nav-menumgr" onclick="switchView('menumgr'); window.loadMenuManager();">
