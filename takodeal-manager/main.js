@@ -711,15 +711,22 @@ window.loadPurchasesAndAlerts = async function () {
         let suggested = (reorder * 2) - stock; 
         if (suggested <= 0) suggested = reorder;
 
+        // 🔥 THE TELEPORT ROW: Click anywhere to jump to Live Inventory for this branch!
         html += `
-          <tr>
+          <tr style="cursor: pointer; transition: background 0.2s;" 
+              onmouseover="this.style.background='#f1f5f9'" 
+              onmouseout="this.style.background='transparent'" 
+              onclick="document.getElementById('nav-inventory').click(); setTimeout(() => { document.getElementById('invBranchFilter').value = '${data.branch}'; if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory(); }, 300);">
             <td><strong>${data.branch}</strong></td>
             <td><span class="badge badge-closed">${data.category || '-'}</span></td>
             <td style="font-weight: bold;">${data.name}</td>
             <td style="color: var(--danger); font-weight: bold;">${stock} <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${data.uom}</span></td>
             <td>${reorder} <span style="font-size:12px; color:var(--text-muted);">${data.uom}</span></td>
             <td style="color: var(--primary); font-weight: bold;">${suggested} <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${data.uom}</span></td>
-            <td><button class="btn-refresh" style="background: white; color: var(--primary); border: 1px solid var(--primary);" onclick="openMultiRestockModal('${data.id}')">📦 Restock</button></td>
+            <td>
+                <button class="btn-refresh" style="background: white; color: var(--primary); border: 1px solid var(--primary); position: relative; z-index: 10;" 
+                        onclick="event.stopPropagation(); openMultiRestockModal('${data.id}')">📦 Restock</button>
+            </td>
           </tr>
         `;
       }
@@ -781,7 +788,7 @@ window.addRestockToCart = function () {
 
   let item = window.globalInventoryList.find(i => i.id === itemId);
   let convRate = parseFloat(item.conversionRate) || 1;
-  let baseQtyToAdd = purchQty * convRate; // MATH MAGiC!
+  let baseQtyToAdd = purchQty * convRate; // MATH MAGIC!
 
   restockCart.push({
     id: item.id,
@@ -855,8 +862,10 @@ window.confirmMultiRestock = async function () {
     document.getElementById('restockModal').style.display = 'none';
 
     // Refresh whatever screen they are currently looking at!
-    if (document.getElementById('view-purchases').classList.contains('active')) window.loadPurchasesAndAlerts();
-    if (document.getElementById('view-inventory').classList.contains('active')) window.loadInventoryData();
+    if (document.getElementById('view-purchases') && document.getElementById('view-purchases').classList.contains('active')) window.loadPurchasesAndAlerts();
+    if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
+         if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
+    }
 
   } catch (e) {
     console.error(e); alert("Failed to process restock.");
