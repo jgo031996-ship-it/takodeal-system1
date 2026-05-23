@@ -1074,8 +1074,8 @@ window.updateDispatchUomLabel = function() {
 window.addToDispatchCart = function () {
   let itemName = document.getElementById('dispItem').value;
   let rawQty = parseFloat(document.getElementById('dispQty').value);
-  // 🔥 FIX: Correctly grab the 'purch' or 'base' value from the dropdown
-  let selectedUomType = document.getElementById('dispUomSelect').value; 
+  let uomSelect = document.getElementById('dispUomSelect');
+  let selectedUomType = uomSelect.value; 
 
   if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
 
@@ -1123,28 +1123,6 @@ window.addToDispatchCart = function () {
   renderDispatchCart();
 };
 
-window.removeFromDispatchCart = function (index) {
-  dispatchCart.splice(index, 1);
-  renderDispatchCart();
-};
-
-function renderDispatchCart() {
-  const tbody = document.getElementById('dispatchCartBody');
-  if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center">Cart is empty.</td></tr>'; return; }
-
-  let html = '';
-  dispatchCart.forEach((item, idx) => {
-    let qtyText = item.displayMsg || `${item.qty} ${item.uom}`;
-    
-    html += `<tr>
-      <td><strong>${item.itemName}</strong></td>
-      <td style="font-size:14px; font-weight:bold; color:var(--primary);">${qtyText}</td>
-      <td><button class="btn-refresh" style="color:var(--danger); border-color:var(--danger); padding:4px 8px; font-size:11px;" onclick="removeFromDispatchCart(${idx})">✖ Remove</button></td>
-    </tr>`;
-  });
-  tbody.innerHTML = html;
-}
-
 window.submitMultiDispatch = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
   let toBranch = document.getElementById('dispTo').value;
@@ -1181,20 +1159,43 @@ window.submitMultiDispatch = async function () {
         toBranch: toBranch,
         driver: driverName,
         status: "In Transit",
-        displayQty: item.rawQty,      // Cashier sees Cans
-        displayUom: item.friendlyUom, // Cashier sees "Can"
-        convRate: item.convRate       // So the Cashier App can translate it back
+        displayQty: item.rawQty || item.qty,      // Cashier sees Cans
+        displayUom: item.friendlyUom || item.uom, // Cashier sees "Can"
+        convRate: item.convRate || 1              // Cashier translates back
       });
     }
 
     alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
-    dispatchCart = []; renderDispatchCart(); window.loadDispatchInventory(); loadDispatchLogs();
+    dispatchCart = []; renderDispatchCart(); window.loadDispatchInventory(); 
+    if (typeof loadDispatchLogs === 'function') loadDispatchLogs();
     btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
   } catch (e) { 
       console.error(e); alert("Dispatch failed."); 
       btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
   }
 };
+
+window.removeFromDispatchCart = function (index) {
+  dispatchCart.splice(index, 1);
+  renderDispatchCart();
+};
+
+function renderDispatchCart() {
+  const tbody = document.getElementById('dispatchCartBody');
+  if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center">Cart is empty.</td></tr>'; return; }
+
+  let html = '';
+  dispatchCart.forEach((item, idx) => {
+    let qtyText = item.displayMsg || `${item.qty} ${item.uom}`;
+    
+    html += `<tr>
+      <td><strong>${item.itemName}</strong></td>
+      <td style="font-size:14px; font-weight:bold; color:var(--primary);">${qtyText}</td>
+      <td><button class="btn-refresh" style="color:var(--danger); border-color:var(--danger); padding:4px 8px; font-size:11px;" onclick="removeFromDispatchCart(${idx})">✖ Remove</button></td>
+    </tr>`;
+  });
+  tbody.innerHTML = html;
+}
 
 async function loadDispatchLogs() {
   const tbody = document.getElementById('dispatchLogBody');
