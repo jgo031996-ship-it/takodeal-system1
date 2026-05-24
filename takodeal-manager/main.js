@@ -1109,7 +1109,8 @@ window.addToDispatchCart = function () {
 
   // Prevent sending more than we have
   if (finalBaseQty > invItem.currentStock) { 
-      alert(`❌ Not enough stock!\n\nYou are trying to send ${finalBaseQty} ${invItem.uom}, but you only have ${invItem.currentStock} ${invItem.uom} available.`); 
+      let stockInPurch = invItem.currentStock / convRate;
+      alert(`❌ Not enough stock!\n\nYou are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.\n\n(Note: If this math looks wrong, check your inventory settings! Your Base UOM might be set up incorrectly.)`); 
       return; 
   }
 
