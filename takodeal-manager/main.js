@@ -1953,14 +1953,33 @@ window.executeBatchPrep = async function () {
     const targetQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", targetItem));
     const targetSnap = await getDocs(targetQ);
     let targetRef = targetSnap.docs[0].ref;
-    let targetStock = targetSnap.docs[0].data().currentStock || 0;
+    let targetData = targetSnap.docs[0].data(); // Grab data to get UOM
+    let targetStock = targetData.currentStock || 0;
 
     await updateDoc(targetRef, { currentStock: targetStock + prepQty });
+
+    // 🔥 5. NEW: LOG TO HISTORY SO IT SHOWS IN THE DASHBOARD!
+    await addDoc(collection(db, "stock_logs"), {
+        branch: branch,
+        item: targetItem,
+        uom: targetData.uom || "units",
+        oldQty: targetStock,
+        newQty: targetStock + prepQty,
+        variance: prepQty,
+        type: "Manager Prep Batch",
+        note: `Prepared via Manager HQ`,
+        user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+        timestamp: new Date()
+    });
 
     // Success!
     alert(`🥣 Kitchen Success!\n\nPrepared ${prepQty} units of ${targetItem}.\nAll raw ingredients were automatically deducted from ${branch}.`);
     document.getElementById('batchModal').style.display = 'none';
-    window.loadInventoryData(); // Refresh the table
+    
+    // Refresh the view you are currently on
+    if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
+        if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
+    }
 
   } catch (error) {
     console.error(error); alert("Failed to prepare batch.");
