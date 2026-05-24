@@ -2936,6 +2936,15 @@ window.selectRealVariant = function(realName, vPrice, clickedBtn) {
       btn.innerText = "Processing Payment..."; 
       btn.disabled = true;
 
+      // 🚨 ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
+      let custName = document.getElementById('finalCustomerName').value.trim();
+      if ((selectedPaymentMethod === 'Grab' || selectedPaymentMethod === 'GCash') && custName === "") {
+          alert(`🚨 SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact Grab Order ID or GCash Ref Number in the Customer Name box to prevent phantom orders.`);
+          btn.innerText = "Complete checkout"; 
+          btn.disabled = false;
+          return;
+      }
+
       // We removed the slow validateStockLevels() check here! The system will just warn you AFTER checkout.
 
       const payload = {
