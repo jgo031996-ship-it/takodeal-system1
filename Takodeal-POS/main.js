@@ -2239,8 +2239,10 @@ window.filterMenuToggle = function() {
 window.toggleItemStatus = async function(docId, makeAvailable) {
     try {
         let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        const itemRef = window.doc(window.db, "menu", docId);
-        const itemSnap = await window.getDoc(itemRef);
+        
+        // 🔥 FIX: Removed "window." prefixes so it correctly uses the imported Firebase functions!
+        const itemRef = doc(db, "menu", docId);
+        const itemSnap = await getDoc(itemRef);
         let unavailableBranches = itemSnap.data().unavailableAt || [];
 
         // Add or remove this specific branch from the "Sold Out" list
@@ -2251,7 +2253,7 @@ window.toggleItemStatus = async function(docId, makeAvailable) {
         }
 
         // 1. Update Cloud
-        await window.updateDoc(itemRef, { unavailableAt: unavailableBranches });
+        await updateDoc(itemRef, { unavailableAt: unavailableBranches });
         
         // 2. Update local memory immediately!
         let item = window.globalMenuToggleList.find(i => i.id === docId);
