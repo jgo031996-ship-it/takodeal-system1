@@ -2450,7 +2450,7 @@
     }
 
     // --- 6. DASHBOARD & DETAILS SYSTEM ---
-    window.loadSalesDashboard = async function () {
+window.loadSalesDashboard = async function () {
   document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
   
   if (!currentShift || !currentShift.active) { 
@@ -2461,8 +2461,8 @@
   let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
   let tBody = '';
   
-  // 🔥 NEW: INSTANT AUDIT TRACKERS
-  let totalCash = 0; let totalGrab = 0; let totalGCash = 0;
+  // 🔥 ONLY TRACK DIGITAL FUNDS FOR THE CASHIER
+  let totalGrab = 0; let totalGCash = 0;
 
   if (!transactions || transactions.length === 0) { 
       tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
@@ -2476,11 +2476,10 @@
           txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
       }
 
-      // 🔥 NEW: TALLY THE TOTALS FOR THE MANAGER (Ignoring Voided items)
+      // 🔥 TALLY ONLY DIGITAL TOTALS FOR VERIFICATION
       if (tx.status !== 'Voided') {
           if (tx.paymentMethod === 'Grab') totalGrab += (tx.netTotal || 0);
           else if (tx.paymentMethod === 'GCash') totalGCash += (tx.netTotal || 0);
-          else totalCash += (tx.netTotal || 0); // Defaults to Cash
       }
 
       tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
@@ -2504,11 +2503,11 @@
     });
   }
   
-  // 🔥 INJECT THE 5-SECOND AUDIT BAR AT THE VERY TOP OF THE TABLE!
+  // 🔥 🚨 ANTI-THEFT: "BLIND COUNT" UI. Hides total cash so cashiers cannot skim overages!
   let auditHeader = `
       <tr style="background: #f8fafc; font-size: 16px;">
         <td colspan="8" style="padding: 15px; text-align: center; border-bottom: 3px solid #cbd5e1;">
-            <strong style="color: #16a34a; font-size: 18px;">💵 Cash: ₱${totalCash.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <span style="color: #64748b; font-size: 15px; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 6px;">🔒 Cash Drawer: Blind Count</span> &nbsp;&nbsp; | &nbsp;&nbsp;
             <strong style="color: #00b14f; font-size: 18px;">🟢 Grab: ₱${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
             <strong style="color: #3b82f6; font-size: 18px;">🔵 GCash: ₱${totalGCash.toFixed(2)}</strong>
         </td>
@@ -2516,7 +2515,7 @@
   `;
 
   document.getElementById('tbTransBody').innerHTML = auditHeader + tBody;
-}
+};
 
     function toggleTxMenu(id) { document.querySelectorAll('.action-dropdown').forEach(el => { if (el.id !== id) el.classList.remove('show'); }); let el = document.getElementById(id); if (el) el.classList.toggle('show'); }
     document.addEventListener('click', function (e) { if (!e.target.classList.contains('dot-menu')) { document.querySelectorAll('.action-dropdown').forEach(el => el.classList.remove('show')); } });
