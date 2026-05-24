@@ -748,22 +748,25 @@ window.openMultiRestockModal = async function (preSelectId = null) {
   restockCart = [];
   renderRestockCart();
 
-  // If the global list is empty (because they clicked from Inventory instead of Alerts), fetch it
+  // If the global list is empty, fetch it
   if (window.globalInventoryList.length === 0) {
     const snap = await getDocs(collection(db, "inventory"));
     snap.forEach(d => { let obj = d.data(); obj.id = d.id; window.globalInventoryList.push(obj); });
   }
 
   let drop = document.getElementById('restockItemSelect');
-  drop.innerHTML = '<option value="">-- Select Item --</option>';
+  drop.innerHTML = '<option value="">-- Select Main Office Item --</option>';
 
-  // Sort alphabetically so it is easy to find
-  let sortedList = [...window.globalInventoryList].sort((a, b) => a.name.localeCompare(b.name));
+  // 🔥 THE VAULT LOCK: We filter the list so ONLY "Main Office" items appear in the dropdown!
+  let hqList = window.globalInventoryList.filter(i => i.branch === "Main Office");
+  let sortedList = hqList.sort((a, b) => a.name.localeCompare(b.name));
 
   sortedList.forEach(item => {
     let selected = (preSelectId === item.id) ? "selected" : "";
-    let stockDisplay = `${parseFloat(item.currentStock || 0).toFixed(0)} ${item.uom}`;
-    drop.innerHTML += `<option value="${item.id}" ${selected}>${item.name} (${item.branch}) - Stock: ${stockDisplay}</option>`;
+    let stockDisplay = `${parseFloat(item.currentStock || 0).toFixed(1)} ${item.uom}`;
+    
+    // Removed branch name from display text since it's guaranteed to be HQ
+    drop.innerHTML += `<option value="${item.id}" ${selected}>${item.name} - Current Stock: ${stockDisplay}</option>`;
   });
 
   updateRestockUomLabel();
@@ -1731,15 +1734,48 @@ window.loadInventoryData = async function() {
     }
 };
 
+// ========================================================
+// 📊 COMMAND CENTER DASHBOARD LOGIC
+// ========================================================
+window.switchInvTab = function(tab) {
+    let overviewTab = document.getElementById('tabInvOverview');
+    let auditsTab = document.getElementById('tabInvAudits');
+    let liveSec = document.getElementById('invTabLiveContent');
+    let logsSec = document.getElementById('invTabLogsContent');
+    let auditsSec = document.getElementById('invSectionAudits');
+
+    if (tab === 'Overview') {
+        overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e';
+        auditsTab.style.color = '#64748b'; auditsTab.style.borderBottomColor = 'transparent';
+        liveSec.style.display = 'block'; 
+        logsSec.style.display = 'none'; 
+        auditsSec.style.display = 'none';
+    } else if (tab === 'Audits') {
+        auditsTab.style.color = '#0f766e'; auditsTab.style.borderBottomColor = '#0f766e';
+        overviewTab.style.color = '#64748b'; overviewTab.style.borderBottomColor = 'transparent';
+        liveSec.style.display = 'none'; 
+        logsSec.style.display = 'none'; 
+        auditsSec.style.display = 'block';
+    }
+};
+
 window.openInventoryLogs = function() {
-  let liveTab = document.getElementById('invTabLiveContent');
-  let logsTab = document.getElementById('invTabLogsContent');
-  if (liveTab) liveTab.style.display = 'none';
-  if (logsTab) logsTab.style.display = 'block';
-  
-  if (typeof window.loadStockLogs === 'function') {
-    window.loadStockLogs();
-  }
+    let overviewTab = document.getElementById('tabInvOverview');
+    let auditsTab = document.getElementById('tabInvAudits');
+    if (overviewTab) { overviewTab.style.color = '#64748b'; overviewTab.style.borderBottomColor = 'transparent'; }
+    if (auditsTab) { auditsTab.style.color = '#64748b'; auditsTab.style.borderBottomColor = 'transparent'; }
+
+    let liveTab = document.getElementById('invTabLiveContent');
+    let logsTab = document.getElementById('invTabLogsContent');
+    let auditsSec = document.getElementById('invSectionAudits');
+    
+    if (liveTab) liveTab.style.display = 'none';
+    if (auditsSec) auditsSec.style.display = 'none';
+    if (logsTab) logsTab.style.display = 'block';
+    
+    if (typeof window.loadStockLogs === 'function') {
+        window.loadStockLogs();
+    }
 };
 
 window.addNewInventoryItem = async function () {
