@@ -2450,40 +2450,73 @@
     }
 
     // --- 6. DASHBOARD & DETAILS SYSTEM ---
-    async function loadSalesDashboard() {
-      document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
-      if (!currentShift || !currentShift.active) { document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; return; }
-      let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
-      let tBody = '';
-      if (!transactions || transactions.length === 0) { tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; }
-      else {
-        transactions.forEach((tx, idx) => {
-          let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
-          let txDate = "Today"; let txTime = "--:--";
-          if (tx.timestamp && tx.timestamp.toDate) { let d = tx.timestamp.toDate(); txDate = d.toLocaleDateString(); txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    window.loadSalesDashboard = async function () {
+  document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
+  
+  if (!currentShift || !currentShift.active) { 
+      document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; 
+      return; 
+  }
+  
+  let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
+  let tBody = '';
+  
+  // 🔥 NEW: INSTANT AUDIT TRACKERS
+  let totalCash = 0; let totalGrab = 0; let totalGCash = 0;
 
-          tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
-            <td style="font-weight:bold;">${tx.receiptId || 'N/A'}</td>
-            <td>${tx.customerName || '-'}</td>
-            <td>${tx.paymentMethod || 'Unknown'}</td>
-            <td>${statusBadge}</td>
-            <td>${txDate}</td>
-            <td>${txTime}</td>
-            <td style="font-weight:bold; color: var(--primary);">₱${(tx.netTotal || 0).toFixed(2)}</td>
-            <td style="text-align:right;">
-              <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
-                <div class="action-dropdown" id="txMenu-${idx}">
-                  <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')">View Details</div>
-                  <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">🖨️ Print Receipt</div>
-                  <div class="action-item danger" onclick="voidTx('${tx.receiptId}')">Void Transaction</div>
-                </div>
-              </div>
-            </td>
-          </tr>`;
-        });
+  if (!transactions || transactions.length === 0) { 
+      tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
+  } else {
+    transactions.forEach((tx, idx) => {
+      let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
+      let txDate = "Today"; let txTime = "--:--";
+      if (tx.timestamp && tx.timestamp.toDate) { 
+          let d = tx.timestamp.toDate(); 
+          txDate = d.toLocaleDateString(); 
+          txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
       }
-      document.getElementById('tbTransBody').innerHTML = tBody;
-    }
+
+      // 🔥 NEW: TALLY THE TOTALS FOR THE MANAGER (Ignoring Voided items)
+      if (tx.status !== 'Voided') {
+          if (tx.paymentMethod === 'Grab') totalGrab += (tx.netTotal || 0);
+          else if (tx.paymentMethod === 'GCash') totalGCash += (tx.netTotal || 0);
+          else totalCash += (tx.netTotal || 0); // Defaults to Cash
+      }
+
+      tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
+        <td style="font-weight:bold;">${tx.receiptId || 'N/A'}</td>
+        <td>${tx.customerName || '-'}</td>
+        <td>${tx.paymentMethod || 'Unknown'}</td>
+        <td>${statusBadge}</td>
+        <td>${txDate}</td>
+        <td>${txTime}</td>
+        <td style="font-weight:bold; color: var(--primary);">₱${(tx.netTotal || 0).toFixed(2)}</td>
+        <td style="text-align:right;">
+          <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
+            <div class="action-dropdown" id="txMenu-${idx}">
+              <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')">View Details</div>
+              <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">🖨️ Print Receipt</div>
+              <div class="action-item danger" onclick="voidTx('${tx.receiptId}')">Void Transaction</div>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+    });
+  }
+  
+  // 🔥 INJECT THE 5-SECOND AUDIT BAR AT THE VERY TOP OF THE TABLE!
+  let auditHeader = `
+      <tr style="background: #f8fafc; font-size: 16px;">
+        <td colspan="8" style="padding: 15px; text-align: center; border-bottom: 3px solid #cbd5e1;">
+            <strong style="color: #16a34a; font-size: 18px;">💵 Cash: ₱${totalCash.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <strong style="color: #00b14f; font-size: 18px;">🟢 Grab: ₱${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <strong style="color: #3b82f6; font-size: 18px;">🔵 GCash: ₱${totalGCash.toFixed(2)}</strong>
+        </td>
+      </tr>
+  `;
+
+  document.getElementById('tbTransBody').innerHTML = auditHeader + tBody;
+}
 
     function toggleTxMenu(id) { document.querySelectorAll('.action-dropdown').forEach(el => { if (el.id !== id) el.classList.remove('show'); }); let el = document.getElementById(id); if (el) el.classList.toggle('show'); }
     document.addEventListener('click', function (e) { if (!e.target.classList.contains('dot-menu')) { document.querySelectorAll('.action-dropdown').forEach(el => el.classList.remove('show')); } });
