@@ -946,142 +946,153 @@
         </div>
     </div>
 
-    <div id="view-inventory" class="view">
+    <div id="view-inventory" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="max-width: 1200px; margin: 0 auto;">
+        
+        <div style="background: white; padding: 15px 20px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
 
-      <div
-        style="background: white; padding: 15px 20px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <span style="font-size: 13px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">Branch:</span>
+            <select id="invBranchFilter" style="height: 42px; padding: 0 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: #334155; background: #f8fafc; cursor: pointer; min-width: 160px; outline: none;" onchange="window.loadInventoryData()">
+              <option value="All">🌐 All Branches</option>
+              <option value="Main Office">🏢 Main Office</option>
+              <option value="Cabantian">📍 Cabantian</option>
+              <option value="Citygate">📍 Citygate</option>
+              <option value="Maa">📍 Maa</option>
+            </select>
 
-        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-          <span style="font-size: 13px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">Branch:</span>
-          <select id="invBranchFilter"
-            style="height: 42px; padding: 0 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: #334155; background: #f8fafc; cursor: pointer; min-width: 160px; outline: none;"
-            onchange="window.loadInventoryData()">
-            <option value="All">🌐 All Branches</option>
-            <option value="Main Office">🏢 Main Office</option>
-            <option value="Cabantian">📍 Cabantian</option>
-            <option value="Citygate">📍 Citygate</option>
-            <option value="Maa">📍 Maa</option>
-          </select>
+            <span style="font-size: 13px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; margin-left: 5px;">Category:</span>
+            <select id="invCategoryFilter" style="height: 42px; padding: 0 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: #334155; background: #f8fafc; cursor: pointer; min-width: 160px; outline: none;" onchange="window.loadInventoryData()">
+              <option value="All">All Categories</option>
+              <option value="Ingredients">Ingredients</option>
+              <option value="Packaging">Packaging</option>
+              <option value="Beverage">Beverage</option>
+              <option value="Prepared Batch">Prepared Batch</option>
+              <option value="Consumables">Consumables</option>
+              <option value="Cleaning Supplies">Cleaning Supplies</option>
+            </select>
 
-          <span style="font-size: 13px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; margin-left: 5px;">Category:</span>
-          <select id="invCategoryFilter" 
-            style="height: 42px; padding: 0 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: #334155; background: #f8fafc; cursor: pointer; min-width: 160px; outline: none;" 
-            onchange="window.loadInventoryData()">
-            <option value="All">All Categories</option>
-            <option value="Ingredients">Ingredients</option>
-            <option value="Packaging">Packaging</option>
-            <option value="Beverage">Beverage</option>
-            <option value="Prepared Batch">Prepared Batch</option>
-            <option value="Consumables">Consumables</option>
-            <option value="Cleaning Supplies">Cleaning Supplies</option>
-          </select>
+            <div style="position: relative; flex: 1; min-width: 250px; margin-left: 10px;">
+              <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
+              <input type="text" id="liveInvSearch" onkeyup="window.loadInventoryData()" placeholder="Search items..." style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; box-sizing: border-box;">
+            </div>
+          </div>
 
-          <div style="position: relative; flex: 1; min-width: 250px; margin-left: 10px;">
-            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
-            <input type="text" id="liveInvSearch" onkeyup="window.loadInventoryData()" placeholder="Search items..." style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; box-sizing: border-box;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button onclick="openAddInventoryModal()" style="height: 42px; padding: 0 18px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(255, 159, 67, 0.2);">
+              <span style="font-size: 16px;">➕</span> Add Item
+            </button>
+            <button onclick="openBatchModal()" style="height: 42px; padding: 0 18px; background: #8b5cf6; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(139, 92, 246, 0.2);">
+              <span style="font-size: 16px;">🥣</span> Prep Batch
+            </button>
+            <button onclick="openMultiRestockModal()" style="height: 42px; padding: 0 18px; background: #0f766e; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(15, 118, 110, 0.2);">
+              <span style="font-size: 16px;">📦</span> HQ Restock
+            </button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button onclick="openInventoryLogs()" style="height: 42px; padding: 0 18px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(59, 130, 246, 0.2);">
+              <span style="font-size: 16px;">📜</span> History Logs
+            </button>
+            <button class="btn-refresh" style="height: 42px; padding: 0 15px; background: white; color: #16a34a; border: 1.5px solid #16a34a; font-weight: 700; border-radius: 8px; white-space: nowrap; cursor: pointer;" onclick="exportInventoryCSV()">
+              ⬇️ Download CSV
+            </button>
+            <label style="height: 42px; padding: 0 15px; background: #16a34a; color: white; border-radius: 8px; display: flex; align-items: center; font-weight: 700; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">
+              ⬆️ Smart Sync Upload
+              <input type="file" id="csvInvUpload" style="display: none;" onchange="smartImportCSV(event)">
+            </label>
           </div>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <button onclick="openAddInventoryModal()"
-            style="height: 42px; padding: 0 18px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(255, 159, 67, 0.2);">
-            <span style="font-size: 16px;">➕</span> Add Item
-          </button>
-
-          <button onclick="openBatchModal()"
-            style="height: 42px; padding: 0 18px; background: #8b5cf6; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(139, 92, 246, 0.2);">
-            <span style="font-size: 16px;">🥣</span> Prep Batch
-          </button>
-
-          <button onclick="openMultiRestockModal()"
-            style="height: 42px; padding: 0 18px; background: #f59e0b; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(245, 158, 11, 0.2);">
-            <span style="font-size: 16px;">📦</span> Multi-Restock
-          </button>
+        <div style="display: flex; gap: 20px; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0;" id="invTabsHeader">
+            <div id="tabInvOverview" onclick="switchInvTab('Overview')" style="padding: 10px 15px; font-weight: bold; font-size: 16px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer; transition: 0.2s;">Overview</div>
+            <div id="tabInvAudits" onclick="switchInvTab('Audits')" style="padding: 10px 15px; font-weight: bold; font-size: 16px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Audits & Accuracy</div>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <button onclick="openInventoryLogs()"
-            style="height: 42px; padding: 0 18px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(59, 130, 246, 0.2);">
-            <span style="font-size: 16px;">📜</span> History Logs
-          </button>
+        <div id="invTabLiveContent">
+          <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+              <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                  <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Total Items (Displayed)</div>
+                  <div id="invTotalItems" style="font-size: 32px; font-weight: 900; color: #0f172a;">0</div>
+              </div>
+              <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                  <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Current Asset Value (Displayed)</div>
+                  <div id="invTotalValue" style="font-size: 32px; font-weight: 900; color: #0f172a;">₱0.00</div>
+              </div>
+              <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                  <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Last HQ Audit</div>
+                  <div id="kpiLastAudit" style="font-size: 20px; font-weight: bold; color: #dc2626; margin-top: 8px;">Pending Setup</div>
+              </div>
+          </div>
 
-          <button class="btn-refresh"
-            style="height: 42px; padding: 0 15px; background: white; color: #16a34a; border: 1.5px solid #16a34a; font-weight: 700; border-radius: 8px; white-space: nowrap; cursor: pointer;"
-            onclick="exportInventoryCSV()">
-            ⬇️ Download CSV
-          </button>
+          <div class="card" style="margin-top: 20px;">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>BRANCH</th>
+                    <th>DESCRIPTION</th>
+                    <th>CATEGORY</th>
+                    <th>STOCK (BASE)</th>
+                    <th>OUTFLOW</th>
+                    <th>STATUS</th>
+                    <th>COST / BASE UNIT</th>
+                    <th>ACTION</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTableBody">
+                  <tr>
+                    <td colspan="8" class="text-center">Loading inventory data...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
 
-          <label
-            style="height: 42px; padding: 0 15px; background: #16a34a; color: white; border-radius: 8px; display: flex; align-items: center; font-weight: 700; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">
-            ⬆️ Smart Sync Upload
-            <input type="file" id="csvInvUpload" style="display: none;" onchange="smartImportCSV(event)">
-          </label>
+        <div id="invTabLogsContent" style="display: none;">
+          <div class="card">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>DATE / TIME</th>
+                    <th>BRANCH</th>
+                    <th>USER</th>
+                    <th>ITEM MODIFIED</th>
+                    <th>OLD QTY</th>
+                    <th>NEW QTY</th>
+                    <th>VARIANCE / TYPE</th>
+                  </tr>
+                </thead>
+                <tbody id="stockLogsBody">
+                  <tr>
+                    <td colspan="7" class="text-center">Loading logs...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div id="invSectionAudits" style="display: none;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Accuracy Rate</div>
+                    <div id="auditAccuracy" style="font-size: 32px; font-weight: 900; color: #0f172a;">--%</div>
+                </div>
+                <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Total Variance Loss</div>
+                    <div id="auditVariance" style="font-size: 32px; font-weight: 900; color: #dc2626;">₱0.00</div>
+                </div>
+            </div>
+            <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); text-align: center;">
+                <h3 style="margin-top:0; color: #0f172a;">Audit Logs Engine</h3>
+                <p style="color: #64748b; font-size: 14px;">The Audit Engine layout is prepared. We will link this to the Cashier Stock Count module in the next phase!</p>
+            </div>
         </div>
 
       </div>
-
-      <div id="invTabLiveContent">
-        <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr);">
-          <div class="stat-card">
-            <h3 style="color: var(--text-muted);">Total Active Items</h3>
-            <div class="value" id="invTotalItems" style="color: var(--text-main);">0</div>
-          </div>
-          <div class="stat-card">
-            <h3 style="color: var(--text-muted);">Current Asset Value</h3>
-            <div class="value" id="invTotalValue" style="color: var(--text-main);">₱0.00</div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top: 20px;">
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>BRANCH</th>
-                  <th>DESCRIPTION</th>
-                  <th>CATEGORY</th>
-                  <th>STOCK (BASE)</th>
-                  <th>OUTFLOW</th>
-                  <th>STATUS</th>
-                  <th>COST / BASE UNIT</th>
-                  <th>ACTION</th>
-                </tr>
-              </thead>
-              <tbody id="inventoryTableBody">
-                <tr>
-                  <td colspan="8" class="text-center">Loading inventory data...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div id="invTabLogsContent" style="display: none;">
-        <div class="card">
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>DATE / TIME</th>
-                  <th>BRANCH</th>
-                  <th>USER</th>
-                  <th>ITEM MODIFIED</th>
-                  <th>OLD QTY</th>
-                  <th>NEW QTY</th>
-                  <th>VARIANCE / TYPE</th>
-                </tr>
-              </thead>
-              <tbody id="stockLogsBody">
-                <tr>
-                  <td colspan="7" class="text-center">Loading logs...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
     </div>
 
     <div id="view-accounts" class="view">
