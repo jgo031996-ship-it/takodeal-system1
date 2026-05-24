@@ -1757,6 +1757,7 @@ window.switchInvTab = function(tab) {
         liveSec.style.display = 'none'; 
         logsSec.style.display = 'none'; 
         auditsSec.style.display = 'block';
+        if (typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits(); // <--- Wakes up the Audit engine!
     }
 };
 
@@ -8168,5 +8169,123 @@ window.editManagerPermissions = async function(docId, email) {
         window.loadAdminDashboard();
     } catch (e) {
         console.error(e); alert("Failed to update permissions.");
+    }
+};
+
+// ========================================================
+// 🕵️‍♂️ INVENTORY AUDIT & RECONCILIATION ENGINE
+// ========================================================
+window.loadInventoryAudits = async function() {
+    const tbody = document.getElementById('auditLogsBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">Fetching audit logs...</td></tr>';
+
+    try {
+        // Fetch the 50 most recent Stock Counts submitted by Cashiers
+        const q = query(collection(db, "stock_counts"), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH') : 'Unknown';
+            let countsLength = Array.isArray(data.counts) ? data.counts.length : 0;
+            
+            // Encode the payload safely so we can pass it to the Modal Button
+            let countsEncoded = encodeURIComponent(JSON.stringify(data.counts || []));
+            let safeBranch = data.branch ? data.branch.replace(/'/g, "\\'") : 'Unknown';
+            let safeCashier = data.cashier ? data.cashier.replace(/'/g, "\\'") : 'Unknown';
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #0f766e;">${safeBranch}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">${safeCashier}</td>
+                    <td style="padding: 12px;"><span style="background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">${countsLength} Items</span></td>
+                    <td style="padding: 12px;">
+                        <button onclick="window.viewAuditDetails('${dateStr}', '${safeBranch}', '${safeCashier}', '${countsEncoded}')" style="background: white; border: 1px solid #0f766e; color: #0f766e; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Reconcile</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 20px; color: #64748b;">No stock counts submitted yet.</td></tr>';
+    } catch (e) {
+        console.error("Audit Engine Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: red;">Failed to load audits.</td></tr>';
+    }
+};
+
+window.viewAuditDetails = async function(dateStr, branch, cashier, countsEncoded) {
+    document.getElementById('auditDetailsModal').style.display = 'flex';
+    document.getElementById('auditModalSubtitle').innerText = `${dateStr} | ${branch} | By: ${cashier}`;
+    
+    const tbody = document.getElementById('auditDetailsBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">Fetching Live DB stock for comparison...</td></tr>';
+    
+    let counts = JSON.parse(decodeURIComponent(countsEncoded));
+    
+    try {
+        // Fetch live inventory for this branch to get System Expected and Cost
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        
+        let liveStockDb = {};
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            liveStockDb[item.name] = {
+                qty: parseFloat(item.currentStock) || 0,
+                cost: parseFloat(item.baseCost) || 0,
+                uom: item.uom || ''
+            };
+        });
+
+        let html = '';
+        let totalLoss = 0;
+        let totalItemsCounted = 0;
+        let perfectItems = 0;
+
+        // Compare Cashier's count to the Live Database!
+        counts.forEach(countObj => {
+            let name = countObj.name;
+            let physQty = parseFloat(countObj.physicalQty) || 0;
+            let dbItem = liveStockDb[name] || { qty: 0, cost: 0, uom: '' };
+            
+            let sysQty = dbItem.qty;
+            let variance = physQty - sysQty;
+            let loss = variance < 0 ? Math.abs(variance) * dbItem.cost : 0;
+            
+            totalLoss += loss;
+            totalItemsCounted++;
+            if (variance === 0) perfectItems++;
+
+            let varColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#16a34a' : '#64748b');
+            let varText = variance === 0 ? 'Perfect' : `${variance > 0 ? '+' : ''}${variance.toFixed(1)} ${dbItem.uom}`;
+
+            html += `
+                <tr style="border-bottom: 1px dashed #e2e8f0;">
+                    <td style="padding: 10px; font-weight: bold; color: #334155;">${name}</td>
+                    <td style="padding: 10px; color: #64748b;">${sysQty.toFixed(1)} ${dbItem.uom}</td>
+                    <td style="padding: 10px; font-weight: bold; color: #0284c7;">${physQty.toFixed(1)} ${dbItem.uom}</td>
+                    <td style="padding: 10px; font-weight: bold; color: ${varColor};">${varText}</td>
+                    <td style="padding: 10px; text-align: right; color: #dc2626; font-weight: bold;">${loss > 0 ? `₱${loss.toFixed(2)}` : '-'}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 20px;">No items recorded in this audit.</td></tr>';
+
+        let accuracy = totalItemsCounted > 0 ? (perfectItems / totalItemsCounted) * 100 : 0;
+        
+        document.getElementById('auditModalAccuracy').innerText = `${accuracy.toFixed(1)}%`;
+        document.getElementById('auditModalLoss').innerText = `₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+        // Update the Top KPIs on the Dashboard!
+        if (document.getElementById('auditAccuracy')) document.getElementById('auditAccuracy').innerText = `${accuracy.toFixed(1)}%`;
+        if (document.getElementById('auditVariance')) document.getElementById('auditVariance').innerText = `₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    } catch (e) {
+        console.error("Audit Details Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: red;">Failed to fetch live database for comparison.</td></tr>';
     }
 };
