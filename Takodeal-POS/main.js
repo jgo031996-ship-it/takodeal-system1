@@ -1434,7 +1434,7 @@ window.submitRemittance = async function() {
         await addDoc(collection(db, "remittances"), payload);
         
         // 4. 🔥 TRUE DRAWER DEDUCTION
-        const shiftRef = doc(db, "shifts", liveShift.logId);
+        const shiftRef = doc(db, "shifts", shiftId); // <-- FIX: Uses the correct ID variable!
         const shiftSnap = await getDoc(shiftRef);
         if (shiftSnap.exists()) {
             let currentExp = shiftSnap.data().cashOut || 0;
@@ -1445,7 +1445,7 @@ window.submitRemittance = async function() {
         // 5. Audit Log (So the Manager can trace where the drawer cash went)
         await addDoc(collection(db, "expenses"), {
             branch: safeBranch,
-            shiftId: liveShift.logId,
+            shiftId: shiftId, // <-- FIX: Uses the correct ID variable!
             cashier: identity.cashierName,
             amount: remitAmount,
             description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`,
