@@ -3474,36 +3474,49 @@ window.openEditInvModal = async function(docId) {
     try {
         const docSnap = await getDoc(doc(db, "inventory", docId));
         if (!docSnap.exists()) { alert("Item not found!"); return; }
+        
         let d = docSnap.data();
+        console.log("Loading item data:", d); // 🔥 Helps you see if data is actually coming from Firebase
 
-        // Bind data to the NEW HTML IDs
+        // 1. Fill ID and Branch
         document.getElementById('editInvId').value = docId;
         document.getElementById('editInvBranch').value = d.branch || "Main Office";
         
+        // 2. Safely set Category
         let catSelect = document.getElementById('editInvCat');
-        let foundCat = Array.from(catSelect.options).find(opt => opt.value === d.category);
-        if (foundCat) { catSelect.value = d.category; } 
-        else if (d.category === "Prepared") { catSelect.value = "Prepared Batch"; } // Auto-fix old "Prepared" typo
-        else { catSelect.value = "Ingredients"; }
+        if (catSelect) {
+            // This handles the "Prepared" vs "Prepared Batch" issue we just fixed!
+            catSelect.value = d.category || "Ingredients";
+        }
 
+        // 3. Fill Text/Number fields with safety fallback
         document.getElementById('editInvName').value = d.name || "";
-        document.getElementById('editInvPurchUom').value = d.purchUom || d.uom || "";
-        document.getElementById('editInvBaseUom').value = d.baseUom || "";
-        document.getElementById('editInvConversion').value = d.conversion || d.conversionRate || 1;
-        document.getElementById('editInvPurchCost').value = d.purchCost || d.cost || d.unitCost || 0;
-        document.getElementById('editInvLowStock').value = d.lowStockAlert || d.reorderLevel || 0;
-        document.getElementById('editInvOldQty').value = d.currentStock || 0;
-        document.getElementById('editInvShowPrep').checked = d.showInPrep !== false;
+        document.getElementById('editInvPurchUom').value = d.purchaseUom || d.uom || "";
+        document.getElementById('editInvBaseUom').value = d.uom || "";
         
-        // Reset the manual adjustment fields
+        // Use d.conversion or d.conversionRate, fallback to 1
+        document.getElementById('editInvConversion').value = d.conversion || d.conversionRate || 1;
+        document.getElementById('editInvPurchCost').value = d.purchaseCost || d.baseCost || 0;
+        document.getElementById('editInvLowStock').value = d.reorderLevel || d.lowStockAlert || 0;
+        document.getElementById('editInvOldQty').value = d.currentStock || 0;
+        
+        // Handle checkbox
+        document.getElementById('editInvShowPrep').checked = (d.showInPrep !== false);
+        
+        // 4. Reset Variance fields
         document.getElementById('editInvNewQty').value = ""; 
         document.getElementById('editInvNote').value = ""; 
         document.getElementById('editInvVariance').innerText = "0";
 
+        // 5. Trigger calculations
         window.calcEditCost();
+        
+        // Show the modal
         document.getElementById('editInvModal').style.display = 'flex';
+        
     } catch (e) {
-        console.error(e); alert("Error opening item.");
+        console.error("Error opening edit modal:", e);
+        alert("Failed to load item details: " + e.message);
     }
 };
 
