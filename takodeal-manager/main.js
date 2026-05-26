@@ -1707,16 +1707,17 @@ window.loadInventoryData = async function() {
             
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 12px; text-align: center;">
+                        <input type="checkbox" class="inv-bulk-checkbox" value="${d.id}" data-name="${d.name}" style="cursor: pointer; width: 16px; height: 16px;">
+                    </td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b; font-size:12px;">${d.branch}</td>
                     <td style="padding: 12px; font-weight:900; color:#1e293b;">${d.name}</td>
                     <td style="padding: 12px; font-size:12px; font-weight:bold; color:var(--primary);">${itemCat}</td>
                     <td style="padding: 12px; font-weight:900; color:${isLow ? '#ef4444' : '#334155'}; font-size:15px;">${stock.toFixed(1)} <span style="font-size:11px; font-weight:normal; color:#64748b;">${d.baseUom || ''}</span></td>
-                    <td style="padding: 12px; color:#94a3b8; font-size:12px; text-align:center;">--</td>
                     <td style="padding: 12px;">${statusHtml}</td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
                     <td style="padding: 12px; display:flex; gap:5px;">
-                        <button onclick="window.openEditInvModal('${docSnap.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
-                        <button onclick="window.deleteInventoryItem('${docSnap.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🗑️</button>
+                        <button onclick="window.openEditInvModal('${d.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
                     </td>
                 </tr>
             `;
@@ -8418,5 +8419,38 @@ window.viewAuditDetails = async function(dateStr, branch, cashier, countsEncoded
     } catch (e) {
         console.error("Audit Details Error:", e);
         tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: red;">Failed to fetch live database for comparison.</td></tr>';
+    }
+};
+
+// ========================================================
+// 🗑️ INVENTORY BULK DELETE ENGINE
+// ========================================================
+window.toggleAllInvCheckboxes = function(source) {
+    let checkboxes = document.querySelectorAll('.inv-bulk-checkbox');
+    checkboxes.forEach(cb => cb.checked = source.checked);
+};
+
+window.bulkDeleteInventory = async function() {
+    let checkboxes = document.querySelectorAll('.inv-bulk-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert("Please select at least one item to delete.");
+        return;
+    }
+
+    if (!confirm(`⚠️ WARNING: You are about to permanently delete ${checkboxes.length} items from this branch. This cannot be undone. Proceed?`)) {
+        return;
+    }
+
+    try {
+        for (let cb of checkboxes) {
+            let docId = cb.value;
+            await deleteDoc(doc(db, "inventory", docId));
+        }
+        alert(`✅ Successfully deleted ${checkboxes.length} items!`);
+        document.getElementById('selectAllInv').checked = false; // Reset master checkbox
+        window.loadInventoryData();
+    } catch (error) {
+        console.error("Bulk Delete Error:", error);
+        alert("❌ Error deleting items. Check F12 console.");
     }
 };
