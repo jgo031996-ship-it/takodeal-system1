@@ -6335,6 +6335,7 @@ window.loadLedger = async function() {
                     <td>
                         <button class="btn-refresh" style="background: #f3e8ff; color: #7c3aed; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.setAutoDeduct('${record.id}', '${name}', ${cutoffDed}, ${balance})">⚙️ Set Deduct</button>
                         <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${staff.id}', '${staff.cashierName}', ${record.totalLoaned || 0}, ${record.totalPaid || 0})">✏️ Adjust</button>
+                        <button class="btn-refresh" style="background: #e0f2fe; color: #0284c7; border: 1px solid #0284c7; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.viewLedgerHistory('${name}')">📜 History</button>
                         <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Loan</button>
                         <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance})">💸 Pay</button>
                     </td>
@@ -8592,20 +8593,74 @@ window.bulkDeleteInventory = async function() {
     }
 };
 
+// ==========================================
+// 📸 SCHEDULE DOWNLOADER ENGINE
+// ==========================================
 window.downloadScheduleImage = function() {
-    const container = document.getElementById("scheduleContainer");
-    if(!container) return;
+    const schedElement = document.getElementById('scheduleContainer');
+    if (!schedElement || schedElement.innerHTML.trim() === '') {
+        alert("No schedule has been generated yet!"); return;
+    }
     
-    // Briefly force background to white for the screenshot
-    container.style.background = "white";
-    container.style.padding = "20px";
-    
-    html2canvas(container, { scale: 2 }).then(canvas => {
+    let btn = document.getElementById('btnDownloadSched');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Capturing...";
+    btn.disabled = true;
+
+    // Use html2canvas to take a picture of the schedule grid
+    html2canvas(schedElement, { scale: 2, backgroundColor: "#f8fafc" }).then(canvas => {
         let link = document.createElement('a');
-        link.download = `Takodeal_Schedule_${currentYear}_${currentMonth}.png`;
+        let month = document.getElementById('monthSelector').value || 'Schedule';
+        link.download = `Takodeal_Schedule_${month}.png`;
         link.href = canvas.toDataURL("image/png");
         link.click();
-        container.style.background = "transparent";
-        container.style.padding = "0";
+        
+        btn.innerText = origText;
+        btn.disabled = false;
+    }).catch(err => {
+        console.error("Canvas Error:", err);
+        alert("❌ Failed to capture schedule.");
+        btn.innerText = origText;
+        btn.disabled = false;
     });
+};
+
+// ==========================================
+// 📘 LEDGER & VALES HISTORY VIEWER
+// ==========================================
+window.viewLedgerHistory = async function(staffName) {
+    document.getElementById('ledgerHistoryModal').style.display = 'flex';
+    document.getElementById('ledgerHistorySubtitle').innerText = staffName;
+    const tbody = document.getElementById('ledgerHistoryBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px;">⏳ Fetching records...</td></tr>';
+
+    try {
+        // Fetch Vales and Staff Meals
+        const q = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), orderBy("dateAdded", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let dateStr = data.dateAdded ? data.dateAdded.toDate().toLocaleString('en-PH') : 'Unknown';
+            let statusBadge = data.status === "Paid" 
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">Paid</span>`
+                : `<span style="background: #fef2f2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">Unpaid</span>`;
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.type}</td>
+                    <td style="padding: 12px; font-style: italic; color: #475569;">System Deduction</td>
+                    <td style="padding: 12px;">${statusBadge}</td>
+                    <td style="padding: 12px; text-align: right; font-weight: bold; color: #ea580c;">₱${(data.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No vales or meals on record.</td></tr>';
+    } catch (e) {
+        console.error("Ledger History Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+    }
 };
