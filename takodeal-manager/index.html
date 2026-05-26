@@ -483,6 +483,7 @@
             <div style="display: flex; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 20px;">
                 <div id="tabHistTx" onclick="window.switchHistoryTab('Tx')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer; transition: 0.2s;">Transactions</div>
                 <div id="tabHistDaily" onclick="window.switchHistoryTab('Daily')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Daily Sales</div>
+                <div id="tabHistMonthly" onclick="window.switchHistoryTab('Monthly')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Monthly Sales</div>
                 <div id="tabHistReports" onclick="window.switchHistoryTab('Reports')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Reports (Optimization)</div>
                 <div style="margin-left: auto; display: flex; align-items: center;">
                     <button onclick="downloadExcel('historyTableBody', 'TAKODEAL_Transactions')" style="background: transparent; color: #64748b; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; display: flex; align-items: center; gap: 5px;">📥 Export Active Tab</button>
@@ -530,6 +531,26 @@
                 </div>
             </div>
 
+            <div id="histSecMonthly" style="display: none;">
+                <div class="table-responsive">
+                  <table class="data-table">
+                    <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                      <tr>
+                        <th style="color: #475569;">Month ↕</th>
+                        <th style="color: #475569;">Sales Amount ↕</th>
+                        <th style="color: #475569;">Est. COGS ↕</th>
+                        <th style="color: #475569;">Net Margin ↕</th>
+                        <th style="color: #475569;">Transactions ↕</th>
+                        <th style="color: #475569;">Ave. Trans Value ↕</th>
+                      </tr>
+                    </thead>
+                    <tbody id="historyMonthlyBody">
+                      <tr><td colspan="6" class="text-center" style="padding: 30px;">Select a date range and click Update Report...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+          
             <div id="histSecReports" style="display: none; padding: 20px;">
                 <h3 style="margin-top: 0; color: #0369a1;">📈 Product Optimization Report</h3>
                 <span style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 15px;">Analyzing Sales, COGS, and Profit Margins to find your best and worst items for the selected Date Range.</span>
