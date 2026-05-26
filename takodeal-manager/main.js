@@ -1686,7 +1686,7 @@ window.openBranchDetails = async function (branch) {
   }
 };
 
-// --- THE LIVE INVENTORY ENGINE (UPGRADED WITH FILTERING & SORTING) ---
+// --- THE LIVE INVENTORY ENGINE (UPGRADED WITH FILTERING) ---
 window.refreshInventoryView = function() { window.loadInventoryData(); };
 
 window.loadInventoryData = async function() {
@@ -1706,15 +1706,15 @@ window.loadInventoryData = async function() {
         let totalItems = 0;
         let totalValue = 0;
 
-        // 🔥 THE FIX: Sort the array alphabetically BEFORE looping through it!
-        let docsArray = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+        // 🔥 THE FIX: Sort the array BEFORE we loop through it!
+        let docsArray = snap.docs.map(d => ({id: d.id, ...d.data()}));
         docsArray.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
         docsArray.forEach(d => {
             let itemName = (d.name || "").toLowerCase();
             let itemCat = d.category || "Uncategorized";
             
-            // THE SMART CATEGORY & SEARCH FILTER LOGIC
+            // 🔥 THE SMART CATEGORY & SEARCH FILTER LOGIC
             if (catFilter !== "All" && itemCat !== catFilter) return; 
             if (search && !itemName.includes(search)) return; 
             
@@ -1741,7 +1741,7 @@ window.loadInventoryData = async function() {
                     <td style="padding: 12px;">${statusHtml}</td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
                     <td style="padding: 12px; display:flex; gap:5px;">
-                        <button onclick="window.openEditInvModal('${d.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
+                        <button onclick="window.openEditInvModal('${d.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
                     </td>
                 </tr>
             `;
@@ -1749,8 +1749,17 @@ window.loadInventoryData = async function() {
 
         tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b; font-weight: bold;">No items match your filters.</td></tr>';
         
-        if (document.getElementById('invTotalItems')) document.getElementById('invTotalItems').innerText = totalItems;
-        if (document.getElementById('invTotalValue')) document.getElementById('invTotalValue').innerText = '₱' + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        let tItemsEl = document.getElementById('invTotalItems');
+        let tValEl = document.getElementById('invTotalValue');
+        if (tItemsEl) tItemsEl.innerText = totalItems;
+        if (tValEl) tValEl.innerText = '₱' + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        // Update Command Center KPIs
+        if(typeof window.calculateInventoryKPIs === 'function') window.calculateInventoryKPIs(docsArray.filter(i => {
+            let bMatch = branchFilter === "All" || i.branch === branchFilter;
+            let cMatch = catFilter === "All" || i.category === catFilter;
+            return bMatch && cMatch;
+        }));
 
     } catch (e) {
         console.error("Inventory Load Error: ", e);
