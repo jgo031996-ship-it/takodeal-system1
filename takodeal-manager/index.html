@@ -421,68 +421,138 @@
     </div>
 
     <div id="view-history" class="view">
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <div class="card" style="background: transparent; border: none; box-shadow: none;">
+        
+        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
           <div>
-            <h2 style="margin: 0;">🧾 Master Sales History</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">View, filter, and export all past receipts for your bookkeeper.</span>
+            <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+              <span style="background: var(--sidebar-bg); color: white; padding: 5px 10px; border-radius: 6px; font-size: 18px;">≡</span>
+              Sales Transactions
+            </h2>
           </div>
-          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <select id="histBranchFilter" onchange="window.loadHistoryShiftDropdown()" onchange="window.loadSalesHistoryTab()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; width: auto;">
-                <option value="All">All Branches</option>
-                <option value="Cabantian">Cabantian</option>
-                <option value="Citygate">Citygate</option>
-                <option value="Maa">Maa</option>
-            </select>
-            <select id="histShiftSelect" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f172a; min-width: 300px; cursor: pointer;" onchange="window.loadSalesHistoryTab()">
-                <option value="">Loading shifts...</option>
-            </select>
-            
-            <button onclick="downloadExcel('historyTableBody', 'TAKODEAL_Master_Sales')" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">📥 Export Excel</button>
+          <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 11px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">Branch</span>
+                <select id="histBranchFilter" class="input-box" style="padding: 8px 12px; width: 140px; font-weight: bold; color: var(--primary);">
+                    <option value="All">All Branches</option>
+                    <option value="Cabantian">Cabantian</option>
+                    <option value="Citygate">Citygate</option>
+                    <option value="Maa">Maa</option>
+                </select>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 11px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">Start Date</span>
+                <input type="date" id="histStartDate" class="input-box" style="padding: 8px 12px; font-weight: bold;">
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 11px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">End Date</span>
+                <input type="date" id="histEndDate" class="input-box" style="padding: 8px 12px; font-weight: bold;">
+            </div>
+            <div style="display: flex; flex-direction: column; justify-content: flex-end; height: 100%;">
+                <button onclick="window.loadSalesHistoryTab()" class="btn-refresh" style="background: var(--primary); color: white; border: none; padding: 10px 20px; font-size: 14px; height: 42px;">🔄 Update Report</button>
+            </div>
           </div>
         </div>
 
-        <div id="historySummaryDashboard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px; padding-top: 15px; border-top: 1px solid #f1f5f9;">
-            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">Gross Sales</div>
-                <div id="histSumGross" style="font-size: 22px; font-weight: 900; color: #334155;">₱0.00</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="font-size: 13px; font-weight: bold; color: #64748b;">Sales <span style="font-size: 10px; background:#f1f5f9; padding:2px 6px; border-radius:4px;">(Net)</span></div>
+                <div id="histSumNet" style="font-size: 28px; font-weight: 900; color: #0f172a; margin-top: 5px;">₱0.00</div>
             </div>
-            <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px solid #bbf7d0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <div style="font-size: 11px; font-weight: bold; color: #166534; text-transform: uppercase;">Net Sales</div>
-                <div id="histSumNet" style="font-size: 22px; font-weight: 900; color: #16a34a;">₱0.00</div>
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 13px; font-weight: bold; color: #64748b;">Cost Of Goods Sold</div>
+                    <div id="histSumCogs" style="font-size: 24px; font-weight: 900; color: #0f172a; margin-top: 5px;">₱0.00</div>
+                </div>
+                <div id="histCogsPct" style="width: 50px; height: 50px; border-radius: 50%; border: 4px solid #10b981; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #10b981; font-size: 13px;">0%</div>
             </div>
-            <div style="background: #fef2f2; padding: 15px; border-radius: 8px; border: 1px solid #fecaca; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <div style="font-size: 11px; font-weight: bold; color: #991b1b; text-transform: uppercase;">Cost of Goods (COGS)</div>
-                <div id="histSumCogs" style="font-size: 22px; font-weight: 900; color: #dc2626;">₱0.00</div>
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 13px; font-weight: bold; color: #64748b;">Margin</div>
+                    <div id="histSumMargin" style="font-size: 24px; font-weight: 900; color: #0f172a; margin-top: 5px;">₱0.00</div>
+                </div>
+                <div id="histMarginPct" style="width: 50px; height: 50px; border-radius: 50%; border: 4px solid #0ea5e9; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #0ea5e9; font-size: 13px;">0%</div>
             </div>
-            <div style="background: #eff6ff; padding: 15px; border-radius: 8px; border: 1px solid #bfdbfe; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <div style="font-size: 11px; font-weight: bold; color: #1e40af; text-transform: uppercase;">Total Margin</div>
-                <div id="histSumMargin" style="font-size: 22px; font-weight: 900; color: #2563eb;">₱0.00 (0%)</div>
-            </div>
-            <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <div style="font-size: 11px; font-weight: bold; color: #b45309; text-transform: uppercase;">Grab Sales</div>
-                <div id="histSumGrab" style="font-size: 22px; font-weight: 900; color: #d97706;">₱0.00</div>
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="font-size: 13px; font-weight: bold; color: #64748b;">Grab Sales</div>
+                <div id="histSumGrab" style="font-size: 28px; font-weight: 900; color: #d97706; margin-top: 5px;">₱0.00</div>
             </div>
         </div>
 
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead style="background: #f8fafc;">
-              <tr>
-                <th>Date & Time</th>
-                <th>Receipt ID</th>
-                <th>Branch</th>
-                <th>Cashier</th>
-                <th style="color: #0284c7;">Customer</th>
-                <th>Payment</th>
-                <th>Net Total</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="historyTableBody">
-              <tr><td colspan="8" class="text-center" style="padding: 30px;">Select a date range to load receipts...</td></tr>
-            </tbody>
-          </table>
+        <div style="background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden;">
+            <div style="display: flex; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 20px;">
+                <div id="tabHistTx" onclick="window.switchHistoryTab('Tx')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer; transition: 0.2s;">Transactions</div>
+                <div id="tabHistDaily" onclick="window.switchHistoryTab('Daily')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Daily Sales</div>
+                <div id="tabHistReports" onclick="window.switchHistoryTab('Reports')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Reports (Optimization)</div>
+                <div style="margin-left: auto; display: flex; align-items: center;">
+                    <button onclick="downloadExcel('historyTableBody', 'TAKODEAL_Transactions')" style="background: transparent; color: #64748b; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; display: flex; align-items: center; gap: 5px;">📥 Export Active Tab</button>
+                </div>
+            </div>
+
+            <div id="histSecTx" style="display: block;">
+                <div class="table-responsive">
+                  <table class="data-table">
+                    <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                      <tr>
+                        <th style="color: #475569;">OR# ↕</th>
+                        <th style="color: #475569;">Sales Amount ↕</th>
+                        <th style="color: #475569;">Payment Method ↕</th>
+                        <th style="color: #475569;">Status ↕</th>
+                        <th style="color: #475569;">Date ↕</th>
+                        <th style="color: #475569;">Time ↕</th>
+                        <th style="color: #475569; text-align: center;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                      <tr><td colspan="7" class="text-center" style="padding: 30px;">Select a date range and click Update Report...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+
+            <div id="histSecDaily" style="display: none;">
+                <div class="table-responsive">
+                  <table class="data-table">
+                    <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                      <tr>
+                        <th style="color: #475569;">Date ↕</th>
+                        <th style="color: #475569;">Sales Amount ↕</th>
+                        <th style="color: #475569;">Est. COGS ↕</th>
+                        <th style="color: #475569;">Net Margin ↕</th>
+                        <th style="color: #475569;">Transactions ↕</th>
+                        <th style="color: #475569;">Ave. Trans Value ↕</th>
+                      </tr>
+                    </thead>
+                    <tbody id="historyDailyBody">
+                      <tr><td colspan="6" class="text-center" style="padding: 30px;">Select a date range and click Update Report...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+
+            <div id="histSecReports" style="display: none; padding: 20px;">
+                <h3 style="margin-top: 0; color: #0369a1;">📈 Product Optimization Report</h3>
+                <span style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 15px;">Analyzing Sales, COGS, and Profit Margins to find your best and worst items for the selected Date Range.</span>
+                <div class="table-responsive">
+                  <table class="data-table" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                    <thead style="background: #f0f9ff;">
+                      <tr>
+                        <th style="color: #0369a1;">Product Name</th>
+                        <th style="color: #0369a1;">Qty Sold</th>
+                        <th style="color: #0369a1;">Gross Sales (₱)</th>
+                        <th style="color: #0369a1;">Est. COGS (₱)</th>
+                        <th style="color: #0369a1;">COGS (%)</th>
+                        <th style="color: #0369a1;">Net Margin (₱)</th>
+                        <th style="color: #0369a1;">Health Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="productAnalyticsBody">
+                      <tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">Run the report to populate...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+
         </div>
       </div>
     </div>
