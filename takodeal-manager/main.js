@@ -7451,8 +7451,7 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
     const tbody = document.getElementById('productAnalyticsBody');
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #0ea5e9; font-weight: bold;">⏳ Crunching big data & COGS...</td></tr>';
-    if (branchFilter && branchFilter !== "All" && tx.branch !== branchFilter) return;
-  
+
     try {
         // 1. Fetch Latest Inventory Unit Costs
         const invSnap = await getDocs(collection(db, "inventory"));
@@ -7477,7 +7476,11 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
         // 4. Rip through every transaction and build the stats
         txSnap.forEach(doc => {
             let tx = doc.data();
+            
             if(tx.status === "Voided" || !tx.cart) return; // Ignore voided items
+
+            // ✅ THE FIX: The filter goes right here, after 'tx' is defined!
+            if (branchFilter && branchFilter !== "All" && tx.branch !== branchFilter) return;
 
             tx.cart.forEach(item => {
                 let name = item.name || item.itemName;
@@ -7494,7 +7497,7 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
                 // Tally Base COGS
                 let baseCogs = (recipeCosts[name] || 0) * qty;
 
-                // Tally Add-on COGS (If they added extra cheese, we must track the cost of that cheese!)
+                // Tally Add-on COGS
                 let addonCogs = 0;
                 if (item.addons) {
                     for (let key in item.addons) {
