@@ -7956,9 +7956,9 @@ window.loadSalesHistoryTab = async function() {
     let startOfDay = new Date(startDateRaw + 'T00:00:00');
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
-    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
-    if(tbodyDaily) tbodyDaily.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Calculating daily aggregates...</td></tr>';
-    if(tbodyMonthly) tbodyMonthly.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Calculating monthly aggregates...</td></tr>';
+    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
+    if(tbodyDaily) tbodyDaily.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Calculating daily aggregates...</td></tr>';
+    if(tbodyMonthly) tbodyMonthly.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Calculating monthly aggregates...</td></tr>';
 
     try {
         const invSnap = await getDocs(collection(db, "inventory"));
@@ -7983,7 +7983,7 @@ window.loadSalesHistoryTab = async function() {
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0;
         let dailyAggregates = {}; 
-        let monthlyAggregates = {}; // 🔥 NEW: Monthly Bucket
+        let monthlyAggregates = {}; 
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
@@ -7991,11 +7991,15 @@ window.loadSalesHistoryTab = async function() {
 
             let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
             let dateStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
-            let monthStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); // e.g., "May 2026"
+            let monthStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); 
             let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
             let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
             
+            // AGGREGATION KEYS (We separate it by Branch so you can see details!)
+            let dailyKey = `${tx.branch}_${dateStr}`;
+            let monthlyKey = `${tx.branch}_${monthStr}`;
+
             if (tx.status !== "Voided") {
                 let txNet = (tx.netTotal || 0);
                 tNet += txNet;
@@ -8022,19 +8026,17 @@ window.loadSalesHistoryTab = async function() {
                 }
                 tCogs += txCogs;
 
-                // 🔥 NEW LOGIC: Group by Date AND Branch!
-                let dailyKey = dateStr + '|' + tx.branch;
-                if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { date: dateStr, branch: tx.branch, sales: 0, cogs: 0, txCount: 0 };
+                // DAILY LOGIC
+                if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0 };
                 dailyAggregates[dailyKey].sales += txNet;
                 dailyAggregates[dailyKey].cogs += txCogs;
                 dailyAggregates[dailyKey].txCount += 1;
 
-                // 🔥 NEW LOGIC: Group by Month AND Branch!
-                let monthKey = monthStr + '|' + tx.branch;
-                if (!monthlyAggregates[monthKey]) monthlyAggregates[monthKey] = { date: monthStr, branch: tx.branch, sales: 0, cogs: 0, txCount: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
-                monthlyAggregates[monthKey].sales += txNet;
-                monthlyAggregates[monthKey].cogs += txCogs;
-                monthlyAggregates[monthKey].txCount += 1;
+                // MONTHLY LOGIC
+                if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
+                monthlyAggregates[monthlyKey].sales += txNet;
+                monthlyAggregates[monthlyKey].cogs += txCogs;
+                monthlyAggregates[monthlyKey].txCount += 1;
             }
 
             let statusStyle = tx.status === "Voided" ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
@@ -8043,53 +8045,58 @@ window.loadSalesHistoryTab = async function() {
             txHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
+                    <td style="padding: 12px 10px;"><span class="badge badge-open">${tx.branch}</span></td>
+                    <td style="padding: 12px 10px; font-weight: 500;">${tx.cashier}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #0284c7;">${safeCustomer}</td>
                     <td style="padding: 12px 10px; ${statusStyle}">₱${(tx.netTotal || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 12px 10px; color: #475569;">${tx.paymentMethod || 'Unknown'}</td>
                     <td style="padding: 12px 10px;">${statusBadge}</td>
                     <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${timeStr}</td>
                     <td style="padding: 12px 10px; text-align: center;">
-                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🔍 View</button>
+                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🔍</button>
                     </td>
                 </tr>
             `;
         });
 
-        if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this date range.</td></tr>';
+        if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="10" class="text-center" style="padding: 30px; color: #64748b;">No transactions found.</td></tr>';
 
-        // BUILD DAILY SALES WITH BRANCHES
+        // BUILD DAILY SALES
         let dailyHtml = '';
-        let sortedDaily = Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date));
-        sortedDaily.forEach(dayData => {
-            let dMargin = dayData.sales - dayData.cogs;
-            let dAvg = dayData.txCount > 0 ? dayData.sales / dayData.txCount : 0;
+        let sortedDates = Object.keys(dailyAggregates).sort((a,b) => new Date(dailyAggregates[b].date) - new Date(dailyAggregates[a].date)); 
+        sortedDates.forEach(key => {
+            let d = dailyAggregates[key];
+            let dMargin = d.sales - d.cogs;
+            let dAvg = d.txCount > 0 ? d.sales / d.txCount : 0;
             dailyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${dayData.date}</td>
-                    <td style="padding: 15px 10px;"><span class="badge badge-closed">${dayData.branch}</span></td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #0f172a; font-size: 15px;">₱${dayData.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${dayData.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-open">${d.branch}</span></td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${d.date}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #0f172a; font-size: 15px;">₱${d.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${dayData.txCount}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${d.txCount}</td>
                     <td style="padding: 15px 10px; color: #64748b;">₱${dAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>`;
         });
         if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // BUILD MONTHLY SALES WITH BRANCHES
+        // BUILD MONTHLY SALES
         let monthlyHtml = '';
-        let sortedMonthly = Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj);
-        sortedMonthly.forEach(mData => {
-            let mMargin = mData.sales - mData.cogs;
-            let mAvg = mData.txCount > 0 ? mData.sales / mData.txCount : 0;
+        let sortedMonths = Object.keys(monthlyAggregates).sort((a,b) => monthlyAggregates[b].dateObj - monthlyAggregates[a].dateObj);
+        sortedMonths.forEach(key => {
+            let m = monthlyAggregates[key];
+            let mMargin = m.sales - m.cogs;
+            let mAvg = m.txCount > 0 ? m.sales / m.txCount : 0;
             monthlyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
-                    <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 14px;">📅 ${mData.date}</td>
-                    <td style="padding: 15px 10px;"><span class="badge badge-closed">${mData.branch}</span></td>
-                    <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 15px;">₱${mData.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${mData.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-open">${m.branch}</span></td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 16px;">📅 ${m.month}</td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 16px;">₱${m.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${m.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${mData.txCount}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${m.txCount}</td>
                     <td style="padding: 15px 10px; color: #64748b;">₱${mAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>`;
         });
@@ -8105,21 +8112,120 @@ window.loadSalesHistoryTab = async function() {
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
         let cogsCirc = document.getElementById('histCogsPct');
-        cogsCirc.innerText = `${cogsPct.toFixed(0)}%`;
-        cogsCirc.style.borderColor = cogsPct > 50 ? '#ef4444' : '#10b981';
-        cogsCirc.style.color = cogsPct > 50 ? '#ef4444' : '#10b981';
+        if (cogsCirc) {
+            cogsCirc.innerText = `${cogsPct.toFixed(0)}%`;
+            cogsCirc.style.borderColor = cogsPct > 50 ? '#ef4444' : '#10b981';
+            cogsCirc.style.color = cogsPct > 50 ? '#ef4444' : '#10b981';
+        }
 
         let marginCirc = document.getElementById('histMarginPct');
-        marginCirc.innerText = `${marginPct.toFixed(0)}%`;
-        marginCirc.style.borderColor = marginPct < 30 ? '#ef4444' : '#0ea5e9';
-        marginCirc.style.color = marginPct < 30 ? '#ef4444' : '#0ea5e9';
+        if (marginCirc) {
+            marginCirc.innerText = `${marginPct.toFixed(0)}%`;
+            marginCirc.style.borderColor = marginPct < 30 ? '#ef4444' : '#0ea5e9';
+            marginCirc.style.color = marginPct < 30 ? '#ef4444' : '#0ea5e9';
+        }
 
+        // TRIGGER THE PRODUCT ANALYTICS REPORT!
         if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
 
     } catch (e) {
         console.error("History Error:", e);
-        if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+        if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
     }
+};
+
+// 🔥 FIX THE PESO SIGN EXCEL BUG! The \uFEFF code forces Excel to read it as UTF-8!
+window.exportTransactionsCSV = async function() {
+    let startDateRaw = document.getElementById('histStartDate').value;
+    let endDateRaw = document.getElementById('histEndDate').value;
+    let branchFilter = document.getElementById('histBranchFilter').value;
+
+    let startOfDay = new Date(startDateRaw + 'T00:00:00');
+    let endOfDay = new Date(endDateRaw + 'T23:59:59');
+
+    let btn = document.getElementById('btnExportSales') || document.querySelector('button[onclick*="exportTransactionsCSV"]');
+    let oldText = btn ? btn.innerText : "Export Excel";
+    if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
+
+    try {
+        let q = query(collection(db, "transactions"), 
+            where("timestamp", ">=", startOfDay), 
+            where("timestamp", "<=", endOfDay), 
+            orderBy("timestamp", "desc")
+        );
+        const snap = await getDocs(q);
+
+        // Standard CSV Headers for Bookkeeping
+        let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Net Total\n";
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (branchFilter !== "All" && tx.branch !== branchFilter) return;
+
+            let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            let dateStr = d.toLocaleDateString('en-PH');
+            let timeStr = d.toLocaleTimeString('en-PH');
+            
+            let itemsArr = [];
+            if (tx.cart) {
+                tx.cart.forEach(item => { itemsArr.push(`${item.qty}x ${item.name || item.itemName}`); });
+            }
+            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); 
+            
+            // Notice there is NO Peso sign in the CSV, just the raw number! Excel handles it better.
+            csv += `"${tx.receiptId}","${dateStr}","${timeStr}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${tx.netTotal}"\n`;
+        });
+
+        // 🔥 THE MAGIC UTF-8 BOM: "\uFEFF"
+        let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+        let downloadLink = document.createElement("a");
+        downloadLink.download = `Takodeal_Sales_${branchFilter}_${startDateRaw}.csv`;
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = "none";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+    } catch (e) {
+        console.error("Export Error:", e);
+        alert("Failed to export sales data.");
+    } finally {
+        if (btn) { btn.innerText = oldText; btn.disabled = false; }
+    }
+};
+
+window.downloadExcel = function(tbodyId, fileName) {
+    let tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    let table = tbody.closest('table');
+    let rows = table.querySelectorAll('tr');
+    let csv = [];
+
+    for (let i = 0; i < rows.length; i++) {
+        let row = [], cols = rows[i].querySelectorAll('td, th');
+        let colCount = cols.length;
+        // Skip the "Action" column at the end of the tables
+        if ((tbodyId === 'historyTableBody' || tbodyId === 'zReadingTableBody') && i > 0) colCount -= 1; 
+
+        for (let j = 0; j < colCount; j++) {
+            let text = cols[j].innerText.replace(/"/g, '""'); 
+            row.push('"' + text + '"');
+        }
+        csv.push(row.join(","));
+    }
+
+    // 🔥 THE MAGIC UTF-8 BOM: "\uFEFF" fixes the Peso sign glitch in Excel!
+    let csvFile = new Blob(["\uFEFF" + csv.join("\n")], {type: "text/csv;charset=utf-8;"});
+    let tempLink = document.createElement("a");
+    let d = new Date();
+    let dateTag = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    
+    tempLink.download = `${fileName}_${dateTag}.csv`;
+    tempLink.href = window.URL.createObjectURL(csvFile);
+    tempLink.style.display = "none";
+    document.body.appendChild(tempLink);
+    tempLink.click();
+    document.body.removeChild(tempLink);
 };
 
 // Auto-Load the dates when the page boots up
