@@ -1665,7 +1665,7 @@ window.openBranchDetails = async function (branch) {
   }
 };
 
-// --- THE LIVE INVENTORY ENGINE (UPGRADED WITH FILTERING) ---
+// --- THE LIVE INVENTORY ENGINE (UPGRADED WITH FILTERING & SORTING) ---
 window.refreshInventoryView = function() { window.loadInventoryData(); };
 
 window.loadInventoryData = async function() {
@@ -1685,14 +1685,17 @@ window.loadInventoryData = async function() {
         let totalItems = 0;
         let totalValue = 0;
 
+        // 🔥 THE FIX: Sort the array alphabetically BEFORE looping through it!
+        let docsArray = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+        docsArray.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
         docsArray.forEach(d => {
             let itemName = (d.name || "").toLowerCase();
             let itemCat = d.category || "Uncategorized";
-            let docsArray = snap.docs.map(d => ({id: d.id, ...d.data()}));
-            docsArray.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-            // 🔥 THE SMART CATEGORY & SEARCH FILTER LOGIC
-            if (catFilter !== "All" && itemCat !== catFilter) return; // Skips if category doesn't match!
-            if (search && !itemName.includes(search)) return; // Skips if search text doesn't match!
+            
+            // THE SMART CATEGORY & SEARCH FILTER LOGIC
+            if (catFilter !== "All" && itemCat !== catFilter) return; 
+            if (search && !itemName.includes(search)) return; 
             
             totalItems++;
             let cost = parseFloat(d.cost || d.purchCost || d.unitCost || 0);
@@ -1725,10 +1728,8 @@ window.loadInventoryData = async function() {
 
         tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b; font-weight: bold;">No items match your filters.</td></tr>';
         
-        let tItemsEl = document.getElementById('invTotalItems');
-        let tValEl = document.getElementById('invTotalValue');
-        if (tItemsEl) tItemsEl.innerText = totalItems;
-        if (tValEl) tValEl.innerText = '₱' + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (document.getElementById('invTotalItems')) document.getElementById('invTotalItems').innerText = totalItems;
+        if (document.getElementById('invTotalValue')) document.getElementById('invTotalValue').innerText = '₱' + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
     } catch (e) {
         console.error("Inventory Load Error: ", e);
@@ -3916,7 +3917,7 @@ window.exportInventoryCSV = async function () {
       csvContent += `${docSnap.id},${branch},${cleanCat},${cleanName},${purchUom},${baseUom},${conv},${pCost},${d.baseCost || 0},${d.currentStock || 0},${d.reorderLevel || 0}\n`;
     });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = `Takodeal_Inventory_Master.csv`;
@@ -5568,7 +5569,8 @@ window.downloadExcel = function(tbodyId, fileName) {
     }
 
     // Create the downloadable file
-    let csvFile = new Blob([csv.join("\n")], {type: "text/csv"});
+    // 🔥 THE FIX: "\uFEFF" forces Excel to read the Peso signs perfectly!
+    let csvFile = new Blob(["\uFEFF" + csv.join("\n")], {type: "text/csv;charset=utf-8;"});
     let tempLink = document.createElement("a");
     let d = new Date();
     let dateTag = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -7428,7 +7430,7 @@ window.exportTransactionsCSV = async function() {
         });
 
         // Trigger Download
-        let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         let downloadLink = document.createElement("a");
         downloadLink.download = `Takodeal_Sales_${safeName}.csv`;
         downloadLink.href = window.URL.createObjectURL(csvFile);
@@ -7479,9 +7481,6 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
             let tx = doc.data();
             
             if(tx.status === "Voided" || !tx.cart) return; // Ignore voided items
-
-            // ✅ THE FIX: The filter goes right here, after 'tx' is defined!
-            if (branchFilter && branchFilter !== "All" && tx.branch !== branchFilter) return;
 
             tx.cart.forEach(item => {
                 let name = item.name || item.itemName;
