@@ -22,6 +22,15 @@
         padding-right: 0 !important;
         margin-bottom: 15px !important;
     }
+      
+    html, body {
+        overscroll-behavior-y: none; /* Stops the pull-to-refresh blank space */
+    }
+    .overlay {
+        position: fixed !important;
+        inset: 0 !important; /* Locks it to all 4 corners perfectly */
+        height: 100% !important; /* Prevents keyboard squish */
+    }
     
     /* ========================================= */
     /* 📱 ULTIMATE RESPONSIVE MOBILE & TABLET ENGINE */
@@ -1880,6 +1889,8 @@
           <select id="settleCashAccount" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
             <option value="">Loading Accounts...</option>
           </select>
+          <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-top: 15px; display: block;">Bank / Transfer Fee (₱) - Optional</label>
+          <input type="number" id="settlePayFee" placeholder="0.00" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px dashed #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626; outline: none;">
 
           <button onclick="window.confirmPayableSettlement()" id="btnConfirmSettle" style="width: 100%; background: #16a34a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">✅ Confirm Payment</button>
         </div>
