@@ -461,6 +461,27 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empPagibig').value = data.pagibig || '';
     document.getElementById('empScheduleName').value = data.scheduleName || '';
     document.getElementById('employeeProfileModal').style.display = 'flex';
+    // Fetch History
+    const tbody = document.getElementById('empProfileHistoryBody');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 15px;">Loading...</td></tr>';
+        getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
+        .then(snap => {
+            let histHtml = '';
+            snap.forEach(dDoc => {
+                let d = dDoc.data();
+                let dateStr = d.dateAdded ? d.dateAdded.toDate().toLocaleDateString() : '';
+                let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
+                histHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding:8px; color: #64748b;">${dateStr}</td>
+                    <td style="padding:8px; font-weight: bold; color: #334155;">${d.type}</td>
+                    <td style="padding:8px; font-weight:bold;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding:8px; color:${color}; font-weight:bold;">${d.status}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = histHtml || '<tr><td colspan="4" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
+        }).catch(e => { console.error(e); tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history</td></tr>'; });
+    }
 };
 
 window.saveEmployeeProfile = async function() {
