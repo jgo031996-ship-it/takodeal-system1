@@ -7879,13 +7879,15 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
 window.switchHistoryTab = function(tabName) {
     let txTab = document.getElementById('tabHistTx');
     let dailyTab = document.getElementById('tabHistDaily');
+    let monthlyTab = document.getElementById('tabHistMonthly');
     let repTab = document.getElementById('tabHistReports');
     
     document.getElementById('histSecTx').style.display = 'none';
     document.getElementById('histSecDaily').style.display = 'none';
+    document.getElementById('histSecMonthly').style.display = 'none';
     document.getElementById('histSecReports').style.display = 'none';
 
-    [txTab, dailyTab, repTab].forEach(t => { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; });
+    [txTab, dailyTab, monthlyTab, repTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
 
     if (tabName === 'Tx') {
         txTab.style.color = '#0f766e'; txTab.style.borderBottomColor = '#0f766e';
@@ -7893,6 +7895,9 @@ window.switchHistoryTab = function(tabName) {
     } else if (tabName === 'Daily') {
         dailyTab.style.color = '#0f766e'; dailyTab.style.borderBottomColor = '#0f766e';
         document.getElementById('histSecDaily').style.display = 'block';
+    } else if (tabName === 'Monthly') {
+        monthlyTab.style.color = '#0f766e'; monthlyTab.style.borderBottomColor = '#0f766e';
+        document.getElementById('histSecMonthly').style.display = 'block';
     } else if (tabName === 'Reports') {
         repTab.style.color = '#0f766e'; repTab.style.borderBottomColor = '#0f766e';
         document.getElementById('histSecReports').style.display = 'block';
@@ -7902,6 +7907,7 @@ window.switchHistoryTab = function(tabName) {
 window.loadSalesHistoryTab = async function() {
     const tbodyTx = document.getElementById('historyTableBody');
     const tbodyDaily = document.getElementById('historyDailyBody');
+    const tbodyMonthly = document.getElementById('historyMonthlyBody');
     
     let branchFilter = document.getElementById('histBranchFilter').value;
     let startDateRaw = document.getElementById('histStartDate').value;
@@ -7920,11 +7926,11 @@ window.loadSalesHistoryTab = async function() {
     let startOfDay = new Date(startDateRaw + 'T00:00:00');
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
-    tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
-    tbodyDaily.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Calculating daily aggregates...</td></tr>';
+    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
+    if(tbodyDaily) tbodyDaily.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Calculating daily aggregates...</td></tr>';
+    if(tbodyMonthly) tbodyMonthly.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Calculating monthly aggregates...</td></tr>';
 
     try {
-        // 1. FETCH INVENTORY & RECIPES FOR COGS CALCULATION
         const invSnap = await getDocs(collection(db, "inventory"));
         let inventoryCosts = {};
         invSnap.forEach(doc => { let data = doc.data(); inventoryCosts[data.name] = parseFloat(data.baseCost) || 0; });
@@ -7937,7 +7943,6 @@ window.loadSalesHistoryTab = async function() {
             recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        // 2. FETCH TRANSACTIONS BY DATE RANGE
         let q = query(collection(db, "transactions"), 
             where("timestamp", ">=", startOfDay), 
             where("timestamp", "<=", endOfDay), 
@@ -7947,19 +7952,20 @@ window.loadSalesHistoryTab = async function() {
         
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0;
-        let dailyAggregates = {}; // For the Daily Sales Tab
+        let dailyAggregates = {}; 
+        let monthlyAggregates = {}; // 🔥 NEW: Monthly Bucket
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
             let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            let dateStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); // YYYY-MM-DD format
+            let dateStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
+            let monthStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); // e.g., "May 2026"
             let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
             let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
             
-            // CALCULATE FINANCIALS (Skip voided items)
             if (tx.status !== "Voided") {
                 let txNet = (tx.netTotal || 0);
                 tNet += txNet;
@@ -7986,14 +7992,19 @@ window.loadSalesHistoryTab = async function() {
                 }
                 tCogs += txCogs;
 
-                // DAILY AGGREGATION LOGIC
+                // DAILY LOGIC
                 if (!dailyAggregates[dateStr]) dailyAggregates[dateStr] = { sales: 0, cogs: 0, txCount: 0 };
                 dailyAggregates[dateStr].sales += txNet;
                 dailyAggregates[dateStr].cogs += txCogs;
                 dailyAggregates[dateStr].txCount += 1;
+
+                // 🔥 MONTHLY LOGIC
+                if (!monthlyAggregates[monthStr]) monthlyAggregates[monthStr] = { sales: 0, cogs: 0, txCount: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
+                monthlyAggregates[monthStr].sales += txNet;
+                monthlyAggregates[monthStr].cogs += txCogs;
+                monthlyAggregates[monthStr].txCount += 1;
             }
 
-            // BUILD TRANSACTION ROW
             let statusStyle = tx.status === "Voided" ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
             let statusBadge = tx.status === "Voided" ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
 
@@ -8012,17 +8023,15 @@ window.loadSalesHistoryTab = async function() {
             `;
         });
 
-        tbodyTx.innerHTML = txHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this date range.</td></tr>';
+        if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this date range.</td></tr>';
 
-        // BUILD DAILY SALES ROWS
+        // BUILD DAILY SALES
         let dailyHtml = '';
-        let sortedDates = Object.keys(dailyAggregates).sort((a,b) => new Date(b) - new Date(a)); // Newest first
-        
+        let sortedDates = Object.keys(dailyAggregates).sort((a,b) => new Date(b) - new Date(a));
         sortedDates.forEach(date => {
             let dayData = dailyAggregates[date];
             let dMargin = dayData.sales - dayData.cogs;
             let dAvg = dayData.txCount > 0 ? dayData.sales / dayData.txCount : 0;
-
             dailyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${date}</td>
@@ -8031,12 +8040,29 @@ window.loadSalesHistoryTab = async function() {
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${dayData.txCount}</td>
                     <td style="padding: 15px 10px; color: #64748b;">₱${dAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                </tr>
-            `;
+                </tr>`;
         });
-        tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
+        if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // UPDATE KPI CARDS
+        // 🔥 BUILD MONTHLY SALES
+        let monthlyHtml = '';
+        let sortedMonths = Object.keys(monthlyAggregates).sort((a,b) => monthlyAggregates[b].dateObj - monthlyAggregates[a].dateObj);
+        sortedMonths.forEach(month => {
+            let mData = monthlyAggregates[month];
+            let mMargin = mData.sales - mData.cogs;
+            let mAvg = mData.txCount > 0 ? mData.sales / mData.txCount : 0;
+            monthlyHtml += `
+                <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 16px;">📅 ${month}</td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 16px;">₱${mData.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${mData.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #16a34a; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${mData.txCount}</td>
+                    <td style="padding: 15px 10px; color: #64748b;">₱${mAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                </tr>`;
+        });
+        if(tbodyMonthly) tbodyMonthly.innerHTML = monthlyHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No monthly aggregates available.</td></tr>';
+
         let tMargin = tNet - tCogs;
         let cogsPct = tNet > 0 ? (tCogs / tNet) * 100 : 0;
         let marginPct = tNet > 0 ? (tMargin / tNet) * 100 : 0;
@@ -8046,7 +8072,6 @@ window.loadSalesHistoryTab = async function() {
         document.getElementById('histSumMargin').innerText = `₱${tMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-        // Circular Pct Updates
         let cogsCirc = document.getElementById('histCogsPct');
         cogsCirc.innerText = `${cogsPct.toFixed(0)}%`;
         cogsCirc.style.borderColor = cogsPct > 50 ? '#ef4444' : '#10b981';
@@ -8057,12 +8082,11 @@ window.loadSalesHistoryTab = async function() {
         marginCirc.style.borderColor = marginPct < 30 ? '#ef4444' : '#0ea5e9';
         marginCirc.style.color = marginPct < 30 ? '#ef4444' : '#0ea5e9';
 
-        // Trigger the Product Analytics tab to refresh its data based on these new dates!
         if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
 
     } catch (e) {
         console.error("History Error:", e);
-        tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+        if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
     }
 };
 
