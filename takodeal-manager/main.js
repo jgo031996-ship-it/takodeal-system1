@@ -7447,11 +7447,12 @@ window.exportTransactionsCSV = async function() {
 // ========================================================
 // 📈 PRODUCT OPTIMIZATION & ANALYTICS ENGINE
 // ========================================================
-window.loadProductAnalytics = async function(startOfDay, endOfDay) {
+window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter) {
     const tbody = document.getElementById('productAnalyticsBody');
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #0ea5e9; font-weight: bold;">⏳ Crunching big data & COGS...</td></tr>';
-
+    if (branchFilter && branchFilter !== "All" && tx.branch !== branchFilter) return;
+  
     try {
         // 1. Fetch Latest Inventory Unit Costs
         const invSnap = await getDocs(collection(db, "inventory"));
@@ -7870,30 +7871,54 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
 };
 
 // ==========================================
-// 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE
+// 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE (UPGRADED TABS)
 // ==========================================
-window.loadSalesHistoryTab = async function() {
-    const tbody = document.getElementById('historyTableBody');
-    if (!tbody) return;
-
-    let select = document.getElementById('histShiftSelect');
+window.switchHistoryTab = function(tabName) {
+    let txTab = document.getElementById('tabHistTx');
+    let dailyTab = document.getElementById('tabHistDaily');
+    let repTab = document.getElementById('tabHistReports');
     
-    // If no shift is selected, empty the screen
-    if (!select || select.selectedIndex <= 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 40px; color: #64748b; font-size: 16px;">👈 Please select a specific shift from the dropdown above.</td></tr>';
-        ['histSumGross', 'histSumNet', 'histSumCogs', 'histSumMargin', 'histSumGrab'].forEach(id => {
-            if(document.getElementById(id)) document.getElementById(id).innerText = "₱0.00";
-        });
-        return;
+    document.getElementById('histSecTx').style.display = 'none';
+    document.getElementById('histSecDaily').style.display = 'none';
+    document.getElementById('histSecReports').style.display = 'none';
+
+    [txTab, dailyTab, repTab].forEach(t => { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; });
+
+    if (tabName === 'Tx') {
+        txTab.style.color = '#0f766e'; txTab.style.borderBottomColor = '#0f766e';
+        document.getElementById('histSecTx').style.display = 'block';
+    } else if (tabName === 'Daily') {
+        dailyTab.style.color = '#0f766e'; dailyTab.style.borderBottomColor = '#0f766e';
+        document.getElementById('histSecDaily').style.display = 'block';
+    } else if (tabName === 'Reports') {
+        repTab.style.color = '#0f766e'; repTab.style.borderBottomColor = '#0f766e';
+        document.getElementById('histSecReports').style.display = 'block';
+    }
+};
+
+window.loadSalesHistoryTab = async function() {
+    const tbodyTx = document.getElementById('historyTableBody');
+    const tbodyDaily = document.getElementById('historyDailyBody');
+    
+    let branchFilter = document.getElementById('histBranchFilter').value;
+    let startDateRaw = document.getElementById('histStartDate').value;
+    let endDateRaw = document.getElementById('histEndDate').value;
+
+    if (!startDateRaw || !endDateRaw) {
+        let today = new Date();
+        today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+        let todayStr = today.toISOString().split('T')[0];
+        document.getElementById('histStartDate').value = todayStr;
+        document.getElementById('histEndDate').value = todayStr;
+        startDateRaw = todayStr;
+        endDateRaw = todayStr;
     }
 
-    // Grab the exact time data secretly hidden in the dropdown
-    let selectedOption = select.options[select.selectedIndex];
-    let startOfDay = new Date(selectedOption.getAttribute('data-start'));
-    let endOfDay = new Date(selectedOption.getAttribute('data-end'));
-    let shiftBranch = selectedOption.getAttribute('data-branch');
+    let startOfDay = new Date(startDateRaw + 'T00:00:00');
+    let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating shift financials and fetching receipts...</td></tr>';
+    tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
+    tbodyDaily.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Calculating daily aggregates...</td></tr>';
 
     try {
         // 1. FETCH INVENTORY & RECIPES FOR COGS CALCULATION
@@ -7906,43 +7931,41 @@ window.loadSalesHistoryTab = async function() {
         bomSnap.forEach(doc => {
             let data = doc.data();
             if (!recipeCosts[data.menuItem]) recipeCosts[data.menuItem] = 0;
-            let ingCost = inventoryCosts[data.ingredientName] || 0;
-            recipeCosts[data.menuItem] += (ingCost * (data.qty || 1));
+            recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        // 2. FETCH TRANSACTIONS (🔥 FIXED: Now uses the exact branch from the shift!)
-        const q = query(collection(db, "transactions"), 
-            where("branch", "==", shiftBranch), 
+        // 2. FETCH TRANSACTIONS BY DATE RANGE
+        let q = query(collection(db, "transactions"), 
             where("timestamp", ">=", startOfDay), 
             where("timestamp", "<=", endOfDay), 
             orderBy("timestamp", "desc")
         );
-
         const snap = await getDocs(q);
-        let html = '';
-
-        // Financial Trackers
-        let tGross = 0; let tNet = 0; let tCogs = 0; let tGrab = 0;
+        
+        let txHtml = '';
+        let tNet = 0; let tCogs = 0; let tGrab = 0;
+        let dailyAggregates = {}; // For the Daily Sales Tab
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
-            let timeStr = tx.timestamp ? tx.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            if (branchFilter !== "All" && tx.branch !== branchFilter) return;
+
+            let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            let dateStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); // YYYY-MM-DD format
+            let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
             let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
             
             // CALCULATE FINANCIALS (Skip voided items)
             if (tx.status !== "Voided") {
-                tNet += (tx.netTotal || 0);
-                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += (tx.netTotal || 0);
+                let txNet = (tx.netTotal || 0);
+                tNet += txNet;
+                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += txNet;
 
-                let txGross = 0;
+                let txCogs = 0;
                 if (tx.cart && Array.isArray(tx.cart)) {
                     tx.cart.forEach(item => {
                         let qty = item.qty || 1;
-                        let price = item.variantPrice || item.basePrice || 0;
-                        txGross += (price * qty);
-
-                        // COGS Math
                         let itemName = item.name || item.itemName;
                         let baseCogs = (recipeCosts[itemName] || 0) * qty;
                         let addonCogs = 0;
@@ -7955,51 +7978,99 @@ window.loadSalesHistoryTab = async function() {
                                 }
                             }
                         }
-                        tCogs += (baseCogs + addonCogs);
+                        txCogs += (baseCogs + addonCogs);
                     });
-                } else {
-                    txGross = tx.netTotal; // fallback
                 }
-                tGross += txGross;
+                tCogs += txCogs;
+
+                // DAILY AGGREGATION LOGIC
+                if (!dailyAggregates[dateStr]) dailyAggregates[dateStr] = { sales: 0, cogs: 0, txCount: 0 };
+                dailyAggregates[dateStr].sales += txNet;
+                dailyAggregates[dateStr].cogs += txCogs;
+                dailyAggregates[dateStr].txCount += 1;
             }
 
-            // BUILD TABLE ROW
+            // BUILD TRANSACTION ROW
             let statusStyle = tx.status === "Voided" ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
-            let voidBadge = tx.status === "Voided" ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:5px;">VOID</span>` : '';
+            let statusBadge = tx.status === "Voided" ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
 
-            html += `
+            txHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${timeStr}</td>
-                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">${tx.receiptId} ${voidBadge}</td>
-                    <td style="padding: 12px 10px;"><span class="badge badge-open">${tx.branch}</span></td>
-                    <td style="padding: 12px 10px; font-weight: 500;">${tx.cashier}</td>
-                    <td style="padding: 12px 10px; font-weight: bold; color: #0284c7;">${safeCustomer}</td>
-                    <td style="padding: 12px 10px;">${tx.paymentMethod || 'Unknown'}</td>
+                    <td style="padding: 12px 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
                     <td style="padding: 12px 10px; ${statusStyle}">₱${(tx.netTotal || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px 10px; color: #475569;">${tx.paymentMethod || 'Unknown'}</td>
+                    <td style="padding: 12px 10px;">${statusBadge}</td>
+                    <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${timeStr}</td>
                     <td style="padding: 12px 10px; text-align: center;">
-                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🔍 View</button>
                     </td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this shift.</td></tr>';
+        tbodyTx.innerHTML = txHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this date range.</td></tr>';
 
-        // 3. UPDATE THE DASHBOARD UI
+        // BUILD DAILY SALES ROWS
+        let dailyHtml = '';
+        let sortedDates = Object.keys(dailyAggregates).sort((a,b) => new Date(b) - new Date(a)); // Newest first
+        
+        sortedDates.forEach(date => {
+            let dayData = dailyAggregates[date];
+            let dMargin = dayData.sales - dayData.cogs;
+            let dAvg = dayData.txCount > 0 ? dayData.sales / dayData.txCount : 0;
+
+            dailyHtml += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${date}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #0f172a; font-size: 15px;">₱${dayData.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${dayData.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #16a34a; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${dayData.txCount}</td>
+                    <td style="padding: 15px 10px; color: #64748b;">₱${dAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                </tr>
+            `;
+        });
+        tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
+
+        // UPDATE KPI CARDS
         let tMargin = tNet - tCogs;
+        let cogsPct = tNet > 0 ? (tCogs / tNet) * 100 : 0;
         let marginPct = tNet > 0 ? (tMargin / tNet) * 100 : 0;
 
-        document.getElementById('histSumGross').innerText = `₱${tGross.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        document.getElementById('histSumNet').innerText = `₱${tNet.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        document.getElementById('histSumMargin').innerText = `₱${tMargin.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${marginPct.toFixed(1)}%)`;
-        document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        document.getElementById('histSumNet').innerText = `₱${tNet.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('histSumMargin').innerText = `₱${tMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+        // Circular Pct Updates
+        let cogsCirc = document.getElementById('histCogsPct');
+        cogsCirc.innerText = `${cogsPct.toFixed(0)}%`;
+        cogsCirc.style.borderColor = cogsPct > 50 ? '#ef4444' : '#10b981';
+        cogsCirc.style.color = cogsPct > 50 ? '#ef4444' : '#10b981';
+
+        let marginCirc = document.getElementById('histMarginPct');
+        marginCirc.innerText = `${marginPct.toFixed(0)}%`;
+        marginCirc.style.borderColor = marginPct < 30 ? '#ef4444' : '#0ea5e9';
+        marginCirc.style.color = marginPct < 30 ? '#ef4444' : '#0ea5e9';
+
+        // Trigger the Product Analytics tab to refresh its data based on these new dates!
+        if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
 
     } catch (e) {
         console.error("History Error:", e);
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px; color: red;">Failed to fetch history. Check F12 console.</td></tr>';
+        tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
     }
 };
+
+// Auto-Load the dates when the page boots up
+document.addEventListener("DOMContentLoaded", () => {
+    let today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+    let todayStr = today.toISOString().split('T')[0];
+    if (document.getElementById('histStartDate')) document.getElementById('histStartDate').value = todayStr;
+    if (document.getElementById('histEndDate')) document.getElementById('histEndDate').value = todayStr;
+});
 
 // ==========================================
 // 📱 MOBILE SIDEBAR SLIDE ENGINE
