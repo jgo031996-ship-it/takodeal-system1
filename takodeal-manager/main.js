@@ -1685,11 +1685,11 @@ window.loadInventoryData = async function() {
         let totalItems = 0;
         let totalValue = 0;
 
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
+        docsArray.forEach(d => {
             let itemName = (d.name || "").toLowerCase();
             let itemCat = d.category || "Uncategorized";
-            
+            let docsArray = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            docsArray.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
             // 🔥 THE SMART CATEGORY & SEARCH FILTER LOGIC
             if (catFilter !== "All" && itemCat !== catFilter) return; // Skips if category doesn't match!
             if (search && !itemName.includes(search)) return; // Skips if search text doesn't match!
@@ -3899,34 +3899,28 @@ window.approveRemittance = async function (docId) {
 window.exportInventoryCSV = async function () {
   try {
     const snap = await getDocs(collection(db, "inventory"));
-
-    // The Header Row (Notice FirebaseID is the very first column!)
-    let csvContent = "FirebaseID,Branch,Category,ItemName,UOM,BaseCost,CurrentStock\n";
+    // 🔥 THE FIX: Export ALL columns required for the math engine!
+    let csvContent = "FirebaseID,Branch,Category,ItemName,PurchaseUOM,BaseUOM,ConversionRate,PurchaseCost,BaseCost,CurrentStock,ReorderLevel\n";
 
     snap.forEach(docSnap => {
       let d = docSnap.data();
-      // We clean the text to make sure commas in names don't break the Excel columns
       let cleanName = (d.name || '').replace(/,/g, '');
       let cleanCat = (d.category || '').replace(/,/g, '');
       let branch = d.branch || 'Main Office';
+      let purchUom = d.purchaseUom || d.purchUom || d.uom || '';
+      let baseUom = d.uom || d.baseUom || '';
+      let conv = d.conversionRate || d.conversion || 1;
+      let pCost = d.purchaseCost || d.purchCost || 0;
 
-      csvContent += `${docSnap.id},${branch},${cleanCat},${cleanName},${d.uom || ''},${d.baseCost || 0},${d.currentStock || 0}\n`;
+      csvContent += `${docSnap.id},${branch},${cleanCat},${cleanName},${purchUom},${baseUom},${conv},${pCost},${d.baseCost || 0},${d.currentStock || 0},${d.reorderLevel || 0}\n`;
     });
 
-    // Magic trick to force the browser to download the file
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Takodeal_Inventory_Master.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-  } catch (e) {
-    console.error(e); alert("Failed to export CSV.");
-  }
+    link.href = URL.createObjectURL(blob);
+    link.download = `Takodeal_Inventory_Master.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  } catch (e) { console.error(e); alert("Failed to export CSV."); }
 };
 
 
@@ -3955,32 +3949,33 @@ window.smartImportCSV = function (event) {
     try {
       // Loop through every row (Skip row 0 because it's the header)
       for (let i = 1; i < rows.length; i++) {
-        if (!rows[i].trim()) continue; // Skip blank lines
+        if (!rows[i].trim()) continue;
         let cols = rows[i].split(',');
 
         let docId = cols[0] ? cols[0].trim() : "";
         let branch = cols[1] ? cols[1].trim() : "";
         let category = cols[2] ? cols[2].trim() : "";
         let name = cols[3] ? cols[3].trim() : "";
-        let uom = cols[4] ? cols[4].trim() : "";
-        let baseCost = parseFloat(cols[5]) || 0;
-        let currentStock = parseFloat(cols[6]) || 0;
+        let pUom = cols[4] ? cols[4].trim() : "";
+        let bUom = cols[5] ? cols[5].trim() : "";
+        let conv = parseFloat(cols[6]) || 1;
+        let pCost = parseFloat(cols[7]) || 0;
+        let bCost = parseFloat(cols[8]) || 0;
+        let currentStock = parseFloat(cols[9]) || 0;
+        let reorder = parseFloat(cols[10]) || 0;
 
-        if (!name) continue; // If there is no item name, ignore the row
+        if (!name) continue;
 
-        if (docId !== "") {
-          // UPDATE existing item
-          await updateDoc(doc(db, "inventory", docId), {
-            branch: branch, category: category, name: name, uom: uom, baseCost: baseCost, currentStock: currentStock
-          });
-          updatedCount++;
-        } else {
-          // CREATE brand new item
-          await addDoc(collection(db, "inventory"), {
-            branch: branch, category: category, name: name, uom: uom, baseCost: baseCost, currentStock: currentStock
-          });
-          addedCount++;
-        }
+        let payload = {
+            branch: branch, category: category, name: name, 
+            purchaseUom: pUom, uom: bUom, baseUom: bUom,
+            conversionRate: conv, conversion: conv,
+            purchaseCost: pCost, baseCost: bCost, 
+            currentStock: currentStock, reorderLevel: reorder
+        };
+
+        if (docId !== "") await updateDoc(doc(db, "inventory", docId), payload);
+        else await addDoc(collection(db, "inventory"), payload);
       }
 
       alert(`✅ Smart Sync Complete!\n\nUpdated: ${updatedCount} existing items.\nAdded: ${addedCount} brand new items.`);
@@ -7333,50 +7328,56 @@ window.confirmPayableSettlement = async function() {
     let supplier = document.getElementById('settlePaySupplier').value;
     let amount = parseFloat(document.getElementById('settlePayAmountRaw').value);
     let accountId = document.getElementById('settleCashAccount').value;
+    let fee = parseFloat(document.getElementById('settlePayFee').value) || 0; // 🔥 Grab the fee
 
     if (!accountId) { alert("Please select a Cash Account to deduct funds from."); return; }
 
+    let totalDeduction = amount + fee; // 🔥 Total money leaving the bank
     let accData = window.livePayableAccounts[accountId];
-    if (accData.balance < amount) {
-        if(!confirm(`⚠️ WARNING: ${accData.name} only has ₱${accData.balance}. Deducting this will make the account negative. Continue anyway?`)) return;
+
+    if (accData.balance < totalDeduction) {
+        if(!confirm(`⚠️ WARNING: ${accData.name} only has ₱${accData.balance.toLocaleString()}.\nDeducting ₱${totalDeduction.toLocaleString()} (Invoice + Fee) will make it negative. Continue anyway?`)) return;
     }
 
     let btn = document.getElementById('btnConfirmSettle');
     btn.innerText = "⏳ Processing Payment..."; btn.disabled = true;
 
     try {
-        // 1. Deduct from Cash Account
+        // 1. Deduct Invoice + Fee from Cash Account
         await updateDoc(doc(db, "cash_accounts", accountId), {
-            balance: accData.balance - amount
+            balance: accData.balance - totalDeduction
         });
 
         // 2. Mark Payable as Paid
         await updateDoc(doc(db, "payables", payId), {
             status: "Paid",
             datePaid: serverTimestamp(),
-            paidFromAccount: accData.name
+            paidFromAccount: accData.name,
+            transactionFee: fee
         });
 
-        // 3. Log to Global Expenses (so it shows up in your Expense Feed!)
+        // 3. Log the Invoice Payment
         await addDoc(collection(db, "expenses"), {
-            branch: "Main Office",
-            amount: amount,
-            category: "Supplier Payment",
-            account: accData.name,
-            note: `Settled Invoice for ${supplier}`,
-            timestamp: serverTimestamp()
+            branch: "Main Office", amount: amount, category: "Supplier Payment",
+            account: accData.name, note: `Settled Invoice for ${supplier}`, timestamp: serverTimestamp()
         });
 
-        alert(`✅ Payment complete! ₱${amount.toLocaleString()} was deducted from ${accData.name}.`);
+        // 4. 🔥 Log the Bank Fee Separately if it exists!
+        if (fee > 0) {
+            await addDoc(collection(db, "expenses"), {
+                branch: "Main Office", amount: fee, category: "Bank Charges",
+                account: accData.name, note: `Transfer Fee for ${supplier} payment`, timestamp: serverTimestamp()
+            });
+        }
+
+        alert(`✅ Payment complete! ₱${totalDeduction.toLocaleString()} was deducted from ${accData.name}.`);
         document.getElementById('settlePayableModal').style.display = 'none';
+        document.getElementById('settlePayFee').value = ''; // Reset fee
         
         window.loadPayablesDashboard();
-        // If the user happens to have the Accounts tab loaded in the background, refresh it too
         if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
-
     } catch (e) {
-        console.error("Error settling payment:", e);
-        alert("Payment failed. Check connection.");
+        console.error("Error settling payment:", e); alert("Payment failed. Check connection.");
     } finally {
         btn.innerText = "✅ Confirm Payment"; btn.disabled = false;
     }
