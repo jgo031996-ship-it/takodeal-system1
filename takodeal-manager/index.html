@@ -221,7 +221,6 @@
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')">👥 Staff & Security</a>
       <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')">🍔 Menu Editor</a>
       <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();">⚙️ POS Config Hub</a>
-      <a href="#" class="nav-item" id="nav-receipt" onclick="switchView('receipt')">🖨️ Printer Setup</a>
       <a href="#" class="nav-item" id="nav-inventory" onclick="switchView('inventory'); loadInventoryData();">📦 Live
         Inventory</a>
       <a href="#" class="nav-item" id="nav-alerts" onclick="switchView('alerts')">🚨 Security Alerts</a>
@@ -517,6 +516,7 @@
                     <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
                       <tr>
                         <th style="color: #475569;">Date ↕</th>
+                        <th style="color: #475569;">Branch ↕</th>
                         <th style="color: #475569;">Sales Amount ↕</th>
                         <th style="color: #475569;">Est. COGS ↕</th>
                         <th style="color: #475569;">Net Margin ↕</th>
@@ -537,6 +537,7 @@
                     <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
                       <tr>
                         <th style="color: #475569;">Month ↕</th>
+                        <th style="color: #475569;">Branch ↕</th>
                         <th style="color: #475569;">Sales Amount ↕</th>
                         <th style="color: #475569;">Est. COGS ↕</th>
                         <th style="color: #475569;">Net Margin ↕</th>
@@ -1015,37 +1016,6 @@
       </div>
     </div>
     
-    <div id="view-receipt" class="view">
-        <div class="card" style="max-width: 600px; margin: 0 auto;">
-            <h2 style="margin-top: 0;">🖨️ Thermal Receipt Settings</h2>
-            
-            <div style="margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
-                <label style="font-size: 13px; font-weight: bold; color: #334155; display: block; margin-bottom: 8px;">Official Store Logo (Black & White works best!)</label>
-                <input type="file" id="rcptLogo" accept="image/png, image/jpeg" onchange="processLogoUpload(event)" style="width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; box-sizing: border-box;">
-                <input type="hidden" id="logoBase64Val" value="">
-                
-                <div style="text-align: center; margin-top: 15px;">
-                    <img id="logoPreview" src="" style="max-width: 150px; max-height: 150px; display: none; border-radius: 8px; border: 1px solid #cbd5e1; padding: 5px; background: white;">
-                </div>
-            </div>
-    
-            <div style="margin-bottom: 15px;">
-                <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Store Name</label>
-                <input type="text" id="rcptName" placeholder="e.g. TAKODEÁL" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Contact Info</label>
-                <input type="text" id="rcptContact" placeholder="Phone / Social Media" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-            </div>
-            <div style="margin-bottom: 25px;">
-                <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Footer Message</label>
-                <input type="text" id="rcptFooter" placeholder="e.g. Thank you for your purchase!" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-            </div>
-            
-            <button onclick="saveReceiptSettings()" style="background: #16a34a; color: white; padding: 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px;">💾 Save Receipt Layout</button>
-        </div>
-    </div>
-
     <div id="view-inventory" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       <div style="max-width: 1200px; margin: 0 auto;">
         
@@ -1476,6 +1446,7 @@
     
         <div class="sched-panel" style="background: #fffbeb; border-color: #fcd34d;">
             <h3 style="margin-top: 0; color: #b45309;">⚙️ Shift Configuration</h3>
+            <button onclick="downloadScheduleImage()" class="btn-refresh" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; margin-bottom:15px; cursor:pointer;">📸 Download Schedule as Image</button>
             <p style="font-size: 13px; margin-bottom: 15px;">Rename shifts, toggle them off, or set active days. (Reshuffle not required after saving).</p>
             <div class="shift-config-grid" id="shiftConfigGrid"></div>
             <button class="action-btn" style="margin-top: 15px;" onclick="saveShiftConfigChanges()">💾 Save Shift Rules</button>
