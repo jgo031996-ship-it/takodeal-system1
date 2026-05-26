@@ -7992,17 +7992,19 @@ window.loadSalesHistoryTab = async function() {
                 }
                 tCogs += txCogs;
 
-                // DAILY LOGIC
-                if (!dailyAggregates[dateStr]) dailyAggregates[dateStr] = { sales: 0, cogs: 0, txCount: 0 };
-                dailyAggregates[dateStr].sales += txNet;
-                dailyAggregates[dateStr].cogs += txCogs;
-                dailyAggregates[dateStr].txCount += 1;
+                // 🔥 NEW LOGIC: Group by Date AND Branch!
+                let dailyKey = dateStr + '|' + tx.branch;
+                if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { date: dateStr, branch: tx.branch, sales: 0, cogs: 0, txCount: 0 };
+                dailyAggregates[dailyKey].sales += txNet;
+                dailyAggregates[dailyKey].cogs += txCogs;
+                dailyAggregates[dailyKey].txCount += 1;
 
-                // 🔥 MONTHLY LOGIC
-                if (!monthlyAggregates[monthStr]) monthlyAggregates[monthStr] = { sales: 0, cogs: 0, txCount: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
-                monthlyAggregates[monthStr].sales += txNet;
-                monthlyAggregates[monthStr].cogs += txCogs;
-                monthlyAggregates[monthStr].txCount += 1;
+                // 🔥 NEW LOGIC: Group by Month AND Branch!
+                let monthKey = monthStr + '|' + tx.branch;
+                if (!monthlyAggregates[monthKey]) monthlyAggregates[monthKey] = { date: monthStr, branch: tx.branch, sales: 0, cogs: 0, txCount: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
+                monthlyAggregates[monthKey].sales += txNet;
+                monthlyAggregates[monthKey].cogs += txCogs;
+                monthlyAggregates[monthKey].txCount += 1;
             }
 
             let statusStyle = tx.status === "Voided" ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
@@ -8025,16 +8027,16 @@ window.loadSalesHistoryTab = async function() {
 
         if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No transactions found for this date range.</td></tr>';
 
-        // BUILD DAILY SALES
+        // BUILD DAILY SALES WITH BRANCHES
         let dailyHtml = '';
-        let sortedDates = Object.keys(dailyAggregates).sort((a,b) => new Date(b) - new Date(a));
-        sortedDates.forEach(date => {
-            let dayData = dailyAggregates[date];
+        let sortedDaily = Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date));
+        sortedDaily.forEach(dayData => {
             let dMargin = dayData.sales - dayData.cogs;
             let dAvg = dayData.txCount > 0 ? dayData.sales / dayData.txCount : 0;
             dailyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${date}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${dayData.date}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-closed">${dayData.branch}</span></td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #0f172a; font-size: 15px;">₱${dayData.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${dayData.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -8042,26 +8044,26 @@ window.loadSalesHistoryTab = async function() {
                     <td style="padding: 15px 10px; color: #64748b;">₱${dAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>`;
         });
-        if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
+        if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // 🔥 BUILD MONTHLY SALES
+        // BUILD MONTHLY SALES WITH BRANCHES
         let monthlyHtml = '';
-        let sortedMonths = Object.keys(monthlyAggregates).sort((a,b) => monthlyAggregates[b].dateObj - monthlyAggregates[a].dateObj);
-        sortedMonths.forEach(month => {
-            let mData = monthlyAggregates[month];
+        let sortedMonthly = Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj);
+        sortedMonthly.forEach(mData => {
             let mMargin = mData.sales - mData.cogs;
             let mAvg = mData.txCount > 0 ? mData.sales / mData.txCount : 0;
             monthlyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
-                    <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 16px;">📅 ${month}</td>
-                    <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 16px;">₱${mData.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 14px;">📅 ${mData.date}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-closed">${mData.branch}</span></td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 15px;">₱${mData.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${mData.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${mData.txCount}</td>
                     <td style="padding: 15px 10px; color: #64748b;">₱${mAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>`;
         });
-        if(tbodyMonthly) tbodyMonthly.innerHTML = monthlyHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No monthly aggregates available.</td></tr>';
+        if(tbodyMonthly) tbodyMonthly.innerHTML = monthlyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No monthly aggregates available.</td></tr>';
 
         let tMargin = tNet - tCogs;
         let cogsPct = tNet > 0 ? (tCogs / tNet) * 100 : 0;
@@ -8452,4 +8454,22 @@ window.bulkDeleteInventory = async function() {
         console.error("Bulk Delete Error:", error);
         alert("❌ Error deleting items. Check F12 console.");
     }
+};
+
+window.downloadScheduleImage = function() {
+    const container = document.getElementById("scheduleContainer");
+    if(!container) return;
+    
+    // Briefly force background to white for the screenshot
+    container.style.background = "white";
+    container.style.padding = "20px";
+    
+    html2canvas(container, { scale: 2 }).then(canvas => {
+        let link = document.createElement('a');
+        link.download = `Takodeal_Schedule_${currentYear}_${currentMonth}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        container.style.background = "transparent";
+        container.style.padding = "0";
+    });
 };
