@@ -1049,12 +1049,34 @@
 
         window.cancelMyOrder = async function() {
             if(!window.currentOrderId) return;
-            if(!confirm("Are you sure you want to cancel your order?")) return;
             
             try {
-                await updateDoc(doc(db, "incoming_orders", window.currentOrderId), {
+                // 1. Fetch the exact order to check when it was placed
+                const orderRef = doc(db, "incoming_orders", window.currentOrderId);
+                const orderSnap = await getDoc(orderRef);
+                
+                if (!orderSnap.exists()) {
+                    alert("This order no longer exists or was already processed.");
+                    return;
+                }
+
+                let orderData = orderSnap.data();
+                let orderDate = orderData.timestamp.toDate();
+                let diffMins = (new Date() - orderDate) / 60000;
+
+                // 🔥 1-MINUTE STRICT LOCK
+                if (diffMins > 1) {
+                    alert("⚠️ Too Late to Cancel!\n\nYour order has already been received by the cashier and preparation has started.\n\nIf you really need to cancel, please contact the branch immediately using our business page:\nwww.facebook.com/Takodeal");
+                    return; // ⛔ Stops the cancellation!
+                }
+
+                if(!confirm("Are you sure you want to cancel your order?")) return;
+                
+                // 2. If it's under 1 minute, allow the cancellation
+                await updateDoc(orderRef, {
                     status: "rejected_by_customer"
                 });
+                
             } catch(e) { console.error("Cancel error", e); }
         };
 
@@ -1120,6 +1142,16 @@
                 if (codAmount) deliveryNotes += `\n\n[RIDER: PREPARE CHANGE FOR ₱${codAmount}]`;
             }
 
+            // 🛑 STORE CLOSED CHECKER (Before we do any uploading!)
+            const activeShiftQ = query(collection(db, "shifts"), where("branch", "==", selectedBranch), where("active", "==", true));
+            const activeShiftSnap = await getDocs(activeShiftQ);
+
+            if (activeShiftSnap.empty) {
+                alert(`🚨 STORE CLOSED!\n\nThe ${selectedBranch} branch is currently closed and the cash register is offline.\n\nPlease check back later or try selecting a different branch!`);
+                window.closeCartModal();
+                return; // ⛔ Blocks the order from being placed!
+            }
+            
             let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
             const btn = document.getElementById('submitBtn');
 
