@@ -2026,6 +2026,11 @@ window.startMobileOrdersListener = function(branch) {
         }
 
         window.hasLoadedMobileOrdersOnce = true; // Mark that they have officially logged in
+        
+    // 🔥 PART 3 FIX: ADD THE ERROR CATCHER HERE!
+    }, (error) => {
+        console.error("Firebase Mobile Orders Error:", error);
+        alert("Firebase Error: " + error.message + "\n\n(If you see this, turn off Tracking Prevention in your browser shield icon!)");
     });
 };
 
