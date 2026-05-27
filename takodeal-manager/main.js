@@ -3930,23 +3930,18 @@ window.approveRemittance = async function (docId) {
 window.exportInventoryCSV = async function () {
   try {
     const snap = await getDocs(collection(db, "inventory"));
-    // 🔥 THE FIX: Export ALL columns required for the math engine!
-    let csvContent = "FirebaseID,Branch,Category,ItemName,PurchaseUOM,BaseUOM,ConversionRate,PurchaseCost,BaseCost,CurrentStock,ReorderLevel\n";
+    // 🔥 Export ALL exact columns required for the math engine!
+    let csvContent = "\uFEFFFirebaseID,Branch,Category,ItemName,PurchaseUOM,BaseUOM,ConversionRate,PurchaseCost,BaseCost,CurrentStock,ReorderLevel\n";
 
     snap.forEach(docSnap => {
       let d = docSnap.data();
-      let cleanName = (d.name || '').replace(/,/g, '');
-      let cleanCat = (d.category || '').replace(/,/g, '');
-      let branch = d.branch || 'Main Office';
-      let purchUom = d.purchaseUom || d.purchUom || d.uom || '';
-      let baseUom = d.uom || d.baseUom || '';
-      let conv = d.conversionRate || d.conversion || 1;
-      let pCost = d.purchaseCost || d.purchCost || 0;
-
-      csvContent += `${docSnap.id},${branch},${cleanCat},${cleanName},${purchUom},${baseUom},${conv},${pCost},${d.baseCost || 0},${d.currentStock || 0},${d.reorderLevel || 0}\n`;
+      let cleanName = (d.name || '').replace(/"/g, '""');
+      let cleanCat = (d.category || '').replace(/"/g, '""');
+      
+      csvContent += `"${docSnap.id}","${d.branch || 'Main Office'}","${cleanCat}","${cleanName}","${d.purchaseUom || d.uom || ''}","${d.uom || d.baseUom || ''}","${d.conversionRate || d.conversion || 1}","${d.purchaseCost || d.purchCost || 0}","${d.baseCost || 0}","${d.currentStock || 0}","${d.reorderLevel || 0}"\n`;
     });
 
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = `Takodeal_Inventory_Master.csv`;
@@ -7950,120 +7945,112 @@ window.loadSalesHistoryTab = async function() {
     let startDateRaw = document.getElementById('histStartDate').value;
     let endDateRaw = document.getElementById('histEndDate').value;
 
+    if (!startDateRaw || !endDateRaw) {
+        let today = new Date();
+        today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+        startDateRaw = today.toISOString().split('T')[0];
+        endDateRaw = startDateRaw;
+        document.getElementById('histStartDate').value = startDateRaw;
+        document.getElementById('histEndDate').value = endDateRaw;
+    }
+
     let startOfDay = new Date(startDateRaw + 'T00:00:00');
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
-    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center">⏳ Loading transactions...</td></tr>';
-    if(tbodyDaily) tbodyDaily.innerHTML = '<tr><td colspan="8" class="text-center">⏳ Calculating shift aggregates...</td></tr>';
-    if(tbodyMonthly) tbodyMonthly.innerHTML = '<tr><td colspan="7" class="text-center">⏳ Calculating monthly aggregates...</td></tr>';
+    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
+    if(tbodyDaily) tbodyDaily.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
+    if(tbodyMonthly) tbodyMonthly.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Calculating monthly aggregates...</td></tr>';
 
     try {
         const invSnap = await getDocs(collection(db, "inventory"));
-        let invCosts = {};
-        invSnap.forEach(doc => { invCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
+        let inventoryCosts = {};
+        invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
 
         const bomSnap = await getDocs(collection(db, "bom"));
         let recipeCosts = {};
         bomSnap.forEach(doc => {
             let data = doc.data();
             if (!recipeCosts[data.menuItem]) recipeCosts[data.menuItem] = 0;
-            recipeCosts[data.menuItem] += ((invCosts[data.ingredientName] || 0) * (data.qty || 1));
+            recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        // 1. FETCH SHIFTS FIRST
-        let shiftQ = query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
-        const shiftSnap = await getDocs(shiftQ);
-        let shiftMap = {};
-        
-        shiftSnap.forEach(doc => {
-            let s = doc.data();
-            if (branchFilter !== "All" && s.branch !== branchFilter) return;
-            shiftMap[doc.id] = {
-                id: doc.id,
-                branch: s.branch,
-                cashier: s.cashier,
-                dateStr: s.startTime.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-                monthStr: s.startTime.toDate().toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }),
-                gross: 0, cogs: 0, voids: 0, txCount: 0
-            };
-        });
-
-        // 2. FETCH TRANSACTIONS
         let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-        const txSnap = await getDocs(q);
+        const snap = await getDocs(q);
         
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0;
+        let dailyAggregates = {}; 
+        let monthlyAggregates = {}; 
 
-        txSnap.forEach(docSnap => {
+        snap.forEach(docSnap => {
             let tx = docSnap.data();
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
-            let sId = tx.shiftId;
-            // If transaction has no shift ID, we group it into an "Unknown Shift" bucket
-            if (!shiftMap[sId]) {
-                let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
-                shiftMap[sId] = {
-                    branch: tx.branch, cashier: tx.cashier || "Unknown",
-                    dateStr: d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-                    monthStr: d.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }),
-                    gross: 0, cogs: 0, voids: 0, txCount: 0
-                };
-            }
-
             let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            let dateStr = dDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+            let dateStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
+            let monthStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); 
             let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
+            let safeCashier = tx.cashier || 'Unknown';
             let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
             
-            if (tx.status === "Voided") {
-                shiftMap[sId].voids += (tx.netTotal || 0);
-            } else {
-                let txNet = (tx.netTotal || 0);
+            // 🔥 SHIFT-BASED AGGREGATION KEYS (Branch + Date/Month + Cashier)
+            let dailyKey = `${tx.branch}_${dateStr}_${safeCashier}`;
+            let monthlyKey = `${tx.branch}_${monthStr}_${safeCashier}`;
+
+            let isVoid = tx.status === "Voided";
+            let txNet = (tx.netTotal || 0);
+            
+            if (!isVoid) {
                 tNet += txNet;
-                shiftMap[sId].gross += txNet;
-                shiftMap[sId].txCount += 1;
-
                 if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += txNet;
-
-                let txCogs = 0;
-                if (tx.cart) {
-                    tx.cart.forEach(item => {
-                        let qty = item.qty || 1;
-                        let baseCogs = (recipeCosts[item.name || item.itemName] || 0) * qty;
-                        let addonCogs = 0;
-                        if (item.addons) {
-                            for (let key in item.addons) {
-                                let addon = item.addons[key];
-                                if (addon.qty > 0 && addon.linkedIngredient) {
-                                    addonCogs += ((invCosts[addon.linkedIngredient] || 0) * addon.deductQty * addon.qty * qty);
-                                }
-                            }
-                        }
-                        txCogs += (baseCogs + addonCogs);
-                    });
-                }
-                tCogs += txCogs;
-                shiftMap[sId].cogs += txCogs;
             }
 
-            let statusStyle = tx.status === "Voided" ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
-            let statusBadge = tx.status === "Voided" ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
+            let txCogs = 0;
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let qty = item.qty || 1;
+                    let baseCogs = (recipeCosts[item.name || item.itemName] || 0) * qty;
+                    let addonCogs = 0;
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            let addon = item.addons[key];
+                            if (addon.qty > 0 && addon.linkedIngredient) {
+                                addonCogs += ((inventoryCosts[addon.linkedIngredient] || 0) * addon.deductQty * addon.qty * qty);
+                            }
+                        }
+                    }
+                    txCogs += (baseCogs + addonCogs);
+                });
+            }
+            if (!isVoid) tCogs += txCogs;
+
+            // DAILY SHIFT LOGIC
+            if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, cashier: safeCashier, sales: 0, cogs: 0, txCount: 0, voids: 0 };
+            if (isVoid) { dailyAggregates[dailyKey].voids += txNet; } 
+            else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
+
+            // MONTHLY SHIFT LOGIC
+            if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, cashier: safeCashier, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
+            if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; }
+            else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
+
+            let statusStyle = isVoid ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
+            let statusBadge = isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
 
             txHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
                     <td style="padding: 12px 10px;"><span class="badge badge-open">${tx.branch}</span></td>
-                    <td style="padding: 12px 10px; font-weight: 500;">${tx.cashier}</td>
+                    <td style="padding: 12px 10px; font-weight: 500;">${safeCashier}</td>
                     <td style="padding: 12px 10px; font-weight: bold; color: #0284c7;">${safeCustomer}</td>
-                    <td style="padding: 12px 10px; ${statusStyle}">₱${(tx.netTotal || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px 10px; ${statusStyle}">₱${txNet.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 12px 10px; color: #475569;">${tx.paymentMethod || 'Unknown'}</td>
                     <td style="padding: 12px 10px;">${statusBadge}</td>
                     <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${timeStr}</td>
                     <td style="padding: 12px 10px; text-align: center;">
-                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🔍 View</button>
+                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${txNet}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🔍 View</button>
                     </td>
                 </tr>
             `;
@@ -8071,54 +8058,40 @@ window.loadSalesHistoryTab = async function() {
 
         if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="10" class="text-center" style="padding: 30px; color: #64748b;">No transactions found.</td></tr>';
 
-        // 3. BUILD SHIFT-BASED DAILY HTML
+        // BUILD DAILY (SHIFT) SALES
         let dailyHtml = '';
-        let monthlyAggregates = {}; // Group the shifts by Month & Branch & Cashier
-
-        Object.values(shiftMap).forEach(shift => {
-            if (shift.gross === 0 && shift.voids === 0) return; // Skip empty shifts
-
-            let margin = shift.gross - shift.cogs;
-            
-            // Build Daily Row
+        Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(d => {
+            let dMargin = d.sales - d.cogs;
             dailyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${shift.dateStr}</td>
-                    <td style="padding: 15px 10px;"><span class="badge badge-open">${shift.branch}</span></td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #0f766e;">👤 ${shift.cashier}</td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #16a34a; font-size: 15px;">₱${shift.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${shift.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #0ea5e9; font-weight: bold;">₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #ef4444; font-weight: bold;">₱${shift.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${shift.txCount}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${d.date}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-open">${d.branch}</span></td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #0f766e;">👤 ${d.cashier}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #16a34a; font-size: 15px;">₱${d.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #0ea5e9; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #ef4444; font-weight: bold;">₱${d.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${d.txCount}</td>
                 </tr>`;
-
-            // Aggregate into Monthly
-            let mKey = `${shift.monthStr}_${shift.branch}_${shift.cashier}`;
-            if (!monthlyAggregates[mKey]) monthlyAggregates[mKey] = { month: shift.monthStr, branch: shift.branch, cashier: shift.cashier, gross: 0, cogs: 0, voids: 0 };
-            
-            monthlyAggregates[mKey].gross += shift.gross;
-            monthlyAggregates[mKey].cogs += shift.cogs;
-            monthlyAggregates[mKey].voids += shift.voids;
         });
-        if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px;">No shift aggregates available.</td></tr>';
+        if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // 4. BUILD MONTHLY SHIFT HTML
+        // BUILD MONTHLY (SHIFT) SALES
         let monthlyHtml = '';
-        Object.values(monthlyAggregates).forEach(m => {
-            let mMargin = m.gross - m.cogs;
+        Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj).forEach(m => {
+            let mMargin = m.sales - m.cogs;
             monthlyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
                     <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 14px;">📅 ${m.month}</td>
                     <td style="padding: 15px 10px;"><span class="badge badge-open">${m.branch}</span></td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #334155;">👤 ${m.cashier}</td>
-                    <td style="padding: 15px 10px; font-weight: 900; color: #16a34a; font-size: 15px;">₱${m.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #16a34a; font-size: 15px;">₱${m.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${m.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #0ea5e9; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #ef4444;">₱${m.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>`;
         });
-        if(tbodyMonthly) tbodyMonthly.innerHTML = monthlyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px;">No monthly aggregates available.</td></tr>';
+        if(tbodyMonthly) tbodyMonthly.innerHTML = monthlyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No monthly aggregates available.</td></tr>';
 
         // UPDATE KPI CARDS
         let tMargin = tNet - tCogs;
@@ -8220,59 +8193,51 @@ window.deleteGlobalAddon = async function(id, name) {
 
 // 🔥 FIX THE PESO SIGN EXCEL BUG! The \uFEFF code forces Excel to read it as UTF-8!
 window.exportTransactionsCSV = async function() {
-    let startDateRaw = document.getElementById('histStartDate').value;
-    let endDateRaw = document.getElementById('histEndDate').value;
-    let branchFilter = document.getElementById('histBranchFilter').value;
+    let select = document.getElementById('histShiftSelect');
+    if (!select || select.selectedIndex <= 0) { 
+        alert("Please select a specific shift to export."); 
+        return; 
+    }
 
-    let startOfDay = new Date(startDateRaw + 'T00:00:00');
-    let endOfDay = new Date(endDateRaw + 'T23:59:59');
+    let selectedOption = select.options[select.selectedIndex];
+    let startOfDay = new Date(selectedOption.getAttribute('data-start'));
+    let endOfDay = new Date(selectedOption.getAttribute('data-end'));
+    let shiftBranch = selectedOption.getAttribute('data-branch');
+    let safeName = selectedOption.innerText.replace(/[^a-zA-Z0-9]/g, '_'); 
 
     let btn = document.getElementById('btnExportSales') || document.querySelector('button[onclick*="exportTransactionsCSV"]');
     let oldText = btn ? btn.innerText : "Export Excel";
     if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
 
     try {
-        let q = query(collection(db, "transactions"), 
-            where("timestamp", ">=", startOfDay), 
-            where("timestamp", "<=", endOfDay), 
-            orderBy("timestamp", "desc")
-        );
+        const q = query(collection(db, "transactions"), where("branch", "==", shiftBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
 
-        // Standard CSV Headers for Bookkeeping
         let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Net Total\n";
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
-            if (branchFilter !== "All" && tx.branch !== branchFilter) return;
-
             let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
             let dateStr = d.toLocaleDateString('en-PH');
             let timeStr = d.toLocaleTimeString('en-PH');
             
             let itemsArr = [];
-            if (tx.cart) {
-                tx.cart.forEach(item => { itemsArr.push(`${item.qty}x ${item.name || item.itemName}`); });
-            }
+            if (tx.cart) { tx.cart.forEach(item => { itemsArr.push(`${item.qty}x ${item.name || item.itemName}`); }); }
             let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); 
             
-            // Notice there is NO Peso sign in the CSV, just the raw number! Excel handles it better.
+            // Note: We leave out the Peso sign in the raw data so Excel can sum the column mathematically!
             csv += `"${tx.receiptId}","${dateStr}","${timeStr}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${tx.netTotal}"\n`;
         });
 
-        // 🔥 THE MAGIC UTF-8 BOM: "\uFEFF"
+        // 🔥 THE MAGIC UTF-8 BOM: "\uFEFF" forces Excel to read symbols correctly!
         let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         let downloadLink = document.createElement("a");
-        downloadLink.download = `Takodeal_Sales_${branchFilter}_${startDateRaw}.csv`;
+        downloadLink.download = `Takodeal_Sales_${safeName}.csv`;
         downloadLink.href = window.URL.createObjectURL(csvFile);
         downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-
+        document.body.appendChild(downloadLink); downloadLink.click(); document.body.removeChild(downloadLink);
     } catch (e) {
-        console.error("Export Error:", e);
-        alert("Failed to export sales data.");
+        console.error("Export Error:", e); alert("Failed to export sales data.");
     } finally {
         if (btn) { btn.innerText = oldText; btn.disabled = false; }
     }
@@ -8288,12 +8253,11 @@ window.downloadExcel = function(tbodyId, fileName) {
     for (let i = 0; i < rows.length; i++) {
         let row = [], cols = rows[i].querySelectorAll('td, th');
         let colCount = cols.length;
-        // Skip the "Action" column at the end of the tables
         if ((tbodyId === 'historyTableBody' || tbodyId === 'zReadingTableBody') && i > 0) colCount -= 1; 
 
         for (let j = 0; j < colCount; j++) {
-            let text = cols[j].innerText.replace(/"/g, '""'); 
-            row.push('"' + text + '"');
+            let text = cols[j].innerText.replace(/"/g, '""').replace(/₱/g, '₱'); 
+            row.push('"' + text + '"'); // Protects against commas!
         }
         csv.push(row.join(","));
     }
@@ -8301,15 +8265,12 @@ window.downloadExcel = function(tbodyId, fileName) {
     // 🔥 THE MAGIC UTF-8 BOM: "\uFEFF" fixes the Peso sign glitch in Excel!
     let csvFile = new Blob(["\uFEFF" + csv.join("\n")], {type: "text/csv;charset=utf-8;"});
     let tempLink = document.createElement("a");
-    let d = new Date();
-    let dateTag = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    let dateTag = new Date().toISOString().split('T')[0];
     
     tempLink.download = `${fileName}_${dateTag}.csv`;
     tempLink.href = window.URL.createObjectURL(csvFile);
     tempLink.style.display = "none";
-    document.body.appendChild(tempLink);
-    tempLink.click();
-    document.body.removeChild(tempLink);
+    document.body.appendChild(tempLink); tempLink.click(); document.body.removeChild(tempLink);
 };
 
 // Auto-Load the dates when the page boots up
