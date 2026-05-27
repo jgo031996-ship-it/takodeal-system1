@@ -98,6 +98,9 @@
             
             <h1 class="text-4xl font-black text-gray-800 mb-2 tracking-tight">TAKODEÁL</h1>
             <p class="text-gray-500 font-medium mb-8 text-sm">Davao's Premium Takoyaki & Refreshments</p>
+            <div class="w-full max-w-xs mb-6 rounded-2xl overflow-hidden shadow-sm border border-gray-200">
+                <img src="guide.jpg" alt="How to order" class="w-full h-auto">
+            </div>
             
             <div class="bg-red-50 border border-red-100 p-4 rounded-2xl mb-10 w-full max-w-xs shadow-sm relative overflow-hidden">
                 <div class="absolute -right-4 -top-4 text-4xl opacity-10">📍</div>
@@ -924,22 +927,18 @@
         window.startCancelTimer = function() {
             let expiresAt = localStorage.getItem('takodealCancelExpiresAt');
             if (!expiresAt) {
-                expiresAt = Date.now() + 300000; // 5 mins from now
+                expiresAt = Date.now() + 60000; // 🔥 1 MINUTE FROM NOW
                 localStorage.setItem('takodealCancelExpiresAt', expiresAt);
             }
-
             document.getElementById('cancelOrderSection').classList.remove('hidden');
-
             window.cancelInterval = setInterval(() => {
                 let timeLeft = Math.floor((expiresAt - Date.now()) / 1000);
-                
                 if (timeLeft <= 0) {
                     clearInterval(window.cancelInterval);
                     document.getElementById('cancelOrderSection').classList.add('hidden'); 
                     localStorage.removeItem('takodealCancelExpiresAt'); 
                 } else {
-                    let m = Math.floor(timeLeft / 60);
-                    let s = timeLeft % 60;
+                    let m = Math.floor(timeLeft / 60); let s = timeLeft % 60;
                     document.getElementById('cancelTimer').innerText = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
                 }
             }, 1000);
@@ -1049,35 +1048,22 @@
 
         window.cancelMyOrder = async function() {
             if(!window.currentOrderId) return;
-            
             try {
-                // 1. Fetch the exact order to check when it was placed
                 const orderRef = doc(db, "incoming_orders", window.currentOrderId);
                 const orderSnap = await getDoc(orderRef);
-                
-                if (!orderSnap.exists()) {
-                    alert("This order no longer exists or was already processed.");
-                    return;
-                }
+                if (!orderSnap.exists()) return;
 
-                let orderData = orderSnap.data();
-                let orderDate = orderData.timestamp.toDate();
-                let diffMins = (new Date() - orderDate) / 60000;
+                let diffMins = (new Date() - orderSnap.data().timestamp.toDate()) / 60000;
 
-                // 🔥 1-MINUTE STRICT LOCK
+                // 🔥 STRICT 1-MINUTE RULE
                 if (diffMins > 1) {
                     alert("⚠️ Too Late to Cancel!\n\nYour order has already been received by the cashier and preparation has started.\n\nIf you really need to cancel, please contact the branch immediately using our business page:\nwww.facebook.com/Takodeal");
-                    return; // ⛔ Stops the cancellation!
+                    return; 
                 }
 
                 if(!confirm("Are you sure you want to cancel your order?")) return;
-                
-                // 2. If it's under 1 minute, allow the cancellation
-                await updateDoc(orderRef, {
-                    status: "rejected_by_customer"
-                });
-                
-            } catch(e) { console.error("Cancel error", e); }
+                await updateDoc(orderRef, { status: "rejected_by_customer" });
+            } catch(e) { console.error(e); }
         };
 
         function getDistanceInMeters(lat1, lon1, lat2, lon2) {
