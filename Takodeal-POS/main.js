@@ -2666,3 +2666,148 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
         if(btn) { btn.innerText = "Confirm"; btn.disabled = false; }
     }
 };
+
+// ========================================================
+// 🗑️ WASTE & SPOILAGE LOG ENGINE
+// ========================================================
+window.wasteInventoryCache = [];
+
+window.loadWasteItems = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let select = document.getElementById('wasteItemSelect');
+    if (!select || !branch) return;
+
+    select.innerHTML = '<option value="">Scanning inventory...</option>';
+    window.wasteInventoryCache = [];
+
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        let html = '<option value="">-- Select Damaged Item --</option>';
+
+        let items = [];
+        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        
+        // Sort alphabetically for easy finding
+        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+        items.forEach(item => {
+            window.wasteInventoryCache.push(item);
+            html += `<option value="${item.id}">${item.name} (Available: ${item.currentStock || 0} ${item.uom || ''})</option>`;
+        });
+
+        select.innerHTML = html;
+    } catch (e) {
+        console.error("Waste Items Error:", e);
+        select.innerHTML = '<option value="">❌ Error loading items</option>';
+    }
+};
+
+window.submitWasteLog = async function() {
+    let itemId = document.getElementById('wasteItemSelect').value;
+    let qtyRaw = document.getElementById('wasteQty').value;
+    let qty = parseFloat(qtyRaw);
+    let reason = document.getElementById('wasteReason').value;
+    
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashierName = localStorage.getItem('cashierName') || "Cashier";
+
+    if (!itemId) { alert("Please select an item first."); return; }
+    if (isNaN(qty) || qty <= 0) { alert("Please enter a valid quantity."); return; }
+
+    let itemData = window.wasteInventoryCache.find(i => i.id === itemId);
+    if (!itemData) return;
+
+    // Safety check: Prevent them from wasting more than they have (unless they force it)
+    if (qty > itemData.currentStock) {
+        if (!confirm(`⚠️ WARNING: You are trying to log ${qty} ${itemData.uom || ''} as waste, but the system says you only have ${itemData.currentStock} left.\n\nThis will force the inventory into the negatives. Are you sure you want to proceed?`)) {
+            return;
+        }
+    }
+
+    if (!confirm(`Confirm deduction: Remove ${qty} ${itemData.uom || ''} of ${itemData.name} from inventory?`)) return;
+
+    let btn = document.getElementById('btnSubmitWaste');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Processing Deduction...";
+    btn.disabled = true;
+
+    try {
+        let newStock = itemData.currentStock - qty;
+
+        // 1. Instantly Deduct from Live Inventory
+        await updateDoc(doc(db, "inventory", itemId), { currentStock: newStock });
+
+        // 2. Log it to the Global Stock History! 
+        await addDoc(collection(db, "stock_logs"), {
+            branch: branch,
+            item: itemData.name,
+            uom: itemData.uom || 'units',
+            oldQty: itemData.currentStock,
+            newQty: newStock,
+            variance: -Math.abs(qty), // Negative variance because it's a loss
+            type: "Waste / Spoilage",
+            note: `Reason: ${reason}`,
+            user: cashierName,
+            timestamp: serverTimestamp()
+        });
+
+        alert(`✅ Waste successfully recorded.\n\n${qty} ${itemData.uom || ''} of ${itemData.name} has been deducted from your inventory.`);
+        
+        // Reset the form
+        document.getElementById('wasteQty').value = '';
+        document.getElementById('wasteItemSelect').value = '';
+        document.getElementById('wasteReason').value = 'Dropped / Spilled';
+        
+        // Refresh the dropdown and history table
+        window.loadWasteItems();
+        window.loadWasteHistory();
+
+    } catch (e) {
+        console.error("Waste Error:", e);
+        alert("❌ Failed to log waste. Check your internet connection.");
+    } finally {
+        btn.innerText = origText;
+        btn.disabled = false;
+    }
+};
+
+window.loadWasteHistory = async function() {
+    let tbody = document.getElementById('wasteHistoryBody');
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!tbody || !branch) return;
+
+    try {
+        // We only want to show Waste logs from today, for this specific branch
+        let startOfDay = new Date();
+        startOfDay.setHours(0,0,0,0);
+
+        const q = query(collection(db, "stock_logs"), 
+            where("branch", "==", branch), 
+            where("type", "==", "Waste / Spoilage"), 
+            where("timestamp", ">=", startOfDay),
+            orderBy("timestamp", "desc")
+        );
+        const snap = await getDocs(q);
+
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #334155; font-size: 15px;">${d.item}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #ef4444; font-size: 16px;">-${Math.abs(d.variance)} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${d.uom}</span></td>
+                    <td style="padding: 15px; color: #475569; font-style: italic;">${d.note}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 30px; color: #64748b;">No waste logged today! 🎉</td></tr>';
+    } catch (e) {
+        console.error("Waste History Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error fetching logs.</td></tr>';
+    }
+};
