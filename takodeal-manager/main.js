@@ -1036,10 +1036,7 @@ window.loadSmartSupplyChain = async function() {
                     <td style="color: #ea580c; font-weight: bold;">${dailyBurn.toFixed(2)} ${uom}/day</td>
                     <td style="color: ${daysColor}; font-weight: bold; font-size: 15px;">${daysText}</td>
                     <td>
-                        <button onclick="document.getElementById('dispItem').value='${itemName}'; window.updateDispatchUomLabel(); window.scrollTo(0,0);" 
-                            style="background: white; border: 1px solid #8b5cf6; color: #8b5cf6; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
-                            📦 Send Stock
-                        </button>
+                        <button onclick="let sel=document.getElementById('dispItem'); sel.value='${itemName}'; if(sel.value===''){alert('❌ Out of Stock at Main Office! You cannot dispatch this yet.');}else{window.updateDispatchUomLabel(); document.getElementById('dispQty').focus(); document.getElementById('dispQty').style.border='2px solid #8b5cf6';}" style="background: white; border: 1px solid #8b5cf6; color: #8b5cf6; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">📦 Send Stock</button>
                     </td>
                 </tr>
             `;
