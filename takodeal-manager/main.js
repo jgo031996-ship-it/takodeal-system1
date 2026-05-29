@@ -8015,11 +8015,8 @@ window.loadSalesHistoryTab = async function() {
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
     if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
-    if(tbodyDaily) tbodyDaily.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
-    if(tbodyMonthly) tbodyMonthly.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Calculating monthly aggregates...</td></tr>';
-
+    
     try {
-        // 1. FETCH INVENTORY & RECIPES FOR COGS
         const invSnap = await getDocs(collection(db, "inventory"));
         let inventoryCosts = {};
         invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
@@ -8032,29 +8029,23 @@ window.loadSalesHistoryTab = async function() {
             recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        // 2. FETCH TRANSACTIONS & REJECTED MOBILE ORDERS
+        // FETCH TRANSACTIONS & REJECTED MOBILE ORDERS
         const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const snap = await getDocs(q);
 
         const rejectedQ = query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const rejectedSnap = await getDocs(rejectedQ);
 
-        // 3. COMBINE AND SORT EVERYTHING INTO ONE LIST
         let allTxArray = [];
         snap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
         rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
         allTxArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
 
-        // 4. SETUP TRACKING VARIABLES
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0;
-        let dailyAggregates = {}; 
-        let monthlyAggregates = {}; 
-        let distOrderType = {};
-        let distPayment = {};
-        let distTotalSales = 0;
+        let dailyAggregates = {}; let monthlyAggregates = {}; 
+        let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
-        // 5. LOOP THROUGH THE COMBINED LIST
         allTxArray.forEach(tx => {
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
@@ -8069,7 +8060,7 @@ window.loadSalesHistoryTab = async function() {
             let isMobile = !!tx.isMobileRejected || (tx.notes && tx.notes.includes("Mobile App Order")) || (tx.cart && tx.cart.some(i => i.notes && i.notes.includes("Mobile App Order")));
             let mobileIcon = isMobile ? '📱 ' : '';
 
-            // A. HANDLE REJECTED MOBILE ORDERS
+            // HANDLE REJECTED MOBILE ORDERS (Shows as Red Row)
             if (tx.isMobileRejected) {
                 let reasonStr = tx.status === "rejected_by_customer" ? "Cancelled by Cust" : "Rejected by Store";
                 txHtml += `
@@ -8091,15 +8082,13 @@ window.loadSalesHistoryTab = async function() {
                 return; // Stop here, do not add rejected orders to financials!
             }
 
-            // B. HANDLE STANDARD TRANSACTIONS
+            // HANDLE STANDARD TRANSACTIONS
             let isVoid = tx.status === "Voided";
             let txNet = (tx.netTotal || 0);
             
-            // AGGREGATION KEYS (Branch + Date/Month + Cashier)
-            let dailyKey = `${tx.branch}_${dateStr}_${safeCashier}`;
-            let monthlyKey = `${tx.branch}_${monthStr}_${safeCashier}`;
+            let dailyKey = `${tx.branch}_${dateStr}`;
+            let monthlyKey = `${tx.branch}_${monthStr}`;
 
-            // Calculate COGS
             let txCogs = 0;
             if (tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
@@ -8124,7 +8113,6 @@ window.loadSalesHistoryTab = async function() {
                 tCogs += txCogs;
                 if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += txNet;
 
-                // Track Sales Distribution (Order Type & Payment Method)
                 let oType = tx.orderType || "Take-out";
                 let pMeth = tx.paymentMethod || "Cash";
                 
@@ -8136,13 +8124,13 @@ window.loadSalesHistoryTab = async function() {
                 distPayment[pMeth].sales += txNet; distPayment[pMeth].count++;
             }
 
-            // DAILY SHIFT LOGIC
-            if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, cashier: safeCashier, sales: 0, cogs: 0, txCount: 0, voids: 0 };
+            // DAILY LOGIC
+            if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0, voids: 0 };
             if (isVoid) { dailyAggregates[dailyKey].voids += txNet; } 
             else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
 
-            // MONTHLY SHIFT LOGIC
-            if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, cashier: safeCashier, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
+            // MONTHLY LOGIC
+            if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
             if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; }
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
 
@@ -8169,58 +8157,49 @@ window.loadSalesHistoryTab = async function() {
 
         if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="10" class="text-center" style="padding: 30px; color: #64748b;">No transactions found.</td></tr>';
 
-        // 6. BUILD DAILY (SHIFT) SALES
+        // BUILD DAILY SALES
         let dailyHtml = '';
         Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(d => {
             let dMargin = d.sales - d.cogs;
+            let dAvg = d.txCount > 0 ? d.sales / d.txCount : 0;
             dailyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${d.date}</td>
                     <td style="padding: 15px 10px;"><span class="badge badge-open">${d.branch}</span></td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #0f766e;">👤 ${d.cashier}</td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #16a34a; font-size: 15px;">₱${d.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #0f172a; font-size: 15px;">₱${d.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #0ea5e9; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #ef4444; font-weight: bold;">₱${d.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #16a34a; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${d.txCount}</td>
+                    <td style="padding: 15px 10px; color: #64748b;">₱${dAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>`;
         });
-        if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
+        if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // 7. BUILD MONTHLY (SHIFT) SALES
+        // BUILD MONTHLY SALES
         let monthlyHtml = '';
         Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj).forEach(m => {
             let mMargin = m.sales - m.cogs;
+            let mAvg = m.txCount > 0 ? m.sales / m.txCount : 0;
             monthlyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
                     <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 14px;">📅 ${m.month}</td>
                     <td style="padding: 15px 10px;"><span class="badge badge-open">${m.branch}</span></td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">👤 ${m.cashier}</td>
-                    <td style="padding: 15px 10px; font-weight: 900; color: #16a34a; font-size: 15px;">₱${m.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 15px;">₱${m.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${m.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; color: #0ea5e9; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 10px; font-weight: bold; color: #ef4444;">₱${m.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #16a34a; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${m.txCount}</td>
+                    <td style="padding: 15px 10px; color: #64748b;">₱${mAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>`;
         });
         if(tbodyMonthly) tbodyMonthly.innerHTML = monthlyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No monthly aggregates available.</td></tr>';
 
-        // 8. UPDATE KPI CARDS
-        let tMargin = tNet - tCogs;
-        let cogsPct = tNet > 0 ? (tCogs / tNet) * 100 : 0;
-        let marginPct = tNet > 0 ? (tMargin / tNet) * 100 : 0;
-
+        // UPDATE KPI CARDS
         document.getElementById('histSumNet').innerText = `₱${tNet.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('histSumMargin').innerText = `₱${tMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('histSumMargin').innerText = `₱${(tNet - tCogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-        let cogsCirc = document.getElementById('histCogsPct');
-        if (cogsCirc) { cogsCirc.innerText = `${cogsPct.toFixed(0)}%`; cogsCirc.style.borderColor = cogsPct > 50 ? '#ef4444' : '#10b981'; cogsCirc.style.color = cogsPct > 50 ? '#ef4444' : '#10b981'; }
-
-        let marginCirc = document.getElementById('histMarginPct');
-        if (marginCirc) { marginCirc.innerText = `${marginPct.toFixed(0)}%`; marginCirc.style.borderColor = marginPct < 30 ? '#ef4444' : '#0ea5e9'; marginCirc.style.color = marginPct < 30 ? '#ef4444' : '#0ea5e9'; }
-
-        // 9. BUILD SALES DISTRIBUTION UI
+        // UPDATE SALES DISTRIBUTION
         let buildDistHtml = (distObj) => {
             let html = '';
             let sortedKeys = Object.keys(distObj).sort((a,b) => distObj[b].sales - distObj[a].sales);
