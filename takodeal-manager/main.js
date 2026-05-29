@@ -7964,30 +7964,50 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
 // ==========================================
 window.switchHistoryTab = function(tabName) {
     let txTab = document.getElementById('tabHistTx');
+    let shiftsTab = document.getElementById('tabHistShifts');
     let dailyTab = document.getElementById('tabHistDaily');
     let monthlyTab = document.getElementById('tabHistMonthly');
     let repTab = document.getElementById('tabHistReports');
     
     document.getElementById('histSecTx').style.display = 'none';
+    document.getElementById('histSecShifts').style.display = 'none';
     document.getElementById('histSecDaily').style.display = 'none';
     document.getElementById('histSecMonthly').style.display = 'none';
     document.getElementById('histSecReports').style.display = 'none';
 
-    [txTab, dailyTab, monthlyTab, repTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
+    [txTab, shiftsTab, dailyTab, monthlyTab, repTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
 
     if (tabName === 'Tx') {
-        txTab.style.color = '#0f766e'; txTab.style.borderBottomColor = '#0f766e';
+        if(txTab) { txTab.style.color = '#0f766e'; txTab.style.borderBottomColor = '#0f766e'; }
         document.getElementById('histSecTx').style.display = 'block';
+    } else if (tabName === 'Shifts') {
+        if(shiftsTab) { shiftsTab.style.color = '#0f766e'; shiftsTab.style.borderBottomColor = '#0f766e'; }
+        document.getElementById('histSecShifts').style.display = 'block';
     } else if (tabName === 'Daily') {
-        dailyTab.style.color = '#0f766e'; dailyTab.style.borderBottomColor = '#0f766e';
+        if(dailyTab) { dailyTab.style.color = '#0f766e'; dailyTab.style.borderBottomColor = '#0f766e'; }
         document.getElementById('histSecDaily').style.display = 'block';
     } else if (tabName === 'Monthly') {
-        monthlyTab.style.color = '#0f766e'; monthlyTab.style.borderBottomColor = '#0f766e';
+        if(monthlyTab) { monthlyTab.style.color = '#0f766e'; monthlyTab.style.borderBottomColor = '#0f766e'; }
         document.getElementById('histSecMonthly').style.display = 'block';
     } else if (tabName === 'Reports') {
-        repTab.style.color = '#0f766e'; repTab.style.borderBottomColor = '#0f766e';
+        if(repTab) { repTab.style.color = '#0f766e'; repTab.style.borderBottomColor = '#0f766e'; }
         document.getElementById('histSecReports').style.display = 'block';
     }
+};
+
+window.runProductReport = function() {
+    let startDateRaw = document.getElementById('histStartDate').value;
+    let endDateRaw = document.getElementById('histEndDate').value;
+    let branchFilter = document.getElementById('histBranchFilter').value;
+    
+    if (!startDateRaw || !endDateRaw) {
+        alert("Please select a Start and End date.");
+        return;
+    }
+    let startOfDay = new Date(startDateRaw + 'T00:00:00');
+    let endOfDay = new Date(endDateRaw + 'T23:59:59');
+    
+    window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
 };
 
 window.runProductReport = function() {
@@ -7999,6 +8019,7 @@ window.runProductReport = function() {
 
 window.loadSalesHistoryTab = async function() {
     const tbodyTx = document.getElementById('historyTableBody');
+    const tbodyShifts = document.getElementById('historyShiftsBody');
     const tbodyDaily = document.getElementById('historyDailyBody');
     const tbodyMonthly = document.getElementById('historyMonthlyBody');
     
@@ -8019,9 +8040,10 @@ window.loadSalesHistoryTab = async function() {
     let startOfDay = new Date(startDateRaw + 'T00:00:00');
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
-    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
+    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading data...</td></tr>';
     
     try {
+        // 1. FETCH COSTS
         const invSnap = await getDocs(collection(db, "inventory"));
         let inventoryCosts = {};
         invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
@@ -8034,23 +8056,28 @@ window.loadSalesHistoryTab = async function() {
             recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        // FETCH TRANSACTIONS & REJECTED MOBILE ORDERS
+        // 2. FETCH TRANSACTIONS
         const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const snap = await getDocs(q);
 
+        // 3. FETCH REJECTED MOBILE ORDERS (OUTSIDE THE LOOP!)
         const rejectedQ = query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const rejectedSnap = await getDocs(rejectedQ);
 
+        // 4. COMBINE AND SORT
         let allTxArray = [];
         snap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
         rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
-        allTxArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+        allTxArray.sort((a,b) => b.timestamp - a.timestamp);
 
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0;
-        let dailyAggregates = {}; let monthlyAggregates = {}; 
+        let shiftAggregates = {};
+        let dailyAggregates = {}; 
+        let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
+        // 5. PROCESS EVERYTHING
         allTxArray.forEach(tx => {
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
@@ -8065,7 +8092,6 @@ window.loadSalesHistoryTab = async function() {
             let isMobile = !!tx.isMobileRejected || (tx.notes && tx.notes.includes("Mobile App Order")) || (tx.cart && tx.cart.some(i => i.notes && i.notes.includes("Mobile App Order")));
             let mobileIcon = isMobile ? '📱 ' : '';
 
-            // HANDLE REJECTED MOBILE ORDERS (Shows as Red Row)
             if (tx.isMobileRejected) {
                 let reasonStr = tx.status === "rejected_by_customer" ? "Cancelled by Cust" : "Rejected by Store";
                 txHtml += `
@@ -8084,13 +8110,14 @@ window.loadSalesHistoryTab = async function() {
                         </td>
                     </tr>
                 `;
-                return; // Stop here, do not add rejected orders to financials!
+                return; 
             }
 
-            // HANDLE STANDARD TRANSACTIONS
             let isVoid = tx.status === "Voided";
             let txNet = (tx.netTotal || 0);
             
+            // 🔥 AGGREGATION KEYS
+            let shiftKey = `${tx.branch}_${dateStr}_${safeCashier}`;
             let dailyKey = `${tx.branch}_${dateStr}`;
             let monthlyKey = `${tx.branch}_${monthStr}`;
 
@@ -8129,12 +8156,17 @@ window.loadSalesHistoryTab = async function() {
                 distPayment[pMeth].sales += txNet; distPayment[pMeth].count++;
             }
 
-            // DAILY LOGIC
+            // SHIFT LOGIC (Branch + Date + Cashier)
+            if (!shiftAggregates[shiftKey]) shiftAggregates[shiftKey] = { branch: tx.branch, date: dateStr, cashier: safeCashier, sales: 0, cogs: 0, txCount: 0, voids: 0 };
+            if (isVoid) { shiftAggregates[shiftKey].voids += txNet; } 
+            else { shiftAggregates[shiftKey].sales += txNet; shiftAggregates[shiftKey].cogs += txCogs; shiftAggregates[shiftKey].txCount += 1; }
+
+            // DAILY LOGIC (Branch + Date Only)
             if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0, voids: 0 };
             if (isVoid) { dailyAggregates[dailyKey].voids += txNet; } 
             else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
 
-            // MONTHLY LOGIC
+            // MONTHLY LOGIC (Branch + Month Only)
             if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
             if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; }
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
@@ -8162,15 +8194,33 @@ window.loadSalesHistoryTab = async function() {
 
         if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="10" class="text-center" style="padding: 30px; color: #64748b;">No transactions found.</td></tr>';
 
-        // BUILD DAILY SALES
+        // BUILD SHIFTS HTML
+        let shiftsHtml = '';
+        Object.values(shiftAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(s => {
+            let sMargin = s.sales - s.cogs;
+            shiftsHtml += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${s.date}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-open">${s.branch}</span></td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #0f766e;">👤 ${s.cashier}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #16a34a; font-size: 15px;">₱${s.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${s.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #0ea5e9; font-weight: bold;">₱${sMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; color: #ef4444; font-weight: bold;">₱${s.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${s.txCount}</td>
+                </tr>`;
+        });
+        if(tbodyShifts) tbodyShifts.innerHTML = shiftsHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No shift aggregates available.</td></tr>';
+
+        // BUILD DAILY HTML
         let dailyHtml = '';
         Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(d => {
             let dMargin = d.sales - d.cogs;
             let dAvg = d.txCount > 0 ? d.sales / d.txCount : 0;
             dailyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${d.date}</td>
                     <td style="padding: 15px 10px;"><span class="badge badge-open">${d.branch}</span></td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${d.date}</td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #0f172a; font-size: 15px;">₱${d.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -8180,15 +8230,15 @@ window.loadSalesHistoryTab = async function() {
         });
         if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // BUILD MONTHLY SALES
+        // BUILD MONTHLY HTML
         let monthlyHtml = '';
         Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj).forEach(m => {
             let mMargin = m.sales - m.cogs;
             let mAvg = m.txCount > 0 ? m.sales / m.txCount : 0;
             monthlyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
-                    <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 14px;">📅 ${m.month}</td>
                     <td style="padding: 15px 10px;"><span class="badge badge-open">${m.branch}</span></td>
+                    <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 14px;">📅 ${m.month}</td>
                     <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 15px;">₱${m.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${m.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -8203,6 +8253,12 @@ window.loadSalesHistoryTab = async function() {
         document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumMargin').innerText = `₱${(tNet - tCogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+        let cogsCirc = document.getElementById('histCogsPct');
+        if (cogsCirc) { let cPct = tNet>0 ? (tCogs/tNet)*100 : 0; cogsCirc.innerText = `${cPct.toFixed(0)}%`; cogsCirc.style.borderColor = cPct>50?'#ef4444':'#10b981'; cogsCirc.style.color = cPct>50?'#ef4444':'#10b981'; }
+
+        let marginCirc = document.getElementById('histMarginPct');
+        if (marginCirc) { let mPct = tNet>0 ? ((tNet-tCogs)/tNet)*100 : 0; marginCirc.innerText = `${mPct.toFixed(0)}%`; marginCirc.style.borderColor = mPct<30?'#ef4444':'#0ea5e9'; marginCirc.style.color = mPct<30?'#ef4444':'#0ea5e9'; }
 
         // UPDATE SALES DISTRIBUTION
         let buildDistHtml = (distObj) => {
@@ -8228,9 +8284,6 @@ window.loadSalesHistoryTab = async function() {
 
         if(document.getElementById('distOrderTypeBody')) document.getElementById('distOrderTypeBody').innerHTML = buildDistHtml(distOrderType);
         if(document.getElementById('distPaymentBody')) document.getElementById('distPaymentBody').innerHTML = buildDistHtml(distPayment);
-
-        // TRIGGER THE PRODUCT ANALYTICS REPORT!
-        if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
 
     } catch (e) {
         console.error("History Error:", e);
@@ -8617,8 +8670,12 @@ window.loadInventoryAudits = async function() {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Fetching audit logs...</td></tr>';
 
-    let durationFilter = document.getElementById('auditDurationFilter').value;
-    let exactDateFilter = document.getElementById('auditExactDate').value;
+    // 🔥 THE FIX: Safely check if the filters exist before reading their values!
+    let durationFilterEl = document.getElementById('auditDurationFilter');
+    let exactDateFilterEl = document.getElementById('auditExactDate');
+    
+    let durationFilter = durationFilterEl ? durationFilterEl.value : 'all';
+    let exactDateFilter = exactDateFilterEl ? exactDateFilterEl.value : '';
     
     let startDate = new Date();
     startDate.setHours(0,0,0,0);
@@ -8691,10 +8748,12 @@ window.loadInventoryAudits = async function() {
         tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No stock counts submitted in this period.</td></tr>';
 
         let accuracy = globalTotalItems > 0 ? (globalPerfectItems / globalTotalItems) * 100 : 100;
-        document.getElementById('auditKpiAccuracy').innerText = `${accuracy.toFixed(1)}%`;
-        document.getElementById('auditKpiLoss').innerText = `₱${globalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        
+        // Safely update KPIs
+        if (document.getElementById('auditKpiAccuracy')) document.getElementById('auditKpiAccuracy').innerText = `${accuracy.toFixed(1)}%`;
+        if (document.getElementById('auditKpiLoss')) document.getElementById('auditKpiLoss').innerText = `₱${globalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-        // 🔥 THE SMART RE-AUDIT ENGINE
+        // Smart Re-Audit Engine
         let nextAuditDateStr = "Awaiting Data";
         let nextAuditSubStr = "Need more audit logs";
         
@@ -8703,27 +8762,25 @@ window.loadInventoryAudits = async function() {
             let latestDate = latestAuditDoc.timestamp ? latestAuditDoc.timestamp.toDate() : new Date();
             let targetDate = new Date(latestDate);
             
-            // The AI Logic Tree for Store Operations
             if (accuracy < 95 || globalLoss > 500) {
-                targetDate.setDate(targetDate.getDate() + 1); // High Variance: Check again tomorrow!
+                targetDate.setDate(targetDate.getDate() + 1); 
                 nextAuditSubStr = "High Variance: Audit Tomorrow";
-                document.getElementById('auditKpiNext').style.color = "#dc2626"; // Red
+                if (document.getElementById('auditKpiNext')) document.getElementById('auditKpiNext').style.color = "#dc2626";
             } else if (accuracy < 98) {
-                targetDate.setDate(targetDate.getDate() + 3); // Moderate Variance: Check in 3 days
+                targetDate.setDate(targetDate.getDate() + 3); 
                 nextAuditSubStr = "Moderate Variance: 3-Day Cycle";
-                document.getElementById('auditKpiNext').style.color = "#d97706"; // Orange
+                if (document.getElementById('auditKpiNext')) document.getElementById('auditKpiNext').style.color = "#d97706";
             } else {
-                targetDate.setDate(targetDate.getDate() + 7); // Perfect Accuracy: Reward them with a 7-day break!
+                targetDate.setDate(targetDate.getDate() + 7); 
                 nextAuditSubStr = "Stable: Weekly Cycle";
-                document.getElementById('auditKpiNext').style.color = "#16a34a"; // Green
+                if (document.getElementById('auditKpiNext')) document.getElementById('auditKpiNext').style.color = "#16a34a";
             }
             
-            // Override if the date has already passed
             let today = new Date();
             today.setHours(0,0,0,0);
             if (targetDate <= today) {
                 nextAuditDateStr = "OVERDUE (Do Today)";
-                document.getElementById('auditKpiNext').style.color = "#dc2626";
+                if (document.getElementById('auditKpiNext')) document.getElementById('auditKpiNext').style.color = "#dc2626";
             } else {
                 nextAuditDateStr = targetDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
             }
