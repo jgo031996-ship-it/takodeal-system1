@@ -1521,7 +1521,7 @@
 
     <div id="view-products" class="view">
 
-      <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid var(--border); margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
           <div id="costingTabsContainer" style="display: flex; gap: 30px; overflow-x: auto; white-space: nowrap; flex: 1;">
             <div class="costing-tab" style="padding-bottom: 10px; font-weight: bold; color: var(--primary); border-bottom: 3px solid var(--primary); cursor: pointer;" onclick="switchCostingTab(this, 'All')">All Items</div>
           </div>
@@ -1529,41 +1529,9 @@
               <div id="tabGlobalAddons" class="costing-tab" style="padding-bottom: 10px; font-weight: 900; color: #d97706; border-bottom: 3px solid transparent; cursor: pointer;" onclick="switchCostingTab(this, 'GlobalAddons')">🍟 Global Add-Ons Manager</div>
           </div>
       </div>
-
-      <div
-        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
-        <div style="flex: 1; min-width: 300px; position: relative;">
-          <span style="position: absolute; left: 15px; top: 12px; color: var(--text-muted);">🔍</span>
-          <input type="text" id="costingSearch" placeholder="Search menu item, base, or add-on..."
-            style="width: 100%; padding: 12px 15px 12px 40px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);"
-            onkeyup="loadMenuCosting()">
-        </div>
-
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <button class="btn-refresh"
-            style="background: white; color: var(--text-main); border: 1px solid var(--border);"
-            onclick="openNewProductModal()">➕ Add Product</button>
-          <input type="file" id="csvRecipeInput" accept=".csv" style="display: none;"
-            onchange="processRecipeCsvUpload(event)">
-          <div style="display: flex; gap: 10px;">
-            <button class="btn-action" onclick="downloadRecipeTemplate()"
-              style="background: #f59e0b; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;">
-              ⬇️ Download Raw Template
-            </button>
-            <label class="btn-action"
-              style="background: #10b981; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center;">
-              ⬆️ Upload Bulk Edits
-              <input type="file" id="bulkUploadInput" accept=".csv" style="display: none;"
-                onchange="processBulkUpload(event)">
-            </label>
-          </div>
-          <button class="btn-refresh" style="background: var(--primary); color: white; border: none;"
-            onclick="loadMenuCosting()">🔄 Recalculate</button>
-        </div>
-      </div>
-
+      
       <!-- 🍟 GLOBAL ADD-ONS VIEW (Hidden by default) -->
-      <div id="globalAddonsSection" style="display: none; background: white; padding: 20px; border-radius: 12px; border: 1px solid #fde68a;">
+      <div id="globalAddonsSection" style="display: none; background: white; padding: 20px; border-radius: 12px; border: 1px solid #fde68a; margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
               <h3 style="margin: 0; color: #b45309;">Global Add-Ons & Upgrades</h3>
               <button class="btn-refresh" style="background: #f59e0b; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold;" onclick="window.openGlobalAddonModal()">➕ Create Add-On</button>
@@ -1576,37 +1544,62 @@
           </div>
       </div>
 
-      <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr);">
-        <div class="stat-card primary">
-          <h3>Avg. Menu Profit Margin</h3>
-          <div class="value" id="bomAvgMargin">0%</div>
-        </div>
-        <div class="stat-card danger">
-          <h3>Items Missing Recipes (BOM)</h3>
-          <div class="value" id="bomMissing" style="color: var(--danger);">0</div>
-        </div>
-      </div>
+      <!-- 📦 MENU COSTING VIEW -->
+      <div id="menuCostingSection" style="display: block;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div style="flex: 1; min-width: 300px; position: relative;">
+              <span style="position: absolute; left: 15px; top: 12px; color: var(--text-muted);">🔍</span>
+              <input type="text" id="costingSearch" placeholder="Search menu item, base, or add-on..."
+                style="width: 100%; padding: 12px 15px 12px 40px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);"
+                onkeyup="loadMenuCosting()">
+            </div>
 
-      <div class="card">
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Menu Item</th>
-                <th>Selling Price</th>
-                <th>Recipe Cost (COGS)</th>
-                <th>Net Margin</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="bomTableBody">
-              <tr>
-                <td colspan="6" class="text-center">Loading menu costing...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button class="btn-refresh" style="background: white; color: var(--text-main); border: 1px solid var(--border);" onclick="openNewProductModal()">➕ Add Product</button>
+              <input type="file" id="csvRecipeInput" accept=".csv" style="display: none;" onchange="processRecipeCsvUpload(event)">
+              <div style="display: flex; gap: 10px;">
+                <button class="btn-action" onclick="downloadRecipeTemplate()" style="background: #f59e0b; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;">⬇️ Download Raw Template</button>
+                <label class="btn-action" style="background: #10b981; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center;">
+                  ⬆️ Upload Bulk Edits
+                  <input type="file" id="bulkUploadInput" accept=".csv" style="display: none;" onchange="processBulkUpload(event)">
+                </label>
+              </div>
+              <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="loadMenuCosting()">🔄 Recalculate</button>
+            </div>
+          </div>
+
+          <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr);">
+            <div class="stat-card primary">
+              <h3>Avg. Menu Profit Margin</h3>
+              <div class="value" id="bomAvgMargin">0%</div>
+            </div>
+            <div class="stat-card danger">
+              <h3>Items Missing Recipes (BOM)</h3>
+              <div class="value" id="bomMissing" style="color: var(--danger);">0</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Menu Item</th>
+                    <th>Selling Price</th>
+                    <th>Recipe Cost (COGS)</th>
+                    <th>Net Margin</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="bomTableBody">
+                  <tr>
+                    <td colspan="6" class="text-center">Loading menu costing...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
       </div>
 
     </div>
