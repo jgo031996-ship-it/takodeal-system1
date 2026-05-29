@@ -1773,14 +1773,17 @@ window.switchInvTab = function(tab) {
     let overviewTab = document.getElementById('tabInvOverview');
     let auditsTab = document.getElementById('tabInvAudits');
     let wasteTab = document.getElementById('tabInvWaste');
+    let prepTab = document.getElementById('tabInvPrep');
+    let logsTab = document.getElementById('tabInvStockLogs');
     
     let liveSec = document.getElementById('invTabLiveContent');
-    let logsSec = document.getElementById('invTabLogsContent');
     let auditsSec = document.getElementById('invSectionAudits');
     let wasteSec = document.getElementById('invSectionWaste');
+    let prepSec = document.getElementById('invSectionPrepLogs');
+    let logsSec = document.getElementById('invTabLogsContent');
 
-    [overviewTab, auditsTab, wasteTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
-    [liveSec, logsSec, auditsSec, wasteSec].forEach(s => { if(s) s.style.display = 'none'; });
+    [overviewTab, auditsTab, wasteTab, prepTab, logsTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
+    [liveSec, auditsSec, wasteSec, prepSec, logsSec].forEach(s => { if(s) s.style.display = 'none'; });
 
     if (tab === 'Overview') {
         if(overviewTab) { overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e'; }
@@ -1793,7 +1796,42 @@ window.switchInvTab = function(tab) {
         if(wasteTab) { wasteTab.style.color = '#0f766e'; wasteTab.style.borderBottomColor = '#0f766e'; }
         if(wasteSec) wasteSec.style.display = 'block';
         if (typeof window.loadWasteTabLogs === 'function') window.loadWasteTabLogs();
+    } else if (tab === 'Prep') {
+        if(prepTab) { prepTab.style.color = '#0f766e'; prepTab.style.borderBottomColor = '#0f766e'; }
+        if(prepSec) prepSec.style.display = 'block';
+        if (typeof window.loadPrepBatchLogs === 'function') window.loadPrepBatchLogs();
+    } else if (tab === 'StockLogs') {
+        if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; logsTab.style.display = 'block'; }
+        if(logsSec) logsSec.style.display = 'block';
+        if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
     }
+};
+
+window.openInventoryLogs = function() { window.switchInvTab('StockLogs'); };
+
+window.loadPrepBatchLogs = async function() {
+    const tbody = document.getElementById('prepBatchLogsBody');
+    if (!tbody) return;
+    let branchFilter = document.getElementById('invBranchFilter').value;
+    try {
+        const q = query(collection(db, "stock_logs"), where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocs(q);
+        let html = '';
+        snap.forEach(doc => {
+            let d = doc.data();
+            if (branchFilter !== "All" && d.branch !== branchFilter) return;
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                <td style="padding: 12px;"><span class="badge badge-open">${d.branch}</span></td>
+                <td style="padding: 12px; font-weight: bold; color: #334155;">${d.user || 'System'}</td>
+                <td style="padding: 12px; font-weight: bold; color: #8b5cf6;">${d.item}</td>
+                <td style="padding: 12px; font-weight: 900; color: #10b981; font-size: 14px;">+${d.variance} <span style="font-size:11px; font-weight:normal; color:#64748b;">${d.uom}</span></td>
+                <td style="padding: 12px;"><span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold;">Completed</span></td>
+            </tr>`;
+        });
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No prep batches logged.</td></tr>';
+    } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:red;">Error loading logs.</td></tr>'; }
 };
 
 window.openInventoryLogs = function() {
@@ -2837,8 +2875,22 @@ let currentEditingMenuItem = "";
 window.activeCostingTab = 'All';
 
 window.switchCostingTab = function (element, tabName) {
-  window.activeCostingTab = tabName;
-  window.loadMenuCosting(); // This redraws the table AND the tabs to highlight the right one!
+    document.querySelectorAll('#costingTabsContainer .costing-tab, #tabGlobalAddons').forEach(el => {
+        el.style.color = 'var(--text-muted)'; el.style.borderBottomColor = 'transparent';
+    });
+    element.style.color = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
+    element.style.borderBottomColor = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
+
+    if (tabName === 'GlobalAddons') {
+        document.getElementById('menuCostingSection').style.display = 'none';
+        document.getElementById('globalAddonsSection').style.display = 'block';
+        window.loadGlobalAddons();
+    } else {
+        document.getElementById('globalAddonsSection').style.display = 'none';
+        document.getElementById('menuCostingSection').style.display = 'block';
+        window.activeCostingTab = tabName;
+        window.loadMenuCosting(); 
+    }
 };
 
 window.loadMenuCosting = async function() {
@@ -7952,20 +8004,22 @@ window.loadSalesHistoryTab = async function() {
     if (!startDateRaw || !endDateRaw) {
         let today = new Date();
         today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
-        startDateRaw = today.toISOString().split('T')[0];
-        endDateRaw = startDateRaw;
-        document.getElementById('histStartDate').value = startDateRaw;
-        document.getElementById('histEndDate').value = endDateRaw;
+        let todayStr = today.toISOString().split('T')[0];
+        document.getElementById('histStartDate').value = todayStr;
+        document.getElementById('histEndDate').value = todayStr;
+        startDateRaw = todayStr;
+        endDateRaw = todayStr;
     }
 
     let startOfDay = new Date(startDateRaw + 'T00:00:00');
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
-    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
+    if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading transactions...</td></tr>';
     if(tbodyDaily) tbodyDaily.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
     if(tbodyMonthly) tbodyMonthly.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Calculating monthly aggregates...</td></tr>';
 
     try {
+        // 1. FETCH INVENTORY & RECIPES FOR COGS
         const invSnap = await getDocs(collection(db, "inventory"));
         let inventoryCosts = {};
         invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
@@ -7978,16 +8032,30 @@ window.loadSalesHistoryTab = async function() {
             recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        // 2. FETCH TRANSACTIONS & REJECTED MOBILE ORDERS
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const snap = await getDocs(q);
-        
+
+        const rejectedQ = query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        const rejectedSnap = await getDocs(rejectedQ);
+
+        // 3. COMBINE AND SORT EVERYTHING INTO ONE LIST
+        let allTxArray = [];
+        snap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
+        rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
+        allTxArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+
+        // 4. SETUP TRACKING VARIABLES
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0;
         let dailyAggregates = {}; 
         let monthlyAggregates = {}; 
+        let distOrderType = {};
+        let distPayment = {};
+        let distTotalSales = 0;
 
-        snap.forEach(docSnap => {
-            let tx = docSnap.data();
+        // 5. LOOP THROUGH THE COMBINED LIST
+        allTxArray.forEach(tx => {
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
             let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
@@ -7996,25 +8064,48 @@ window.loadSalesHistoryTab = async function() {
             let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
             let safeCashier = tx.cashier || 'Unknown';
-            let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
-            
-            // 🔥 SHIFT-BASED AGGREGATION KEYS (Branch + Date/Month + Cashier)
-            let dailyKey = `${tx.branch}_${dateStr}_${safeCashier}`;
-            let monthlyKey = `${tx.branch}_${monthStr}_${safeCashier}`;
+            let safeCart = encodeURIComponent(JSON.stringify(tx.cart || tx.items || [])); 
 
+            let isMobile = !!tx.isMobileRejected || (tx.notes && tx.notes.includes("Mobile App Order")) || (tx.cart && tx.cart.some(i => i.notes && i.notes.includes("Mobile App Order")));
+            let mobileIcon = isMobile ? '📱 ' : '';
+
+            // A. HANDLE REJECTED MOBILE ORDERS
+            if (tx.isMobileRejected) {
+                let reasonStr = tx.status === "rejected_by_customer" ? "Cancelled by Cust" : "Rejected by Store";
+                txHtml += `
+                    <tr style="border-bottom: 1px solid #f1f5f9; background: #fff1f2;">
+                        <td style="padding: 12px 10px; font-family: monospace; font-weight: bold; color: #ef4444;">MOBILE-REJ</td>
+                        <td style="padding: 12px 10px;"><span class="badge badge-open">${tx.branch}</span></td>
+                        <td style="padding: 12px 10px; font-weight: 500;">-</td>
+                        <td style="padding: 12px 10px; font-weight: bold; color: #ef4444;">${mobileIcon}${safeCustomer}</td>
+                        <td style="padding: 12px 10px; color: #ef4444; font-weight: bold; text-decoration: line-through;">₱${(tx.totalAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        <td style="padding: 12px 10px; color: #475569;">${tx.paymentMode || 'Unknown'}</td>
+                        <td style="padding: 12px 10px;"><span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold;">${reasonStr}</span></td>
+                        <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                        <td style="padding: 12px 10px; color: #64748b; font-size: 13px;">${timeStr}</td>
+                        <td style="padding: 12px 10px; text-align: center;">
+                            <button onclick="window.viewReceiptDetails('${tx.id}', '${safeCustomer}', '${timeStr}', '${tx.paymentMode}', ${tx.totalAmount}, '${safeCart}')" style="background: white; border: 1px solid #ef4444; color: #ef4444; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🔍 View</button>
+                        </td>
+                    </tr>
+                `;
+                return; // Stop here, do not add rejected orders to financials!
+            }
+
+            // B. HANDLE STANDARD TRANSACTIONS
             let isVoid = tx.status === "Voided";
             let txNet = (tx.netTotal || 0);
             
-            if (!isVoid) {
-                tNet += txNet;
-                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += txNet;
-            }
+            // AGGREGATION KEYS (Branch + Date/Month + Cashier)
+            let dailyKey = `${tx.branch}_${dateStr}_${safeCashier}`;
+            let monthlyKey = `${tx.branch}_${monthStr}_${safeCashier}`;
 
+            // Calculate COGS
             let txCogs = 0;
             if (tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let qty = item.qty || 1;
-                    let baseCogs = (recipeCosts[item.name || item.itemName] || 0) * qty;
+                    let itemName = item.name || item.itemName;
+                    let baseCogs = (recipeCosts[itemName] || 0) * qty;
                     let addonCogs = 0;
                     if (item.addons) {
                         for (let key in item.addons) {
@@ -8027,7 +8118,23 @@ window.loadSalesHistoryTab = async function() {
                     txCogs += (baseCogs + addonCogs);
                 });
             }
-            if (!isVoid) tCogs += txCogs;
+
+            if (!isVoid) {
+                tNet += txNet;
+                tCogs += txCogs;
+                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += txNet;
+
+                // Track Sales Distribution (Order Type & Payment Method)
+                let oType = tx.orderType || "Take-out";
+                let pMeth = tx.paymentMethod || "Cash";
+                
+                distTotalSales += txNet;
+                if (!distOrderType[oType]) distOrderType[oType] = { sales: 0, count: 0 };
+                if (!distPayment[pMeth]) distPayment[pMeth] = { sales: 0, count: 0 };
+                
+                distOrderType[oType].sales += txNet; distOrderType[oType].count++;
+                distPayment[pMeth].sales += txNet; distPayment[pMeth].count++;
+            }
 
             // DAILY SHIFT LOGIC
             if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, cashier: safeCashier, sales: 0, cogs: 0, txCount: 0, voids: 0 };
@@ -8047,7 +8154,7 @@ window.loadSalesHistoryTab = async function() {
                     <td style="padding: 12px 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
                     <td style="padding: 12px 10px;"><span class="badge badge-open">${tx.branch}</span></td>
                     <td style="padding: 12px 10px; font-weight: 500;">${safeCashier}</td>
-                    <td style="padding: 12px 10px; font-weight: bold; color: #0284c7;">${safeCustomer}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #0284c7;">${mobileIcon}${safeCustomer}</td>
                     <td style="padding: 12px 10px; ${statusStyle}">₱${txNet.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 12px 10px; color: #475569;">${tx.paymentMethod || 'Unknown'}</td>
                     <td style="padding: 12px 10px;">${statusBadge}</td>
@@ -8062,7 +8169,7 @@ window.loadSalesHistoryTab = async function() {
 
         if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="10" class="text-center" style="padding: 30px; color: #64748b;">No transactions found.</td></tr>';
 
-        // BUILD DAILY (SHIFT) SALES
+        // 6. BUILD DAILY (SHIFT) SALES
         let dailyHtml = '';
         Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(d => {
             let dMargin = d.sales - d.cogs;
@@ -8080,7 +8187,7 @@ window.loadSalesHistoryTab = async function() {
         });
         if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // BUILD MONTHLY (SHIFT) SALES
+        // 7. BUILD MONTHLY (SHIFT) SALES
         let monthlyHtml = '';
         Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj).forEach(m => {
             let mMargin = m.sales - m.cogs;
@@ -8097,7 +8204,7 @@ window.loadSalesHistoryTab = async function() {
         });
         if(tbodyMonthly) tbodyMonthly.innerHTML = monthlyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No monthly aggregates available.</td></tr>';
 
-        // UPDATE KPI CARDS
+        // 8. UPDATE KPI CARDS
         let tMargin = tNet - tCogs;
         let cogsPct = tNet > 0 ? (tCogs / tNet) * 100 : 0;
         let marginPct = tNet > 0 ? (tMargin / tNet) * 100 : 0;
@@ -8112,6 +8219,34 @@ window.loadSalesHistoryTab = async function() {
 
         let marginCirc = document.getElementById('histMarginPct');
         if (marginCirc) { marginCirc.innerText = `${marginPct.toFixed(0)}%`; marginCirc.style.borderColor = marginPct < 30 ? '#ef4444' : '#0ea5e9'; marginCirc.style.color = marginPct < 30 ? '#ef4444' : '#0ea5e9'; }
+
+        // 9. BUILD SALES DISTRIBUTION UI
+        let buildDistHtml = (distObj) => {
+            let html = '';
+            let sortedKeys = Object.keys(distObj).sort((a,b) => distObj[b].sales - distObj[a].sales);
+            sortedKeys.forEach(k => {
+                let d = distObj[k];
+                let pct = distTotalSales > 0 ? (d.sales / distTotalSales) * 100 : 0;
+                html += `
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; color: #334155; margin-bottom: 4px;">
+                            <span>${k} <span style="color:#94a3b8; font-weight:normal; font-size:11px;">(${d.count} tx)</span></span>
+                            <span>₱${d.sales.toLocaleString(undefined, {minimumFractionDigits: 2})} <span style="color:#10b981; font-weight:900;">${pct.toFixed(1)}%</span></span>
+                        </div>
+                        <div style="background: #e2e8f0; height: 8px; border-radius: 4px; overflow: hidden;">
+                            <div style="background: #10b981; height: 100%; width: ${pct}%;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            return html || '<div style="color:#94a3b8; font-size:12px;">No data.</div>';
+        };
+
+        if(document.getElementById('distOrderTypeBody')) document.getElementById('distOrderTypeBody').innerHTML = buildDistHtml(distOrderType);
+        if(document.getElementById('distPaymentBody')) document.getElementById('distPaymentBody').innerHTML = buildDistHtml(distPayment);
+
+        // TRIGGER THE PRODUCT ANALYTICS REPORT!
+        if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
 
     } catch (e) {
         console.error("History Error:", e);
