@@ -482,8 +482,9 @@
         </div>
 
         <div style="background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden;">
-            <div style="display: flex; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 20px;">
+            <div style="display: flex; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 20px; overflow-x: auto; white-space: nowrap;">
                 <div id="tabHistTx" onclick="window.switchHistoryTab('Tx')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer; transition: 0.2s;">Transactions</div>
+                <div id="tabHistShifts" onclick="window.switchHistoryTab('Shifts')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Shifts Sales</div>
                 <div id="tabHistDaily" onclick="window.switchHistoryTab('Daily')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Daily Sales</div>
                 <div id="tabHistMonthly" onclick="window.switchHistoryTab('Monthly')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Monthly Sales</div>
                 <div id="tabHistReports" onclick="window.switchHistoryTab('Reports')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Reports (Optimization)</div>
@@ -511,6 +512,28 @@
                     </thead>
                     <tbody id="historyTableBody">
                       <tr><td colspan="7" class="text-center" style="padding: 30px;">Select a date range and click Update Report...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+
+            <div id="histSecShifts" style="display: none;">
+                <div class="table-responsive">
+                  <table class="data-table">
+                    <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                      <tr>
+                        <th style="color: #475569;">Date ↕</th>
+                        <th style="color: #475569;">Branch ↕</th>
+                        <th style="color: #475569;">Cashier (Shift) ↕</th>
+                        <th style="color: #16a34a;">Gross Sales ↕</th>
+                        <th style="color: #dc2626;">Est. COGS ↕</th>
+                        <th style="color: #0ea5e9;">Net Margin ↕</th>
+                        <th style="color: #ef4444;">Voided (₱) ↕</th>
+                        <th style="color: #475569;">Total Tx ↕</th>
+                      </tr>
+                    </thead>
+                    <tbody id="historyShiftsBody">
+                      <tr><td colspan="8" class="text-center" style="padding: 30px;">Select a date range and click Update Report...</td></tr>
                     </tbody>
                   </table>
                 </div>
