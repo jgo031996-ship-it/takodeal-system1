@@ -1772,23 +1772,27 @@ window.loadInventoryData = async function() {
 window.switchInvTab = function(tab) {
     let overviewTab = document.getElementById('tabInvOverview');
     let auditsTab = document.getElementById('tabInvAudits');
+    let wasteTab = document.getElementById('tabInvWaste');
+    
     let liveSec = document.getElementById('invTabLiveContent');
     let logsSec = document.getElementById('invTabLogsContent');
     let auditsSec = document.getElementById('invSectionAudits');
+    let wasteSec = document.getElementById('invSectionWaste');
+
+    [overviewTab, auditsTab, wasteTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
+    [liveSec, logsSec, auditsSec, wasteSec].forEach(s => { if(s) s.style.display = 'none'; });
 
     if (tab === 'Overview') {
-        overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e';
-        auditsTab.style.color = '#64748b'; auditsTab.style.borderBottomColor = 'transparent';
-        liveSec.style.display = 'block'; 
-        logsSec.style.display = 'none'; 
-        auditsSec.style.display = 'none';
+        if(overviewTab) { overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e'; }
+        if(liveSec) liveSec.style.display = 'block';
     } else if (tab === 'Audits') {
-        auditsTab.style.color = '#0f766e'; auditsTab.style.borderBottomColor = '#0f766e';
-        overviewTab.style.color = '#64748b'; overviewTab.style.borderBottomColor = 'transparent';
-        liveSec.style.display = 'none'; 
-        logsSec.style.display = 'none'; 
-        auditsSec.style.display = 'block';
-        if (typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits(); // <--- Wakes up the Audit engine!
+        if(auditsTab) { auditsTab.style.color = '#0f766e'; auditsTab.style.borderBottomColor = '#0f766e'; }
+        if(auditsSec) auditsSec.style.display = 'block';
+        if (typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits();
+    } else if (tab === 'Waste') {
+        if(wasteTab) { wasteTab.style.color = '#0f766e'; wasteTab.style.borderBottomColor = '#0f766e'; }
+        if(wasteSec) wasteSec.style.display = 'block';
+        if (typeof window.loadWasteTabLogs === 'function') window.loadWasteTabLogs();
     }
 };
 
@@ -8492,41 +8496,126 @@ window.editManagerPermissions = async function(docId, email) {
 window.loadInventoryAudits = async function() {
     const tbody = document.getElementById('auditLogsBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">Fetching audit logs...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Fetching audit logs...</td></tr>';
+
+    let durationFilter = document.getElementById('auditDurationFilter').value;
+    let exactDateFilter = document.getElementById('auditExactDate').value;
+    
+    let startDate = new Date();
+    startDate.setHours(0,0,0,0);
+    
+    if (exactDateFilter) {
+        startDate = new Date(exactDateFilter + 'T00:00:00');
+    } else if (durationFilter === '7days') {
+        startDate.setDate(startDate.getDate() - 7);
+    } else if (durationFilter === '30days') {
+        startDate.setDate(startDate.getDate() - 30);
+    } else if (durationFilter === 'all') {
+        startDate = new Date('2020-01-01');
+    }
 
     try {
-        // Fetch the 50 most recent Stock Counts submitted by Cashiers
-        const q = query(collection(db, "stock_counts"), orderBy("timestamp", "desc"), limit(50));
+        const q = query(collection(db, "stock_counts"), where("timestamp", ">=", startDate), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
+        
+        const invSnap = await getDocs(collection(db, "inventory"));
+        let invDb = {};
+        invSnap.forEach(d => {
+            let item = d.data();
+            invDb[`${item.branch}_${item.name}`] = parseFloat(item.baseCost) || 0;
+        });
+
         let html = '';
+        let globalLoss = 0;
+        let globalPerfectItems = 0;
+        let globalTotalItems = 0;
 
         snap.forEach(docSnap => {
             let data = docSnap.data();
-            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH') : 'Unknown';
-            let countsLength = Array.isArray(data.counts) ? data.counts.length : 0;
-            
-            // Encode the payload safely so we can pass it to the Modal Button
-            let countsEncoded = encodeURIComponent(JSON.stringify(data.counts || []));
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             let safeBranch = data.branch ? data.branch.replace(/'/g, "\\'") : 'Unknown';
             let safeCashier = data.cashier ? data.cashier.replace(/'/g, "\\'") : 'Unknown';
+            let counts = data.counts || [];
+            
+            let rowLoss = 0;
+            let rowPerfect = 0;
+
+            counts.forEach(c => {
+                let cost = invDb[`${data.branch}_${c.name}`] || 0;
+                let variance = (parseFloat(c.physicalQty) || 0) - (parseFloat(c.systemQty) || 0);
+                
+                if (variance < 0) rowLoss += (Math.abs(variance) * cost);
+                if (variance === 0) rowPerfect++;
+                
+                globalTotalItems++;
+            });
+            
+            globalLoss += rowLoss;
+            globalPerfectItems += rowPerfect;
+
+            let countsEncoded = encodeURIComponent(JSON.stringify(counts));
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px; color: #64748b;">${dateStr}</td>
                     <td style="padding: 12px; font-weight: bold; color: #0f766e;">${safeBranch}</td>
                     <td style="padding: 12px; font-weight: bold; color: #334155;">${safeCashier}</td>
-                    <td style="padding: 12px;"><span style="background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">${countsLength} Items</span></td>
+                    <td style="padding: 12px;"><span style="background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">${counts.length} Items</span></td>
+                    <td style="padding: 12px; font-weight: bold; color: #dc2626;">${rowLoss > 0 ? `₱${rowLoss.toFixed(2)}` : '₱0.00'}</td>
                     <td style="padding: 12px;">
-                        <button onclick="window.viewAuditDetails('${dateStr}', '${safeBranch}', '${safeCashier}', '${countsEncoded}')" style="background: white; border: 1px solid #0f766e; color: #0f766e; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Reconcile</button>
+                        <button onclick="window.viewAuditDetails('${dateStr}', '${safeBranch}', '${safeCashier}', '${countsEncoded}')" style="background: white; border: 1px solid #0f766e; color: #0f766e; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View Details</button>
                     </td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 20px; color: #64748b;">No stock counts submitted yet.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No stock counts submitted in this period.</td></tr>';
+
+        let accuracy = globalTotalItems > 0 ? (globalPerfectItems / globalTotalItems) * 100 : 100;
+        document.getElementById('auditKpiAccuracy').innerText = `${accuracy.toFixed(1)}%`;
+        document.getElementById('auditKpiLoss').innerText = `₱${globalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+        // 🔥 THE SMART RE-AUDIT ENGINE
+        let nextAuditDateStr = "Awaiting Data";
+        let nextAuditSubStr = "Need more audit logs";
+        
+        if (snap.size > 0) {
+            let latestAuditDoc = snap.docs[0].data();
+            let latestDate = latestAuditDoc.timestamp ? latestAuditDoc.timestamp.toDate() : new Date();
+            let targetDate = new Date(latestDate);
+            
+            // The AI Logic Tree for Store Operations
+            if (accuracy < 95 || globalLoss > 500) {
+                targetDate.setDate(targetDate.getDate() + 1); // High Variance: Check again tomorrow!
+                nextAuditSubStr = "High Variance: Audit Tomorrow";
+                document.getElementById('auditKpiNext').style.color = "#dc2626"; // Red
+            } else if (accuracy < 98) {
+                targetDate.setDate(targetDate.getDate() + 3); // Moderate Variance: Check in 3 days
+                nextAuditSubStr = "Moderate Variance: 3-Day Cycle";
+                document.getElementById('auditKpiNext').style.color = "#d97706"; // Orange
+            } else {
+                targetDate.setDate(targetDate.getDate() + 7); // Perfect Accuracy: Reward them with a 7-day break!
+                nextAuditSubStr = "Stable: Weekly Cycle";
+                document.getElementById('auditKpiNext').style.color = "#16a34a"; // Green
+            }
+            
+            // Override if the date has already passed
+            let today = new Date();
+            today.setHours(0,0,0,0);
+            if (targetDate <= today) {
+                nextAuditDateStr = "OVERDUE (Do Today)";
+                document.getElementById('auditKpiNext').style.color = "#dc2626";
+            } else {
+                nextAuditDateStr = targetDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+        }
+        
+        if(document.getElementById('auditKpiNext')) document.getElementById('auditKpiNext').innerText = nextAuditDateStr;
+        if(document.getElementById('auditKpiNextSub')) document.getElementById('auditKpiNextSub').innerText = nextAuditSubStr;
+
     } catch (e) {
         console.error("Audit Engine Error:", e);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: red;">Failed to load audits.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; color: red;">Failed to load audits.</td></tr>';
     }
 };
 
@@ -8706,5 +8795,68 @@ window.viewLedgerHistory = async function(staffName) {
     } catch (e) {
         console.error("Ledger History Error:", e);
         tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+    }
+};
+
+// ========================================================
+// 🗑️ MANAGER APP WASTE LOG DASHBOARD
+// ========================================================
+window.loadWasteTabLogs = async function() {
+    const tbody = document.getElementById('wasteTabBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Fetching waste logs...</td></tr>';
+    
+    let branchFilter = document.getElementById('invBranchFilter').value;
+    
+    try {
+        // Fetch inventory base costs to calculate waste value
+        const invSnap = await getDocs(collection(db, "inventory"));
+        let invCosts = {};
+        invSnap.forEach(d => {
+            let item = d.data();
+            invCosts[`${item.branch}_${item.name}`] = parseFloat(item.baseCost) || 0;
+        });
+        
+        const q = query(collection(db, "stock_logs"), where("type", "==", "Waste / Spoilage"), orderBy("timestamp", "desc"), limit(100));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        let totalWasteCount = 0;
+        let totalValueLost = 0;
+        
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            if (branchFilter !== "All" && data.branch !== branchFilter) return;
+            
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let qtyLost = Math.abs(data.variance || 0);
+            
+            // Calculate Financial Impact!
+            let unitCost = invCosts[`${data.branch}_${data.item}`] || 0;
+            let valueLost = qtyLost * unitCost;
+            
+            totalWasteCount++;
+            totalValueLost += valueLost;
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 12px;"><span class="badge badge-open">${data.branch}</span></td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.user || 'System'}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #b91c1c;">${data.item}</td>
+                    <td style="padding: 12px; font-weight: 900; color: #ef4444; font-size: 15px;">-${qtyLost} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${data.uom || ''}</span><br><span style="font-size: 10px; color: #64748b;">(₱${valueLost.toFixed(2)})</span></td>
+                    <td style="padding: 12px; color: #475569; font-style: italic;">${data.note || 'No reason provided'}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No waste records found for this branch.</td></tr>';
+        
+        if(document.getElementById('wasteTotalCount')) document.getElementById('wasteTotalCount').innerText = totalWasteCount;
+        if(document.getElementById('wasteTotalValue')) document.getElementById('wasteTotalValue').innerText = `₱${totalValueLost.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        
+    } catch (e) {
+        console.error("Waste Tab Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; color: red;">Failed to load waste logs. Check console.</td></tr>';
     }
 };
