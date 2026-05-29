@@ -1162,23 +1162,56 @@
           </div>
         </div>
 
+        <!-- 📑 NEW TABS (Overview | Audits | Waste) -->
+        <div style="display: flex; gap: 20px; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0;" id="invTabsHeader">
+            <div id="tabInvOverview" onclick="switchInvTab('Overview')" style="padding: 10px 15px; font-weight: bold; font-size: 16px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer; transition: 0.2s;">Overview</div>
+            <div id="tabInvAudits" onclick="switchInvTab('Audits')" style="padding: 10px 15px; font-weight: bold; font-size: 16px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Audits & Accuracy</div>
+            <div id="tabInvWaste" onclick="switchInvTab('Waste')" style="padding: 10px 15px; font-weight: bold; font-size: 16px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Waste & Spoilage</div>
+        </div>
+
+        <!-- 🕵️‍♂️ SECTION 2: AUDIT & ACCURACY -->
         <div id="invSectionAudits" style="display: none;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
                 <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                    <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Accuracy Score (Latest Audit)</div>
-                    <div id="auditAccuracy" style="font-size: 32px; font-weight: 900; color: #0f172a;">--%</div>
+                    <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Accuracy Rate (Latest Audit)</div>
+                    <div id="auditKpiAccuracy" style="font-size: 32px; font-weight: 900; color: #0f172a;">--%</div>
                 </div>
                 <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                     <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Variance Loss (Latest Audit)</div>
-                    <div id="auditVariance" style="font-size: 32px; font-weight: 900; color: #dc2626;">₱0.00</div>
+                    <div id="auditKpiLoss" style="font-size: 32px; font-weight: 900; color: #dc2626;">₱0.00</div>
+                </div>
+                <div style="background: #fdf4ff; padding: 20px; border-radius: 12px; border: 1px solid #f5d0fe; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <div style="font-size: 12px; color: #86198f; font-weight: bold; text-transform: uppercase;">Smart Re-Audit Date 🤖</div>
+                    <div id="auditKpiNext" style="font-size: 24px; font-weight: 900; color: #701a75; margin-top: 5px;">Analyzing...</div>
+                    <div id="auditKpiNextSub" style="font-size: 11px; color: #a21caf; margin-top: 5px; font-weight: bold;">Scanning variance cycles...</div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; background: white;">
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold; margin-bottom: 5px;">Report Duration</div>
+                    <select id="auditDurationFilter" onchange="window.loadInventoryAudits()" style="width: 100%; border: none; outline: none; font-weight: bold; font-size: 14px; color: #0f766e; cursor: pointer; background: transparent;">
+                        <option value="today">Today</option>
+                        <option value="7days">Last 7 Days</option>
+                        <option value="30days">Last 30 Days</option>
+                        <option value="all">All Time</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 200px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; background: white;">
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold; margin-bottom: 5px;">Specific Date</div>
+                    <input type="date" id="auditExactDate" onchange="window.loadInventoryAudits()" style="width: 100%; border: none; outline: none; font-weight: bold; font-size: 14px; color: #334155; background: transparent;">
                 </div>
             </div>
 
             <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin-top:0; color: #0f172a;">📜 Daily Stock Counts</h3>
-                    <button onclick="window.loadInventoryAudits()" class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 8px 15px; border-radius: 6px;">🔄 Refresh Audits</button>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">
+                    <div style="display: flex; gap: 20px;">
+                        <span style="font-weight: bold; font-size: 16px; color: #0f766e; border-bottom: 3px solid #0f766e; padding-bottom: 8px;">Audit Logs</span>
+                    </div>
+                    <button onclick="window.loadInventoryAudits()" class="btn-refresh" style="background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold;">🔄 Refresh Audits</button>
                 </div>
+                
                 <div class="table-responsive">
                     <table class="data-table">
                         <thead style="background: #f8fafc;">
@@ -1187,11 +1220,51 @@
                                 <th>Branch</th>
                                 <th>Cashier</th>
                                 <th>Items Counted</th>
+                                <th>Variance Loss</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
                         <tbody id="auditLogsBody">
-                            <tr><td colspan="5" class="text-center" style="padding: 20px;">Loading audits...</td></tr>
+                            <tr><td colspan="6" class="text-center" style="padding: 20px;">Loading audits...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🗑️ SECTION 3: WASTE & SPOILAGE -->
+        <div id="invSectionWaste" style="display: none;">
+            <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 20px;">
+                <div style="background: #fffcf0; padding: 20px; border-radius: 12px; border: 1px solid #fde68a;">
+                    <div style="font-size: 12px; color: #b45309; font-weight: bold; text-transform: uppercase;">Total Waste Instances</div>
+                    <div id="wasteTotalCount" style="font-size: 32px; font-weight: 900; color: #d97706;">0</div>
+                </div>
+                <div style="background: #fef2f2; padding: 20px; border-radius: 12px; border: 1px solid #fecaca;">
+                    <div style="font-size: 12px; color: #b91c1c; font-weight: bold; text-transform: uppercase;">Total Value Lost to Waste</div>
+                    <div id="wasteTotalValue" style="font-size: 32px; font-weight: 900; color: #dc2626;">₱0.00</div>
+                </div>
+            </div>
+            
+            <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">
+                    <h3 style="margin-top:0; color: #b91c1c;">🗑️ Branch Waste Logs</h3>
+                    <button onclick="window.loadWasteTabLogs()" class="btn-refresh" style="background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold;">🔄 Refresh Logs</button>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead style="background: #f8fafc;">
+                            <tr>
+                                <th style="color: #475569;">Date & Time</th>
+                                <th style="color: #475569;">Branch</th>
+                                <th style="color: #475569;">Cashier</th>
+                                <th style="color: #475569;">Item Wasted</th>
+                                <th style="color: #475569;">Qty Lost</th>
+                                <th style="color: #475569;">Reason / Note</th>
+                            </tr>
+                        </thead>
+                        <tbody id="wasteTabBody">
+                            <tr><td colspan="6" class="text-center" style="padding: 20px;">Loading waste logs...</td></tr>
                         </tbody>
                     </table>
                 </div>
