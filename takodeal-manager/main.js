@@ -2120,7 +2120,7 @@ window.loadAccountsAndBudget = async function() {
     }
 
     // ==========================================
-    // 💸 PART 2: THE MONTHLY BUDGET TRACKER (WITH AUTO-RESET)
+    // 💸 PART 2: THE MONTHLY BUDGET TRACKER (GROUPED BY BRANCH)
     // ==========================================
     try {
         const budgetBody = document.getElementById('budgetListBody');
@@ -2133,7 +2133,6 @@ window.loadAccountsAndBudget = async function() {
         
         window.liveBudgets = []; 
 
-        // 🔥 MONTHLY RESET MATH
         let today = new Date();
         let currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -2141,53 +2140,76 @@ window.loadAccountsAndBudget = async function() {
 
         let budgetItems = [];
         budgetSnap.forEach(doc => { budgetItems.push({id: doc.id, ...doc.data()}) });
-        budgetItems.sort((a, b) => (a.branch || "Unassigned").localeCompare(b.branch || "Unassigned"));
+
+        let budgetsByBranch = {};
 
         if (budgetItems.length === 0) {
             bHtml = '<div class="text-center" style="color: #64748b; padding: 20px;">No budget categories found. Click "+ Category" to start tracking.</div>';
         } else {
+            // Group items into branches
             budgetItems.forEach(b => {
+                let branchName = b.branch || "Unassigned";
+                if (!budgetsByBranch[branchName]) budgetsByBranch[branchName] = [];
+
                 let limit = parseFloat(b.limit || b.amount || 0);
                 let spent = parseFloat(b.spent || 0);
                 let budgetMonth = b.currentMonth || "";
-                let branchName = b.branch || "Unassigned";
 
-                // 🔄 AUTO-RESET DETECTOR: If this budget is from an old month, wipe it clean!
                 if (budgetMonth !== currentMonthStr) {
-                    spent = 0; // Visually reset it
-                    // Quietly update the database in the background without lagging the screen
+                    spent = 0; 
                     updateDoc(doc(db, "budgets", b.id), { spent: 0, currentMonth: currentMonthStr });
                 }
 
                 window.liveBudgets.push({ ...b, spent: spent, limit: limit });
-
                 totalB += limit;
                 totalS += spent;
+                
+                budgetsByBranch[branchName].push({ ...b, spent: spent, limit: limit });
+            });
 
-                let pct = limit > 0 ? (spent / limit) * 100 : 0;
-                let barColor = pct >= 90 ? '#ef4444' : (pct >= 75 ? '#f59e0b' : '#10b981');
-                let branchBadge = `<span style="background: #ede9fe; color: #8b5cf6; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin-right: 10px; border: 1px solid #ddd6fe; font-weight: bold;">📍 ${branchName}</span>`;
+            // Build the HTML Grouped by Branch
+            for (let branch in budgetsByBranch) {
+                let branchLimit = 0;
+                let branchSpent = 0;
+                let branchItemsHtml = '';
+
+                budgetsByBranch[branch].forEach(b => {
+                    branchLimit += b.limit;
+                    branchSpent += b.spent;
+
+                    let pct = b.limit > 0 ? (b.spent / b.limit) * 100 : 0;
+                    let barColor = pct >= 90 ? '#ef4444' : (pct >= 75 ? '#f59e0b' : '#10b981');
+
+                    branchItemsHtml += `
+                        <div style="margin-bottom: 12px; background: white; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div style="color: #334155; font-size: 14px; font-weight: bold;">
+                                    ${b.category || b.name || 'Category'} 
+                                    <span style="font-size:10px; color:#94a3b8; font-weight:normal; margin-left:5px;">(${displayMonth})</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <span style="color: ${barColor}; font-weight: bold; font-size: 13px;">₱${b.spent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${b.limit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                                    <button onclick="window.openEditBudgetModal('${b.id}', '${b.category || b.name}', ${b.limit}, '${branch}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Edit Limit">✏️ Edit</button>
+                                    <button onclick="window.deleteBudgetCategory('${b.id}', '${b.category || b.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Delete">🗑️</button>
+                                </div>
+                            </div>
+                            <div style="background: #e2e8f0; height: 8px; border-radius: 4px; overflow: hidden;">
+                                <div style="width: ${Math.min(pct, 100)}%; height: 100%; background: ${barColor}; transition: width 0.5s;"></div>
+                            </div>
+                        </div>
+                    `;
+                });
 
                 bHtml += `
-                    <div style="margin-bottom: 20px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <div style="display: flex; align-items: center;">
-                                ${branchBadge}
-                                <span style="color: #334155; font-size: 14px; font-weight: bold;">${b.category || b.name || 'Category'} <span style="font-size:10px; color:#94a3b8; font-weight:normal; margin-left:5px;">(${displayMonth})</span></span>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <span style="color: ${barColor}; font-weight: bold; font-size: 13px;">₱${spent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${limit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                                
-                                <button onclick="window.openEditBudgetModal('${b.id}', '${b.category || b.name}', ${limit}, '${branchName}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Edit Limit">✏️ Edit</button>
-                                <button onclick="window.deleteBudgetCategory('${b.id}', '${b.category || b.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Delete">🗑️</button>
-                            </div>
+                    <div style="margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">
+                            <h3 style="margin: 0; color: #0f766e; font-size: 16px;">🏢 ${branch}</h3>
+                            <span style="font-weight: bold; color: #475569; font-size: 13px;">Total: ₱${branchSpent.toLocaleString(undefined, {minimumFractionDigits: 2})} / ₱${branchLimit.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                         </div>
-                        <div style="background: #cbd5e1; height: 10px; border-radius: 5px; overflow: hidden;">
-                            <div style="width: ${Math.min(pct, 100)}%; height: 100%; background: ${barColor}; transition: width 0.5s;"></div>
-                        </div>
+                        ${branchItemsHtml}
                     </div>
                 `;
-            });
+            }
         }
         
         budgetBody.innerHTML = bHtml;
@@ -2199,7 +2221,6 @@ window.loadAccountsAndBudget = async function() {
         const budgetBody = document.getElementById('budgetListBody');
         if (budgetBody) budgetBody.innerHTML = '<div class="text-center" style="color: red; padding: 20px;">Error loading budgets.</div>';
     }
-};
 
 // ==========================================
 // 🏢 NEW: BRANCH ACCOUNTS MODAL ENGINE
@@ -7964,13 +7985,13 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
 // ==========================================
 window.switchHistoryTab = function(tabName) {
     let txTab = document.getElementById('tabHistTx');
-    let shiftsTab = document.getElementById('tabHistShifts');
+    let shiftsTab = document.getElementById('tabHistShifts'); // Added!
     let dailyTab = document.getElementById('tabHistDaily');
     let monthlyTab = document.getElementById('tabHistMonthly');
     let repTab = document.getElementById('tabHistReports');
     
     document.getElementById('histSecTx').style.display = 'none';
-    document.getElementById('histSecShifts').style.display = 'none';
+    document.getElementById('histSecShifts').style.display = 'none'; // Added!
     document.getElementById('histSecDaily').style.display = 'none';
     document.getElementById('histSecMonthly').style.display = 'none';
     document.getElementById('histSecReports').style.display = 'none';
@@ -7992,6 +8013,27 @@ window.switchHistoryTab = function(tabName) {
     } else if (tabName === 'Reports') {
         if(repTab) { repTab.style.color = '#0f766e'; repTab.style.borderBottomColor = '#0f766e'; }
         document.getElementById('histSecReports').style.display = 'block';
+    }
+};
+
+// 🔥 FIX: The Missing Run Report Engine!
+window.runProductReport = function() {
+    let startDateRaw = document.getElementById('histStartDate').value;
+    let endDateRaw = document.getElementById('histEndDate').value;
+    let branchFilter = document.getElementById('histBranchFilter').value;
+    
+    if (!startDateRaw || !endDateRaw) {
+        alert("Please select a Start and End date.");
+        return;
+    }
+    
+    let startOfDay = new Date(startDateRaw + 'T00:00:00');
+    let endOfDay = new Date(endDateRaw + 'T23:59:59');
+    
+    if (typeof window.loadProductAnalytics === 'function') {
+        window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
+    } else {
+        alert("Analytics Engine is still loading. Please try again in a moment.");
     }
 };
 
