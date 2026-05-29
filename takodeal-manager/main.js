@@ -8017,6 +8017,8 @@ window.runProductReport = function() {
     window.loadProductAnalytics(new Date(startDateRaw + 'T00:00:00'), new Date(endDateRaw + 'T23:59:59'), branchFilter);
 };
 
+window.globalShiftReports = {}; // Global memory for the popup modal!
+
 window.loadSalesHistoryTab = async function() {
     const tbodyTx = document.getElementById('historyTableBody');
     const tbodyShifts = document.getElementById('historyShiftsBody');
@@ -8041,9 +8043,10 @@ window.loadSalesHistoryTab = async function() {
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
     if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading data...</td></tr>';
+    if(tbodyShifts) tbodyShifts.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
     
     try {
-        // 1. FETCH COSTS
+        // 1. FETCH COSTS & MENU CATEGORIES
         const invSnap = await getDocs(collection(db, "inventory"));
         let inventoryCosts = {};
         invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
@@ -8056,11 +8059,42 @@ window.loadSalesHistoryTab = async function() {
             recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        // 2. FETCH TRANSACTIONS
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let menuCats = {};
+        menuSnap.forEach(d => { menuCats[d.data().name] = d.data().category || "Uncategorized"; });
+
+        // 2. FETCH ACTUAL SHIFTS
+        const shiftQ = query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
+        const shiftSnap = await getDocs(shiftQ);
+        window.globalShiftReports = {}; // Reset Memory
+        
+        shiftSnap.forEach(doc => {
+            let s = doc.data();
+            if (branchFilter !== "All" && s.branch !== branchFilter) return;
+            
+            let sTime = s.startTime ? s.startTime.toDate() : new Date();
+            let eTime = s.active ? new Date() : (s.endTime ? s.endTime.toDate() : new Date());
+            
+            let sTimeStr = sTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+            let eTimeStr = s.active ? "Present" : eTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+            let dateStr = sTime.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
+            window.globalShiftReports[doc.id] = {
+                id: doc.id,
+                branch: s.branch,
+                cashier: s.cashier,
+                dateStr: dateStr,
+                timeLabel: `${sTimeStr} - ${eTimeStr}`,
+                timestamp: sTime,
+                sales: 0, cogs: 0, voids: 0, txCount: 0,
+                categorySales: {}, itemSales: {}
+            };
+        });
+
+        // 3. FETCH TRANSACTIONS & REJECTED MOBILE ORDERS
         const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const snap = await getDocs(q);
 
-        // 3. FETCH REJECTED MOBILE ORDERS (OUTSIDE THE LOOP!)
         const rejectedQ = query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const rejectedSnap = await getDocs(rejectedQ);
 
@@ -8072,9 +8106,7 @@ window.loadSalesHistoryTab = async function() {
 
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0;
-        let shiftAggregates = {};
-        let dailyAggregates = {}; 
-        let monthlyAggregates = {}; 
+        let dailyAggregates = {}; let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
         // 5. PROCESS EVERYTHING
@@ -8092,6 +8124,7 @@ window.loadSalesHistoryTab = async function() {
             let isMobile = !!tx.isMobileRejected || (tx.notes && tx.notes.includes("Mobile App Order")) || (tx.cart && tx.cart.some(i => i.notes && i.notes.includes("Mobile App Order")));
             let mobileIcon = isMobile ? '📱 ' : '';
 
+            // A. HANDLE REJECTED MOBILE ORDERS
             if (tx.isMobileRejected) {
                 let reasonStr = tx.status === "rejected_by_customer" ? "Cancelled by Cust" : "Rejected by Store";
                 txHtml += `
@@ -8113,11 +8146,24 @@ window.loadSalesHistoryTab = async function() {
                 return; 
             }
 
+            // B. HANDLE STANDARD TRANSACTIONS
             let isVoid = tx.status === "Voided";
             let txNet = (tx.netTotal || 0);
             
-            // 🔥 AGGREGATION KEYS
-            let shiftKey = `${tx.branch}_${dateStr}_${safeCashier}`;
+            // MAP TO THE EXACT SHIFT
+            let sId = tx.shiftId;
+            if (!sId || !window.globalShiftReports[sId]) {
+                sId = `fallback_${tx.branch}_${dateStr}`;
+                if (!window.globalShiftReports[sId]) {
+                    window.globalShiftReports[sId] = {
+                        id: sId, branch: tx.branch, cashier: safeCashier,
+                        dateStr: dateStr, timeLabel: "Unlinked Transactions", timestamp: dDate,
+                        sales: 0, cogs: 0, voids: 0, txCount: 0, categorySales: {}, itemSales: {}, isFallback: true
+                    };
+                }
+            }
+            let shiftRef = window.globalShiftReports[sId];
+
             let dailyKey = `${tx.branch}_${dateStr}`;
             let monthlyKey = `${tx.branch}_${monthStr}`;
 
@@ -8126,6 +8172,8 @@ window.loadSalesHistoryTab = async function() {
                 tx.cart.forEach(item => {
                     let qty = item.qty || 1;
                     let itemName = item.name || item.itemName;
+                    let itemCat = item.category || menuCats[itemName] || "Uncategorized";
+                    
                     let baseCogs = (recipeCosts[itemName] || 0) * qty;
                     let addonCogs = 0;
                     if (item.addons) {
@@ -8136,13 +8184,32 @@ window.loadSalesHistoryTab = async function() {
                             }
                         }
                     }
-                    txCogs += (baseCogs + addonCogs);
+                    let itemTotalCogs = baseCogs + addonCogs;
+                    let itemTotalSales = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
+
+                    txCogs += itemTotalCogs;
+
+                    // POPULATE THE SHIFT REPORT MODAL DATA
+                    if (!isVoid) {
+                        if (!shiftRef.categorySales[itemCat]) shiftRef.categorySales[itemCat] = { sales: 0, qty: 0 };
+                        shiftRef.categorySales[itemCat].sales += itemTotalSales;
+                        shiftRef.categorySales[itemCat].qty += qty;
+
+                        if (!shiftRef.itemSales[itemName]) shiftRef.itemSales[itemName] = { qty: 0, sales: 0, cogs: 0 };
+                        shiftRef.itemSales[itemName].qty += qty;
+                        shiftRef.itemSales[itemName].sales += itemTotalSales;
+                        shiftRef.itemSales[itemName].cogs += itemTotalCogs;
+                    }
                 });
             }
 
             if (!isVoid) {
                 tNet += txNet;
                 tCogs += txCogs;
+                shiftRef.sales += txNet;
+                shiftRef.cogs += txCogs;
+                shiftRef.txCount += 1;
+
                 if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += txNet;
 
                 let oType = tx.orderType || "Take-out";
@@ -8154,19 +8221,16 @@ window.loadSalesHistoryTab = async function() {
                 
                 distOrderType[oType].sales += txNet; distOrderType[oType].count++;
                 distPayment[pMeth].sales += txNet; distPayment[pMeth].count++;
+            } else {
+                shiftRef.voids += txNet;
             }
 
-            // SHIFT LOGIC (Branch + Date + Cashier)
-            if (!shiftAggregates[shiftKey]) shiftAggregates[shiftKey] = { branch: tx.branch, date: dateStr, cashier: safeCashier, sales: 0, cogs: 0, txCount: 0, voids: 0 };
-            if (isVoid) { shiftAggregates[shiftKey].voids += txNet; } 
-            else { shiftAggregates[shiftKey].sales += txNet; shiftAggregates[shiftKey].cogs += txCogs; shiftAggregates[shiftKey].txCount += 1; }
-
-            // DAILY LOGIC (Branch + Date Only)
+            // DAILY LOGIC
             if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0, voids: 0 };
             if (isVoid) { dailyAggregates[dailyKey].voids += txNet; } 
             else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
 
-            // MONTHLY LOGIC (Branch + Month Only)
+            // MONTHLY LOGIC
             if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
             if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; }
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
@@ -8194,13 +8258,16 @@ window.loadSalesHistoryTab = async function() {
 
         if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="10" class="text-center" style="padding: 30px; color: #64748b;">No transactions found.</td></tr>';
 
-        // BUILD SHIFTS HTML
+        // 6. BUILD SHIFTS HTML WITH VIEW BUTTON
         let shiftsHtml = '';
-        Object.values(shiftAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(s => {
+        Object.values(window.globalShiftReports).sort((a,b) => b.timestamp - a.timestamp).forEach(s => {
+            if (s.sales === 0 && s.voids === 0) return; // Hide empty shifts
             let sMargin = s.sales - s.cogs;
             shiftsHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${s.date}</td>
+                    <td style="padding: 15px 10px; font-weight: bold; color: #334155;">
+                        ${s.dateStr} <br><span style="font-size: 11px; color: #64748b; font-weight: normal;">${s.timeLabel}</span>
+                    </td>
                     <td style="padding: 15px 10px;"><span class="badge badge-open">${s.branch}</span></td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #0f766e;">👤 ${s.cashier}</td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #16a34a; font-size: 15px;">₱${s.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -8208,9 +8275,12 @@ window.loadSalesHistoryTab = async function() {
                     <td style="padding: 15px 10px; color: #0ea5e9; font-weight: bold;">₱${sMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #ef4444; font-weight: bold;">₱${s.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #475569;">${s.txCount}</td>
+                    <td style="padding: 15px 10px; text-align: center;">
+                        <button onclick="window.viewShiftReportModal('${s.id}')" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📊 Full Details</button>
+                    </td>
                 </tr>`;
         });
-        if(tbodyShifts) tbodyShifts.innerHTML = shiftsHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No shift aggregates available.</td></tr>';
+        if(tbodyShifts) tbodyShifts.innerHTML = shiftsHtml || '<tr><td colspan="9" class="text-center" style="padding: 30px; color: #64748b;">No shift aggregates available.</td></tr>';
 
         // BUILD DAILY HTML
         let dailyHtml = '';
@@ -8284,6 +8354,8 @@ window.loadSalesHistoryTab = async function() {
 
         if(document.getElementById('distOrderTypeBody')) document.getElementById('distOrderTypeBody').innerHTML = buildDistHtml(distOrderType);
         if(document.getElementById('distPaymentBody')) document.getElementById('distPaymentBody').innerHTML = buildDistHtml(distPayment);
+
+        if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
 
     } catch (e) {
         console.error("History Error:", e);
@@ -9035,4 +9107,98 @@ window.loadWasteTabLogs = async function() {
         console.error("Waste Tab Error:", e);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; color: red;">Failed to load waste logs. Check console.</td></tr>';
     }
+};
+
+// ========================================================
+// 📊 VIEW SHIFT DETAILS MODAL ENGINE
+// ========================================================
+window.viewShiftReportModal = function(shiftId) {
+    let s = window.globalShiftReports[shiftId];
+    if (!s) return;
+
+    // 1. Build the Category Breakdown HTML
+    let catHtml = '';
+    let sortedCats = Object.keys(s.categorySales).sort((a,b) => s.categorySales[b].sales - s.categorySales[a].sales);
+    sortedCats.forEach(c => {
+        catHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:6px 0; font-size: 14px;">
+            <span><strong style="color:#334155;">${c}</strong> <span style="color:#94a3b8; font-size:12px;">(${s.categorySales[c].qty} items)</span></span>
+            <strong style="color:#0f766e;">₱${s.categorySales[c].sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+        </div>`;
+    });
+
+    // 2. Build the Itemized List HTML
+    let itemHtml = '';
+    let sortedItems = Object.keys(s.itemSales).sort((a,b) => s.itemSales[b].sales - s.itemSales[a].sales);
+    sortedItems.forEach(i => {
+        let item = s.itemSales[i];
+        let margin = item.sales - item.cogs;
+        itemHtml += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; font-weight: bold; color: #1e293b;">${i}</td>
+                <td style="padding: 10px; font-weight: 900; color: #475569;">${item.qty}</td>
+                <td style="padding: 10px; color: #16a34a; font-weight: bold;">₱${item.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td style="padding: 10px; color: #dc2626; font-weight: 500;">₱${item.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td style="padding: 10px; color: #0ea5e9; font-weight: 900;">₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+            </tr>
+        `;
+    });
+
+    // 3. Inject the Popup Modal dynamically into the screen
+    let modalHtml = `
+        <div id="dynamicShiftReportModal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 800px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
+                    <div>
+                        <h3 style="margin: 0; color: #0f172a; font-size: 22px;">📊 Comprehensive Shift Report</h3>
+                        <div style="font-size: 13px; color: #64748b; margin-top: 6px; font-weight: bold;">
+                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">👤 ${s.cashier}</span> &nbsp;
+                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">📍 ${s.branch}</span> &nbsp;
+                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">⏰ ${s.dateStr} (${s.timeLabel})</span>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('dynamicShiftReportModal').remove()" style="background: #f1f5f9; border: 1px solid #cbd5e1; width: 36px; height: 36px; border-radius: 8px; font-size: 20px; cursor: pointer; color: #64748b; display: flex; align-items: center; justify-content: center;">×</button>
+                </div>
+
+                <div style="flex: 1; overflow-y: auto; padding-right: 5px;">
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+                        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                            <h4 style="margin-top: 0; color: #334155; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; font-size: 15px;">💰 Shift Financials</h4>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Gross Sales:</span><strong style="color:#16a34a;">₱${s.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Est. COGS:</span><strong style="color:#dc2626;">₱${s.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Net Margin:</span><strong style="color:#0ea5e9;">₱${(s.sales - s.cogs).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                            <div style="display:flex; justify-content:space-between; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #cbd5e1; font-size: 15px;"><span>Total Voided:</span><strong style="color:#ef4444;">₱${s.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                        </div>
+                        
+                        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                            <h4 style="margin-top: 0; color: #334155; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; font-size: 15px;">📦 Category Breakdown</h4>
+                            <div style="max-height: 120px; overflow-y: auto;">
+                                ${catHtml || '<i style="color:#94a3b8;">No category data.</i>'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <h4 style="margin-top: 0; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; font-size: 16px;">🍔 Itemized Sales List</h4>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                        <thead style="background: #f1f5f9;">
+                            <tr>
+                                <th style="padding: 12px 10px; color: #475569;">Product Sold</th>
+                                <th style="padding: 12px 10px; color: #475569;">Qty</th>
+                                <th style="padding: 12px 10px; color: #475569;">Gross Sales</th>
+                                <th style="padding: 12px 10px; color: #475569;">Est. COGS</th>
+                                <th style="padding: 12px 10px; color: #475569;">Net Margin</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemHtml || '<tr><td colspan="5" class="text-center" style="padding:20px; color:#64748b;">No items sold during this shift.</td></tr>'}
+                        </tbody>
+                    </table>
+
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
 };
