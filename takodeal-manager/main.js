@@ -1801,7 +1801,7 @@ window.switchInvTab = function(tab) {
         if(prepSec) prepSec.style.display = 'block';
         if (typeof window.loadPrepBatchLogs === 'function') window.loadPrepBatchLogs();
     } else if (tab === 'StockLogs') {
-        if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; logsTab.style.display = 'block'; }
+        if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; }
         if(logsSec) logsSec.style.display = 'block';
         if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
     }
