@@ -2878,18 +2878,23 @@ window.switchCostingTab = function (element, tabName) {
     document.querySelectorAll('#costingTabsContainer .costing-tab, #tabGlobalAddons').forEach(el => {
         el.style.color = 'var(--text-muted)'; el.style.borderBottomColor = 'transparent';
     });
-    element.style.color = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
-    element.style.borderBottomColor = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
+    if (element) {
+        element.style.color = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
+        element.style.borderBottomColor = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
+    }
+
+    let menuSec = document.getElementById('menuCostingSection');
+    let addonSec = document.getElementById('globalAddonsSection');
 
     if (tabName === 'GlobalAddons') {
-        document.getElementById('menuCostingSection').style.display = 'none';
-        document.getElementById('globalAddonsSection').style.display = 'block';
-        window.loadGlobalAddons();
+        if (menuSec) menuSec.style.display = 'none';
+        if (addonSec) addonSec.style.display = 'block';
+        if (typeof window.loadGlobalAddons === 'function') window.loadGlobalAddons();
     } else {
-        document.getElementById('globalAddonsSection').style.display = 'none';
-        document.getElementById('menuCostingSection').style.display = 'block';
+        if (addonSec) addonSec.style.display = 'none';
+        if (menuSec) menuSec.style.display = 'block';
         window.activeCostingTab = tabName;
-        window.loadMenuCosting(); 
+        if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting(); 
     }
 };
 
