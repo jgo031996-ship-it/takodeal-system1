@@ -2234,6 +2234,7 @@
       else if (viewName === 'deliveries') { topBar.innerText = "🚚 Incoming Stock"; }
       else if (viewName === 'menumgr') { topBar.innerText = "🍔 Menu Toggle"; }
       else if (viewName === 'waste') { topBar.innerText = "🗑️ Log Waste & Spoilage"; }
+      else if (viewName === 'schedule') { topBar.innerText = "📅 My Schedule"; window.loadPersonalSchedule(); }
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
