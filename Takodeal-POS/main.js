@@ -1,8 +1,8 @@
- // ========================================================
+// ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 // 🔥 NEW: Import Firebase Storage
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -18,18 +18,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
 const storage = getStorage(app); // 🔥 Turn on the engine
 
-window.storage = storage; // Export it for the staff meal function!
-
-enableIndexedDbPersistence(db).then(() => {
-    console.log("🚀 TAKODEÁL Offline Mode is ACTIVE!");
-}).catch((err) => {
-    if (err.code == 'failed-precondition') console.warn("Offline persistence failed: Multiple tabs open.");
-    else if (err.code == 'unimplemented') console.warn("Offline persistence is not supported.");
+// 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 
+window.storage = storage; // Export it for the staff meal function!
 window.db = db;
 window.query = query;
 window.where = where;
@@ -39,7 +35,7 @@ window.deleteDoc = deleteDoc;
 window.doc = doc;
 window.updateDoc = updateDoc;
 
-console.log("🔥 Firebase Engine is LIVE!");
+console.log("🚀 TAKODEÁL Cashier Offline Mode is ACTIVE!");
 
 // ==========================================
 // 🏷️ SMART TAB TITLE ENGINE
