@@ -7369,24 +7369,32 @@ window.openPayslipModal = async function(staffName) {
         }
     }
 
-    document.getElementById('psName').innerText = data.name || "Unknown";
-    document.getElementById('psBranch').innerText = data.branch || "Unassigned";
-    document.getElementById('psStart').innerText = data.start || "";
-    document.getElementById('psEnd').innerText = data.end || "";
+    // 🛡️ CRASH-PROOF ENGINE: Safely ignores missing HTML IDs
+    const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
+    const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
 
-    document.getElementById('psBasicPay').innerText = (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+    safeSetText('psName', data.name || "Unknown");
+    safeSetText('psBranch', data.branch || "Unassigned");
+    safeSetText('psStart', data.start || "");
+    safeSetText('psEnd', data.end || "");
+    safeSetText('psBasicPay', (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2}));
     
-    // We map Night Bonus into "Overtime" and Holiday Pay into "Holiday" so it calculates perfectly!
-    document.getElementById('psOvertime').value = data.nightBonus || 0;
-    document.getElementById('psHoliday').value = data.holidayPayTotal || 0;
+    // 🔥 NEW HR DATA
+    safeSetText('psDaysWorked', data.shiftsWorked || 0);
+    safeSetText('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
+    
+    let today = new Date();
+    safeSetText('psPayDistributed', today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }));
 
-    document.getElementById('psLate').value = data.lateDeduction || 0;
-    document.getElementById('psSSS').value = data.sss || 0;
-    document.getElementById('psPhil').value = data.philhealth || 0;
-    document.getElementById('psPagibig').value = data.pagibig || 0;
-    document.getElementById('psAdvance').value = data.advances || 0;
-    document.getElementById('psLoans').value = data.loans || 0;
-    document.getElementById('psFoods').value = data.meals || 0;
+    safeSetVal('psOvertime', data.nightBonus || 0);
+    safeSetVal('psHoliday', data.holidayPayTotal || 0);
+    safeSetVal('psLate', data.lateDeduction || 0);
+    safeSetVal('psSSS', data.sss || 0);
+    safeSetVal('psPhil', data.philhealth || 0);
+    safeSetVal('psPagibig', data.pagibig || 0);
+    safeSetVal('psAdvance', data.advances || 0);
+    safeSetVal('psLoans', data.loans || 0);
+    safeSetVal('psFoods', data.meals || 0);
     
     let wifiBox = document.getElementById('psWifi');
     if(wifiBox) wifiBox.value = 0;
