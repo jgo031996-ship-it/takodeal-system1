@@ -3017,7 +3017,7 @@
                       <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid black; padding-bottom: 15px; margin-bottom: 15px;">
                           <div style="width: 140px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #94a3b8; text-align: center; overflow: hidden;">
                               <span id="psLogoText">[ TAKODEÁL LOGO ]</span>
-                              <img id="psLogoImg" src="" style="display: none; width: 100%; height: auto; object-fit: cover;">
+                              <img src="logo.jpg" alt="Takodeal Logo" style="width: 80px; object-fit: contain; border-radius: 8px;">
                           </div>
                           <div style="text-align: center; flex: 1;">
                               <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px;">TAKODEÁL</h1>
@@ -3029,12 +3029,12 @@
                           <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px;">
                               <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span id="psName" style="border-bottom: 1px solid black; font-weight: bold;">Loading...</span>
                               <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span id="psBranch" style="border-bottom: 1px solid black;">Loading...</span>
-                              <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span id="psHired" style="border-bottom: 1px solid black;">---</span>
+                              <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span id="psDateHired">---</span>
                           </div>
                           <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px;">
                               <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span id="psStart" style="border-bottom: 1px solid black;">---</span>
                               <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span id="psEnd" style="border-bottom: 1px solid black;">---</span>
-                              <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> <span id="psDist" style="border-bottom: 1px solid black;">---</span>
+                              <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> <span id="psPayDistributed">---</span>
                           </div>
                       </div>
 
@@ -3043,7 +3043,7 @@
                           <div style="border-right: 1px solid black;">
                               <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black;">INCOME</div>
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
-                                  <span>Basic Pay (<span id="psDays">0 days</span>)</span> <span id="psBasicPay" style="font-weight: bold;">0.00</span>
+                                  <span>Basic Pay (<span id="psDaysWorked">0</span> days)</span> <span id="psDaysWorked" style="font-weight: bold;">0.00</span>
                               </div>
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
                                   <span>Overtime / Night Diff</span> <input type="number" id="psOvertime" class="ps-input" value="0.00" oninput="recalcPayslip()">
