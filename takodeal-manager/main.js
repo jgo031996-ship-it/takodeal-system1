@@ -9252,7 +9252,7 @@ window.bulkDeleteInventory = async function() {
 };
 
 // ==========================================
-// 📸 SCHEDULE DOWNLOADER ENGINE
+// 📸 UPGRADED SCHEDULE DOWNLOADER ENGINE
 // ==========================================
 window.downloadScheduleImage = function() {
     const schedElement = document.getElementById('scheduleContainer');
@@ -9261,25 +9261,84 @@ window.downloadScheduleImage = function() {
     }
     
     let btn = document.getElementById('btnDownloadSched');
-    let origText = btn.innerText;
-    btn.innerText = "⏳ Capturing...";
-    btn.disabled = true;
+    let origText = btn ? btn.innerText : "📸 Download as Image";
+    if (btn) {
+        btn.innerText = "⏳ Building Mobile Document...";
+        btn.disabled = true;
+    }
 
-    // Use html2canvas to take a picture of the schedule grid
-    html2canvas(schedElement, { scale: 2, backgroundColor: "#f8fafc" }).then(canvas => {
+    // 1. Get the beautifully formatted month name
+    let monthVal = document.getElementById('monthSelector').value || '';
+    let niceMonth = "Upcoming Schedule";
+    if (monthVal) {
+        let parts = monthVal.split('-');
+        let dateObj = new Date(parts[0], parts[1] - 1);
+        niceMonth = dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    }
+
+    // 2. Identify the currently active branch to print on the header
+    let activeBranch = window.currentActiveTab || 'All Branches';
+
+    // 3. Create a hidden "Print Canvas" optimized for mobile screens
+    const printWrapper = document.createElement('div');
+    printWrapper.style.padding = '30px';
+    printWrapper.style.background = '#ffffff';
+    printWrapper.style.width = '800px'; // Mobile-friendly width!
+    printWrapper.style.position = 'absolute';
+    printWrapper.style.left = '-9999px'; 
+    printWrapper.style.top = '0';
+    printWrapper.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+
+    // 4. Inject strict CSS to force large, readable text and hide tab buttons
+    printWrapper.innerHTML = `
+        <style>
+            .tab-btn { display: none !important; } /* Hide the buttons */
+            .tab-content { display: none !important; } /* Hide background branches */
+            .tab-content.active { display: block !important; } /* Show ONLY the active branch */
+            table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; }
+            th { background: #0f766e !important; color: white !important; padding: 14px 8px !important; font-size: 15px !important; text-align: center !important; border: 1px solid #0d9488 !important; }
+            td { padding: 14px 8px !important; border: 1px solid #cbd5e1 !important; text-align: center !important; font-size: 15px !important; font-weight: bold !important; color: #334155 !important; }
+            .date-col { text-align: left !important; background: #f8fafc !important; width: 120px !important; font-size: 14px !important; }
+        </style>
+        <div style="text-align: center; margin-bottom: 20px; border-bottom: 3px solid #0f766e; padding-bottom: 15px;">
+            <h1 style="margin: 0; color: #0f172a; font-size: 34px; font-weight: 900; letter-spacing: 2px;">TAKODEÁL</h1>
+            <h2 style="margin: 5px 0 0 0; color: #0f766e; font-size: 20px; text-transform: uppercase;">Staff Schedule - ${activeBranch}</h2>
+            <div style="margin-top: 8px; color: #64748b; font-weight: bold; font-size: 16px;">${niceMonth}</div>
+        </div>
+    `;
+
+    // 5. Clone the schedule grid into the wrapper
+    const clonedSched = schedElement.cloneNode(true);
+    clonedSched.style.overflow = 'visible'; 
+    clonedSched.style.maxHeight = 'none';
+    printWrapper.appendChild(clonedSched);
+
+    // 6. Inject the Official Footer
+    const footer = document.createElement('div');
+    footer.innerHTML = `
+        <div style="text-align: center; margin-top: 25px; padding-top: 12px; border-top: 1px dashed #cbd5e1; color: #94a3b8; font-size: 13px; font-weight: bold;">
+            Generated securely by Takodeal OS • ${new Date().toLocaleString('en-PH')}
+        </div>
+    `;
+    printWrapper.appendChild(footer);
+
+    document.body.appendChild(printWrapper);
+
+    // 7. Take the Ultra-HD screenshot (Scale: 3 makes it incredibly crisp for zooming)
+    html2canvas(printWrapper, { scale: 3, backgroundColor: "#ffffff" }).then(canvas => {
         let link = document.createElement('a');
-        let month = document.getElementById('monthSelector').value || 'Schedule';
-        link.download = `Takodeal_Schedule_${month}.png`;
+        let safeBranchName = activeBranch.replace(/[^a-zA-Z0-9]/g, '_');
+        link.download = `Takodeal_Schedule_${safeBranchName}_${monthVal || 'Export'}.png`;
         link.href = canvas.toDataURL("image/png");
         link.click();
         
-        btn.innerText = origText;
-        btn.disabled = false;
+        document.body.removeChild(printWrapper);
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
     }).catch(err => {
         console.error("Canvas Error:", err);
         alert("❌ Failed to capture schedule.");
-        btn.innerText = origText;
-        btn.disabled = false;
+        document.body.removeChild(printWrapper);
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
     });
 };
 
