@@ -2829,9 +2829,9 @@ window.loadPersonalSchedule = async function() {
     }
 
     try {
-        // 2. Look up their "Schedule Nickname" from their HR Profile
-        const cashiersQ = window.query(window.collection(window.db, "cashiers"), window.where("cashierName", "==", safeCashierName));
-        const cashiersSnap = await window.getDocs(cashiersQ);
+        // 🔥 THE FIX: Removed 'window.' from all Firebase commands!
+        const cashiersQ = query(collection(db, "cashiers"), where("cashierName", "==", safeCashierName));
+        const cashiersSnap = await getDocs(cashiersQ);
         
         let schedName = safeCashierName; // Default to full name if no nickname is found
         if (!cashiersSnap.empty) {
@@ -2842,7 +2842,7 @@ window.loadPersonalSchedule = async function() {
         }
 
         // 3. Download the giant Global Schedule
-        const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
         if (!schedSnap.exists()) {
             container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;">No schedule has been published by HQ yet.</div>';
             return;
