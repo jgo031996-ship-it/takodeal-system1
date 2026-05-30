@@ -8432,33 +8432,36 @@ window.viewShiftReportModal = function(shiftId) {
 
     // 🔥 2. NEW: Build the Transactions List HTML (Replaces the old Products list!)
     let txHtml = '';
-    // Make sure we sort the transactions newest first
-    s.transactions.sort((a, b) => new Date('1970/01/01 ' + b.time) - new Date('1970/01/01 ' + a.time));
     
-    s.transactions.forEach(tx => {
-        let statusBadge = tx.isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
-        let rowStyle = tx.isVoid ? "opacity: 0.6; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: #16a34a;";
+    if (s.transactions && s.transactions.length > 0) {
+        // Make sure we sort the transactions newest first
+        s.transactions.sort((a, b) => new Date('1970/01/01 ' + b.time) - new Date('1970/01/01 ' + a.time));
+        
+        s.transactions.forEach(tx => {
+            let statusBadge = tx.isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
+            let rowStyle = tx.isVoid ? "opacity: 0.6; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: #16a34a;";
 
-        // If it's voided, COGS and Margin are zeroed out for visual clarity
-        let cogsDisplay = tx.isVoid ? '₱0.00' : `₱${tx.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        let marginDisplay = tx.isVoid ? '₱0.00' : `₱${(tx.netTotal - tx.cogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            // If it's voided, COGS and Margin are zeroed out for visual clarity
+            let cogsDisplay = tx.isVoid ? '₱0.00' : `₱${(tx.cogs || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            let marginDisplay = tx.isVoid ? '₱0.00' : `₱${((tx.netTotal || 0) - (tx.cogs || 0)).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-        txHtml += `
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
-                <td style="padding: 10px; color: #64748b;">${tx.time}</td>
-                <td style="padding: 10px; color: #0284c7; font-weight: bold;">${tx.customer}</td>
-                <td style="padding: 10px; ${rowStyle}">₱${tx.netTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td style="padding: 10px; color: #dc2626; font-weight: 500;">${cogsDisplay}</td>
-                <td style="padding: 10px; color: #0ea5e9; font-weight: 900;">${marginDisplay}</td>
-                <td style="padding: 10px; color: #475569;">${tx.paymentMethod}</td>
-                <td style="padding: 10px;">${statusBadge}</td>
-                <td style="padding: 10px; text-align: center;">
-                    <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${tx.customer.replace(/'/g, "\\'")}', '${tx.time}', '${tx.paymentMethod}', ${tx.netTotal}, '${tx.cartEncoded}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
-                </td>
-            </tr>
-        `;
-    });
+            txHtml += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
+                    <td style="padding: 10px; color: #64748b;">${tx.time}</td>
+                    <td style="padding: 10px; color: #0284c7; font-weight: bold;">${tx.customer}</td>
+                    <td style="padding: 10px; ${rowStyle}">₱${(tx.netTotal || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 10px; color: #dc2626; font-weight: 500;">${cogsDisplay}</td>
+                    <td style="padding: 10px; color: #0ea5e9; font-weight: 900;">${marginDisplay}</td>
+                    <td style="padding: 10px; color: #475569;">${tx.paymentMethod}</td>
+                    <td style="padding: 10px;">${statusBadge}</td>
+                    <td style="padding: 10px; text-align: center;">
+                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${(tx.customer || 'Guest').replace(/'/g, "\\'")}', '${tx.time}', '${tx.paymentMethod}', ${tx.netTotal}, '${tx.cartEncoded}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
 
     // 3. Inject the Popup Modal dynamically into the screen
     let modalHtml = `
@@ -8482,10 +8485,10 @@ window.viewShiftReportModal = function(shiftId) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
                         <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                             <h4 style="margin-top: 0; color: #334155; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; font-size: 15px;">💰 Shift Financials</h4>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Gross Sales:</span><strong style="color:#16a34a;">₱${s.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Est. COGS:</span><strong style="color:#dc2626;">₱${s.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Net Margin:</span><strong style="color:#0ea5e9;">₱${(s.sales - s.cogs).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
-                            <div style="display:flex; justify-content:space-between; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #cbd5e1; font-size: 15px;"><span>Total Voided:</span><strong style="color:#ef4444;">₱${s.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Gross Sales:</span><strong style="color:#16a34a;">₱${(s.sales || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Est. COGS:</span><strong style="color:#dc2626;">₱${(s.cogs || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Net Margin:</span><strong style="color:#0ea5e9;">₱${((s.sales || 0) - (s.cogs || 0)).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
+                            <div style="display:flex; justify-content:space-between; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #cbd5e1; font-size: 15px;"><span>Total Voided:</span><strong style="color:#ef4444;">₱${(s.voids || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
                         </div>
                         
                         <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
