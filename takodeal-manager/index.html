@@ -1532,6 +1532,21 @@
                 </div>
                 <div id="unavailabilityList" style="margin-top: 15px; font-size: 13px; max-height: 150px; overflow-y: auto;"></div>
             </div>
+          
+            <div style="flex: 1; min-width: 300px; background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                <h3 style="margin-top:0; color: #0f172a; font-size: 16px;">🏖️ 3. Holiday Manager</h3>
+                <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">Set dates to automatically apply a +50% (Regular) or +10% (Special) pay bonus.</p>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="date" id="holidayDate" style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; flex: 1;">
+                    <select id="holidayType" style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; flex: 1;">
+                        <option value="Regular">Regular (+50%)</option>
+                        <option value="Special">Special (+10%)</option>
+                    </select>
+                    <button onclick="window.addHoliday()" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">Add</button>
+                </div>
+                <div id="holidayList" style="max-height: 120px; overflow-y: auto; font-size: 13px; border: 1px solid #f1f5f9; padding: 10px; border-radius: 6px;">
+                    </div>
+            </div>
         </div>
     
         <div id="scheduleContainer" style="margin-bottom: 50px;"></div>
