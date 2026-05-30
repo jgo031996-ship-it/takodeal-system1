@@ -8127,7 +8127,7 @@ window.loadSalesHistoryTab = async function() {
                 timeLabel: `${sTimeStr} - ${eTimeStr}`,
                 timestamp: sTime,
                 sales: 0, cogs: 0, voids: 0, txCount: 0,
-                categorySales: {}, itemSales: {}, transactions: [] // 🔥 Memory for transactions!
+                categorySales: {}, itemSales: {}, transactions: [] // 🔥 NEW: Added transactions array!
             };
         });
 
@@ -8224,8 +8224,10 @@ window.loadSalesHistoryTab = async function() {
                             }
                         }
                     }
-                    txCogs += (baseCogs + addonCogs);
+                    let itemTotalCogs = baseCogs + addonCogs;
                     let itemTotalSales = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
+
+                    txCogs += itemTotalCogs;
 
                     // POPULATE THE SHIFT REPORT MODAL DATA (CATEGORY AGGREGATES)
                     if (!isVoid) {
@@ -8243,6 +8245,7 @@ window.loadSalesHistoryTab = async function() {
                 customer: safeCustomer,
                 status: tx.status || "Paid",
                 netTotal: txNet,
+                cogs: txCogs,
                 paymentMethod: tx.paymentMethod || 'Unknown',
                 cartEncoded: safeCart,
                 isVoid: isVoid
@@ -8306,7 +8309,7 @@ window.loadSalesHistoryTab = async function() {
         // 6. BUILD SHIFTS HTML WITH VIEW BUTTON
         let shiftsHtml = '';
         Object.values(window.globalShiftReports).sort((a,b) => b.timestamp - a.timestamp).forEach(s => {
-            if (s.sales === 0 && s.voids === 0) return; 
+            if (s.sales === 0 && s.voids === 0) return; // Hide empty shifts
             let sMargin = s.sales - s.cogs;
             shiftsHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -8436,12 +8439,18 @@ window.viewShiftReportModal = function(shiftId) {
         let statusBadge = tx.isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
         let rowStyle = tx.isVoid ? "opacity: 0.6; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: #16a34a;";
 
+        // If it's voided, COGS and Margin are zeroed out for visual clarity
+        let cogsDisplay = tx.isVoid ? '₱0.00' : `₱${tx.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        let marginDisplay = tx.isVoid ? '₱0.00' : `₱${(tx.netTotal - tx.cogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
         txHtml += `
             <tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
                 <td style="padding: 10px; color: #64748b;">${tx.time}</td>
                 <td style="padding: 10px; color: #0284c7; font-weight: bold;">${tx.customer}</td>
                 <td style="padding: 10px; ${rowStyle}">₱${tx.netTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td style="padding: 10px; color: #dc2626; font-weight: 500;">${cogsDisplay}</td>
+                <td style="padding: 10px; color: #0ea5e9; font-weight: 900;">${marginDisplay}</td>
                 <td style="padding: 10px; color: #475569;">${tx.paymentMethod}</td>
                 <td style="padding: 10px;">${statusBadge}</td>
                 <td style="padding: 10px; text-align: center;">
@@ -8454,7 +8463,7 @@ window.viewShiftReportModal = function(shiftId) {
     // 3. Inject the Popup Modal dynamically into the screen
     let modalHtml = `
         <div id="dynamicShiftReportModal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
-            <div style="background: white; padding: 25px; border-radius: 12px; width: 900px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 1000px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
                     <div>
@@ -8495,13 +8504,15 @@ window.viewShiftReportModal = function(shiftId) {
                                 <th style="padding: 12px 10px; color: #475569;">Time</th>
                                 <th style="padding: 12px 10px; color: #475569;">Customer</th>
                                 <th style="padding: 12px 10px; color: #475569;">Amount</th>
+                                <th style="padding: 12px 10px; color: #475569;">Est. COGS</th>
+                                <th style="padding: 12px 10px; color: #475569;">Net Margin</th>
                                 <th style="padding: 12px 10px; color: #475569;">Payment</th>
                                 <th style="padding: 12px 10px; color: #475569;">Status</th>
                                 <th style="padding: 12px 10px; text-align: center; color: #475569;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${txHtml || '<tr><td colspan="7" class="text-center" style="padding:20px; color:#64748b;">No transactions recorded during this shift.</td></tr>'}
+                            ${txHtml || '<tr><td colspan="9" class="text-center" style="padding:20px; color:#64748b;">No transactions recorded during this shift.</td></tr>'}
                         </tbody>
                     </table>
 
