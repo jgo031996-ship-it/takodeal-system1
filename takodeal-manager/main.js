@@ -6460,6 +6460,9 @@ window.loadPayrollGenerator = async function() {
     }
 };
 
+// ========================================================
+// 🧾 CRASH-PROOF PAYSLIP MODAL ENGINE
+// ========================================================
 window.openPayslipModal = async function(staffName) {
     let data = window.globalPayrollCache[staffName];
     if (!data) return;
@@ -6481,7 +6484,7 @@ window.openPayslipModal = async function(staffName) {
         }
     }
 
-    // 🛡️ CRASH-PROOF ENGINE: Safely injects text/values ONLY if the HTML ID exists!
+    // 🛡️ CRASH-PROOF ENGINE: Ignores missing HTML IDs safely
     const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
     const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
 
@@ -6491,7 +6494,7 @@ window.openPayslipModal = async function(staffName) {
     safeSetText('psEnd', data.end || "");
     safeSetText('psBasicPay', (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2}));
     
-    // 🔥 INJECTS THE NEW HR DATA
+    // 🔥 NEW HR DATA
     safeSetText('psDaysWorked', data.shiftsWorked || 0);
     safeSetText('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
     
@@ -6534,29 +6537,36 @@ window.openPayslipModal = async function(staffName) {
     if(modal) modal.style.display = 'flex';
 };
 
-// 🧮 LIVE MATH CALCULATOR FOR PAYSLIPS
+// 🛡️ CRASH-PROOF MATH ENGINE
 window.recalcPayslip = function() {
-    let basic = parseFloat(document.getElementById('psBasicPay').innerText.replace(/,/g, '')) || 0;
-    let ot = parseFloat(document.getElementById('psOvertime').value) || 0;
-    let holiday = parseFloat(document.getElementById('psHoliday').value) || 0;
+    const getVal = (id) => { let el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
+    const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
+
+    let basicEl = document.getElementById('psBasicPay');
+    let basic = 0;
+    if (basicEl) {
+        basic = parseFloat(basicEl.innerText.replace(/,/g, '')) || 0;
+    }
+
+    let overtime = getVal('psOvertime');
+    let holiday = getVal('psHoliday');
     
-    let gross = basic + ot + holiday;
-    document.getElementById('psGross').innerText = gross.toLocaleString(undefined, {minimumFractionDigits: 2});
+    let late = getVal('psLate');
+    let sss = getVal('psSSS');
+    let phil = getVal('psPhil');
+    let pagibig = getVal('psPagibig');
+    let advance = getVal('psAdvance');
+    let loans = getVal('psLoans');
+    let foods = getVal('psFoods');
+    let wifi = getVal('psWifi');
 
-    let late = parseFloat(document.getElementById('psLate').value) || 0;
-    let sss = parseFloat(document.getElementById('psSSS').value) || 0;
-    let phil = parseFloat(document.getElementById('psPhil').value) || 0;
-    let pagibig = parseFloat(document.getElementById('psPagibig').value) || 0;
-    let adv = parseFloat(document.getElementById('psAdvance').value) || 0;
-    let loans = parseFloat(document.getElementById('psLoans').value) || 0;
-    let foods = parseFloat(document.getElementById('psFoods').value) || 0;
-    let wifi = parseFloat(document.getElementById('psWifi').value) || 0;
+    let gross = basic + overtime + holiday;
+    let deductions = late + sss + phil + pagibig + advance + loans + foods + wifi;
+    let net = gross - deductions;
 
-    let totalDed = late + sss + phil + pagibig + adv + loans + foods + wifi;
-    document.getElementById('psTotalDeduct').innerText = totalDed.toLocaleString(undefined, {minimumFractionDigits: 2});
-
-    let net = gross - totalDed;
-    document.getElementById('psNetPay').innerText = net.toLocaleString(undefined, {minimumFractionDigits: 2});
+    safeSetText('psGrossIncome', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    safeSetText('psTotalDeduct', deductions.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2}));
 };
 
 window.finalizePayslip = async function() {
