@@ -8020,7 +8020,7 @@ window.switchHistoryTab = function(tabName) {
 };
 
 // 🔥 FIX: The Missing Run Report Engine!
-window.runProductReport = function() {window.runProductReport = function() {
+window.runProductReport = function() {
     let startDateRaw = document.getElementById('histStartDate').value;
     let endDateRaw = document.getElementById('histEndDate').value;
     let branchFilter = document.getElementById('histBranchFilter').value;
