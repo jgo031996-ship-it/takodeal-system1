@@ -2061,6 +2061,9 @@ window.executeBatchPrep = async function () {
   }
 };
 
+// ==========================================
+// 🏦 MASTER CASH & BUDGET ENGINE
+// ==========================================
 window.loadAccountsAndBudget = async function() {
     // ==========================================
     // 🏦 PART 1: THE SLEEK CASH LEDGER
@@ -2094,7 +2097,6 @@ window.loadAccountsAndBudget = async function() {
             for (let branch in accountsByBranch) {
                 let branchTotal = accountsByBranch[branch].reduce((sum, acc) => sum + (acc.balance || 0), 0);
                 
-                // 🔥 NEW: Clean summary row that opens the modal on click!
                 html += `
                     <tr style="background: white; cursor: pointer; border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" 
                         onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'"
@@ -2221,6 +2223,7 @@ window.loadAccountsAndBudget = async function() {
         const budgetBody = document.getElementById('budgetListBody');
         if (budgetBody) budgetBody.innerHTML = '<div class="text-center" style="color: red; padding: 20px;">Error loading budgets.</div>';
     }
+}; // <-- THIS IS THE MAGIC BRACKET THAT WAS MISSING!
 
 // ==========================================
 // 🏢 NEW: BRANCH ACCOUNTS MODAL ENGINE
