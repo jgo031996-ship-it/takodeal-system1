@@ -1362,6 +1362,10 @@
           <div class="nav-item-text">Time Clock</div>
       </div>
 
+      <div class="nav-item" id="nav-schedule" onclick="switchView('schedule')">
+          <span class="icon">📅</span> My Schedule
+      </div>
+
       <div class="nav-item" onclick="window.openGrabEarningsModal()" style="color: #00b14f;">
           <span style="font-size: 18px;">🟢</span>
           <div class="nav-item-text" style="font-weight: bold;">Log Grab Earnings</div>
@@ -2170,6 +2174,18 @@
                   </table>
               </div>
   
+          </div>
+      </div>
+  </div>
+  
+  <!-- PERSONAL SCHEDULE VIEW -->
+  <div id="view-schedule" class="view">
+      <div class="top-bar">
+          <h2>📅 My Monthly Schedule</h2>
+      </div>
+      <div class="card" style="margin-top: 20px;">
+          <div id="cashierScheduleContainer" style="padding: 20px;">
+              <div style="text-align: center; color: #64748b;">Loading your schedule...</div>
           </div>
       </div>
   </div>
