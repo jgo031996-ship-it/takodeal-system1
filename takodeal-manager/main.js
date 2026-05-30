@@ -6466,55 +6466,47 @@ window.openPayslipModal = async function(staffName) {
 
     window.currentPayslipData = data; 
     
-    // 🔥 NEW: Check if this was a frozen/paid record, and lock the button!
     let finalizeBtn = document.getElementById('btnFinalizePayslip');
     if (finalizeBtn) {
         if (data.isPaid) {
             finalizeBtn.innerText = "✅ Paid & Done!";
             finalizeBtn.disabled = true;
-            finalizeBtn.style.background = "#16a34a"; // Green
+            finalizeBtn.style.background = "#16a34a"; 
             finalizeBtn.style.cursor = "not-allowed";
         } else {
             finalizeBtn.innerText = "✅ Mark Paid & Auto-Deduct";
             finalizeBtn.disabled = false;
-            finalizeBtn.style.background = "#3b82f6"; // Blue
+            finalizeBtn.style.background = "#3b82f6"; 
             finalizeBtn.style.cursor = "pointer";
         }
     }
 
-    if (!data.rate || data.rate === 0) {
-        alert(`⚠️ Warning: ${data.name} does not have a Daily Rate set in their profile!`);
-    }
+    // 🛡️ CRASH-PROOF ENGINE: Safely injects text/values ONLY if the HTML ID exists!
+    const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
+    const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
 
-    // --- 🛠️ RESTORED UI POPULATORS ---
-    document.getElementById('psName').innerText = data.name || "Unknown";
-    document.getElementById('psBranch').innerText = data.branch || "Unassigned";
-    document.getElementById('psStart').innerText = data.start || "";
-    document.getElementById('psEnd').innerText = data.end || "";
-    document.getElementById('psBasicPay').innerText = (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
-    // 🔥 NEW FIXES: Populate Days Worked, Date Hired, and Pay Distributed!
-    let daysSpan = document.getElementById('psDaysWorked');
-    if (daysSpan) daysSpan.innerText = data.shiftsWorked || 0;
+    safeSetText('psName', data.name || "Unknown");
+    safeSetText('psBranch', data.branch || "Unassigned");
+    safeSetText('psStart', data.start || "");
+    safeSetText('psEnd', data.end || "");
+    safeSetText('psBasicPay', (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2}));
+    
+    // 🔥 INJECTS THE NEW HR DATA
+    safeSetText('psDaysWorked', data.shiftsWorked || 0);
+    safeSetText('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
+    
+    let today = new Date();
+    safeSetText('psPayDistributed', today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }));
 
-    let hiredSpan = document.getElementById('psDateHired');
-    if (hiredSpan) hiredSpan.innerText = (data.profile && data.profile.dateHired) ? data.profile.dateHired : "Not Set";
-
-    let distSpan = document.getElementById('psPayDistributed');
-    if (distSpan) {
-        let today = new Date();
-        // Formats as YYYY-MM-DD to match your cutoff dates perfectly
-        distSpan.innerText = today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
-    }
-    document.getElementById('psOvertime').value = 0;
-    document.getElementById('psHoliday').value = data.nightBonus || 0;
-
-    document.getElementById('psLate').value = data.lateDeduction || 0;
-    document.getElementById('psSSS').value = data.sss || 0;
-    document.getElementById('psPhil').value = data.philhealth || 0;
-    document.getElementById('psPagibig').value = data.pagibig || 0;
-    document.getElementById('psAdvance').value = data.advances || 0;
-    document.getElementById('psLoans').value = data.loans || 0;
-    document.getElementById('psFoods').value = data.meals || 0;
+    safeSetVal('psOvertime', data.nightBonus || 0);
+    safeSetVal('psHoliday', data.holidayPayTotal || 0);
+    safeSetVal('psLate', data.lateDeduction || 0);
+    safeSetVal('psSSS', data.sss || 0);
+    safeSetVal('psPhil', data.philhealth || 0);
+    safeSetVal('psPagibig', data.pagibig || 0);
+    safeSetVal('psAdvance', data.advances || 0);
+    safeSetVal('psLoans', data.loans || 0);
+    safeSetVal('psFoods', data.meals || 0);
     
     let wifiBox = document.getElementById('psWifi');
     if(wifiBox) wifiBox.value = 0;
@@ -6527,7 +6519,7 @@ window.openPayslipModal = async function(staffName) {
                 <td style="padding: 8px; font-weight: bold; color: #16a34a;">${log.in}</td>
                 <td style="padding: 8px; font-weight: bold; color: #dc2626;">${log.out}</td>
                 <td style="padding: 8px; font-weight: bold;">${log.hrs}h</td>
-                <td style="padding: 8px;">${log.remark}</td>
+                <td style="padding: 8px; font-size:11px;">${log.remark}</td>
             </tr>`;
         });
     } else {
@@ -6536,12 +6528,11 @@ window.openPayslipModal = async function(staffName) {
     let attBody = document.getElementById('psAttendanceBody');
     if (attBody) attBody.innerHTML = attHtml;
 
-    // Trigger math recalculation
     if (typeof window.recalcPayslip === 'function') window.recalcPayslip();
-
-    // Open Modal
-    document.getElementById('payslipModal').style.display = 'flex';
-}; // <--- THIS BRACKET WAS MISSING!
+    
+    let modal = document.getElementById('payslipModal');
+    if(modal) modal.style.display = 'flex';
+};
 
 // 🧮 LIVE MATH CALCULATOR FOR PAYSLIPS
 window.recalcPayslip = function() {
