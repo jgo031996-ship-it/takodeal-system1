@@ -8434,7 +8434,7 @@ window.viewShiftReportModal = function(shiftId) {
     let txHtml = '';
     
     if (s.transactions && s.transactions.length > 0) {
-        // Make sure we sort the transactions newest first
+        // Sort the transactions newest first
         s.transactions.sort((a, b) => new Date('1970/01/01 ' + b.time) - new Date('1970/01/01 ' + a.time));
         
         s.transactions.forEach(tx => {
@@ -8461,12 +8461,14 @@ window.viewShiftReportModal = function(shiftId) {
                 </tr>
             `;
         });
+    } else {
+        txHtml = '<tr><td colspan="9" class="text-center" style="padding:20px; color:#64748b;">No transactions recorded. (Please click "Update Report" again to refresh data).</td></tr>';
     }
 
     // 3. Inject the Popup Modal dynamically into the screen
     let modalHtml = `
         <div id="dynamicShiftReportModal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
-            <div style="background: white; padding: 25px; border-radius: 12px; width: 1000px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 1050px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
                     <div>
@@ -8515,7 +8517,7 @@ window.viewShiftReportModal = function(shiftId) {
                             </tr>
                         </thead>
                         <tbody>
-                            ${txHtml || '<tr><td colspan="9" class="text-center" style="padding:20px; color:#64748b;">No transactions recorded during this shift.</td></tr>'}
+                            ${txHtml}
                         </tbody>
                     </table>
 
