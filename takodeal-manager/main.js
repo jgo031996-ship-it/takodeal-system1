@@ -6484,7 +6484,6 @@ window.openPayslipModal = async function(staffName) {
         }
     }
 
-    // 🛡️ CRASH-PROOF ENGINE: Safely ignores missing HTML IDs
     const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
     const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
 
@@ -6492,9 +6491,10 @@ window.openPayslipModal = async function(staffName) {
     safeSetText('psBranch', data.branch || "Unassigned");
     safeSetText('psStart', data.start || "");
     safeSetText('psEnd', data.end || "");
-    safeSetText('psBasicPay', (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2}));
     
-    // 🔥 NEW HR DATA
+    let safeBasicPay = parseFloat(data.basicPay) || 0;
+    safeSetText('psBasicPay', safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    
     safeSetText('psDaysWorked', data.shiftsWorked || 0);
     safeSetText('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
     
@@ -6517,12 +6517,13 @@ window.openPayslipModal = async function(staffName) {
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
         data.logs.forEach(log => {
+            // 🔥 FIX: Added 'text-align: center;' to beautifully align your table columns!
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px;">${log.date || ''}</td>
-                <td style="padding: 8px; font-weight: bold; color: #16a34a;">${log.in || ''}</td>
-                <td style="padding: 8px; font-weight: bold; color: #dc2626;">${log.out || ''}</td>
-                <td style="padding: 8px; font-weight: bold;">${log.hrs || 0}h</td>
-                <td style="padding: 8px; font-size:11px;">${log.remark || ''}</td>
+                <td style="padding: 8px; text-align: center;">${log.date || ''}</td>
+                <td style="padding: 8px; font-weight: bold; color: #16a34a; text-align: center;">${log.in || ''}</td>
+                <td style="padding: 8px; font-weight: bold; color: #dc2626; text-align: center;">${log.out || ''}</td>
+                <td style="padding: 8px; font-weight: bold; text-align: center;">${log.hrs || 0}h</td>
+                <td style="padding: 8px; font-size:11px; text-align: center;">${log.remark || ''}</td>
             </tr>`;
         });
     } else {
@@ -6537,7 +6538,6 @@ window.openPayslipModal = async function(staffName) {
     if(modal) modal.style.display = 'flex';
 };
 
-// 🛡️ CRASH-PROOF MATH ENGINE
 window.recalcPayslip = function() {
     const getVal = (id) => { let el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
     const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
@@ -6563,7 +6563,8 @@ window.recalcPayslip = function() {
     let deductions = late + sss + phil + pagibig + advance + loans + foods + wifi;
     let net = gross - deductions;
 
-    safeSetText('psGrossIncome', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    // 🔥 FIX: Targets 'psGross' specifically to match your native HTML
+    safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psTotalDeduct', deductions.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2}));
 };
