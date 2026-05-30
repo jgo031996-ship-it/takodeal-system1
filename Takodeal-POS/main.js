@@ -2812,3 +2812,151 @@ window.loadWasteHistory = async function() {
         tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error fetching logs.</td></tr>';
     }
 };
+
+// ========================================================
+// 📅 PERSONAL CASHIER SCHEDULE ENGINE
+// ========================================================
+window.loadPersonalSchedule = async function() {
+    const container = document.getElementById('cashierScheduleContainer');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b; font-size: 16px;">⏳ Fetching your schedule from HQ...</div>';
+
+    // 1. Get the name of whoever is currently using the tablet
+    let safeCashierName = localStorage.getItem('cashierName');
+    if (!safeCashierName) {
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color:#dc2626; font-weight:bold;">❌ Please log in via the Time Clock / Lock Screen to view your schedule.</div>';
+        return;
+    }
+
+    try {
+        // 2. Look up their "Schedule Nickname" from their HR Profile
+        const cashiersQ = window.query(window.collection(window.db, "cashiers"), window.where("cashierName", "==", safeCashierName));
+        const cashiersSnap = await window.getDocs(cashiersQ);
+        
+        let schedName = safeCashierName; // Default to full name if no nickname is found
+        if (!cashiersSnap.empty) {
+            let cData = cashiersSnap.docs[0].data();
+            if (cData.scheduleName && cData.scheduleName.trim() !== '') {
+                schedName = cData.scheduleName; 
+            }
+        }
+
+        // 3. Download the giant Global Schedule
+        const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
+        if (!schedSnap.exists()) {
+            container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;">No schedule has been published by HQ yet.</div>';
+            return;
+        }
+
+        const schedData = schedSnap.data();
+        const branchConfig = schedData.branchConfig || {};
+        const schedule = schedData.currentSchedule || {};
+        const year = schedData.currentYear;
+        const month = schedData.currentMonth;
+        const holidays = schedData.holidays || {};
+
+        if (!year || !month || Object.keys(schedule).length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;">The schedule for this month is currently empty.</div>';
+            return;
+        }
+
+        // Format the Header
+        const monthName = new Date(year, month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+        let html = `
+            <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; text-align: center; display: flex; justify-content: space-between; align-items: center;">
+                <div style="text-align: left;">
+                    <h3 style="margin: 0; color: #0f766e; font-size: 20px;">🗓️ ${monthName}</h3>
+                    <div style="font-size: 13px; color: #64748b; margin-top: 5px;">Filtering shifts for: <strong>${schedName}</strong></div>
+                </div>
+                <div style="text-align: right;">
+                    <button class="btn-refresh" onclick="window.loadPersonalSchedule()" style="background: white; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; font-weight: bold; color: #334155; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔄 Refresh Schedule</button>
+                </div>
+            </div>
+            
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <thead style="background: #0f172a; color: white;">
+                    <tr>
+                        <th style="padding: 15px;">Date</th>
+                        <th style="padding: 15px;">Location</th>
+                        <th style="padding: 15px;">Shift / Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        let shiftCount = 0;
+
+        // 4. Extract ONLY their shifts!
+        for (let day = 1; day <= 31; day++) {
+            if (!schedule[day]) continue;
+            
+            let dateObj = new Date(year, month - 1, day);
+            let dateStr = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            
+            // Check if this date is a holiday!
+            let fullDateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            let holidayType = holidays[fullDateKey];
+            let holBadge = holidayType ? `<br><span style="background: ${holidayType === 'Regular' ? '#fee2e2' : '#fef3c7'}; color: ${holidayType === 'Regular' ? '#dc2626' : '#ea580c'}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px;">⭐ ${holidayType} Holiday</span>` : '';
+
+            let dailyShifts = [];
+
+            // Search through every branch to see where they are assigned today
+            for (let branch in schedule[day]) {
+                let bData = schedule[day][branch];
+                
+                // A. Check if Scheduled for a specific Shift
+                for (let sId in bData.scheduled) {
+                    if (bData.scheduled[sId] === schedName) {
+                        let shiftInfo = branchConfig[branch].find(s => s.id === sId);
+                        let shiftName = shiftInfo ? shiftInfo.name : "Unknown Shift";
+                        dailyShifts.push({ branch, status: `<span style="color: #0284c7; font-weight: 900; font-size: 15px;">${shiftName}</span>` });
+                    }
+                }
+
+                // B. Check if on Standby
+                if (bData.rest && bData.rest.includes(schedName)) {
+                    dailyShifts.push({ branch, status: `<span style="color: #16a34a; font-weight: bold; font-style: italic;">Standby / Reliever</span>` });
+                }
+
+                // C. Check if Unavailable/Leave/Off
+                let unavailMatch = bData.unavailable ? bData.unavailable.find(u => u.name === schedName) : null;
+                if (unavailMatch) {
+                    dailyShifts.push({ branch, status: `<span style="color: #ef4444; font-weight: bold; text-decoration: line-through;">${unavailMatch.status}</span>` });
+                }
+            }
+
+            // Print the rows
+            if (dailyShifts.length > 0) {
+                dailyShifts.forEach(ds => {
+                    html += `
+                        <tr style="border-bottom: 1px solid #e2e8f0; background: white; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                            <td style="padding: 15px; font-weight: bold; color: #334155;">${dateStr} ${holBadge}</td>
+                            <td style="padding: 15px;"><span class="badge badge-open">${ds.branch}</span></td>
+                            <td style="padding: 15px;">${ds.status}</td>
+                        </tr>
+                    `;
+                    shiftCount++;
+                });
+            }
+        }
+
+        html += `</tbody></table>`;
+
+        if (shiftCount === 0) {
+            container.innerHTML = `
+                <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;">
+                    <h3 style="margin: 0; color: #0f766e; font-size: 18px;">${monthName}</h3>
+                    <div style="font-size: 13px; color: #64748b; margin-top: 5px;">Filtering shifts for: <strong>${schedName}</strong></div>
+                    <div style="margin-top: 30px; font-weight: bold; color: #ef4444;">You have no shifts assigned for this month.</div>
+                </div>
+            `;
+        } else {
+            container.innerHTML = html;
+        }
+
+    } catch (e) {
+        console.error("Error loading personal schedule:", e);
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color:red; font-weight: bold;">❌ Failed to load schedule. Please check your internet connection.</div>';
+    }
+};
