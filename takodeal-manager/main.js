@@ -6491,8 +6491,20 @@ window.openPayslipModal = async function(staffName) {
     document.getElementById('psBranch').innerText = data.branch || "Unassigned";
     document.getElementById('psStart').innerText = data.start || "";
     document.getElementById('psEnd').innerText = data.end || "";
-
     document.getElementById('psBasicPay').innerText = (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+    // 🔥 NEW FIXES: Populate Days Worked, Date Hired, and Pay Distributed!
+    let daysSpan = document.getElementById('psDaysWorked');
+    if (daysSpan) daysSpan.innerText = data.shiftsWorked || 0;
+
+    let hiredSpan = document.getElementById('psDateHired');
+    if (hiredSpan) hiredSpan.innerText = (data.profile && data.profile.dateHired) ? data.profile.dateHired : "Not Set";
+
+    let distSpan = document.getElementById('psPayDistributed');
+    if (distSpan) {
+        let today = new Date();
+        // Formats as YYYY-MM-DD to match your cutoff dates perfectly
+        distSpan.innerText = today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
+    }
     document.getElementById('psOvertime').value = 0;
     document.getElementById('psHoliday').value = data.nightBonus || 0;
 
