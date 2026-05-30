@@ -5178,10 +5178,12 @@ let currentYear, currentMonth;
 let swapData = null; 
 let currentActiveTab = 'Cabantian'; // Your tab memory!
 
-// 🔥 FIREBASE SAVE/LOAD (Replaces localStorage)
+window.scheduleHolidays = {}; // Memory for holidays
+
+// 🔥 FIREBASE SAVE/LOAD (Upgraded with Holidays)
 window.saveToCloud = async function() {
     try {
-        const appData = { branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth };
+        const appData = { branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays: window.scheduleHolidays };
         await setDoc(doc(db, "settings", "global_schedule"), appData);
     } catch(e) { console.error("Cloud Save Error:", e); }
 };
@@ -5197,6 +5199,8 @@ window.loadFromCloud = async function() {
             currentSchedule = appData.currentSchedule || {};
             currentYear = appData.currentYear;
             currentMonth = appData.currentMonth;
+            window.scheduleHolidays = appData.holidays || {}; // Load Holidays!
+            
             if (currentYear && currentMonth) {
                 const mm = currentMonth < 10 ? '0' + currentMonth : currentMonth;
                 document.getElementById("monthSelector").value = `${currentYear}-${mm}`;
@@ -5206,8 +5210,42 @@ window.loadFromCloud = async function() {
             const mm = String(today.getMonth() + 1).padStart(2, '0');
             document.getElementById("monthSelector").value = `${today.getFullYear()}-${mm}`;
         }
-        window.renderConfigUI(); window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables();
+        window.renderConfigUI(); window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.updateHolidayList(); window.renderTables();
     } catch(e) { console.error("Cloud Load Error:", e); }
+};
+
+// 🏖️ HOLIDAY UI FUNCTIONS
+window.addHoliday = function() {
+    const date = document.getElementById('holidayDate').value;
+    const type = document.getElementById('holidayType').value;
+    if (!date) return alert("Select a date.");
+    window.scheduleHolidays[date] = type;
+    window.updateHolidayList();
+    window.saveToCloud(); // Auto-save to Firebase
+};
+
+window.removeHoliday = function(date) {
+    if (!confirm(`Remove holiday on ${date}?`)) return;
+    delete window.scheduleHolidays[date];
+    window.updateHolidayList();
+    window.saveToCloud();
+};
+
+window.updateHolidayList = function() {
+    const list = document.getElementById('holidayList');
+    if(!list) return;
+    list.innerHTML = '';
+    const dates = Object.keys(window.scheduleHolidays).sort();
+    if (dates.length === 0) { list.innerHTML = '<span style="color:#aaa;">No holidays set.</span>'; return; }
+    
+    dates.forEach(date => {
+        let type = window.scheduleHolidays[date];
+        let color = type === 'Regular' ? '#dc2626' : '#ea580c';
+        const div = document.createElement('div'); 
+        div.style.cssText = 'display:flex; justify-content:space-between; padding:5px; border-bottom:1px dashed #cbd5e1; margin-bottom: 5px;';
+        div.innerHTML = `<span><strong>${date}</strong>: <span style="background: ${type === 'Regular' ? '#fee2e2' : '#fef3c7'}; color:${color}; padding: 2px 6px; border-radius: 4px; font-weight:bold; font-size: 11px;">${type} (+${type === 'Regular' ? '50' : '10'}%)</span></span><span style="color:#ef4444;cursor:pointer;font-weight:bold;" onclick="window.removeHoliday('${date}')">✖</span>`;
+        list.appendChild(div);
+    });
 };
 
 // --- CORE UI FUNCTIONS ---
@@ -6784,7 +6822,7 @@ window.globalPayrollCache = {};
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
 
-// 2. The Master Pairing Engine
+// 2. The Master Pairing Engine (UPGRADED WITH HOLIDAY MATH)
 window.generateAutoPayslips = async function() {
     let startInput = document.getElementById('payrollStart').value;
     let endInput = document.getElementById('payrollEnd').value;
@@ -6807,7 +6845,10 @@ window.generateAutoPayslips = async function() {
     fetchEndDate.setHours(fetchEndDate.getHours() + 12);
 
     try {
-        // 🔥 NEW: Check for FROZEN/PAID records first!
+        // 🔥 FETCH HOLIDAYS FROM THE SCHEDULE VAULT
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        let holidaysObj = schedSnap.exists() ? (schedSnap.data().holidays || {}) : {};
+
         const prQ = query(collection(db, "payroll_records"), where("startDate", "==", startInput), where("endDate", "==", endInput));
         const prSnap = await getDocs(prQ);
         let paidRecords = {};
@@ -6844,7 +6885,7 @@ window.generateAutoPayslips = async function() {
             
             if (!staffData[name]) {
                 staffData[name] = { 
-                    branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, 
+                    branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, // Added Holiday Pay
                     foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0,
                     logs: [] 
                 };
@@ -6871,6 +6912,20 @@ window.generateAutoPayslips = async function() {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
+                // 🔥 HOLIDAY PAY CALCULATOR
+                let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
+                let hType = holidaysObj[logDateStr];
+                let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
+                let hBonus = 0;
+
+                if (hType === 'Regular') {
+                    hBonus = (dailyRate * shiftMultiplier) * 0.50; // +50%
+                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Holiday)</span>`;
+                } else if (hType === 'Special') {
+                    hBonus = (dailyRate * shiftMultiplier) * 0.10; // +10%
+                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Holiday)</span>`;
+                }
+
                 staffData[name].logs.push({
                     date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
                     in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
@@ -6881,6 +6936,7 @@ window.generateAutoPayslips = async function() {
 
                 staffData[name].totalHours += hoursWorked;
                 staffData[name].shiftsWorked += shiftMultiplier; 
+                staffData[name].holidayPayTotal += hBonus;
 
                 let outHour = timeOut.getHours();
                 if (outHour >= 0 && outHour <= 4) {
@@ -6896,7 +6952,7 @@ window.generateAutoPayslips = async function() {
             let name = req.staffName;
 
             if (req.status === "Approved") {
-                if (!staffData[name]) staffData[name] = { branch: req.branch || "Unknown", totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] };
+                if (!staffData[name]) staffData[name] = { branch: req.branch || "Unknown", totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] };
 
                 if (req.type === "Staff Meal") staffData[name].foodDeductions += (req.amount || 0);
                 else if (req.type === "Cash Advance") staffData[name].cashAdvances += (req.amount || 0);
@@ -6913,13 +6969,11 @@ window.generateAutoPayslips = async function() {
                 let d;
                 let isPaid = false;
 
-                // 🔥 IF THEY ALREADY PAID, USE THE FROZEN SNAPSHOT
                 if (paidRecords[name]) {
                     d = paidRecords[name];
                     isPaid = true;
                     window.globalPayrollCache[name] = d; 
                 } else {
-                    // OTHERWISE, DO THE LIVE MATH
                     d = staffData[name];
                     let profile = staffDict[name] || {};
                     let dailyRate = profile.hourlyRate || 0; 
@@ -6953,7 +7007,7 @@ window.generateAutoPayslips = async function() {
 
                     // Save to Global Memory
                     window.globalPayrollCache[name] = {
-                        name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal,
+                        name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal, // Saved here!
                         advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth, lateDeduction: d.lateDeduction,
                         shiftsWorked: d.shiftsWorked, basicPay: d.basicPay, rate: dailyRate,
@@ -6962,18 +7016,17 @@ window.generateAutoPayslips = async function() {
                     d = window.globalPayrollCache[name]; // Re-reference
                 }
 
-                // Render UI Variables
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
 
                 let bonusLabel = d.nightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonus} Night Bonus</span>` : '';
+                let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
                 let foodLabel = d.meals > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.meals.toFixed(2)} (Meals)</span>` : '';
                 let valeLabel = d.advances > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.advances.toFixed(2)} (Vale)</span>` : '';
-                let loanLabel = d.loans > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.loans.toFixed(2)} (Ledger Auto-Deduct)</span>` : '';
-                let lateLabel = d.lateDeduction > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.lateDeduction.toFixed(2)} (Auto-Late)</span>` : '';
+                let loanLabel = d.loans > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.loans.toFixed(2)} (Ledger)</span>` : '';
+                let lateLabel = d.lateDeduction > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.lateDeduction.toFixed(2)} (Late)</span>` : '';
                 let govTotal = (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0);
-                let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov Benefits)</span>` : `<br><span style="font-size:10px; color:#64748b;">Gov Benefits: Not Set</span>`;
+                let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov)</span>` : '';
 
-                // 🔥 The UI changes based on if they are already paid!
                 let buttonHtml = isPaid 
                     ? `<button onclick="window.openPayslipModal('${name}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
                     : `<button onclick="window.openPayslipModal('${name}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
@@ -6984,7 +7037,7 @@ window.generateAutoPayslips = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${rowStyle}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${holLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">
                             Total: ₱${totalDeduct.toFixed(2)}
                             ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel} ${govLabel}
@@ -7002,6 +7055,70 @@ window.generateAutoPayslips = async function() {
         console.error("Payroll Engine Error:", error);
         tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding: 20px;">Failed to calculate payroll. Check Developer Console (F12).</td></tr>`;
     }
+};
+
+window.openPayslipModal = async function(staffName) {
+    let data = window.globalPayrollCache[staffName];
+    if (!data) return;
+
+    window.currentPayslipData = data; 
+    
+    let finalizeBtn = document.getElementById('btnFinalizePayslip');
+    if (finalizeBtn) {
+        if (data.isPaid) {
+            finalizeBtn.innerText = "✅ Paid & Done!";
+            finalizeBtn.disabled = true;
+            finalizeBtn.style.background = "#16a34a"; 
+            finalizeBtn.style.cursor = "not-allowed";
+        } else {
+            finalizeBtn.innerText = "✅ Mark Paid & Auto-Deduct";
+            finalizeBtn.disabled = false;
+            finalizeBtn.style.background = "#3b82f6"; 
+            finalizeBtn.style.cursor = "pointer";
+        }
+    }
+
+    document.getElementById('psName').innerText = data.name || "Unknown";
+    document.getElementById('psBranch').innerText = data.branch || "Unassigned";
+    document.getElementById('psStart').innerText = data.start || "";
+    document.getElementById('psEnd').innerText = data.end || "";
+
+    document.getElementById('psBasicPay').innerText = (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    // We map Night Bonus into "Overtime" and Holiday Pay into "Holiday" so it calculates perfectly!
+    document.getElementById('psOvertime').value = data.nightBonus || 0;
+    document.getElementById('psHoliday').value = data.holidayPayTotal || 0;
+
+    document.getElementById('psLate').value = data.lateDeduction || 0;
+    document.getElementById('psSSS').value = data.sss || 0;
+    document.getElementById('psPhil').value = data.philhealth || 0;
+    document.getElementById('psPagibig').value = data.pagibig || 0;
+    document.getElementById('psAdvance').value = data.advances || 0;
+    document.getElementById('psLoans').value = data.loans || 0;
+    document.getElementById('psFoods').value = data.meals || 0;
+    
+    let wifiBox = document.getElementById('psWifi');
+    if(wifiBox) wifiBox.value = 0;
+
+    let attHtml = '';
+    if (data.logs && data.logs.length > 0) {
+        data.logs.forEach(log => {
+            attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px;">${log.date}</td>
+                <td style="padding: 8px; font-weight: bold; color: #16a34a;">${log.in}</td>
+                <td style="padding: 8px; font-weight: bold; color: #dc2626;">${log.out}</td>
+                <td style="padding: 8px; font-weight: bold;">${log.hrs}h</td>
+                <td style="padding: 8px; font-size:11px;">${log.remark}</td>
+            </tr>`;
+        });
+    } else {
+        attHtml = '<tr><td colspan="5" style="text-align:center; padding: 15px; color: #94a3b8;">No attendance logs found.</td></tr>';
+    }
+    let attBody = document.getElementById('psAttendanceBody');
+    if (attBody) attBody.innerHTML = attHtml;
+
+    if (typeof window.recalcPayslip === 'function') window.recalcPayslip();
+    document.getElementById('payslipModal').style.display = 'flex';
 };
 
 // Run the date setter when the dashboard loads!
