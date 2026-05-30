@@ -1481,16 +1481,22 @@
             <span id="configSaveMsg" style="color: #16a34a; font-weight: bold; margin-left: 10px; display: none;">Saved!</span>
         </div>
     
-        <div class="sched-panel">
-            <div class="controls">
-                <div class="control-group">
-                    <label>Schedule Month / Year</label>
-                    <input type="month" id="monthSelector">
-                </div>
-                <div class="control-group">
-                    <button class="action-btn" style="background-color: #ef4444;" onclick="generateSchedule()">⚠️ Auto-Generate (Full Reshuffle)</button> <button id="btnDownloadSched" class="action-btn" style="background-color: #0284c7; margin-left: 10px;" onclick="window.downloadScheduleImage()">📸 Download as Image</button>
-                </div>
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); flex-wrap: wrap; gap: 15px;">
+        
+            <div style="flex: 1; min-width: 200px;">
+                <label style="font-size: 12px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">Schedule Month / Year</label>
+                <input type="month" id="monthSelector" onchange="window.generateSchedule()" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a; font-size: 16px; outline: none; cursor: pointer; background: #f8fafc; width: 100%; max-width: 250px; box-sizing: border-box;">
             </div>
+    
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <button onclick="window.generateSchedule()" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2); display: flex; align-items: center; gap: 8px; transition: 0.2s;">
+                    <span style="font-size: 16px;">⚠️</span> Auto-Generate (Full Reshuffle)
+                </button>
+                <button id="btnDownloadSched" onclick="window.downloadScheduleImage()" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.2); display: flex; align-items: center; gap: 8px; transition: 0.2s;">
+                    <span style="font-size: 16px;">📸</span> Download as Image
+                </button>
+            </div>
+            
         </div>
     
         <div class="grid-container">
