@@ -2263,7 +2263,7 @@
             deptContainer.innerHTML = `
                 <button class="dept-btn ${window.currentDepartment === 'All Items' ? 'active' : ''}" onclick="window.selectDepartment('All Items')">ALL ITEMS</button>
                 <button class="dept-btn ${window.currentDepartment === 'MAIN MENU' ? 'active' : ''}" onclick="window.selectDepartment('MAIN MENU')">MAIN MENU</button>
-                <button class="dept-btn ${window.currentDepartment === 'PREMIX & CONSUMABLES' ? 'active' : ''}" onclick="window.selectDepartment('PREMIX & CONSUMABLES')">PREMIX & CONSUMABLES</button>
+                <button class="dept-btn ${window.currentDepartment === 'CONSUMABLES' ? 'active' : ''}" onclick="window.selectDepartment('CONSUMABLES')">CONSUMABLES</button>
             `;
         }
     
@@ -2287,7 +2287,7 @@
         let catsToRender = safeCategories;
     
         // Filter categories based on the active bottom tab
-        if (window.currentDepartment === "PREMIX & CONSUMABLES") {
+        if (window.currentDepartment === "CONSUMABLES") {
             catsToRender = safeCategories.filter(c => premixCategories.includes(c));
         } else if (window.currentDepartment === "MAIN MENU") {
             catsToRender = safeCategories.filter(c => !premixCategories.includes(c));
@@ -2327,7 +2327,7 @@
     
         // Filter by bottom tab if 'All' is selected on top
         if (category === 'All') {
-            if (window.currentDepartment === "PREMIX & CONSUMABLES") {
+            if (window.currentDepartment === "CONSUMABLES") {
                 filteredItems = safeItems.filter(item => premixCategories.includes(item.category));
             } else if (window.currentDepartment === "MAIN MENU") {
                 filteredItems = safeItems.filter(item => !premixCategories.includes(item.category));
