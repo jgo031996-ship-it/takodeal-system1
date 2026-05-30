@@ -740,7 +740,6 @@ window.loadPurchasesAndAlerts = async function () {
         let suggested = (reorder * 2) - stock; 
         if (suggested <= 0) suggested = reorder;
 
-        // 🔥 THE TELEPORT ROW: Click anywhere to jump to Live Inventory for this branch!
         html += `
           <tr style="cursor: pointer; transition: background 0.2s;" 
               onmouseover="this.style.background='#f1f5f9'" 
@@ -768,93 +767,137 @@ window.loadPurchasesAndAlerts = async function () {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Failed to scan inventory.</td></tr>';
   }
 };
-// ALIAS FOR THE HTML ONCLICK
 window.loadAlerts = window.loadPurchasesAndAlerts;
 
 // --- THE RESTOCK MODAL LOGIC ---
 window.openMultiRestockModal = async function (preSelectId = null) {
   document.getElementById('restockModal').style.display = 'flex';
   restockCart = [];
-  renderRestockCart();
+  window.renderRestockCart();
 
-  // If the global list is empty, fetch it
   if (window.globalInventoryList.length === 0) {
     const snap = await getDocs(collection(db, "inventory"));
     snap.forEach(d => { let obj = d.data(); obj.id = d.id; window.globalInventoryList.push(obj); });
   }
 
-  let drop = document.getElementById('restockItemSelect');
-  drop.innerHTML = '<option value="">-- Select Main Office Item --</option>';
+  // 🔥 THE FIX: Transform the Dropdown into a Smart Search Bar
+  let itemInput = document.getElementById('restockItemSelect');
+  if (itemInput.tagName === 'SELECT') {
+      let newInput = document.createElement('input');
+      newInput.id = 'restockItemSelect';
+      newInput.setAttribute('list', 'restockDatalist');
+      newInput.placeholder = "Type to search Main Office item...";
+      newInput.style.cssText = "padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-weight: bold; color: #0f172a;";
+      newInput.onchange = window.updateRestockUomLabel;
+      itemInput.parentNode.replaceChild(newInput, itemInput);
+      itemInput = newInput;
+  }
+  itemInput.value = '';
 
-  // 🔥 THE VAULT LOCK: We filter the list so ONLY "Main Office" items appear in the dropdown!
   let hqList = window.globalInventoryList.filter(i => i.branch === "Main Office");
   let sortedList = hqList.sort((a, b) => a.name.localeCompare(b.name));
 
+  // Build the invisible datalist for the search bar
+  let datalistHtml = '<datalist id="restockDatalist">';
   sortedList.forEach(item => {
-    let selected = (preSelectId === item.id) ? "selected" : "";
     let stockDisplay = `${parseFloat(item.currentStock || 0).toFixed(1)} ${item.uom}`;
-    
-    // Removed branch name from display text since it's guaranteed to be HQ
-    drop.innerHTML += `<option value="${item.id}" ${selected}>${item.name} - Current Stock: ${stockDisplay}</option>`;
+    datalistHtml += `<option value="${item.name}">Current Stock: ${stockDisplay}</option>`;
   });
+  datalistHtml += '</datalist>';
 
-  updateRestockUomLabel();
+  if (!document.getElementById('restockDatalist')) {
+      document.body.insertAdjacentHTML('beforeend', datalistHtml);
+  } else {
+      document.getElementById('restockDatalist').innerHTML = datalistHtml.replace('<datalist id="restockDatalist">', '').replace('</datalist>', '');
+  }
+
+  // If a preSelectId was passed from an alert button, auto-fill the search bar
+  if (preSelectId) {
+      let preItem = window.globalInventoryList.find(i => i.id === preSelectId);
+      if (preItem) itemInput.value = preItem.name;
+  }
+
+  window.updateRestockUomLabel();
 };
 
 window.updateRestockUomLabel = function () {
-  let itemId = document.getElementById('restockItemSelect').value;
+  let itemName = document.getElementById('restockItemSelect').value.trim();
   let label = document.getElementById('restockQtyLabel');
-  if (!itemId) { label.innerText = "No. of packs"; return; }
+  if (!itemName) { label.innerText = "No. of packs"; return; }
 
-  let item = window.globalInventoryList.find(i => i.id === itemId);
+  let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
   if (item) {
     label.innerText = `No. of ${item.purchaseUom || 'units'}s`;
   }
 };
 
 window.addRestockToCart = function () {
-  let itemId = document.getElementById('restockItemSelect').value;
+  let itemName = document.getElementById('restockItemSelect').value.trim();
   let purchQty = parseFloat(document.getElementById('restockQtyInput').value);
 
-  if (!itemId || isNaN(purchQty) || purchQty <= 0) { alert("Select an item and enter a valid quantity."); return; }
+  if (!itemName || isNaN(purchQty) || purchQty <= 0) { alert("Select an item and enter a valid quantity."); return; }
 
-  let item = window.globalInventoryList.find(i => i.id === itemId);
+  let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
+  if (!item) { alert("Item not found in Main Office."); return; }
+
   let convRate = parseFloat(item.conversionRate) || 1;
-  let baseQtyToAdd = purchQty * convRate; // MATH MAGIC!
+  let baseQtyToAdd = purchQty * convRate;
 
-  restockCart.push({
-    id: item.id,
-    name: item.name,
-    branch: item.branch,
-    purchQty: purchQty,
-    purchUom: item.purchaseUom || 'units',
-    baseQtyToAdd: baseQtyToAdd,
-    baseUom: item.uom
-  });
+  // 🔥 THE FIX: Combines quantities if the item is already in the cart!
+  let existing = restockCart.find(i => i.id === item.id);
+  if (existing) {
+      existing.purchQty += purchQty;
+      existing.baseQtyToAdd += baseQtyToAdd;
+  } else {
+      restockCart.push({
+        id: item.id,
+        name: item.name,
+        branch: item.branch,
+        purchQty: purchQty,
+        purchUom: item.purchaseUom || 'units',
+        baseQtyToAdd: baseQtyToAdd,
+        baseUom: item.uom
+      });
+  }
 
   document.getElementById('restockQtyInput').value = '';
-  renderRestockCart();
+  document.getElementById('restockItemSelect').value = ''; // Auto-clear search for next item
+  window.renderRestockCart();
 };
 
 window.removeRestockItem = function (index) {
   restockCart.splice(index, 1);
-  renderRestockCart();
+  window.renderRestockCart();
 };
 
 window.renderRestockCart = function () {
   let tbody = document.getElementById('restockCartBody');
-  if (restockCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
+  
+  // 🔥 THE FIX: Inject a scrollable container around the table!
+  let table = tbody.closest('table');
+  if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
+      let wrapper = document.createElement('div');
+      wrapper.className = 'table-scroll-wrapper';
+      wrapper.style.maxHeight = '220px';
+      wrapper.style.overflowY = 'auto';
+      wrapper.style.borderBottom = '1px solid #e2e8f0';
+      wrapper.style.marginBottom = '10px';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+  }
+
+  if (restockCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:var(--text-muted); padding:15px;">Cart is empty.</td></tr>'; return; }
 
   let html = '';
   restockCart.forEach((cartItem, idx) => {
     html += `
       <tr>
-        <td>
-          <strong style="font-size: 15px;">${cartItem.name}</strong> <span style="font-size:11px; color:var(--text-muted);">(${cartItem.branch})</span><br>
+        <td style="padding: 10px;">
+          <strong style="font-size: 15px; color:#0f172a;">${cartItem.name}</strong> <span style="font-size:11px; color:var(--text-muted);">(${cartItem.branch})</span><br>
           <span style="font-size:12px; color:var(--success); font-weight:bold;">(+${cartItem.baseQtyToAdd.toLocaleString()} ${cartItem.baseUom} to stock)</span>
         </td>
-        <td style="font-weight:bold; font-size: 16px;">${cartItem.purchQty} <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${cartItem.purchUom}s</span></td>
-        <td><button onclick="removeRestockItem(${idx})" style="color:var(--danger); border:1px solid var(--danger); background:white; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;">✖</button></td>
+        <td style="font-weight:bold; font-size: 16px; padding: 10px; color:#0f766e;">${cartItem.purchQty} <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${cartItem.purchUom}s</span></td>
+        <td style="padding: 10px; text-align:right;"><button onclick="window.removeRestockItem(${idx})" style="color:var(--danger); border:1px solid var(--danger); background:#fef2f2; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✖ Remove</button></td>
       </tr>
     `;
   });
@@ -876,7 +919,6 @@ window.confirmMultiRestock = async function () {
 
       await updateDoc(itemRef, { currentStock: newStock });
 
-      // 🔥 FIRE INTO THE LOG BOOK
       await addDoc(collection(db, "stock_logs"), {
         branch: cartItem.branch,
         item: cartItem.name,
@@ -893,7 +935,6 @@ window.confirmMultiRestock = async function () {
     alert(`✅ Successfully restocked ${restockCart.length} items!`);
     document.getElementById('restockModal').style.display = 'none';
 
-    // Refresh whatever screen they are currently looking at!
     if (document.getElementById('view-purchases') && document.getElementById('view-purchases').classList.contains('active')) window.loadPurchasesAndAlerts();
     if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
          if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
@@ -920,15 +961,253 @@ window.loadDispatchDashboard = async function() {
     toHtml += `<option value="${b}">${b}</option>`;
   });
 
-  // Set defaults
   document.getElementById('dispFrom').innerHTML = fromHtml;
   document.getElementById('dispFrom').value = "Main Office";
   document.getElementById('dispTo').innerHTML = toHtml;
 
   dispatchCart = [];
-  renderDispatchCart();
+  window.renderDispatchCart();
   await window.loadDispatchInventory();
-  await loadDispatchLogs();
+  await window.loadDispatchLogs();
+};
+
+window.loadDispatchInventory = async function () {
+  let fromBranch = document.getElementById('dispFrom').value;
+  let itemInput = document.getElementById('dispItem');
+
+  // 🔥 THE FIX: Transform the Dropdown into a Smart Search Bar
+  if (itemInput.tagName === 'SELECT') {
+      let newInput = document.createElement('input');
+      newInput.id = 'dispItem';
+      newInput.setAttribute('list', 'dispatchDatalist');
+      newInput.placeholder = "Type to search item to send...";
+      newInput.style.cssText = "padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-weight: bold; color: #0f172a;";
+      newInput.onchange = window.updateDispatchUomLabel;
+      itemInput.parentNode.replaceChild(newInput, itemInput);
+      itemInput = newInput;
+  }
+
+  if (!fromBranch) { itemInput.placeholder = 'Select source branch first'; itemInput.disabled = true; return; }
+  
+  itemInput.disabled = false;
+  itemInput.placeholder = 'Scanning warehouse...';
+  itemInput.value = '';
+  dispatchInventoryList = [];
+
+  try {
+    const q = query(collection(db, "inventory"), where("branch", "==", fromBranch));
+    const snap = await getDocs(q);
+    
+    let datalistHtml = '<datalist id="dispatchDatalist">';
+
+    snap.forEach(docSnap => {
+      let data = docSnap.data();
+      if (data.currentStock > 0) {
+        dispatchInventoryList.push({ id: docSnap.id, ...data });
+        datalistHtml += `<option value="${data.name}">Available: ${data.currentStock} ${data.uom}</option>`;
+      }
+    });
+    datalistHtml += '</datalist>';
+
+    if (!document.getElementById('dispatchDatalist')) {
+        document.body.insertAdjacentHTML('beforeend', datalistHtml);
+    } else {
+        document.getElementById('dispatchDatalist').innerHTML = datalistHtml.replace('<datalist id="dispatchDatalist">', '').replace('</datalist>', '');
+    }
+
+    itemInput.placeholder = 'Type to search item to send...';
+    window.updateDispatchUomLabel();
+  } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
+};
+
+window.updateDispatchUomLabel = function() {
+    let itemName = document.getElementById('dispItem').value.trim();
+    let uomDrop = document.getElementById('dispUomSelect');
+    
+    if (!itemName) {
+        uomDrop.innerHTML = '<option value="base">Units</option>';
+        return;
+    }
+
+    let invItem = dispatchInventoryList.find(i => i.name === itemName);
+    if (invItem) {
+        let baseUom = invItem.uom || 'units';
+        let purchUom = invItem.purchaseUom || 'Bulk';
+        
+        uomDrop.innerHTML = `
+            <option value="purch">${purchUom}</option>
+            <option value="base">${baseUom}</option>
+        `;
+    }
+};
+
+window.addToDispatchCart = function () {
+  let itemName = document.getElementById('dispItem').value.trim();
+  let rawQty = parseFloat(document.getElementById('dispQty').value);
+  let uomSelect = document.getElementById('dispUomSelect');
+  let selectedUomType = uomSelect.value; 
+
+  if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
+
+  let invItem = dispatchInventoryList.find(i => i.name === itemName);
+  if (!invItem) { alert("Item not found."); return; }
+
+  let finalBaseQty = rawQty;
+  let displayMsg = `${rawQty} ${invItem.uom}`;
+  let convRate = 1;
+  let friendlyUom = invItem.uom;
+
+  if (selectedUomType === 'purch') {
+      convRate = parseFloat(invItem.conversionRate) || 1;
+      finalBaseQty = rawQty * convRate; 
+      friendlyUom = invItem.purchaseUom || "Bulk";
+      displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
+  }
+
+  if (finalBaseQty > invItem.currentStock) { 
+      let stockInPurch = invItem.currentStock / convRate;
+      alert(`❌ Not enough stock!\n\nYou are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.`); 
+      return; 
+  }
+
+  // 🔥 THE FIX: Accumulates quantities if item already exists in the dispatch cart
+  let existing = dispatchCart.find(i => i.itemName === itemName);
+  if (existing) { 
+      existing.qty += finalBaseQty; 
+      existing.rawQty += rawQty;
+      existing.displayMsg = `${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
+  } else { 
+      dispatchCart.push({ 
+          itemName: itemName, 
+          qty: finalBaseQty, 
+          uom: invItem.uom, 
+          sourceId: invItem.id,
+          displayMsg: displayMsg,
+          rawQty: rawQty,            
+          friendlyUom: friendlyUom, 
+          convRate: convRate,
+          category: invItem.category || "Ingredients",
+          purchaseUom: invItem.purchaseUom || invItem.uom,
+          cost: invItem.cost || 0,
+          reorderLevel: invItem.reorderLevel || 10
+      });
+  }
+
+  document.getElementById('dispQty').value = '';
+  document.getElementById('dispItem').value = ''; // Auto-clear search for next item
+  window.renderDispatchCart();
+};
+
+window.submitMultiDispatch = async function () {
+  let fromBranch = document.getElementById('dispFrom').value;
+  let toBranch = document.getElementById('dispTo').value;
+
+  if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
+  if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
+  if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
+
+  let btn = document.getElementById('btnSubmitDispatch');
+  btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
+
+  try {
+    let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
+    if (!driverName) {
+        btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
+        return; 
+    }
+
+    for (let item of dispatchCart) {
+      let sourceRef = doc(db, "inventory", item.sourceId);
+      let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
+      await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
+
+      await addDoc(collection(db, "dispatch_logs"), {
+        date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
+        time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date(),
+        item: item.itemName,
+        qty: item.qty, 
+        uom: item.uom, 
+        details: `${fromBranch} ➡️ ${toBranch}`,
+        toBranch: toBranch,
+        driver: driverName,
+        status: "In Transit",
+        displayQty: item.rawQty || item.qty,      
+        displayUom: item.friendlyUom || item.uom, 
+        convRate: item.convRate || 1,
+        category: item.category,
+        purchaseUom: item.purchaseUom,
+        cost: item.cost,
+        reorderLevel: item.reorderLevel
+      });
+    }
+
+    alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
+    dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); 
+    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+    btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
+  } catch (e) { 
+      console.error(e); alert("Dispatch failed."); 
+      btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
+  }
+};
+
+window.removeFromDispatchCart = function (index) {
+  dispatchCart.splice(index, 1);
+  window.renderDispatchCart();
+};
+
+window.renderDispatchCart = function() {
+  const tbody = document.getElementById('dispatchCartBody');
+  
+  // 🔥 THE FIX: Inject a scrollable container around the table!
+  let table = tbody.closest('table');
+  if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
+      let wrapper = document.createElement('div');
+      wrapper.className = 'table-scroll-wrapper';
+      wrapper.style.maxHeight = '250px';
+      wrapper.style.overflowY = 'auto';
+      wrapper.style.borderBottom = '1px solid #e2e8f0';
+      wrapper.style.marginBottom = '10px';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+  }
+
+  if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
+
+  let html = '';
+  dispatchCart.forEach((item, idx) => {
+    let qtyText = item.displayMsg || `${item.qty} ${item.uom}`;
+    
+    html += `<tr>
+      <td style="padding:10px;"><strong>${item.itemName}</strong></td>
+      <td style="font-size:14px; font-weight:bold; color:var(--primary); padding:10px;">${qtyText}</td>
+      <td style="text-align:right; padding:10px;"><button class="btn-refresh" style="color:var(--danger); border:1px solid var(--danger); background:#fef2f2; padding:4px 8px; font-size:11px; font-weight:bold;" onclick="window.removeFromDispatchCart(${idx})">✖ Remove</button></td>
+    </tr>`;
+  });
+  tbody.innerHTML = html;
+};
+
+window.loadDispatchLogs = async function() {
+  const tbody = document.getElementById('dispatchLogBody');
+  if(!tbody) return;
+  tbody.innerHTML = '<tr><td class="text-center">Loading logs...</td></tr>';
+  try {
+    const qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"), limit(20));
+    const snap = await getDocs(qLogs);
+    let html = '';
+    if (snap.empty) { html = '<tr><td class="text-center">No recent deliveries.</td></tr>'; }
+    else {
+      snap.forEach(doc => {
+        let d = doc.data();
+        html += `<tr><td style="padding:10px; border-bottom:1px dashed #e2e8f0;">
+          <div style="font-weight:bold; color:var(--primary); font-size:14px;">${d.item} <span style="color:#475569;">(${d.displayQty || d.qty} ${d.displayUom || d.uom})</span></div>
+          <div style="font-size:12px; color:var(--text-muted);">${d.details} | ${d.date} ${d.time}</div>
+        </td></tr>`;
+      });
+    }
+    tbody.innerHTML = html;
+  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td class="text-center" style="color:red;">Error loading logs</td></tr>'; }
 };
 
 // ========================================================
