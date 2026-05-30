@@ -1363,7 +1363,8 @@
       </div>
 
       <div class="nav-item" id="nav-schedule" onclick="switchView('schedule')">
-          <span class="icon">📅</span> My Schedule
+          <span style="font-size: 18px;">📅</span>
+          <div class="nav-item-text">My Schedule</div>
       </div>
 
       <div class="nav-item" onclick="window.openGrabEarningsModal()" style="color: #00b14f;">
@@ -2178,13 +2179,9 @@
       </div>
   </div>
   
-  <!-- PERSONAL SCHEDULE VIEW -->
-  <div id="view-schedule" class="view">
-      <div class="top-bar">
-          <h2>📅 My Monthly Schedule</h2>
-      </div>
-      <div class="card" style="margin-top: 20px;">
-          <div id="cashierScheduleContainer" style="padding: 20px;">
+  <div class="view-container" id="view-schedule" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
+          <div id="cashierScheduleContainer">
               <div style="text-align: center; color: #64748b;">Loading your schedule...</div>
           </div>
       </div>
@@ -2234,7 +2231,10 @@
       else if (viewName === 'deliveries') { topBar.innerText = "🚚 Incoming Stock"; }
       else if (viewName === 'menumgr') { topBar.innerText = "🍔 Menu Toggle"; }
       else if (viewName === 'waste') { topBar.innerText = "🗑️ Log Waste & Spoilage"; }
-      else if (viewName === 'schedule') { topBar.innerText = "📅 My Schedule"; window.loadPersonalSchedule(); }
+      else if (viewName === 'schedule') { 
+          topBar.innerText = "📅 My Schedule"; 
+          if (typeof window.loadPersonalSchedule === 'function') window.loadPersonalSchedule(); 
+      }
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
