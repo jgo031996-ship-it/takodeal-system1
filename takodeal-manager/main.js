@@ -8127,7 +8127,7 @@ window.loadSalesHistoryTab = async function() {
                 timeLabel: `${sTimeStr} - ${eTimeStr}`,
                 timestamp: sTime,
                 sales: 0, cogs: 0, voids: 0, txCount: 0,
-                categorySales: {}, itemSales: {}, transactions: [] // 🔥 NEW: Added transactions array!
+                categorySales: {}, itemSales: {}, transactions: [] // 🔥 REQUIRED: Array to hold the receipts!
             };
         });
 
@@ -8164,7 +8164,6 @@ window.loadSalesHistoryTab = async function() {
             let isMobile = !!tx.isMobileRejected || (tx.notes && tx.notes.includes("Mobile App Order")) || (tx.cart && tx.cart.some(i => i.notes && i.notes.includes("Mobile App Order")));
             let mobileIcon = isMobile ? '📱 ' : '';
 
-            // A. HANDLE REJECTED MOBILE ORDERS
             if (tx.isMobileRejected) {
                 let reasonStr = tx.status === "rejected_by_customer" ? "Cancelled by Cust" : "Rejected by Store";
                 txHtml += `
@@ -8186,11 +8185,9 @@ window.loadSalesHistoryTab = async function() {
                 return; 
             }
 
-            // B. HANDLE STANDARD TRANSACTIONS
             let isVoid = tx.status === "Voided";
             let txNet = (tx.netTotal || 0);
             
-            // MAP TO THE EXACT SHIFT
             let sId = tx.shiftId;
             if (!sId || !window.globalShiftReports[sId]) {
                 sId = `fallback_${tx.branch}_${dateStr}`;
@@ -8229,7 +8226,6 @@ window.loadSalesHistoryTab = async function() {
 
                     txCogs += itemTotalCogs;
 
-                    // POPULATE THE SHIFT REPORT MODAL DATA (CATEGORY AGGREGATES)
                     if (!isVoid) {
                         if (!shiftRef.categorySales[itemCat]) shiftRef.categorySales[itemCat] = { sales: 0, qty: 0 };
                         shiftRef.categorySales[itemCat].sales += itemTotalSales;
@@ -8238,7 +8234,7 @@ window.loadSalesHistoryTab = async function() {
                 });
             }
             
-            // 🔥 NEW: Store the exact transaction into the shift memory!
+            // 🔥 REQUIRED: Save the actual receipt details to the shift memory for the modal!
             shiftRef.transactions.push({
                 time: timeStr,
                 receiptId: tx.receiptId,
@@ -8273,12 +8269,12 @@ window.loadSalesHistoryTab = async function() {
                 shiftRef.voids += txNet;
             }
 
-            // DAILY LOGIC
+            // 🔥 FIX: Daily Logic Columns (Date first, then Branch)
             if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0, voids: 0 };
             if (isVoid) { dailyAggregates[dailyKey].voids += txNet; } 
             else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
 
-            // MONTHLY LOGIC
+            // 🔥 FIX: Monthly Logic Columns (Month first, then Branch)
             if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
             if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; }
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
@@ -8306,10 +8302,10 @@ window.loadSalesHistoryTab = async function() {
 
         if(tbodyTx) tbodyTx.innerHTML = txHtml || '<tr><td colspan="10" class="text-center" style="padding: 30px; color: #64748b;">No transactions found.</td></tr>';
 
-        // 6. BUILD SHIFTS HTML WITH VIEW BUTTON
+        // BUILD SHIFTS HTML WITH VIEW BUTTON
         let shiftsHtml = '';
         Object.values(window.globalShiftReports).sort((a,b) => b.timestamp - a.timestamp).forEach(s => {
-            if (s.sales === 0 && s.voids === 0) return; // Hide empty shifts
+            if (s.sales === 0 && s.voids === 0) return; 
             let sMargin = s.sales - s.cogs;
             shiftsHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -8330,15 +8326,15 @@ window.loadSalesHistoryTab = async function() {
         });
         if(tbodyShifts) tbodyShifts.innerHTML = shiftsHtml || '<tr><td colspan="9" class="text-center" style="padding: 30px; color: #64748b;">No shift aggregates available.</td></tr>';
 
-        // BUILD DAILY HTML
+        // 🔥 FIX: BUILD DAILY HTML (Date first, then Branch)
         let dailyHtml = '';
         Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(d => {
             let dMargin = d.sales - d.cogs;
             let dAvg = d.txCount > 0 ? d.sales / d.txCount : 0;
             dailyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px;"><span class="badge badge-open">${d.branch}</span></td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #334155;">${d.date}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-open">${d.branch}</span></td>
                     <td style="padding: 15px 10px; font-weight: bold; color: #0f172a; font-size: 15px;">₱${d.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: 500;">₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: bold;">₱${dMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -8348,15 +8344,15 @@ window.loadSalesHistoryTab = async function() {
         });
         if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // BUILD MONTHLY HTML
+        // 🔥 FIX: BUILD MONTHLY HTML (Month first, then Branch)
         let monthlyHtml = '';
         Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj).forEach(m => {
             let mMargin = m.sales - m.cogs;
             let mAvg = m.txCount > 0 ? m.sales / m.txCount : 0;
             monthlyHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
-                    <td style="padding: 15px 10px;"><span class="badge badge-open">${m.branch}</span></td>
                     <td style="padding: 15px 10px; font-weight: 900; color: #0f766e; font-size: 14px;">📅 ${m.month}</td>
+                    <td style="padding: 15px 10px;"><span class="badge badge-open">${m.branch}</span></td>
                     <td style="padding: 15px 10px; font-weight: 900; color: #0f172a; font-size: 15px;">₱${m.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #dc2626; font-weight: bold;">₱${m.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 10px; color: #16a34a; font-weight: 900;">₱${mMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -8461,8 +8457,6 @@ window.viewShiftReportModal = function(shiftId) {
                 </tr>
             `;
         });
-    } else {
-        txHtml = '<tr><td colspan="9" class="text-center" style="padding:20px; color:#64748b;">No transactions recorded. (Please click "Update Report" again to refresh data).</td></tr>';
     }
 
     // 3. Inject the Popup Modal dynamically into the screen
@@ -8517,7 +8511,7 @@ window.viewShiftReportModal = function(shiftId) {
                             </tr>
                         </thead>
                         <tbody>
-                            ${txHtml}
+                            ${txHtml || '<tr><td colspan="9" class="text-center" style="padding:20px; color:#64748b;">No transactions recorded. (Please click "Update Report" to refresh data).</td></tr>'}
                         </tbody>
                     </table>
 
