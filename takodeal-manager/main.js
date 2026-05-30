@@ -6461,10 +6461,10 @@ window.loadPayrollGenerator = async function() {
 };
 
 // ========================================================
-// 🧾 CRASH-PROOF PAYSLIP MODAL ENGINE
+// 🛡️ ABSOLUTE OVERRIDE: CRASH-PROOF PAYSLIP ENGINE
 // ========================================================
 window.openPayslipModal = async function(staffName) {
-    let data = window.globalPayrollCache[staffName];
+    let data = window.globalPayrollCache ? window.globalPayrollCache[staffName] : null;
     if (!data) return;
 
     window.currentPayslipData = data; 
@@ -6484,7 +6484,7 @@ window.openPayslipModal = async function(staffName) {
         }
     }
 
-    // 🛡️ CRASH-PROOF ENGINE: Ignores missing HTML IDs safely
+    // 🛡️ CRASH-PROOF ENGINE: Safely ignores missing HTML IDs
     const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
     const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
 
@@ -6518,11 +6518,11 @@ window.openPayslipModal = async function(staffName) {
     if (data.logs && data.logs.length > 0) {
         data.logs.forEach(log => {
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px;">${log.date}</td>
-                <td style="padding: 8px; font-weight: bold; color: #16a34a;">${log.in}</td>
-                <td style="padding: 8px; font-weight: bold; color: #dc2626;">${log.out}</td>
-                <td style="padding: 8px; font-weight: bold;">${log.hrs}h</td>
-                <td style="padding: 8px; font-size:11px;">${log.remark}</td>
+                <td style="padding: 8px;">${log.date || ''}</td>
+                <td style="padding: 8px; font-weight: bold; color: #16a34a;">${log.in || ''}</td>
+                <td style="padding: 8px; font-weight: bold; color: #dc2626;">${log.out || ''}</td>
+                <td style="padding: 8px; font-weight: bold;">${log.hrs || 0}h</td>
+                <td style="padding: 8px; font-size:11px;">${log.remark || ''}</td>
             </tr>`;
         });
     } else {
@@ -6550,7 +6550,6 @@ window.recalcPayslip = function() {
 
     let overtime = getVal('psOvertime');
     let holiday = getVal('psHoliday');
-    
     let late = getVal('psLate');
     let sss = getVal('psSSS');
     let phil = getVal('psPhil');
