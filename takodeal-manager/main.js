@@ -8017,7 +8017,7 @@ window.switchHistoryTab = function(tabName) {
 };
 
 // 🔥 FIX: The Missing Run Report Engine!
-window.runProductReport = function() {
+window.runProductReport = function() {window.runProductReport = function() {
     let startDateRaw = document.getElementById('histStartDate').value;
     let endDateRaw = document.getElementById('histEndDate').value;
     let branchFilter = document.getElementById('histBranchFilter').value;
@@ -8036,8 +8036,6 @@ window.runProductReport = function() {
         alert("Analytics Engine is still loading. Please try again in a moment.");
     }
 };
-
-window.globalShiftReports = {}; // Global memory for the popup modal!
 
 // ========================================================
 // 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE
@@ -8066,9 +8064,10 @@ window.loadSalesHistoryTab = async function() {
     let endOfDay = new Date(endDateRaw + 'T23:59:59');
 
     if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading data...</td></tr>';
+    if(tbodyShifts) tbodyShifts.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
     
     try {
-        // 1. FETCH COSTS
+        // 1. FETCH COSTS & MENU CATEGORIES
         const invSnap = await getDocs(collection(db, "inventory"));
         let inventoryCosts = {};
         invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
@@ -8088,7 +8087,7 @@ window.loadSalesHistoryTab = async function() {
         // 2. FETCH ACTUAL SHIFTS
         const shiftQ = query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
         const shiftSnap = await getDocs(shiftQ);
-        window.globalShiftReports = {}; 
+        window.globalShiftReports = {}; // Reset Memory
         
         shiftSnap.forEach(doc => {
             let s = doc.data();
