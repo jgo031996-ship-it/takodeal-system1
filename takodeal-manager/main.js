@@ -3716,20 +3716,24 @@ window.saveInventoryEdit = async function() {
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
+        // 🔥 THE FIX: We added 'baseCost' and 'baseUom' so the Recipe Engine reads the exact math!
         await updateDoc(doc(db, "inventory", docId), {
             branch: branch,
             category: category,
             name: name,
+            purchaseUom: purchUom,
             purchUom: purchUom,
-            uom: purchUom, 
             baseUom: baseUom,
+            uom: baseUom, 
             conversion: conversion,
             conversionRate: conversion, 
+            purchaseCost: purchCost,
             purchCost: purchCost,
             cost: purchCost, 
+            baseCost: (purchCost / conversion), // <--- THE MAGIC FIX
             lowStockAlert: lowStock,
             reorderLevel: lowStock, 
-            currentStock: finalQty, // <--- THIS WAS THE MISSING COMMA!
+            currentStock: finalQty, 
             showInPrep: document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true
         });
 
