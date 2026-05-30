@@ -8037,28 +8037,6 @@ window.runProductReport = function() {
     }
 };
 
-window.runProductReport = function() {
-    let startDateRaw = document.getElementById('histStartDate').value;
-    let endDateRaw = document.getElementById('histEndDate').value;
-    let branchFilter = document.getElementById('histBranchFilter').value;
-    
-    if (!startDateRaw || !endDateRaw) {
-        alert("Please select a Start and End date.");
-        return;
-    }
-    let startOfDay = new Date(startDateRaw + 'T00:00:00');
-    let endOfDay = new Date(endDateRaw + 'T23:59:59');
-    
-    window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
-};
-
-window.runProductReport = function() {
-    let startDateRaw = document.getElementById('histStartDate').value;
-    let endDateRaw = document.getElementById('histEndDate').value;
-    let branchFilter = document.getElementById('histBranchFilter').value;
-    window.loadProductAnalytics(new Date(startDateRaw + 'T00:00:00'), new Date(endDateRaw + 'T23:59:59'), branchFilter);
-};
-
 window.globalShiftReports = {}; // Global memory for the popup modal!
 
 // ========================================================
