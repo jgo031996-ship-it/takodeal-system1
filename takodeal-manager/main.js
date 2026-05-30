@@ -8117,7 +8117,7 @@ window.loadSalesHistoryTab = async function() {
                 timeLabel: `${sTimeStr} - ${eTimeStr}`,
                 timestamp: sTime,
                 sales: 0, cogs: 0, voids: 0, txCount: 0,
-                categorySales: {}, itemSales: {}, transactions: [] // 🔥 NEW: Added transactions array!
+                categorySales: {}, itemSales: {}, transactions: [] // 🔥 Memory for transactions!
             };
         });
 
@@ -8214,10 +8214,8 @@ window.loadSalesHistoryTab = async function() {
                             }
                         }
                     }
-                    let itemTotalCogs = baseCogs + addonCogs;
+                    txCogs += (baseCogs + addonCogs);
                     let itemTotalSales = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
-
-                    txCogs += itemTotalCogs;
 
                     // POPULATE THE SHIFT REPORT MODAL DATA (CATEGORY AGGREGATES)
                     if (!isVoid) {
@@ -8235,7 +8233,9 @@ window.loadSalesHistoryTab = async function() {
                 customer: safeCustomer,
                 status: tx.status || "Paid",
                 netTotal: txNet,
-                cogs: txCogs
+                paymentMethod: tx.paymentMethod || 'Unknown',
+                cartEncoded: safeCart,
+                isVoid: isVoid
             });
 
             if (!isVoid) {
@@ -8417,27 +8417,26 @@ window.viewShiftReportModal = function(shiftId) {
         </div>`;
     });
 
-    // 🔥 2. NEW: Build the Transactions List HTML (Replaced the Products list!)
+    // 🔥 2. NEW: Build the Transactions List HTML (Replaces the old Products list!)
     let txHtml = '';
+    // Make sure we sort the transactions newest first
+    s.transactions.sort((a, b) => new Date('1970/01/01 ' + b.time) - new Date('1970/01/01 ' + a.time));
+    
     s.transactions.forEach(tx => {
-        let margin = tx.netTotal - tx.cogs;
-        let isVoid = tx.status === "Voided";
-        
-        let statusBadge = isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
-        let rowStyle = isVoid ? "opacity: 0.6;" : "";
-        let grossStyle = isVoid ? "text-decoration: line-through; color: #ef4444;" : "color: #16a34a;";
-        let cogsDisplay = isVoid ? '₱0.00' : `₱${tx.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        let marginDisplay = isVoid ? '₱0.00' : `₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        let statusBadge = tx.isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
+        let rowStyle = tx.isVoid ? "opacity: 0.6; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: #16a34a;";
 
         txHtml += `
-            <tr style="border-bottom: 1px solid #f1f5f9; ${rowStyle}">
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #334155;">${tx.receiptId}</td>
                 <td style="padding: 10px; color: #64748b;">${tx.time}</td>
-                <td style="padding: 10px; font-weight: bold; font-family: monospace; color: #334155;">${tx.receiptId}</td>
                 <td style="padding: 10px; color: #0284c7; font-weight: bold;">${tx.customer}</td>
-                <td style="padding: 10px; font-weight: bold; ${grossStyle}">₱${tx.netTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td style="padding: 10px; color: #dc2626; font-weight: 500;">${cogsDisplay}</td>
-                <td style="padding: 10px; color: #0ea5e9; font-weight: 900;">${marginDisplay}</td>
+                <td style="padding: 10px; ${rowStyle}">₱${tx.netTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td style="padding: 10px; color: #475569;">${tx.paymentMethod}</td>
                 <td style="padding: 10px;">${statusBadge}</td>
+                <td style="padding: 10px; text-align: center;">
+                    <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${tx.customer.replace(/'/g, "\\'")}', '${tx.time}', '${tx.paymentMethod}', ${tx.netTotal}, '${tx.cartEncoded}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                </td>
             </tr>
         `;
     });
@@ -8482,119 +8481,13 @@ window.viewShiftReportModal = function(shiftId) {
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                         <thead style="background: #f1f5f9;">
                             <tr>
+                                <th style="padding: 12px 10px; color: #475569;">OR#</th>
                                 <th style="padding: 12px 10px; color: #475569;">Time</th>
-                                <th style="padding: 12px 10px; color: #475569;">Receipt ID</th>
                                 <th style="padding: 12px 10px; color: #475569;">Customer</th>
-                                <th style="padding: 12px 10px; color: #475569;">Gross Sales</th>
-                                <th style="padding: 12px 10px; color: #475569;">Est. COGS</th>
-                                <th style="padding: 12px 10px; color: #475569;">Net Margin</th>
+                                <th style="padding: 12px 10px; color: #475569;">Amount</th>
+                                <th style="padding: 12px 10px; color: #475569;">Payment</th>
                                 <th style="padding: 12px 10px; color: #475569;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${txHtml || '<tr><td colspan="7" class="text-center" style="padding:20px; color:#64748b;">No transactions recorded during this shift.</td></tr>'}
-                        </tbody>
-                    </table>
-
-                </div>
-            </div>
-        </div>
-    `;
-
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-};
-
-// ========================================================
-// 📊 VIEW SHIFT DETAILS MODAL ENGINE
-// ========================================================
-window.globalShiftReports = {}; 
-
-window.viewShiftReportModal = function(shiftId) {
-    let s = window.globalShiftReports[shiftId];
-    if (!s) return;
-
-    // 1. Build the Category Breakdown HTML
-    let catHtml = '';
-    let sortedCats = Object.keys(s.categorySales).sort((a,b) => s.categorySales[b].sales - s.categorySales[a].sales);
-    sortedCats.forEach(c => {
-        catHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:6px 0; font-size: 14px;">
-            <span><strong style="color:#334155;">${c}</strong> <span style="color:#94a3b8; font-size:12px;">(${s.categorySales[c].qty} items)</span></span>
-            <strong style="color:#0f766e;">₱${s.categorySales[c].sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
-        </div>`;
-    });
-
-    // 🔥 2. NEW: Build the Transactions List HTML (Replaced the Products list!)
-    let txHtml = '';
-    s.transactions.forEach(tx => {
-        let margin = tx.netTotal - tx.cogs;
-        let isVoid = tx.status === "Voided";
-        
-        let statusBadge = isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
-        let rowStyle = isVoid ? "opacity: 0.6;" : "";
-        let grossStyle = isVoid ? "text-decoration: line-through; color: #ef4444;" : "color: #16a34a;";
-        let cogsDisplay = isVoid ? '₱0.00' : `₱${tx.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        let marginDisplay = isVoid ? '₱0.00' : `₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-
-        txHtml += `
-            <tr style="border-bottom: 1px solid #f1f5f9; ${rowStyle}">
-                <td style="padding: 10px; color: #64748b;">${tx.time}</td>
-                <td style="padding: 10px; font-weight: bold; font-family: monospace; color: #334155;">${tx.receiptId}</td>
-                <td style="padding: 10px; color: #0284c7; font-weight: bold;">${tx.customer}</td>
-                <td style="padding: 10px; font-weight: bold; ${grossStyle}">₱${tx.netTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td style="padding: 10px; color: #dc2626; font-weight: 500;">${cogsDisplay}</td>
-                <td style="padding: 10px; color: #0ea5e9; font-weight: 900;">${marginDisplay}</td>
-                <td style="padding: 10px;">${statusBadge}</td>
-            </tr>
-        `;
-    });
-
-    // 3. Inject the Popup Modal dynamically into the screen
-    let modalHtml = `
-        <div id="dynamicShiftReportModal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
-            <div style="background: white; padding: 25px; border-radius: 12px; width: 900px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
-                
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
-                    <div>
-                        <h3 style="margin: 0; color: #0f172a; font-size: 22px;">📊 Comprehensive Shift Report</h3>
-                        <div style="font-size: 13px; color: #64748b; margin-top: 6px; font-weight: bold;">
-                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">👤 ${s.cashier}</span> &nbsp;
-                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">📍 ${s.branch}</span> &nbsp;
-                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">⏰ ${s.dateStr} (${s.timeLabel})</span>
-                        </div>
-                    </div>
-                    <button onclick="document.getElementById('dynamicShiftReportModal').remove()" style="background: #f1f5f9; border: 1px solid #cbd5e1; width: 36px; height: 36px; border-radius: 8px; font-size: 20px; cursor: pointer; color: #64748b; display: flex; align-items: center; justify-content: center;">×</button>
-                </div>
-
-                <div style="flex: 1; overflow-y: auto; padding-right: 5px;">
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
-                        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                            <h4 style="margin-top: 0; color: #334155; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; font-size: 15px;">💰 Shift Financials</h4>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Gross Sales:</span><strong style="color:#16a34a;">₱${s.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Est. COGS:</span><strong style="color:#dc2626;">₱${s.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size: 15px;"><span>Net Margin:</span><strong style="color:#0ea5e9;">₱${(s.sales - s.cogs).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
-                            <div style="display:flex; justify-content:space-between; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #cbd5e1; font-size: 15px;"><span>Total Voided:</span><strong style="color:#ef4444;">₱${s.voids.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>
-                        </div>
-                        
-                        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                            <h4 style="margin-top: 0; color: #334155; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; font-size: 15px;">📦 Category Breakdown</h4>
-                            <div style="max-height: 120px; overflow-y: auto;">
-                                ${catHtml || '<i style="color:#94a3b8;">No category data.</i>'}
-                            </div>
-                        </div>
-                    </div>
-
-                    <h4 style="margin-top: 0; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; font-size: 16px;">🧾 Shift Transactions</h4>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                        <thead style="background: #f1f5f9;">
-                            <tr>
-                                <th style="padding: 12px 10px; color: #475569;">Time</th>
-                                <th style="padding: 12px 10px; color: #475569;">Receipt ID</th>
-                                <th style="padding: 12px 10px; color: #475569;">Customer</th>
-                                <th style="padding: 12px 10px; color: #475569;">Gross Sales</th>
-                                <th style="padding: 12px 10px; color: #475569;">Est. COGS</th>
-                                <th style="padding: 12px 10px; color: #475569;">Net Margin</th>
-                                <th style="padding: 12px 10px; color: #475569;">Status</th>
+                                <th style="padding: 12px 10px; text-align: center; color: #475569;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
