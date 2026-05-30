@@ -2936,13 +2936,19 @@ window.loadMenuCosting = async function() {
   let searchQuery = document.getElementById('costingSearch') ? document.getElementById('costingSearch').value.toLowerCase() : '';
 
   try {
-    // 1. Get Live Inventory Costs
-    const invSnap = await getDocs(collection(db, "inventory"));
-    globalInventoryCosts = {};
-    invSnap.forEach(doc => {
-      let data = doc.data();
-      globalInventoryCosts[data.name] = { cost: parseFloat(data.baseCost) || 0, uom: data.uom };
-    });
+      // 1. Get Live Inventory Costs (WITH SMART MULTI-BRANCH FILTER)
+      const invSnap = await getDocs(collection(db, "inventory"));
+      globalInventoryCosts = {};
+        
+      invSnap.forEach(doc => {
+          let data = doc.data();
+          let currentCost = parseFloat(data.baseCost) || 0;
+            
+          // 🔥 THE FIX: If an item exists in multiple branches, ALWAYS grab the highest/updated cost to protect margins!
+          if (!globalInventoryCosts[data.name] || currentCost > globalInventoryCosts[data.name].cost) {
+              globalInventoryCosts[data.name] = { cost: currentCost, uom: data.uom };
+          }
+      });
 
     // 2. Get Recipes
     const bomSnap = await getDocs(collection(db, "bom"));
