@@ -1191,23 +1191,99 @@ window.renderDispatchCart = function() {
 window.loadDispatchLogs = async function() {
   const tbody = document.getElementById('dispatchLogBody');
   if(!tbody) return;
-  tbody.innerHTML = '<tr><td class="text-center">Loading logs...</td></tr>';
+  tbody.innerHTML = '<tr><td class="text-center" style="padding: 20px;">Loading deliveries...</td></tr>';
+  
   try {
-    const qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"), limit(20));
+    const qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
     const snap = await getDocs(qLogs);
-    let html = '';
-    if (snap.empty) { html = '<tr><td class="text-center">No recent deliveries.</td></tr>'; }
-    else {
-      snap.forEach(doc => {
+    
+    let deliveries = {};
+    
+    snap.forEach(doc => {
         let d = doc.data();
-        html += `<tr><td style="padding:10px; border-bottom:1px dashed #e2e8f0;">
-          <div style="font-weight:bold; color:var(--primary); font-size:14px;">${d.item} <span style="color:#475569;">(${d.displayQty || d.qty} ${d.displayUom || d.uom})</span></div>
-          <div style="font-size:12px; color:var(--text-muted);">${d.details} | ${d.date} ${d.time}</div>
-        </td></tr>`;
+        d.id = doc.id;
+        
+        // Group individual items into a single "Delivery Run"
+        let groupKey = `${d.date}_${d.toBranch}_${d.driver || 'Unknown'}`;
+        if(!deliveries[groupKey]) {
+            deliveries[groupKey] = {
+                date: d.date,
+                time: d.time,
+                toBranch: d.toBranch,
+                driver: d.driver || 'Unknown',
+                items: [],
+                status: 'In Transit',
+                timestamp: d.timestamp
+            };
+        }
+        deliveries[groupKey].items.push(d);
+        
+        // Auto-update status if any items are flagged
+        if(d.status === "Received") deliveries[groupKey].status = "Received";
+        if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
+    });
+
+    let html = '';
+    let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
+
+    if (sortedKeys.length === 0) { 
+        html = '<tr><td class="text-center" style="padding: 20px;">No recent deliveries.</td></tr>'; 
+    } else {
+      sortedKeys.slice(0, 20).forEach(key => {
+        let del = deliveries[key];
+        let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : '#f59e0b');
+        
+        let safeItemsJson = encodeURIComponent(JSON.stringify(del.items));
+
+        html += `<tr style="border-bottom:1px solid #e2e8f0; background: white;">
+          <td style="padding:15px;">
+            <div style="font-weight:bold; color:#0f172a; font-size:14px;">📍 To: ${del.toBranch}</div>
+            <div style="font-size:12px; color:#64748b; margin-top: 4px;">🚚 Driver: ${del.driver}</div>
+            <div style="font-size:11px; color:#94a3b8; margin-top:4px;">📅 ${del.date} at ${del.time}</div>
+          </td>
+          <td style="padding:15px; text-align:center;">
+              <span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span>
+          </td>
+          <td style="padding:15px; text-align:right;">
+              <button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}')" style="background: white; color: #ea580c; border: 1px solid #ea580c; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button>
+          </td>
+        </tr>`;
       });
     }
     tbody.innerHTML = html;
-  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td class="text-center" style="color:red;">Error loading logs</td></tr>'; }
+  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
+};
+
+// Opens the Modal and renders the Variance Table
+window.viewDispatchDetails = function(encodedItems, branch, driver, date) {
+    let items = JSON.parse(decodeURIComponent(encodedItems));
+    let header = document.getElementById('dispatchDetailsHeader');
+    let tbody = document.getElementById('dispatchDetailsBody');
+    
+    header.innerHTML = `<strong>📍 Destination:</strong> ${branch} <br><br> <strong>🚚 Driver:</strong> ${driver} &nbsp;|&nbsp; <strong>📅 Date:</strong> ${date}`;
+    
+    let html = '';
+    items.forEach(item => {
+        let sent = parseFloat(item.displayQty || item.qty);
+        let received = item.receivedQty !== undefined ? parseFloat(item.receivedQty) : '-';
+        let variance = item.varianceQty !== undefined ? parseFloat(item.varianceQty) : '-';
+        let status = item.status || 'In Transit';
+        let uom = item.displayUom || item.uom;
+        
+        let varColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#16a34a' : '#475569');
+        let varText = variance !== '-' ? (variance > 0 ? `+${variance}` : variance) + ' ' + uom : '-';
+
+        html += `<tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:12px; font-weight:bold; color:#334155;">${item.item}</td>
+            <td style="padding:12px; font-weight: bold;">${sent} ${uom}</td>
+            <td style="padding:12px; color:#0284c7; font-weight:bold;">${received !== '-' ? received + ' ' + uom : 'Pending'}</td>
+            <td style="padding:12px; color:${varColor}; font-weight:bold;">${varText}</td>
+            <td style="padding:12px;">${status}</td>
+        </tr>`;
+    });
+    
+    tbody.innerHTML = html;
+    document.getElementById('dispatchDetailsModal').style.display = 'flex';
 };
 
 // ========================================================
