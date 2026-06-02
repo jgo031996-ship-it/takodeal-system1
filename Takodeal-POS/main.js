@@ -1340,114 +1340,81 @@ window.loadHqAccountsForRemittance = async function() {
 window.submitRemittance = async function() {
     let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     let safeCashier = localStorage.getItem('cashierName') || 'Unknown';
-
-    let amountStr = document.getElementById('remitAmount').value;
-    let remitAmount = parseFloat(amountStr);
+    let remitAmount = parseFloat(document.getElementById('remitAmount').value);
     let channel = document.getElementById('remitChannel').value;
     let recipient = document.getElementById('remitRecipient').value.trim();
-    let refNum = document.getElementById('remitRefNum').value.trim();
-    let startDate = document.getElementById('remitStartDate').value;
-    let endDate = document.getElementById('remitEndDate').value;
-
-    if (isNaN(remitAmount) || remitAmount <= 0 || !channel || !recipient) {
-        alert("❌ Please fill out the Amount, Channel, and Recipient correctly."); return;
-    }
+    
+    if (isNaN(remitAmount) || remitAmount <= 0 || !channel || !recipient) { alert("❌ Fill out Amount, Channel, and Recipient."); return; }
 
     let btn = document.querySelector("button[onclick='submitRemittance()']");
-    if(btn) { btn.innerText = "⏳ Auditing Lifetime Cash Flow..."; btn.disabled = true; }
+    if(btn) { btn.innerText = "⏳ Auditing Drawer..."; btn.disabled = true; }
 
     try {
-        // 1. SECURITY PIN AUTHORIZATION
         let userPin = document.getElementById('remitPinCode').value;
-        if (!userPin) { alert("❌ Please enter your 4-Digit PIN."); if(btn) { btn.innerText = "Submit Remittance"; btn.disabled = false; } return; }
-        
         let identity = await window.verifyPin(userPin);
-        if (!identity) { alert("❌ Unauthorized. Incorrect PIN."); if(btn) { btn.innerText = "Submit Remittance"; btn.disabled = false; } return; }
+        if (!identity) { alert("❌ Incorrect PIN."); if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; } return; }
 
-        // 💸 2. BULLETPROOF FLOATING CASH ENGINE (LIFETIME MATH)
-        let totalCashSales = 0;
-        const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch));
-        const txSnap = await getDocs(txQ);
-        txSnap.forEach(doc => {
-            let tx = doc.data();
-            if (tx.status !== 'Voided') {
-                if (tx.splitDetails && tx.splitDetails.length > 0) {
-                    let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                    if (cashSplit) totalCashSales += (parseFloat(cashSplit.amount) || 0);
-                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                    totalCashSales += (parseFloat(tx.netTotal) || 0);
+        // 💸 NEW MATH: Look ONLY at the latest drawer balances!
+        let drawerCash = 0;
+        
+        // 1. Get the current active shift (if they are open right now)
+        const activeQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
+        const activeSnap = await getDocs(activeQ);
+        
+        if (!activeSnap.empty) {
+            // If open, calculate today's exact expected cash right now
+            let shiftData = activeSnap.docs[0].data();
+            let start = parseFloat(shiftData.startingCash) || 0;
+            let cashOut = parseFloat(shiftData.cashOut) || 0;
+            
+            let cashSales = 0;
+            let validStartTime = shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
+            const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch), where("timestamp", ">=", validStartTime));
+            const txSnap = await getDocs(txQ);
+            txSnap.forEach(d => {
+                let tx = d.data();
+                if (tx.status !== 'Voided') {
+                    if (tx.splitDetails) {
+                        let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                        if (cashSplit) cashSales += cashSplit.amount;
+                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                        cashSales += (tx.netTotal || 0);
+                    }
                 }
+            });
+            drawerCash = (start + cashSales) - cashOut;
+        } else {
+            // 2. If closed, just grab the Declared Cash from their last Z-Reading
+            const lastShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+            const lastShiftSnap = await getDocs(lastShiftQ);
+            if (!lastShiftSnap.empty) {
+                drawerCash = parseFloat(lastShiftSnap.docs[0].data().declaredCash) || 0;
             }
-        });
-
-        let totalExpenses = 0;
-        const expQ = query(collection(db, "expenses"), where("branch", "==", safeBranch));
-        const expSnap = await getDocs(expQ);
-        expSnap.forEach(doc => { totalExpenses += (parseFloat(doc.data().amount) || 0); });
-
-        let totalRemittances = 0;
-        const remQ = query(collection(db, "remittances"), where("branch", "==", safeBranch));
-        const remSnap = await getDocs(remQ);
-        remSnap.forEach(doc => {
-            let r = doc.data();
-            if (r.status !== "Rejected" && r.status !== "Voided") {
-                totalRemittances += (parseFloat(r.amount) || 0);
-            }
-        });
-
-        // Get the very first initial capital injected into the drawer on Day 1
-        let initialFloat = 0;
-        const firstShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), orderBy("startTime", "asc"), limit(1));
-        const firstShiftSnap = await getDocs(firstShiftQ);
-        if (!firstShiftSnap.empty) {
-            initialFloat = parseFloat(firstShiftSnap.docs[0].data().startingCash) || 0;
         }
 
-        let trueFloatingCash = (totalCashSales + initialFloat) - totalExpenses - totalRemittances;
-
-        // Tolerance check: Allow them to remit what they have, but block if they try to remit thousands more than physically possible
-        if (remitAmount > trueFloatingCash + 500) { 
-            alert(`⛔ REMITTANCE BLOCKED (SHORTAGE DETECTED)\n\nTrue Unremitted Cash for ${safeBranch}: ₱${trueFloatingCash.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what has been generated!`);
+        if (remitAmount > drawerCash + 500) { 
+            alert(`⛔ REMITTANCE BLOCKED\n\nActual Cash in ${safeBranch} Drawer: ₱${drawerCash.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what is currently in the drawer!`);
             if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
             return;
         }
 
-        // 3. LOG THE REMITTANCE TO HQ
-        let payload = {
-            branch: safeBranch,
-            cashier: identity.cashierName,
-            salesPeriodStart: startDate,
-            salesPeriodEnd: endDate,
-            amount: remitAmount,
-            channel: channel,
-            recipient: recipient,
-            referenceNumber: refNum,
-            status: "Pending", 
-            timestamp: serverTimestamp()
-        };
-
-        await addDoc(collection(db, "remittances"), payload);
-
-        // 4. CREATE AUDIT LOG (But NOT deducted from the active shift's Z-Reading!)
-        await addDoc(collection(db, "expenses"), {
-            branch: safeBranch,
-            shiftId: "Accumulated_Floating",
-            cashier: identity.cashierName,
-            amount: remitAmount,
-            description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`,
-            timestamp: serverTimestamp()
+        await addDoc(collection(db, "remittances"), {
+            branch: safeBranch, cashier: identity.cashierName, amount: remitAmount,
+            channel: channel, recipient: recipient, referenceNumber: document.getElementById('remitRefNum').value.trim(),
+            status: "Pending", timestamp: serverTimestamp()
         });
 
-        alert("✅ Security Cleared! Remittance successfully sent to HQ for verification.");
-        document.getElementById('remitAmount').value = '';
-        document.getElementById('remitRefNum').value = '';
-        window.switchRemittanceTab('history');
+        // Log the expense so it removes the physical cash from the building correctly
+        await addDoc(collection(db, "expenses"), {
+            branch: safeBranch, shiftId: "Remittance", cashier: identity.cashierName, amount: remitAmount,
+            description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`, timestamp: serverTimestamp()
+        });
 
-    } catch (e) { 
-        console.error(e); alert("❌ Failed to send remittance. Check connection."); 
-    } finally {
-        if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
-    }
+        alert("✅ Remittance sent to HQ!");
+        document.getElementById('remitAmount').value = ''; document.getElementById('remitRefNum').value = '';
+        window.switchRemittanceTab('history');
+    } catch (e) { console.error(e); alert("❌ Failed to remit."); } 
+    finally { if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; } }
 };
 
 window.loadRemittanceHistory = async function() {
