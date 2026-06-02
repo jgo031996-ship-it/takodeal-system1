@@ -550,7 +550,6 @@ window.processPettyCashExpense = async function (payload) {
 // --- INVENTORY & STOCK COUNT ENGINE ---
 window.getInventoryForCount = async function (branch) {
   try {
-    // Looks for a master list of raw materials for this branch
     const q = query(collection(db, "inventory"), where("branch", "==", branch));
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -560,19 +559,77 @@ window.getInventoryForCount = async function (branch) {
   }
 };
 
-window.submitInventoryCheck = async function (branch, cashier, counts) {
-  try {
-    await addDoc(collection(db, "stock_counts"), {
-      branch: branch,
-      cashier: cashier,
-      counts: counts,
-      timestamp: serverTimestamp()
-    });
-    return true;
-  } catch (e) {
-    console.error("Stock Count Submit Error:", e);
-    throw e;
-  }
+// 🔥 UPGRADED SEARCHABLE STOCK COUNT
+window.openInventoryCheckModal = async function() {
+    document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory...</div>'; 
+    document.getElementById('inventoryCheckModal').style.display = 'flex';
+    
+    let items = await window.getInventoryForCount(sessionUser.branch);
+    window.tempStockList = items.filter(i => {
+        let cat = (i.category || "").toLowerCase();
+        return !cat.includes("prepared batch") && !cat.includes("prep batch") && !cat.includes("raw material");
+    }).sort((a, b) => a.name.localeCompare(b.name)); // Alphabetical Sort!
+
+    window.renderStockCountUI('');
+};
+
+window.renderStockCountUI = function(searchTerm = '') {
+    let container = document.getElementById('invCheckListContainer');
+    let html = `
+        <div style="margin-bottom: 15px; position: sticky; top: 0; background: white; padding-bottom: 10px; z-index: 10;">
+            <input type="text" id="searchStockCount" placeholder="🔍 Search item to count..." onkeyup="window.renderStockCountUI(this.value)" value="${searchTerm}"
+            style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid #cbd5e1; outline: none; font-size: 15px; font-weight: bold;">
+        </div>
+    `;
+
+    let filtered = window.tempStockList.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    if (filtered.length === 0) {
+        html += '<div style="text-align:center; padding:20px; color:#888;">No items found.</div>';
+    } else {
+        filtered.forEach(i => { 
+            let existingVal = window.tempCountData ? (window.tempCountData[i.name] || '') : '';
+            html += `<div class="count-row" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f1f1;">
+                <div style="flex: 2; font-weight:600; color:#444; font-size:14px;">${i.name}</div>
+                <div style="flex: 1; color:#888; font-size:12px; text-align: center;">${i.uom || 'units'}</div>
+                <div style="flex: 1;"><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty" value="${existingVal}" onchange="window.saveTempCount(this)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: center;"></div>
+            </div>`; 
+        }); 
+    }
+    container.innerHTML = html;
+    let searchBox = document.getElementById('searchStockCount');
+    if(searchBox && searchTerm) { searchBox.focus(); } // Keep focus while typing
+};
+
+window.saveTempCount = function(input) {
+    if(!window.tempCountData) window.tempCountData = {};
+    window.tempCountData[input.getAttribute('data-item')] = input.value;
+};
+
+window.submitInventoryCheck = async function () {
+    let counts = [];
+    if(window.tempCountData) {
+        Object.keys(window.tempCountData).forEach(name => {
+            let val = parseFloat(window.tempCountData[name]);
+            if(!isNaN(val)) counts.push({ name: name, physicalQty: val });
+        });
+    }
+    if (counts.length === 0) { alert("Please enter at least one quantity before submitting."); return; }
+    
+    let btn = document.getElementById('btnSubmitInvCheck'); btn.innerText = "Submitting..."; btn.disabled = true;
+    try { 
+        await addDoc(collection(db, "stock_counts"), {
+            branch: sessionUser.branch,
+            cashier: sessionUser.cashierName,
+            counts: counts,
+            timestamp: serverTimestamp()
+        });
+        alert("End-of-day stock count submitted securely!"); 
+        window.tempCountData = {}; // Clear temp memory
+        closeModal('inventoryCheckModal'); 
+    }
+    catch (e) { alert("Error submitting stock count. Check connection."); } 
+    btn.innerText = "Submit Count"; btn.disabled = false;
 };
 
 // --- PARKED ORDERS ENGINE ---
@@ -1343,6 +1400,9 @@ window.submitRemittance = async function() {
     let remitAmount = parseFloat(document.getElementById('remitAmount').value);
     let channel = document.getElementById('remitChannel').value;
     let recipient = document.getElementById('remitRecipient').value.trim();
+    let refNum = document.getElementById('remitRefNum').value.trim();
+    let startDate = document.getElementById('remitStartDate').value;
+    let endDate = document.getElementById('remitEndDate').value;
     
     if (isNaN(remitAmount) || remitAmount <= 0 || !channel || !recipient) { alert("❌ Fill out Amount, Channel, and Recipient."); return; }
 
@@ -1356,14 +1416,14 @@ window.submitRemittance = async function() {
 
         // 💸 NEW MATH: Look ONLY at the latest drawer balances!
         let drawerCash = 0;
+        let shiftIdToLog = "Accumulated_Floating";
         
-        // 1. Get the current active shift (if they are open right now)
         const activeQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
         const activeSnap = await getDocs(activeQ);
         
         if (!activeSnap.empty) {
-            // If open, calculate today's exact expected cash right now
             let shiftData = activeSnap.docs[0].data();
+            shiftIdToLog = activeSnap.docs[0].id;
             let start = parseFloat(shiftData.startingCash) || 0;
             let cashOut = parseFloat(shiftData.cashOut) || 0;
             
@@ -1384,7 +1444,6 @@ window.submitRemittance = async function() {
             });
             drawerCash = (start + cashSales) - cashOut;
         } else {
-            // 2. If closed, just grab the Declared Cash from their last Z-Reading
             const lastShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
             const lastShiftSnap = await getDocs(lastShiftQ);
             if (!lastShiftSnap.empty) {
@@ -1400,13 +1459,14 @@ window.submitRemittance = async function() {
 
         await addDoc(collection(db, "remittances"), {
             branch: safeBranch, cashier: identity.cashierName, amount: remitAmount,
-            channel: channel, recipient: recipient, referenceNumber: document.getElementById('remitRefNum').value.trim(),
+            channel: channel, recipient: recipient, referenceNumber: refNum,
+            salesPeriodStart: startDate, salesPeriodEnd: endDate,
             status: "Pending", timestamp: serverTimestamp()
         });
 
         // Log the expense so it removes the physical cash from the building correctly
         await addDoc(collection(db, "expenses"), {
-            branch: safeBranch, shiftId: "Remittance", cashier: identity.cashierName, amount: remitAmount,
+            branch: safeBranch, shiftId: shiftIdToLog, cashier: identity.cashierName, amount: remitAmount,
             description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`, timestamp: serverTimestamp()
         });
 
