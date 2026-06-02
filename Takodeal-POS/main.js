@@ -1354,76 +1354,60 @@ window.submitRemittance = async function() {
     }
 
     let btn = document.querySelector("button[onclick='submitRemittance()']");
-    if(btn) { btn.innerText = "⏳ Verifying Records..."; btn.disabled = true; }
+    if(btn) { btn.innerText = "⏳ Auditing Lifetime Cash Flow..."; btn.disabled = true; }
 
     try {
-        // 🔒 1. SECURITY PIN AUTHORIZATION
+        // 1. SECURITY PIN AUTHORIZATION
         let userPin = document.getElementById('remitPinCode').value;
-        if (!userPin) {
-            alert("❌ Please enter your 4-Digit PIN to authorize this transfer.");
-            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
-            return;
-        }
-        let identity = await window.verifyPin(userPin);
-        if (!identity) {
-            alert("❌ Unauthorized. Incorrect PIN.");
-            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
-            return;
-        }
-
-        // 💸 2. CALCULATE TOTAL FLOATING CASH FOR THE BRANCH
-        // This replaces the old "Active Shift" check with a global accumulated check!
-        let branchFloating = 0;
+        if (!userPin) { alert("❌ Please enter your 4-Digit PIN."); if(btn) { btn.innerText = "Submit Remittance"; btn.disabled = false; } return; }
         
-        // A. Get all physical cash declared from closed shifts
-        const closedShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("status", "==", "Closed"));
-        const closedSnap = await getDocs(closedShiftQ);
-        closedSnap.forEach(doc => {
-            let d = doc.data();
-            branchFloating += (d.declaredCash || 0) - (d.startingCash || 0);
-        });
+        let identity = await window.verifyPin(userPin);
+        if (!identity) { alert("❌ Unauthorized. Incorrect PIN."); if(btn) { btn.innerText = "Submit Remittance"; btn.disabled = false; } return; }
 
-        // B. Subtract what has already been remitted
-        const pastRemitQ = query(collection(db, "remittances"), where("branch", "==", safeBranch));
-        const pastRemitSnap = await getDocs(pastRemitQ);
-        pastRemitSnap.forEach(doc => {
-            let r = doc.data();
-            if (r.status === "Pending" || r.status === "Received") {
-                branchFloating -= (r.amount || 0);
+        // 💸 2. BULLETPROOF FLOATING CASH ENGINE (LIFETIME MATH)
+        let totalCashSales = 0;
+        const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch));
+        const txSnap = await getDocs(txQ);
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (tx.status !== 'Voided') {
+                if (tx.splitDetails && tx.splitDetails.length > 0) {
+                    let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                    if (cashSplit) totalCashSales += (parseFloat(cashSplit.amount) || 0);
+                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    totalCashSales += (parseFloat(tx.netTotal) || 0);
+                }
             }
         });
 
-        // C. Add the current active shift's cash (if there is one open)
-        const activeShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
-        const activeSnap = await getDocs(activeShiftQ);
-        let activeShiftId = null;
-        
-        if (!activeSnap.empty) {
-            let activeShiftData = activeSnap.docs[0].data();
-            activeShiftId = activeSnap.docs[0].id;
-            
-            let validStartTime = activeShiftData.startTime && activeShiftData.startTime.toDate ? activeShiftData.startTime.toDate() : new Date(activeShiftData.startTime);
-            const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch), where("timestamp", ">=", validStartTime));
-            const txSnap = await getDocs(txQ);
-            
-            let activeCashSales = 0;
-            txSnap.forEach(d => {
-                let tx = d.data();
-                if (tx.status !== 'Voided') {
-                    if (tx.splitDetails) {
-                        let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                        if (cashSplit) activeCashSales += cashSplit.amount;
-                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                        activeCashSales += (tx.netTotal || 0);
-                    }
-                }
-            });
-            branchFloating += activeCashSales - (activeShiftData.cashOut || 0);
+        let totalExpenses = 0;
+        const expQ = query(collection(db, "expenses"), where("branch", "==", safeBranch));
+        const expSnap = await getDocs(expQ);
+        expSnap.forEach(doc => { totalExpenses += (parseFloat(doc.data().amount) || 0); });
+
+        let totalRemittances = 0;
+        const remQ = query(collection(db, "remittances"), where("branch", "==", safeBranch));
+        const remSnap = await getDocs(remQ);
+        remSnap.forEach(doc => {
+            let r = doc.data();
+            if (r.status !== "Rejected" && r.status !== "Voided") {
+                totalRemittances += (parseFloat(r.amount) || 0);
+            }
+        });
+
+        // Get the very first initial capital injected into the drawer on Day 1
+        let initialFloat = 0;
+        const firstShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), orderBy("startTime", "asc"), limit(1));
+        const firstShiftSnap = await getDocs(firstShiftQ);
+        if (!firstShiftSnap.empty) {
+            initialFloat = parseFloat(firstShiftSnap.docs[0].data().startingCash) || 0;
         }
 
-        // Check if they are trying to remit more money than physically exists in the building
-        if (remitAmount > branchFloating + 500) { // 500 peso tolerance for minor loose change differences
-            alert(`⛔ REMITTANCE BLOCKED (SHORTAGE DETECTED)\n\nTotal Unremitted Cash for ${safeBranch}: ₱${branchFloating.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what has been accumulated from your Z-Readings!`);
+        let trueFloatingCash = (totalCashSales + initialFloat) - totalExpenses - totalRemittances;
+
+        // Tolerance check: Allow them to remit what they have, but block if they try to remit thousands more than physically possible
+        if (remitAmount > trueFloatingCash + 500) { 
+            alert(`⛔ REMITTANCE BLOCKED (SHORTAGE DETECTED)\n\nTrue Unremitted Cash for ${safeBranch}: ₱${trueFloatingCash.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what has been generated!`);
             if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
             return;
         }
@@ -1444,25 +1428,20 @@ window.submitRemittance = async function() {
 
         await addDoc(collection(db, "remittances"), payload);
 
-        // 4. CREATE AUDIT LOG
+        // 4. CREATE AUDIT LOG (But NOT deducted from the active shift's Z-Reading!)
         await addDoc(collection(db, "expenses"), {
             branch: safeBranch,
-            shiftId: activeShiftId || "Accumulated_Floating",
+            shiftId: "Accumulated_Floating",
             cashier: identity.cashierName,
             amount: remitAmount,
             description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`,
             timestamp: serverTimestamp()
         });
 
-        // 🚨 CRITICAL CHANGE: We no longer deduct this from the active shift's "CashOut/Expenses".
-        // This ensures the current shift's Z-Reading stays perfectly accurate, 
-        // while the Manager's Cash Flow Hub handles the Floating Cash math!
-
         alert("✅ Security Cleared! Remittance successfully sent to HQ for verification.");
         document.getElementById('remitAmount').value = '';
         document.getElementById('remitRefNum').value = '';
         window.switchRemittanceTab('history');
-        if (typeof checkCurrentShift === 'function') checkCurrentShift(); 
 
     } catch (e) { 
         console.error(e); alert("❌ Failed to send remittance. Check connection."); 
