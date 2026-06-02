@@ -9932,3 +9932,90 @@ window.loadWasteTabLogs = async function() {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; color: red;">Failed to load waste logs. Check console.</td></tr>';
     }
 };
+
+window.editSalesTarget = async function() {
+    let newTarget = prompt("Enter new Monthly Sales Target (₱):");
+    if (!newTarget || isNaN(newTarget)) return;
+    
+    await setDoc(doc(db, "settings", "sales_target"), {
+        amount: parseFloat(newTarget),
+        updatedAt: serverTimestamp()
+    });
+    window.loadMonthlyTarget();
+};
+
+window.loadMonthlyTarget = async function() {
+    try {
+        const snap = await getDoc(doc(db, "settings", "sales_target"));
+        let targetAmount = snap.exists() ? (parseFloat(snap.data().amount) || 0) : 0;
+        
+        let now = new Date();
+        let firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        let lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        let daysInMonth = lastDay.getDate();
+        let currentDay = now.getDate();
+        let daysLeft = daysInMonth - currentDay + 1; // +1 includes today
+        
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", firstDay));
+        const txSnap = await getDocs(q);
+        
+        let mtdSales = 0;
+        txSnap.forEach(d => {
+            if (d.data().status !== 'Voided') mtdSales += (d.data().netTotal || 0);
+        });
+        
+        let percent = targetAmount > 0 ? (mtdSales / targetAmount) * 100 : 0;
+        if (percent > 100) percent = 100;
+        
+        let expectedPace = targetAmount > 0 ? (targetAmount / daysInMonth) * currentDay : 0;
+        let isBehind = mtdSales < expectedPace;
+        
+        let remainingToTarget = targetAmount - mtdSales;
+        let requiredDaily = remainingToTarget > 0 ? remainingToTarget / daysLeft : 0;
+        
+        document.getElementById('targetGoalAmount').innerText = `₱${targetAmount.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('targetMtdSales').innerText = `MTD Sales: ₱${mtdSales.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('targetProgressBar').style.width = `${percent}%`;
+        document.getElementById('targetProgressText').innerText = `${percent.toFixed(1)}% Completed`;
+        
+        document.getElementById('targetDaysLeft').innerText = `${daysLeft} days left`;
+        document.getElementById('targetRequiredDaily').innerText = `₱${requiredDaily.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        
+        let statusEl = document.getElementById('targetStatusText');
+        let paceEl = document.getElementById('targetPaceText');
+        
+        if (targetAmount === 0) {
+            statusEl.innerText = "Target Not Set";
+            statusEl.style.color = "#94a3b8";
+            paceEl.innerText = "Click Edit Target to begin";
+            paceEl.style.color = "#94a3b8";
+        } else if (remainingToTarget <= 0) {
+            statusEl.innerText = "🏆 Target Hit!";
+            statusEl.style.color = "#10b981";
+            paceEl.innerText = "Goal achieved!";
+            paceEl.style.color = "#10b981";
+        } else if (isBehind) {
+            statusEl.innerText = "Behind Target";
+            statusEl.style.color = "#ef4444";
+            paceEl.innerText = `₱${(expectedPace - mtdSales).toLocaleString(undefined, {minimumFractionDigits:2})} below pace`;
+            paceEl.style.color = "#ef4444";
+        } else {
+            statusEl.innerText = "🔥 On Pace";
+            statusEl.style.color = "#10b981";
+            paceEl.innerText = `₱${(mtdSales - expectedPace).toLocaleString(undefined, {minimumFractionDigits:2})} ahead of pace`;
+            paceEl.style.color = "#10b981";
+        }
+        
+    } catch(e) {
+        console.error("Dashboard Target Error:", e);
+    }
+};
+
+// Call it when the dashboard loads
+if (typeof window.loadDashboard === 'function') {
+    const originalLoadDash = window.loadDashboard;
+    window.loadDashboard = function() {
+        originalLoadDash();
+        window.loadMonthlyTarget();
+    };
+}
