@@ -823,19 +823,34 @@ window.openMultiRestockModal = async function (preSelectId = null) {
 window.updateRestockUomLabel = function () {
   let itemName = document.getElementById('restockItemSelect').value.trim();
   let label = document.getElementById('restockQtyLabel');
+  
+  // 🔥 THE FIX: Injecting the Cost Input next to the Qty Input!
+  let costContainer = document.getElementById('restockCostContainer');
+  if (!costContainer) {
+      let qtyInputParent = document.getElementById('restockQtyInput').parentElement;
+      qtyInputParent.insertAdjacentHTML('afterend', `
+        <div id="restockCostContainer" style="margin-top: 10px;">
+            <label style="font-size:12px; font-weight:bold; color:#64748b;">Total Cost of Purchase (₱)</label>
+            <input type="number" id="restockCostInput" class="input-box" placeholder="e.g. 1500" style="border: 2px solid #cbd5e1;">
+        </div>
+      `);
+  }
+
   if (!itemName) { label.innerText = "No. of packs"; return; }
 
   let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
   if (item) {
-    label.innerText = `No. of ${item.purchaseUom || 'units'}s`;
+    label.innerHTML = `No. of <span style="color:#0ea5e9;">${item.purchaseUom || 'units'}s</span> <br><span style="font-size:10px; color:#94a3b8;">(1 ${item.purchaseUom || 'unit'} = ${item.conversionRate || 1} ${item.uom})</span>`;
   }
 };
 
 window.addRestockToCart = function () {
   let itemName = document.getElementById('restockItemSelect').value.trim();
   let purchQty = parseFloat(document.getElementById('restockQtyInput').value);
+  let totalCost = parseFloat(document.getElementById('restockCostInput').value) || 0; // Grab the new cost input!
 
   if (!itemName || isNaN(purchQty) || purchQty <= 0) { alert("Select an item and enter a valid quantity."); return; }
+  if (totalCost <= 0) { if(!confirm("You did not enter a Total Cost. Restock with ₱0.00 cost?")) return; }
 
   let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
   if (!item) { alert("Item not found in Main Office."); return; }
@@ -843,11 +858,11 @@ window.addRestockToCart = function () {
   let convRate = parseFloat(item.conversionRate) || 1;
   let baseQtyToAdd = purchQty * convRate;
 
-  // 🔥 THE FIX: Combines quantities if the item is already in the cart!
   let existing = restockCart.find(i => i.id === item.id);
   if (existing) {
       existing.purchQty += purchQty;
       existing.baseQtyToAdd += baseQtyToAdd;
+      existing.totalCost += totalCost;
   } else {
       restockCart.push({
         id: item.id,
@@ -856,12 +871,14 @@ window.addRestockToCart = function () {
         purchQty: purchQty,
         purchUom: item.purchaseUom || 'units',
         baseQtyToAdd: baseQtyToAdd,
-        baseUom: item.uom
+        baseUom: item.uom,
+        totalCost: totalCost // Saved to cart!
       });
   }
 
   document.getElementById('restockQtyInput').value = '';
-  document.getElementById('restockItemSelect').value = ''; // Auto-clear search for next item
+  document.getElementById('restockItemSelect').value = ''; 
+  if(document.getElementById('restockCostInput')) document.getElementById('restockCostInput').value = '';
   window.renderRestockCart();
 };
 
