@@ -1061,111 +1061,205 @@ window.submitComprehensiveCloseShift = async function () {
     }
 };
 // ========================================================
-// 💸 SMART EXPENSE & INVENTORY RESTOCK ENGINE
+// 💸 UPGRADED MULTI-ITEM EXPENSE & RESTOCK CART ENGINE
 // ========================================================
+window.expenseCart = [];
+window.expenseInventoryCache = [];
+window.selectedExpenseItem = null; // Holds the DB item if they select one
 
-// 1. Open Modal & Fetch Live Inventory for Dropdown
 window.openExpenseModal = async function () {
-  document.getElementById('expenseModal').style.display = 'flex';
-  document.getElementById('expenseQtyDiv').style.display = 'none'; // Reset to general
-  let branch = localStorage.getItem('takodeal_device_branch') || localStorage.getItem('branch') || 'Unknown';
-  let select = document.getElementById('expenseType');
+    document.getElementById('expenseModal').style.display = 'flex';
+    document.getElementById('expSearchInput').value = '';
+    document.getElementById('expQtyInput').value = '';
+    document.getElementById('expAmtInput').value = '';
+    window.expenseCart = [];
+    window.renderExpenseCart();
 
-  // Keep the General option, clear the rest
-  select.innerHTML = '<option value="general">General Expense (Fare, Ice, Cleaning Supplies)</option>';
-
-  try {
-    const q = query(collection(db, "inventory"), where("branch", "==", branch));
-    const snap = await getDocs(q);
-    snap.forEach(docSnap => {
-      let item = docSnap.data();
-      let itemName = item.name || item.itemName || item.item;
-      if (itemName) {
-        let opt = document.createElement('option');
-        opt.value = docSnap.id; // Store Firebase ID for instant updating
-        opt.text = `📦 Restock: ${itemName}`;
-        select.appendChild(opt);
-      }
-    });
-  } catch (e) {
-    console.error("Error loading inventory for expenses:", e);
-  }
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    window.expenseInventoryCache = [];
+    
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            item.id = docSnap.id;
+            window.expenseInventoryCache.push(item);
+        });
+    } catch (e) { console.error("Error loading inventory for expenses:", e); }
 };
 
-// 2. Show/Hide the Quantity Box based on selection
-window.toggleExpenseQty = function () {
-  let val = document.getElementById('expenseType').value;
-  if (val === 'general') {
-    document.getElementById('expenseQtyDiv').style.display = 'none';
-  } else {
-    document.getElementById('expenseQtyDiv').style.display = 'block';
-  }
-};
+// Mobile-friendly custom search dropdown
+window.filterExpenseSearch = function() {
+    let input = document.getElementById('expSearchInput').value.toLowerCase();
+    let resultsDiv = document.getElementById('expSearchResults');
+    window.selectedExpenseItem = null; // Reset selection on typing
 
-// 3. Submit Expense, Deduct Cash, & Add Inventory
-window.submitSmartExpense = async function () {
-  let amount = parseFloat(document.getElementById('expenseAmount').value);
-  let desc = document.getElementById('expenseDesc').value || '';
-  let typeId = document.getElementById('expenseType').value;
-  let qty = parseInt(document.getElementById('expenseQty').value) || 0;
+    if (input.length < 1) { resultsDiv.style.display = 'none'; return; }
 
-  if (!amount || amount <= 0) { alert("Please enter a valid amount."); return; }
-  if (!activeShiftDetails || !activeShiftDetails.logId) { alert("No active shift found to attach this expense to!"); return; }
-
-  let selectEl = document.getElementById('expenseType');
-  let selectedText = selectEl.options[selectEl.selectedIndex].text;
-  let finalDesc = typeId === 'general' ? desc : `RESTOCK [${qty} added] ${selectedText} - ${desc}`;
-
-  try {
-    // A. Update the Active Shift's Total Expenses
-    const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
-    const shiftSnap = await getDoc(shiftRef);
-    let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
-
-    await updateDoc(shiftRef, {
-      expenses: currentExp + amount,
-      cashOut: currentExp + amount // Kept for backwards compatibility with your old code
+    let filtered = window.expenseInventoryCache.filter(i => (i.name || '').toLowerCase().includes(input));
+    let html = '';
+    
+    filtered.forEach(item => {
+        let safeItemStr = encodeURIComponent(JSON.stringify(item));
+        html += `<div onclick="window.selectExpenseItem('${safeItemStr}')" style="padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 14px; font-weight: bold; color: #334155;">📦 Restock: ${item.name} <span style="font-size:11px; color:#94a3b8;">(${item.uom || ''})</span></div>`;
     });
 
-    // B. If it's an Inventory item, automatically increase the branch stock!
-    if (typeId !== 'general' && qty > 0) {
-      const invRef = doc(db, "inventory", typeId);
-      const invSnap = await getDoc(invRef);
-      let currentStock = invSnap.data().currentStock || invSnap.data().stock || invSnap.data().quantity || 0;
-
-      await updateDoc(invRef, {
-        currentStock: currentStock + qty,
-        stock: currentStock + qty // Kept for backwards compatibility
-      });
+    if (html === '') {
+        html = `<div style="padding: 12px 15px; font-size: 13px; color: #64748b; font-style: italic;">No inventory found. This will be saved as a General Expense.</div>`;
     }
 
-    // C. Keep a permanent receipt of the transaction
-    let branch = localStorage.getItem('takodeal_device_branch') || localStorage.getItem('branch');
-    let cashier = localStorage.getItem('cashierName') || 'Unknown';
-    await addDoc(collection(db, "expenses"), {
-      branch: branch,
-      shiftId: activeShiftDetails.logId,
-      cashier: cashier,
-      amount: amount,
-      description: finalDesc,
-      timestamp: serverTimestamp()
+    resultsDiv.innerHTML = html;
+    resultsDiv.style.display = 'block';
+};
+
+window.selectExpenseItem = function(encodedItem) {
+    let item = JSON.parse(decodeURIComponent(encodedItem));
+    window.selectedExpenseItem = item;
+    document.getElementById('expSearchInput').value = `Restock: ${item.name}`;
+    document.getElementById('expSearchResults').style.display = 'none';
+    document.getElementById('expQtyInput').focus();
+};
+
+window.addExpenseToCart = function() {
+    let desc = document.getElementById('expSearchInput').value.trim();
+    let qty = parseFloat(document.getElementById('expQtyInput').value) || 0;
+    let cost = parseFloat(document.getElementById('expAmtInput').value) || 0;
+
+    if (!desc || cost <= 0) { alert("Enter a description and a valid cost."); return; }
+
+    let cartItem = {
+        description: desc,
+        cost: cost,
+        qty: qty,
+        isRestock: window.selectedExpenseItem !== null,
+        dbId: window.selectedExpenseItem ? window.selectedExpenseItem.id : null,
+        dbName: window.selectedExpenseItem ? window.selectedExpenseItem.name : null,
+        uom: window.selectedExpenseItem ? window.selectedExpenseItem.uom : null
+    };
+
+    window.expenseCart.push(cartItem);
+    
+    // Clear inputs for next item
+    document.getElementById('expSearchInput').value = '';
+    document.getElementById('expQtyInput').value = '';
+    document.getElementById('expAmtInput').value = '';
+    window.selectedExpenseItem = null;
+    
+    window.renderExpenseCart();
+};
+
+window.removeExpenseItem = function(index) {
+    window.expenseCart.splice(index, 1);
+    window.renderExpenseCart();
+};
+
+window.renderExpenseCart = function() {
+    let tbody = document.getElementById('expenseCartBody');
+    let totalEl = document.getElementById('expenseCartTotal');
+    let total = 0;
+
+    if (window.expenseCart.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 15px; color: #94a3b8;">Cart is empty.</td></tr>';
+        totalEl.innerText = '₱0.00';
+        return;
+    }
+
+    let html = '';
+    window.expenseCart.forEach((item, index) => {
+        total += item.cost;
+        let qtyText = item.isRestock && item.qty > 0 ? `<br><span style="color:#16a34a; font-size:11px;">+${item.qty} ${item.uom} to inventory</span>` : '';
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.description} ${qtyText}</td>
+                <td style="padding: 10px; font-weight: bold; color: #dc2626;">₱${item.cost.toFixed(2)}</td>
+                <td style="padding: 10px; text-align: right;"><button onclick="window.removeExpenseItem(${index})" style="background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">✖</button></td>
+            </tr>
+        `;
     });
 
-    alert(`✅ ₱${amount.toFixed(2)} deducted from drawer.\n${typeId !== 'general' ? `📦 Inventory updated with +${qty} items.` : ''}`);
+    tbody.innerHTML = html;
+    totalEl.innerText = `₱${total.toFixed(2)}`;
+};
 
-    // Close and clean up
-    document.getElementById('expenseAmount').value = '';
-    document.getElementById('expenseDesc').value = '';
-    document.getElementById('expenseQty').value = '';
-    document.getElementById('expenseModal').style.display = 'none';
+window.submitExpenseCart = async function() {
+    if (window.expenseCart.length === 0) { alert("Cart is empty!"); return; }
+    if (!activeShiftDetails || !activeShiftDetails.logId) { alert("No active shift found to attach these expenses to!"); return; }
 
-    // Refresh Shift UI so the new Expected Cash is immediately visible
-    if (typeof checkCurrentShift === 'function') checkCurrentShift();
+    let btn = document.getElementById('btnSubmitExpenseCart');
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
 
-  } catch (e) {
-    console.error("Error submitting expense:", e);
-    alert("❌ Failed to log expense. Check console.");
-  }
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let cashier = localStorage.getItem('cashierName') || 'Unknown';
+    let grandTotal = window.expenseCart.reduce((sum, item) => sum + item.cost, 0);
+
+    try {
+        // 1. Upload Photo if exists
+        let photoUrl = null;
+        let fileInput = document.getElementById('expenseReceiptPhoto');
+        if (fileInput.files.length > 0) {
+            btn.innerText = "⏳ Uploading Photo...";
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const storageRef = ref(window.storage, `expenses/${branch}_${Date.now()}.${fileExt}`);
+            const snapshot = await uploadBytes(storageRef, file);
+            photoUrl = await getDownloadURL(snapshot.ref);
+        }
+
+        // 2. Process each item in cart
+        for (let item of window.expenseCart) {
+            // Log the expense
+            await addDoc(collection(db, "expenses"), {
+                branch: branch,
+                shiftId: activeShiftDetails.logId,
+                cashier: cashier,
+                amount: item.cost,
+                description: item.description,
+                receiptPhoto: photoUrl, // Attach photo to every item in this batch
+                timestamp: serverTimestamp()
+            });
+
+            // If it's a restock, update Live Inventory AND perform Average Costing automatically!
+            if (item.isRestock && item.dbId && item.qty > 0) {
+                const invRef = doc(db, "inventory", item.dbId);
+                const invSnap = await getDoc(invRef);
+                if (invSnap.exists()) {
+                    let d = invSnap.data();
+                    let currentStock = parseFloat(d.currentStock) || 0;
+                    let currentAvgCost = parseFloat(d.cost) || 0;
+                    
+                    let unitCostOfThisPurchase = item.cost / item.qty;
+                    
+                    // The Financial Average Cost Formula!
+                    let newTotalValue = (currentStock * currentAvgCost) + item.cost;
+                    let newTotalStock = currentStock + item.qty;
+                    let newAverageCost = newTotalStock > 0 ? (newTotalValue / newTotalStock) : unitCostOfThisPurchase;
+
+                    await updateDoc(invRef, {
+                        currentStock: newTotalStock,
+                        cost: newAverageCost // Updates the global cost instantly!
+                    });
+                }
+            }
+        }
+
+        // 3. Update the Active Shift's Total Expenses
+        const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
+        const shiftSnap = await getDoc(shiftRef);
+        let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
+        await updateDoc(shiftRef, { expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal });
+
+        alert(`✅ Success! ₱${grandTotal.toFixed(2)} deducted from drawer for ${window.expenseCart.length} item(s).`);
+        document.getElementById('expenseModal').style.display = 'none';
+        
+        if (typeof checkCurrentShift === 'function') checkCurrentShift();
+
+    } catch (e) {
+        console.error("Expense Cart Error:", e);
+        alert("❌ Failed to process expenses. Check connection.");
+    } finally {
+        btn.innerText = "Submit All Expenses"; btn.disabled = false;
+    }
 };
 
 // --- LIVE CLOCK ENGINE ---
