@@ -1118,20 +1118,50 @@ window.selectExpenseItem = function(encodedItem) {
     window.selectedExpenseItem = item;
     document.getElementById('expSearchInput').value = `Restock: ${item.name}`;
     document.getElementById('expSearchResults').style.display = 'none';
+
+    // 🔥 SHOW UOM DROPDOWN
+    let uomContainer = document.getElementById('expUomContainer');
+    let uomSelect = document.getElementById('expUomSelect');
+    if (uomContainer && uomSelect) {
+        uomContainer.style.display = 'block';
+        let html = `<option value="base">${item.uom || 'units'}</option>`;
+        if (item.purchaseUom) {
+            html = `<option value="purch">${item.purchaseUom} (x${item.conversionRate || 1})</option>` + html;
+        }
+        uomSelect.innerHTML = html;
+    }
+
     document.getElementById('expQtyInput').focus();
 };
 
 window.addExpenseToCart = function() {
     let desc = document.getElementById('expSearchInput').value.trim();
-    let qty = parseFloat(document.getElementById('expQtyInput').value) || 0;
+    let rawQty = parseFloat(document.getElementById('expQtyInput').value) || 0;
     let cost = parseFloat(document.getElementById('expAmtInput').value) || 0;
 
     if (!desc || cost <= 0) { alert("Enter a description and a valid cost."); return; }
 
+    // 🔥 SMART UOM MATH
+    let baseQty = rawQty;
+    let displayUom = '';
+    let convRate = 1;
+
+    if (window.selectedExpenseItem) {
+        let uomSelect = document.getElementById('expUomSelect');
+        displayUom = window.selectedExpenseItem.uom;
+        if (uomSelect && uomSelect.value === 'purch') {
+            convRate = parseFloat(window.selectedExpenseItem.conversionRate) || 1;
+            baseQty = rawQty * convRate; // Multiply by bulk size!
+            displayUom = window.selectedExpenseItem.purchaseUom;
+        }
+    }
+
     let cartItem = {
         description: desc,
         cost: cost,
-        qty: qty,
+        displayQty: rawQty,
+        baseQty: baseQty,
+        displayUom: displayUom,
         isRestock: window.selectedExpenseItem !== null,
         dbId: window.selectedExpenseItem ? window.selectedExpenseItem.id : null,
         dbName: window.selectedExpenseItem ? window.selectedExpenseItem.name : null,
@@ -1144,6 +1174,7 @@ window.addExpenseToCart = function() {
     document.getElementById('expSearchInput').value = '';
     document.getElementById('expQtyInput').value = '';
     document.getElementById('expAmtInput').value = '';
+    if(document.getElementById('expUomContainer')) document.getElementById('expUomContainer').style.display = 'none';
     window.selectedExpenseItem = null;
     
     window.renderExpenseCart();
@@ -1168,7 +1199,7 @@ window.renderExpenseCart = function() {
     let html = '';
     window.expenseCart.forEach((item, index) => {
         total += item.cost;
-        let qtyText = item.isRestock && item.qty > 0 ? `<br><span style="color:#16a34a; font-size:11px;">+${item.qty} ${item.uom} to inventory</span>` : '';
+        let qtyText = item.isRestock && item.displayQty > 0 ? `<br><span style="color:#16a34a; font-size:11px;">+${item.displayQty} ${item.displayUom} (${item.baseQty} ${item.uom} to inventory)</span>` : '';
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 10px; font-weight: bold; color: #334155;">${item.description} ${qtyText}</td>
@@ -1194,33 +1225,37 @@ window.submitExpenseCart = async function() {
     let grandTotal = window.expenseCart.reduce((sum, item) => sum + item.cost, 0);
 
     try {
-        // 1. Upload Photo if exists
+        // 1. 🛡️ UPLOAD PHOTO SAFELY (Wont crash if rules are broken!)
         let photoUrl = null;
         let fileInput = document.getElementById('expenseReceiptPhoto');
         if (fileInput.files.length > 0) {
             btn.innerText = "⏳ Uploading Photo...";
-            const file = fileInput.files[0];
-            const fileExt = file.name.split('.').pop();
-            const storageRef = ref(window.storage, `expenses/${branch}_${Date.now()}.${fileExt}`);
-            const snapshot = await uploadBytes(storageRef, file);
-            photoUrl = await getDownloadURL(snapshot.ref);
+            try {
+                const file = fileInput.files[0];
+                const fileExt = file.name.split('.').pop();
+                const storageRef = ref(window.storage, `expenses/${branch}_${Date.now()}.${fileExt}`);
+                const snapshot = await uploadBytes(storageRef, file);
+                photoUrl = await getDownloadURL(snapshot.ref);
+            } catch (err) {
+                console.error("Storage upload failed:", err);
+                alert("⚠️ Photo upload failed (Check Firebase Storage Permissions). The expense will still be saved, but without the photo attached.");
+            }
         }
 
         // 2. Process each item in cart
         for (let item of window.expenseCart) {
-            // Log the expense
             await addDoc(collection(db, "expenses"), {
                 branch: branch,
                 shiftId: activeShiftDetails.logId,
                 cashier: cashier,
                 amount: item.cost,
                 description: item.description,
-                receiptPhoto: photoUrl, // Attach photo to every item in this batch
+                receiptPhoto: photoUrl, 
                 timestamp: serverTimestamp()
             });
 
-            // If it's a restock, update Live Inventory AND perform Average Costing automatically!
-            if (item.isRestock && item.dbId && item.qty > 0) {
+            // 3. 🧠 THE AUTO-AVERAGE COSTING & INVENTORY INJECTOR
+            if (item.isRestock && item.dbId && item.baseQty > 0) {
                 const invRef = doc(db, "inventory", item.dbId);
                 const invSnap = await getDoc(invRef);
                 if (invSnap.exists()) {
@@ -1228,22 +1263,25 @@ window.submitExpenseCart = async function() {
                     let currentStock = parseFloat(d.currentStock) || 0;
                     let currentAvgCost = parseFloat(d.cost) || 0;
                     
-                    let unitCostOfThisPurchase = item.cost / item.qty;
-                    
-                    // The Financial Average Cost Formula!
+                    let unitCostOfThisPurchase = item.cost / item.baseQty;
                     let newTotalValue = (currentStock * currentAvgCost) + item.cost;
-                    let newTotalStock = currentStock + item.qty;
+                    let newTotalStock = currentStock + item.baseQty;
                     let newAverageCost = newTotalStock > 0 ? (newTotalValue / newTotalStock) : unitCostOfThisPurchase;
 
                     await updateDoc(invRef, {
                         currentStock: newTotalStock,
-                        cost: newAverageCost // Updates the global cost instantly!
+                        cost: newAverageCost 
+                    });
+
+                    // Log the stock addition
+                    await addDoc(collection(db, "stock_logs"), {
+                        branch: branch, item: item.dbName, uom: item.uom, oldQty: currentStock, newQty: newTotalStock, variance: item.baseQty,
+                        type: "Store Restock (Expense)", note: `Purchased ${item.displayQty} ${item.displayUom} for ₱${item.cost}`, user: cashier, timestamp: serverTimestamp()
                     });
                 }
             }
         }
 
-        // 3. Update the Active Shift's Total Expenses
         const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
         const shiftSnap = await getDoc(shiftRef);
         let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
