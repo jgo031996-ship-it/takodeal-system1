@@ -2039,19 +2039,18 @@
   </div>
 
   <div class="overlay" id="inventoryCheckModal">
-    <div class="modal" style="width: 550px; max-height: 85vh;">
+    <div class="modal" style="width: 650px; max-height: 85vh;">
       <div class="modal-head"><span>📋 End of Shift Stock Count</span><span class="close-modal"
           onclick="closeModal('inventoryCheckModal')">✖</span></div>
-      <div class="modal-body" style="padding: 0;">
-        <div
-          style="background: #fffcf0; padding: 15px 25px; border-bottom: 1px solid #ffeeba; font-size: 13px; color: #856404;">
+      <div class="modal-body" style="padding: 0; display: flex; flex-direction: column;">
+        <div style="background: #fffcf0; padding: 15px 25px; border-bottom: 1px solid #ffeeba; font-size: 13px; color: #856404; flex-shrink: 0;">
           <strong>Instructions:</strong> Enter the physical quantity you currently see. Leave blank if not counting.
         </div>
-        <div style="padding: 20px 25px;" id="invCheckListContainer">
+        <div style="padding: 20px 25px; flex: 1; overflow-y: auto;" id="invCheckListContainer">
           <div style="text-align:center; padding:20px; color:#888;">Fetching inventory list...</div>
         </div>
       </div>
-      <div class="modal-foot">
+      <div class="modal-foot" style="flex-shrink: 0;">
         <button class="btn-clear" onclick="closeModal('inventoryCheckModal')">Cancel</button>
         <button class="btn-place" id="btnSubmitInvCheck" onclick="submitInventoryCheck()">Submit Count</button>
       </div>
