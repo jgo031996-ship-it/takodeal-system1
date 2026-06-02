@@ -4277,13 +4277,15 @@ window.loadCashExplorer = async function() {
             
             let statusBadge = status === "Received"
                 ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`
-                : `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
+                : (status === "Rejected" 
+                    ? `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Rejected</span>`
+                    : `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`);
 
-            // 🔥 THE NEW BUTTON UI (Added the Audit Button!)
             let actionBtn = status === "Pending"
-                ? `<div style="display:flex; gap:10px;">
-                    <button onclick="window.viewRemittanceAudit('${data.id}', '${data.branch}', '${data.salesPeriodStart || 'N/A'}', '${data.salesPeriodEnd || 'N/A'}', ${data.amount}, '${data.channel}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">🔍 Audit</button>
-                    <button onclick="approveRemittance('${data.id}', ${data.amount}, '${data.branch}', '${data.channel}')" style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">Approve</button>
+                ? `<div style="display:flex; gap:5px;">
+                    <button onclick="window.viewRemittanceAudit('${data.id}', '${data.branch}', '${data.salesPeriodStart || 'N/A'}', '${data.salesPeriodEnd || 'N/A'}', ${data.amount}, '${data.channel}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">🔍 Audit</button>
+                    <button onclick="approveRemittance('${data.id}', ${data.amount}, '${data.branch}', '${data.channel}')" style="background: #16a34a; color: white; border: none; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">Approve</button>
+                    <button onclick="window.rejectRemittance('${data.id}', '${data.branch}')" style="background: #dc2626; color: white; border: none; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">Reject</button>
                    </div>`
                 : `<span style="color: #94a3b8; font-size: 12px; display: block; text-align: center;">Locked</span>`;
 
@@ -4319,6 +4321,37 @@ window.loadCashExplorer = async function() {
     } catch (error) {
         console.error(error);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Error fetching data. Check Console.</td></tr>';
+    }
+};
+
+window.rejectRemittance = async function(docId, branchName) {
+    let reason = prompt(`WARNING: You are about to reject a remittance from ${branchName}.\n\nPlease enter the reason for rejection (this will be saved in the logs):`);
+    
+    // If they click cancel or leave it blank, abort the rejection.
+    if (reason === null || reason.trim() === "") {
+        return; 
+    }
+    
+    if (confirm(`Final Confirmation: Reject this remittance?`)) {
+        try {
+            await updateDoc(doc(db, "remittances", docId), {
+                status: "Rejected",
+                rejectedReason: reason,
+                rejectedAt: serverTimestamp(),
+                rejectedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
+            });
+            
+            alert("❌ Remittance has been rejected and locked.");
+            window.loadCashExplorer(); // Refresh the table instantly
+            
+            // If you have a dashboard refresher, this triggers it so the floating cash updates
+            if (typeof window.loadUnremittedCashDashboard === 'function') window.loadUnremittedCashDashboard();
+            if (typeof window.loadDashboard === 'function') window.loadDashboard();
+            
+        } catch (e) {
+            console.error("Error rejecting remittance:", e);
+            alert("Failed to reject remittance. Please check your connection.");
+        }
     }
 };
 
