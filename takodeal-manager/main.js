@@ -4231,10 +4231,6 @@ window.loadCashExplorer = async function() {
     const endTimestamp = new Date(endDateRaw + 'T23:59:59');
 
     try {
-        // 🔥 THE FIX: We fetch TWO things at the same time:
-        // 1. ALL Pending Remittances (so they never get lost)
-        // 2. The standard date-filtered log for your history
-        
         let pendingQ;
         let logQ;
 
@@ -4252,7 +4248,6 @@ window.loadCashExplorer = async function() {
         let totalCash = 0;
         let pendingCount = 0;
 
-        // Process Log (Received/Completed within date range)
         logSnap.forEach(docSnap => {
             let data = docSnap.data();
             if (data.status === "Received") {
@@ -4261,14 +4256,12 @@ window.loadCashExplorer = async function() {
             uniqueTransfers.set(docSnap.id, data);
         });
 
-        // Process Pending (Always forces them into the table so you can approve them!)
         pendingSnap.forEach(docSnap => {
             let data = docSnap.data();
             pendingCount++;
             uniqueTransfers.set(docSnap.id, data); 
         });
 
-        // Convert our list back to an array and sort it newest-first
         let sortedTransfers = Array.from(uniqueTransfers, ([id, data]) => ({ id, ...data }));
         sortedTransfers.sort((a, b) => {
             let timeA = a.timestamp ? a.timestamp.toMillis() : 0;
@@ -4286,8 +4279,12 @@ window.loadCashExplorer = async function() {
                 ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`
                 : `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
 
+            // 🔥 THE NEW BUTTON UI (Added the Audit Button!)
             let actionBtn = status === "Pending"
-                ? `<button onclick="approveRemittance('${data.id}')" style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; width: 100%;">Approve</button>`
+                ? `<div style="display:flex; gap:10px;">
+                    <button onclick="window.viewRemittanceAudit('${data.id}', '${data.branch}', '${data.salesPeriodStart || 'N/A'}', '${data.salesPeriodEnd || 'N/A'}', ${data.amount}, '${data.channel}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">🔍 Audit</button>
+                    <button onclick="approveRemittance('${data.id}', ${data.amount}, '${data.branch}', '${data.channel}')" style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">Approve</button>
+                   </div>`
                 : `<span style="color: #94a3b8; font-size: 12px; display: block; text-align: center;">Locked</span>`;
 
             html += `
@@ -4296,7 +4293,7 @@ window.loadCashExplorer = async function() {
                     <td style="padding: 15px 20px;">
                         <strong style="color: var(--primary); font-size: 15px;">${data.branch}</strong><br>
                         <span style="font-size: 12px; color: #64748b;">By: ${data.cashier}</span><br>
-                        <span style="font-size: 11px; color: #94a3b8;">Sales: ${data.salesPeriodStart} to ${data.salesPeriodEnd}</span>
+                        <span style="font-size: 11px; color: #94a3b8;">Sales: ${data.salesPeriodStart || 'N/A'} to ${data.salesPeriodEnd || 'N/A'}</span>
                     </td>
                     <td style="padding: 15px 20px;">
                         <strong style="font-size: 13px;">${data.channel}</strong> ➡️ ${data.recipient}<br>
@@ -4306,7 +4303,7 @@ window.loadCashExplorer = async function() {
                     <td style="padding: 15px 20px; text-align: right; font-size: 16px; font-weight: bold; color: #16a34a;">
                         ₱${data.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
                     </td>
-                    <td style="padding: 15px 20px;">${actionBtn}</td>
+                    <td style="padding: 15px 20px; width: 180px;">${actionBtn}</td>
                 </tr>
             `;
         });
@@ -4322,6 +4319,109 @@ window.loadCashExplorer = async function() {
     } catch (error) {
         console.error(error);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Error fetching data. Check Console.</td></tr>';
+    }
+};
+
+// ========================================================
+// 🔍 REMITTANCE AUDIT ENGINE
+// ========================================================
+window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, amount, channel) {
+    if (!document.getElementById('remitAuditModal')) {
+        document.body.insertAdjacentHTML('beforeend', `
+            <div class="overlay" id="remitAuditModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
+                <div style="background:white; width:500px; border-radius:12px; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+                    <div style="background:#0f172a; color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:16px;">🔍 Financial Audit</h3>
+                        <span onclick="document.getElementById('remitAuditModal').style.display='none'" style="cursor:pointer; font-size:24px;">✖</span>
+                    </div>
+                    <div id="remitAuditBody" style="padding:20px; background:#f8fafc;">Loading financial data...</div>
+                </div>
+            </div>
+        `);
+    }
+
+    document.getElementById('remitAuditModal').style.display = 'flex';
+    let body = document.getElementById('remitAuditBody');
+    body.innerHTML = `<div style="text-align:center; padding: 40px; color: #64748b;">⏳ Crunching transactions from<br><strong>${startStr}</strong> to <strong>${endStr}</strong>...</div>`;
+
+    try {
+        let startObj = new Date(startStr); startObj.setHours(0,0,0,0);
+        let endObj = new Date(endStr); endObj.setHours(23,59,59,999);
+
+        if (isNaN(startObj.getTime()) || isNaN(endObj.getTime())) {
+            body.innerHTML = `<div style="color:red; text-align:center; padding: 20px;">Invalid date range provided by cashier. Cannot run audit.</div>`;
+            return;
+        }
+
+        // 1. Calculate Total Cash Sales in Period
+        let cashSales = 0;
+        const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startObj), where("timestamp", "<=", endObj));
+        const txSnap = await getDocs(txQ);
+        txSnap.forEach(d => {
+            let tx = d.data();
+            if (tx.status !== 'Voided') {
+                if (tx.splitDetails) {
+                    let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                    if (cashSplit) cashSales += cashSplit.amount;
+                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    cashSales += (tx.netTotal || 0);
+                }
+            }
+        });
+
+        // 2. Calculate Total Expenses in Period
+        let cashExpenses = 0;
+        const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startObj), where("timestamp", "<=", endObj));
+        const expSnap = await getDocs(expQ);
+        expSnap.forEach(d => {
+            let exp = d.data();
+            if (!exp.description.includes("[REMITTANCE")) {
+                cashExpenses += (parseFloat(exp.amount) || 0);
+            }
+        });
+
+        let netCashGenerated = cashSales - cashExpenses;
+        let diff = amount - netCashGenerated;
+        let diffColor = diff === 0 ? '#16a34a' : (diff < 0 ? '#dc2626' : '#ea580c');
+        let diffNote = diff === 0 ? "Perfect Match ✔️" : (diff < 0 ? "Shorting Detected 🔻" : "Over Remitted 🔺");
+
+        body.innerHTML = `
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                <div style="font-size:12px; color:#64748b; font-weight:bold; margin-bottom:5px;">AUDIT PERIOD</div>
+                <div style="font-size:14px; font-weight:bold; color:#0f172a;">${branch} (${startStr} to ${endStr})</div>
+            </div>
+            
+            <table style="width:100%; border-collapse: collapse; font-size: 14px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color:#475569;">Total Cash Sales</td>
+                    <td style="padding: 12px; text-align:right; font-weight:bold; color:#16a34a;">+ ₱${cashSales.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color:#475569;">Total Cash Expenses</td>
+                    <td style="padding: 12px; text-align:right; font-weight:bold; color:#dc2626;">- ₱${cashExpenses.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+                <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+                    <td style="padding: 12px; font-weight:bold; color:#0f172a;">Net Cash Generated</td>
+                    <td style="padding: 12px; text-align:right; font-weight:900; color:#0f172a;">₱${netCashGenerated.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; font-weight:bold; color:#0ea5e9;">Cashier Remitted</td>
+                    <td style="padding: 12px; text-align:right; font-weight:900; color:#0ea5e9;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+            </table>
+
+            <div style="margin-top: 15px; text-align: center; padding: 15px; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px;">
+                <div style="font-size: 12px; font-weight: bold; color: #b45309;">VARIANCE ANALYSIS</div>
+                <div style="font-size: 18px; font-weight: 900; color: ${diffColor}; margin-top: 5px;">${diffNote} (₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits:2})})</div>
+                <div style="font-size: 11px; color: #92400e; margin-top: 5px; font-style: italic;">*Note: Floating cash from days prior to ${startStr} are not included in this isolated period check.</div>
+            </div>
+            
+            <button onclick="window.approveRemittance('${remitId}', ${amount}, '${branch}', '${channel}'); document.getElementById('remitAuditModal').style.display='none';" style="width:100%; margin-top:15px; padding:15px; background:#16a34a; color:white; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:16px;">Approve ₱${amount.toLocaleString()} Remittance</button>
+        `;
+
+    } catch(e) {
+        console.error(e);
+        body.innerHTML = `<div style="color:red; text-align:center; padding: 20px;">Failed to run audit.</div>`;
     }
 };
 
