@@ -975,13 +975,13 @@ window.loadDispatchInventory = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
   let itemInput = document.getElementById('dispItem');
 
-  // 🔥 THE FIX: Transform the Dropdown into a Smart Search Bar
+  // 🔥 Transform Select into a Smart Search Input automatically!
   if (itemInput.tagName === 'SELECT') {
       let newInput = document.createElement('input');
       newInput.id = 'dispItem';
       newInput.setAttribute('list', 'dispatchDatalist');
       newInput.placeholder = "Type to search item to send...";
-      newInput.style.cssText = "padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-weight: bold; color: #0f172a;";
+      newInput.style.cssText = "padding: 10px; border: 2px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-weight: bold; font-size: 15px; color: #0f172a;";
       newInput.onchange = window.updateDispatchUomLabel;
       itemInput.parentNode.replaceChild(newInput, itemInput);
       itemInput = newInput;
@@ -989,9 +989,7 @@ window.loadDispatchInventory = async function () {
 
   if (!fromBranch) { itemInput.placeholder = 'Select source branch first'; itemInput.disabled = true; return; }
   
-  itemInput.disabled = false;
-  itemInput.placeholder = 'Scanning warehouse...';
-  itemInput.value = '';
+  itemInput.disabled = false; itemInput.placeholder = 'Scanning warehouse...'; itemInput.value = '';
   dispatchInventoryList = [];
 
   try {
@@ -999,7 +997,6 @@ window.loadDispatchInventory = async function () {
     const snap = await getDocs(q);
     
     let datalistHtml = '<datalist id="dispatchDatalist">';
-
     snap.forEach(docSnap => {
       let data = docSnap.data();
       if (data.currentStock > 0) {
@@ -1009,13 +1006,12 @@ window.loadDispatchInventory = async function () {
     });
     datalistHtml += '</datalist>';
 
-    if (!document.getElementById('dispatchDatalist')) {
-        document.body.insertAdjacentHTML('beforeend', datalistHtml);
-    } else {
-        document.getElementById('dispatchDatalist').innerHTML = datalistHtml.replace('<datalist id="dispatchDatalist">', '').replace('</datalist>', '');
-    }
+    // Inject the invisible datalist into the page
+    let existingList = document.getElementById('dispatchDatalist');
+    if (existingList) existingList.remove();
+    document.body.insertAdjacentHTML('beforeend', datalistHtml);
 
-    itemInput.placeholder = 'Type to search item to send...';
+    itemInput.placeholder = 'Type item name...';
     window.updateDispatchUomLabel();
   } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
 };
@@ -4555,6 +4551,105 @@ window.deleteDevice = async function (deviceId) {
   } catch (e) { alert("Failed to delete device."); }
 };
 
+window.loadZReadingArchive = async function() {
+    let tbody = document.getElementById('zReadingBody');
+    if (!tbody) return;
+    
+    // Build the UI header with Branch and Date Filters!
+    let filterUI = `
+        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="flex: 1;">
+                <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; display: block;">Filter by Branch:</label>
+                <select id="zBranchFilter" onchange="window.fetchZReadings()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #94a3b8; font-weight: bold; outline: none;">
+                    <option value="All">All Branches</option>
+                    <option value="Cabantian">Cabantian</option>
+                    <option value="Citygate">Citygate</option>
+                    <option value="Maa">Maa</option>
+                    <option value="Main Office">Main Office</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; display: block;">Filter by Date:</label>
+                <input type="date" id="zDateFilter" onchange="window.fetchZReadings()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #94a3b8; font-weight: bold; outline: none;">
+            </div>
+            <button onclick="document.getElementById('zDateFilter').value=''; document.getElementById('zBranchFilter').value='All'; window.fetchZReadings();" style="margin-top: 20px; padding: 10px 15px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #475569;">Clear Filters</button>
+        </div>
+    `;
+
+    // Inject the filter UI ABOVE the table if it doesn't exist yet
+    let tableElement = tbody.closest('table');
+    let parentDiv = tableElement.parentElement;
+    if (!document.getElementById('zBranchFilter')) {
+        let filterDiv = document.createElement('div');
+        filterDiv.innerHTML = filterUI;
+        parentDiv.insertBefore(filterDiv, tableElement);
+    }
+
+    // Load initial data
+    window.fetchZReadings();
+};
+
+window.fetchZReadings = async function() {
+    let tbody = document.getElementById('zReadingBody');
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px;">Fetching Z-Readings...</td></tr>';
+
+    let selectedBranch = document.getElementById('zBranchFilter').value;
+    let selectedDate = document.getElementById('zDateFilter').value;
+
+    try {
+        let q;
+        if (selectedBranch !== "All") {
+            q = query(collection(db, "shifts"), where("status", "==", "Closed"), where("branch", "==", selectedBranch), orderBy("endTime", "desc"), limit(50));
+        } else {
+            q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(50));
+        }
+
+        const snap = await getDocs(q);
+        let html = '';
+
+        snap.forEach(doc => {
+            let s = doc.data();
+            
+            // Filter by date if selected
+            if (selectedDate && s.endTime) {
+                let shiftDate = s.endTime.toDate().toISOString().split('T')[0];
+                if (shiftDate !== selectedDate) return; // Skip this one
+            }
+
+            let startStr = s.startTime ? s.startTime.toDate().toLocaleString() : 'N/A';
+            let endStr = s.endTime ? s.endTime.toDate().toLocaleString() : 'N/A';
+            let varColor = s.difference < 0 ? 'red' : (s.difference > 0 ? 'green' : '#333');
+            
+            let digitalTotal = s.totalDigitalSales || 0;
+            let grabSales = s.digitalBreakdown ? (s.digitalBreakdown['Grab'] || 0) : 0;
+            let gcashSales = s.digitalBreakdown ? (s.digitalBreakdown['GCash'] || 0) : 0;
+            
+            let cSales = s.totalCashSales !== undefined ? s.totalCashSales : s.grossSales;
+
+            let diffText = s.difference !== undefined ? `<span style="color:${varColor}; font-weight:bold;">₱${s.difference.toFixed(2)}</span>` : '-';
+            let safeDataStr = encodeURIComponent(JSON.stringify(s));
+
+            html += `<tr>
+                <td style="font-weight:bold; color:var(--primary);">${doc.id.slice(0,6).toUpperCase()}</td>
+                <td><strong style="font-size: 14px;">${s.branch}</strong><br><span style="font-size:11px; color:#666;">${s.cashier}</span></td>
+                <td style="font-size:12px; color:#555;">${startStr} <br> ${endStr}</td>
+                <td style="font-weight:bold;">₱${(cSales || 0).toLocaleString()} <br> <span style="font-size:11px; color:var(--primary);">+₱${digitalTotal.toLocaleString()} Digital</span></td>
+                <td style="font-weight:bold; color:#dc3545;">-₱${(s.cashOut || s.expenses || 0).toLocaleString()}</td>
+                <td>
+                    <div style="font-size:12px;">Sys Expected: <strong>₱${(s.expectedCash || 0).toLocaleString()}</strong></div>
+                    <div style="font-size:12px;">Phys Declared: <strong>₱${(s.declaredCash || 0).toLocaleString()}</strong></div>
+                    <div style="font-size:12px; border-top:1px dashed #ccc; margin-top:2px;">Diff: ${diffText}</div>
+                </td>
+                <td><button class="btn-refresh" style="background:#fef3c7; border:1px solid #fcd34d; color:#b45309;" onclick="window.viewZReadingDetails('${doc.id}', '${encodeURIComponent(JSON.stringify(s.cashBreakdown || {}))}', '${encodeURIComponent(JSON.stringify(s.physicalStockCount || {}))}', '${s.cashier}', '${s.branch}', ${s.declaredCash || 0})">🔍 View</button></td>
+            </tr>`;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 20px;">No Z-Readings match this filter.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading logs.</td></tr>';
+    }
+};
 
 // ========================================================
 // 🔍 THE BEAUTIFUL VARIANCE & BREAKDOWN MODAL
