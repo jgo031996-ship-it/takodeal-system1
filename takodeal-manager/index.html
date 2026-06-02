@@ -3326,6 +3326,32 @@
       </div>
     </div>
   </div>
+
+  <div class="overlay" id="dispatchDetailsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:white; width:700px; max-width:95%; border-radius:12px; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+            <div style="background:#ea580c; color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; font-size: 18px;">🚚 Delivery Full Details & Variance</h3>
+                <span onclick="document.getElementById('dispatchDetailsModal').style.display='none'" style="cursor:pointer; font-size:24px; font-weight:bold;">✖</span>
+            </div>
+            <div style="padding:20px; overflow-y:auto; max-height:60vh; background: #f8fafc;">
+                <div id="dispatchDetailsHeader" style="margin-bottom:20px; font-size:14px; color:#475569; background: white; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1;"></div>
+                <div style="border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+                    <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px; background: white;">
+                        <thead style="background:#1e293b; color: white;">
+                            <tr>
+                                <th style="padding:12px;">Item</th>
+                                <th style="padding:12px;">Qty Sent</th>
+                                <th style="padding:12px;">Qty Received</th>
+                                <th style="padding:12px;">Variance</th>
+                                <th style="padding:12px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dispatchDetailsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
   
   <style>
     /* MAGIC CSS: Makes inputs look like text when printing! */
