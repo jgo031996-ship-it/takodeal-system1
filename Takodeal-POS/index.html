@@ -1990,49 +1990,37 @@
   </div>
   </div>
 
-  <div class="overlay" id="expenseModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
-    <div class="modal"
-      style="background: white; width: 450px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden;">
-
-      <div
-        style="background: #dc2626; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+  <div class="overlay" id="expenseModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
+    <div class="modal" style="background: white; width: 500px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden;">
+      <div style="background: #dc2626; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
         <span style="font-weight: bold; font-size: 16px;">💸 Branch Expense / COD Payment</span>
-        <span onclick="document.getElementById('expenseModal').style.display='none'"
-          style="cursor: pointer; font-size: 20px;">✖</span>
+        <span onclick="document.getElementById('expenseModal').style.display='none'" style="cursor: pointer; font-size: 20px;">✖</span>
       </div>
-
-      <div style="padding: 20px;">
-        <label style="font-size: 13px; font-weight: bold; color: #334155;">What are you paying for?</label>
-        <select id="expenseType" class="input-box"
-          style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px;" onchange="toggleExpenseQty()">
+      <div style="padding: 20px; max-height: 75vh; overflow-y: auto;">
+        
+        <label style="font-size: 12px; font-weight: bold; color: #334155;">What are you paying for?</label>
+        <select id="expenseType" class="input-box" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px;" onchange="toggleExpenseQty()">
           <option value="general">General Expense (Fare, Ice, Cleaning Supplies)</option>
         </select>
 
-        <div id="expenseQtyDiv"
-          style="display: none; background: #fffbeb; border: 1px solid #fde68a; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
+        <div id="expenseQtyDiv" style="display: none; background: #fffbeb; border: 1px solid #fde68a; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
           <label style="font-size: 13px; font-weight: bold; color: #b45309;">📦 Quantity Delivered (Restock)</label>
-          <input type="number" id="expenseQty" class="input-box" style="width: 100%; padding: 10px; margin-top: 5px;"
-            placeholder="e.g., 50">
+          <input type="number" id="expenseQty" class="input-box" style="width: 100%; padding: 10px; margin-top: 5px;" placeholder="e.g., 50">
           <span style="font-size: 11px; color: #d97706;">This will automatically be added to your live inventory.</span>
         </div>
 
-        <label style="font-size: 13px; font-weight: bold; color: #334155;">Amount Taken from Drawer (₱)</label>
-        <input type="number" id="expenseAmount" class="input-box"
-          style="width: 100%; font-size: 18px; font-weight: bold; color: #dc2626; padding: 10px; margin-top: 5px; margin-bottom: 15px;"
-          placeholder="0.00">
+        <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount Taken from Drawer (₱)</label>
+        <input type="number" id="expenseAmount" class="input-box" style="width: 100%; font-size: 24px; font-weight: bold; color: #dc2626; padding: 12px; margin-top: 5px; margin-bottom: 15px; text-align: center;" placeholder="0.00">
 
-        <label style="font-size: 13px; font-weight: bold; color: #334155;">Notes / Description</label>
-        <input type="text" id="expenseDesc" class="input-box"
-          style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 20px;"
-          placeholder="e.g. Delivery from HQ, or Tricycle fare">
+        <label style="font-size: 12px; font-weight: bold; color: #334155;">Notes / Description</label>
+        <input type="text" id="expenseDesc" class="input-box" style="width: 100%; padding: 12px; margin-top: 5px; margin-bottom: 15px;" placeholder="e.g. Tricycle fare to palengke">
+
+        <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt Photo 📸 (Optional)</label>
+        <input type="file" id="expenseReceiptPhoto" accept="image/*" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc;">
 
         <div style="display: flex; gap: 10px;">
-          <button onclick="document.getElementById('expenseModal').style.display='none'"
-            style="flex: 1; padding: 12px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Cancel</button>
-          <button onclick="submitSmartExpense()"
-            style="flex: 1; padding: 12px; background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Submit
-            Expense</button>
+          <button onclick="document.getElementById('expenseModal').style.display='none'" style="flex: 1; padding: 14px; background: #e2e8f0; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Cancel</button>
+          <button onclick="submitSmartExpense()" style="flex: 2; padding: 14px; background: #dc2626; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px;">Submit Expense</button>
         </div>
       </div>
     </div>
