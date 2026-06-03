@@ -6911,16 +6911,21 @@ window.finalizePayslip = async function() {
     let data = window.currentPayslipData;
     if (!data) return;
     
-    // Grab the final net pay from the UI (in case you manually edited the numbers)
+    // Grab the final net pay from the UI
     let netPayStr = document.getElementById('psNetPay').innerText.replace(/,/g, '');
     let finalNetPay = parseFloat(netPayStr) || 0;
+
+    // 🔥 THE FIX: Grab the EXACT LIVE NUMBERS you typed into the boxes!
+    let actualLoanDeducted = parseFloat(document.getElementById('psLoans').value) || 0;
+    let actualValeDeducted = parseFloat(document.getElementById('psAdvance').value) || 0;
+    let actualFoodDeducted = parseFloat(document.getElementById('psFoods').value) || 0;
 
     // Load Cash Accounts if they aren't loaded yet
     if (!window.liveAccounts || window.liveAccounts.length === 0) {
         if(typeof window.loadAccountsAndBudget === 'function') await window.loadAccountsAndBudget();
     }
 
-    // Build a menu of your bank accounts (e.g. GoTyme, BDO, Petty Cash)
+    // Build a menu of your bank accounts
     let accList = window.liveAccounts.map((a, i) => `[${i}] ${a.name} (Bal: ₱${a.balance.toLocaleString()})`).join('\n');
     let accIdx = prompt(`DISBURSE PAYROLL\nNet Pay: ₱${finalNetPay.toLocaleString()}\n\nSelect Account to deduct this payment from (Enter Number):\n\n${accList}`);
 
@@ -6928,7 +6933,6 @@ window.finalizePayslip = async function() {
     let selAcc = window.liveAccounts[parseInt(accIdx)];
     if (!selAcc) { alert("❌ Invalid account selected."); return; }
 
-    // Warn if they don't have enough money in GoTyme!
     if (selAcc.balance < finalNetPay) {
         if(!confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance.toLocaleString()}. Deducting this will make it negative. Continue?`)) return;
     }
@@ -6937,7 +6941,7 @@ window.finalizePayslip = async function() {
     btn.innerText = "⏳ Processing..."; btn.disabled = true;
     
     try {
-        // 1. Deduct money from GoTyme / Selected Cash Account
+        // 1. Deduct money from Selected Cash Account
         await updateDoc(doc(db, "cash_accounts", selAcc.id), { balance: selAcc.balance - finalNetPay });
 
         // 2. Log it as an official Expense in your dashboard feed
@@ -6950,30 +6954,36 @@ window.finalizePayslip = async function() {
             timestamp: new Date()
         });
 
-        // 3. Automatically deduct the loan in the ledger!
-        if (data.loans > 0 && data.ledgerId) {
+        // 3. 🔥 Deduct exactly what you typed for the LOAN in the ledger!
+        if (actualLoanDeducted > 0 && data.ledgerId) {
             const ledgerRef = doc(db, "staff_ledger", data.ledgerId);
             const ledgerSnap = await getDoc(ledgerRef);
             if (ledgerSnap.exists()) {
                 let currentPaid = ledgerSnap.data().totalPaid || 0;
-                await updateDoc(ledgerRef, { totalPaid: currentPaid + data.loans });
+                await updateDoc(ledgerRef, { totalPaid: currentPaid + actualLoanDeducted });
             }
         }
         
-        // 4. Mark all Vales & Meals as "Paid" so they disappear next cutoff!
-        const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", data.name), where("status", "==", "Unpaid"));
-        const deductSnap = await getDocs(deductQ);
-        for (let dDoc of deductSnap.docs) {
-            await updateDoc(doc(db, "staff_deductions", dDoc.id), { status: "Paid", paidAt: new Date() });
+        // 4. 🔥 Only clear Vales & Meals if you actually deducted money for them!
+        if (actualValeDeducted > 0 || actualFoodDeducted > 0) {
+            const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", data.name), where("status", "==", "Unpaid"));
+            const deductSnap = await getDocs(deductQ);
+            for (let dDoc of deductSnap.docs) {
+                await updateDoc(doc(db, "staff_deductions", dDoc.id), { status: "Paid", paidAt: new Date() });
+            }
         }
 
-        // 5. 🔥 FREEZE THE PAYSLIP DATA IN FIREBASE 🔥
-        data.isPaid = true; // Mark it as officially paid
+        // 5. 🔥 FREEZE THE PAYSLIP DATA WITH YOUR EDITED NUMBERS 🔥
+        data.isPaid = true; 
+        data.loans = actualLoanDeducted;
+        data.advances = actualValeDeducted;
+        data.meals = actualFoodDeducted;
+        
         await addDoc(collection(db, "payroll_records"), {
             staffName: data.name,
             startDate: data.start,
             endDate: data.end,
-            frozenData: data, // Stores the exact snapshot of the math
+            frozenData: data, 
             finalNetPay: finalNetPay,
             processedAt: serverTimestamp()
         });
@@ -6981,30 +6991,24 @@ window.finalizePayslip = async function() {
         alert(`✅ Payroll Disbursed! ₱${finalNetPay.toLocaleString()} was deducted from ${selAcc.name}.\nAll Vales and Loans have been updated.`);
         
         // Change the button to Done and Lock It!
-        let btnFinalize = document.getElementById('btnFinalizePayslip');
-        if (btnFinalize) {
-            btnFinalize.innerText = "✅ Paid & Done!";
-            btnFinalize.style.background = "#16a34a";
-            btnFinalize.style.cursor = "not-allowed";
-            btnFinalize.disabled = true;
+        if (btn) {
+            btn.innerText = "✅ Paid & Done!";
+            btn.style.background = "#16a34a";
+            btn.style.cursor = "not-allowed";
+            btn.disabled = true;
         }
         
-        // 🔥 FIX 1: Auto-close the modal!
         document.getElementById('payslipModal').style.display = 'none';
-
-        // 🔥 FIX 2: Trigger the image download automatically!
         window.downloadPayslipImage();
         
-        // 🔥 FIX 3: Run the NEW generator so the buttons don't freeze!
         window.loadLedger(); 
-        window.generateAutoPayslips(); // <-- This was the culprit!
+        window.generateAutoPayslips(); 
         window.loadAccountsAndBudget();
     } catch (e) {
         console.error(e); alert("❌ Failed to finalize payslip.");
-        let btnFinalize = document.getElementById('btnFinalizePayslip');
-        if (btnFinalize) {
-            btnFinalize.innerText = "✅ Mark Paid & Auto-Deduct"; 
-            btnFinalize.disabled = false;
+        if (btn) {
+            btn.innerText = "✅ Mark Paid & Auto-Deduct"; 
+            btn.disabled = false;
         }
     } 
 };
