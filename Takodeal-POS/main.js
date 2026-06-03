@@ -1745,11 +1745,12 @@ window.submitAttendance = async function(type) {
             
             let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
 
-            // 🛑 STRICT LOCK: If you are Timed In, you MUST Time Out next. No exceptions.
+            // 🛑 STRICT LOCK: Prevent Double "Time In" Misclicks
             if (type === "TIME IN" && lastType === "TIME IN") {
-                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.\n\n(If you forgot to Time Out yesterday, please use the 'Manual Log' in the Manager App to fix your records.)`);
+                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.\n\n(If you forgot to Time Out yesterday, tell your Manager so they can fix your record.)`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
+            // 🛑 STRICT LOCK: Prevent Double "Time Out"
             if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
                 alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
@@ -1759,19 +1760,19 @@ window.submitAttendance = async function(type) {
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
 
-            // 🔥 NEW: 14-HOUR OVERTIME / FORGOTTEN PUNCH DETECTOR
+            // 🔥 NEW: 14-HOUR SHIFT VIOLATION DETECTOR
             if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog > 14) {
                 // Blast an urgent alert to the Manager App Security Feed!
                 await addDoc(collection(db, "manager_alerts"), {
                     type: "ATTENDANCE_ALERT",
                     branch: finalBranch,
                     cashier: staffName,
-                    message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours in a single shift. Remind them that Straight Duties MUST be logged as two separate shifts.`,
+                    message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
                     timestamp: new Date(),
                     isRead: false
                 });
                 
-                // Show a massive red warning to the cashier, but STILL allow them to log out
+                // Show a massive red warning to the cashier, but STILL allow them to log out so they aren't stuck
                 alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit.\n\nIf you are working a Straight Duty (2 shifts), you MUST Time In and Time Out for Shift 1, then immediately Time In again for Shift 2.\n\nThe Manager has been notified to review this time punch.`);
             }
         }
