@@ -438,6 +438,19 @@ window.processCheckout = async function (payload) {
                             let invData = addonInvSnap.docs[0].data();
                             let newStock = (invData.currentStock || 0) - totalAddonDeduct;
                             await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
+                          // 🔥 THE FIX: Log the addon deduction correctly!
+                            await addDoc(collection(db, "stock_logs"), {
+                                branch: payload.branch,
+                                item: addon.linkedIngredient,
+                                uom: invData.uom || 'units',
+                                oldQty: invData.currentStock || 0,
+                                newQty: newStock,
+                                variance: -totalAddonDeduct, // Negative because it's a deduction
+                                type: "Sales Auto-Deduct (Addon)",
+                                note: `Receipt: ${receiptId}`,
+                                user: payload.cashier,
+                                timestamp: serverTimestamp()
+                            });
                             if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                         }
                     }
@@ -454,6 +467,19 @@ window.processCheckout = async function (payload) {
         }
         if (totalBallsInOrder > 0) {
             await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: increment(totalBallsInOrder) }, { merge: true });
+        // 🔥 THE FIX: Log the deduction correctly!
+                  await addDoc(collection(db, "stock_logs"), {
+                      branch: payload.branch,
+                      item: recipeData.ingredientName,
+                      uom: invData.uom || 'units',
+                      oldQty: invData.currentStock || 0,
+                      newQty: newStock,
+                      variance: -totalAmountToDeduct, // Negative because it's a deduction
+                      type: "Sales Auto-Deduct",
+                      note: `Receipt: ${receiptId}`,
+                      user: payload.cashier,
+                      timestamp: serverTimestamp()
+                  });
         }
     }, 100); 
 
@@ -719,6 +745,20 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
             // Add it back to the current stock!
             let newStock = (invData.currentStock || 0) + totalAmountToReturn;
             await updateDoc(invDocRef, { currentStock: newStock });
+
+            // 🔥 THE FIX: Log the replenishment correctly so the Manager App can read it!
+            await addDoc(collection(db, "stock_logs"), {
+                branch: branch,
+                item: ingredientName,
+                uom: invData.uom || 'units',
+                oldQty: invData.currentStock || 0,
+                newQty: newStock,
+                variance: totalAmountToReturn, 
+                type: "Transaction Voided",
+                note: `Receipt ${receiptId} voided by ${cashierName}`,
+                user: cashierName,
+                timestamp: serverTimestamp()
+            });
           }
         }
 
@@ -740,6 +780,20 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                         
                         let newStock = (invData.currentStock || 0) + totalAddonReturn;
                         await updateDoc(invDocRef, { currentStock: newStock });
+
+                      // 🔥 THE FIX: Log the addon replenishment correctly!
+                      await addDoc(collection(db, "stock_logs"), {
+                          branch: branch,
+                          item: addon.linkedIngredient,
+                          uom: invData.uom || 'units',
+                          oldQty: invData.currentStock || 0,
+                          newQty: newStock,
+                          variance: totalAddonReturn, 
+                          type: "Transaction Voided (Addon)",
+                          note: `Receipt ${receiptId} voided by ${cashierName}`,
+                          user: cashierName,
+                          timestamp: serverTimestamp()
+                      });
                     }
                 }
             }
@@ -2825,7 +2879,24 @@ window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty,
         } else {
             let tRef = targetSnap.docs[0].ref;
             let tStock = targetSnap.docs[0].data().currentStock || 0;
-            await updateDoc(tRef, { currentStock: tStock + actualBaseQty });
+            let tUom = targetSnap.docs[0].data().uom || baseUom;
+            let newStock = tStock + actualBaseQty;
+
+            await updateDoc(tRef, { currentStock: newStock });
+
+            // 🔥 THE FIX: Log the delivery addition correctly!
+            await addDoc(collection(db, "stock_logs"), {
+                branch: safeBranch,
+                item: itemName,
+                uom: tUom,
+                oldQty: tStock,
+                newQty: newStock,
+                variance: actualBaseQty, 
+                type: "Delivery Received",
+                note: `Received from Main Office`,
+                user: localStorage.getItem('cashierName') || 'System',
+                timestamp: serverTimestamp()
+            });
         }
 
         // 2. Mark Dispatch as Received 
