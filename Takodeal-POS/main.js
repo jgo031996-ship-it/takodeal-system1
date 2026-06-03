@@ -1742,6 +1742,22 @@ window.submitAttendance = async function(type) {
                 alert(`❌ You just Timed In a few minutes ago!\n\nWait until your shift is over to Time Out.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
+
+            // 🔥 NEW: 14-HOUR OVERTIME / FORGOTTEN PUNCH DETECTOR
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog > 14) {
+                // Blast an urgent alert to the Manager App Security Feed!
+                await addDoc(collection(db, "manager_alerts"), {
+                    type: "ATTENDANCE_ALERT",
+                    branch: finalBranch,
+                    cashier: staffName,
+                    message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours in a single shift. Remind them that Straight Duties MUST be logged as two separate shifts.`,
+                    timestamp: new Date(),
+                    isRead: false
+                });
+                
+                // Show a massive red warning to the cashier, but STILL allow them to log out
+                alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit.\n\nIf you are working a Straight Duty (2 shifts), you MUST Time In and Time Out for Shift 1, then immediately Time In again for Shift 2.\n\nThe Manager has been notified to review this time punch.`);
+            }
         }
     } catch(e) {
         console.warn("Fast query failed. Using fallback lock method...");
