@@ -3821,6 +3821,7 @@ window.printParkedReceipt = function(docId) {
                 confirmButtonText: 'Understood',
                 background: '#ffffff',
                 backdrop: `rgba(0,0,0,0.5)`,
+                scrollbarPadding: false, // 🔥 THE FIX: Stops the background from jumping!
                 customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
             });
         };
