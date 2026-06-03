@@ -7650,17 +7650,35 @@ window.generateAutoPayslips = async function() {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
+                // 1. Calculate Night Diff FIRST
+                let outHour = timeOut.getHours();
+                let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+                let thisShiftNightBonus = 0;
+
+                if (outHour >= 0 && outHour <= 4) {
+                    staffData[name].nightShifts += 1;
+                    // Strict Lock: Only grant the ₱50 if their profile allows it!
+                    if (isNightEligible) {
+                        thisShiftNightBonus = 50;
+                        staffData[name].nightBonusTotal += thisShiftNightBonus; 
+                    }
+                }
+
+                // 2. Calculate Holiday Pay SECOND (Including Night Diff in the base math!)
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
                 let hType = holidaysObj[logDateStr];
                 let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
                 let hBonus = 0;
 
+                // The Magic Formula: (Daily Rate * Shifts) + Night Bonus
+                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+
                 if (hType === 'Regular') {
-                    hBonus = (dailyRate * shiftMultiplier) * 0.50; 
-                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Holiday)</span>`;
+                    hBonus = baseForHoliday * 0.50; 
+                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Holiday: +₱${hBonus.toFixed(2)})</span>`;
                 } else if (hType === 'Special') {
-                    hBonus = (dailyRate * shiftMultiplier) * 0.10; 
-                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Holiday)</span>`;
+                    hBonus = baseForHoliday * 0.10; 
+                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Holiday: +₱${hBonus.toFixed(2)})</span>`;
                 }
 
                 staffData[name].logs.push({
@@ -7675,15 +7693,6 @@ window.generateAutoPayslips = async function() {
                 staffData[name].shiftsWorked += shiftMultiplier; 
                 staffData[name].holidayPayTotal += hBonus;
 
-                let outHour = timeOut.getHours();
-                let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-
-                if (outHour >= 0 && outHour <= 4) {
-                    staffData[name].nightShifts += 1;
-                    if (isNightEligible) {
-                        staffData[name].nightBonusTotal += 50; 
-                    }
-                }
                 delete activeShifts[name];
             }
         });
