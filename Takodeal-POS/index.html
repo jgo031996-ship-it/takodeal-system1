@@ -1244,9 +1244,17 @@
           let btn = document.getElementById('btnSubmitPin'); 
           btn.innerText = "Verifying..."; btn.disabled = true;
           
-          // It still calls verifyPin, but now it passes the typed word instead of numbers!
           let identity = await window.verifyPin(password);
           
+          // If the device wall stopped them, just reset the button silently
+          if (identity === "BLOCKED") {
+              passInput.value = ""; 
+              btn.innerText = "Secure Login"; 
+              btn.disabled = false; 
+              return; 
+          }
+
+          // If it genuinely couldn't find the PIN
           if (!identity) { 
               alert("Invalid Password."); 
               passInput.value = ""; 
