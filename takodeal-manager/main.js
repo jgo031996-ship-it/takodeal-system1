@@ -432,6 +432,10 @@ window.addNewStaff = function() {
     document.getElementById('empDateHired').value = '';
     document.getElementById('empHourlyRate').value = '';
     document.getElementById('empPin').value = '';
+    
+    // 🔥 NEW: Set toggle to checked by default for new staff
+    if (document.getElementById('empNightDiff')) document.getElementById('empNightDiff').checked = true;
+
     document.getElementById('empPhone').value = '';
     document.getElementById('empAddress').value = '';
     document.getElementById('empGcashName').value = '';
@@ -456,6 +460,10 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empDateHired').value = data.dateHired || '';
     document.getElementById('empHourlyRate').value = data.hourlyRate || '';
     document.getElementById('empPin').value = data.pin || '';
+    
+    // 🔥 NEW: Load the saved toggle state (defaults to true if not set)
+    if (document.getElementById('empNightDiff')) document.getElementById('empNightDiff').checked = (data.eligibleNightDiff !== false);
+
     document.getElementById('empPhone').value = data.phone || '';
     document.getElementById('empAddress').value = data.address || '';
     document.getElementById('empGcashName').value = data.gcashName || '';
@@ -467,6 +475,7 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empPagibig').value = data.pagibig || '';
     document.getElementById('empScheduleName').value = data.scheduleName || '';
     document.getElementById('employeeProfileModal').style.display = 'flex';
+    
     // Fetch History
     const tbody = document.getElementById('empProfileHistoryBody');
     if (tbody) {
@@ -511,6 +520,10 @@ window.saveEmployeeProfile = async function() {
         dateHired: document.getElementById('empDateHired').value,
         hourlyRate: rate,
         pin: pin,
+        
+        // 🔥 NEW: Save the toggle state to the cloud!
+        eligibleNightDiff: document.getElementById('empNightDiff') ? document.getElementById('empNightDiff').checked : true,
+        
         phone: document.getElementById('empPhone').value.trim(),
         address: document.getElementById('empAddress').value.trim(),
         gcashName: document.getElementById('empGcashName').value.trim(),
@@ -521,7 +534,6 @@ window.saveEmployeeProfile = async function() {
         philhealth: document.getElementById('empPhilhealth').value.trim(),
         pagibig: document.getElementById('empPagibig').value.trim(),
         scheduleName: document.getElementById('empScheduleName').value.trim(),
-      
     };
 
     let btn = document.getElementById('btnSaveEmpProfile');
