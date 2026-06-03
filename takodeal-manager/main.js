@@ -7602,6 +7602,8 @@ window.generateAutoPayslips = async function() {
         // 🔥 THE FIX: Completely ignore "staff_requests", only read the verified Unpaid Ledger!
         const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
         const deductSnap = await getDocs(deductQ);
+        const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", trueStartDate), where("dateAdded", "<=", fetchEndDate));
+        const bonusSnap = await getDocs(bonusQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
@@ -7728,6 +7730,32 @@ window.generateAutoPayslips = async function() {
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
         });
 
+        // 🔥 INJECT MANUAL OVERTIME BONUSES
+        bonusSnap.forEach(docSnap => {
+            let b = docSnap.data();
+            let name = b.staffName;
+            
+            // If they didn't have any shifts, create an empty profile for them
+            if (!staffData[name]) {
+                let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
+                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] };
+            }
+            
+            let amt = parseFloat(b.amount) || 0;
+            // Pushes the money into the Overtime / Night Diff box!
+            staffData[name].nightBonusTotal += amt; 
+            
+            // Creates a beautiful visual log at the bottom of their Payslip so they know they got it!
+            let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
+            staffData[name].logs.push({
+                date: bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
+                in: "---",
+                out: "---",
+                hrs: "0.00",
+                remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`
+            });
+        });
+      
         let html = '';
         let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
 
@@ -8646,6 +8674,75 @@ window.submitManualAttendance = async function() {
         alert("❌ Failed to save manual log.");
     } finally {
         btn.innerText = "💾 Save Override Log"; btn.disabled = false;
+    }
+};
+
+window.openManualOvertimeModal = async function() {
+    document.getElementById('manualOvertimeModal').style.display = 'flex';
+    let select = document.getElementById('manOtStaff');
+    select.innerHTML = '<option value="">Loading Staff...</option>';
+    
+    // Auto-set date to today
+    let now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('manOtDate').value = now.toISOString().split('T')[0];
+    
+    document.getElementById('manOtAmount').value = '';
+    document.getElementById('manOtRemarks').value = '';
+
+    try {
+        const snap = await getDocs(collection(db, "cashiers"));
+        let html = '<option value="">-- Select Staff --</option>';
+        let staffList = [];
+        snap.forEach(doc => staffList.push(doc.data().cashierName));
+        staffList.sort().forEach(name => {
+            html += `<option value="${name}">${name}</option>`;
+        });
+        select.innerHTML = html;
+    } catch (e) {
+        console.error(e);
+        select.innerHTML = '<option value="">Error loading staff</option>';
+    }
+};
+
+window.submitManualOvertime = async function() {
+    let staffName = document.getElementById('manOtStaff').value;
+    let dateRaw = document.getElementById('manOtDate').value;
+    let amount = parseFloat(document.getElementById('manOtAmount').value);
+    let remarks = document.getElementById('manOtRemarks').value.trim();
+
+    if (!staffName || !dateRaw || isNaN(amount) || amount <= 0 || !remarks) {
+        alert("❌ Please fill out all fields correctly (Amount must be greater than 0).");
+        return;
+    }
+
+    let btn = document.getElementById('btnSaveManualOt');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        // Set the date to midday so it safely falls within payroll cutoff ranges!
+        let otDate = new Date(dateRaw + 'T12:00:00');
+
+        await addDoc(collection(db, "staff_bonuses"), {
+            staffName: staffName,
+            amount: amount,
+            dateAdded: otDate,
+            type: "Overtime",
+            remarks: remarks,
+            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: serverTimestamp()
+        });
+
+        alert(`✅ Success! ₱${amount.toLocaleString()} Overtime Bonus added for ${staffName}.`);
+        document.getElementById('manualOvertimeModal').style.display = 'none';
+        
+        alert("Reminder: If you are calculating payroll, click 'Generate List' again to apply this new bonus.");
+
+    } catch (error) {
+        console.error("OT Log Error:", error);
+        alert("❌ Failed to save overtime bonus.");
+    } finally {
+        btn.innerText = "💾 Save Overtime Bonus"; btn.disabled = false;
     }
 };
 
