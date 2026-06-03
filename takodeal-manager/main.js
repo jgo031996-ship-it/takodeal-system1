@@ -10094,7 +10094,28 @@ window.loadMonthlyTarget = async function() {
         
         let mtdSales = 0;
         txSnap.forEach(d => {
-            if (d.data().status !== 'Voided') mtdSales += (d.data().netTotal || 0);
+            let tx = d.data();
+            if (tx.status !== 'Voided') {
+                // 🔥 THE NEW NET REVENUE ENGINE
+                // Scans every payment method. If it's Grab, it automatically deducts 18% Commission!
+                if (tx.splitDetails && tx.splitDetails.length > 0) {
+                    tx.splitDetails.forEach(split => {
+                        let amount = parseFloat(split.amount) || 0;
+                        if (split.method === 'Grab') {
+                            mtdSales += (amount * 0.82); // Removes 18%
+                        } else {
+                            mtdSales += amount;
+                        }
+                    });
+                } else {
+                    let amount = parseFloat(tx.netTotal) || 0;
+                    if (tx.paymentMethod === 'Grab') {
+                        mtdSales += (amount * 0.82); // Removes 18%
+                    } else {
+                        mtdSales += amount;
+                    }
+                }
+            }
         });
         
         let percent = targetAmount > 0 ? (mtdSales / targetAmount) * 100 : 0;
@@ -10107,7 +10128,7 @@ window.loadMonthlyTarget = async function() {
         let requiredDaily = remainingToTarget > 0 ? remainingToTarget / daysLeft : 0;
         
         document.getElementById('targetGoalAmount').innerText = `₱${targetAmount.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('targetMtdSales').innerText = `MTD Sales: ₱${mtdSales.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('targetMtdSales').innerText = `MTD Sales (Net 18%): ₱${mtdSales.toLocaleString(undefined, {minimumFractionDigits:2})}`;
         document.getElementById('targetProgressBar').style.width = `${percent}%`;
         document.getElementById('targetProgressText').innerText = `${percent.toFixed(1)}% Completed`;
         
