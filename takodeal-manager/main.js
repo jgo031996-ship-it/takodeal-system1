@@ -4747,41 +4747,58 @@ window.fetchZReadings = async function() {
     let selectedDate = document.getElementById('zDateFilter').value;
 
     try {
-        let q;
-        if (selectedBranch !== "All") {
-            q = query(collection(db, "shifts"), where("status", "==", "Closed"), where("branch", "==", selectedBranch), orderBy("endTime", "desc"), limit(50));
-        } else {
-            q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(50));
-        }
-
+        // 🔥 THE INDEX-FREE QUERY 🔥
+        // We only ask Firebase for one simple thing: "Give me the closed shifts."
+        // Firebase does not need a custom index for a single requirement!
+        let q = query(collection(db, "shifts"), where("status", "==", "Closed"));
         const snap = await getDocs(q);
-        let html = '';
 
-        snap.forEach(doc => {
-            let s = doc.data();
-            
-            // Filter by date if selected
+        // Put them in a Javascript array so we can sort them manually
+        let allShifts = [];
+        snap.forEach(doc => allShifts.push({ id: doc.id, ...doc.data() }));
+
+        // 🧠 JAVASCRIPT SORTING: Sort by newest first
+        allShifts.sort((a, b) => {
+            let timeA = a.endTime ? a.endTime.toDate().getTime() : 0;
+            let timeB = b.endTime ? b.endTime.toDate().getTime() : 0;
+            return timeB - timeA;
+        });
+
+        let html = '';
+        let displayCount = 0;
+
+        // 🧠 JAVASCRIPT FILTERING: We loop through them and hide what we don't want!
+        allShifts.forEach(s => {
+            if (displayCount >= 50) return; // Only show 50 to keep the app fast
+
+            // If the manager selected a specific branch, skip the others!
+            if (selectedBranch !== "All" && s.branch !== selectedBranch) return;
+
+            // If the manager selected a specific date, skip the others!
             if (selectedDate && s.endTime) {
                 let shiftDate = s.endTime.toDate().toISOString().split('T')[0];
-                if (shiftDate !== selectedDate) return; // Skip this one
+                if (shiftDate !== selectedDate) return; 
             }
 
+            // If it survived the filters, build the HTML!
+            displayCount++;
             let startStr = s.startTime ? s.startTime.toDate().toLocaleString() : 'N/A';
             let endStr = s.endTime ? s.endTime.toDate().toLocaleString() : 'N/A';
             let varColor = s.difference < 0 ? 'red' : (s.difference > 0 ? 'green' : '#333');
             
             let digitalTotal = s.totalDigitalSales || 0;
-            let grabSales = s.digitalBreakdown ? (s.digitalBreakdown['Grab'] || 0) : 0;
-            let gcashSales = s.digitalBreakdown ? (s.digitalBreakdown['GCash'] || 0) : 0;
-            
             let cSales = s.totalCashSales !== undefined ? s.totalCashSales : s.grossSales;
-
             let diffText = s.difference !== undefined ? `<span style="color:${varColor}; font-weight:bold;">₱${s.difference.toFixed(2)}</span>` : '-';
-            let safeDataStr = encodeURIComponent(JSON.stringify(s));
+            
+            // Safe JSON strings for the View button
+            let breakdownStr = encodeURIComponent(JSON.stringify(s.cashBreakdown || {}));
+            let stockStr = encodeURIComponent(JSON.stringify(s.physicalStockCount || {}));
+            let safeCashier = s.cashier ? s.cashier.replace(/'/g, "\\'") : 'Unknown';
+            let safeBranch = s.branch ? s.branch.replace(/'/g, "\\'") : 'Unknown';
 
             html += `<tr>
-                <td style="font-weight:bold; color:var(--primary);">${doc.id.slice(0,6).toUpperCase()}</td>
-                <td><strong style="font-size: 14px;">${s.branch}</strong><br><span style="font-size:11px; color:#666;">${s.cashier}</span></td>
+                <td style="font-weight:bold; color:var(--primary);">${s.id.slice(0,6).toUpperCase()}</td>
+                <td><strong style="font-size: 14px;">${safeBranch}</strong><br><span style="font-size:11px; color:#666;">${safeCashier}</span></td>
                 <td style="font-size:12px; color:#555;">${startStr} <br> ${endStr}</td>
                 <td style="font-weight:bold;">₱${(cSales || 0).toLocaleString()} <br> <span style="font-size:11px; color:var(--primary);">+₱${digitalTotal.toLocaleString()} Digital</span></td>
                 <td style="font-weight:bold; color:#dc3545;">-₱${(s.cashOut || s.expenses || 0).toLocaleString()}</td>
@@ -4790,7 +4807,7 @@ window.fetchZReadings = async function() {
                     <div style="font-size:12px;">Phys Declared: <strong>₱${(s.declaredCash || 0).toLocaleString()}</strong></div>
                     <div style="font-size:12px; border-top:1px dashed #ccc; margin-top:2px;">Diff: ${diffText}</div>
                 </td>
-                <td><button class="btn-refresh" style="background:#fef3c7; border:1px solid #fcd34d; color:#b45309;" onclick="window.viewZReadingDetails('${doc.id}', '${encodeURIComponent(JSON.stringify(s.cashBreakdown || {}))}', '${encodeURIComponent(JSON.stringify(s.physicalStockCount || {}))}', '${s.cashier}', '${s.branch}', ${s.declaredCash || 0})">🔍 View</button></td>
+                <td><button class="btn-refresh" style="background:#fef3c7; border:1px solid #fcd34d; color:#b45309;" onclick="window.viewZReadingDetails('${s.id}', '${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${s.declaredCash || 0})">🔍 View</button></td>
             </tr>`;
         });
         
@@ -10195,7 +10212,7 @@ window.editSalesTarget = async function() {
 };
 
 // ========================================================
-// 🧠 TAKODEÁL CEO AI ORACLE ENGINE
+// 🧠 TAKODEÁL CEO AI ORACLE ENGINE (INDEX-FREE)
 // ========================================================
 
 window.generateAIReport = async function() {
@@ -10211,9 +10228,10 @@ window.generateAIReport = async function() {
     startDate.setHours(0,0,0,0);
 
     try {
-        // 1. GATHER DATA SOURCES
-        const qWaste = query(collection(db, "stock_logs"), where("branch", "==", branch), where("type", "in", ["Waste / Spoilage", "Shift Close Variance"]), where("timestamp", ">=", startDate));
-        const qShifts = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), where("endTime", ">=", startDate));
+        // 1. GATHER DATA SOURCES (THE INDEX-FREE WAY)
+        // We only ask Firebase to filter by Date. We do everything else locally!
+        const qWaste = query(collection(db, "stock_logs"), where("timestamp", ">=", startDate));
+        const qShifts = query(collection(db, "shifts"), where("startTime", ">=", startDate));
         const qInventory = query(collection(db, "inventory"), where("branch", "==", branch));
 
         const [wasteSnap, shiftSnap, invSnap] = await Promise.all([getDocs(qWaste), getDocs(qShifts), getDocs(qInventory)]);
@@ -10228,6 +10246,11 @@ window.generateAIReport = async function() {
 
         wasteSnap.forEach(doc => {
             let data = doc.data();
+            
+            // 🛑 JAVASCRIPT FILTERING: Skip items that don't belong to this branch or aren't waste!
+            if (data.branch !== branch) return;
+            if (data.type !== "Waste / Spoilage" && data.type !== "Shift Close Variance") return;
+
             let qtyLost = Math.abs(data.variance || 0);
             let itemName = data.item;
             
@@ -10259,8 +10282,13 @@ window.generateAIReport = async function() {
         let totalSales = 0;
 
         shiftSnap.forEach(doc => {
-            totalShifts++;
             let data = doc.data();
+            
+            // 🛑 JAVASCRIPT FILTERING: Skip if wrong branch or not closed
+            if (data.branch !== branch) return;
+            if (data.status !== "Closed") return;
+
+            totalShifts++;
             let cSales = data.totalCashSales !== undefined ? data.totalCashSales : (data.grossSales || 0);
             totalSales += cSales + (data.totalDigitalSales || 0);
             
