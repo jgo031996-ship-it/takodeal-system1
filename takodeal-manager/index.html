@@ -1369,6 +1369,7 @@
                   <input type="date" id="attendanceDateFilter" onchange="loadAttendanceLogs()" class="input-box" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; outline: none; cursor: pointer;">
                   <button onclick="downloadExcel('attendanceTableBody', 'TAKODEAL_Attendance')" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px;">📥 Export Excel</button>
                   <button class="btn-refresh" style="background: white; color: var(--primary); border: 1px solid var(--primary);" onclick="window.openManualAttendanceModal()">➕ Add Manual Log</button>
+                  <button class="btn-refresh" style="background: white; color: #ea580c; border: 1px solid #ea580c;" onclick="window.openManualOvertimeModal()">➕ Add OT Bonus</button>
               </div>
           </div> <div class="table-responsive">
               <table class="data-table">
@@ -2160,6 +2161,32 @@
       </div>
   </div>
 
+  <div id="manualOvertimeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+        <div style="background: #ea580c; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="margin: 0; font-size: 18px;">⏱️ Add Overtime Bonus</h2>
+            <span onclick="document.getElementById('manualOvertimeModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">×</span>
+        </div>
+        <div style="padding: 25px; background: #f8fafc;">
+            <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Grant manual overtime pay to a specific staff member for a specific date. This will automatically add to their next payslip.</p>
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Staff Name</label>
+            <select id="manOtStaff" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold;"></select>
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Date of Overtime</label>
+            <input type="date" id="manOtDate" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155;">
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Overtime Amount (₱)</label>
+            <input type="number" id="manOtAmount" placeholder="e.g. 150" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: 900; color: #ea580c; font-size: 18px;">
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Remarks / Reason</label>
+            <input type="text" id="manOtRemarks" placeholder="e.g. Extended 2 hours for deep cleaning" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+
+            <button id="btnSaveManualOt" onclick="window.submitManualOvertime()" style="width: 100%; background: #ea580c; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Save Overtime Bonus</button>
+        </div>
+    </div>
+  </div>
+    
 <div id="view-addons" class="view">
       <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
