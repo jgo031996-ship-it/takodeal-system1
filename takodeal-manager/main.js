@@ -7607,6 +7607,17 @@ window.generateAutoPayslips = async function() {
 
             if (log.type === "TIME IN") {
                 if (log.timestamp.toDate() <= trueEndDate) {
+                    // 🔥 THE FIX: Did they forget to time out of their last shift or misclick?
+                    if (activeShifts[name]) {
+                        let missedIn = activeShifts[name];
+                        staffData[name].logs.push({
+                            date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
+                            in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+                            out: "MISSED",
+                            hrs: "0.00",
+                            remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out (Misclick)</span>`
+                        });
+                    }
                     activeShifts[name] = log.timestamp.toDate();
                 }
             } else if (log.type === "TIME OUT" && activeShifts[name]) {
@@ -7615,6 +7626,19 @@ window.generateAutoPayslips = async function() {
                 
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
+                // 🔥 THE FIX: 16+ Hour Invalid Shift Blocker
+                if (hoursWorked > 16) {
+                    staffData[name].logs.push({
+                        date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
+                        in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+                        out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+                        hrs: hoursWorked.toFixed(2),
+                        remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h) - Use Manual Log</span>`
+                    });
+                    delete activeShifts[name];
+                    return; // Skip adding this to payroll totals!
+                }
+
                 let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
                 let shiftMultiplier = 1;
 
@@ -7652,9 +7676,13 @@ window.generateAutoPayslips = async function() {
                 staffData[name].holidayPayTotal += hBonus;
 
                 let outHour = timeOut.getHours();
+                let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+
                 if (outHour >= 0 && outHour <= 4) {
                     staffData[name].nightShifts += 1;
-                    staffData[name].nightBonusTotal += 50; 
+                    if (isNightEligible) {
+                        staffData[name].nightBonusTotal += 50; 
+                    }
                 }
                 delete activeShifts[name];
             }
