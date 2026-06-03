@@ -10193,3 +10193,156 @@ window.editSalesTarget = async function() {
     window.hasLoadedSalesTarget = false; 
     await originalEditTarget();
 };
+
+// ========================================================
+// 🧠 TAKODEÁL CEO AI ORACLE ENGINE
+// ========================================================
+
+window.generateAIReport = async function() {
+    let branch = document.getElementById('aiBranchSelect').value;
+    let days = parseInt(document.getElementById('aiDaysSelect').value);
+    
+    document.getElementById('aiStatsGrid').style.display = 'none';
+    document.getElementById('aiReportContainer').style.display = 'none';
+    document.getElementById('aiLoadingUI').style.display = 'block';
+
+    let startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0,0,0,0);
+
+    try {
+        // 1. GATHER DATA SOURCES
+        const qWaste = query(collection(db, "stock_logs"), where("branch", "==", branch), where("type", "in", ["Waste / Spoilage", "Shift Close Variance"]), where("timestamp", ">=", startDate));
+        const qShifts = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), where("endTime", ">=", startDate));
+        const qInventory = query(collection(db, "inventory"), where("branch", "==", branch));
+
+        const [wasteSnap, shiftSnap, invSnap] = await Promise.all([getDocs(qWaste), getDocs(qShifts), getDocs(qInventory)]);
+
+        let branchInv = {};
+        invSnap.forEach(doc => { branchInv[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
+
+        // 2. CRUNCH WASTE DATA
+        let totalWasteValue = 0;
+        let itemWasteMap = {};
+        let missingInventoryEvents = 0;
+
+        wasteSnap.forEach(doc => {
+            let data = doc.data();
+            let qtyLost = Math.abs(data.variance || 0);
+            let itemName = data.item;
+            
+            let costPerUnit = branchInv[itemName] || 0;
+            let valueLost = qtyLost * costPerUnit;
+
+            totalWasteValue += valueLost;
+
+            if (!itemWasteMap[itemName]) itemWasteMap[itemName] = { qty: 0, value: 0 };
+            itemWasteMap[itemName].qty += qtyLost;
+            itemWasteMap[itemName].value += valueLost;
+
+            if (data.type === "Shift Close Variance") missingInventoryEvents++;
+        });
+
+        let topWastedItem = "None";
+        let maxWasteValue = 0;
+        for (let item in itemWasteMap) {
+            if (itemWasteMap[item].value > maxWasteValue) {
+                maxWasteValue = itemWasteMap[item].value;
+                topWastedItem = item;
+            }
+        }
+
+        // 3. CRUNCH SHIFT AUDIT DATA
+        let totalShifts = 0;
+        let shiftsWithCashVariance = 0;
+        let totalCashShortage = 0;
+        let totalSales = 0;
+
+        shiftSnap.forEach(doc => {
+            totalShifts++;
+            let data = doc.data();
+            let cSales = data.totalCashSales !== undefined ? data.totalCashSales : (data.grossSales || 0);
+            totalSales += cSales + (data.totalDigitalSales || 0);
+            
+            if (data.difference && Math.abs(data.difference) > 5) { // Allowance of 5 pesos
+                shiftsWithCashVariance++;
+                if (data.difference < 0) totalCashShortage += Math.abs(data.difference);
+            }
+        });
+
+        // 4. CALCULATE HEALTH SCORES
+        let errorEvents = shiftsWithCashVariance + missingInventoryEvents;
+        let accuracyScore = totalShifts > 0 ? Math.max(0, 100 - ((errorEvents / (totalShifts * 2)) * 100)) : 100;
+        let avgSalesPerDay = days > 0 ? totalSales / days : 0;
+
+        // 5. UPDATE UI CARDS
+        document.getElementById('aiStatWaste').innerText = `₱${totalWasteValue.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('aiStatAccuracy').innerText = `${accuracyScore.toFixed(0)}%`;
+        document.getElementById('aiStatAccuracy').style.color = accuracyScore > 85 ? "#16a34a" : "#dc2626";
+        document.getElementById('aiStatTopWaste').innerText = topWastedItem === "None" ? "Looking Good!" : `${topWastedItem}\n(₱${maxWasteValue.toFixed(2)} lost)`;
+        document.getElementById('aiStatShortage').innerText = `₱${totalCashShortage.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+
+        // 6. 🧠 THE AI TEXT GENERATION ENGINE
+        let reportHTML = `<p><strong>Analysis Period:</strong> Last ${days} days at ${branch}.</p>`;
+
+        // A. Sales & Performance
+        reportHTML += `<p><strong>📈 Financial Overview:</strong> Over the last ${days} days, this branch generated <strong>₱${totalSales.toLocaleString()}</strong> in gross revenue, averaging ₱${avgSalesPerDay.toLocaleString(undefined, {maximumFractionDigits:0})} per day. `;
+        if (avgSalesPerDay > 5000) reportHTML += `Volume is extremely healthy, indicating strong local demand. Keep pushing up-selling at the counter.`;
+        else reportHTML += `Sales pacing is somewhat moderate. Consider launching localized promotions or checking if "Sold Out" statuses are hurting your ticket averages.`;
+        reportHTML += `</p>`;
+
+        // B. Waste & Spoilage
+        reportHTML += `<p><strong>🗑️ Waste & Optimization:</strong> The system tracked <strong>₱${totalWasteValue.toLocaleString(undefined, {minimumFractionDigits:2})}</strong> in lost ingredients/materials. `;
+        if (totalWasteValue > 500) {
+            reportHTML += `This is a direct hit to your net margin. The primary culprit is <strong>${topWastedItem}</strong>. <span style="color:#dc2626; font-weight:bold;">Action Required:</span> Immediately review portion control and storage protocols for ${topWastedItem} with the kitchen staff.`;
+        } else {
+            reportHTML += `<span style="color:#16a34a; font-weight:bold;">Great job!</span> Spoilage is being kept to an absolute minimum, protecting your COGS.`;
+        }
+        reportHTML += `</p>`;
+
+        // C. Staff Accountability
+        reportHTML += `<p><strong>⚖️ Staff Integrity & Accuracy:</strong> Based on the Z-Readings and Blind Inventory counts, your staff's operational accuracy is rated at <strong>${accuracyScore.toFixed(0)}%</strong>. `;
+        if (accuracyScore < 85) {
+            reportHTML += `<span style="color:#dc2626; font-weight:bold;">Critical Alert:</span> There were ${missingInventoryEvents} instances of missing physical stock and ₱${totalCashShortage.toLocaleString()} in missing drawer cash. You must confront the specific cashiers on duty during these shortages and mandate the use of Reason Letters.`;
+        } else if (accuracyScore < 95) {
+            reportHTML += `Accuracy is acceptable, but minor variances in stock and cash were detected. Remind cashiers to double-check their change and carefully input waste records before closing.`;
+        } else {
+            reportHTML += `<span style="color:#16a34a; font-weight:bold;">Excellent.</span> Drawer counts and stock audits are perfectly aligned. Your staff is executing the end-of-shift SOP flawlessly.`;
+        }
+        reportHTML += `</p>`;
+
+        // D. Final Strategic Verdict
+        reportHTML += `<div style="background:#f8fafc; padding:15px; border-left:4px solid #8b5cf6; margin-top:20px; border-radius:4px;">
+            <strong style="color:#4c1d95;">👑 CEO Action Plan:</strong><br>`;
+        
+        if (accuracyScore < 85) {
+            reportHTML += `Halt expansion efforts at this branch temporarily and focus on <strong>Internal Audit</strong>. Fix the leak before pouring more marketing money into this location.`;
+        } else if (totalWasteValue > 1000) {
+            reportHTML += `Focus entirely on <strong>Kitchen Retraining</strong>. Your sales are fine, but you are throwing profits in the trash. Print the kitchen recipes and enforce strict adherence to the BOM.`;
+        } else {
+            reportHTML += `Operations are stable and highly profitable. Your focus here should shift to <strong>Scaling & Marketing</strong>. Push your staff to up-sell addons to increase the average ticket size.`;
+        }
+        reportHTML += `</div>`;
+
+        document.getElementById('aiReportText').innerHTML = reportHTML;
+        
+        // Hide loading, show UI
+        document.getElementById('aiLoadingUI').style.display = 'none';
+        document.getElementById('aiStatsGrid').style.display = 'grid';
+        document.getElementById('aiReportContainer').style.display = 'block';
+
+    } catch(e) {
+        console.error("AI Report Error:", e);
+        document.getElementById('aiLoadingUI').innerHTML = `<span style="color:red; font-size:18px;">❌ Critical Error: Could not compile data.</span>`;
+    }
+};
+
+// Hook the AI tab into the existing navigation
+const originalSwitchView = window.switchView;
+window.switchView = function (viewId) {
+    originalSwitchView(viewId);
+    if (viewId === 'reports') {
+        document.getElementById('pageTitle').innerText = "🧠 AI Oracle & Insights";
+        window.generateAIReport(); // Auto-runs when clicked!
+    }
+};
