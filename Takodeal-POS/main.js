@@ -92,7 +92,7 @@ window.lockDeviceToBranch = async function () {
   }
 };
 
-// --- THE FIREBASE PIN SEARCHER ---
+// --- THE SMART FIREBASE PIN SEARCHER ---
 window.verifyPin = async function (pin) {
   try {
     // 🚨 1. NEW DEVICE SECURITY CHECK 🚨
@@ -105,31 +105,47 @@ window.verifyPin = async function (pin) {
             let devStatus = devSnap.docs[0].data().status;
             if (devStatus === 'Pending') {
                 alert("⏳ DEVICE PENDING APPROVAL\n\nThe Manager has not approved this device yet. Please ask them to approve it in the Device Fleet tab.");
-                return null; // Blocks login!
+                return "BLOCKED"; // Stops double-alerting
             }
             if (devStatus === 'Blocked') {
                 alert("🚫 DEVICE BLOCKED\n\nThis device has been blocked by the Manager.");
-                return null; // Blocks login!
+                return "BLOCKED"; // Stops double-alerting
             }
         } else {
             alert("❌ UNREGISTERED DEVICE\n\nThis device was removed from the HQ. Please clear your browser data and re-register.");
-            return null;
+            return "BLOCKED";
         }
     }
 
-    // 2. PROCEED WITH NORMAL PIN CHECK
-    const q = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pin));
-    const snapshot = await window.getDocs(q);
+    // 2. PROCEED WITH SMART PIN CHECK (String vs Number Fix!)
+    let staffData = null;
+    
+    // First, try searching for the exact String they typed
+    const qStr = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pin));
+    const snapStr = await window.getDocs(qStr);
 
-    if (snapshot.empty) return null; // PIN is wrong
+    if (!snapStr.empty) {
+        staffData = snapStr.docs[0].data();
+    } else {
+        // FALLBACK: If string fails, convert it to a Number and search again!
+        let pinNum = parseInt(pin);
+        if (!isNaN(pinNum)) {
+            const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
+            const snapNum = await window.getDocs(qNum);
+            if (!snapNum.empty) {
+                staffData = snapNum.docs[0].data();
+            }
+        }
+    }
 
-    let staffData = snapshot.docs[0].data();
+    if (!staffData) return null; // PIN is genuinely wrong
+
     let deviceBranch = localStorage.getItem('takodeal_device_branch');
 
     // 🛡️ THE DEVICE SECURITY WALL
     if (staffData.branch !== deviceBranch && staffData.branch !== "Main Office") {
       alert(`❌ Access Denied: You are assigned to ${staffData.branch || 'Unassigned'}, but this tablet is located at ${deviceBranch}.`);
-      return null; // Blocks the login!
+      return "BLOCKED"; // Blocks the login without double-alerting!
     }
 
     return staffData; // Allows the login!
