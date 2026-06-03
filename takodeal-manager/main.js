@@ -6713,10 +6713,11 @@ window.loadPayrollGenerator = async function() {
         let ledgerDict = {};
         ledgerSnap.forEach(docSnap => { ledgerDict[docSnap.data().staffName] = { id: docSnap.id, ...docSnap.data() }; });
 
-        // 2. Fetch Shifts & 1-Time Deductions
+        // 2. Fetch Shifts & Unpaid Deductions
         const shiftQ = query(collection(db, "shifts"), where("startTime", ">=", startTimestamp), where("startTime", "<=", endTimestamp));
         const shiftSnap = await getDocs(shiftQ);
         
+        // 🔥 THE FIX: Strictly target the actual Deductions Ledger
         const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
         const deductSnap = await getDocs(deductQ);
 
@@ -6734,14 +6735,20 @@ window.loadPayrollGenerator = async function() {
             payrollData[name].hours += hrs;
         });
 
-        // Aggregate Vales & Meals
+        // 🔥 THE FIX: Aggregate Vales & Meals (With Strict Date Logic!)
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data();
             let name = deduct.staffName;
             if (!payrollData[name]) return; 
+
+            // SAFETY LOCK: Ignore any Vales taken AFTER the cutoff end date!
+            let dDate = deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();
+            if (dDate > endTimestamp) return;
+
             let amt = parseFloat(deduct.amount) || 0;
             if (deduct.type === "Cash Advance") payrollData[name].advances += amt;
             else if (deduct.type === "Staff Meal") payrollData[name].meals += amt;
+            
             payrollData[name].deductions += amt;
         });
 
@@ -6751,7 +6758,6 @@ window.loadPayrollGenerator = async function() {
             let data = payrollData[name];
             let rate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
             
-            // 🧠 The Auto-Deduct Math
             let loanData = ledgerDict[name];
             let autoLoanDeduction = 0;
             let ledgerId = null;
@@ -6760,7 +6766,6 @@ window.loadPayrollGenerator = async function() {
                 let currentBalance = loanData.totalLoaned - loanData.totalPaid;
                 if (currentBalance > 0) {
                     let setRate = loanData.cutoffDeduction || 0;
-                    // Ensure we don't deduct more than what they actually owe!
                     autoLoanDeduction = Math.min(setRate, currentBalance);
                     ledgerId = loanData.id;
                 }
@@ -6768,7 +6773,7 @@ window.loadPayrollGenerator = async function() {
 
             data.loans = autoLoanDeduction;
             data.ledgerId = ledgerId;
-            data.deductions += autoLoanDeduction; // Add to total display
+            data.deductions += autoLoanDeduction; 
 
             let encodedData = encodeURIComponent(JSON.stringify({
                 name: name, branch: data.branch, hours: data.hours,
@@ -7534,7 +7539,7 @@ window.globalPayrollCache = {};
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
 
-// 2. The Master Pairing Engine (UPGRADED WITH HOLIDAY MATH)
+// 2. The Master Pairing Engine (UPGRADED WITH STRICT LEDGER MATH)
 window.generateAutoPayslips = async function() {
     let startInput = document.getElementById('payrollStart').value;
     let endInput = document.getElementById('payrollEnd').value;
@@ -7557,7 +7562,6 @@ window.generateAutoPayslips = async function() {
     fetchEndDate.setHours(fetchEndDate.getHours() + 12);
 
     try {
-        // 🔥 FETCH HOLIDAYS FROM THE SCHEDULE VAULT
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
         let holidaysObj = schedSnap.exists() ? (schedSnap.data().holidays || {}) : {};
 
@@ -7583,10 +7587,9 @@ window.generateAutoPayslips = async function() {
         );
         const attSnap = await getDocs(attQ);
 
-        const reqQ = query(collection(db, "staff_requests"), 
-            where("timestamp", ">=", trueStartDate), where("timestamp", "<=", trueEndDate)
-        );
-        const reqSnap = await getDocs(reqQ);
+        // 🔥 THE FIX: Completely ignore "staff_requests", only read the verified Unpaid Ledger!
+        const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
+        const deductSnap = await getDocs(deductQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
@@ -7597,9 +7600,8 @@ window.generateAutoPayslips = async function() {
             
             if (!staffData[name]) {
                 staffData[name] = { 
-                    branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, // Added Holiday Pay
-                    foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0,
-                    logs: [] 
+                    branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0,
+                    foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] 
                 };
             }
 
@@ -7624,17 +7626,16 @@ window.generateAutoPayslips = async function() {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
-                // 🔥 HOLIDAY PAY CALCULATOR
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
                 let hType = holidaysObj[logDateStr];
                 let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
                 let hBonus = 0;
 
                 if (hType === 'Regular') {
-                    hBonus = (dailyRate * shiftMultiplier) * 0.50; // +50%
+                    hBonus = (dailyRate * shiftMultiplier) * 0.50; 
                     remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Holiday)</span>`;
                 } else if (hType === 'Special') {
-                    hBonus = (dailyRate * shiftMultiplier) * 0.10; // +10%
+                    hBonus = (dailyRate * shiftMultiplier) * 0.10; 
                     remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Holiday)</span>`;
                 }
 
@@ -7659,16 +7660,23 @@ window.generateAutoPayslips = async function() {
             }
         });
 
-        reqSnap.forEach(docSnap => {
-            let req = docSnap.data();
-            let name = req.staffName;
+        // 🔥 THE FIX: Inject Unpaid Ledger Values safely
+        deductSnap.forEach(docSnap => {
+            let deduct = docSnap.data();
+            let name = deduct.staffName;
 
-            if (req.status === "Approved") {
-                if (!staffData[name]) staffData[name] = { branch: req.branch || "Unknown", totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] };
+            // Strict Filter: Ignore vales taken AFTER this cutoff date!
+            let dDate = deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();
+            if (dDate > trueEndDate) return;
 
-                if (req.type === "Staff Meal") staffData[name].foodDeductions += (req.amount || 0);
-                else if (req.type === "Cash Advance") staffData[name].cashAdvances += (req.amount || 0);
+            if (!staffData[name]) {
+                let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
+                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] };
             }
+
+            let amt = parseFloat(deduct.amount) || 0;
+            if (deduct.type === "Staff Meal") staffData[name].foodDeductions += amt;
+            else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
         });
 
         let html = '';
@@ -7717,15 +7725,14 @@ window.generateAutoPayslips = async function() {
                     d.pagibig = profile.pagibigDeduction || 0;
                     d.philhealth = profile.philhealthDeduction || 0;
 
-                    // Save to Global Memory
                     window.globalPayrollCache[name] = {
-                        name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal, // Saved here!
+                        name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth, lateDeduction: d.lateDeduction,
                         shiftsWorked: d.shiftsWorked, basicPay: d.basicPay, rate: dailyRate,
                         start: startInput, end: endInput, profile: profile, logs: d.logs, isPaid: false
                     };
-                    d = window.globalPayrollCache[name]; // Re-reference
+                    d = window.globalPayrollCache[name]; 
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
