@@ -3951,17 +3951,18 @@ window.processCsvUpload = function (event) {
 };
 
 // ========================================================
-// 🔥 STOCK HISTORY & LOGGING ENGINE 🔥
+// 🔥 STOCK HISTORY & LOGGING ENGINE (UPGRADED)
 // ========================================================
 window.loadStockLogs = async function() {
   const tbody = document.getElementById('stockLogsBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="7" class="text-center">Loading history...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px;">Loading history...</td></tr>';
 
   let branchFilter = document.getElementById('invBranchFilter').value;
 
   try {
-    const qLogs = query(collection(db, "stock_logs"), orderBy("timestamp", "desc"));
+    // Added limit(150) so your app doesn't crash trying to load 10,000 logs at once!
+    const qLogs = query(collection(db, "stock_logs"), orderBy("timestamp", "desc"), limit(150));
     const snap = await getDocs(qLogs);
     let html = '';
 
@@ -3971,27 +3972,40 @@ window.loadStockLogs = async function() {
 
       let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
 
+      // 🔥 THE CLEANUP FIX: Safely intercept missing data from the Cashier App!
+      let user = data.user || data.cashier || "System Auto-Deduct";
+      let uom = data.uom || "";
+      let oldQty = data.oldQty !== undefined ? data.oldQty : "-";
+      let newQty = data.newQty !== undefined ? data.newQty : "-";
+      let logType = data.type || "System Update";
+
       let varHtml = '';
-      if (data.type === "Restock") varHtml = `<span style="color: var(--success); font-weight: bold;">+${data.variance} ${data.uom} (Restock)</span>`;
-      else if (data.variance > 0) varHtml = `<span style="color: var(--success); font-weight: bold;">+${data.variance} ${data.uom} (Manual)</span>`;
-      else if (data.variance < 0) varHtml = `<span style="color: var(--danger); font-weight: bold;">${data.variance} ${data.uom} (Manual)</span>`;
-      else varHtml = `<span style="color: var(--text-muted);">No Change</span>`;
+      if (data.variance > 0) {
+          varHtml = `<span style="color: var(--success); font-weight: bold;">+${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
+      } else if (data.variance < 0) {
+          varHtml = `<span style="color: var(--danger); font-weight: bold;">${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
+      } else {
+          varHtml = `<span style="color: var(--text-muted);">No Change <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
+      }
 
       html += `
-        <tr>
-          <td style="font-size: 12px; color: var(--text-muted); font-family: monospace;">${dateStr}</td>
-          <td><strong>${data.branch}</strong></td>
-          <td>👤 ${data.user}</td>
-          <td style="font-weight: 600;">${data.item}</td>
-          <td>${data.oldQty} <span style="font-size:11px;">${data.uom}</span></td>
-          <td><strong>${data.newQty} <span style="font-size:11px;">${data.uom}</span></strong></td>
-          <td>${varHtml}</td>
+        <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+          <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px;">${dateStr}</td>
+          <td style="padding: 12px;"><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
+          <td style="font-weight: bold; color: #334155; padding: 12px;">👤 ${user}</td>
+          <td style="font-weight: 600; color: #0f172a; padding: 12px;">${data.item || 'Unknown Item'}</td>
+          <td style="color: #64748b; padding: 12px;">${oldQty} <span style="font-size:11px;">${uom}</span></td>
+          <td style="font-weight: bold; color: #0284c7; padding: 12px;">${newQty} <span style="font-size:11px;">${uom}</span></td>
+          <td style="padding: 12px;">${varHtml}</td>
         </tr>
       `;
     });
 
-    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center">No logs found.</td></tr>';
-  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red;">Error loading logs.</td></tr>'; }
+    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No stock history found.</td></tr>';
+  } catch (e) { 
+    console.error("Stock Logs Error:", e); 
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading logs. Check console.</td></tr>'; 
+  }
 };
 
 // ==========================================
