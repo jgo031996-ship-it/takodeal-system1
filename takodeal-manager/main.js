@@ -7869,6 +7869,8 @@ window.openPayslipModal = async function(staffName) {
     safeSetVal('psSSS', data.sss || 0);
     safeSetVal('psPhil', data.philhealth || 0);
     safeSetVal('psPagibig', data.pagibig || 0);
+    
+    // 🔥 THE FIX: Explicitly route the separated deduction types!
     safeSetVal('psAdvance', data.advances || 0);
     safeSetVal('psLoans', data.loans || 0);
     safeSetVal('psFoods', data.meals || 0);
