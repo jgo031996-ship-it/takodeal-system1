@@ -7125,7 +7125,7 @@ window.loadLedger = async function() {
                         <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${staff.id}', '${staff.cashierName}', ${record.totalLoaned || 0}, ${record.totalPaid || 0})">✏️ Adjust</button>
                         <button class="btn-refresh" style="background: #e0f2fe; color: #0284c7; border: 1px solid #0284c7; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.viewLedgerHistory('${name}')">📜 History</button>
                         <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Loan</button>
-                        <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance})">💸 Pay</button>
+                        <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance}, ${unpaidVales})">💸 Pay</button>
                     </td>
                 </tr>
             `;
@@ -7184,17 +7184,74 @@ window.issueLoan = async function(docId, staffName, currentLoaned) {
     } catch (e) { console.error(e); alert("Failed to issue loan."); }
 };
 
-window.logLoanPayment = async function(docId, staffName, currentPaid, currentBalance) {
-    if (currentBalance <= 0) { alert("✅ This employee has no outstanding balance."); return; }
-    let amount = parseFloat(prompt(`${staffName} currently owes ₱${currentBalance.toLocaleString()}.\n\nHow much did they pay back this cutoff? (₱)`));
+window.logLoanPayment = async function(docId, staffName, currentPaid, currentBalance, unpaidVales) {
+    // 1. Check if they owe ANYTHING at all
+    if (currentBalance <= 0 && unpaidVales <= 0) { 
+        alert("✅ This employee has no outstanding balance or unpaid vales."); 
+        return; 
+    }
+
+    // 2. Build a clear prompt showing exactly what they owe
+    let totalOwed = currentBalance + unpaidVales;
+    let promptMsg = `${staffName} owes a total of ₱${totalOwed.toLocaleString()}.\n`;
+    if (currentBalance > 0) promptMsg += `- Company Loan: ₱${currentBalance.toLocaleString()}\n`;
+    if (unpaidVales > 0) promptMsg += `- Unpaid Vales/Meals: ₱${unpaidVales.toLocaleString()}\n`;
+    promptMsg += `\nHow much cash did they hand you to pay this off? (₱)`;
+
+    let amountStr = prompt(promptMsg);
+    if (amountStr === null || amountStr.trim() === "") return;
+    
+    let amount = parseFloat(amountStr);
     if (isNaN(amount) || amount <= 0) return;
-    if (amount > currentBalance) { alert(`❌ They only owe ₱${currentBalance}. You cannot log a payment higher than the balance.`); return; }
+    if (amount > totalOwed) { 
+        alert(`❌ They only owe ₱${totalOwed.toLocaleString()}. You cannot log a payment higher than what they owe.`); 
+        return; 
+    }
+
+    let remainingPayment = amount;
 
     try {
-        await updateDoc(doc(db, "staff_ledger", docId), { totalPaid: currentPaid + amount });
+        // 3. SMART LOGIC: Pay off Vales/Meals first (because they are short-term debts)
+        if (unpaidVales > 0 && remainingPayment > 0) {
+            const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
+            const deductSnap = await getDocs(deductQ);
+            
+            let pending = [];
+            deductSnap.forEach(d => pending.push({ id: d.id, ...d.data() }));
+            
+            // Sort oldest first so old debts die first!
+            pending.sort((a, b) => (a.dateAdded?.toDate() || 0) - (b.dateAdded?.toDate() || 0));
+
+            for (let dData of pending) {
+                if (remainingPayment <= 0) break;
+                
+                let dAmt = parseFloat(dData.amount) || 0;
+                let dRef = doc(db, "staff_deductions", dData.id);
+
+                if (remainingPayment >= dAmt) {
+                    await updateDoc(dRef, { status: "Paid", paidAt: serverTimestamp() });
+                    remainingPayment -= dAmt;
+                } else {
+                    // Partial Payment!
+                    await updateDoc(dRef, { amount: dAmt - remainingPayment });
+                    remainingPayment = 0; 
+                }
+            }
+        }
+
+        // 4. SMART LOGIC: If there's money left over, apply it to the Long-Term Company Loan!
+        if (currentBalance > 0 && remainingPayment > 0) {
+            if (docId && docId !== 'undefined') {
+                await updateDoc(doc(db, "staff_ledger", docId), { totalPaid: currentPaid + remainingPayment });
+            }
+        }
+
         alert(`✅ Payment of ₱${amount.toLocaleString()} successfully logged for ${staffName}!`);
         window.loadLedger();
-    } catch (e) { console.error(e); alert("Failed to log payment."); }
+    } catch (e) { 
+        console.error(e); 
+        alert("❌ Failed to log manual payment. Check console."); 
+    }
 };
 
 // ==========================================
