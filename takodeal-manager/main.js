@@ -10144,11 +10144,31 @@ window.loadMonthlyTarget = async function() {
     }
 };
 
-// Call it when the dashboard loads
-if (typeof window.loadDashboard === 'function') {
-    const originalLoadDash = window.loadDashboard;
-    window.loadDashboard = function() {
-        originalLoadDash();
-        window.loadMonthlyTarget();
+// 🔥 THE BULLETPROOF AUTO-LOADER
+window.hasLoadedSalesTarget = false;
+
+// 1. Hook into your standard tab switching
+if (typeof window.switchManagerTab === 'function') {
+    const originalSwitchTab = window.switchManagerTab;
+    window.switchManagerTab = function(tabName) {
+        originalSwitchTab(tabName);
+        window.loadMonthlyTarget(); 
     };
 }
+
+// 2. Watchdog: Checks every 2 seconds if the widget loaded properly
+setInterval(() => {
+    let targetUI = document.getElementById('targetGoalAmount');
+    // If the widget is on the screen, but hasn't loaded data yet, force a fetch!
+    if (targetUI && !window.hasLoadedSalesTarget) {
+        window.loadMonthlyTarget();
+        window.hasLoadedSalesTarget = true; 
+    }
+}, 2000);
+
+// Reset the watchdog if they edit the target
+const originalEditTarget = window.editSalesTarget;
+window.editSalesTarget = async function() {
+    window.hasLoadedSalesTarget = false; 
+    await originalEditTarget();
+};
