@@ -6907,6 +6907,9 @@ window.recalcPayslip = function() {
     safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2}));
 };
 
+// ========================================================
+// 💸 ABSOLUTE OVERRIDE: SMART PAYSLIP ENGINE
+// ========================================================
 window.finalizePayslip = async function() {
     let data = window.currentPayslipData;
     if (!data) return;
@@ -6915,17 +6918,15 @@ window.finalizePayslip = async function() {
     let netPayStr = document.getElementById('psNetPay').innerText.replace(/,/g, '');
     let finalNetPay = parseFloat(netPayStr) || 0;
 
-    // 🔥 THE FIX: Grab the EXACT LIVE NUMBERS you typed into the boxes!
+    // 🔥 GRAB THE EXACT NUMBERS TYPED IN THE OVERRIDE BOXES
     let actualLoanDeducted = parseFloat(document.getElementById('psLoans').value) || 0;
     let actualValeDeducted = parseFloat(document.getElementById('psAdvance').value) || 0;
     let actualFoodDeducted = parseFloat(document.getElementById('psFoods').value) || 0;
 
-    // Load Cash Accounts if they aren't loaded yet
     if (!window.liveAccounts || window.liveAccounts.length === 0) {
         if(typeof window.loadAccountsAndBudget === 'function') await window.loadAccountsAndBudget();
     }
 
-    // Build a menu of your bank accounts
     let accList = window.liveAccounts.map((a, i) => `[${i}] ${a.name} (Bal: ₱${a.balance.toLocaleString()})`).join('\n');
     let accIdx = prompt(`DISBURSE PAYROLL\nNet Pay: ₱${finalNetPay.toLocaleString()}\n\nSelect Account to deduct this payment from (Enter Number):\n\n${accList}`);
 
@@ -6946,15 +6947,11 @@ window.finalizePayslip = async function() {
 
         // 2. Log it as an official Expense in your dashboard feed
         await addDoc(collection(db, "expenses"), {
-            branch: data.branch,
-            amount: finalNetPay,
-            category: "Payroll",
-            account: selAcc.name,
-            note: `Payslip for ${data.name} (${data.start} to ${data.end})`,
-            timestamp: new Date()
+            branch: data.branch, amount: finalNetPay, category: "Payroll",
+            account: selAcc.name, note: `Payslip for ${data.name} (${data.start} to ${data.end})`, timestamp: serverTimestamp()
         });
 
-        // 3. 🔥 Deduct exactly what you typed for the LOAN in the ledger!
+        // 3. Deduct exactly what you typed for the LOAN in the ledger
         if (actualLoanDeducted > 0 && data.ledgerId) {
             const ledgerRef = doc(db, "staff_ledger", data.ledgerId);
             const ledgerSnap = await getDoc(ledgerRef);
@@ -6964,12 +6961,44 @@ window.finalizePayslip = async function() {
             }
         }
         
-        // 4. 🔥 Only clear Vales & Meals if you actually deducted money for them!
-        if (actualValeDeducted > 0 || actualFoodDeducted > 0) {
-            const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", data.name), where("status", "==", "Unpaid"));
+        // 4. 🔥 SMART VALE & MEAL CLEARER (INDEX-FREE PARTIAL PAYMENTS)
+        let remainingValeToClear = actualValeDeducted;
+        let remainingFoodToClear = actualFoodDeducted;
+
+        if (remainingValeToClear > 0 || remainingFoodToClear > 0) {
+            const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", data.name));
             const deductSnap = await getDocs(deductQ);
-            for (let dDoc of deductSnap.docs) {
-                await updateDoc(doc(db, "staff_deductions", dDoc.id), { status: "Paid", paidAt: new Date() });
+            
+            let pendingDeductions = [];
+            deductSnap.forEach(d => {
+                if (d.data().status === "Unpaid") pendingDeductions.push({ id: d.id, ...d.data() });
+            });
+
+            // Sort oldest first so we pay off old debts first!
+            pendingDeductions.sort((a, b) => (a.dateAdded?.toDate() || 0) - (b.dateAdded?.toDate() || 0));
+
+            for (let dData of pendingDeductions) {
+                let dAmt = parseFloat(dData.amount) || 0;
+                let dRef = doc(db, "staff_deductions", dData.id);
+
+                if (dData.type === "Cash Advance" && remainingValeToClear > 0) {
+                    if (remainingValeToClear >= dAmt) {
+                        await updateDoc(dRef, { status: "Paid", paidAt: serverTimestamp() });
+                        remainingValeToClear -= dAmt;
+                    } else {
+                        await updateDoc(dRef, { amount: dAmt - remainingValeToClear });
+                        remainingValeToClear = 0; // Partial payment applied!
+                    }
+                }
+                else if (dData.type === "Staff Meal" && remainingFoodToClear > 0) {
+                    if (remainingFoodToClear >= dAmt) {
+                        await updateDoc(dRef, { status: "Paid", paidAt: serverTimestamp() });
+                        remainingFoodToClear -= dAmt;
+                    } else {
+                        await updateDoc(dRef, { amount: dAmt - remainingFoodToClear });
+                        remainingFoodToClear = 0; // Partial payment applied!
+                    }
+                }
             }
         }
 
@@ -6980,17 +7009,12 @@ window.finalizePayslip = async function() {
         data.meals = actualFoodDeducted;
         
         await addDoc(collection(db, "payroll_records"), {
-            staffName: data.name,
-            startDate: data.start,
-            endDate: data.end,
-            frozenData: data, 
-            finalNetPay: finalNetPay,
-            processedAt: serverTimestamp()
+            staffName: data.name, startDate: data.start, endDate: data.end,
+            frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp()
         });
 
-        alert(`✅ Payroll Disbursed! ₱${finalNetPay.toLocaleString()} was deducted from ${selAcc.name}.\nAll Vales and Loans have been updated.`);
+        alert(`✅ Payroll Disbursed! ₱${finalNetPay.toLocaleString()} was deducted from ${selAcc.name}.\nAll Vales and Loans have been accurately updated.`);
         
-        // Change the button to Done and Lock It!
         if (btn) {
             btn.innerText = "✅ Paid & Done!";
             btn.style.background = "#16a34a";
@@ -7006,10 +7030,7 @@ window.finalizePayslip = async function() {
         window.loadAccountsAndBudget();
     } catch (e) {
         console.error(e); alert("❌ Failed to finalize payslip.");
-        if (btn) {
-            btn.innerText = "✅ Mark Paid & Auto-Deduct"; 
-            btn.disabled = false;
-        }
+        if (btn) { btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false; }
     } 
 };
 
