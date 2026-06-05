@@ -423,6 +423,21 @@ window.processCheckout = async function (payload) {
                     let invData = invSnap.docs[0].data();
                     let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
                     await updateDoc(invSnap.docs[0].ref, { currentStock: newStock });
+                    
+                    // 🔥 THE FIX: Placed carefully INSIDE the loop so it has all the details!
+                    await addDoc(collection(db, "stock_logs"), {
+                        branch: payload.branch,
+                        item: recipeData.ingredientName,
+                        uom: invData.uom || 'units',
+                        oldQty: invData.currentStock || 0,
+                        newQty: newStock,
+                        variance: -totalAmountToDeduct, // Negative because it's a deduction
+                        type: "Sales Auto-Deduct",
+                        note: `Receipt: ${receiptId}`,
+                        user: payload.cashier,
+                        timestamp: serverTimestamp()
+                    });
+
                     if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                 }
             }
@@ -438,7 +453,8 @@ window.processCheckout = async function (payload) {
                             let invData = addonInvSnap.docs[0].data();
                             let newStock = (invData.currentStock || 0) - totalAddonDeduct;
                             await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
-                          // 🔥 THE FIX: Log the addon deduction correctly!
+                            
+                            // 🔥 THE FIX: Log the addon deduction correctly!
                             await addDoc(collection(db, "stock_logs"), {
                                 branch: payload.branch,
                                 item: addon.linkedIngredient,
@@ -451,6 +467,7 @@ window.processCheckout = async function (payload) {
                                 user: payload.cashier,
                                 timestamp: serverTimestamp()
                             });
+                            
                             if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                         }
                     }
@@ -467,19 +484,6 @@ window.processCheckout = async function (payload) {
         }
         if (totalBallsInOrder > 0) {
             await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: increment(totalBallsInOrder) }, { merge: true });
-        // 🔥 THE FIX: Log the deduction correctly!
-                  await addDoc(collection(db, "stock_logs"), {
-                      branch: payload.branch,
-                      item: recipeData.ingredientName,
-                      uom: invData.uom || 'units',
-                      oldQty: invData.currentStock || 0,
-                      newQty: newStock,
-                      variance: -totalAmountToDeduct, // Negative because it's a deduction
-                      type: "Sales Auto-Deduct",
-                      note: `Receipt: ${receiptId}`,
-                      user: payload.cashier,
-                      timestamp: serverTimestamp()
-                  });
         }
     }, 100); 
 
@@ -855,6 +859,10 @@ window.viewReceiptDetails = async function (receiptId) {
     let tx = await window.getReceiptDetails(receiptId);
     if (!tx) { alert("Receipt not found!"); return; }
 
+    // 🚨 SECURITY: Mask the totals if physical cash was involved
+    let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
+    let displayTotal = isCashTx ? `<span style="color:#94a3b8; font-family: monospace;">*** (Hidden)</span>` : (tx.netTotal || 0).toFixed(2);
+
     let modalHtml = `
         <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #ccc;">
             <div style="font-weight: bold; font-size: 16px;">OR# ${tx.receiptId}</div>
@@ -875,10 +883,14 @@ window.viewReceiptDetails = async function (receiptId) {
                     if(item.addons[key].qty > 0) addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${item.addons[key].qty}x ${key}</span>`;
                 }
             }
+            
+            // Mask individual line items too, otherwise they will just add them up!
+            let lineTotalDisplay = isCashTx ? '***' : (item.lineTotalFinal || 0).toFixed(2);
+
             modalHtml += `
                 <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
                     <div><strong>${item.qty}x ${item.name}</strong><br><span style="font-size:11px; color:#888;">${item.variantName !== 'Standard' ? item.variantName : ''}</span>${addonsText}</div>
-                    <div style="font-weight: bold;">₱${(item.lineTotalFinal || 0).toFixed(2)}</div>
+                    <div style="font-weight: bold; color: ${isCashTx ? '#94a3b8' : '#333'}">₱${lineTotalDisplay}</div>
                 </div>
             `;
         });
@@ -887,7 +899,7 @@ window.viewReceiptDetails = async function (receiptId) {
     modalHtml += `
         </div>
         <div style="border-top: 1px solid #eee; padding-top: 15px; font-size: 18px; font-weight: bold; text-align: right; color: var(--primary);">
-            TOTAL: ₱${(tx.netTotal || 0).toFixed(2)}
+            TOTAL: ₱${displayTotal}
         </div>
     `;
 
