@@ -2569,7 +2569,7 @@
       catch (e) { alert("Error submitting stock count. Check connection."); } btn.innerText = "Submit Count"; btn.disabled = false;
     }
 
-    // --- 6. DASHBOARD & DETAILS SYSTEM ---
+// --- THE DASHBOARD ENGINE ---
 window.loadSalesDashboard = async function () {
   document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
   
@@ -2602,6 +2602,10 @@ window.loadSalesDashboard = async function () {
           else if (tx.paymentMethod === 'GCash') totalGCash += (tx.netTotal || 0);
       }
 
+      // 🚨 THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
+      let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
+      let displayAmount = isCashTx ? `<span style="color:#94a3b8; font-family: monospace; letter-spacing: 2px;">₱***</span>` : `₱${(tx.netTotal || 0).toFixed(2)}`;
+
       tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
         <td style="font-weight:bold;">${tx.receiptId || 'N/A'}</td>
         <td>${tx.customerName || '-'}</td>
@@ -2609,7 +2613,7 @@ window.loadSalesDashboard = async function () {
         <td>${statusBadge}</td>
         <td>${txDate}</td>
         <td>${txTime}</td>
-        <td style="font-weight:bold; color: var(--primary);">₱${(tx.netTotal || 0).toFixed(2)}</td>
+        <td style="font-weight:bold; color: var(--primary);">${displayAmount}</td>
         <td style="text-align:right;">
           <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
             <div class="action-dropdown" id="txMenu-${idx}">
