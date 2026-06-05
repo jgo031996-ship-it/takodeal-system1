@@ -2810,45 +2810,99 @@ window.renderDeliveriesTab = function() {
         return;
     }
 
-    let html = '';
+    // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH / SHIPMENT SHEET
+    let dispatchGroups = {};
     window.incomingDeliveriesList.forEach(del => {
-        // Cashier sees the FRIENDLY units!
-        let friendlyQty = del.displayQty || del.qty;
-        let friendlyUom = del.displayUom || del.uom;
-        let convRate = del.convRate || 1;
-        let baseUom = del.uom;
+        // Fallback grouping key if dispatchId isn't declared yet
+        let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
+        if (!dispatchGroups[groupKey]) {
+            dispatchGroups[groupKey] = {
+                dispatchId: groupKey,
+                date: del.date || 'Recent Date',
+                time: del.time || '--:--',
+                driver: del.driver || 'Assigned Driver',
+                items: []
+            };
+        }
+        dispatchGroups[groupKey].items.push(del);
+    });
+
+    // 📦 STEP 2: BUILD A SINGLE INVOICE SHEET CARD FOR EACH DISPATCH
+    let html = '';
+    for (let key in dispatchGroups) {
+        let dispatch = dispatchGroups[key];
+        
+        let itemsTableRows = '';
+        dispatch.items.forEach(item => {
+            let friendlyQty = item.displayQty || item.qty;
+            let friendlyUom = item.displayUom || item.uom;
+            
+            itemsTableRows += `
+                <tr style="border-bottom: 1px solid #f1f5f9;" id="row_${item.id}">
+                    <td style="padding: 12px 8px; font-weight: bold; color: #334155;">📦 ${item.item}</td>
+                    <td style="padding: 12px 8px; font-weight: bold; color: #0284c7; text-align: center;">${friendlyQty} ${friendlyUom}</td>
+                    <td style="padding: 12px 8px; text-align: center;">
+                        <input type="number" id="recv_val_${item.id}" data-expected="${friendlyQty}" placeholder="${friendlyQty}" style="width: 85px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-weight: bold; outline: none;">
+                    </td>
+                    <td style="padding: 12px 8px; text-align: center;">
+                        <label style="display: inline-flex; align-items: center; gap: 4px; background: #fff5f5; border: 1px dashed #fca5a5; padding: 6px 10px; border-radius: 6px; color: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer;">
+                            <input type="checkbox" id="missing_check_${item.id}" onchange="window.toggleMissingItemRow('${item.id}')" style="accent-color: #dc2626; cursor: pointer;"> Missing
+                        </label>
+                    </td>
+                </tr>
+            `;
+        });
 
         html += `
-            <div style="background: white; border: 1px solid #cbd5e1; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-                <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 10px;">
+            <div style="background: white; border: 2px solid #cbd5e1; padding: 20px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);">
+                <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; align-items: center;">
                     <div>
-                        <h3 style="margin: 0; color: #0f172a; font-size: 18px;">${del.item}</h3>
-                        <span style="font-size: 12px; color: #64748b;">Dispatched: ${del.date} ${del.time}</span>
+                        <h3 style="margin: 0; color: #0f172a; font-size: 16px; letter-spacing: 0.3px;">📋 SHIPMENT DISPATCH TRACK SHEET</h3>
+                        <span style="font-size: 12px; color: #64748b; font-weight: 500;">Dispatched: <strong>${dispatch.date} @ ${dispatch.time}</strong></span>
                     </div>
                     <div style="text-align: right;">
-                        <span style="background:#fef9c3; color:#ca8a04; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold;">🚚 In Transit</span><br>
-                        <span style="font-size: 11px; color: #64748b; font-weight: bold; margin-top: 5px; display: inline-block;">Driver: ${del.driver || 'Unknown'}</span>
+                        <span style="background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">🚚 Driver: ${dispatch.driver}</span>
                     </div>
                 </div>
                 
-                <div style="display:flex; align-items:center; gap: 15px; flex-wrap: wrap;">
-                    <div style="flex: 1; min-width: 150px; background: #f8fafc; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;">
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Expected</div>
-                        <div style="font-size: 22px; font-weight: 900; color: #0284c7;">${friendlyQty} <span style="font-size:14px; font-weight:bold; color:#64748b;">${friendlyUom}</span></div>
-                    </div>
-                    
-                    <div style="flex: 1.5; min-width: 250px; display: flex; flex-direction: column; gap: 5px;">
-                        <label style="font-size: 12px; font-weight: bold; color: #334155;">Actual Received (${friendlyUom}):</label>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="number" id="recv_qty_${del.id}" placeholder="e.g. ${friendlyQty}" style="flex: 1; padding: 12px; border: 1px solid #94a3b8; border-radius: 6px; font-size: 16px; font-weight: bold; outline: none;">
-                            <button onclick="window.receiveDeliveryItem('${del.id}', '${del.item}', ${friendlyQty}, '${friendlyUom}', ${convRate}, '${baseUom}')" style="background: #16a34a; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.2);">Confirm</button>
-                        </div>
-                    </div>
-                </div>
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; text-align: left; font-size: 13px;">
+                    <thead>
+                        <tr style="background: #f8fafc; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                            <th style="padding: 10px 8px;">Item Description</th>
+                            <th style="padding: 10px 8px; text-align: center;">Expected</th>
+                            <th style="padding: 10px 8px; text-align: center;">Actual Received</th>
+                            <th style="padding: 10px 8px; text-align: center;">Security Exception</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsTableRows}
+                    </tbody>
+                </table>
+
+                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}')" style="width: 100%; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.2); transition: 0.2s;">
+                    📥 Confirm and Receive Complete Shipment
+                </button>
             </div>
         `;
-    });
+    }
     container.innerHTML = html;
+};
+
+// Quick UI Toggle visual treatment for missing items
+window.toggleMissingItemRow = function(itemId) {
+    let isChecked = document.getElementById(`missing_check_${itemId}`).checked;
+    let inputField = document.getElementById(`recv_val_${itemId}`);
+    let row = document.getElementById(`row_${itemId}`);
+    
+    if (isChecked) {
+        inputField.value = 0;
+        inputField.disabled = true;
+        row.style.background = '#fff5f5';
+    } else {
+        inputField.value = '';
+        inputField.disabled = false;
+        row.style.background = 'transparent';
+    }
 };
 
 window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty, displayUom, convRate, baseUom) {
