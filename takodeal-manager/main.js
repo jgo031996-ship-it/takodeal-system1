@@ -2161,15 +2161,17 @@ window.switchInvTab = function(tab) {
     let wasteTab = document.getElementById('tabInvWaste');
     let prepTab = document.getElementById('tabInvPrep');
     let logsTab = document.getElementById('tabInvStockLogs');
+    let forecasterTab = document.getElementById('tabInvForecaster'); // 🔥 NEW
     
     let liveSec = document.getElementById('invTabLiveContent');
     let auditsSec = document.getElementById('invSectionAudits');
     let wasteSec = document.getElementById('invSectionWaste');
     let prepSec = document.getElementById('invSectionPrepLogs');
     let logsSec = document.getElementById('invTabLogsContent');
+    let forecasterSec = document.getElementById('invSectionForecaster'); // 🔥 NEW
 
-    [overviewTab, auditsTab, wasteTab, prepTab, logsTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
-    [liveSec, auditsSec, wasteSec, prepSec, logsSec].forEach(s => { if(s) s.style.display = 'none'; });
+    [overviewTab, auditsTab, wasteTab, prepTab, logsTab, forecasterTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
+    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec].forEach(s => { if(s) s.style.display = 'none'; });
 
     if (tab === 'Overview') {
         if(overviewTab) { overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e'; }
@@ -2190,6 +2192,10 @@ window.switchInvTab = function(tab) {
         if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; }
         if(logsSec) logsSec.style.display = 'block';
         if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
+    } else if (tab === 'Forecaster') {
+        if(forecasterTab) { forecasterTab.style.color = '#0f766e'; forecasterTab.style.borderBottomColor = '#0f766e'; }
+        if(forecasterSec) forecasterSec.style.display = 'block';
+        if (typeof window.loadForecasterEngine === 'function') window.loadForecasterEngine();
     }
 };
 
@@ -10623,5 +10629,104 @@ window.switchView = function (viewId) {
     if (viewId === 'reports') {
         document.getElementById('pageTitle').innerText = "🧠 AI Oracle & Insights";
         window.generateAIReport(); // Auto-runs when clicked!
+    }
+};
+
+// ========================================================
+// 🧠 TAKODEAL FORECASTER ENGINE
+// ========================================================
+window.loadForecasterEngine = async function() {
+    let container = document.getElementById('forecasterGrid');
+    let branch = document.getElementById('forecasterBranchSelect').value;
+    
+    if (!container) return;
+    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #0f766e; font-size: 18px; font-weight: bold;">⏳ Scanning 14 days of data... Please wait.</div>';
+
+    try {
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
+        const invSnap = await getDocs(invQ);
+        let inventory = [];
+        invSnap.forEach(doc => inventory.push({ id: doc.id, ...doc.data() }));
+
+        let daysToScan = 14;
+        let pastDate = new Date();
+        pastDate.setDate(pastDate.getDate() - daysToScan);
+        pastDate.setHours(0,0,0,0);
+
+        const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", pastDate));
+        const logsSnap = await getDocs(logsQ);
+
+        let burnData = {}; 
+        logsSnap.forEach(docSnap => {
+            let log = docSnap.data();
+            if (log.variance < 0 && (log.type.includes("Auto-Deduct") || log.type.includes("Waste") || log.type.includes("Spoilage") || log.type.includes("Prep"))) {
+                if (!burnData[log.item]) burnData[log.item] = 0;
+                burnData[log.item] += Math.abs(log.variance);
+            }
+        });
+
+        let html = '';
+        let today = new Date();
+
+        inventory.sort((a, b) => a.name.localeCompare(b.name)).forEach(item => {
+            let totalBurned = burnData[item.name] || 0;
+            let avgDailyBurn = totalBurned / daysToScan;
+            let currentStock = parseFloat(item.currentStock) || 0;
+            let uom = item.uom || 'units';
+
+            let daysLeft = Infinity;
+            if (avgDailyBurn > 0) daysLeft = currentStock / avgDailyBurn;
+
+            let statusColor = "#16a34a"; let statusBg = "#f0fdf4"; let warningIcon = "✅";
+            
+            if (daysLeft <= 0 || currentStock <= 0) {
+                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; daysLeft = 0;
+            } else if (daysLeft <= 3) {
+                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "⚠️";
+            } else if (daysLeft <= 7) {
+                statusColor = "#ea580c"; statusBg = "#fff7ed"; warningIcon = "⚡";
+            }
+
+            let runOutDateStr = "Sufficient Stock";
+            if (daysLeft !== Infinity && daysLeft > 0) {
+                let runOutDate = new Date();
+                runOutDate.setDate(today.getDate() + daysLeft);
+                runOutDateStr = runOutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            } else if (daysLeft === 0) {
+                runOutDateStr = "Out of Stock Now";
+            }
+
+            let daysLeftDisplay = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
+            let avgDailyDisplay = avgDailyBurn === 0 ? "0.0" : avgDailyBurn.toFixed(1);
+
+            html += `
+                <div style="background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); overflow: hidden; border: 1px solid #e2e8f0; display: flex; flex-direction: column;">
+                    <div style="padding: 15px 20px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 15px; align-items: center;">
+                        <div style="width: 40px; height: 40px; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid #e2e8f0;">📦</div>
+                        <div>
+                            <h3 style="margin: 0; font-size: 15px; color: #0f172a;">${item.name}</h3>
+                            <span style="font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase;">${branch}</span>
+                        </div>
+                    </div>
+                    <div style="padding: 20px; display: flex; align-items: center; justify-content: space-between; background: #fdfdfd; flex: 1;">
+                        <div style="font-size: 13px; color: #475569; line-height: 1.8;">
+                            <span style="color: #64748b;">Current Stock:</span> <strong style="color: #0f172a; font-size: 14px;">${currentStock.toLocaleString()} ${uom}</strong><br>
+                            <span style="color: #64748b;">Daily Burn Rate:</span> <strong style="color: ${statusColor}; font-size: 14px;">${avgDailyDisplay} ${uom} / day</strong>
+                        </div>
+                        <div style="text-align: center; background: ${statusBg}; padding: 12px; border-radius: 12px; border: 1px dashed ${statusColor}; min-width: 80px;">
+                            <div style="font-size: 24px; font-weight: 900; color: ${statusColor};">${daysLeftDisplay}</div>
+                            <div style="font-size: 10px; font-weight: bold; color: ${statusColor}; text-transform: uppercase;">Days Left</div>
+                        </div>
+                    </div>
+                    <div style="background: ${statusBg}; padding: 12px 20px; font-size: 12px; color: ${statusColor}; font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9;">
+                        <span>${warningIcon} Run-Out Date:</span><span>${runOutDateStr}</span>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html || '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #94a3b8;">No inventory found.</div>';
+    } catch (error) {
+        console.error("Forecaster Error:", error);
+        container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #ef4444; font-weight: bold;">❌ Failed to run Forecast. Check connection.</div>';
     }
 };
