@@ -140,7 +140,6 @@
 
         /* Stat cards stay in a grid, but reduced to 2 columns */
         .stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
-        div[style*="grid-template-columns: repeat(3"] { grid-template-columns: repeat(2, 1fr) !important; }
         div[style*="grid-template-columns: repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
         
         .modal { width: 95% !important; max-width: 95% !important; }
@@ -3565,12 +3564,6 @@
         overflow: visible !important;
     }
     
-    .card {
-        display: block !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-        min-height: 500px !important; 
-    }
   </style>
 
   <script type="module" src="main.js"></script>
