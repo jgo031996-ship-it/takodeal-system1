@@ -716,7 +716,7 @@ window.switchView = function (viewId) {
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
   if (viewId === 'ledger') window.loadLedger();
-  if (viewId === 'admin') window.loadAdminDashboard();
+  if (viewId === 'admin') { window.loadAdminDashboard(); window.loadBranchManager(); }
 };
 
 // ========================================================
@@ -10878,3 +10878,156 @@ window.submitGeneralAudit = async function() {
         btn.innerText = "💾 Sync & Finalize Audit"; btn.disabled = false;
     }
 };
+
+// ========================================================
+// 🏢 MULTI-TENANT BRANCH EXPANSION ENGINE
+// ========================================================
+window.globalActiveBranches = ["Main Office", "Cabantian", "Citygate", "Maa"]; // Failsafe memory
+
+window.loadBranchManager = async function() {
+    const tbody = document.getElementById('branchManagerListBody');
+    if(!tbody) return;
+    
+    try {
+        const q = query(collection(db, "branches"), orderBy("createdAt", "asc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        let branches = [];
+        
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            branches.push(d.name);
+            let dateStr = d.createdAt ? d.createdAt.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Core System';
+            
+            let delBtn = d.isCore 
+                ? `<span style="color:#94a3b8; font-size: 11px; font-style: italic;">Protected</span>` 
+                : `<button onclick="window.deleteBranch('${docSnap.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>`;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; font-weight: bold; color: #4c1d95; font-size: 15px;">📍 ${d.name}</td>
+                    <td style="padding: 12px;"><span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Online</span></td>
+                    <td style="padding: 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 12px;">${delBtn}</td>
+                </tr>
+            `;
+        });
+        
+        // Setup Protocol: If it's the very first time running this, inject the hardcoded ones into the DB
+        if (snap.empty) {
+            await window.initializeCoreBranches();
+            return;
+        }
+
+        tbody.innerHTML = html;
+        window.globalActiveBranches = branches;
+        window.injectDynamicBranchDropdowns(); // 🔥 THE MAGIC COMMAND
+        
+    } catch (e) {
+        console.error("Branch Manager Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading branches.</td></tr>';
+    }
+};
+
+window.initializeCoreBranches = async function() {
+    let core = ["Main Office", "Cabantian", "Citygate", "Maa"];
+    for (let b of core) {
+        await addDoc(collection(db, "branches"), { name: b, isCore: true, createdAt: serverTimestamp() });
+    }
+    window.loadBranchManager();
+};
+
+window.openAddBranchModal = function() {
+    document.getElementById('addBranchModal').style.display = 'flex';
+    document.getElementById('newBranchName').value = '';
+};
+
+window.saveNewBranch = async function() {
+    let name = document.getElementById('newBranchName').value.trim();
+    if (!name) return alert("Branch name is required!");
+    
+    if (window.globalActiveBranches.includes(name)) {
+        return alert("A branch with this name already exists!");
+    }
+
+    let btn = document.getElementById('btnSaveNewBranch');
+    btn.innerText = "⏳ Provisioning..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "branches"), { name: name, isCore: false, createdAt: serverTimestamp() });
+        alert(`🎉 Congratulations! ${name} is now online and integrated into the system!`);
+        document.getElementById('addBranchModal').style.display = 'none';
+        window.loadBranchManager();
+    } catch (e) {
+        console.error(e); alert("Failed to add branch.");
+    } finally {
+        btn.innerText = "🚀 Launch Branch"; btn.disabled = false;
+    }
+};
+
+window.deleteBranch = async function(docId, name) {
+    if (!confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?\n\nThis will remove it from all dropdowns. Existing data (sales, inventory) will still exist but might be orphaned.`)) return;
+    
+    let confirmText = prompt(`Type DELETE to confirm removal of ${name}:`);
+    if (confirmText !== "DELETE") return;
+
+    try {
+        await deleteDoc(doc(db, "branches", docId));
+        alert(`🗑️ ${name} has been taken offline.`);
+        window.loadBranchManager();
+    } catch (e) { console.error(e); alert("Failed to delete branch."); }
+};
+
+// 💉 THE DOM INJECTOR
+window.injectDynamicBranchDropdowns = function() {
+    // 1. Lists where it just needs the branch names
+    const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
+    
+    // 2. Lists where it needs an "All Branches" option at the top
+    const filterSelects = ['invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect'];
+    
+    let stdHtml = '';
+    let filterHtml = '<option value="All">🌐 All Branches</option>';
+    let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; // For inputs that need a blank start
+
+    window.globalActiveBranches.forEach(b => {
+        let icon = b === "Main Office" ? "🏢" : "📍";
+        let label = `${icon} ${b}`;
+        
+        stdHtml += `<option value="${b}">${b}</option>`;
+        filterHtml += `<option value="${b}">${label}</option>`;
+        plainFilterHtml += `<option value="${b}">${b}</option>`;
+    });
+
+    standardSelects.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) { let oldVal = el.value; el.innerHTML = stdHtml; if (oldVal) el.value = oldVal; }
+    });
+
+    filterSelects.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) {
+            let oldVal = el.value;
+            if (id === 'burnRateBranch' || id === 'auditModalBranch' || id === 'forecasterBranchSelect') el.innerHTML = plainFilterHtml;
+            else el.innerHTML = filterHtml;
+            if (oldVal) el.value = oldVal;
+        }
+    });
+
+    // Append to Scheduler config dynamically
+    if (typeof branchConfig !== 'undefined') {
+        window.globalActiveBranches.forEach(b => {
+            if (b !== "Main Office" && !branchConfig[b]) {
+                branchConfig[b] = JSON.parse(JSON.stringify(defaultSchedConfig["Cabantian"] || [])); 
+            }
+        });
+    }
+};
+
+// Fire the engine up as soon as the app loads!
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => { 
+        if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
+    }, 1500); // 1.5s delay gives Firebase time to auth
+});
