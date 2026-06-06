@@ -1150,6 +1150,7 @@
             <div id="tabInvWaste" onclick="switchInvTab('Waste')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Waste & Spoilage</div>
             <div id="tabInvPrep" onclick="switchInvTab('Prep')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Prep Batch Logs</div>
             <div id="tabInvStockLogs" onclick="switchInvTab('StockLogs')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s; display: none;">Stock History</div>
+            <div id="tabInvForecaster" onclick="switchInvTab('Forecaster')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">TAKODEAL Forecaster</div>
         </div>
 
         <!-- 📊 SECTION 1: OVERVIEW -->
@@ -1253,6 +1254,33 @@
       </div>
     </div>
 
+    <div id="invSectionForecaster" style="display: none; padding-top: 20px;">
+        <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h2 style="margin: 0; color: #0f766e; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">📦</span> TAKODEAL Forecaster
+                    </h2>
+                    <p style="margin: 5px 0 0 0; color: #64748b; font-size: 14px;">Analyzing the last 14 days of sales and waste to predict stock run-out dates.</p>
+                </div>
+                <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                      <select id="forecasterBranchSelect" onchange="window.loadForecasterEngine()" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; cursor: pointer;">
+                        <option value="Cabantian">Cabantian</option>
+                        <option value="Citygate">Citygate</option>
+                        <option value="Maa">Maa</option>
+                        <option value="Main Office">Main Office</option>
+                    </select>
+                    <button onclick="window.loadForecasterEngine()" style="background: var(--primary); border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">🔄 Run Calculation</button>
+                </div>
+            </div>
+            <div id="forecasterGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
+                <div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #94a3b8; font-size: 16px;">
+                    Click "Run Calculation" to scan your inventory burn rate.
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <div id="view-accounts" class="view">
 
       <div class="stat-grid">
