@@ -3294,3 +3294,12 @@ window.loadPersonalSchedule = async function() {
         container.innerHTML = '<div style="text-align:center; padding: 40px; color:red; font-weight: bold;">❌ Failed to load schedule. Please check your internet connection.</div>';
     }
 };
+
+window.filterCashierStock = function() {
+    let input = document.getElementById('cashierStockSearch').value.toLowerCase();
+    let rows = document.querySelectorAll('#invCheckListContainer > div'); 
+    rows.forEach(row => {
+        let text = row.innerText.toLowerCase();
+        row.style.display = text.includes(input) ? '' : 'none'; 
+    });
+};
