@@ -2813,7 +2813,6 @@ window.renderDeliveriesTab = function() {
     // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH / SHIPMENT SHEET
     let dispatchGroups = {};
     window.incomingDeliveriesList.forEach(del => {
-        // Fallback grouping key if dispatchId isn't declared yet
         let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
         if (!dispatchGroups[groupKey]) {
             dispatchGroups[groupKey] = {
@@ -2905,84 +2904,101 @@ window.toggleMissingItemRow = function(itemId) {
     }
 };
 
-window.receiveDeliveryItem = async function(logId, itemName, expectedDisplayQty, displayUom, convRate, baseUom) {
-    let actualDisplayQty = parseFloat(document.getElementById(`recv_qty_${logId}`).value);
-    if (isNaN(actualDisplayQty) || actualDisplayQty < 0) { alert(`Enter a valid number for ${displayUom}.`); return; }
+window.submitGroupedDispatch = async function(groupKey, encodedItems) {
+    let items = JSON.parse(decodeURIComponent(encodedItems));
+    let masterBtn = document.getElementById(`btn_submit_dispatch_${groupKey}`);
+    
+    let itemsToProcess = [];
+    for (let item of items) {
+        let isMissing = document.getElementById(`missing_check_${item.id}`).checked;
+        let inputVal = document.getElementById(`recv_val_${item.id}`).value;
+        let actualDisplayQty = parseFloat(inputVal);
 
-    let actualBaseQty = actualDisplayQty * convRate;
-    let expectedBaseQty = expectedDisplayQty * convRate;
-    let varianceBase = actualBaseQty - expectedBaseQty;
+        if (isMissing) {
+            actualDisplayQty = 0;
+        } else if (isNaN(actualDisplayQty) || actualDisplayQty < 0) {
+            actualDisplayQty = parseFloat(document.getElementById(`recv_val_${item.id}`).placeholder);
+        }
 
-    let btn = document.querySelector(`button[onclick*="${logId}"]`);
-    if(btn) { btn.innerText = "⏳ Saving..."; btn.disabled = true; }
+        itemsToProcess.push({
+            ...item,
+            actualDisplayQty: actualDisplayQty,
+            isMissing: isMissing
+        });
+    }
 
+    if (!confirm(`Are you sure you want to verify receipt for this entire shipment sheet?`)) return;
+
+    if (masterBtn) { masterBtn.innerText = "⏳ Processing Bulk Safe-Deposit..."; masterBtn.disabled = true; }
     let safeBranch = localStorage.getItem('takodeal_device_branch');
 
     try {
-        // 🔥 Fetch the Delivery Log to get the Master DNA!
-        const logSnap = await getDoc(doc(db, "dispatch_logs", logId));
-        let logData = logSnap.exists() ? logSnap.data() : {};
+        await Promise.all(itemsToProcess.map(async (item) => {
+            let convRate = item.convRate || 1;
+            let baseUom = item.uom;
+            let actualBaseQty = item.actualDisplayQty * convRate;
+            let expectedDisplayQty = item.displayQty || item.qty;
+            let expectedBaseQty = expectedDisplayQty * convRate;
+            let varianceBase = actualBaseQty - expectedBaseQty;
 
-        // 1. Check the Branch Inventory
-        const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", itemName));
-        const targetSnap = await getDocs(targetQ);
+            let exceptionStatus = "Received";
+            if (item.isMissing) {
+                exceptionStatus = "Lost in Transit";
+            } else if (varianceBase !== 0) {
+                exceptionStatus = "Discrepancy";
+            }
 
-        if (targetSnap.empty) {
-            // 🔥 THE PERFECT CLONER: Builds the item with ALL details so the Manager App doesn't glitch!
-            await addDoc(collection(db, "inventory"), { 
-                branch: safeBranch, 
-                name: itemName, 
-                uom: baseUom, 
-                currentStock: actualBaseQty, 
-                category: logData.category || "Ingredients",
-                purchaseUom: logData.purchaseUom || baseUom,
-                conversionRate: convRate,
-                conversion: convRate, // Fallback for old code
-                cost: logData.cost || 0,
-                reorderLevel: logData.reorderLevel || 10,
-                showInPrep: true
+            if (!item.isMissing && actualBaseQty > 0) {
+                const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", item.item));
+                const targetSnap = await getDocs(targetQ);
+
+                if (targetSnap.empty) {
+                    await addDoc(collection(db, "inventory"), { 
+                        branch: safeBranch, name: item.item, uom: baseUom, currentStock: actualBaseQty, 
+                        category: item.category || "Ingredients", purchaseUom: item.purchaseUom || baseUom,
+                        conversionOriginal: convRate, conversionRate: convRate, cost: item.cost || 0, reorderLevel: item.reorderLevel || 10, showInPrep: true
+                    });
+                } else {
+                    let tRef = targetSnap.docs[0].ref;
+                    let tStock = targetSnap.docs[0].data().currentStock || 0;
+                    await updateDoc(tRef, { currentStock: tStock + actualBaseQty });
+                }
+
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: safeBranch, item: item.item, uom: baseUom, oldQty: targetSnap.empty ? 0 : targetSnap.docs[0].data().currentStock || 0,
+                    newQty: (targetSnap.empty ? 0 : targetSnap.docs[0].data().currentStock || 0) + actualBaseQty, variance: actualBaseQty, 
+                    type: "Delivery Received", note: `Group Batch Shipment Confirmed`, user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
+                });
+            }
+
+            await updateDoc(doc(db, "dispatch_logs", item.id), {
+                status: exceptionStatus,
+                receivedQty: actualBaseQty, 
+                variance: varianceBase,     
+                receivedDisplayQty: item.actualDisplayQty, 
+                receivedAt: serverTimestamp(),
+                receivedBy: localStorage.getItem('cashierName') || 'Cashier'
             });
-        } else {
-            let tRef = targetSnap.docs[0].ref;
-            let tStock = targetSnap.docs[0].data().currentStock || 0;
-            let tUom = targetSnap.docs[0].data().uom || baseUom;
-            let newStock = tStock + actualBaseQty;
 
-            await updateDoc(tRef, { currentStock: newStock });
+            if (item.isMissing || varianceBase !== 0) {
+                await addDoc(collection(db, "manager_alerts"), {
+                    type: "DELIVERY_DISCREPANCY",
+                    branch: safeBranch,
+                    cashier: localStorage.getItem('cashierName') || 'Cashier',
+                    message: `SH_ALERT: ${item.item} delivery discrepancy flagged at ${safeBranch}. Status: ${exceptionStatus}. Expected: ${expectedDisplayQty}, Got: ${item.actualDisplayQty}.`,
+                    timestamp: serverTimestamp(),
+                    isRead: false
+                });
+            }
+        }));
 
-            // 🔥 THE FIX: Log the delivery addition correctly!
-            await addDoc(collection(db, "stock_logs"), {
-                branch: safeBranch,
-                item: itemName,
-                uom: tUom,
-                oldQty: tStock,
-                newQty: newStock,
-                variance: actualBaseQty, 
-                type: "Delivery Received",
-                note: `Received from Main Office`,
-                user: localStorage.getItem('cashierName') || 'System',
-                timestamp: serverTimestamp()
-            });
-        }
+        alert("🎉 Complete shipment sheet successfully verified and deposited to database registers!");
 
-        // 2. Mark Dispatch as Received 
-        await updateDoc(doc(db, "dispatch_logs", logId), {
-            status: "Received",
-            receivedQty: actualBaseQty, 
-            variance: varianceBase,     
-            receivedDisplayQty: actualDisplayQty, 
-            receivedAt: serverTimestamp(),
-            receivedBy: localStorage.getItem('cashierName') || 'Cashier'
-        });
-
-        if (varianceBase !== 0) {
-            alert(`⚠️ Variance Flagged: You received ${actualDisplayQty} ${displayUom}, creating a variance of ${varianceBase} ${baseUom}.`);
-        } else {
-            alert(`✅ Delivery Confirmed! ${actualDisplayQty} ${displayUom} securely added to inventory.`);
-        }
-    } catch(e) { 
-        console.error(e); alert("Failed to process receipt."); 
-        if(btn) { btn.innerText = "Confirm"; btn.disabled = false; }
+    } catch (error) {
+        console.error("Bulk Process Error: ", error);
+        alert("❌ Bulk write execution failure. Please check your data connection settings.");
+    } finally {
+        if (masterBtn) { masterBtn.innerText = "Confirm and Receive Complete Shipment"; masterBtn.disabled = false; }
     }
 };
 
