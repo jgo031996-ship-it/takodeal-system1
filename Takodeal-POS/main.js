@@ -623,7 +623,6 @@ window.renderStockCountUI = function(searchTerm = '') {
     let container = document.getElementById('invCheckListContainer');
     let html = `
         <div style="margin-bottom: 15px; position: sticky; top: 0; background: white; padding-bottom: 10px; z-index: 10;">
-            <input type="text" id="searchStockCount" placeholder="🔍 Search item to count..." onkeyup="window.renderStockCountUI(this.value)" value="${searchTerm}"
             style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid #cbd5e1; outline: none; font-size: 15px; font-weight: bold;">
         </div>
     `;
@@ -3293,6 +3292,15 @@ window.loadPersonalSchedule = async function() {
         console.error("Error loading personal schedule:", e);
         container.innerHTML = '<div style="text-align:center; padding: 40px; color:red; font-weight: bold;">❌ Failed to load schedule. Please check your internet connection.</div>';
     }
+};
+
+window.filterCashierStock = function() {
+    let input = document.getElementById('cashierStockSearch').value.toLowerCase();
+    let rows = document.querySelectorAll('#invCheckListContainer > div'); 
+    rows.forEach(row => {
+        let text = row.innerText.toLowerCase();
+        row.style.display = text.includes(input) ? '' : 'none'; 
+    });
 };
 
 window.filterCashierStock = function() {
