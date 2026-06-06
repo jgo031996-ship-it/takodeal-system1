@@ -1194,7 +1194,13 @@
             </div>
             <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-                    <h3 style="margin:0; color: #0f172a;">📜 Daily Stock Counts</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                        <h3 style="margin:0; color: #0f172a;">📜 Daily Stock Counts</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="window.openGeneralAuditModal()" style="background: #ea580c; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.3);">📝 Start General Audit</button>
+                            <button onclick="window.loadInventoryAudits()" class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold;">🔄 Refresh</button>
+                        </div>
+                    </div>
                     <button onclick="window.loadInventoryAudits()" class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 6px 12px; border-radius: 6px;">🔄 Refresh Audits</button>
                 </div>
                 <div class="table-responsive">
@@ -2015,6 +2021,15 @@
             </tbody>
           </table>
 
+        </div>
+      </div>
+      <div class="card" style="max-width: 800px; margin: 20px auto 0 auto; border-top: 4px solid #8b5cf6;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div>
+                <h2 style="margin: 0; color: #6d28d9;">🏢 Branch Expansion Manager</h2>
+                <span style="font-size: 12px; color: var(--text-muted);">Prepare the system for franchise scaling (Next Phase Target)</span>
+            </div>
+            <button onclick="alert('This module will initialize the Multi-Tenant Architecture in the next phase! It will allow dynamic branch creation across menus, inventory, and analytics instead of using hardcoded lists.')" style="background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);">➕ Add New Branch</button>
         </div>
       </div>
     </div>
@@ -3533,6 +3548,57 @@
           </div>
       </div>
     </div>
+
+    <div id="generalAuditModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
+      <div style="background: white; width: 850px; max-width: 95%; height: 85vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #ea580c; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">📝 Master General Audit</h2>
+              <span onclick="document.getElementById('generalAuditModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+          </div>
+          
+          <div style="padding: 20px; background: #fffbeb; border-bottom: 1px solid #fcd34d; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 150px;">
+                  <label style="font-size: 11px; font-weight: bold; color: #b45309; text-transform: uppercase;">1. Select Location to Audit</label>
+                  <select id="auditModalBranch" onchange="window.loadAuditModalItems()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #fcd34d; font-weight: bold; color: #92400e; outline: none; margin-top: 5px;">
+                      <option value="">-- Choose Branch --</option>
+                      <option value="Main Office">Main Office</option>
+                      <option value="Cabantian">Cabantian</option>
+                      <option value="Citygate">Citygate</option>
+                      <option value="Maa">Maa</option>
+                  </select>
+              </div>
+              <div style="flex: 2; min-width: 200px;">
+                  <label style="font-size: 11px; font-weight: bold; color: #b45309; text-transform: uppercase;">2. Quick Search Item</label>
+                  <input type="text" id="auditModalSearch" onkeyup="window.renderAuditModalItems()" placeholder="Type item name or category..." style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #fcd34d; margin-top: 5px; box-sizing: border-box; outline: none;">
+              </div>
+          </div>
+
+          <div style="flex: 1; overflow-y: auto;">
+              <table class="data-table" style="width: 100%; border-collapse: collapse;">
+                  <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                      <tr>
+                          <th style="padding: 12px; text-align: left; color: #475569;">Item Description</th>
+                          <th style="padding: 12px; text-align: center; color: #475569;">Category</th>
+                          <th style="padding: 12px; text-align: center; color: #475569;">System Qty</th>
+                          <th style="padding: 12px; text-align: center; color: #ea580c; border-left: 2px dashed #e2e8f0;">Actual Physical Count</th>
+                      </tr>
+                  </thead>
+                  <tbody id="auditModalBody">
+                      <tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8;">Select a branch above to begin the audit...</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <div style="padding: 15px 25px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: #64748b; font-weight: bold;">Blank inputs will be treated as matching the system count.</span>
+              <div style="display: flex; gap: 10px;">
+                  <button onclick="document.getElementById('generalAuditModal').style.display='none'" style="padding: 12px 20px; border-radius: 6px; border: 1px solid #cbd5e1; background: white; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
+                  <button id="btnSubmitGeneralAudit" onclick="window.submitGeneralAudit()" style="padding: 12px 24px; border-radius: 6px; border: none; background: #ea580c; color: white; font-weight: bold; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(234, 88, 12, 0.3);">💾 Sync & Finalize Audit</button>
+              </div>
+          </div>
+      </div>
+  </div>
+  
   <style>
     /* MAGIC CSS: Makes inputs look like text when printing! */
     .ps-input { 
