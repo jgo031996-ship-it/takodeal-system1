@@ -226,7 +226,7 @@ window.loadGlobalDashboard = async function() {
   endOfDay.setHours(23, 59, 59, 999);
 
   let globalGross = 0; let globalNet = 0; let globalExp = 0;
-  const branches = ['Cabantian', 'Citygate', 'Maa'];
+  const branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ['Cabantian', 'Citygate', 'Maa'];
   let tableHtml = '';
 
   try {
@@ -8018,7 +8018,10 @@ window.loadCashFlowHub = async function() {
         const accSnap = await getDocs(collection(db, "cash_accounts"));
         accSnap.forEach(doc => { safeCash += (doc.data().balance || 0); });
 
-        let branchFloating = { "Cabantian": 0, "Citygate": 0, "Maa": 0 };
+        let branchFloating = {};
+        if (window.globalActiveBranches) {
+            window.globalActiveBranches.forEach(b => { if (b !== "Main Office") branchFloating[b] = 0; });
+        }
         let pendingVerifications = 0;
         let totalFloating = 0;
 
