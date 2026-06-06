@@ -2027,9 +2027,24 @@
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <div>
                 <h2 style="margin: 0; color: #6d28d9;">🏢 Branch Expansion Manager</h2>
-                <span style="font-size: 12px; color: var(--text-muted);">Prepare the system for franchise scaling (Next Phase Target)</span>
+                <span style="font-size: 12px; color: var(--text-muted);">Manage active locations and multi-tenant scaling.</span>
             </div>
-            <button onclick="alert('This module will initialize the Multi-Tenant Architecture in the next phase! It will allow dynamic branch creation across menus, inventory, and analytics instead of using hardcoded lists.')" style="background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);">➕ Add New Branch</button>
+            <button onclick="window.openAddBranchModal()" style="background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);">➕ Add New Branch</button>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead style="background: #f5f3ff;">
+                    <tr>
+                        <th style="color: #4c1d95;">Branch Name</th>
+                        <th style="color: #4c1d95;">Status</th>
+                        <th style="color: #4c1d95;">Date Added</th>
+                        <th style="color: #4c1d95;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="branchManagerListBody">
+                    <tr><td colspan="4" class="text-center">Loading branches...</td></tr>
+                </tbody>
+            </table>
         </div>
       </div>
     </div>
@@ -3595,6 +3610,29 @@
                   <button onclick="document.getElementById('generalAuditModal').style.display='none'" style="padding: 12px 20px; border-radius: 6px; border: 1px solid #cbd5e1; background: white; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
                   <button id="btnSubmitGeneralAudit" onclick="window.submitGeneralAudit()" style="padding: 12px 24px; border-radius: 6px; border: none; background: #ea580c; color: white; font-weight: bold; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(234, 88, 12, 0.3);">💾 Sync & Finalize Audit</button>
               </div>
+          </div>
+      </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 🚀 DYNAMIC BRANCH CREATOR MODAL -->
+  <!-- ========================================== -->
+  <div id="addBranchModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
+      <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #8b5cf6; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">🏢 Register New Branch</h2>
+              <span onclick="document.getElementById('addBranchModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+          </div>
+          <div style="padding: 25px; background: #f8fafc;">
+              <label style="font-size: 12px; font-weight: bold; color: #475569;">Branch Name *</label>
+              <input type="text" id="newBranchName" placeholder="e.g. Ecoland, SM Lanang" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #1e293b;">
+              
+              <div style="background: #fef2f2; border: 1px dashed #fca5a5; padding: 12px; border-radius: 6px; margin-bottom: 20px;">
+                  <span style="font-size: 12px; font-weight: bold; color: #b91c1c;">⚠️ System Scaling Note:</span>
+                  <p style="font-size: 11px; color: #991b1b; margin: 5px 0 0 0;">Adding a branch will instantly reprogram all dropdowns across the system (Inventory, HR, Logistics, AI) to include this new location.</p>
+              </div>
+
+              <button id="btnSaveNewBranch" onclick="window.saveNewBranch()" style="width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">🚀 Launch Branch</button>
           </div>
       </div>
   </div>
