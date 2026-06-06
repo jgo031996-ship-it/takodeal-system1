@@ -10730,3 +10730,151 @@ window.loadForecasterEngine = async function() {
         container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #ef4444; font-weight: bold;">❌ Failed to run Forecast. Check connection.</div>';
     }
 };
+
+// ========================================================
+// 📝 MASTER GENERAL AUDIT ENGINE (WITH SMART SYNC)
+// ========================================================
+window.globalAuditItems = [];
+
+window.openGeneralAuditModal = function() {
+    document.getElementById('generalAuditModal').style.display = 'flex';
+    document.getElementById('auditModalBranch').value = '';
+    document.getElementById('auditModalSearch').value = '';
+    document.getElementById('auditModalBody').innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color:#94a3b8; font-weight: bold;">Select a branch above to begin the audit...</td></tr>';
+};
+
+window.loadAuditModalItems = async function() {
+    let branch = document.getElementById('auditModalBranch').value;
+    let tbody = document.getElementById('auditModalBody');
+    
+    if (!branch) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color:#94a3b8; font-weight: bold;">Select a branch above to begin the audit...</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center" style="padding: 40px; color: #ea580c; font-weight: bold;">⏳ Loading inventory for ${branch}...</td></tr>`;
+    window.globalAuditItems = [];
+
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            window.globalAuditItems.push({
+                id: docSnap.id,
+                name: data.name || 'Unnamed Item',
+                category: data.category || 'Uncategorized',
+                systemQty: parseFloat(data.currentStock) || 0,
+                uom: data.uom || 'units',
+                tempValue: undefined // Memory for search filtering
+            });
+        });
+
+        window.globalAuditItems.sort((a,b) => a.name.localeCompare(b.name));
+        window.renderAuditModalItems();
+
+    } catch (e) {
+        console.error("Audit Modal Load Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red; padding: 40px;">Failed to fetch inventory from cloud.</td></tr>';
+    }
+};
+
+window.renderAuditModalItems = function() {
+    let search = document.getElementById('auditModalSearch').value.toLowerCase();
+    let tbody = document.getElementById('auditModalBody');
+    let html = '';
+
+    window.globalAuditItems.forEach((item, index) => {
+        // Search Filter
+        if (search && !item.name.toLowerCase().includes(search) && !item.category.toLowerCase().includes(search)) return;
+
+        // Restore value from memory if they previously typed it
+        let displayValue = item.tempValue !== undefined ? item.tempValue : '';
+
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                <td style="padding: 12px; font-weight: bold; color: #1e293b; font-size: 14px;">${item.name}</td>
+                <td style="padding: 12px; text-align: center;"><span class="badge badge-closed">${item.category}</span></td>
+                <td style="padding: 12px; text-align: center; font-weight: bold; color: #64748b; font-size: 15px;">${item.systemQty.toFixed(1)} <span style="font-size:11px; font-weight:normal;">${item.uom}</span></td>
+                <td style="padding: 12px; text-align: center; border-left: 2px dashed #e2e8f0; background: #fffcf0;">
+                    <input type="number" onchange="window.globalAuditItems[${index}].tempValue = parseFloat(this.value)" value="${displayValue}" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; max-width: 120px; padding: 10px; border: 2px solid #fdba74; border-radius: 6px; text-align: center; font-weight: 900; color: #ea580c; font-size: 16px; outline: none;">
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color:#94a3b8; font-weight: bold;">No items match your search.</td></tr>';
+};
+
+window.submitGeneralAudit = async function() {
+    let branch = document.getElementById('auditModalBranch').value;
+    if (!branch) { alert("Please select a branch first."); return; }
+
+    if (!confirm(`⚠️ CRITICAL ACTION: Are you sure you want to finalize this audit for ${branch}?\n\nThis will force-sync the live database to match your physical counts.`)) return;
+
+    let btn = document.getElementById('btnSubmitGeneralAudit');
+    btn.innerText = "⏳ Syncing Database..."; btn.disabled = true;
+
+    try {
+        let auditCounts = [];
+
+        // 1. Process all items
+        for (let i = 0; i < window.globalAuditItems.length; i++) {
+            let item = window.globalAuditItems[i];
+            
+            // If they didn't type anything, assume the count is perfect
+            let physicalQty = item.tempValue !== undefined && !isNaN(item.tempValue) ? item.tempValue : item.systemQty;
+
+            // If a variance is detected, push it to the database
+            if (physicalQty !== item.systemQty) {
+                let variance = physicalQty - item.systemQty;
+                
+                // Update Live Inventory
+                await updateDoc(doc(db, "inventory", item.id), { currentStock: physicalQty });
+
+                // Write to History Logs so the CEO AI can track it
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: branch,
+                    item: item.name,
+                    uom: item.uom,
+                    oldQty: item.systemQty,
+                    newQty: physicalQty,
+                    variance: variance,
+                    type: "Manager General Audit",
+                    note: "Live Sync via Audit Tool",
+                    user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+                    timestamp: serverTimestamp()
+                });
+            }
+
+            // Always add to the Master Audit Record
+            auditCounts.push({
+                name: item.name,
+                systemQty: item.systemQty,
+                physicalQty: physicalQty
+            });
+        }
+
+        // 2. Save the overarching Audit Record to stock_counts
+        await addDoc(collection(db, "stock_counts"), {
+            branch: branch,
+            cashier: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: serverTimestamp(),
+            counts: auditCounts
+        });
+
+        alert(`✅ Audit Complete! Live inventory for ${branch} has been strictly synchronized.`);
+        document.getElementById('generalAuditModal').style.display = 'none';
+        
+        // Refresh the UI
+        window.loadInventoryAudits(); 
+        if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
+
+    } catch (e) {
+        console.error("Audit Sync Error:", e);
+        alert("❌ Failed to sync audit. Check F12 console.");
+    } finally {
+        btn.innerText = "💾 Sync & Finalize Audit"; btn.disabled = false;
+    }
+};
