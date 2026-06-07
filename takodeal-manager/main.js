@@ -1004,45 +1004,71 @@ window.loadDispatchInventory = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
   let itemInput = document.getElementById('dispItem');
 
-  // 🔥 Transform Select into a Smart Search Input automatically!
+  // 🔥 Transform the old <select> into a Smart Search <input> automatically!
   if (itemInput.tagName === 'SELECT') {
       let newInput = document.createElement('input');
       newInput.id = 'dispItem';
       newInput.setAttribute('list', 'dispatchDatalist');
       newInput.placeholder = "Type to search item to send...";
-      newInput.style.cssText = "padding: 10px; border: 2px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-weight: bold; font-size: 15px; color: #0f172a;";
+      newInput.style.cssText = "width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #334155;";
+      
+      // Bind the updating functions to typing and clicking
       newInput.onchange = window.updateDispatchUomLabel;
+      newInput.onkeyup = window.updateDispatchUomLabel; 
+      
       itemInput.parentNode.replaceChild(newInput, itemInput);
       itemInput = newInput;
   }
 
-  if (!fromBranch) { itemInput.placeholder = 'Select source branch first'; itemInput.disabled = true; return; }
+  if (!fromBranch) { 
+      itemInput.placeholder = 'Select source branch first...'; 
+      itemInput.disabled = true; 
+      itemInput.value = '';
+      return; 
+  }
   
-  itemInput.disabled = false; itemInput.placeholder = 'Scanning warehouse...'; itemInput.value = '';
+  itemInput.disabled = false; 
+  itemInput.placeholder = 'Scanning warehouse...'; 
+  itemInput.value = '';
   dispatchInventoryList = [];
 
   try {
     const q = query(collection(db, "inventory"), where("branch", "==", fromBranch));
     const snap = await getDocs(q);
     
+    // Build the invisible datalist for the search bar
     let datalistHtml = '<datalist id="dispatchDatalist">';
+    
+    let sortedStock = [];
     snap.forEach(docSnap => {
-      let data = docSnap.data();
-      if (data.currentStock > 0) {
-        dispatchInventoryList.push({ id: docSnap.id, ...data });
-        datalistHtml += `<option value="${data.name}">Available: ${data.currentStock} ${data.uom}</option>`;
-      }
+        let data = docSnap.data();
+        if (data.currentStock > 0) {
+            sortedStock.push({ id: docSnap.id, ...data });
+        }
     });
+    
+    // Alphabetical sort so it's easy to browse
+    sortedStock.sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedStock.forEach(data => {
+        dispatchInventoryList.push(data);
+        let safeStock = parseFloat(data.currentStock).toFixed(1);
+        datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
+    });
+    
     datalistHtml += '</datalist>';
 
-    // Inject the invisible datalist into the page
+    // Inject the datalist into the HTML body
     let existingList = document.getElementById('dispatchDatalist');
     if (existingList) existingList.remove();
     document.body.insertAdjacentHTML('beforeend', datalistHtml);
 
-    itemInput.placeholder = 'Type item name...';
+    itemInput.placeholder = 'Type to search item...';
     window.updateDispatchUomLabel();
-  } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
+  } catch (e) { 
+    console.error(e); 
+    itemInput.placeholder = 'Error loading stock'; 
+  }
 };
 
 window.updateDispatchUomLabel = function() {
@@ -1438,33 +1464,6 @@ window.loadSmartSupplyChain = async function() {
         console.error("Supply Chain Engine Error:", e);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 20px; font-weight: bold;">⚠️ Error fetching data. Open F12 Console to see if a Firebase Index is missing.</td></tr>';
     }
-};
-
-window.loadDispatchInventory = async function () {
-  let fromBranch = document.getElementById('dispFrom').value;
-  let drop = document.getElementById('dispItem');
-  if (!fromBranch) { drop.innerHTML = '<option value="">Select source branch first</option>'; return; }
-
-  drop.innerHTML = '<option value="">Scanning warehouse...</option>';
-  dispatchInventoryList = [];
-
-  try {
-    const q = query(collection(db, "inventory"), where("branch", "==", fromBranch));
-    const snap = await getDocs(q);
-    let html = '<option value="">-- Select Item to Send --</option>';
-
-    snap.forEach(docSnap => {
-      let data = docSnap.data();
-      if (data.currentStock > 0) {
-        dispatchInventoryList.push({ id: docSnap.id, ...data });
-        html += `<option value="${data.name}">${data.name} (Available: ${data.currentStock} ${data.uom})</option>`;
-      }
-    });
-
-    drop.innerHTML = html || '<option value="">No available stock</option>';
-    // 🟢 NEW: Trigger the label update so it defaults to the correct units!
-    window.updateDispatchUomLabel();
-  } catch (e) { console.error(e); drop.innerHTML = '<option value="">Error loading stock</option>'; }
 };
 
 // 🟢 NEW: Updates the dropdown to show "Packs" vs "grams" based on the item
