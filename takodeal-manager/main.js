@@ -11099,15 +11099,6 @@ window.injectDynamicBranchDropdowns = function() {
     }
 };
 
-// Hook the Branch Manager to open when you visit the "Staff & Security" tab
-const origSwitchViewBranches = window.switchView;
-window.switchView = function (viewId) {
-    origSwitchViewBranches(viewId);
-    if (viewId === 'branches') {
-        if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
-    }
-};
-
 // Fire the engine up as soon as the app loads!
 document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => { 
