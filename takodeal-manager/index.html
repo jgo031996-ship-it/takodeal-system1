@@ -3635,24 +3635,66 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- 🚀 DYNAMIC BRANCH CREATOR MODAL -->
+  <!-- 🚀 UPGRADED DYNAMIC BRANCH CREATOR WITH MAP -->
   <!-- ========================================== -->
   <div id="addBranchModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
-      <div style="background: white; width: 400px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+      <div style="background: white; width: 500px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
           <div style="background: #8b5cf6; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
               <h2 style="margin: 0; font-size: 18px;">🏢 Register New Branch</h2>
               <span onclick="document.getElementById('addBranchModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
           </div>
-          <div style="padding: 25px; background: #f8fafc;">
+          <div style="padding: 25px; background: #f8fafc; max-height: 75vh; overflow-y: auto;">
               <label style="font-size: 12px; font-weight: bold; color: #475569;">Branch Name *</label>
-              <input type="text" id="newBranchName" placeholder="e.g. Ecoland, SM Lanang" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #1e293b;">
+              <input type="text" id="newBranchName" placeholder="e.g. Ecoland, SM Lanang" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #1e293b; box-sizing: border-box;">
               
+              <label style="font-size: 12px; font-weight: bold; color: #475569;">Exact Pin Location *</label>
+              <p style="font-size: 11px; color: #64748b; margin: 2px 0 10px 0;">Drag the pin to the exact location of the new store.</p>
+              
+              <div id="branchMap" style="height: 250px; width: 100%; margin-bottom: 15px; border-radius: 6px; border: 1px solid #cbd5e1; z-index: 1;"></div>
+              
+              <input type="hidden" id="newBranchLat">
+              <input type="hidden" id="newBranchLng">
+
               <div style="background: #fef2f2; border: 1px dashed #fca5a5; padding: 12px; border-radius: 6px; margin-bottom: 20px;">
                   <span style="font-size: 12px; font-weight: bold; color: #b91c1c;">⚠️ System Scaling Note:</span>
-                  <p style="font-size: 11px; color: #991b1b; margin: 5px 0 0 0;">Adding a branch will instantly reprogram all dropdowns across the system (Inventory, HR, Logistics, AI) to include this new location.</p>
+                  <p style="font-size: 11px; color: #991b1b; margin: 5px 0 0 0;">Adding a branch will instantly reprogram all dropdowns across the system to include this new location.</p>
               </div>
 
               <button id="btnSaveNewBranch" onclick="window.saveNewBranch()" style="width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">🚀 Launch Branch</button>
+          </div>
+      </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- ⚙️ CENTRALIZED BRANCH SETTINGS HUB -->
+  <!-- ========================================== -->
+  <div id="branchSettingsModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
+      <div style="background: white; width: 500px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #0f172a; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;" id="branchSettingsTitle">⚙️ Settings</h2>
+              <span onclick="document.getElementById('branchSettingsModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+          </div>
+          <div style="padding: 25px; background: #f8fafc; max-height: 75vh; overflow-y: auto;">
+              <input type="hidden" id="settingBranchId">
+              
+              <h3 style="margin-top: 0; font-size: 14px; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">🖨️ Receipt & Cashier Settings</h3>
+              
+              <label style="font-size: 12px; font-weight: bold; color: #475569;">Store Address (Prints on Receipt)</label>
+              <input type="text" id="settingAddress" placeholder="e.g. Door 1, Cabantian Road..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;">
+              
+              <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number</label>
+              <input type="text" id="settingContact" placeholder="09xxxxxxxxx" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;">
+              
+              <label style="font-size: 12px; font-weight: bold; color: #475569;">WiFi Password (For Staff/Customers)</label>
+              <input type="text" id="settingWifi" placeholder="Leave blank if none" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; color: #0284c7; font-weight: bold;">
+
+              <label style="font-size: 12px; font-weight: bold; color: #475569;">Printer Paper Size</label>
+              <select id="settingPrinterSize" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155; box-sizing: border-box;">
+                  <option value="58mm">58mm (Small Thermal)</option>
+                  <option value="80mm">80mm (Large Thermal)</option>
+              </select>
+
+              <button onclick="window.saveBranchSettings()" style="width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Push Settings to Cashier App</button>
           </div>
       </div>
   </div>
