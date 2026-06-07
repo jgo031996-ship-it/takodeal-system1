@@ -758,7 +758,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                 newQty: newStock,
                 variance: totalAmountToReturn, 
                 type: "Transaction Voided",
-                note: `Receipt ${receiptId} voided by ${cashierName}`,
+                note: `Receipt ${receiptId} voided by ${safeFirstName}`,
                 user: cashierName,
                 timestamp: serverTimestamp()
             });
@@ -793,7 +793,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                           newQty: newStock,
                           variance: totalAddonReturn, 
                           type: "Transaction Voided (Addon)",
-                          note: `Receipt ${receiptId} voided by ${cashierName}`,
+                          note: `Receipt ${receiptId} voided by ${safeFirstName}`,
                           user: cashierName,
                           timestamp: serverTimestamp()
                       });
@@ -832,7 +832,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
       branch: branch,
       cashier: cashierName,
       receiptId: receiptId,
-      message: `WARNING: Cashier ${cashierName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
+      message: `WARNING: Cashier ${safeFirstName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
       timestamp: serverTimestamp(),
       isRead: false
     });
@@ -3045,6 +3045,7 @@ window.submitWasteLog = async function() {
     
     let branch = localStorage.getItem('takodeal_device_branch');
     let cashierName = localStorage.getItem('cashierName') || "Cashier";
+    let safeFirstName = cashierName.split(' ')[0];
 
     if (!itemId) { alert("Please select an item first."); return; }
     if (isNaN(qty) || qty <= 0) { alert("Please enter a valid quantity."); return; }
