@@ -8941,6 +8941,12 @@ window.recalcModalNetSales = function() {
 // 🧾 DYNAMIC DIGITAL RECEIPT VIEWER
 // ==========================================
 window.viewReceiptDetails = function(receiptId, customer, time, payment, total, cartEncoded) {
+    // 🔥 FIRST NAME EXTRACTOR
+    let safeCashierName = "Cashier";
+    try {
+        let fullCashierName = window.globalShiftReports && Object.values(window.globalShiftReports).find(s => s.transactions && s.transactions.some(t => t.receiptId === receiptId))?.cashier || 'System';
+        safeCashierName = fullCashierName.split(' ')[0]; // Grabs just the first name!
+    } catch(e) {}
     let cart = JSON.parse(decodeURIComponent(cartEncoded));
     let itemsHtml = '';
 
@@ -10882,9 +10888,11 @@ window.submitGeneralAudit = async function() {
 };
 
 // ========================================================
-// 🏢 MULTI-TENANT BRANCH EXPANSION ENGINE
+// 🏢 MULTI-TENANT BRANCH EXPANSION ENGINE (WITH MAP & SETTINGS)
 // ========================================================
-window.globalActiveBranches = ["Main Office", "Cabantian", "Citygate", "Maa"]; // Failsafe memory
+window.globalActiveBranches = ["Main Office", "Cabantian", "Citygate", "Maa"]; 
+window.branchMapInstance = null;
+window.branchMarker = null;
 
 window.loadBranchManager = async function() {
     const tbody = document.getElementById('branchManagerListBody');
@@ -10896,10 +10904,13 @@ window.loadBranchManager = async function() {
         
         let html = '';
         let branches = [];
+        window.globalBranchData = {}; // Memory cache for settings
         
         snap.forEach(docSnap => {
             let d = docSnap.data();
             branches.push(d.name);
+            window.globalBranchData[docSnap.id] = d;
+
             let dateStr = d.createdAt ? d.createdAt.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Core System';
             
             let delBtn = d.isCore 
@@ -10911,12 +10922,14 @@ window.loadBranchManager = async function() {
                     <td style="padding: 12px; font-weight: bold; color: #4c1d95; font-size: 15px;">📍 ${d.name}</td>
                     <td style="padding: 12px;"><span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Online</span></td>
                     <td style="padding: 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 12px;">${delBtn}</td>
+                    <td style="padding: 12px; display: flex; gap: 5px;">
+                        <button onclick="window.openBranchSettings('${docSnap.id}')" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">⚙️ Settings</button>
+                        ${delBtn}
+                    </td>
                 </tr>
             `;
         });
         
-        // Setup Protocol: If it's the very first time running this, inject the hardcoded ones into the DB
         if (snap.empty) {
             await window.initializeCoreBranches();
             return;
@@ -10924,13 +10937,183 @@ window.loadBranchManager = async function() {
 
         tbody.innerHTML = html;
         window.globalActiveBranches = branches;
-        window.injectDynamicBranchDropdowns(); // 🔥 THE MAGIC COMMAND
+        window.injectDynamicBranchDropdowns(); 
         
     } catch (e) {
         console.error("Branch Manager Error:", e);
         tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading branches.</td></tr>';
     }
 };
+
+window.initializeCoreBranches = async function() {
+    let core = ["Main Office", "Cabantian", "Citygate", "Maa"];
+    for (let b of core) {
+        await addDoc(collection(db, "branches"), { name: b, isCore: true, createdAt: serverTimestamp() });
+    }
+    window.loadBranchManager();
+};
+
+window.openAddBranchModal = function() {
+    document.getElementById('addBranchModal').style.display = 'flex';
+    document.getElementById('newBranchName').value = '';
+    
+    // 🗺️ LAUNCH THE LEAFLET MAP ENGINE
+    setTimeout(() => {
+        if (!window.branchMapInstance) {
+            // Default center perfectly over Davao City
+            window.branchMapInstance = L.map('branchMap').setView([7.1907, 125.4553], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(window.branchMapInstance);
+            
+            window.branchMarker = L.marker([7.1907, 125.4553], {draggable: true}).addTo(window.branchMapInstance);
+            
+            // Listen for dragging the pin to save exact coordinates
+            window.branchMarker.on('dragend', function(event) {
+                var position = window.branchMarker.getLatLng();
+                document.getElementById('newBranchLat').value = position.lat;
+                document.getElementById('newBranchLng').value = position.lng;
+            });
+
+            // Set default hidden values immediately
+            document.getElementById('newBranchLat').value = 7.1907;
+            document.getElementById('newBranchLng').value = 125.4553;
+        }
+        window.branchMapInstance.invalidateSize(); // Fixes rendering glitch inside hidden modals
+    }, 300);
+};
+
+window.saveNewBranch = async function() {
+    let name = document.getElementById('newBranchName').value.trim();
+    let lat = document.getElementById('newBranchLat').value;
+    let lng = document.getElementById('newBranchLng').value;
+
+    if (!name) return alert("Branch name is required!");
+    if (window.globalActiveBranches.includes(name)) return alert("A branch with this name already exists!");
+
+    let btn = document.getElementById('btnSaveNewBranch');
+    btn.innerText = "⏳ Provisioning..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "branches"), { 
+            name: name, 
+            isCore: false, 
+            latitude: lat,
+            longitude: lng,
+            printerSize: "58mm", // Default settings for the new cashier app
+            createdAt: serverTimestamp() 
+        });
+        alert(`🎉 Congratulations! ${name} is now online and mapped at [${lat}, ${lng}].`);
+        document.getElementById('addBranchModal').style.display = 'none';
+        window.loadBranchManager();
+    } catch (e) {
+        console.error(e); alert("Failed to add branch.");
+    } finally {
+        btn.innerText = "🚀 Launch Branch"; btn.disabled = false;
+    }
+};
+
+window.deleteBranch = async function(docId, name) {
+    if (!confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?`)) return;
+    let confirmText = prompt(`Type DELETE to confirm removal of ${name}:`);
+    if (confirmText !== "DELETE") return;
+
+    try {
+        await deleteDoc(doc(db, "branches", docId));
+        alert(`🗑️ ${name} has been taken offline.`);
+        window.loadBranchManager();
+    } catch (e) { console.error(e); alert("Failed to delete branch."); }
+};
+
+// ⚙️ CENTRAL SETTINGS CONTROLLER
+window.openBranchSettings = function(docId) {
+    let d = window.globalBranchData[docId];
+    if (!d) return;
+
+    document.getElementById('settingBranchId').value = docId;
+    document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;
+    document.getElementById('settingAddress').value = d.address || '';
+    document.getElementById('settingContact').value = d.contact || '';
+    document.getElementById('settingWifi').value = d.wifi || '';
+    document.getElementById('settingPrinterSize').value = d.printerSize || '58mm';
+
+    document.getElementById('branchSettingsModal').style.display = 'flex';
+};
+
+window.saveBranchSettings = async function() {
+    let docId = document.getElementById('settingBranchId').value;
+    let payload = {
+        address: document.getElementById('settingAddress').value.trim(),
+        contact: document.getElementById('settingContact').value.trim(),
+        wifi: document.getElementById('settingWifi').value.trim(),
+        printerSize: document.getElementById('settingPrinterSize').value
+    };
+
+    try {
+        await updateDoc(doc(db, "branches", docId), payload);
+        alert(`✅ Settings pushed globally! The Cashier App at this branch will update automatically.`);
+        document.getElementById('branchSettingsModal').style.display = 'none';
+        window.loadBranchManager();
+    } catch (e) { console.error(e); alert("Failed to push settings."); }
+};
+
+// 💉 THE DOM INJECTOR
+window.injectDynamicBranchDropdowns = function() {
+    const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
+    const filterSelects = ['invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect'];
+    
+    let stdHtml = '';
+    let filterHtml = '<option value="All">🌐 All Branches</option>';
+    let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; 
+
+    window.globalActiveBranches.forEach(b => {
+        let icon = b === "Main Office" ? "🏢" : "📍";
+        let label = `${icon} ${b}`;
+        
+        stdHtml += `<option value="${b}">${b}</option>`;
+        filterHtml += `<option value="${b}">${label}</option>`;
+        plainFilterHtml += `<option value="${b}">${b}</option>`;
+    });
+
+    standardSelects.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) { let oldVal = el.value; el.innerHTML = stdHtml; if (oldVal) el.value = oldVal; }
+    });
+
+    filterSelects.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) {
+            let oldVal = el.value;
+            if (id === 'burnRateBranch' || id === 'auditModalBranch' || id === 'forecasterBranchSelect') el.innerHTML = plainFilterHtml;
+            else el.innerHTML = filterHtml;
+            if (oldVal) el.value = oldVal;
+        }
+    });
+
+    if (typeof branchConfig !== 'undefined') {
+        window.globalActiveBranches.forEach(b => {
+            if (b !== "Main Office" && !branchConfig[b]) {
+                branchConfig[b] = JSON.parse(JSON.stringify(defaultSchedConfig["Cabantian"] || [])); 
+            }
+        });
+    }
+};
+
+// Hook the Branch Manager to open when you visit the "Staff & Security" tab
+const origSwitchViewBranches = window.switchView;
+window.switchView = function (viewId) {
+    origSwitchViewBranches(viewId);
+    if (viewId === 'branches') {
+        if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
+    }
+};
+
+// Fire the engine up as soon as the app loads!
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => { 
+        if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
+    }, 1500); 
+});
 
 window.initializeCoreBranches = async function() {
     let core = ["Main Office", "Cabantian", "Citygate", "Maa"];
