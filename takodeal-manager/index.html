@@ -1104,19 +1104,17 @@
       </div>
     </div>
 
-    <div id="view-menu-layout" class="view">
-      <div class="card" style="max-width: 600px; margin: 0 auto;">
+    <div class="card" style="margin-top: 20px; border-top: 4px solid #8b5cf6;">
         <div class="card-header">
-            <h2>📱 Reorder Menu Tabs</h2>
-            <p style="font-size: 12px; color: #64748b;">Use the arrows to change the button order at the top of the POS screen.</p>
+            <h2 style="margin: 0; color: #6d28d9;">📐 POS Menu Tab Arrangement</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Rearrange the tab order for all Cashier Apps.</span>
         </div>
-        <div id="menuOrderList" style="padding: 20px;">
-            <!-- Categories will be injected here -->
+        <div style="padding: 20px;">
+            <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 10px;">
+                <!-- Categories will be injected here -->
+            </div>
+            <button onclick="window.savePosLayout()" style="margin-top: 20px; background: #8b5cf6; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save Tab Order</button>
         </div>
-        <div style="padding: 20px; border-top: 1px solid #e2e8f0;">
-            <button onclick="window.saveMenuLayout()" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer;">💾 Save New Order</button>
-        </div>
-      </div>
     </div>
     
     <div id="view-inventory" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
