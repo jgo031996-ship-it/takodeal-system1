@@ -1104,16 +1104,20 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top: 20px; border-top: 4px solid #8b5cf6;">
-        <div class="card-header">
-            <h2 style="margin: 0; color: #6d28d9;">📐 POS Menu Tab Arrangement</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Rearrange the tab order for all Cashier Apps.</span>
+    <!-- 📐 POS MENU TAB ARRANGEMENT -->
+    <div class="card" style="margin-top: 20px; border-top: 4px solid #8b5cf6; margin-bottom: 20px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div>
+                <h2 style="margin: 0; color: #6d28d9;">📐 POS Menu Tab Arrangement</h2>
+                <span style="font-size: 12px; color: var(--text-muted);">Rearrange the tab order for all Cashier Apps.</span>
+            </div>
+            <button onclick="window.loadPosLayout()" class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">🔄 Refresh List</button>
         </div>
         <div style="padding: 20px;">
             <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 10px;">
-                <!-- Categories will be injected here -->
+                <div style="color: #64748b; font-size: 14px; text-align: center; padding: 20px;">Loading categories...</div>
             </div>
-            <button onclick="window.savePosLayout()" style="margin-top: 20px; background: #8b5cf6; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save Tab Order</button>
+            <button onclick="window.savePosLayout()" style="margin-top: 20px; width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px 20px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save & Sync Tab Order to Cashier Apps</button>
         </div>
     </div>
     
