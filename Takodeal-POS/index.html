@@ -2315,31 +2315,40 @@
         buildCategories(); // Re-render tabs to show active state
     };
     
-    window.renderTopCategories = function() {
+    window.renderTopCategories = async function() {
         const catContainer = document.querySelector('.category-header');
         if (!catContainer) return;
     
         catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
     
-        // 🛡️ Remove backend items from the top scrolling bar
+        // 1. Fetch the Master Layout Order from Settings
+        let layoutOrder = [];
+        try {
+            const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
+            if (layoutSnap.exists()) {
+                layoutOrder = layoutSnap.data().categories || [];
+            }
+        } catch(e) { console.error("Error fetching POS layout:", e); }
+    
+        // 2. Remove backend items from the top scrolling bar
         let safeCategories = masterPOSData.categories.filter(c => !hiddenCategories.includes(c));
         let catsToRender = safeCategories;
     
-        // Filter categories based on the active bottom tab
+        // 3. Filter categories based on the active bottom tab
         if (window.currentDepartment === "CONSUMABLES") {
             catsToRender = safeCategories.filter(c => premixCategories.includes(c));
         } else if (window.currentDepartment === "MAIN MENU") {
             catsToRender = safeCategories.filter(c => !premixCategories.includes(c));
         }
     
-        // Preferred Sorting (Main Menu items first)
-        const preferredOrder = ["Cheesy Takoyaki", "Bonito Takoyaki", "Double Grilled", "Iced Coffee", "Milk Bubble"];
+        // 4. Sort the categories to perfectly match the Manager's layout!
         catsToRender.sort((a, b) => {
-            let indexA = preferredOrder.indexOf(a);
-            let indexB = preferredOrder.indexOf(b);
-            if (indexA === -1) indexA = 999;
-            if (indexB === -1) indexB = 999;
-            return indexA - indexB;
+            let idxA = layoutOrder.indexOf(a);
+            let idxB = layoutOrder.indexOf(b);
+            // If a category isn't in the saved layout yet, throw it to the back
+            if (idxA === -1) idxA = 999;
+            if (idxB === -1) idxB = 999;
+            return idxA - idxB;
         });
     
         catsToRender.forEach(cat => {
