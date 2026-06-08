@@ -3138,189 +3138,6 @@ window.selectRealVariant = function(realName, vPrice, clickedBtn) {
     }
 
 // ==========================================
-// 🖨️ ULTIMATE RAWBT PRINTER ENGINE
-// ==========================================
-window.printReceipt = async function(type) {
-      let d = lastTransactionData; if (!d || !d.cart) return;
-      let hasFood = false; let hasDrinks = false;
-      d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
-      
-      let rSettings = null;
-      if (typeof window.getReceiptSettings === 'function') {
-          rSettings = await window.getReceiptSettings();
-      }
-      
-      let storeName = rSettings?.storeName || "TAKODEAL";
-      
-      let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
-      let storeAddress = "";
-      if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes Cabantian";
-      else if (currentBranch === "Citygate") storeAddress = "Citygate Foodpark";
-      else if (currentBranch === "Maa") storeAddress = "Maa Road, Davao City";
-      else storeAddress = "Takodeal Headquarters";
-      
-      let storeContact = "09629721305";
-      let footerMsg = "Acknowledgement Receipt\nThank you!";
-
-      // 🔥 THE BULLETPROOF CENTERING ENGINE 🔥
-      function centerTxt(text) {
-          let cleanText = text.trim();
-          if (cleanText.length >= 32) return cleanText;
-          let leftPad = Math.floor((32 - cleanText.length) / 2);
-          return " ".repeat(leftPad) + cleanText;
-      }
-
-      // ------------------------------------------
-      // KITCHEN & BAR TICKETS 
-      // ------------------------------------------
-      if (type === 'food' || type === 'drinks') {
-          let cartHtml = '';
-          d.cart.forEach(item => {
-            let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
-            if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
-            
-            cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span></div>`;
-            
-            if (item.addons) {
-              for (let key in item.addons) {
-                if (item.addons[key].qty > 0) {
-                  cartHtml += `<div style="font-size: 12px; color: #333; padding-left: 15px; margin-bottom: 2px;">+ ${item.addons[key].qty}x ${key}</div>`;
-                }
-              }
-            }
-            if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">↘ ${item.notes}</div>`; 
-          });
-
-          let headerTxt = type === 'food' ? 'KITCHEN TICKET' : 'BAR TICKET'; 
-          let crossRefNote = '';
-          if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`;
-          if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`;
-
-          let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 10px;">${headerTxt}</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div></div>`;
-          let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
-          let plainTextReceipt = "\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
-          
-          let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
-          window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-          return;
-      }
-
-      // ------------------------------------------
-      // CUSTOMER RECEIPT
-      // ------------------------------------------
-      let proReceipt = "";
-      
-      // We use manual spacing so it is guaranteed to center!
-      proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
-      if (storeAddress) proReceipt += centerTxt(storeAddress) + "\n";
-      if (storeContact) proReceipt += centerTxt(storeContact) + "\n";
-      proReceipt += "================================\n";
-  
-      const now = new Date();
-      let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
-      const timeStr = hours + ':' + minutes + ' ' + ampm;
-  
-      let cashier = d.cashierName || localStorage.getItem('cashierName') || "Staff";
-      let customer = d.customerName || "Guest";
-  
-      proReceipt += "Date: " + now.toLocaleDateString() + "\n";
-      proReceipt += "Time: " + timeStr + "\n";
-      proReceipt += "Customer: " + customer + "\n";
-      proReceipt += "Cashier: " + cashier + "\n";
-      proReceipt += "================================\n";
-      proReceipt += "ITEM/S PURCHASED\n";
-      proReceipt += "--------------------------------\n";
-  
-      let grandTotal = 0;
-      let totalDiscount = 0;
-
-      d.cart.forEach(item => {
-          let name = item.name || "Item";
-          let qty = parseFloat(item.qty || 1);
-          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-          let baseLineTotal = qty * basePrice;
-          let itemGrossTotal = baseLineTotal;
-  
-          proReceipt += name + variantName + "\n";
-          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-          let totalStr = baseLineTotal.toFixed(2);
-          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
-  
-          if (item.addons) {
-              for (let key in item.addons) {
-                  let addon = item.addons[key];
-                  if (addon.qty > 0) {
-                      let addonPrice = parseFloat(addon.price || 0);
-                      let addonTotalQty = qty * addon.qty; 
-                      let addonLineTotal = addonTotalQty * addonPrice;
-                      itemGrossTotal += addonLineTotal;
-                      
-                      let aName = `  + ${addon.qty}x ${key}`;
-                      if (addonPrice > 0) {
-                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                          let aTotalStr = addonLineTotal.toFixed(2);
-                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                      } else {
-                          proReceipt += aName + "\n";
-                      }
-                  }
-              }
-          }
-  
-          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
-  
-          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
-          let diff = itemGrossTotal - actualFinal;
-          if (diff > 0.01) totalDiscount += diff;
-          
-          grandTotal += itemGrossTotal; 
-      });
-  
-      let amountRec = parseFloat(d.amountReceived) || 0;
-      let paymentMethod = d.paymentMethod || "Cash";
-      
-      let subtotalVal = grandTotal.toFixed(2);
-      let totalVal = (grandTotal - totalDiscount).toFixed(2);
-      let changeVal = 0;
-      
-      if (amountRec > 0) {
-          changeVal = amountRec - parseFloat(totalVal);
-          if (changeVal < 0) changeVal = 0;
-      }
-  
-      proReceipt += "--------------------------------\n";
-  
-      function formatLine(label, value) {
-          let valStr = value.toFixed(2);
-          let padding = 32 - label.length - valStr.length;
-          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-      }
-  
-      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
-      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-      proReceipt += "--------------------------------\n";
-  
-      if (amountRec > 0) {
-          proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
-          proReceipt += "Payment Method: " + paymentMethod + "\n";
-          proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
-      } else {
-          proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n";
-      }
-      proReceipt += "\n";
-      
-      let footerLines = footerMsg.split('\n');
-      footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
-      proReceipt += "\n\n\n";
-    
-      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-};
-
-// ==========================================
 // 🕒 ULTIMATE PARKED ORDERS & PRINTER ENGINE
 // ==========================================
 window.currentParkedOrdersList = []; 
@@ -3409,40 +3226,68 @@ window.deleteParkedOrderManually = async function(docId) {
 };
 
 // ==========================================
-// 🖨️ ULTIMATE RAWBT PRINTER ENGINE (FIXED ORDER TYPE & BUFFER CLEANER)
+// 🖨️ LIGHTNING FAST NATIVE HTML PRINTER (NO 3RD PARTY APPS)
 // ==========================================
+window.printNativeReceipt = function(htmlContent) {
+    // 1. Create a hidden printing iframe
+    let printFrame = document.getElementById('thermalPrintFrame');
+    if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'thermalPrintFrame';
+        printFrame.style.position = 'fixed'; printFrame.style.right = '0'; printFrame.style.bottom = '0'; printFrame.style.width = '0'; printFrame.style.height = '0'; printFrame.style.border = '0';
+        document.body.appendChild(printFrame);
+    }
+
+    let doc = printFrame.contentWindow.document;
+    doc.open();
+
+    // 2. Inject CSS that forces the browser to format the paper to exactly 58mm Thermal dimensions!
+    doc.write(`
+        <html><head><style>
+            @page { margin: 0; size: 58mm auto; }
+            body { font-family: 'Courier New', Courier, monospace; font-size: 11px; width: 54mm; margin: 0 auto; padding: 2mm 0; color: black; line-height: 1.2; }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .flex { display: flex; justify-content: space-between; }
+            .line { border-top: 1px dashed black; margin: 5px 0; }
+            .item-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            td { vertical-align: top; }
+        </style></head>
+        <body>${htmlContent}</body></html>
+    `);
+    doc.close();
+
+    // 3. Command the browser to instantly open the print dialog
+    setTimeout(() => {
+        printFrame.contentWindow.focus();
+        printFrame.contentWindow.print();
+    }, 250); 
+};
+
 window.printReceipt = async function(type) {
     let d = lastTransactionData; if (!d || !d.cart) return;
     let hasFood = false; let hasDrinks = false;
     d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
     
-    let rSettings = null;
-    if (typeof window.getReceiptSettings === 'function') {
-        rSettings = await window.getReceiptSettings();
-    }
-    
-    let storeName = rSettings?.storeName || "TAKODEAL";
-    
+    let storeName = "TAKODEAL";
     let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
-    let storeAddress = "";
-    if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes Cabantian";
-    else if (currentBranch === "Citygate") storeAddress = "Citygate Foodpark";
-    else if (currentBranch === "Maa") storeAddress = "Maa Road, Davao City";
-    else storeAddress = "Takodeal Headquarters";
-    
+    let storeAddress = currentBranch === "Cabantian" ? "B14L6 Deca Homes Cabantian" : (currentBranch === "Citygate" ? "Citygate Foodpark" : (currentBranch === "Maa" ? "Maa Road, Davao City" : "Takodeal Headquarters"));
     let storeContact = "09629721305";
-    let footerMsg = "Acknowledgement Receipt\nThank you!";
 
-    function centerTxt(text) {
-        let cleanText = text.trim();
-        if (cleanText.length >= 32) return cleanText;
-        let leftPad = Math.floor((32 - cleanText.length) / 2);
-        return " ".repeat(leftPad) + cleanText;
-    }
-
-    // 🔥 FORCE GRAB ORDER TYPE (DINE-IN, TAKE-OUT, etc.)
     let orderType = d.orderType || (document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : "DINE-IN");
     orderType = orderType.toUpperCase();
+
+    // 🔥 PRIVACY SHIELD: First Name Only
+    let rawCashier = d.cashierName || localStorage.getItem('cashierName') || "Staff";
+    let safeFirstName = rawCashier.split(' ')[0];
+    let customer = d.customerName || "Guest";
+
+    const now = new Date();
+    let timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let dateStr = now.toLocaleDateString();
+
+    let html = '';
 
     // ------------------------------------------
     // 🔪 KITCHEN & BAR TICKETS 
@@ -3450,83 +3295,65 @@ window.printReceipt = async function(type) {
     if (type === 'food' || type === 'drinks') {
         let cartHtml = '';
         d.cart.forEach(item => {
-          let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
-          if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
-          cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span></div>`;
-          if (item.addons) {
-            for (let key in item.addons) {
-              if (item.addons[key].qty > 0) {
-                cartHtml += `<div style="font-size: 12px; color: #333; padding-left: 15px; margin-bottom: 2px;">+ ${item.addons[key].qty}x ${key}</div>`;
-              }
+            let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
+            if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
+            
+            cartHtml += `<div class="item-row"><span class="bold">${item.qty}x ${item.name}</span></div>`;
+            if (item.addons) {
+                for (let key in item.addons) {
+                    if (item.addons[key].qty > 0) cartHtml += `<div style="padding-left: 10px;">+ ${item.addons[key].qty}x ${key}</div>`;
+                }
             }
-          }
-          if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">↘ ${item.notes}</div>`; 
+            if (item.notes) cartHtml += `<div class="bold" style="padding-left: 10px; margin-bottom: 5px;">↘ ${item.notes}</div>`; 
         });
 
         let headerTxt = type === 'food' ? 'KITCHEN TICKET' : 'BAR TICKET'; 
         let crossRefNote = '';
-        if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`;
-        if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`;
+        if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed black; padding: 2px; margin-bottom: 5px;">⚠️ ORDER CONTAINS DRINKS</div>`;
+        if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed black; padding: 2px; margin-bottom: 5px;">⚠️ ORDER CONTAINS FOOD</div>`;
 
-        // INJECT THE ORDER TYPE FOR THE KITCHEN!
-        let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 5px;">${headerTxt}</div><div class="center bold" style="font-size: 20px; margin-bottom: 10px;">>> ${orderType} <<</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div></div>`;
+        html = `<div class="center bold" style="font-size: 16px; margin-bottom: 2px;">${headerTxt}</div>
+                <div class="center bold" style="font-size: 14px; margin-bottom: 5px;">>> ${orderType} <<</div>
+                ${crossRefNote}
+                <div class="line"></div>
+                ${cartHtml}
+                <div class="line"></div>
+                <div class="center bold">-- END OF TICKET --</div>`;
         
-        let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
-        
-        // \x1B\x40 RESETS THE PRINTER TO CLEAR OUT THE GARBAGE TEXT!
-        let plainTextReceipt = "\x1B\x40\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
-        let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
-        window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        window.printNativeReceipt(html);
         return;
     }
 
     // ------------------------------------------
-    // 🧾 CUSTOMER RECEIPT
+    // 🧾 CUSTOMER RECEIPT (NATIVE HTML)
     // ------------------------------------------
-    // \x1B\x40 RESETS THE PRINTER TO CLEAR OUT THE GARBAGE TEXT!
-    let proReceipt = "\x1B\x40\n";
-    proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
-    if (storeAddress) proReceipt += centerTxt(storeAddress) + "\n";
-    if (storeContact) proReceipt += centerTxt(storeContact) + "\n";
-    proReceipt += "================================\n";
+    html = `<div class="center bold" style="font-size:16px;">*** ${storeName} ***</div>
+            <div class="center">${storeAddress}</div>
+            <div class="center">${storeContact}</div>
+            <div class="line"></div>
+            <div class="center bold" style="font-size: 14px;">>> ${orderType} <<</div>
+            <div class="line"></div>
+            <table style="margin-bottom: 5px;">
+                <tr><td>Date:</td><td style="text-align:right">${dateStr}</td></tr>
+                <tr><td>Time:</td><td style="text-align:right">${timeStr}</td></tr>
+                <tr><td>Customer:</td><td style="text-align:right">${customer}</td></tr>
+                <tr><td>Cashier:</td><td style="text-align:right">${safeFirstName}</td></tr>
+            </table>
+            <div class="line"></div>
+            <div class="center bold">ITEM/S PURCHASED</div>
+            <div class="line"></div>`;
 
-    const now = new Date();
-    let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
-    const timeStr = hours + ':' + minutes + ' ' + ampm;
-
-    let cashier = d.cashierName || localStorage.getItem('cashierName') || "Staff";
-    let customer = d.customerName || "Guest";
-
-    proReceipt += "Date: " + now.toLocaleDateString() + "\n";
-    proReceipt += "Time: " + timeStr + "\n";
-    
-    // 🔥 PRINT THE ORDER TYPE LOUD AND CLEAR!
-    proReceipt += "================================\n";
-    proReceipt += centerTxt(">> " + orderType + " <<") + "\n"; 
-    proReceipt += "================================\n";
-    
-    proReceipt += "Customer: " + customer + "\n";
-    proReceipt += "Cashier: " + cashier + "\n";
-    proReceipt += "--------------------------------\n";
-    proReceipt += "ITEM/S PURCHASED\n";
-    proReceipt += "--------------------------------\n";
-
-    let grandTotal = 0;
-    let totalDiscount = 0;
+    let grandTotal = 0; let totalDiscount = 0;
 
     d.cart.forEach(item => {
         let name = item.name || "Item";
         let qty = parseFloat(item.qty || 1);
         let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
         let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-        let baseLineTotal = qty * basePrice;
-        let itemGrossTotal = baseLineTotal;
+        let itemGrossTotal = qty * basePrice;
 
-        proReceipt += name + variantName + "\n";
-        let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-        let totalStr = baseLineTotal.toFixed(2);
-        proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
+        html += `<div class="bold">${name}${variantName}</div>`;
+        html += `<div class="flex"><span>${qty} x ${basePrice.toFixed(2)}</span><span>${itemGrossTotal.toFixed(2)}</span></div>`;
 
         if (item.addons) {
             for (let key in item.addons) {
@@ -3537,150 +3364,108 @@ window.printReceipt = async function(type) {
                     let addonLineTotal = addonTotalQty * addonPrice;
                     itemGrossTotal += addonLineTotal;
                     
-                    let aName = `  + ${addon.qty}x ${key}`;
+                    html += `<div style="padding-left:10px;">+ ${addon.qty}x ${key}</div>`;
                     if (addonPrice > 0) {
-                        let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                        let aTotalStr = addonLineTotal.toFixed(2);
-                        proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                    } else {
-                        proReceipt += aName + "\n";
+                        html += `<div class="flex" style="padding-left:10px;"><span>${addonTotalQty} x ${addonPrice.toFixed(2)}</span><span>${addonLineTotal.toFixed(2)}</span></div>`;
                     }
                 }
             }
         }
 
-        if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
+        if (item.notes) html += `<div style="padding-left:10px;">✎ ${item.notes}</div>`;
 
         let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
         let diff = itemGrossTotal - actualFinal;
         if (diff > 0.01) totalDiscount += diff;
-        
         grandTotal += itemGrossTotal; 
     });
 
     let amountRec = parseFloat(d.amountReceived) || 0;
     let paymentMethod = d.paymentMethod || "Cash";
-    
-    let subtotalVal = grandTotal.toFixed(2);
-    let totalVal = (grandTotal - totalDiscount).toFixed(2);
-    let changeVal = 0;
-    
+    let totalVal = grandTotal - totalDiscount;
+    let changeVal = amountRec > 0 ? Math.max(0, amountRec - totalVal) : 0;
+
+    html += `<div class="line"></div>
+             <table style="font-weight:bold;">
+                <tr><td>Subtotal:</td><td style="text-align:right">${grandTotal.toFixed(2)}</td></tr>`;
+    if (totalDiscount > 0) html += `<tr><td>Discount:</td><td style="text-align:right">-${totalDiscount.toFixed(2)}</td></tr>`;
+    html += `    <tr><td style="font-size:14px;">TOTAL DUE:</td><td style="text-align:right; font-size:14px;">${totalVal.toFixed(2)}</td></tr>
+             </table>
+             <div class="line"></div>`;
+
     if (amountRec > 0) {
-        changeVal = amountRec - parseFloat(totalVal);
-        if (changeVal < 0) changeVal = 0;
+        html += `<table>
+                    <tr><td>Amt Received:</td><td style="text-align:right">${amountRec.toFixed(2)}</td></tr>
+                    <tr><td>Pay Method:</td><td style="text-align:right">${paymentMethod}</td></tr>
+                    <tr><td>Change:</td><td style="text-align:right">${changeVal.toFixed(2)}</td></tr>
+                 </table>`;
+    } else {
+        html += `<div class="center bold">** PLEASE PAY AT COUNTER **</div>`;
     }
 
-    proReceipt += "--------------------------------\n";
-    function formatLine(label, value) {
-        let valStr = value.toFixed(2); let padding = 32 - label.length - valStr.length;
-        return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-    }
-    proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-    if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
-    proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-    proReceipt += "--------------------------------\n";
+    html += `<br><div class="center">Acknowledgement Receipt<br>Thank you!</div><br><br>`;
     
-    if (amountRec > 0) {
-        proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
-        proReceipt += "Payment Method: " + paymentMethod + "\n";
-        proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
-    } else {
-        proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n";
-    }
-    proReceipt += "\n";
-    
-    let footerLines = footerMsg.split('\n');
-    footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
-    proReceipt += "\n\n\n\n";
-    
-    let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-    window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+    // Shoot it to the native printer!
+    window.printNativeReceipt(html);
 };
 
 window.printParkedReceipt = function(docId) {
-      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-      if (!order) { alert("Order data missing! Please refresh."); return; }
-      
-      let storeName = "TAKODEAL";
+    let order = window.currentParkedOrdersList.find(o => o.id === docId); 
+    if (!order) { alert("Order data missing! Please refresh."); return; }
+    
+    let rawCashier = localStorage.getItem('cashierName') || "Staff";
+    let safeFirstName = rawCashier.split(' ')[0];
 
-      function centerTxt(text) {
-          let cleanText = text.trim();
-          if (cleanText.length >= 32) return cleanText;
-          let leftPad = Math.floor((32 - cleanText.length) / 2);
-          return " ".repeat(leftPad) + cleanText;
-      }
+    let html = `<div class="center bold" style="font-size:16px;">*** TAKODEAL ***</div>
+                <div class="center bold">** PAY LATER (PARKED) **</div>
+                <div class="line"></div>
+                <table>
+                    <tr><td>Cashier:</td><td style="text-align:right">${safeFirstName}</td></tr>
+                    <tr><td>Cust/Table:</td><td style="text-align:right">${order.name}</td></tr>
+                </table>
+                <div class="line"></div>`;
 
-      let proReceipt = "";
-      proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
-      proReceipt += centerTxt("** PAY LATER (PARKED) **") + "\n";
-      proReceipt += "================================\n";
-      
-      let cashierName = localStorage.getItem('cashierName') || "Staff";
-      proReceipt += "Cashier: " + cashierName + "\n";
-      proReceipt += "Cust/Table: " + order.name + "\n";
-      proReceipt += "================================\n";
-      
-      let grandTotal = 0;
-      let totalDiscount = 0;
+    let grandTotal = 0; let totalDiscount = 0;
 
-      order.items.forEach(item => {
-          let name = item.name || "Item";
-          let qty = parseFloat(item.qty || 1);
-          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-          let baseLineTotal = qty * basePrice;
-          let itemGrossTotal = baseLineTotal;
-  
-          proReceipt += name + variantName + "\n";
-          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-          let totalStr = baseLineTotal.toFixed(2);
-          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
-  
-          if (item.addons) {
-              for (let key in item.addons) {
-                  let addon = item.addons[key];
-                  if (addon.qty > 0) {
-                      let addonPrice = parseFloat(addon.price || 0);
-                      let addonTotalQty = qty * addon.qty; 
-                      let addonLineTotal = addonTotalQty * addonPrice;
-                      itemGrossTotal += addonLineTotal;
-                      
-                      let aName = `  + ${addon.qty}x ${key}`;
-                      if (addonPrice > 0) {
-                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                          let aTotalStr = addonLineTotal.toFixed(2);
-                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                      } else {
-                          proReceipt += aName + "\n";
-                      }
-                  }
-              }
-          }
-          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
-  
-          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
-          let diff = itemGrossTotal - actualFinal;
-          if (diff > 0.01) totalDiscount += diff;
-          
-          grandTotal += itemGrossTotal; 
-      });
-  
-      let subtotalVal = grandTotal.toFixed(2);
-      let totalVal = (grandTotal - totalDiscount).toFixed(2);
-  
-      proReceipt += "--------------------------------\n";
-      function formatLine(label, value) {
-          let valStr = value.toFixed(2); let padding = 32 - label.length - valStr.length;
-          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-      }
-      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
-      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-      proReceipt += "--------------------------------\n";
-      proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n\n\n\n";
-      
-      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+    order.items.forEach(item => {
+        let name = item.name || "Item"; let qty = parseFloat(item.qty || 1);
+        let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
+        let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
+        let itemGrossTotal = qty * basePrice;
+
+        html += `<div class="bold">${name}${variantName}</div>
+                 <div class="flex"><span>${qty} x ${basePrice.toFixed(2)}</span><span>${itemGrossTotal.toFixed(2)}</span></div>`;
+
+        if (item.addons) {
+            for (let key in item.addons) {
+                let addon = item.addons[key];
+                if (addon.qty > 0) {
+                    let addonTotalQty = qty * addon.qty; let addonPrice = parseFloat(addon.price || 0);
+                    itemGrossTotal += (addonTotalQty * addonPrice);
+                    html += `<div style="padding-left:10px;">+ ${addon.qty}x ${key}</div>`;
+                    if (addonPrice > 0) html += `<div class="flex" style="padding-left:10px;"><span>${addonTotalQty} x ${addonPrice.toFixed(2)}</span><span>${(addonTotalQty * addonPrice).toFixed(2)}</span></div>`;
+                }
+            }
+        }
+        if (item.notes) html += `<div style="padding-left:10px;">✎ ${item.notes}</div>`;
+        
+        let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
+        if ((itemGrossTotal - actualFinal) > 0.01) totalDiscount += (itemGrossTotal - actualFinal);
+        grandTotal += itemGrossTotal; 
+    });
+
+    let totalVal = grandTotal - totalDiscount;
+    html += `<div class="line"></div>
+             <table style="font-weight:bold;">
+                <tr><td>Subtotal:</td><td style="text-align:right">${grandTotal.toFixed(2)}</td></tr>`;
+    if (totalDiscount > 0) html += `<tr><td>Discount:</td><td style="text-align:right">-${totalDiscount.toFixed(2)}</td></tr>`;
+    html += `    <tr><td style="font-size:14px;">TOTAL DUE:</td><td style="text-align:right; font-size:14px;">${totalVal.toFixed(2)}</td></tr>
+             </table>
+             <div class="line"></div>
+             <div class="center bold">** PLEASE PAY AT COUNTER **</div><br><br>`;
+
+    window.printNativeReceipt(html);
+};
 
       // ==========================================
       // 📱 MOBILE ORDERS ENGINE & LISTENER
