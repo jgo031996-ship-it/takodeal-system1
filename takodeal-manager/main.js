@@ -716,6 +716,7 @@ window.switchView = function (viewId) {
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
   if (viewId === 'ledger') window.loadLedger();
+  if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); }
   if (viewId === 'admin') { window.loadAdminDashboard(); window.loadBranchManager(); }
 };
 
@@ -11217,57 +11218,82 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 1500); // 1.5s delay gives Firebase time to auth
 });
 
-window.loadMenuLayoutManager = async function() {
-    const listContainer = document.getElementById('menuOrderList');
-    listContainer.innerHTML = 'Loading categories...';
+// ========================================================
+// 📐 CENTRALIZED POS LAYOUT MANAGER
+// ========================================================
+window.currentLayout = [];
 
-    // 1. Get current saved order from Firebase
-    const settingsSnap = await getDoc(doc(db, "settings", "pos_layout"));
-    let savedOrder = settingsSnap.exists() ? settingsSnap.data().order : [];
-
-    // 2. Get all unique categories from Menu
-    const menuSnap = await getDocs(collection(db, "menu"));
-    let cats = new Set();
-    menuSnap.forEach(d => cats.add(d.data().category || "Uncategorized"));
-    let allCats = Array.from(cats);
-
-    // 3. Merge: saved order first, then new categories alphabetically
-    let finalOrder = [...new Set([...savedOrder, ...allCats.sort()])];
+window.loadPosLayout = async function() {
+    const listDiv = document.getElementById('posCategoryArrangementList');
+    if (!listDiv) return;
+    listDiv.innerHTML = '<div style="color: #64748b; text-align: center; padding: 20px;">Loading live menu categories...</div>';
     
+    try {
+        // 1. Fetch all unique categories currently in the database
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let categories = new Set();
+        menuSnap.forEach(d => {
+            let cat = d.data().category;
+            if (cat) categories.add(cat.trim());
+        });
+        
+        // 2. Fetch the saved arrangement order from Settings
+        const layoutSnap = await getDoc(doc(db, "settings", "pos_layout"));
+        let layout = layoutSnap.exists() ? layoutSnap.data().categories || [] : Array.from(categories);
+
+        // 3. Smart Merge: Add new categories that aren't in the saved layout yet
+        categories.forEach(c => { 
+            if (!layout.includes(c)) layout.push(c); 
+        });
+
+        // 4. Cleanup: Remove old categories that no longer exist in the menu
+        layout = layout.filter(c => categories.has(c));
+
+        window.currentLayout = layout;
+        window.renderLayoutEditor();
+    } catch(e) { 
+        console.error("Layout Load Error:", e); 
+        listDiv.innerHTML = '<div style="color: red; text-align: center;">Error loading layout data.</div>';
+    }
+};
+
+window.moveLayout = function(index, direction) {
+    let i = parseInt(index);
+    let newIndex = i + direction;
+    // Stop it from moving out of bounds
+    if (newIndex < 0 || newIndex >= window.currentLayout.length) return;
+    
+    // Swap the array items
+    let temp = window.currentLayout[i];
+    window.currentLayout[i] = window.currentLayout[newIndex];
+    window.currentLayout[newIndex] = temp;
+    
+    window.renderLayoutEditor();
+};
+
+window.renderLayoutEditor = function() {
+    let listDiv = document.getElementById('posCategoryArrangementList');
     let html = '';
-    finalOrder.forEach((cat, index) => {
-        html += `<div style="display:flex; align-items:center; gap:10px; padding:12px; background:white; border:1px solid #e2e8f0; margin-bottom:8px; border-radius:6px;">
-            <span style="font-weight:bold; color:#475569; flex:1;">${cat}</span>
-            <button onclick="window.moveCategory(${index}, -1)" ${index === 0 ? 'disabled':''}>⬆️</button>
-            <button onclick="window.moveCategory(${index}, 1)" ${index === finalOrder.length-1 ? 'disabled':''}>⬇️</button>
-        </div>`;
+    window.currentLayout.forEach((cat, index) => {
+        html += `
+            <div style="display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <button onclick="window.moveLayout('${index}', -1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▲ UP</button>
+                    <button onclick="window.moveLayout('${index}', 1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▼ DOWN</button>
+                </div>
+                <div style="font-weight: 900; color: #1e293b; font-size: 16px; flex-grow: 1;">${cat}</div>
+                <div style="font-size: 12px; color: #94a3b8; font-weight: bold;">Position: ${index + 1}</div>
+            </div>`;
     });
-    listContainer.innerHTML = html;
-    window.currentMenuOrder = finalOrder;
+    listDiv.innerHTML = html;
 };
 
-window.moveCategory = function(index, direction) {
-    let list = window.currentMenuOrder;
-    let newIndex = index + direction;
-    [list[index], list[newIndex]] = [list[newIndex], list[index]];
-    window.renderList(list);
-};
-
-window.renderList = function(list) {
-    const listContainer = document.getElementById('menuOrderList');
-    let html = '';
-    list.forEach((cat, index) => {
-        html += `<div style="display:flex; align-items:center; gap:10px; padding:12px; background:white; border:1px solid #e2e8f0; margin-bottom:8px; border-radius:6px;">
-            <span style="font-weight:bold; color:#475569; flex:1;">${cat}</span>
-            <button onclick="window.moveCategory(${index}, -1)" ${index === 0 ? 'disabled':''}>⬆️</button>
-            <button onclick="window.moveCategory(${index}, 1)" ${index === list.length-1 ? 'disabled':''}>⬇️</button>
-        </div>`;
-    });
-    listContainer.innerHTML = html;
-    window.currentMenuOrder = list;
-};
-
-window.saveMenuLayout = async function() {
-    await setDoc(doc(db, "settings", "pos_layout"), { order: window.currentMenuOrder });
-    alert("✅ Menu layout updated! All Cashier apps will reflect this order.");
+window.savePosLayout = async function() {
+    try {
+        await setDoc(doc(db, "settings", "pos_layout"), { categories: window.currentLayout }, { merge: true });
+        alert("✅ Tab arrangement saved successfully!\n\nAll Cashier Apps will reflect this exact order immediately upon refresh.");
+    } catch(e) { 
+        console.error(e);
+        alert("❌ Failed to save layout to cloud."); 
+    }
 };
