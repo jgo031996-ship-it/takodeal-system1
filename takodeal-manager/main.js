@@ -11216,3 +11216,58 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
     }, 1500); // 1.5s delay gives Firebase time to auth
 });
+
+window.loadMenuLayoutManager = async function() {
+    const listContainer = document.getElementById('menuOrderList');
+    listContainer.innerHTML = 'Loading categories...';
+
+    // 1. Get current saved order from Firebase
+    const settingsSnap = await getDoc(doc(db, "settings", "pos_layout"));
+    let savedOrder = settingsSnap.exists() ? settingsSnap.data().order : [];
+
+    // 2. Get all unique categories from Menu
+    const menuSnap = await getDocs(collection(db, "menu"));
+    let cats = new Set();
+    menuSnap.forEach(d => cats.add(d.data().category || "Uncategorized"));
+    let allCats = Array.from(cats);
+
+    // 3. Merge: saved order first, then new categories alphabetically
+    let finalOrder = [...new Set([...savedOrder, ...allCats.sort()])];
+    
+    let html = '';
+    finalOrder.forEach((cat, index) => {
+        html += `<div style="display:flex; align-items:center; gap:10px; padding:12px; background:white; border:1px solid #e2e8f0; margin-bottom:8px; border-radius:6px;">
+            <span style="font-weight:bold; color:#475569; flex:1;">${cat}</span>
+            <button onclick="window.moveCategory(${index}, -1)" ${index === 0 ? 'disabled':''}>⬆️</button>
+            <button onclick="window.moveCategory(${index}, 1)" ${index === finalOrder.length-1 ? 'disabled':''}>⬇️</button>
+        </div>`;
+    });
+    listContainer.innerHTML = html;
+    window.currentMenuOrder = finalOrder;
+};
+
+window.moveCategory = function(index, direction) {
+    let list = window.currentMenuOrder;
+    let newIndex = index + direction;
+    [list[index], list[newIndex]] = [list[newIndex], list[index]];
+    window.renderList(list);
+};
+
+window.renderList = function(list) {
+    const listContainer = document.getElementById('menuOrderList');
+    let html = '';
+    list.forEach((cat, index) => {
+        html += `<div style="display:flex; align-items:center; gap:10px; padding:12px; background:white; border:1px solid #e2e8f0; margin-bottom:8px; border-radius:6px;">
+            <span style="font-weight:bold; color:#475569; flex:1;">${cat}</span>
+            <button onclick="window.moveCategory(${index}, -1)" ${index === 0 ? 'disabled':''}>⬆️</button>
+            <button onclick="window.moveCategory(${index}, 1)" ${index === list.length-1 ? 'disabled':''}>⬇️</button>
+        </div>`;
+    });
+    listContainer.innerHTML = html;
+    window.currentMenuOrder = list;
+};
+
+window.saveMenuLayout = async function() {
+    await setDoc(doc(db, "settings", "pos_layout"), { order: window.currentMenuOrder });
+    alert("✅ Menu layout updated! All Cashier apps will reflect this order.");
+};
