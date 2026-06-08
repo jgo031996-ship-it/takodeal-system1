@@ -226,6 +226,7 @@
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')">👥 Staff & Security</a>
       <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')">🍔 Menu Editor</a>
       <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();">⚙️ POS Config Hub</a>
+      <a href="#" class="nav-item" id="nav-layout" onclick="switchView('menu-layout'); window.loadMenuLayoutManager();">📱 Menu Layout Order</a>
       <a href="#" class="nav-item" id="nav-inventory" onclick="switchView('inventory'); loadInventoryData();">📦 Live
         Inventory</a>
       <a href="#" class="nav-item" id="nav-alerts" onclick="switchView('alerts')">🚨 Security Alerts</a>
@@ -1099,6 +1100,21 @@
             <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: 320cc Paper Bowl, Burger Box, Boba Straw</div>
           </div>
 
+        </div>
+      </div>
+    </div>
+
+    <div id="view-menu-layout" class="view">
+      <div class="card" style="max-width: 600px; margin: 0 auto;">
+        <div class="card-header">
+            <h2>📱 Reorder Menu Tabs</h2>
+            <p style="font-size: 12px; color: #64748b;">Use the arrows to change the button order at the top of the POS screen.</p>
+        </div>
+        <div id="menuOrderList" style="padding: 20px;">
+            <!-- Categories will be injected here -->
+        </div>
+        <div style="padding: 20px; border-top: 1px solid #e2e8f0;">
+            <button onclick="window.saveMenuLayout()" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer;">💾 Save New Order</button>
         </div>
       </div>
     </div>
