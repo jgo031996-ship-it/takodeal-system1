@@ -11282,7 +11282,7 @@ window.renderLayoutEditor = function() {
                     <button onclick="window.moveLayout('${index}', 1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▼ DOWN</button>
                 </div>
                 <div style="font-weight: 900; color: #1e293b; font-size: 16px; flex-grow: 1;">${cat}</div>
-                <div style="font-weight: bold; font-size: 12px; color: #94a3b8;">Pos: ${index + 1}</div>
+                <div style="font-size: 12px; color: #94a3b8; font-weight: bold;">Position: ${index + 1}</div>
             </div>`;
     });
     listDiv.innerHTML = html;
