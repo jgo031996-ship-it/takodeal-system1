@@ -3409,9 +3409,9 @@ window.deleteParkedOrderManually = async function(docId) {
 };
 
 // ==========================================
-// 🖨️ LIGHTNING FAST NATIVE HTML PRINTER (NO RAWBT NEEDED)
+// 🖨️ LIGHTNING FAST NATIVE HTML PRINTER (DYNAMIC SIZE)
 // ==========================================
-window.printNativeReceipt = function(htmlContent) {
+window.printNativeReceipt = function(htmlContent, paperSize = '58mm') {
     let printFrame = document.getElementById('thermalPrintFrame');
     if (!printFrame) {
         printFrame = document.createElement('iframe');
@@ -3427,16 +3427,21 @@ window.printNativeReceipt = function(htmlContent) {
 
     let doc = printFrame.contentWindow.document;
     doc.open();
+
+    // Dynamically adjust CSS based on HQ Settings!
+    let cssWidth = paperSize === '80mm' ? '76mm' : '54mm';
+    let fontSize = paperSize === '80mm' ? '13px' : '11px';
+
     doc.write(`
         <html><head><style>
-            @page { margin: 0; size: 58mm auto; }
-            body { font-family: 'Courier New', Courier, monospace; font-size: 11px; width: 56mm; margin: 0 auto; padding: 2mm 0; color: black; line-height: 1.2; }
+            @page { margin: 0; size: ${paperSize} auto; }
+            body { font-family: 'Courier New', Courier, monospace; font-size: ${fontSize}; width: ${cssWidth}; margin: 0 auto; padding: 2mm 0; color: black; line-height: 1.2; }
             .center { text-align: center; }
             .bold { font-weight: bold; }
             .flex { display: flex; justify-content: space-between; }
             .line { border-top: 1px dashed black; margin: 5px 0; }
             .item-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2px; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            table { width: 100%; border-collapse: collapse; font-size: ${fontSize}; }
             td { vertical-align: top; }
         </style></head>
         <body>${htmlContent}</body></html>
@@ -3446,7 +3451,7 @@ window.printNativeReceipt = function(htmlContent) {
     setTimeout(() => {
         printFrame.contentWindow.focus();
         printFrame.contentWindow.print();
-    }, 250); // Instantly opens native print dialog
+    }, 400); // Gives the iframe time to render before triggering the native dialog
 };
 
 window.printReceipt = async function(type) {
@@ -3456,8 +3461,23 @@ window.printReceipt = async function(type) {
     
     let storeName = "TAKODEAL";
     let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
-    let storeAddress = currentBranch === "Cabantian" ? "B14L6 Deca Homes Cabantian" : (currentBranch === "Citygate" ? "Citygate Foodpark" : (currentBranch === "Maa" ? "Maa Road, Davao City" : "Takodeal Headquarters"));
-    let storeContact = "09629721305";
+    
+    // 🔥 DEFAULT FALLBACKS
+    let storeAddress = "Takodeal Branch";
+    let storeContact = "09xxxxxxxxx";
+    let printerSize = "58mm";
+
+    // 📡 FETCH LIVE HQ SETTINGS FROM FIREBASE
+    try {
+        const bQuery = window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch));
+        const bSnap = await window.getDocs(bQuery);
+        if (!bSnap.empty) {
+            let bData = bSnap.docs[0].data();
+            if (bData.address) storeAddress = bData.address;
+            if (bData.contact) storeContact = bData.contact;
+            if (bData.printerSize) printerSize = bData.printerSize;
+        }
+    } catch(e) { console.warn("Failed to fetch branch settings, using defaults."); }
 
     let orderType = d.orderType || (document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : "DINE-IN");
     orderType = orderType.toUpperCase();
@@ -3504,12 +3524,12 @@ window.printReceipt = async function(type) {
                 <div class="line"></div>
                 <div class="center bold">-- END OF TICKET --</div>`;
         
-        window.printNativeReceipt(html);
+        window.printNativeReceipt(html, printerSize);
         return;
     }
 
     // ------------------------------------------
-    // 🧾 CUSTOMER RECEIPT (NATIVE HTML)
+    // 🧾 CUSTOMER RECEIPT
     // ------------------------------------------
     html = `<div class="center bold" style="font-size:16px;">*** ${storeName} ***</div>
             <div class="center">${storeAddress}</div>
@@ -3589,13 +3609,26 @@ window.printReceipt = async function(type) {
 
     html += `<br><div class="center">Acknowledgement Receipt<br>Thank you!</div><br><br>`;
     
-    window.printNativeReceipt(html);
+    // Pass the fetched setting to the printer engine!
+    window.printNativeReceipt(html, printerSize);
 };
 
-window.printParkedReceipt = function(docId) {
+window.printParkedReceipt = async function(docId) {
     let order = window.currentParkedOrdersList.find(o => o.id === docId); 
     if (!order) { alert("Order data missing! Please refresh."); return; }
     
+    let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
+    let printerSize = "58mm";
+
+    // 📡 FETCH LIVE HQ SETTINGS FROM FIREBASE
+    try {
+        const bQuery = window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch));
+        const bSnap = await window.getDocs(bQuery);
+        if (!bSnap.empty && bSnap.docs[0].data().printerSize) {
+            printerSize = bSnap.docs[0].data().printerSize;
+        }
+    } catch(e) {}
+
     let rawCashier = localStorage.getItem('cashierName') || "Staff";
     let safeFirstName = rawCashier.split(' ')[0];
 
@@ -3647,7 +3680,8 @@ window.printParkedReceipt = function(docId) {
              <div class="line"></div>
              <div class="center bold">** PLEASE PAY AT COUNTER **</div><br><br>`;
 
-    window.printNativeReceipt(html);
+    // Pass the fetched setting to the printer engine!
+    window.printNativeReceipt(html, printerSize);
 };
 
 // ==========================================
