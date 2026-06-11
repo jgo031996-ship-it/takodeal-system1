@@ -218,7 +218,6 @@
       <a href="#" class="nav-item" id="nav-ledger" onclick="switchView('ledger')">📘 Loans & Ledger</a>
       <a href="#" class="nav-item" id="nav-schedule" onclick="switchView('schedule')">📅 Schedule Manager</a>
       <a href="#" class="nav-item" id="nav-products" onclick="switchView('products')">🏷️ Menu Costing & BOM</a>
-      <a href="#" class="nav-item" id="nav-purchases" onclick="switchView('purchases')">⚠️ Purchases & Alerts</a>
       <a href="#" class="nav-item" id="nav-dispatch" onclick="switchView('dispatch')">🚚 Dispatch Stock</a>
       <a href="#" class="nav-item" id="nav-zreadings" onclick="switchView('zreadings')">📊 Z-Reading Reports</a>
       <a href="#" class="nav-item" id="nav-history" onclick="switchView('history')">🧾 Sales History</a>
@@ -1062,45 +1061,44 @@
           </div>
           <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="saveGlobalPosConfig()">💾 Save Changes to Cloud</button>
         </div>
-
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; padding: 20px;">
-          
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">💳 Payment Methods</h3>
-            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of accepted payments.</p>
             <textarea id="configPayMethods" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Cash, GCash, Bank, Maya</div>
           </div>
-
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">🛍️ Order Types</h3>
-            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of order categories.</p>
             <textarea id="configOrderTypes" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Dine-In, Take-Out, Delivery, Grab</div>
           </div>
-
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📑 POS Layout Tabs</h3>
-            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of menu categories to display as tabs on the POS.</p>
             <textarea id="configPosTabs" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Takoyaki, Milk Tea, Add-ons</div>
           </div>
-
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">🔪 Kitchen Prep Categories</h3>
-            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Which inventory categories should appear in the Kitchen Prep tab?</p>
             <textarea id="configKitchenPrep" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Prepared Batch, Sauces, Mixes</div>
           </div>
-
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
-            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📋 End-of-Day Audit List (Consumables)</h3>
-            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Exact inventory items cashiers MUST count before closing.</p>
+            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📋 End-of-Day Audit List</h3>
             <textarea id="configAuditList" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: 320cc Paper Bowl, Burger Box, Boba Straw</div>
           </div>
-
         </div>
+      </div>
+
+      <div class="card" style="margin-top: 20px; border-top: 4px solid #8b5cf6; margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                  <h2 style="margin: 0; color: #6d28d9;">📐 POS Menu Tab Arrangement</h2>
+                  <span style="font-size: 12px; color: var(--text-muted);">Rearrange the tab order for all Cashier Apps.</span>
+              </div>
+              <button onclick="window.loadPosLayout()" class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">🔄 Refresh List</button>
+          </div>
+          <div style="padding: 20px;">
+              <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 10px;">
+                  <div style="color: #64748b; font-size: 14px; text-align: center; padding: 20px;">Loading categories...</div>
+              </div>
+              <button onclick="window.savePosLayout()" style="margin-top: 20px; width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px 20px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save & Sync Tab Order to Cashier Apps</button>
+          </div>
       </div>
     </div>
 
@@ -1172,6 +1170,7 @@
             <div id="tabInvPrep" onclick="switchInvTab('Prep')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Prep Batch Logs</div>
             <div id="tabInvStockLogs" onclick="switchInvTab('StockLogs')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s; display: none;">Stock History</div>
             <div id="tabInvForecaster" onclick="switchInvTab('Forecaster')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">TAKODEAL Forecaster</div>
+            <div id="tabInvAlerts" onclick="switchInvTab('Alerts')" style="padding: 10px 15px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">⚠️ Low Stock Alerts</div>
         </div>
 
         <!-- 📊 SECTION 1: OVERVIEW -->
@@ -1301,6 +1300,42 @@
                     <div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #94a3b8; font-size: 16px;">
                         Click "Run Calculation" to scan your inventory burn rate.
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="invSectionAlerts" style="display: none; padding-top: 20px;">
+            <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+                    <div>
+                        <h2 style="margin: 0; color: #ef4444; display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 24px;">⚠️</span> Low Stock Alerts
+                        </h2>
+                        <span style="font-size: 12px; color: var(--text-muted);">Automatically tracks items that fall below your set re-order levels.</span>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
+                            <input type="text" id="alertSearchInput" onkeyup="filterAlertsTable()" placeholder="Search..." style="padding: 8px 10px 8px 30px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px; outline: none;">
+                        </div>
+                        <select id="branchAlertFilter" onchange="window.loadPurchasesAndAlerts()" style="padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+                            <option value="All Branches">All Branches</option>
+                            <option value="Cabantian">Cabantian</option>
+                            <option value="Maa">Maa</option>
+                            <option value="Citygate">Citygate</option>
+                        </select>
+                        <button onclick="window.loadPurchasesAndAlerts()" style="background: white; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: 500;">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead style="background: #fef2f2;">
+                            <tr><th>Branch</th><th>Category</th><th>Item Name</th><th>Current Stock</th><th>Re-order Level</th><th>Suggested Replenish</th><th>Action</th></tr>
+                        </thead>
+                        <tbody id="alertsPurchasesBody">
+                            <tr><td colspan="7" class="text-center">Loading alerts...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -1742,56 +1777,6 @@
 
     </div>
 
-    <div id="view-purchases" class="view">
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h2>⚠️ Low Stock Alerts</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Automatically tracks items that fall below your set
-              re-order levels.</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; width: 100%;">
-              <div style="position: relative; flex: 1; min-width: 250px;">
-                  <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
-                  <input type="text" id="alertSearchInput" onkeyup="filterAlertsTable()" placeholder="Search item name or category..." 
-                         style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 14px; outline: none; transition: border 0.2s;">
-              </div>
-          
-              <div style="display: flex; gap: 10px; align-items: center;">
-                  <select id="branchAlertFilter" onchange="loadAlerts()" style="padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
-                      <option value="All Branches">All Branches</option>
-                      <option value="Cabantian">Cabantian</option>
-                      <option value="Maa">Maa</option>
-                      <option value="Citygate">Citygate</option>
-                  </select>
-                  <button onclick="loadAlerts()" style="background: white; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: 500;">
-                      🔄 Refresh
-                  </button>
-              </div>
-          </div>
-        </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Branch</th>
-                <th>Category</th>
-                <th>Item Name</th>
-                <th>Current Stock</th>
-                <th>Re-order Level</th>
-                <th>Suggested Replenish</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="alertsPurchasesBody">
-              <tr>
-                <td colspan="7" class="text-center">Loading alerts...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
 
     <div id="view-dispatch" class="view">
       
@@ -2833,25 +2818,27 @@
 
         <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;">
           <div style="flex: 2; min-width: 200px;">
-            <label
-              style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Select
-              inventory item</label>
-            <select id="restockItemSelect"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold;"
-              onchange="updateRestockUomLabel()">
+            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Select inventory item</label>
+            <select id="restockItemSelect" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold;" onchange="updateRestockUomLabel()">
               <option value="">-- Select Item --</option>
             </select>
           </div>
           <div style="flex: 1; min-width: 100px;">
-            <label id="restockQtyLabel"
-              style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">No.
-              of packs</label>
-            <input type="number" id="restockQtyInput"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px;" placeholder="0">
+            <label id="restockQtyLabel" style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">No. of packs</label>
+            <input type="number" id="restockQtyInput" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px;" placeholder="0">
           </div>
-          <button onclick="addRestockToCart()"
-            style="background: white; color: var(--primary); border: 1px solid var(--primary); padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 38px;">➕
-            Add</button>
+          <button onclick="addRestockToCart()" style="background: white; color: var(--primary); border: 1px solid var(--primary); padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 38px;">➕ Add</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; padding: 15px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;">
+            <div>
+                <label style="font-size:12px; font-weight:bold; color:#64748b;">Supplier / Receipt No.</label>
+                <input type="text" id="restockSupplierInput" class="input-box" placeholder="e.g., SM, Inv-102" style="border: 1px solid #cbd5e1; padding: 10px;">
+            </div>
+            <div>
+                <label style="font-size:12px; font-weight:bold; color:#64748b;">Total Cost (Optional)</label>
+                <input type="number" id="restockCostInput" class="input-box" placeholder="Leave blank if no price change" style="border: 1px solid #cbd5e1; padding: 10px;">
+            </div>
         </div>
 
         <table class="data-table"
