@@ -8097,7 +8097,7 @@ window.loadPayablesDashboard = async function() {
                 data.linkedItems.forEach(i => { itemsHtml += `📦 <strong>${i.purchQty} ${i.purchUom}</strong> ${i.name}<br>`; });
                 itemsHtml += `</div>`;
             } else if (data.hasLinkedItems) {
-                itemsHtml = `<div style="margin-top: 6px; font-size: 11px; color: #0ea5e9;">📦 Contains received stock</div>`;
+                itemsHtml = `<div style="margin-top: 6px; padding: 6px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 4px; font-size: 11px; color: #b91c1c;">📦 Legacy Delivery (Details Hidden)</div>`;
             }
 
             html += `<tr style="border-bottom: 1px solid #f1f5f9;">
@@ -9123,7 +9123,7 @@ window.loadSalesHistoryTab = async function() {
                 if (!window.globalShiftReports[sId]) {
                     window.globalShiftReports[sId] = {
                         id: sId, branch: tx.branch, cashier: safeCashier,
-                        dateStr: dateStr, timeLabel: "Unlinked Transactions", timestamp: dDate,
+                        dateStr: dateStr, timeLabel: "General Sales (No Shift Linked)", timestamp: dDate,
                         sales: 0, cogs: 0, voids: 0, txCount: 0, categorySales: {}, itemSales: {}, transactions: [], isFallback: true
                     };
                 }
@@ -10161,10 +10161,9 @@ window.viewLedgerHistory = async function(staffName) {
     document.getElementById('ledgerHistoryModal').style.display = 'flex';
     document.getElementById('ledgerHistorySubtitle').innerText = staffName;
     const tbody = document.getElementById('ledgerHistoryBody');
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px;">⏳ Fetching records...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Fetching records...</td></tr>';
 
     try {
-        // Fetch Vales and Staff Meals
         const q = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), orderBy("dateAdded", "desc"));
         const snap = await getDocs(q);
         
@@ -10176,6 +10175,11 @@ window.viewLedgerHistory = async function(staffName) {
                 ? `<span style="background: #dcfce7; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">Paid</span>`
                 : `<span style="background: #fef2f2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">Unpaid</span>`;
             
+            // 🔥 NEW: MANUAL OVERRIDE BUTTON FOR STUCK VALES
+            let overrideBtn = data.status === "Unpaid"
+                ? `<button onclick="window.forceMarkDeductionPaid('${docSnap.id}', '${staffName}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;">Mark Paid</button>`
+                : `<span style="font-size:11px; color:#94a3b8;">Cleared</span>`;
+
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
@@ -10183,14 +10187,41 @@ window.viewLedgerHistory = async function(staffName) {
                     <td style="padding: 12px; font-style: italic; color: #475569;">System Deduction</td>
                     <td style="padding: 12px;">${statusBadge}</td>
                     <td style="padding: 12px; text-align: right; font-weight: bold; color: #ea580c;">₱${(data.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px; text-align: center;">${overrideBtn}</td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No vales or meals on record.</td></tr>';
+        // Inject a 6th column header dynamically
+        let headerRow = tbody.previousElementSibling.querySelector('tr');
+        if (headerRow.children.length === 5) {
+            let th = document.createElement('th');
+            th.style.cssText = "padding: 12px 10px; color: #475569; text-align: center;";
+            th.innerText = "Action";
+            headerRow.appendChild(th);
+        }
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No vales or meals on record.</td></tr>';
     } catch (e) {
         console.error("Ledger History Error:", e);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+    }
+};
+
+window.forceMarkDeductionPaid = async function(docId, staffName) {
+    if (!confirm(`⚠️ Are you sure you want to manually mark this Vale/Meal as PAID?\n\nThis will instantly remove it from ${staffName}'s outstanding balance.`)) return;
+    try {
+        await updateDoc(doc(db, "staff_deductions", docId), {
+            status: "Paid",
+            paidAt: serverTimestamp(),
+            manualOverride: true
+        });
+        alert("✅ Deduction successfully marked as Paid!");
+        window.viewLedgerHistory(staffName); // Refresh modal
+        if (typeof window.loadLedger === 'function') window.loadLedger(); // Refresh background table
+    } catch (e) {
+        console.error(e);
+        alert("❌ Failed to update deduction status.");
     }
 };
 
