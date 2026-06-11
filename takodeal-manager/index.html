@@ -1061,62 +1061,60 @@
           </div>
           <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="saveGlobalPosConfig()">💾 Save Changes to Cloud</button>
         </div>
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; padding: 20px;">
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">💳 Payment Methods</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of accepted payments.</p>
             <textarea id="configPayMethods" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Cash, GCash, Bank, Maya</div>
           </div>
+
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">🛍️ Order Types</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of order categories.</p>
             <textarea id="configOrderTypes" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Dine-In, Take-Out, Delivery, Grab</div>
           </div>
+
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📑 POS Layout Tabs</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of menu categories to display as tabs on the POS.</p>
             <textarea id="configPosTabs" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Takoyaki, Milk Tea, Add-ons</div>
           </div>
+
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">🔪 Kitchen Prep Categories</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Which inventory categories should appear in the Kitchen Prep tab?</p>
             <textarea id="configKitchenPrep" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Prepared Batch, Sauces, Mixes</div>
           </div>
+
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
-            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📋 End-of-Day Audit List</h3>
+            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📋 End-of-Day Audit List (Consumables)</h3>
+            <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Exact inventory items cashiers MUST count before closing.</p>
             <textarea id="configAuditList" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: 320cc Paper Bowl, Burger Box, Boba Straw</div>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top: 20px; border-top: 4px solid #8b5cf6; margin-bottom: 20px;">
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-              <div>
-                  <h2 style="margin: 0; color: #6d28d9;">📐 POS Menu Tab Arrangement</h2>
-                  <span style="font-size: 12px; color: var(--text-muted);">Rearrange the tab order for all Cashier Apps.</span>
-              </div>
-              <button onclick="window.loadPosLayout()" class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">🔄 Refresh List</button>
-          </div>
-          <div style="padding: 20px;">
-              <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 10px;">
-                  <div style="color: #64748b; font-size: 14px; text-align: center; padding: 20px;">Loading categories...</div>
-              </div>
-              <button onclick="window.savePosLayout()" style="margin-top: 20px; width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px 20px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save & Sync Tab Order to Cashier Apps</button>
-          </div>
-      </div>
-    </div>
-
-    <!-- 📐 POS MENU TAB ARRANGEMENT -->
-    <div class="card" style="margin-top: 20px; border-top: 4px solid #8b5cf6; margin-bottom: 20px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div>
-                <h2 style="margin: 0; color: #6d28d9;">📐 POS Menu Tab Arrangement</h2>
-                <span style="font-size: 12px; color: var(--text-muted);">Rearrange the tab order for all Cashier Apps.</span>
-            </div>
-            <button onclick="window.loadPosLayout()" class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">🔄 Refresh List</button>
+          <div>
+            <h2 style="margin: 0; color: #6d28d9;">📐 POS Menu Tab Arrangement</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Rearrange the tab order for all Cashier Apps.</span>
+          </div>
+          <button onclick="window.loadPosLayout()" class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">🔄 Refresh List</button>
         </div>
         <div style="padding: 20px;">
-            <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 10px;">
-                <div style="color: #64748b; font-size: 14px; text-align: center; padding: 20px;">Loading categories...</div>
-            </div>
-            <button onclick="window.savePosLayout()" style="margin-top: 20px; width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px 20px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save & Sync Tab Order to Cashier Apps</button>
+          <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="color: #64748b; font-size: 14px; text-align: center; padding: 20px;">Loading categories...</div>
+          </div>
+          <button onclick="window.savePosLayout()" style="margin-top: 20px; width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px 20px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save & Sync Tab Order to Cashier Apps</button>
         </div>
+      </div>
     </div>
     
     <div id="view-inventory" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
