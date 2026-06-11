@@ -860,10 +860,10 @@ window.updateRestockUomLabel = function () {
 window.addRestockToCart = function () {
   let itemName = document.getElementById('restockItemSelect').value.trim();
   let purchQty = parseFloat(document.getElementById('restockQtyInput').value);
-  let totalCost = parseFloat(document.getElementById('restockCostInput').value) || 0; // Grab the new cost input!
+  let totalCost = parseFloat(document.getElementById('restockCostInput') ? document.getElementById('restockCostInput').value : 0); 
+  let supplierName = document.getElementById('restockSupplierInput') ? document.getElementById('restockSupplierInput').value.trim() : "Walk-in/Supplier";
 
   if (!itemName || isNaN(purchQty) || purchQty <= 0) { alert("Select an item and enter a valid quantity."); return; }
-  if (totalCost <= 0) { if(!confirm("You did not enter a Total Cost. Restock with ₱0.00 cost?")) return; }
 
   let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
   if (!item) { alert("Item not found in Main Office."); return; }
@@ -875,17 +875,11 @@ window.addRestockToCart = function () {
   if (existing) {
       existing.purchQty += purchQty;
       existing.baseQtyToAdd += baseQtyToAdd;
-      existing.totalCost += totalCost;
+      existing.totalCost += (totalCost || 0);
   } else {
       restockCart.push({
-        id: item.id,
-        name: item.name,
-        branch: item.branch,
-        purchQty: purchQty,
-        purchUom: item.purchaseUom || 'units',
-        baseQtyToAdd: baseQtyToAdd,
-        baseUom: item.uom,
-        totalCost: totalCost // Saved to cart!
+        id: item.id, name: item.name, branch: item.branch, purchQty: purchQty, purchUom: item.purchaseUom || 'units',
+        baseQtyToAdd: baseQtyToAdd, baseUom: item.uom, totalCost: totalCost || 0, supplier: supplierName 
       });
   }
 
@@ -947,29 +941,30 @@ window.confirmMultiRestock = async function () {
       let currentStock = parseFloat(memoryItem.currentStock) || 0;
       let newStock = currentStock + cartItem.baseQtyToAdd;
 
-      await updateDoc(itemRef, { currentStock: newStock });
+      // 🔥 OPTIONAL PRICING ENGINE: Only alter Base Cost if they actually paid money for this!
+      if (cartItem.totalCost > 0) {
+          let currentAvgCost = parseFloat(memoryItem.baseCost) || parseFloat(memoryItem.cost) || 0;
+          let newTotalValue = (currentStock * currentAvgCost) + cartItem.totalCost;
+          let newAverageCost = newStock > 0 ? (newTotalValue / newStock) : (cartItem.totalCost / cartItem.baseQtyToAdd);
+          
+          await updateDoc(itemRef, { currentStock: newStock, baseCost: newAverageCost, cost: newAverageCost, purchaseCost: (newAverageCost * (parseFloat(memoryItem.conversionRate)||1)) });
+      } else {
+          // They didn't type a cost, just add the stock safely!
+          await updateDoc(itemRef, { currentStock: newStock });
+      }
 
       await addDoc(collection(db, "stock_logs"), {
-        branch: cartItem.branch,
-        item: cartItem.name,
-        uom: cartItem.baseUom,
-        oldQty: currentStock,
-        newQty: newStock,
-        variance: cartItem.baseQtyToAdd,
-        type: "Restock",
-        user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-        timestamp: new Date()
+        branch: cartItem.branch, item: cartItem.name, uom: cartItem.baseUom, oldQty: currentStock, newQty: newStock, variance: cartItem.baseQtyToAdd,
+        type: "HQ Delivery Restock", note: `Supplier/Receipt: ${cartItem.supplier || 'N/A'}${cartItem.totalCost > 0 ? ` | Cost: ₱${cartItem.totalCost}` : ''}`,
+        user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: new Date()
       });
     }
 
     alert(`✅ Successfully restocked ${restockCart.length} items!`);
     document.getElementById('restockModal').style.display = 'none';
 
-    if (document.getElementById('view-purchases') && document.getElementById('view-purchases').classList.contains('active')) window.loadPurchasesAndAlerts();
-    if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
-         if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
-    }
-
+    if (typeof window.loadPurchasesAndAlerts === 'function') window.loadPurchasesAndAlerts(); // Update Alerts tab
+    if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
   } catch (e) {
     console.error(e); alert("Failed to process restock.");
   } finally {
@@ -2156,47 +2151,34 @@ window.loadInventoryData = async function() {
 // 📊 COMMAND CENTER DASHBOARD LOGIC
 // ========================================================
 window.switchInvTab = function(tab) {
-    let overviewTab = document.getElementById('tabInvOverview');
-    let auditsTab = document.getElementById('tabInvAudits');
-    let wasteTab = document.getElementById('tabInvWaste');
-    let prepTab = document.getElementById('tabInvPrep');
-    let logsTab = document.getElementById('tabInvStockLogs');
-    let forecasterTab = document.getElementById('tabInvForecaster'); // 🔥 NEW
+    window.activeInvTab = tab; 
+    let overviewTab = document.getElementById('tabInvOverview'); let auditsTab = document.getElementById('tabInvAudits'); let wasteTab = document.getElementById('tabInvWaste'); let prepTab = document.getElementById('tabInvPrep'); let logsTab = document.getElementById('tabInvStockLogs'); let forecasterTab = document.getElementById('tabInvForecaster'); let alertsTab = document.getElementById('tabInvAlerts');
     
-    let liveSec = document.getElementById('invTabLiveContent');
-    let auditsSec = document.getElementById('invSectionAudits');
-    let wasteSec = document.getElementById('invSectionWaste');
-    let prepSec = document.getElementById('invSectionPrepLogs');
-    let logsSec = document.getElementById('invTabLogsContent');
-    let forecasterSec = document.getElementById('invSectionForecaster'); // 🔥 NEW
+    let liveSec = document.getElementById('invTabLiveContent'); let auditsSec = document.getElementById('invSectionAudits'); let wasteSec = document.getElementById('invSectionWaste'); let prepSec = document.getElementById('invSectionPrepLogs'); let logsSec = document.getElementById('invTabLogsContent'); let forecasterSec = document.getElementById('invSectionForecaster'); let alertsSec = document.getElementById('invSectionAlerts');
 
-    [overviewTab, auditsTab, wasteTab, prepTab, logsTab, forecasterTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
-    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec].forEach(s => { if(s) s.style.display = 'none'; });
+    [overviewTab, auditsTab, wasteTab, prepTab, logsTab, forecasterTab, alertsTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
+    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec].forEach(s => { if(s) s.style.display = 'none'; });
 
-    if (tab === 'Overview') {
-        if(overviewTab) { overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e'; }
-        if(liveSec) liveSec.style.display = 'block';
-    } else if (tab === 'Audits') {
-        if(auditsTab) { auditsTab.style.color = '#0f766e'; auditsTab.style.borderBottomColor = '#0f766e'; }
-        if(auditsSec) auditsSec.style.display = 'block';
-        if (typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits();
-    } else if (tab === 'Waste') {
-        if(wasteTab) { wasteTab.style.color = '#0f766e'; wasteTab.style.borderBottomColor = '#0f766e'; }
-        if(wasteSec) wasteSec.style.display = 'block';
-        if (typeof window.loadWasteTabLogs === 'function') window.loadWasteTabLogs();
-    } else if (tab === 'Prep') {
-        if(prepTab) { prepTab.style.color = '#0f766e'; prepTab.style.borderBottomColor = '#0f766e'; }
-        if(prepSec) prepSec.style.display = 'block';
-        if (typeof window.loadPrepBatchLogs === 'function') window.loadPrepBatchLogs();
-    } else if (tab === 'StockLogs') {
-        if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; }
-        if(logsSec) logsSec.style.display = 'block';
-        if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
-    } else if (tab === 'Forecaster') {
-        if(forecasterTab) { forecasterTab.style.color = '#0f766e'; forecasterTab.style.borderBottomColor = '#0f766e'; }
-        if(forecasterSec) forecasterSec.style.display = 'block';
-        if (typeof window.loadForecasterEngine === 'function') window.loadForecasterEngine();
-    }
+    if (tab === 'Overview') { if(overviewTab) { overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e'; } if(liveSec) liveSec.style.display = 'block'; } 
+    else if (tab === 'Audits') { if(auditsTab) { auditsTab.style.color = '#0f766e'; auditsTab.style.borderBottomColor = '#0f766e'; } if(auditsSec) auditsSec.style.display = 'block'; } 
+    else if (tab === 'Waste') { if(wasteTab) { wasteTab.style.color = '#0f766e'; wasteTab.style.borderBottomColor = '#0f766e'; } if(wasteSec) wasteSec.style.display = 'block'; } 
+    else if (tab === 'Prep') { if(prepTab) { prepTab.style.color = '#0f766e'; prepTab.style.borderBottomColor = '#0f766e'; } if(prepSec) prepSec.style.display = 'block'; } 
+    else if (tab === 'StockLogs') { if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; } if(logsSec) logsSec.style.display = 'block'; } 
+    else if (tab === 'Forecaster') { if(forecasterTab) { forecasterTab.style.color = '#0f766e'; forecasterTab.style.borderBottomColor = '#0f766e'; } if(forecasterSec) forecasterSec.style.display = 'block'; }
+    else if (tab === 'Alerts') { if(alertsTab) { alertsTab.style.color = '#ef4444'; alertsTab.style.borderBottomColor = '#ef4444'; } if(alertsSec) alertsSec.style.display = 'block'; }
+
+    window.refreshActiveInventoryTab();
+};
+
+window.refreshActiveInventoryTab = function() {
+    let tab = window.activeInvTab || 'Overview';
+    if (tab === 'Overview') window.loadInventoryData();
+    else if (tab === 'Audits') window.loadInventoryAudits();
+    else if (tab === 'Waste') window.loadWasteTabLogs();
+    else if (tab === 'Prep') window.loadPrepBatchLogs();
+    else if (tab === 'StockLogs') window.loadStockLogs();
+    else if (tab === 'Forecaster') window.loadForecasterEngine(); 
+    else if (tab === 'Alerts') window.loadPurchasesAndAlerts(); 
 };
 
 window.openInventoryLogs = function() { window.switchInvTab('StockLogs'); };
@@ -8086,84 +8068,53 @@ window.loadCashFlowHub = async function() {
 // ========================================================
 
 window.loadPayablesDashboard = async function() {
-    const tbody = document.getElementById('payablesTableBody');
-    if (!tbody) return;
+    const tbody = document.getElementById('payablesTableBody'); if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7" class="text-center">Scanning payables...</td></tr>';
-
     try {
-        // We only want to see Unpaid invoices
         const q = query(collection(db, "payables"), where("status", "==", "Unpaid"), orderBy("dueDate", "asc"));
         const snap = await getDocs(q);
 
-        let html = '';
-        let totalUnpaid = 0;
-        let overdueCount = 0;
-        let dueSoonCount = 0;
-        
-        let now = new Date();
-        now.setHours(0,0,0,0);
+        let html = ''; let totalUnpaid = 0; let overdueCount = 0; let dueSoonCount = 0;
+        let now = new Date(); now.setHours(0,0,0,0);
 
         snap.forEach(docSnap => {
             let data = docSnap.data();
-            let amount = parseFloat(data.amount) || 0;
-            totalUnpaid += amount;
-
+            let amount = parseFloat(data.amount) || 0; totalUnpaid += amount;
             let deliveryDate = data.deliveryDate ? data.deliveryDate.toDate() : new Date();
             let dueDate = data.dueDate ? data.dueDate.toDate() : new Date();
             
-            // Calculate days difference
-            let diffTime = dueDate.getTime() - now.getTime();
-            let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            let diffTime = dueDate.getTime() - now.getTime(); let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            let statusHtml = ''; let dateColor = '#334155';
 
-            let statusHtml = '';
-            let dateColor = '#334155';
+            if (diffDays < 0) { overdueCount++; statusHtml = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⚠️ OVERDUE</span>`; dateColor = '#dc2626'; } 
+            else if (diffDays === 0) { dueSoonCount++; statusHtml = `<span style="background: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🚨 DUE TODAY</span>`; dateColor = '#d97706'; } 
+            else if (diffDays <= 7) { dueSoonCount++; statusHtml = `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Due in ${diffDays} Days</span>`; } 
+            else { statusHtml = `<span style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">Safe (${diffDays} Days)</span>`; }
 
-            if (diffDays < 0) {
-                overdueCount++;
-                statusHtml = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⚠️ OVERDUE by ${Math.abs(diffDays)} Days</span>`;
-                dateColor = '#dc2626';
-            } else if (diffDays === 0) {
-                dueSoonCount++;
-                statusHtml = `<span style="background: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🚨 DUE TODAY</span>`;
-                dateColor = '#d97706';
-            } else if (diffDays <= 7) {
-                dueSoonCount++;
-                statusHtml = `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Due in ${diffDays} Days</span>`;
-            } else {
-                statusHtml = `<span style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">Safe (${diffDays} Days)</span>`;
+            let itemsHtml = '';
+            if (data.linkedItems && data.linkedItems.length > 0) {
+                itemsHtml = `<div style="margin-top: 6px; padding: 6px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 4px; font-size: 11px; color: #475569;">`;
+                data.linkedItems.forEach(i => { itemsHtml += `📦 <strong>${i.purchQty} ${i.purchUom}</strong> ${i.name}<br>`; });
+                itemsHtml += `</div>`;
+            } else if (data.hasLinkedItems) {
+                itemsHtml = `<div style="margin-top: 6px; font-size: 11px; color: #0ea5e9;">📦 Contains received stock</div>`;
             }
 
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td><strong style="color: var(--primary); font-size: 15px;">${data.supplier}</strong></td>
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td><strong style="color: var(--primary); font-size: 15px;">${data.supplier}</strong>${itemsHtml}</td>
                     <td style="font-family: monospace; color: #64748b;">${data.invoiceNum || 'N/A'}</td>
                     <td style="font-size: 13px;">${deliveryDate.toLocaleDateString()}</td>
                     <td style="font-weight: bold; color: ${dateColor};">${dueDate.toLocaleDateString()}</td>
                     <td style="font-weight: bold; font-size: 15px; color: #1e293b;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
                     <td>${statusHtml}</td>
-                    <td>
-                        <button onclick="window.openSettlePayable('${docSnap.id}', '${data.supplier}', ${amount}, '${data.invoiceNum}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">💸 Pay Now</button>
-                    </td>
-                </tr>
-            `;
+                    <td><button onclick="window.openSettlePayable('${docSnap.id}', '${data.supplier}', ${amount}, '${data.invoiceNum}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">💸 Pay Now</button></td>
+                </tr>`;
         });
-
         tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="color: #64748b; padding: 30px;">All payables are cleared! No outstanding debts.</td></tr>';
-
-        // Update Stat Cards
         document.getElementById('payTotalUnpaid').innerText = `₱${totalUnpaid.toLocaleString(undefined, {minimumFractionDigits:2})}`;
         document.getElementById('payTotalOverdue').innerText = overdueCount;
         document.getElementById('payDueSoon').innerText = dueSoonCount;
-
-        // Auto-Trigger Security Alert if there are Overdue invoices!
-        if (overdueCount > 0) {
-            triggerPayableAlert(overdueCount);
-        }
-
-    } catch (e) {
-        console.error("Payables Error:", e);
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error fetching payables.</td></tr>';
-    }
+    } catch (e) { console.error("Payables Error:", e); tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error fetching payables.</td></tr>'; }
 };
 
 async function triggerPayableAlert(count) {
@@ -8196,7 +8147,6 @@ async function triggerPayableAlert(count) {
 window.payableItemsCart = [];
 window.payableInventoryOptions = [];
 
-// 1. Opens the Modal & Fetches Main Office Inventory
 window.openAddPayableModal = async function() {
     document.getElementById('addPayableModal').style.display = 'flex';
     document.getElementById('paySupplierName').value = '';
@@ -8205,163 +8155,121 @@ window.openAddPayableModal = async function() {
     window.payableItemsCart = [];
     window.renderPayableItems();
 
-    let select = document.getElementById('payItemSelect');
-    select.innerHTML = '<option value="">Loading items...</option>';
+    let itemInput = document.getElementById('payItemSelect');
+    
+    // Transform select into a datalist search
+    if (itemInput.tagName === 'SELECT') {
+        let newInput = document.createElement('input');
+        newInput.id = 'payItemSelect';
+        newInput.setAttribute('list', 'payableDatalist');
+        newInput.placeholder = "Type to search Main Office item...";
+        newInput.style.cssText = "flex: 1; min-width: 0; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; outline: none; box-sizing: border-box;";
+        itemInput.parentNode.replaceChild(newInput, itemInput);
+        itemInput = newInput;
+    }
+    itemInput.value = '';
 
     try {
-        // Fetch ONLY Main Office inventory for receiving bulk deliveries
         const q = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
         const snap = await getDocs(q);
         
         window.payableInventoryOptions = [];
-        let html = '<option value="">-- Select Item Received --</option>';
+        let datalistHtml = '<datalist id="payableDatalist">';
         
         snap.forEach(docSnap => {
             let data = docSnap.data();
             window.payableInventoryOptions.push({ id: docSnap.id, ...data });
-            html += `<option value="${docSnap.id}">${data.name} (${data.purchaseUom || data.uom})</option>`;
+            datalistHtml += `<option value="${data.name}">${data.name} (${data.purchaseUom || data.uom})</option>`;
         });
-        
-        select.innerHTML = html;
-    } catch (e) {
-        console.error(e);
-        select.innerHTML = '<option value="">Error loading items</option>';
-    }
+        datalistHtml += '</datalist>';
+
+        let existingList = document.getElementById('payableDatalist');
+        if (existingList) existingList.remove();
+        document.body.insertAdjacentHTML('beforeend', datalistHtml);
+    } catch (e) { console.error(e); }
 };
 
 // 2. Adds Items to the Temporary Delivery Cart
 window.addPayableItem = function() {
-    let select = document.getElementById('payItemSelect');
-    let itemId = select.value;
+    let itemName = document.getElementById('payItemSelect').value;
     let qty = parseFloat(document.getElementById('payItemQty').value);
-
-    if (!itemId || isNaN(qty) || qty <= 0) return;
-
-    let itemData = window.payableInventoryOptions.find(i => i.id === itemId);
+    if (!itemName || isNaN(qty) || qty <= 0) return;
+    let itemData = window.payableInventoryOptions.find(i => i.name === itemName);
     if (!itemData) return;
 
-    // Automatically calculate Base Units from Purchase Units!
     let convRate = parseFloat(itemData.conversionRate) || 1;
     let baseQtyToAdd = qty * convRate;
 
     window.payableItemsCart.push({
-        id: itemData.id,
-        name: itemData.name,
-        purchQty: qty,
-        purchUom: itemData.purchaseUom || itemData.uom,
-        baseQtyToAdd: baseQtyToAdd,
-        baseUom: itemData.uom
+        id: itemData.id, name: itemData.name, purchQty: qty,
+        purchUom: itemData.purchaseUom || itemData.uom, baseQtyToAdd: baseQtyToAdd, baseUom: itemData.uom
     });
 
-    document.getElementById('payItemQty').value = '';
+    document.getElementById('payItemQty').value = ''; document.getElementById('payItemSelect').value = '';
     window.renderPayableItems();
 };
 
-window.removePayableItem = function(index) {
-    window.payableItemsCart.splice(index, 1);
-    window.renderPayableItems();
-};
+window.removePayableItem = function(index) { window.payableItemsCart.splice(index, 1); window.renderPayableItems(); };
 
 window.renderPayableItems = function() {
     let container = document.getElementById('payItemsList');
     if (window.payableItemsCart.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding: 10px; font-style: italic;">No physical items linked. This will just log the cash payable.</div>';
-        return;
+        container.innerHTML = '<div style="text-align:center; padding: 10px; font-style: italic;">No physical items linked. This will just log the cash payable.</div>'; return;
     }
-
     let html = '';
     window.payableItemsCart.forEach((item, index) => {
-        html += `
-            <div style="display:flex; justify-content:space-between; align-items:center; padding: 6px 5px; border-bottom: 1px dashed #cbd5e1; background: white; border-radius: 4px; margin-bottom: 4px;">
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; padding: 6px 5px; border-bottom: 1px dashed #cbd5e1; background: white; border-radius: 4px; margin-bottom: 4px;">
                 <span><strong style="color: #0f766e;">${item.purchQty} ${item.purchUom}</strong> ${item.name} <br><span style="font-size:10px; color:#64748b;">(Adds +${item.baseQtyToAdd} ${item.baseUom} to stock)</span></span>
                 <button onclick="window.removePayableItem(${index})" style="color: #ef4444; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-weight: bold;">✖</button>
-            </div>
-        `;
+            </div>`;
     });
     container.innerHTML = html;
 };
 
 // 3. The Grand Double-Save (Updates Payables AND Live Inventory)
 window.saveNewPayable = async function() {
-    // 🔥 AUTO-CATCH FEATURE
     let pendingItem = document.getElementById('payItemSelect').value;
-    let pendingQty = document.getElementById('payItemQty').value;
-    if (pendingItem && pendingQty) {
-        window.addPayableItem(); 
-    }
+    if (pendingItem && document.getElementById('payItemQty').value) window.addPayableItem(); 
 
     let supplier = document.getElementById('paySupplierName').value.trim();
     let invoice = document.getElementById('payInvoiceNum').value.trim();
     let amount = parseFloat(document.getElementById('payAmount').value);
     let terms = parseInt(document.getElementById('payTerms').value);
 
-    if (!supplier || isNaN(amount) || amount <= 0) {
-        alert("Please enter Supplier Name and a valid Amount.");
-        return;
-    }
+    if (!supplier || isNaN(amount) || amount <= 0) { alert("Please enter Supplier Name and a valid Amount."); return; }
 
     let btn = document.getElementById('btnSavePayable');
     btn.innerText = "⏳ Saving & Updating Inventory..."; btn.disabled = true;
 
     try {
-        let deliveryDate = new Date();
-        let dueDate = new Date();
-        dueDate.setDate(deliveryDate.getDate() + terms);
-
-        // A. Save the Financial Payable Record (CORRECTED: Removed window. prefixes from Firebase calls)
+        let deliveryDate = new Date(); let dueDate = new Date(); dueDate.setDate(deliveryDate.getDate() + terms);
         await addDoc(collection(db, "payables"), {
-            supplier: supplier,
-            invoiceNum: invoice,
-            amount: amount,
-            termsDays: terms,
-            deliveryDate: deliveryDate,
-            dueDate: dueDate,
-            status: "Unpaid",
-            hasLinkedItems: window.payableItemsCart.length > 0,
-            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: serverTimestamp()
+            supplier: supplier, invoiceNum: invoice, amount: amount, termsDays: terms, deliveryDate: deliveryDate, dueDate: dueDate, status: "Unpaid",
+            hasLinkedItems: window.payableItemsCart.length > 0, linkedItems: window.payableItemsCart,
+            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
         });
 
-        // B. Update Live Inventory & Stock Logs if items were attached
         if (window.payableItemsCart.length > 0) {
             for (let item of window.payableItemsCart) {
                 let invRef = doc(db, "inventory", item.id);
                 let invData = window.payableInventoryOptions.find(i => i.id === item.id);
                 let currentStock = parseFloat(invData.currentStock) || 0;
                 let newStock = currentStock + item.baseQtyToAdd;
-
-                // Update the actual stock level
+                
                 await updateDoc(invRef, { currentStock: newStock });
-
-                // Create a beautiful audit log so you know where it came from
                 await addDoc(collection(db, "stock_logs"), {
-                    branch: "Main Office",
-                    item: item.name,
-                    uom: item.baseUom,
-                    oldQty: currentStock,
-                    newQty: newStock,
-                    variance: item.baseQtyToAdd,
-                    type: "Supplier Delivery",
-                    note: `Linked to Invoice: ${invoice || 'N/A'}, Supplier: ${supplier}`,
-                    user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-                    timestamp: new Date()
+                    branch: "Main Office", item: item.name, uom: item.baseUom, oldQty: currentStock, newQty: newStock, variance: item.baseQtyToAdd,
+                    type: "Supplier Delivery", note: `Linked to Invoice: ${invoice || 'N/A'}, Supplier: ${supplier}`,
+                    user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: new Date()
                 });
             }
         }
 
-        alert(`✅ Success! Invoice logged and ${window.payableItemsCart.length} inventory items added to the Main Office.`);
+        alert(`✅ Success! Invoice logged and inventory added to Main Office.`);
         document.getElementById('addPayableModal').style.display = 'none';
         window.loadPayablesDashboard();
-        
-        // Refresh inventory if that tab happens to be loaded
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
-        
-    } catch (e) {
-        console.error("Save Payable Error:", e);
-        alert(`❌ Failed to save. Error: ${e.message}`);
-    } finally {
-        btn.innerText = "💾 Log Delivery & Track Deadline"; btn.disabled = false;
-    }
+    } catch (e) { alert(`❌ Failed to save. Error: ${e.message}`); } finally { btn.innerText = "💾 Log Delivery & Track Deadline"; btn.disabled = false; }
 };
 
 window.openSettlePayable = async function(id, supplier, amount, invoice) {
