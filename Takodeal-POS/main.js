@@ -2098,7 +2098,7 @@ window.loadKitchenPrep = async function() {
 
     try {
         const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
-        let allowedCats = ["Prepared Batch"]; // Default fallback
+        let allowedCats = ["Prepared Batch"]; 
         if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
             allowedCats = configSnap.data().kitchenPrepCats;
         }
@@ -2114,15 +2114,16 @@ window.loadKitchenPrep = async function() {
                 let d = docSnap.data();
                 if (d.showInPrep === false) return;
              
-                // 🔥 FIXED: Prioritize the 'uom' or 'baseUom' explicitly over 'batch'
-                let displayUom = d.uom || d.baseUom || 'units';
+                let baseUom = d.uom || d.baseUom || 'units';
+                // 🔥 SMART UOM: Pulls the Purchase UOM you set in the Manager app!
+                let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
 
                 html += `
                     <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; background: #ffffff; text-align: center;">
                         <h3 style="margin: 0 0 10px 0; color: #0f172a; font-size: 16px;">${d.name}</h3>
-                        <p style="margin: 0 0 15px 0; color: #64748b; font-size: 12px;">Current Stock: <strong style="color:#0f172a;">${(d.currentStock||0).toFixed(1)} ${displayUom}</strong></p>
-                        <button onclick="window.logPrepBatch('${docSnap.id}', '${d.name}', '${branch}')" style="background: #f59e0b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);">
-                            + Log 1 Batch Made
+                        <p style="margin: 0 0 15px 0; color: #64748b; font-size: 12px;">Current Stock: <strong style="color:#0f172a;">${(d.currentStock||0).toFixed(1)} ${baseUom}</strong></p>
+                        <button onclick="window.logPrepBatch('${docSnap.id}', '${d.name}', '${branch}', '${purchUom}', '${baseUom}')" style="background: #f59e0b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);">
+                            + Log Prep (${purchUom})
                         </button>
                     </div>
                 `;
@@ -2135,22 +2136,24 @@ window.loadKitchenPrep = async function() {
     }
 };
 
-window.logPrepBatch = async function(invId, itemName, branch) {
-    let qty = prompt(`How many batches of ${itemName} did you prepare today?`, "1");
+window.logPrepBatch = async function(invId, itemName, branch, purchUom, baseUom) {
+    if (!purchUom || purchUom === 'undefined') purchUom = 'Batch';
+    if (!baseUom || baseUom === 'undefined') baseUom = 'units';
+
+    // 🔥 DYNAMIC PROMPT: Asks for the exact unit of measurement!
+    let qty = prompt(`How many ${purchUom}s of ${itemName} did you prepare today?`, "1");
     if (!qty || isNaN(qty) || qty <= 0) return;
     
     qty = parseFloat(qty);
-    if (!confirm(`Confirm logging ${qty} batch(es) of ${itemName}?\n\nThis will automatically restore negative stocks and deduct the raw ingredients used.`)) return;
+    if (!confirm(`Confirm logging ${qty} ${purchUom}(s) of ${itemName}?\n\nThis will automatically convert to ${baseUom} and deduct the raw ingredients used.`)) return;
 
     try {
         const invRef = doc(db, "inventory", invId);
         
-        // 1. ADD TO PREP BATCH INVENTORY 
         const invSnap = await getDoc(invRef);
         let invData = invSnap.data();
         let currentStock = invData.currentStock || 0;
         
-        // 🔥 THE FIX: Multiply by the Conversion Rate so it adds Grams, not just "1"!
         let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
         let baseQtyToAdd = qty * convRate;
 
@@ -2158,7 +2161,6 @@ window.logPrepBatch = async function(invId, itemName, branch) {
             currentStock: currentStock + baseQtyToAdd
         });
 
-        // 2. AUTO-DEDUCT RAW INGREDIENTS VIA BOM
         const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
         const bomSnap = await getDocs(bomQ);
         
@@ -2168,8 +2170,6 @@ window.logPrepBatch = async function(invId, itemName, branch) {
             for (let bomDoc of bomSnap.docs) {
                 let recipe = bomDoc.data();
                 let rawIngredient = recipe.ingredientName;
-                
-                // Deduct the ingredients based on how many BATCHES they made
                 let totalAmountToDeduct = (recipe.qty || 0) * qty; 
 
                 const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
@@ -2186,25 +2186,24 @@ window.logPrepBatch = async function(invId, itemName, branch) {
             }
         }
 
-        // 3. LOG THE ACTION FOR THE OWNER'S AUDIT TRAIL
         let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
         await addDoc(collection(db, "stock_logs"), {
             branch: branch,
             item: itemName,
-            variance: baseQtyToAdd, // 🔥 Logs the actual Grams added!
+            variance: baseQtyToAdd, 
+            uom: baseUom,
             type: "End-of-Shift Kitchen Prep",
-            note: `Prepared ${qty} batch(es) by ${safeCashierName}`,
+            note: `Prepared ${qty} ${purchUom}(s) by ${safeCashierName}`,
             timestamp: new Date()
         });
 
-        // 4. SHOW SUCCESS MESSAGE
-        let msg = `✅ Successfully logged ${qty} batch(es) of ${itemName}!\nAdded +${baseQtyToAdd.toLocaleString()} ${invData.uom || invData.baseUom} to the vault.`;
+        let msg = `✅ Successfully logged ${qty} ${purchUom}(s) of ${itemName}!\nAdded +${baseQtyToAdd.toLocaleString()} ${baseUom} to the vault.`;
         if (missingItems.length > 0) {
             msg += `\n\n⚠️ Warning: The following raw ingredients are missing from the ${branch} warehouse and were not deducted: ${missingItems.join(", ")}`;
         }
         
         alert(msg);
-        window.loadKitchenPrep(); // Instantly refresh the UI
+        window.loadKitchenPrep(); 
         
     } catch (e) {
         console.error("Prep Batch Error:", e);
