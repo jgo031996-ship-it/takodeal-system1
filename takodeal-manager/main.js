@@ -1089,20 +1089,21 @@ window.updateDispatchUomLabel = function() {
 };
 
 window.addToDispatchCart = function () {
-  let itemName = document.getElementById('dispItem').value.trim();
+  let itemName = document.getElementById('dispItem').value;
   let rawQty = parseFloat(document.getElementById('dispQty').value);
-  let uomSelect = document.getElementById('dispUomSelect');
-  let selectedUomType = uomSelect.value; 
-
+  
   if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
 
   let invItem = dispatchInventoryList.find(i => i.name === itemName);
-  if (!invItem) { alert("Item not found."); return; }
+  if (!invItem) return;
 
   let finalBaseQty = rawQty;
   let displayMsg = `${rawQty} ${invItem.uom}`;
   let convRate = 1;
   let friendlyUom = invItem.uom;
+  
+  let uomSelect = document.getElementById('dispUomSelect');
+  let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
 
   if (selectedUomType === 'purch') {
       convRate = parseFloat(invItem.conversionRate) || 1;
@@ -1111,46 +1112,42 @@ window.addToDispatchCart = function () {
       displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
   }
 
-  // Prevent sending more than we have
   if (finalBaseQty > invItem.currentStock) { 
       let stockInPurch = invItem.currentStock / convRate;
+      let msg = `You are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.\n\n(Note: If this math looks wrong, check your inventory settings! Your Base UOM might be set up incorrectly.)`; 
       
-      // Use the beautiful custom alert instead of the boring browser prompt
-      let msg = `❌ Not enough stock!\n\nYou are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.\n\n(Note: If this math looks wrong, check your inventory settings! Your Base UOM might be set up incorrectly.)`;
-      
+      // 🔥 THE FIX: Forced SweetAlert configuration so the Jump Button renders!
       Swal.fire({
-          html: `<div style="font-size: 15px; font-weight: 600; color: #334155; line-height: 1.5;">${msg.replace(/\n/g, '<br>')}</div>`,
+          title: '❌ Not enough stock!',
+          text: msg,
           icon: 'error',
           showCancelButton: true,
           confirmButtonColor: '#0ea5e9',
           cancelButtonColor: '#94a3b8',
           confirmButtonText: '🔍 Go to Live Inventory',
-          cancelButtonText: 'Dismiss',
-          background: '#ffffff',
-          backdrop: `rgba(0,0,0,0.5)`,
-          customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
+          cancelButtonText: 'Dismiss'
       }).then((result) => {
           if (result.isConfirmed) {
-              // The Magic Jump!
+              // Click the side tab
               document.getElementById('nav-inventory').click();
               
-              // Wait a split second for the tab to load, then auto-fill the search!
+              // Wait 400ms for UI to render, then inject the search text and reload!
               setTimeout(() => {
-                  let searchBox = document.getElementById('liveInvSearch');
                   let branchFilter = document.getElementById('invBranchFilter');
-                  
-                  if (searchBox && branchFilter) {
+                  let searchBox = document.getElementById('liveInvSearch');
+                  if (branchFilter && searchBox) {
                       branchFilter.value = 'Main Office';
-                      searchBox.value = itemName; // Auto-types the item name
-                      window.loadInventoryData(); // Triggers the search
+                      searchBox.value = itemName;
+                      if (typeof window.loadInventoryData === 'function') {
+                          window.loadInventoryData();
+                      }
                   }
-              }, 300);
+              }, 400);
           }
       });
       return; 
   }
 
-  // 🔥 THE FIX: Accumulates quantities if item already exists in the dispatch cart
   let existing = dispatchCart.find(i => i.itemName === itemName);
   if (existing) { 
       existing.qty += finalBaseQty; 
@@ -1158,24 +1155,15 @@ window.addToDispatchCart = function () {
       existing.displayMsg = `${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
   } else { 
       dispatchCart.push({ 
-          itemName: itemName, 
-          qty: finalBaseQty, 
-          uom: invItem.uom, 
-          sourceId: invItem.id,
-          displayMsg: displayMsg,
-          rawQty: rawQty,            
-          friendlyUom: friendlyUom, 
-          convRate: convRate,
-          category: invItem.category || "Ingredients",
-          purchaseUom: invItem.purchaseUom || invItem.uom,
-          cost: invItem.cost || 0,
-          reorderLevel: invItem.reorderLevel || 10
+          itemName: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, displayMsg: displayMsg, rawQty: rawQty,            
+          friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", purchaseUom: invItem.purchaseUom || invItem.uom,
+          cost: invItem.cost || 0, reorderLevel: invItem.reorderLevel || 10
       });
   }
 
   document.getElementById('dispQty').value = '';
-  document.getElementById('dispItem').value = ''; // Auto-clear search for next item
-  window.renderDispatchCart();
+  document.getElementById('dispItem').value = ''; 
+  if (typeof renderDispatchCart === 'function') renderDispatchCart();
 };
 
 window.submitMultiDispatch = async function () {
@@ -1515,64 +1503,6 @@ window.updateDispatchUomLabel = function() {
             <option value="base">${baseUom}</option>
         `;
     }
-};
-
-window.addToDispatchCart = function () {
-  let itemName = document.getElementById('dispItem').value;
-  let rawQty = parseFloat(document.getElementById('dispQty').value);
-  let uomSelect = document.getElementById('dispUomSelect');
-  let selectedUomType = uomSelect.value; 
-
-  if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
-
-  let invItem = dispatchInventoryList.find(i => i.name === itemName);
-  if (!invItem) return;
-
-  let finalBaseQty = rawQty;
-  let displayMsg = `${rawQty} ${invItem.uom}`;
-  let convRate = 1;
-  let friendlyUom = invItem.uom;
-
-  // 🟢 CONVERSION MAGIC
-  if (selectedUomType === 'purch') {
-      convRate = parseFloat(invItem.conversionRate) || 1;
-      finalBaseQty = rawQty * convRate; 
-      friendlyUom = invItem.purchaseUom || "Bulk";
-      displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
-  }
-
-  // Prevent sending more than we have
-  if (finalBaseQty > invItem.currentStock) { 
-      let stockInPurch = invItem.currentStock / convRate;
-      alert(`❌ Not enough stock!\n\nYou are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.\n\n(Note: If this math looks wrong, check your inventory settings! Your Base UOM might be set up incorrectly.)`); 
-      return; 
-  }
-
-  let existing = dispatchCart.find(i => i.itemName === itemName);
-  if (existing) { 
-      existing.qty += finalBaseQty; 
-      existing.rawQty += rawQty;
-      existing.displayMsg = `${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
-  } else { 
-      dispatchCart.push({ 
-          itemName: itemName, 
-          qty: finalBaseQty, 
-          uom: invItem.uom, 
-          sourceId: invItem.id,
-          displayMsg: displayMsg,
-          rawQty: rawQty,           
-          friendlyUom: friendlyUom, 
-          convRate: convRate,
-          // 🔥 NEW: Grab the DNA for the Perfect Clone!
-          category: invItem.category || "Ingredients",
-          purchaseUom: invItem.purchaseUom || invItem.uom,
-          cost: invItem.cost || 0,
-          reorderLevel: invItem.reorderLevel || 10
-      });
-  }
-
-  document.getElementById('dispQty').value = '';
-  renderDispatchCart();
 };
 
 window.submitMultiDispatch = async function () {
