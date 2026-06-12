@@ -8097,7 +8097,7 @@ window.loadPayablesDashboard = async function() {
                 data.linkedItems.forEach(i => { itemsHtml += `📦 <strong>${i.purchQty} ${i.purchUom}</strong> ${i.name}<br>`; });
                 itemsHtml += `</div>`;
             } else if (data.hasLinkedItems) {
-                itemsHtml = `<div style="margin-top: 6px; padding: 6px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 4px; font-size: 11px; color: #b91c1c;">📦 Legacy Delivery (Details Hidden)</div>`;
+                itemsHtml = `<div style="margin-top: 6px; font-size: 11px; color: #64748b; font-style: italic;">📦 General Restock (No itemized list)</div>`;
             }
 
             html += `<tr style="border-bottom: 1px solid #f1f5f9;">
@@ -9393,16 +9393,20 @@ window.viewShiftReportModal = function(shiftId) {
         <div id="dynamicShiftReportModal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
             <div style="background: white; padding: 25px; border-radius: 12px; width: 1050px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
                 
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
-                    <div>
-                        <h3 style="margin: 0; color: #0f172a; font-size: 22px;">📊 Comprehensive Shift Report</h3>
-                        <div style="font-size: 13px; color: #64748b; margin-top: 6px; font-weight: bold;">
-                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">👤 ${s.cashier}</span> &nbsp;
-                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">📍 ${s.branch}</span> &nbsp;
-                            <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">⏰ ${s.dateStr} (${s.timeLabel})</span>
+                <!-- 🔥 NEW: BEAUTIFUL GRADIENT BANNER 🔥 -->
+                <div style="background: linear-gradient(135deg, #0f172a, #1e293b); color: white; padding: 20px; border-radius: 12px 12px 0 0; display: flex; justify-content: space-between; align-items: center; margin: -25px -25px 20px -25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <div style="display: flex; gap: 15px; align-items: center;">
+                        <div style="width: 50px; height: 50px; background: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🧑‍🍳</div>
+                        <div>
+                            <h3 style="margin: 0; color: white; font-size: 22px;">📊 Comprehensive Shift Report</h3>
+                            <div style="font-size: 13px; color: #94a3b8; margin-top: 6px; font-weight: bold;">
+                                <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px;">👤 ${s.cashier}</span> &nbsp;
+                                <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px;">📍 ${s.branch}</span> &nbsp;
+                                <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px;">⏰ ${s.dateStr} (${s.timeLabel})</span>
+                            </div>
                         </div>
                     </div>
-                    <button onclick="document.getElementById('dynamicShiftReportModal').remove()" style="background: #f1f5f9; border: 1px solid #cbd5e1; width: 36px; height: 36px; border-radius: 8px; font-size: 20px; cursor: pointer; color: #64748b; display: flex; align-items: center; justify-content: center;">×</button>
+                    <button onclick="document.getElementById('dynamicShiftReportModal').remove()" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); width: 36px; height: 36px; border-radius: 8px; font-size: 20px; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; transition: 0.2s;">×</button>
                 </div>
 
                 <div style="flex: 1; overflow-y: auto; padding-right: 5px;">
@@ -10626,20 +10630,28 @@ window.loadForecasterEngine = async function() {
             if (avgDailyBurn > 0) daysLeft = currentStock / avgDailyBurn;
 
             let statusColor = "#16a34a"; let statusBg = "#f0fdf4"; let warningIcon = "✅";
-            
-            if (daysLeft <= 0 || currentStock <= 0) {
-                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; daysLeft = 0;
+            let daysLeftDisplay = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
+            let avgDailyDisplay = avgDailyBurn === 0 ? "0.0" : avgDailyBurn.toFixed(1);
+            let runOutDateStr = "Sufficient Stock";
+
+            // 🔥 FIX: STRICT HANDLING OF NEGATIVE INVENTORY
+            if (currentStock < 0) {
+                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; daysLeft = 0; daysLeftDisplay = "0.0";
+                runOutDateStr = "NEGATIVE STOCK (Audit Needed)";
+            } else if (daysLeft <= 0 || currentStock === 0) {
+                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; daysLeft = 0; daysLeftDisplay = "0.0";
+                runOutDateStr = "Out of Stock Now";
             } else if (daysLeft <= 3) {
                 statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "⚠️";
             } else if (daysLeft <= 7) {
                 statusColor = "#ea580c"; statusBg = "#fff7ed"; warningIcon = "⚡";
             }
 
-            let runOutDateStr = "Sufficient Stock";
-            if (daysLeft !== Infinity && daysLeft > 0) {
+            if (currentStock > 0 && daysLeft !== Infinity && daysLeft > 0) {
                 let runOutDate = new Date();
                 runOutDate.setDate(today.getDate() + daysLeft);
                 runOutDateStr = runOutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            }
             } else if (daysLeft === 0) {
                 runOutDateStr = "Out of Stock Now";
             }
