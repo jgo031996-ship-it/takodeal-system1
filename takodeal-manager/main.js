@@ -7100,7 +7100,6 @@ window.loadLedger = async function() {
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         
-        // 🔥 NEW: Fetch ALL Unpaid Vales & Meals
         const deductSnap = await getDocs(query(collection(db, "staff_deductions"), where("status", "==", "Unpaid")));
         let valesData = {};
         deductSnap.forEach(doc => {
@@ -7141,7 +7140,7 @@ window.loadLedger = async function() {
                     <td style="font-weight: bold; color: #8b5cf6;">₱${cutoffDed.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td>
                         <button class="btn-refresh" style="background: #f3e8ff; color: #7c3aed; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.setAutoDeduct('${record.id}', '${name}', ${cutoffDed}, ${balance})">⚙️ Set Deduct</button>
-                        <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${staff.id}', '${staff.cashierName}', ${record.totalLoaned || 0}, ${record.totalPaid || 0})">✏️ Adjust</button>
+                        <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${docSnap.id}', '${name}', ${record.totalLoaned || 0}, ${record.totalPaid || 0})">✏️ Adjust</button>
                         <button class="btn-refresh" style="background: #e0f2fe; color: #0284c7; border: 1px solid #0284c7; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.viewLedgerHistory('${name}')">📜 History</button>
                         <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Loan</button>
                         <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance}, ${unpaidVales})">💸 Pay</button>
@@ -8066,7 +8065,6 @@ window.loadCashFlowHub = async function() {
 // ========================================================
 // 🚚 PHASE 7: SUPPLIER PAYABLES & CALENDAR ENGINE
 // ========================================================
-
 window.loadPayablesDashboard = async function() {
     const tbody = document.getElementById('payablesTableBody'); if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7" class="text-center">Scanning payables...</td></tr>';
@@ -8097,6 +8095,7 @@ window.loadPayablesDashboard = async function() {
                 data.linkedItems.forEach(i => { itemsHtml += `📦 <strong>${i.purchQty} ${i.purchUom}</strong> ${i.name}<br>`; });
                 itemsHtml += `</div>`;
             } else if (data.hasLinkedItems) {
+                // THE FIX: Clean gray text!
                 itemsHtml = `<div style="margin-top: 6px; font-size: 11px; color: #64748b; font-style: italic;">📦 General Restock (No itemized list)</div>`;
             }
 
@@ -10595,6 +10594,14 @@ window.loadForecasterEngine = async function() {
     container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #0f766e; font-size: 18px; font-weight: bold;">⏳ Scanning 14 days of data... Please wait.</div>';
 
     try {
+        // 📸 FETCH MENU IMAGES FOR THE CARDS!
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let itemImages = {};
+        menuSnap.forEach(doc => { 
+            let d = doc.data();
+            if (d.image) itemImages[d.name] = d.image; 
+        });
+
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
         const invSnap = await getDocs(invQ);
         let inventory = [];
@@ -10626,20 +10633,23 @@ window.loadForecasterEngine = async function() {
             let currentStock = parseFloat(item.currentStock) || 0;
             let uom = item.uom || 'units';
 
+            // 🛠️ THE CRASH FIX: Clean variables
             let daysLeft = Infinity;
             if (avgDailyBurn > 0) daysLeft = currentStock / avgDailyBurn;
 
             let statusColor = "#16a34a"; let statusBg = "#f0fdf4"; let warningIcon = "✅";
-            let daysLeftDisplay = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
-            let avgDailyDisplay = avgDailyBurn === 0 ? "0.0" : avgDailyBurn.toFixed(1);
+            let daysLeftStr = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
+            let avgDailyStr = avgDailyBurn === 0 ? "0.0" : avgDailyBurn.toFixed(1);
             let runOutDateStr = "Sufficient Stock";
 
-            // 🔥 FIX: STRICT HANDLING OF NEGATIVE INVENTORY
+            // 📉 STRICT HANDLING OF NEGATIVE INVENTORY
             if (currentStock < 0) {
-                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; daysLeft = 0; daysLeftDisplay = "0.0";
+                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; 
+                daysLeftStr = "0.0";
                 runOutDateStr = "NEGATIVE STOCK (Audit Needed)";
             } else if (daysLeft <= 0 || currentStock === 0) {
-                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; daysLeft = 0; daysLeftDisplay = "0.0";
+                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; 
+                daysLeftStr = "0.0";
                 runOutDateStr = "Out of Stock Now";
             } else if (daysLeft <= 3) {
                 statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "⚠️";
@@ -10651,17 +10661,17 @@ window.loadForecasterEngine = async function() {
                 let runOutDate = new Date();
                 runOutDate.setDate(today.getDate() + daysLeft);
                 runOutDateStr = runOutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            } else if (daysLeft === 0) {
-                runOutDateStr = "Out of Stock Now";
             }
 
-            let daysLeftDisplay = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
-            let avgDailyDisplay = avgDailyBurn === 0 ? "0.0" : avgDailyBurn.toFixed(1);
+            // 📸 PHOTOS INJECTION (Falls back to a box emoji if it's a raw ingredient without a picture)
+            let photoHtml = itemImages[item.name] 
+                ? `<img src="${itemImages[item.name]}" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0;">` 
+                : `<div style="width: 40px; height: 40px; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid #e2e8f0;">📦</div>`;
 
             html += `
                 <div style="background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); overflow: hidden; border: 1px solid #e2e8f0; display: flex; flex-direction: column;">
                     <div style="padding: 15px 20px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 15px; align-items: center;">
-                        <div style="width: 40px; height: 40px; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid #e2e8f0;">📦</div>
+                        ${photoHtml}
                         <div>
                             <h3 style="margin: 0; font-size: 15px; color: #0f172a;">${item.name}</h3>
                             <span style="font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase;">${branch}</span>
@@ -10669,11 +10679,11 @@ window.loadForecasterEngine = async function() {
                     </div>
                     <div style="padding: 20px; display: flex; align-items: center; justify-content: space-between; background: #fdfdfd; flex: 1;">
                         <div style="font-size: 13px; color: #475569; line-height: 1.8;">
-                            <span style="color: #64748b;">Current Stock:</span> <strong style="color: #0f172a; font-size: 14px;">${currentStock.toLocaleString()} ${uom}</strong><br>
-                            <span style="color: #64748b;">Daily Burn Rate:</span> <strong style="color: ${statusColor}; font-size: 14px;">${avgDailyDisplay} ${uom} / day</strong>
+                            <span style="color: #64748b;">Current Stock:</span> <strong style="color: ${currentStock < 0 ? '#dc2626' : '#0f172a'}; font-size: 14px;">${currentStock.toLocaleString()} ${uom}</strong><br>
+                            <span style="color: #64748b;">Daily Burn Rate:</span> <strong style="color: ${statusColor}; font-size: 14px;">${avgDailyStr} ${uom} / day</strong>
                         </div>
                         <div style="text-align: center; background: ${statusBg}; padding: 12px; border-radius: 12px; border: 1px dashed ${statusColor}; min-width: 80px;">
-                            <div style="font-size: 24px; font-weight: 900; color: ${statusColor};">${daysLeftDisplay}</div>
+                            <div style="font-size: 24px; font-weight: 900; color: ${statusColor};">${daysLeftStr}</div>
                             <div style="font-size: 10px; font-weight: bold; color: ${statusColor}; text-transform: uppercase;">Days Left</div>
                         </div>
                     </div>
