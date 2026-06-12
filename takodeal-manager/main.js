@@ -1111,9 +1111,42 @@ window.addToDispatchCart = function () {
       displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
   }
 
+  // Prevent sending more than we have
   if (finalBaseQty > invItem.currentStock) { 
       let stockInPurch = invItem.currentStock / convRate;
-      alert(`❌ Not enough stock!\n\nYou are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.`); 
+      
+      // Use the beautiful custom alert instead of the boring browser prompt
+      let msg = `❌ Not enough stock!\n\nYou are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.\n\n(Note: If this math looks wrong, check your inventory settings! Your Base UOM might be set up incorrectly.)`;
+      
+      Swal.fire({
+          html: `<div style="font-size: 15px; font-weight: 600; color: #334155; line-height: 1.5;">${msg.replace(/\n/g, '<br>')}</div>`,
+          icon: 'error',
+          showCancelButton: true,
+          confirmButtonColor: '#0ea5e9',
+          cancelButtonColor: '#94a3b8',
+          confirmButtonText: '🔍 Go to Live Inventory',
+          cancelButtonText: 'Dismiss',
+          background: '#ffffff',
+          backdrop: `rgba(0,0,0,0.5)`,
+          customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
+      }).then((result) => {
+          if (result.isConfirmed) {
+              // The Magic Jump!
+              document.getElementById('nav-inventory').click();
+              
+              // Wait a split second for the tab to load, then auto-fill the search!
+              setTimeout(() => {
+                  let searchBox = document.getElementById('liveInvSearch');
+                  let branchFilter = document.getElementById('invBranchFilter');
+                  
+                  if (searchBox && branchFilter) {
+                      branchFilter.value = 'Main Office';
+                      searchBox.value = itemName; // Auto-types the item name
+                      window.loadInventoryData(); // Triggers the search
+                  }
+              }, 300);
+          }
+      });
       return; 
   }
 
@@ -4060,16 +4093,22 @@ window.calcEditCost = function() {
 
 window.calcEditVariance = function() {
     let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQ = document.getElementById('editInvNewQty').value;
+    let newQRaw = document.getElementById('editInvNewQty').value;
+    let countType = document.getElementById('editInvCountType').value;
+    let conv = parseFloat(document.getElementById('editInvConversion').value) || 1;
     let varianceEl = document.getElementById('editInvVariance');
     
-    if (newQ === "") {
+    if (newQRaw === "") {
         varianceEl.innerText = "0";
         varianceEl.style.color = "#d97706";
         return;
     }
+
+    // 🔥 THE FIX: Convert to Base UOM if they are counting in Purchase UOM
+    let parsedInput = parseFloat(newQRaw);
+    let finalBaseQty = countType === 'purch' ? (parsedInput * conv) : parsedInput;
     
-    let diff = parseFloat(newQ) - oldQ;
+    let diff = finalBaseQty - oldQ;
     varianceEl.innerText = (diff > 0 ? "+" : "") + diff;
     varianceEl.style.color = diff < 0 ? "#ef4444" : "#16a34a";
 };
@@ -4087,6 +4126,7 @@ window.saveInventoryEdit = async function() {
     
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
     let newQtyRaw = document.getElementById('editInvNewQty').value;
+    let countType = document.getElementById('editInvCountType').value;
     let note = document.getElementById('editInvNote').value.trim();
 
     if (!name) { alert("Item name is required!"); return; }
@@ -4095,7 +4135,10 @@ window.saveInventoryEdit = async function() {
     let isAdjusting = false;
 
     if (newQtyRaw !== "") {
-        finalQty = parseFloat(newQtyRaw);
+        // Apply the same math during saving!
+        let parsedInput = parseFloat(newQtyRaw);
+        finalQty = countType === 'purch' ? (parsedInput * conversion) : parsedInput;
+        
         isAdjusting = true;
         if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
@@ -4104,41 +4147,28 @@ window.saveInventoryEdit = async function() {
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
-        // 🔥 THE FIX: We added 'baseCost' and 'baseUom' so the Recipe Engine reads the exact math!
         await updateDoc(doc(db, "inventory", docId), {
-            branch: branch,
-            category: category,
-            name: name,
-            purchaseUom: purchUom,
-            purchUom: purchUom,
-            baseUom: baseUom,
-            uom: baseUom, 
-            conversion: conversion,
-            conversionRate: conversion, 
-            purchaseCost: purchCost,
-            purchCost: purchCost,
-            cost: purchCost, 
-            baseCost: (purchCost / conversion), // <--- THE MAGIC FIX
-            lowStockAlert: lowStock,
-            reorderLevel: lowStock, 
+            branch: branch, category: category, name: name,
+            purchaseUom: purchUom, purchUom: purchUom,
+            baseUom: baseUom, uom: baseUom, 
+            conversion: conversion, conversionRate: conversion, 
+            purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, 
+            baseCost: (purchCost / conversion), 
+            lowStockAlert: lowStock, reorderLevel: lowStock, 
             currentStock: finalQty, 
             showInPrep: document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true
         });
 
-        // Log the manual edit if they physically changed the quantity!
         if (isAdjusting && finalQty !== oldQty) {
             let variance = finalQty - oldQty;
             let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
+            
+            // Add extra detail to the note so the owner knows how they counted it
+            let finalNote = countType === 'purch' ? `[Counted as ${newQtyRaw} ${purchUom}s] ${note}` : note;
+
             await addDoc(collection(db, "stock_logs"), {
-                branch: branch,
-                item: name,
-                oldQty: oldQty,
-                newQty: finalQty,
-                variance: variance,
-                type: "Manual Adjustment",
-                note: note,
-                user: safeCashierName,
-                timestamp: serverTimestamp()
+                branch: branch, item: name, oldQty: oldQty, newQty: finalQty, variance: variance, uom: baseUom,
+                type: "Manual Adjustment", note: finalNote, user: safeCashierName, timestamp: serverTimestamp()
             });
         }
 
@@ -4149,6 +4179,7 @@ window.saveInventoryEdit = async function() {
         console.error(e); alert("Failed to save changes.");
     } finally {
         btn.innerText = "💾 Save All Changes"; btn.disabled = false;
+        document.getElementById('editInvCountType').value = 'base'; // Reset the dropdown
     }
 };
 
