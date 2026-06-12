@@ -610,24 +610,22 @@ window.openInventoryCheckModal = async function() {
     document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory...</div>'; 
     document.getElementById('inventoryCheckModal').style.display = 'flex';
     
+    // Clear out the permanent search bar at the top!
+    let searchBox = document.getElementById('cashierStockSearch');
+    if (searchBox) searchBox.value = '';
+
     let items = await window.getInventoryForCount(sessionUser.branch);
     window.tempStockList = items.filter(i => {
         let cat = (i.category || "").toLowerCase();
         return !cat.includes("prepared batch") && !cat.includes("prep batch") && !cat.includes("raw material");
-    }).sort((a, b) => a.name.localeCompare(b.name)); // Alphabetical Sort!
+    }).sort((a, b) => a.name.localeCompare(b.name)); 
 
     window.renderStockCountUI('');
 };
 
 window.renderStockCountUI = function(searchTerm = '') {
     let container = document.getElementById('invCheckListContainer');
-    
-    // 🔥 FIXED: The Search Bar HTML is now perfectly closed and formatted
-    let html = `
-        <div style="margin-bottom: 15px; position: sticky; top: 0; background: white; padding-bottom: 10px; z-index: 10;">
-            <input type="text" id="searchStockCount" onkeyup="window.renderStockCountUI(this.value)" placeholder="🔍 Quick search item..." value="${searchTerm}" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid #cbd5e1; outline: none; font-size: 15px; font-weight: bold;">
-        </div>
-    `;
+    let html = '';
 
     let filtered = window.tempStockList.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
     
@@ -645,14 +643,6 @@ window.renderStockCountUI = function(searchTerm = '') {
     }
     
     container.innerHTML = html;
-    let searchBox = document.getElementById('searchStockCount');
-    if(searchBox && searchTerm) { 
-        searchBox.focus(); 
-        // Force the cursor to the end of the text they are typing
-        let val = searchBox.value;
-        searchBox.value = '';
-        searchBox.value = val;
-    }
 };
 
 window.saveTempCount = function(input) {
@@ -3306,19 +3296,6 @@ window.loadPersonalSchedule = async function() {
 };
 
 window.filterCashierStock = function() {
-    let input = document.getElementById('cashierStockSearch').value.toLowerCase();
-    let rows = document.querySelectorAll('#invCheckListContainer > div'); 
-    rows.forEach(row => {
-        let text = row.innerText.toLowerCase();
-        row.style.display = text.includes(input) ? '' : 'none'; 
-    });
-};
-
-window.filterCashierStock = function() {
-    let input = document.getElementById('cashierStockSearch').value.toLowerCase();
-    let rows = document.querySelectorAll('#invCheckListContainer > div'); 
-    rows.forEach(row => {
-        let text = row.innerText.toLowerCase();
-        row.style.display = text.includes(input) ? '' : 'none'; 
-    });
+    let input = document.getElementById('cashierStockSearch').value;
+    window.renderStockCountUI(input);
 };
