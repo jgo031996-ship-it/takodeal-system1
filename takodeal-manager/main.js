@@ -10651,7 +10651,6 @@ window.loadForecasterEngine = async function() {
                 let runOutDate = new Date();
                 runOutDate.setDate(today.getDate() + daysLeft);
                 runOutDateStr = runOutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            }
             } else if (daysLeft === 0) {
                 runOutDateStr = "Out of Stock Now";
             }
