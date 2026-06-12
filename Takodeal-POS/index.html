@@ -467,6 +467,7 @@
       max-width: 450px;
       flex-shrink: 0;
       border-left: 1px solid var(--border);
+      height: 100%; /* Force it to take the full screen height */
     }
 
     .ticket-header {
@@ -575,6 +576,9 @@
       padding: 20px;
       border-top: 1px solid var(--border);
       background: #fafafa;
+      position: sticky; /* Lock it to the bottom */
+      bottom: 0;
+      z-index: 10;
     }
 
     .total-line {
