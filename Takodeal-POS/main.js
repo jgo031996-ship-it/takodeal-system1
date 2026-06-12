@@ -2218,6 +2218,64 @@ window.logPrepBatch = async function(invId, itemName, branch) {
 window.mobileOrdersList = [];
 window.mobileOrdersUnsubscribe = null;
 window.hasLoadedMobileOrdersOnce = false; // Memory to track logins
+// ==========================================
+// 🚨 MOBILE EMERGENCY KILL SWITCH ENGINE
+// ==========================================
+window.isMobileOrderingActive = true; // Defaults to accepting
+
+// Listens silently to see if another tablet already turned it off
+setTimeout(() => {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
+        let btn = document.getElementById('btnMobileKillSwitch');
+        if (docSnap.exists()) {
+            let data = docSnap.data();
+            window.isMobileOrderingActive = data.mobileOrdersActive !== false; // Defaults to true if undefined
+        } else {
+            window.isMobileOrderingActive = true;
+        }
+
+        if (btn) {
+            if (window.isMobileOrderingActive) {
+                btn.style.background = "#16a34a"; // Green
+                btn.innerHTML = "🟢 Accepting";
+            } else {
+                btn.style.background = "#b91c1c"; // Dark Red
+                btn.innerHTML = "🔴 PAUSED";
+            }
+        }
+    });
+}, 3000);
+
+window.toggleMobileOrderingStatus = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) { alert("Branch not set!"); return; }
+
+    let newState = !window.isMobileOrderingActive;
+    
+    if (!newState) {
+        if (!confirm("🚨 WARNING: This will immediately PAUSE the Customer App for your branch. Customers will see a 'Currently Unavailable' message and cannot place orders.\n\nAre you sure you want to pause mobile ordering?")) return;
+    }
+
+    let btn = document.getElementById('btnMobileKillSwitch');
+    btn.innerText = "⏳..."; btn.disabled = true;
+
+    try {
+        await setDoc(doc(db, "settings", "status_" + branch), { 
+            mobileOrdersActive: newState,
+            lastUpdatedBy: localStorage.getItem('cashierName') || 'System',
+            lastUpdated: serverTimestamp()
+        }, { merge: true });
+        
+    } catch(e) {
+        console.error("Kill Switch Error:", e);
+        alert("Failed to toggle Mobile Ordering. Check internet connection.");
+    } finally {
+        btn.disabled = false;
+    }
+};
 
 window.startMobileOrdersListener = function(branch) {
     if (window.mobileOrdersUnsubscribe) {
