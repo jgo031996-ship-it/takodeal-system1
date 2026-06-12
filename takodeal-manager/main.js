@@ -4065,7 +4065,6 @@ window.saveInventoryEdit = async function() {
     let isAdjusting = false;
 
     if (newQtyRaw !== "") {
-        // Apply the same math during saving!
         let parsedInput = parseFloat(newQtyRaw);
         finalQty = countType === 'purch' ? (parsedInput * conversion) : parsedInput;
         
@@ -4074,9 +4073,10 @@ window.saveInventoryEdit = async function() {
     }
 
     let btn = document.getElementById('btnSaveInvEdit');
-    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+    btn.innerText = "⏳ Saving & Syncing Globally..."; btn.disabled = true;
 
     try {
+        // 1. Update the Main Item
         await updateDoc(doc(db, "inventory", docId), {
             branch: branch, category: category, name: name,
             purchaseUom: purchUom, purchUom: purchUom,
@@ -4089,11 +4089,26 @@ window.saveInventoryEdit = async function() {
             showInPrep: document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true
         });
 
+        // 🔥 2. GLOBAL UOM SYNC FOR RECIPE CONSISTENCY 🔥
+        // This hunts down this exact item in every other branch and updates its UOM so your BOM never breaks!
+        const syncQ = query(collection(db, "inventory"), where("name", "==", name));
+        const syncSnap = await getDocs(syncQ);
+        let syncPromises = [];
+        syncSnap.forEach(d => {
+            if (d.id !== docId) {
+                syncPromises.push(updateDoc(doc(db, "inventory", d.id), {
+                    purchaseUom: purchUom, purchUom: purchUom,
+                    baseUom: baseUom, uom: baseUom, 
+                    conversion: conversion, conversionRate: conversion
+                }));
+            }
+        });
+        await Promise.all(syncPromises);
+
+        // 3. Log Physical Adjustments
         if (isAdjusting && finalQty !== oldQty) {
             let variance = finalQty - oldQty;
             let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
-            
-            // Add extra detail to the note so the owner knows how they counted it
             let finalNote = countType === 'purch' ? `[Counted as ${newQtyRaw} ${purchUom}s] ${note}` : note;
 
             await addDoc(collection(db, "stock_logs"), {
@@ -4102,14 +4117,18 @@ window.saveInventoryEdit = async function() {
             });
         }
 
-        alert("✅ Item updated successfully!");
+        alert("✅ Item updated and synced across all branches successfully!");
         document.getElementById('editInvModal').style.display = 'none';
+        
         window.loadInventoryData();
+        // Force the Costing memory to wipe and fetch the new UOM!
+        if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
+
     } catch (e) {
         console.error(e); alert("Failed to save changes.");
     } finally {
         btn.innerText = "💾 Save All Changes"; btn.disabled = false;
-        document.getElementById('editInvCountType').value = 'base'; // Reset the dropdown
+        document.getElementById('editInvCountType').value = 'base';
     }
 };
 
