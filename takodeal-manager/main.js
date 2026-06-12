@@ -7090,7 +7090,6 @@ window.downloadPayslipImage = function() {
 // ==========================================
 // 📘 STAFF LOANS & LEDGER ENGINE (WITH AUTO-DEDUCT)
 // ==========================================
-
 window.loadLedger = async function() {
     const tbody = document.getElementById('ledgerTableBody');
     if (!tbody) return;
@@ -7129,6 +7128,7 @@ window.loadLedger = async function() {
             let balWeight = balance > 0 ? 'bold' : 'normal';
             let valeColor = unpaidVales > 0 ? '#ea580c' : 'var(--text-muted)';
 
+            // 🔥 THE FIX: Passed docSnap.id into adjustStaffLoan so Firebase knows exactly which profile to update!
             html += `
                 <tr>
                     <td><strong style="color: var(--primary);">👤 ${name}</strong></td>
@@ -10633,23 +10633,22 @@ window.loadForecasterEngine = async function() {
             let currentStock = parseFloat(item.currentStock) || 0;
             let uom = item.uom || 'units';
 
-            // 🛠️ THE CRASH FIX: Clean variables
             let daysLeft = Infinity;
             if (avgDailyBurn > 0) daysLeft = currentStock / avgDailyBurn;
 
             let statusColor = "#16a34a"; let statusBg = "#f0fdf4"; let warningIcon = "✅";
-            let daysLeftStr = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
+            let dLeftStr = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
             let avgDailyStr = avgDailyBurn === 0 ? "0.0" : avgDailyBurn.toFixed(1);
             let runOutDateStr = "Sufficient Stock";
 
             // 📉 STRICT HANDLING OF NEGATIVE INVENTORY
             if (currentStock < 0) {
                 statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; 
-                daysLeftStr = "0.0";
+                dLeftStr = "0.0";
                 runOutDateStr = "NEGATIVE STOCK (Audit Needed)";
             } else if (daysLeft <= 0 || currentStock === 0) {
                 statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; 
-                daysLeftStr = "0.0";
+                dLeftStr = "0.0";
                 runOutDateStr = "Out of Stock Now";
             } else if (daysLeft <= 3) {
                 statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "⚠️";
@@ -10663,7 +10662,7 @@ window.loadForecasterEngine = async function() {
                 runOutDateStr = runOutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             }
 
-            // 📸 PHOTOS INJECTION (Falls back to a box emoji if it's a raw ingredient without a picture)
+            // 📸 PHOTOS INJECTION
             let photoHtml = itemImages[item.name] 
                 ? `<img src="${itemImages[item.name]}" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0;">` 
                 : `<div style="width: 40px; height: 40px; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid #e2e8f0;">📦</div>`;
@@ -10683,7 +10682,7 @@ window.loadForecasterEngine = async function() {
                             <span style="color: #64748b;">Daily Burn Rate:</span> <strong style="color: ${statusColor}; font-size: 14px;">${avgDailyStr} ${uom} / day</strong>
                         </div>
                         <div style="text-align: center; background: ${statusBg}; padding: 12px; border-radius: 12px; border: 1px dashed ${statusColor}; min-width: 80px;">
-                            <div style="font-size: 24px; font-weight: 900; color: ${statusColor};">${daysLeftStr}</div>
+                            <div style="font-size: 24px; font-weight: 900; color: ${statusColor};">${dLeftStr}</div>
                             <div style="font-size: 10px; font-weight: bold; color: ${statusColor}; text-transform: uppercase;">Days Left</div>
                         </div>
                     </div>
