@@ -1116,7 +1116,6 @@ window.addToDispatchCart = function () {
       let stockInPurch = invItem.currentStock / convRate;
       let msg = `You are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.\n\n(Note: If this math looks wrong, check your inventory settings! Your Base UOM might be set up incorrectly.)`; 
       
-      // 🔥 THE FIX: Forced SweetAlert configuration so the Jump Button renders!
       Swal.fire({
           title: '❌ Not enough stock!',
           text: msg,
@@ -1128,8 +1127,10 @@ window.addToDispatchCart = function () {
           cancelButtonText: 'Dismiss'
       }).then((result) => {
           if (result.isConfirmed) {
-              // Click the side tab
-              document.getElementById('nav-inventory').click();
+              // 🔥 THE FIX: Use the app's native tab switcher!
+              if (typeof window.switchView === 'function') {
+                  window.switchView('inventory');
+              }
               
               // Wait 400ms for UI to render, then inject the search text and reload!
               setTimeout(() => {
