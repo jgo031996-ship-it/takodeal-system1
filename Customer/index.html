@@ -924,6 +924,73 @@
             else document.getElementById('codChangeSection').classList.add('hidden');
         }
 
+        // ==========================================
+        // 🚨 CUSTOMER APP: STORE STATUS LISTENER 
+        // ==========================================
+        window.isStoreAcceptingOrders = true; 
+        window.statusListenerUnsubscribe = null;
+
+        window.listenToStoreStatus = function() {
+            let selectedBranch = document.getElementById('selectedBranch').value;
+            if (!selectedBranch) return;
+
+            // Clear old listener if they switch branches
+            if (window.statusListenerUnsubscribe) {
+                window.statusListenerUnsubscribe();
+            }
+
+            // Listen to the specific branch's status document in Firebase
+            window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
+                let checkoutButton = document.getElementById('reviewBtn'); 
+                
+                // Create banner if it doesn't exist
+                let statusBanner = document.getElementById('storeStatusBanner');
+                if (!statusBanner) {
+                    let container = document.getElementById('orderingScreen');
+                    let bannerHtml = `<div id="storeStatusBanner" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl relative text-center text-sm font-bold mb-4 shadow-sm">
+                        ⚠️ Due to high volume, this branch is temporarily pausing mobile orders. Please try again in a few minutes!
+                    </div>`;
+                    // Insert banner right after the Search Bar container
+                    container.querySelector('.search-bar-container').insertAdjacentHTML('afterend', bannerHtml);
+                    statusBanner = document.getElementById('storeStatusBanner');
+                }
+
+                if (docSnap.exists()) {
+                    let data = docSnap.data();
+                    window.isStoreAcceptingOrders = data.mobileOrdersActive !== false;
+                } else {
+                    window.isStoreAcceptingOrders = true; // Default open if no doc exists
+                }
+
+                if (!window.isStoreAcceptingOrders) {
+                    // Store is paused!
+                    if (checkoutButton) {
+                        checkoutButton.disabled = true;
+                        checkoutButton.innerHTML = "<span>🛑 Store Paused</span>";
+                        checkoutButton.classList.replace('bg-red-600', 'bg-gray-400');
+                        checkoutButton.classList.replace('hover:bg-red-700', 'hover:bg-gray-500');
+                    }
+                    if (statusBanner) {
+                        statusBanner.classList.remove('hidden');
+                    }
+                } else {
+                    // Store is open!
+                    if (checkoutButton) {
+                        checkoutButton.disabled = false;
+                        checkoutButton.innerHTML = `<span>🛒 Review Order</span> <span id="floatingTotal">₱${(typeof window.cart !== 'undefined' ? window.cart.reduce((sum, i) => sum + i.lineTotalFinal, 0) : 0).toFixed(2)}</span>`;
+                        checkoutButton.classList.replace('bg-gray-400', 'bg-red-600');
+                        checkoutButton.classList.replace('hover:bg-gray-500', 'hover:bg-red-700');
+                    }
+                    if (statusBanner) {
+                        statusBanner.classList.add('hidden');
+                    }
+                }
+            });
+        };
+
+        // Attach listener to the Branch Dropdown so it updates instantly when they switch locations!
+        document.getElementById('selectedBranch').addEventListener('change', window.listenToStoreStatus);
+        
         window.startCancelTimer = function() {
             let expiresAt = localStorage.getItem('takodealCancelExpiresAt');
             if (!expiresAt) {
@@ -1263,7 +1330,9 @@
         document.addEventListener("DOMContentLoaded", async () => {
             await window.checkActiveOrder();
             window.loadLiveMenu(); 
+            window.listenToStoreStatus(); // Start listening for the Kill Switch!
         });
+
         
     </script>
 </body>
