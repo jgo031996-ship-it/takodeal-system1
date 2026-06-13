@@ -2071,32 +2071,59 @@
       <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
           <div>
-            <h2 style="margin: 0; color: #334155;">📦 Active Deliveries & Invoices</h2>
+            <h2 style="margin: 0; color: #334155;">📦 Supplier Deliveries & Invoices</h2>
             <span style="font-size: 12px; color: var(--text-muted);">Track supplier terms and upcoming payment deadlines.</span>
           </div>
           <button onclick="window.openAddPayableModal()" style="background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">
             ➕ Log Delivery / Invoice
           </button>
         </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead style="background: #f8fafc;">
-              <tr>
-                <th>Supplier / Vendor</th>
-                <th>Ref / Invoice #</th>
-                <th>Delivery Date</th>
-                <th>Due Date</th>
-                <th>Amount (₱)</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="payablesTableBody">
-              <tr>
-                <td colspan="7" class="text-center">Loading payables...</td>
-              </tr>
-            </tbody>
-          </table>
+        
+        <!-- 🔥 NEW: PAYABLES TABS -->
+        <div style="display: flex; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 20px; margin-bottom: 20px;">
+            <div id="tabPayActive" onclick="window.switchPayablesTab('Active')" style="padding: 15px 20px; font-weight: bold; font-size: 14px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer;">Active Payables</div>
+            <div id="tabPayHistory" onclick="window.switchPayablesTab('History')" style="padding: 15px 20px; font-weight: bold; font-size: 14px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer;">Paid History</div>
+        </div>
+
+        <div id="payablesActiveSection">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead style="background: #f8fafc;">
+                  <tr>
+                    <th>Supplier / Vendor</th>
+                    <th>Ref / Invoice #</th>
+                    <th>Delivery Date</th>
+                    <th>Due Date</th>
+                    <th>Amount (₱)</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="payablesTableBody">
+                  <tr><td colspan="7" class="text-center">Loading payables...</td></tr>
+                </tbody>
+              </table>
+            </div>
+        </div>
+
+        <div id="payablesHistorySection" style="display: none;">
+            <div class="table-responsive">
+              <table class="data-table">
+                  <thead style="background: #f8fafc;">
+                      <tr>
+                          <th>Supplier</th>
+                          <th>Invoice #</th>
+                          <th>Date Paid</th>
+                          <th>Amount</th>
+                          <th>Paid From</th>
+                          <th>Proof</th>
+                      </tr>
+                  </thead>
+                  <tbody id="payablesHistoryBody">
+                      <tr><td colspan="6" class="text-center">Loading history...</td></tr>
+                  </tbody>
+              </table>
+            </div>
         </div>
       </div>
     </div>
@@ -2136,6 +2163,8 @@
             </div>
             <div>
               <label style="font-size: 12px; font-weight: bold; color: #64748b;">Total Amount Owed (₱)</label>
+              <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-top: 10px; display: block;">Upload OR / Invoice Photo 📸</label>
+              <input type="file" id="payPhotoProof" accept="image/*" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px dashed #cbd5e1; border-radius: 6px; box-sizing: border-box; background: #f8fafc;">
               <input type="number" id="payAmount" placeholder="0.00" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626;">
             </div>
           </div>
