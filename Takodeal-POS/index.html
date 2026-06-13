@@ -2332,7 +2332,7 @@
     
         let layoutOrder = [];
         try {
-            // 🔥 FIXED: Removed window. prefixes so it properly uses the imported Firebase functions!
+            // 🔥 FIXED: Removed 'window.' from Firebase calls to prevent TypeError crashes!
             const layoutSnap = await getDoc(doc(db, "settings", "pos_layout"));
             if (layoutSnap.exists()) {
                 layoutOrder = layoutSnap.data().categories || [];
