@@ -8075,19 +8075,25 @@ window.loadPayablesDashboard = async function() {
                 itemsHtml = `<div style="margin-top: 6px; padding: 6px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 4px; font-size: 11px; color: #475569;">`;
                 data.linkedItems.forEach(i => { itemsHtml += `📦 <strong>${i.purchQty} ${i.purchUom}</strong> ${i.name}<br>`; });
                 itemsHtml += `</div>`;
-            } else if (data.hasLinkedItems) {
-                // THE FIX: Clean gray text!
-                itemsHtml = `<div style="margin-top: 6px; font-size: 11px; color: #64748b; font-style: italic;">📦 General Restock (No itemized list)</div>`;
             }
+
+            // 🔥 PHOTO PREVIEW BUTTON
+            let photoBtn = data.photoUrl ? `<br><button onclick="window.viewSelfie('${data.photoUrl}', 'Invoice: ${data.invoiceNum || 'N/A'}')" style="margin-top:5px; background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; cursor:pointer;">📸 View OR</button>` : '';
+
+            // 🔥 DELETE BUTTON
+            let deleteBtn = `<button onclick="window.deletePayable('${docSnap.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; margin-left:5px;" title="Delete">🗑️</button>`;
 
             html += `<tr style="border-bottom: 1px solid #f1f5f9;">
                     <td><strong style="color: var(--primary); font-size: 15px;">${data.supplier}</strong>${itemsHtml}</td>
-                    <td style="font-family: monospace; color: #64748b;">${data.invoiceNum || 'N/A'}</td>
+                    <td style="font-family: monospace; color: #64748b;">${data.invoiceNum || 'N/A'} ${photoBtn}</td>
                     <td style="font-size: 13px;">${deliveryDate.toLocaleDateString()}</td>
                     <td style="font-weight: bold; color: ${dateColor};">${dueDate.toLocaleDateString()}</td>
                     <td style="font-weight: bold; font-size: 15px; color: #1e293b;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
                     <td>${statusHtml}</td>
-                    <td><button onclick="window.openSettlePayable('${docSnap.id}', '${data.supplier}', ${amount}, '${data.invoiceNum}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">💸 Pay Now</button></td>
+                    <td style="display: flex; gap: 5px;">
+                        <button onclick="window.openSettlePayable('${docSnap.id}', '${data.supplier}', ${amount}, '${data.invoiceNum}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">💸 Pay Now</button>
+                        ${deleteBtn}
+                    </td>
                 </tr>`;
         });
         tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="color: #64748b; padding: 30px;">All payables are cleared! No outstanding debts.</td></tr>';
@@ -8095,6 +8101,46 @@ window.loadPayablesDashboard = async function() {
         document.getElementById('payTotalOverdue').innerText = overdueCount;
         document.getElementById('payDueSoon').innerText = dueSoonCount;
     } catch (e) { console.error("Payables Error:", e); tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error fetching payables.</td></tr>'; }
+};
+
+// 🔥 TABS LOGIC
+window.switchPayablesTab = function(tab) {
+    document.getElementById('tabPayActive').style.color = tab === 'Active' ? '#0f766e' : '#64748b';
+    document.getElementById('tabPayActive').style.borderBottomColor = tab === 'Active' ? '#0f766e' : 'transparent';
+    document.getElementById('tabPayHistory').style.color = tab === 'History' ? '#0f766e' : '#64748b';
+    document.getElementById('tabPayHistory').style.borderBottomColor = tab === 'History' ? '#0f766e' : 'transparent';
+    
+    document.getElementById('payablesActiveSection').style.display = tab === 'Active' ? 'block' : 'none';
+    document.getElementById('payablesHistorySection').style.display = tab === 'History' ? 'block' : 'none';
+    
+    if (tab === 'History') window.loadPayablesHistory();
+};
+
+window.loadPayablesHistory = async function() {
+    const tbody = document.getElementById('payablesHistoryBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading history...</td></tr>';
+    try {
+        const q = query(collection(db, "payables"), where("status", "==", "Paid"), orderBy("datePaid", "desc"), limit(50));
+        const snap = await getDocs(q);
+        let html = '';
+        snap.forEach(doc => {
+            let d = doc.data();
+            let datePaid = d.datePaid ? d.datePaid.toDate().toLocaleDateString() : 'Unknown';
+            let photoBtn = d.photoUrl ? `<button onclick="window.viewSelfie('${d.photoUrl}', 'Invoice: ${d.invoiceNum || 'N/A'}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📸 View</button>` : '-';
+            
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td><strong style="color: #334155;">${d.supplier}</strong></td>
+                <td style="font-family: monospace; color: #64748b;">${d.invoiceNum || 'N/A'}</td>
+                <td style="font-size: 13px;">${datePaid}</td>
+                <td style="font-weight: bold; color: #16a34a;">₱${(parseFloat(d.amount)||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="font-size: 12px; color: #475569;">${d.paidFromAccount || 'Unknown'}</td>
+                <td>${photoBtn}</td>
+            </tr>`;
+        });
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="color: #64748b; padding: 30px;">No paid history found.</td></tr>';
+    } catch(e) {
+        console.error(e); tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading history.</td></tr>';
+    }
 };
 
 async function triggerPayableAlert(count) {
@@ -8219,13 +8265,27 @@ window.saveNewPayable = async function() {
     if (!supplier || isNaN(amount) || amount <= 0) { alert("Please enter Supplier Name and a valid Amount."); return; }
 
     let btn = document.getElementById('btnSavePayable');
-    btn.innerText = "⏳ Saving & Updating Inventory..."; btn.disabled = true;
+    btn.innerText = "⏳ Uploading & Saving..."; btn.disabled = true;
 
     try {
+        // 🔥 UPLOAD THE INVOICE PHOTO TO FIREBASE STORAGE
+        let photoUrl = "";
+        let fileInput = document.getElementById('payPhotoProof');
+        if (fileInput && fileInput.files.length > 0) {
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `payables/inv_${Date.now()}.${fileExt}`;
+            const storageRef = ref(window.storage, fileName);
+            const snapshot = await uploadBytes(storageRef, file);
+            photoUrl = await getDownloadURL(snapshot.ref);
+        }
+
         let deliveryDate = new Date(); let dueDate = new Date(); dueDate.setDate(deliveryDate.getDate() + terms);
+        
         await addDoc(collection(db, "payables"), {
             supplier: supplier, invoiceNum: invoice, amount: amount, termsDays: terms, deliveryDate: deliveryDate, dueDate: dueDate, status: "Unpaid",
             hasLinkedItems: window.payableItemsCart.length > 0, linkedItems: window.payableItemsCart,
+            photoUrl: photoUrl, // 🔥 SAVES THE PHOTO URL!
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
         });
 
@@ -8247,9 +8307,21 @@ window.saveNewPayable = async function() {
 
         alert(`✅ Success! Invoice logged and inventory added to Main Office.`);
         document.getElementById('addPayableModal').style.display = 'none';
+        
+        // Reset file input
+        if (fileInput) fileInput.value = '';
+        
         window.loadPayablesDashboard();
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
     } catch (e) { alert(`❌ Failed to save. Error: ${e.message}`); } finally { btn.innerText = "💾 Log Delivery & Track Deadline"; btn.disabled = false; }
+};
+
+window.deletePayable = async function(id) {
+    if(!confirm("⚠️ Delete this invoice? (Note: This will NOT undo any physical inventory that was already added).")) return;
+    try {
+        await deleteDoc(doc(db, "payables", id));
+        window.loadPayablesDashboard();
+    } catch(e) { alert("Failed to delete."); }
 };
 
 window.openSettlePayable = async function(id, supplier, amount, invoice) {
