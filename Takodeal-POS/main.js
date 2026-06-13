@@ -2097,42 +2097,51 @@ window.loadKitchenPrep = async function() {
     container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
 
     try {
-        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
-        let allowedCats = ["Prepared Batch"]; 
-        if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
-            allowedCats = configSnap.data().kitchenPrepCats;
-        }
-
-        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("category", "in", allowedCats));
+        // 🔥 THE FIX: We fetch the entire branch inventory and filter locally based strictly on the Manager's "Show in Prep" checkbox!
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
         const snap = await getDocs(q);
         
         let html = '';
-        if (snap.empty) {
-            html = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">No Kitchen Prep items found. Make sure your items' categories match what you typed in the POS Config Hub.</div>`;
-        } else {
-            snap.forEach(docSnap => {
-                let d = docSnap.data();
-                if (d.showInPrep === false) return;
-             
-                let baseUom = d.uom || d.baseUom || 'units';
-                // 🔥 SMART UOM: Pulls the Purchase UOM you set in the Manager app!
-                let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
+        let hasItems = false;
+        
+        // Sort items alphabetically for easy reading
+        let items = [];
+        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-                html += `
-                    <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; background: #ffffff; text-align: center;">
-                        <h3 style="margin: 0 0 10px 0; color: #0f172a; font-size: 16px;">${d.name}</h3>
-                        <p style="margin: 0 0 15px 0; color: #64748b; font-size: 12px;">Current Stock: <strong style="color:#0f172a;">${(d.currentStock||0).toFixed(1)} ${baseUom}</strong></p>
-                        <button onclick="window.logPrepBatch('${docSnap.id}', '${d.name}', '${branch}', '${purchUom}', '${baseUom}')" style="background: #f59e0b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);">
-                            + Log Prep (${purchUom})
-                        </button>
-                    </div>
-                `;
-            });
+        items.forEach(d => {
+            // STRICT FILTER: Only show items where the Manager checked "Show in Kitchen Prep Station"
+            if (d.showInPrep !== true) return;
+            hasItems = true;
+         
+            let baseUom = d.uom || d.baseUom || 'units';
+            let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
+
+            // Beautiful UI Redesign!
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; transition: transform 0.2s;">
+                    <div style="width: 50px; height: 50px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 10px; border: 1px solid #cbd5e1;">🔪</div>
+                    <h3 style="margin: 0 0 5px 0; color: #1e293b; font-size: 16px; font-weight: 900;">${d.name}</h3>
+                    <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(d.currentStock||0).toFixed(1)} ${baseUom}</span>
+                    
+                    <button onclick="window.logPrepBatch('${d.id}', '${d.name}', '${branch}', '${purchUom}', '${baseUom}')" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">
+                        + Log Prep (${purchUom})
+                    </button>
+                </div>
+            `;
+        });
+        
+        if (!hasItems) {
+            html = `<div style="text-align:center; padding:40px; color:#94a3b8; grid-column:1/-1;">
+                <span style="font-size: 40px; display: block; margin-bottom: 15px;">🕵️‍♂️</span>
+                No Kitchen Prep items found.<br>Go to the Manager App > Live Inventory > Edit Item, and check "Show in Kitchen Prep Station".
+            </div>`;
         }
+        
         container.innerHTML = html;
     } catch (e) {
         console.error("Prep Load Error:", e);
-        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Failed to load items. Check connection.</div>`;
+        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1; padding: 20px;">Failed to load items. Check connection.</div>`;
     }
 };
 
