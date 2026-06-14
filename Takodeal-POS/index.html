@@ -1404,8 +1404,8 @@
       <div class="top-bar-right">
         <div style="display: flex; gap: 10px; align-items: center;">
 
-          <!-- Mobile Orders + Kill Switch -->
-          <div style="position: relative; display: inline-flex; align-items: center; border-radius: 20px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-right: 5px;">
+          <!-- GROUPED: Mobile Orders, Accepting, AND Delivery -->
+          <div style="position: relative; display: inline-flex; align-items: center; border-radius: 20px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
               <button onclick="window.showMobileOrders()" style="position: relative; background: #e74c3c; color: white; border: none; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;">
                 📱 Mobile Orders
                 <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #f1c40f; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
@@ -1413,14 +1413,12 @@
               <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus()" style="background: #16a34a; color: white; border: none; padding: 8px 12px; cursor: pointer; font-size: 14px; font-weight: bold; border-left: 1px solid rgba(255,255,255,0.2);" title="Toggle App Ordering">
                   🟢 Accepting
               </button>
+              <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery()" style="background: #8b5cf6; color: white; border: none; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; border-left: 1px solid rgba(255,255,255,0.2);">
+                  🚚 Delivery: <span id="deliveryStatusText">ON</span>
+              </button>
           </div>
 
-          <!-- Delivery Toggle (Moved right next to Mobile Orders) -->
-          <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery()" 
-            style="background: #8b5cf6; color: white; border: none; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              🚚 Delivery: <span id="deliveryStatusText">ON</span>
-          </button>
-
+          <!-- Parked Orders & Shift Controls -->
           <button onclick="window.showParkedOrders()"
             style="position: relative; background: #34495e; color: white; border: none; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-family: inherit; font-size: 14px; font-weight: 600;">
             🕒 Parked Orders
