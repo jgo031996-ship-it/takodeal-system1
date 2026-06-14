@@ -3997,7 +3997,8 @@ window.openEditInvModal = async function(docId) {
         document.getElementById('editInvOldQty').value = d.currentStock || 0;
         
         // Handle checkbox
-        document.getElementById('editInvShowPrep').checked = (d.showInPrep !== false);
+        if(document.getElementById('editInvShowPrep')) 
+        document.getElementById('editInvShowPrep').checked = data.showInPrep !== false;
         
         // 4. Reset Variance fields
         document.getElementById('editInvNewQty').value = ""; 
@@ -4080,6 +4081,8 @@ window.saveInventoryEdit = async function() {
     btn.innerText = "⏳ Saving & Syncing Globally..."; btn.disabled = true;
 
     try {
+        let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
+
         // 1. Update the Main Item
         await updateDoc(doc(db, "inventory", docId), {
             branch: branch, category: category, name: name,
@@ -4090,23 +4093,23 @@ window.saveInventoryEdit = async function() {
             baseCost: (purchCost / conversion), 
             lowStockAlert: lowStock, reorderLevel: lowStock, 
             currentStock: finalQty, 
-            showInPrep: document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true
+            showInPrep: showPrepVal // 🔥 Re-attached!
         });
 
-        // 🔥 2. GLOBAL UOM SYNC FOR RECIPE CONSISTENCY 🔥
-        // This hunts down this exact item in every other branch and synchronizes its UOM/Cost so your BOM never breaks!
+        // 🔥 2. GLOBAL UOM & PREP SYNC 🔥
         const syncQ = query(collection(db, "inventory"), where("name", "==", name));
         const syncSnap = await getDocs(syncQ);
         let syncPromises = [];
         syncSnap.forEach(d => {
             if (d.id !== docId) {
                 syncPromises.push(updateDoc(doc(db, "inventory", d.id), {
-                    category: category, // Sync category too!
+                    category: category, 
                     purchaseUom: purchUom, purchUom: purchUom,
                     baseUom: baseUom, uom: baseUom, 
                     conversion: conversion, conversionRate: conversion,
                     purchaseCost: purchCost, purchCost: purchCost, cost: purchCost,
-                    baseCost: (purchCost / conversion)
+                    baseCost: (purchCost / conversion),
+                    showInPrep: showPrepVal // 🔥 Syncs the hidden status to ALL branches instantly!
                 }));
             }
         });
