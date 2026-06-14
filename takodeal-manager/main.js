@@ -11335,3 +11335,50 @@ window.savePosLayout = async function() {
         alert("❌ Failed to save layout to cloud."); 
     }
 };
+
+// ==========================================
+// 🗑️ MENU EDITOR: DELETE ITEM ENGINE
+// ==========================================
+window.deleteMenuItem = async function(docId) {
+    // Beautiful SweetAlert Confirmation
+    const confirmDelete = await Swal.fire({
+        title: 'Delete Menu Item?',
+        text: "Are you sure? This will remove the item from the POS and the Customer App permanently. This action cannot be undone.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626', // Red
+        cancelButtonColor: '#94a3b8',  // Gray
+        confirmButtonText: 'Yes, Delete it!',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (confirmDelete.isConfirmed) {
+        Swal.fire({ title: 'Deleting...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+        
+        try {
+            // Delete from Firebase
+            await deleteDoc(doc(db, "menu", docId));
+            
+            Swal.fire({
+                title: 'Deleted!',
+                text: 'The item has been removed from your menu.',
+                icon: 'success',
+                confirmButtonColor: '#16a34a',
+                customClass: { popup: 'rounded-2xl' }
+            });
+            
+            // Reload the UI
+            if (typeof window.loadMenuEditor === 'function') {
+                window.loadMenuEditor();
+            } else {
+                // Fallback UI refresh
+                let menuTab = document.querySelector('[onclick*="view-menu"]');
+                if (menuTab) menuTab.click();
+            }
+            
+        } catch (error) {
+            console.error("Error deleting menu item: ", error);
+            Swal.fire('Error', 'Failed to delete the item. Check your connection.', 'error');
+        }
+    }
+};
