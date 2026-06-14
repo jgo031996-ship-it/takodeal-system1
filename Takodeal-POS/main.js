@@ -2097,32 +2097,42 @@ window.loadKitchenPrep = async function() {
     container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
 
     try {
-        // 🔥 THE FIX: We fetch the entire branch inventory and filter locally based strictly on the Manager's "Show in Prep" checkbox!
+        // 1. Read the POS Config Hub to see which CATEGORIES are allowed
+        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+        let allowedCats = ["Prepared Batch"]; // Default fallback
+        if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
+            // Normalize to lowercase so it matches safely even if capitalized differently
+            allowedCats = configSnap.data().kitchenPrepCats.map(c => c.trim().toLowerCase());
+        }
+
+        // 2. Fetch inventory for this branch
         const q = query(collection(db, "inventory"), where("branch", "==", branch));
         const snap = await getDocs(q);
         
         let html = '';
         let hasItems = false;
         
-        // Sort items alphabetically for easy reading
         let items = [];
         snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
         items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
         items.forEach(d => {
-            // STRICT FILTER: Only show items where the Manager checked "Show in Kitchen Prep Station"
-            if (d.showInPrep !== true) return;
+            let itemCat = (d.category || "").trim().toLowerCase();
+            
+            // 🔥 STRICT FILTER: Only show items if their category is in the POS Config Hub!
+            // (We completely bypass the tedious checkbox)
+            if (!allowedCats.includes(itemCat)) return;
+            
             hasItems = true;
          
             let baseUom = d.uom || d.baseUom || 'units';
             let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
 
-            // Beautiful UI Redesign!
             html += `
                 <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; transition: transform 0.2s;">
                     <div style="width: 50px; height: 50px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 10px; border: 1px solid #cbd5e1;">🔪</div>
                     <h3 style="margin: 0 0 5px 0; color: #1e293b; font-size: 16px; font-weight: 900;">${d.name}</h3>
-                    <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(d.currentStock||0).toFixed(1)} ${baseUom}</span>
+                    <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(parseFloat(d.currentStock)||0).toFixed(1)} ${baseUom}</span>
                     
                     <button onclick="window.logPrepBatch('${d.id}', '${d.name}', '${branch}', '${purchUom}', '${baseUom}')" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">
                         + Log Prep (${purchUom})
@@ -2134,7 +2144,7 @@ window.loadKitchenPrep = async function() {
         if (!hasItems) {
             html = `<div style="text-align:center; padding:40px; color:#94a3b8; grid-column:1/-1;">
                 <span style="font-size: 40px; display: block; margin-bottom: 15px;">🕵️‍♂️</span>
-                No Kitchen Prep items found.<br>Go to the Manager App > Live Inventory > Edit Item, and check "Show in Kitchen Prep Station".
+                No Kitchen Prep items found.<br>In your Manager App > POS Config Hub, ensure "Kitchen Prep Categories" matches the categories of your prep items (e.g. Prepared Batch).
             </div>`;
         }
         
