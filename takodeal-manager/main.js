@@ -4060,7 +4060,7 @@ window.saveInventoryEdit = async function() {
     
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
     let newQtyRaw = document.getElementById('editInvNewQty').value;
-    let countType = document.getElementById('editInvCountType').value;
+    let countType = document.getElementById('editInvCountType') ? document.getElementById('editInvCountType').value : 'base';
     let note = document.getElementById('editInvNote').value.trim();
 
     if (!name) { alert("Item name is required!"); return; }
@@ -4094,16 +4094,19 @@ window.saveInventoryEdit = async function() {
         });
 
         // 🔥 2. GLOBAL UOM SYNC FOR RECIPE CONSISTENCY 🔥
-        // This hunts down this exact item in every other branch and updates its UOM so your BOM never breaks!
+        // This hunts down this exact item in every other branch and synchronizes its UOM/Cost so your BOM never breaks!
         const syncQ = query(collection(db, "inventory"), where("name", "==", name));
         const syncSnap = await getDocs(syncQ);
         let syncPromises = [];
         syncSnap.forEach(d => {
             if (d.id !== docId) {
                 syncPromises.push(updateDoc(doc(db, "inventory", d.id), {
+                    category: category, // Sync category too!
                     purchaseUom: purchUom, purchUom: purchUom,
                     baseUom: baseUom, uom: baseUom, 
-                    conversion: conversion, conversionRate: conversion
+                    conversion: conversion, conversionRate: conversion,
+                    purchaseCost: purchCost, purchCost: purchCost, cost: purchCost,
+                    baseCost: (purchCost / conversion)
                 }));
             }
         });
@@ -4132,7 +4135,7 @@ window.saveInventoryEdit = async function() {
         console.error(e); alert("Failed to save changes.");
     } finally {
         btn.innerText = "💾 Save All Changes"; btn.disabled = false;
-        document.getElementById('editInvCountType').value = 'base';
+        if(document.getElementById('editInvCountType')) document.getElementById('editInvCountType').value = 'base';
     }
 };
 
