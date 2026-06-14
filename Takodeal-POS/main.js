@@ -2122,6 +2122,7 @@ window.loadKitchenPrep = async function() {
             // 🔥 STRICT FILTER: Only show items if their category is in the POS Config Hub!
             // (We completely bypass the tedious checkbox)
             if (!allowedCats.includes(itemCat)) return;
+            if (d.showInPrep === false) return;
             
             hasItems = true;
          
@@ -2159,16 +2160,42 @@ window.logPrepBatch = async function(invId, itemName, branch, purchUom, baseUom)
     if (!purchUom || purchUom === 'undefined') purchUom = 'Batch';
     if (!baseUom || baseUom === 'undefined') baseUom = 'units';
 
-    // 🔥 DYNAMIC PROMPT: Asks for the exact unit of measurement!
-    let qty = prompt(`How many ${purchUom}s of ${itemName} did you prepare today?`, "1");
-    if (!qty || isNaN(qty) || qty <= 0) return;
-    
-    qty = parseFloat(qty);
-    if (!confirm(`Confirm logging ${qty} ${purchUom}(s) of ${itemName}?\n\nThis will automatically convert to ${baseUom} and deduct the raw ingredients used.`)) return;
+    // 🌟 BEAUTIFUL INPUT POPUP
+    const { value: qtyRaw } = await Swal.fire({
+        title: '🔪 Kitchen Prep',
+        html: `<div style="margin-bottom: 10px; color: #475569; font-size: 15px;">How many <strong>${purchUom}s</strong> of <strong style="color: #0f172a;">${itemName}</strong> did you prepare today?</div>`,
+        input: 'number',
+        inputPlaceholder: `Enter number of ${purchUom}s...`,
+        inputAttributes: { min: 0.1, step: 'any' },
+        showCancelButton: true,
+        confirmButtonText: 'Next ➡',
+        confirmButtonColor: '#f59e0b',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
+    });
+
+    if (!qtyRaw) return; // User cancelled
+    let qty = parseFloat(qtyRaw);
+
+    // 🌟 BEAUTIFUL CONFIRMATION POPUP
+    const confirmResult = await Swal.fire({
+        title: 'Confirm Logging',
+        html: `<div style="color: #475569;">You are about to log:<br><strong style="font-size: 22px; color: #16a34a; display: block; margin: 10px 0;">${qty} ${purchUom}(s)</strong> of <strong style="font-size: 18px;">${itemName}</strong>.<br><br><span style="font-size: 12px; color: #64748b;">This will automatically convert to ${baseUom} and deduct the raw ingredients used.</span></div>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: '✅ Yes, Log it!',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#ef4444',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    // Show loading spinner
+    Swal.fire({ title: 'Processing...', text: 'Updating inventory & recipes...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
 
     try {
         const invRef = doc(db, "inventory", invId);
-        
         const invSnap = await getDoc(invRef);
         let invData = invSnap.data();
         let currentStock = invData.currentStock || 0;
@@ -2176,13 +2203,10 @@ window.logPrepBatch = async function(invId, itemName, branch, purchUom, baseUom)
         let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
         let baseQtyToAdd = qty * convRate;
 
-        await updateDoc(invRef, {
-            currentStock: currentStock + baseQtyToAdd
-        });
+        await updateDoc(invRef, { currentStock: currentStock + baseQtyToAdd });
 
         const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
         const bomSnap = await getDocs(bomQ);
-        
         let missingItems = [];
 
         if (!bomSnap.empty) {
@@ -2197,7 +2221,6 @@ window.logPrepBatch = async function(invId, itemName, branch, purchUom, baseUom)
                 if (!rawSnap.empty) {
                     let rawRef = rawSnap.docs[0].ref;
                     let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
-                    
                     await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
                 } else {
                     missingItems.push(rawIngredient);
@@ -2207,26 +2230,23 @@ window.logPrepBatch = async function(invId, itemName, branch, purchUom, baseUom)
 
         let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
         await addDoc(collection(db, "stock_logs"), {
-            branch: branch,
-            item: itemName,
-            variance: baseQtyToAdd, 
-            uom: baseUom,
-            type: "End-of-Shift Kitchen Prep",
-            note: `Prepared ${qty} ${purchUom}(s) by ${safeCashierName}`,
-            timestamp: new Date()
+            branch: branch, item: itemName, variance: baseQtyToAdd, uom: baseUom,
+            type: "End-of-Shift Kitchen Prep", note: `Prepared ${qty} ${purchUom}(s) by ${safeCashierName}`, timestamp: new Date()
         });
 
-        let msg = `✅ Successfully logged ${qty} ${purchUom}(s) of ${itemName}!\nAdded +${baseQtyToAdd.toLocaleString()} ${baseUom} to the vault.`;
+        // 🌟 BEAUTIFUL SUCCESS POPUP
+        let msg = `<div style="text-align: left; font-size: 14px;">✅ Added <strong>+${baseQtyToAdd.toLocaleString()} ${baseUom}</strong> to the vault.`;
         if (missingItems.length > 0) {
-            msg += `\n\n⚠️ Warning: The following raw ingredients are missing from the ${branch} warehouse and were not deducted: ${missingItems.join(", ")}`;
+            msg += `<br><br><span style="color: #dc2626;">⚠️ <strong>Warning:</strong> The following raw ingredients are missing from the ${branch} warehouse and were not deducted: <strong>${missingItems.join(", ")}</strong></span>`;
         }
+        msg += `</div>`;
         
-        alert(msg);
+        Swal.fire({ title: 'Success!', html: msg, icon: 'success', confirmButtonColor: '#16a34a', customClass: { popup: 'rounded-2xl' } });
+        
         window.loadKitchenPrep(); 
-        
     } catch (e) {
         console.error("Prep Batch Error:", e);
-        alert("❌ Failed to log prep batch. Check console.");
+        Swal.fire('Error', '❌ Failed to log prep batch. Check connection.', 'error');
     }
 };
 
