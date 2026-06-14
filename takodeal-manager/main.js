@@ -1114,11 +1114,12 @@ window.addToDispatchCart = function () {
 
   if (finalBaseQty > invItem.currentStock) { 
       let stockInPurch = invItem.currentStock / convRate;
-      let msg = `You are trying to send ${rawQty} ${friendlyUom} (${finalBaseQty} ${invItem.uom}), but the Main Office only has ${stockInPurch.toFixed(2)} ${friendlyUom} (${invItem.currentStock} ${invItem.uom}) available in the database.\n\n(Note: If this math looks wrong, check your inventory settings! Your Base UOM might be set up incorrectly.)`; 
+      let msg = `You are trying to send <strong>${rawQty} ${friendlyUom}</strong> (${finalBaseQty} ${invItem.uom}), but the Main Office only has <strong>${stockInPurch.toFixed(2)} ${friendlyUom}</strong> (${invItem.currentStock} ${invItem.uom}) available.`; 
       
+      // 🔥 BEAUTIFUL SWEETALERT WITH JUMP ROUTING 🔥
       Swal.fire({
           title: '❌ Not enough stock!',
-          text: msg,
+          html: `<div style="font-size: 14px; color: #334155; line-height: 1.5; text-align: left;">${msg.replace(/\n/g, '<br>')}</div>`,
           icon: 'error',
           showCancelButton: true,
           confirmButtonColor: '#0ea5e9',
@@ -1127,23 +1128,25 @@ window.addToDispatchCart = function () {
           cancelButtonText: 'Dismiss'
       }).then((result) => {
           if (result.isConfirmed) {
-              // 🔥 THE FIX: Use the app's native tab switcher!
-              if (typeof window.switchView === 'function') {
-                  window.switchView('inventory');
-              }
+              // 1. Click the side tab to switch pages
+              let inventoryTab = document.getElementById('nav-inventory');
+              if (inventoryTab) inventoryTab.click();
               
-              // Wait 400ms for UI to render, then inject the search text and reload!
+              // 2. Wait for the page to render, then auto-fill the search box and trigger the search!
               setTimeout(() => {
                   let branchFilter = document.getElementById('invBranchFilter');
                   let searchBox = document.getElementById('liveInvSearch');
+                  
                   if (branchFilter && searchBox) {
                       branchFilter.value = 'Main Office';
                       searchBox.value = itemName;
+                      
+                      // Trigger the search function directly!
                       if (typeof window.loadInventoryData === 'function') {
                           window.loadInventoryData();
                       }
                   }
-              }, 400);
+              }, 500); // Half second delay ensures the HTML is ready
           }
       });
       return; 
@@ -11234,6 +11237,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // 📐 CENTRALIZED POS LAYOUT MANAGER
 // ========================================================
 window.currentLayout = [];
+window.categoryImages = {}; // Memory to store the category photos!
 
 window.loadPosLayout = async function() {
     const listDiv = document.getElementById('posCategoryArrangementList');
@@ -11241,12 +11245,21 @@ window.loadPosLayout = async function() {
     listDiv.innerHTML = '<div style="color: #64748b; text-align: center; padding: 20px;">Loading live menu categories...</div>';
     
     try {
-        // 1. Fetch all unique categories currently in the database
+        // 1. Fetch all categories AND grab their images!
         const menuSnap = await getDocs(collection(db, "menu"));
         let categories = new Set();
+        
         menuSnap.forEach(d => {
-            let cat = d.data().category;
-            if (cat) categories.add(cat.trim());
+            let data = d.data();
+            let cat = data.category;
+            if (cat) {
+                let catTrimmed = cat.trim();
+                categories.add(catTrimmed);
+                // Save the first image we find for this category to act as its Thumbnail!
+                if (data.image && !window.categoryImages[catTrimmed]) {
+                    window.categoryImages[catTrimmed] = data.image;
+                }
+            }
         });
         
         // 2. Fetch the saved arrangement order from Settings
@@ -11286,15 +11299,23 @@ window.moveLayout = function(index, direction) {
 window.renderLayoutEditor = function() {
     let listDiv = document.getElementById('posCategoryArrangementList');
     let html = '';
+    
     window.currentLayout.forEach((cat, index) => {
+        // Find the image, or use a beautiful default burger icon!
+        let imgSrc = window.categoryImages[cat];
+        let imgHtml = imgSrc 
+            ? `<img src="${imgSrc}" style="width: 45px; height: 45px; border-radius: 8px; object-fit: cover; border: 1px solid #cbd5e1; flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">` 
+            : `<div style="width: 45px; height: 45px; border-radius: 8px; background: #f8fafc; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;">🍔</div>`;
+
         html += `
-            <div style="display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+            <div style="display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 <div style="display: flex; flex-direction: column; gap: 4px;">
                     <button onclick="window.moveLayout('${index}', -1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▲ UP</button>
                     <button onclick="window.moveLayout('${index}', 1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▼ DOWN</button>
                 </div>
+                ${imgHtml}
                 <div style="font-weight: 900; color: #1e293b; font-size: 16px; flex-grow: 1;">${cat}</div>
-                <div style="font-weight: bold; font-size: 12px; color: #94a3b8;">Pos: ${index + 1}</div>
+                <div style="font-weight: bold; font-size: 12px; color: #94a3b8; background: #e2e8f0; padding: 4px 8px; border-radius: 6px;">Pos: ${index + 1}</div>
             </div>`;
     });
     listDiv.innerHTML = html;
