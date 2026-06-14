@@ -3966,54 +3966,53 @@ window.loadStockLogs = async function() {
 // ==========================================
 // ✏️ UPGRADED INVENTORY EDIT ENGINE
 // ==========================================
-window.openEditInvModal = async function(docId) {
+window.openEditInvModal = async function(id) {
     try {
-        const docSnap = await getDoc(doc(db, "inventory", docId));
-        if (!docSnap.exists()) { alert("Item not found!"); return; }
+        const docRef = doc(db, "inventory", id);
+        const docSnap = await getDoc(docRef);
         
-        let d = docSnap.data();
-        console.log("Loading item data:", d); // 🔥 Helps you see if data is actually coming from Firebase
+        if (docSnap.exists()) {
+            let itemData = docSnap.data();
+            console.log("Loading item data:", itemData);
+            
+            document.getElementById('editInvId').value = id;
+            document.getElementById('editInvBranch').value = itemData.branch || 'Main Office';
+            document.getElementById('editInvCat').value = itemData.category || '';
+            document.getElementById('editInvName').value = itemData.name || '';
+            
+            document.getElementById('editInvPurchUom').value = itemData.purchaseUom || itemData.purchUom || '';
+            document.getElementById('editInvBaseUom').value = itemData.baseUom || itemData.uom || '';
+            document.getElementById('editInvConversion').value = itemData.conversionRate || itemData.conversion || 1;
+            document.getElementById('editInvPurchCost').value = itemData.purchaseCost || itemData.purchCost || itemData.cost || 0;
+            document.getElementById('editInvLowStock').value = itemData.lowStockAlert || itemData.reorderLevel || 0;
+            
+            document.getElementById('editInvOldQty').value = itemData.currentStock || 0;
+            document.getElementById('editInvNewQty').value = '';
+            
+            if (document.getElementById('editInvCountType')) {
+                document.getElementById('editInvCountType').value = 'base';
+            }
+            
+            document.getElementById('editInvNote').value = '';
+            
+            let varianceEl = document.getElementById('editInvVariance');
+            if (varianceEl) {
+                varianceEl.innerText = '0';
+                varianceEl.style.color = '#d97706';
+            }
 
-        // 1. Fill ID and Branch
-        document.getElementById('editInvId').value = docId;
-        document.getElementById('editInvBranch').value = d.branch || "Main Office";
-        
-        // 2. Safely set Category
-        let catSelect = document.getElementById('editInvCat');
-        if (catSelect) {
-            // This handles the "Prepared" vs "Prepared Batch" issue we just fixed!
-            catSelect.value = d.category || "Ingredients";
+            // Precisely referencing itemData to bypass the undefined 'data' ReferenceError
+            if (document.getElementById('editInvShowPrep')) {
+                document.getElementById('editInvShowPrep').checked = itemData.showInPrep !== false;
+            }
+
+            document.getElementById('editInvModal').style.display = 'flex';
+        } else {
+            alert("The requested inventory item could not be located in the central database infrastructure.");
         }
-
-        // 3. Fill Text/Number fields with safety fallback
-        document.getElementById('editInvName').value = d.name || "";
-        document.getElementById('editInvPurchUom').value = d.purchaseUom || d.uom || "";
-        document.getElementById('editInvBaseUom').value = d.uom || "";
-        
-        // Use d.conversion or d.conversionRate, fallback to 1
-        document.getElementById('editInvConversion').value = d.conversion || d.conversionRate || 1;
-        document.getElementById('editInvPurchCost').value = d.purchaseCost || d.baseCost || 0;
-        document.getElementById('editInvLowStock').value = d.reorderLevel || d.lowStockAlert || 0;
-        document.getElementById('editInvOldQty').value = d.currentStock || 0;
-        
-        // Handle checkbox
-        if(document.getElementById('editInvShowPrep')) 
-        document.getElementById('editInvShowPrep').checked = data.showInPrep !== false;
-        
-        // 4. Reset Variance fields
-        document.getElementById('editInvNewQty').value = ""; 
-        document.getElementById('editInvNote').value = ""; 
-        document.getElementById('editInvVariance').innerText = "0";
-
-        // 5. Trigger calculations
-        window.calcEditCost();
-        
-        // Show the modal
-        document.getElementById('editInvModal').style.display = 'flex';
-        
     } catch (e) {
         console.error("Error opening edit modal:", e);
-        alert("Failed to load item details: " + e.message);
+        alert("Failed to successfully load item details: " + e.message);
     }
 };
 
