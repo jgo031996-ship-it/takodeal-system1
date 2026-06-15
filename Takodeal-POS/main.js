@@ -315,8 +315,8 @@ window.checkShiftStatus = async function (branch) {
     const snap = await getDocs(q);
     if (!snap.empty) {
       let data = snap.docs[0].data();
-      // NEW: We now grab the exact Firebase Server Time the shift started!
-      return { active: true, startedBy: data.cashier, startTime: data.startTime };
+      // 🔥 THE CRITICAL FIX: We MUST grab the actual Document ID (shiftId) so orders can attach to it!
+      return { active: true, startedBy: data.cashier, startTime: data.startTime, shiftId: snap.docs[0].id };
     }
     return { active: false };
   } catch (error) { console.error(error); return { active: false }; }
@@ -565,14 +565,6 @@ window.getLiveShiftDetails = async function (branch) {
       expectedCash: (shiftData.startingCash || 0) + cashIn - totalExpenses
     };
   } catch (e) { console.error(e); return null; }
-};
-
-window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
-  try {
-    const shiftRef = doc(db, "shifts", shiftId);
-    await updateDoc(shiftRef, { active: false, endTime: serverTimestamp(), actualCash: actualCash, expectedCash: expectedCash, difference: diff });
-    return true;
-  } catch (e) { console.error(e); throw e; }
 };
 
 window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
@@ -1129,17 +1121,26 @@ window.submitComprehensiveCloseShift = async function () {
 
         alert(`✅ Shift Closed & Bookkeeping Complete!\n\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}\n\n(Digital sales were automatically swept to HQ Bank ledgers).`);
 
+        // 🛑 THE HARD MEMORY WIPE & KILL SWITCH
         localStorage.removeItem('currentShiftId');
+        window.activeShiftDetails = null;
+        if (typeof window.currentShift !== 'undefined') window.currentShift = null;
+
         if (typeof closeModal === 'function') closeModal('endShiftModal');
         else document.getElementById('endShiftModal').style.display = 'none';
 
-        if (typeof checkCurrentShift === 'function') checkCurrentShift();
+        // Instantly triggers the Lock Screen so the next cashier MUST open a new shift
+        if (typeof checkCurrentShift === 'function') await checkCurrentShift();
+        
+        // Purge the sales dashboard UI so the next shift doesn't see old data
+        if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
 
     } catch (error) {
         console.error("Error closing shift:", error);
         alert("❌ Failed to close shift. Check your connection.");
     }
 };
+
 // ========================================================
 // 💸 UPGRADED MULTI-ITEM EXPENSE & RESTOCK CART ENGINE
 // ========================================================
@@ -2421,11 +2422,6 @@ window.startMobileOrderAlarm = function() {
         }
         window.playNotificationPing();
     }, 2000);
-};
-
-window.stopMobileOrderAlarm = function() {
-    if (window.orderAlarmInterval) clearInterval(window.orderAlarmInterval);
-    // Removed the timeout clearer since the timeout no longer exists!
 };
 
 window.stopMobileOrderAlarm = function() {
