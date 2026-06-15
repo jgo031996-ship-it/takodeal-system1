@@ -3112,12 +3112,15 @@ window.selectRealVariant = function(realName, vPrice, clickedBtn) {
           return;
       }
 
-      // We removed the slow validateStockLevels() check here! The system will just warn you AFTER checkout.
+      // 🔥 THE FIX: Securely pull the Shift ID from the active memory
+      let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) 
+                         ? currentShift.shiftId 
+                         : "UNKNOWN";
 
       const payload = {
         branch: sessionUser.branch,
         cashier: sessionUser.cashierName,
-        shiftId: activeShiftDetails ? activeShiftDetails.logId : "UNKNOWN",
+        shiftId: exactShiftId, // EVERY order is now permanently tagged to this specific shift!
         orderType: document.getElementById('mainOrderType').value,
         paymentMethod: selectedPaymentMethod,
         netTotal: window.currentGrandTotal,
