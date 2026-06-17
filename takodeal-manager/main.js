@@ -8011,20 +8011,22 @@ window.loadCashFlowHub = async function() {
         let pendingVerifications = 0;
         let totalFloating = 0;
 
+        // 1. Calculate Expected Money (All Closed Shifts)
         const shiftSnap = await getDocs(query(collection(db, "shifts"), where("status", "==", "Closed")));
         shiftSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
             
-            // 🔥 NEW: Only track the PHYSICAL cash they took out of the drawer to remit!
-            // (What they counted) MINUS (What they left in the drawer for tomorrow)
-            let physicalCashToRemit = (data.declaredCash || 0) - (data.startingCash || 0);
+            // 🚨 THE FIX: Total expected physical cash is simply what the cashier declared!
+            // (We assume they took the starting cash out to leave for tomorrow)
+            let physicalCashToRemit = (parseFloat(data.declaredCash) || 0) - (parseFloat(data.startingCash) || 0);
             
             if (physicalCashToRemit > 0 && branchFloating[branch] !== undefined) {
                 branchFloating[branch] += physicalCashToRemit;
             }
         });
 
+        // 2. Subtract Money That Has Already Been Remitted!
         const remitSnap = await getDocs(collection(db, "remittances"));
         remitSnap.forEach(doc => {
             let data = doc.data();
@@ -8034,15 +8036,21 @@ window.loadCashFlowHub = async function() {
                 pendingVerifications += (data.amount || 0);
             }
 
+            // 🚨 THE FIX: Subtract the money if it's Pending OR Received!
+            // If it's Pending, it's out of the drawer and on its way to HQ.
             if (branchFloating[branch] !== undefined) {
-                if (data.status === "Received") branchFloating[branch] -= (data.amount || 0);
+                if (data.status === "Received" || data.status === "Pending") {
+                    branchFloating[branch] -= (parseFloat(data.amount) || 0);
+                }
             }
         });
 
         let branchHtml = '';
         for (let branch in branchFloating) {
+            // Prevent negative numbers if they over-remitted
             let owed = branchFloating[branch] < 0 ? 0 : branchFloating[branch];
             totalFloating += owed;
+            
             let alertColor = owed > 5000 ? "#dc2626" : "#475569"; 
             let alertBg = owed > 5000 ? "#fef2f2" : "#f8fafc";
             let alertBorder = owed > 5000 ? "#fecaca" : "#e2e8f0";
@@ -10643,16 +10651,28 @@ window.generateAIReport = async function() {
         }
         reportHTML += `</p>`;
 
-        // D. Final Strategic Verdict
+        // D. Final Strategic Verdict & AI Marketing Suggestions
         reportHTML += `<div style="background:#f8fafc; padding:15px; border-left:4px solid #8b5cf6; margin-top:20px; border-radius:4px;">
-            <strong style="color:#4c1d95;">👑 CEO Action Plan:</strong><br>`;
+            <strong style="color:#4c1d95; font-size: 16px;">👑 CEO Action Plan & Content Strategy:</strong><br><br>`;
         
         if (accuracyScore < 85) {
-            reportHTML += `Halt expansion efforts at this branch temporarily and focus on <strong>Internal Audit</strong>. Fix the leak before pouring more marketing money into this location.`;
+            reportHTML += `<strong>Immediate Goal: Stop the Bleeding.</strong><br>
+            Your staff accuracy is critically low. Focus entirely on internal retraining before spending on ads.<br><br>
+            📱 <strong>1-Week Content Video:</strong> <em>"A Day in the Life of a Takodeal Cashier."</em> Have a manager film a highly positive, energetic video showing a cashier correctly counting their drawer and cleaning their station. This acts as both marketing (showing you are clean and professional) and a subtle training video for your actual staff.`;
         } else if (totalWasteValue > 1000) {
-            reportHTML += `Focus entirely on <strong>Kitchen Retraining</strong>. Your sales are fine, but you are throwing profits in the trash. Print the kitchen recipes and enforce strict adherence to the BOM.`;
+            reportHTML += `<strong>Immediate Goal: Fix the COGS Leak.</strong><br>
+            Your sales are fine, but you are throwing profits in the trash (₱${totalWasteValue.toLocaleString()} wasted).<br><br>
+            📱 <strong>1-Week Content Video:</strong> <em>"How we make the perfect Takoyaki."</em> Film a close-up, high-quality video of the batter being poured and the exact portion of octopus/filling being added. Emphasize the quality. Send this video to your staff group chat as the "Golden Standard" to follow, reducing their errors and waste.`;
+        } else if (avgSalesPerDay < 3000) {
+            reportHTML += `<strong>Immediate Goal: Drive Foot Traffic.</strong><br>
+            Operations are stable, but volume is too low. We need aggressive local marketing.<br><br>
+            🎯 <strong>Facebook Ad Strategy:</strong> Run a ₱150/day "Reach" campaign targeting a 3km radius around ${branch}. Use an image of a heavily sauced Takoyaki with the text: <em>"Craving authentic Takoyaki? We are right around the corner at ${branch}!"</em><br><br>
+            📱 <strong>1-Week Content Video:</strong> Do a "Customer Challenge." Offer a free drink to the first 5 customers who mention a secret code word from your TikTok/Reels. Film their reactions (with permission).`;
         } else {
-            reportHTML += `Operations are stable and highly profitable. Your focus here should shift to <strong>Scaling & Marketing</strong>. Push your staff to up-sell addons to increase the average ticket size.`;
+            reportHTML += `<strong>Immediate Goal: Maximize Profit Margins.</strong><br>
+            You are highly profitable! Operations are smooth and sales are high. Now is the time to push high-margin add-ons.<br><br>
+            🎯 <strong>Facebook Ad Strategy:</strong> Run a "Conversion" or "Message" campaign for bulk orders. <em>"Planning an office party or birthday? Get a Takodeal Family Platter!"</em> Target local businesses and schools.<br><br>
+            📱 <strong>1-Week Content Video:</strong> <em>"The Secret Menu Hack."</em> Film a video showing a customer ordering a regular Takoyaki, but adding Extra Cheese and Spicy Mayo. Make it look irresistible. This will train your customers to ask for high-margin Add-Ons!`;
         }
         reportHTML += `</div>`;
 
@@ -11415,5 +11435,128 @@ window.deleteMenuItem = async function(docId) {
             console.error("Error deleting menu item: ", error);
             Swal.fire('Error', 'Failed to delete the item. Check your connection.', 'error');
         }
+    }
+};
+
+// ==========================================
+// 🧠 SMART AI FINANCIAL ADVISOR & CHART ENGINE
+// ==========================================
+window.revenueChartInstance = null;
+
+window.loadSmartAIInsights = async function() {
+    let adviceBox = document.getElementById('aiAdviceBox');
+    if(adviceBox) adviceBox.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b;">🤖 Analyzing your business data...</div>';
+
+    try {
+        let thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        // 1. Fetch Sales
+        const txQ = query(collection(db, "transactions"), where("timestamp", ">=", thirtyDaysAgo));
+        const txSnap = await getDocs(txQ);
+        
+        let dailySales = {};
+        let totalNetSales = 0;
+        let totalCogs = 0;
+
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (tx.status !== 'Voided') {
+                let dateStr = tx.timestamp.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric'});
+                if (!dailySales[dateStr]) dailySales[dateStr] = 0;
+                
+                dailySales[dateStr] += (parseFloat(tx.netTotal) || 0);
+                totalNetSales += (parseFloat(tx.netTotal) || 0);
+                totalCogs += (parseFloat(tx.totalCogs) || 0);
+            }
+        });
+
+        // 2. Fetch Expenses
+        const expQ = query(collection(db, "expenses"), where("timestamp", ">=", thirtyDaysAgo));
+        const expSnap = await getDocs(expQ);
+        let totalExpenses = 0;
+        expSnap.forEach(e => totalExpenses += (parseFloat(e.data().amount) || 0));
+
+        // 3. Render 30-Day Trend Chart
+        let labels = Object.keys(dailySales);
+        let dataPoints = Object.values(dailySales);
+        
+        let ctx = document.getElementById('revenueTrendChart');
+        if (ctx) {
+            if (window.revenueChartInstance) window.revenueChartInstance.destroy();
+            window.revenueChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Gross Revenue (Last 30 Days)',
+                        data: dataPoints,
+                        borderColor: '#e5a93d',
+                        backgroundColor: 'rgba(229, 169, 61, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        // 4. THE AI ADVISOR ALGORITHM
+        let netProfit = totalNetSales - totalCogs - totalExpenses;
+        let profitMargin = totalNetSales > 0 ? (netProfit / totalNetSales) * 100 : 0;
+        
+        let aiAdvice = '';
+        let aiColor = '#16a34a';
+
+        if (profitMargin < 15) {
+            aiColor = '#dc2626';
+            aiAdvice = `
+                <strong style="color: #dc2626;">⚠️ AI ALERT: Barely Surviving (Margin: ${profitMargin.toFixed(1)}%)</strong><br><br>
+                Your operating expenses are eating your profits. You made ₱${totalNetSales.toLocaleString()}, but after COGS (₱${totalCogs.toLocaleString()}) and Expenses (₱${totalExpenses.toLocaleString()}), you only kept ₱${netProfit.toLocaleString()}.<br><br>
+                <strong>💡 AI Action Plan:</strong><br>
+                1. 🛑 Stop non-essential petty cash expenses immediately.<br>
+                2. 📉 Audit your Waste Logs. High COGS means food is spoiling or portion sizes are too big.<br>
+                3. 📱 <strong>Video Idea:</strong> Do a "Behind the Scenes" TikTok showing how much meat goes into your Takoyaki to justify prices without spending on Ads.
+            `;
+        } else if (profitMargin >= 15 && profitMargin < 35) {
+            aiColor = '#d97706';
+            aiAdvice = `
+                <strong style="color: #d97706;">⚖️ AI INSIGHT: Stable but Stagnant (Margin: ${profitMargin.toFixed(1)}%)</strong><br><br>
+                Your business is healthy, but we can squeeze more profit out of it.<br><br>
+                <strong>💡 AI Action Plan:</strong><br>
+                1. 🎯 Upsell! Train cashiers to push "Extra Cheese" and Drinks. Add-ons are 90% profit margin.<br>
+                2. 📈 <strong>FB Ads Strategy:</strong> Run a ₱150/day Facebook Ad targeting a 5km radius around your worst-performing branch promoting a "Buy 1 Get 1 Drinks" deal during dead hours (2 PM - 5 PM).
+            `;
+        } else {
+            aiColor = '#16a34a';
+            aiAdvice = `
+                <strong style="color: #16a34a;">🚀 AI INSIGHT: Highly Profitable! (Margin: ${profitMargin.toFixed(1)}%)</strong><br><br>
+                Excellent financial health! Your expenses are low and sales are booming.<br><br>
+                <strong>💡 AI Action Plan:</strong><br>
+                1. 🏦 Save ${Math.floor(netProfit * 0.4).toLocaleString()} in a high-yield digital bank to prepare for a new branch.<br>
+                2. 📱 <strong>Video Idea:</strong> Post a hype video of your long lines or sold-out signs. "Fear of Missing Out" (FOMO) marketing works best when you are already winning!
+            `;
+        }
+
+        // Add Google Calendar Sync Button to Attendance
+        let calendarIntegration = `
+            <div style="margin-top: 20px; padding: 15px; background: #e0f2fe; border: 1px dashed #0284c7; border-radius: 8px;">
+                <h4 style="margin:0 0 5px 0; color: #0369a1;">📅 Google Calendar Sync (Attendance)</h4>
+                <p style="font-size:12px; color: #0c4a6e; margin-bottom: 10px;">Click below to generate a Zapier Webhook URL or manually push today's attendance to your Google Calendar.</p>
+                <button onclick="window.open('https://calendar.google.com/calendar/r/eventedit?text=Takodeal+Shift+Review&details=Review+today%27s+attendance+logs+in+the+Manager+App', '_blank')" style="background: white; border: 1px solid #0284c7; padding: 8px 15px; border-radius: 6px; font-weight: bold; color: #0369a1; cursor: pointer;">+ Add Reminder to Google Calendar</button>
+            </div>
+        `;
+
+        if(adviceBox) adviceBox.innerHTML = `
+            <div style="background: #f8fafc; border: 2px solid ${aiColor}; padding: 20px; border-radius: 12px; font-size: 14px; line-height: 1.6;">
+                ${aiAdvice}
+                ${calendarIntegration}
+            </div>
+        `;
+
+    } catch (e) {
+        console.error(e);
+        if(adviceBox) adviceBox.innerHTML = '<div style="color: red;">Error loading AI Insights.</div>';
     }
 };
