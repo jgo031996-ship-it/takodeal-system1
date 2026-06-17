@@ -1724,7 +1724,7 @@ window.editMenuItem = async function (docId, name, currentPrice) {
   if (isNaN(newPrice) || newPrice < 0) { alert("❌ Error: Invalid price."); return; }
 
   try {
-    await updateDoc(doc(db, "menu", docId), { price: newPrice });
+    await updateDoc(doc(db, "menu", docId), { price: newPrice, basePrice: newPrice });
     alert(`✅ Success! ${name} is now ₱${newPrice.toFixed(2)}.`);
     window.loadMenuEditor();
   } catch (error) {
@@ -2066,12 +2066,15 @@ window.loadInventoryData = async function() {
             if (search && !itemName.includes(search)) return; 
             
             totalItems++;
-            let cost = parseFloat(d.cost || d.purchCost || d.unitCost || 0);
-            let stock = parseFloat(d.currentStock || 0);
-            let conv = parseFloat(d.conversion || d.conversionRate || 1);
+            let cost = parseFloat(d.cost) || parseFloat(d.purchCost) || parseFloat(d.unitCost) || 0;
+            let stock = parseFloat(d.currentStock) || 0;
+            let conv = parseFloat(d.conversionRate) || parseFloat(d.conversion) || 1;
             
-            let baseCost = cost / conv;
-            if (stock > 0 && !isNaN(baseCost)) totalValue += (baseCost * stock);
+            // 🛡️ Bulletproof Asset Value Math
+            let baseCost = conv > 0 ? (cost / conv) : 0;
+            if (stock > 0 && baseCost > 0) {
+                totalValue += (baseCost * stock);
+            }
             
             let isLow = stock <= parseFloat(d.reorderLevel || d.lowStockAlert || 5);
             let statusHtml = isLow ? `<span style="color:#ef4444; background:#fef2f2; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Low Stock</span>` : `<span style="color:#16a34a; font-weight:bold; font-size:11px;">In Stock</span>`;
@@ -3675,16 +3678,18 @@ window.saveAdvancedProduct = async function () {
           name: prodName, 
           category: category, 
           price: price,
-          addons: addonsArray // 👈 This glues the Add-ons to the product!
+          basePrice: price, // 🔥 LOCKS IT IN
+          addons: addonsArray 
       });
     } else {
       let newMenuRef = await addDoc(collection(db, "menu"), { 
           name: prodName, 
           category: category, 
           price: price,
-          addons: addonsArray // 👈 This glues the Add-ons to the product!
+          basePrice: price, // 🔥 LOCKS IT IN
+          addons: addonsArray 
       });
-      document.getElementById('advProdId').value = newMenuRef.id; // Save the new ID
+      document.getElementById('advProdId').value = newMenuRef.id;
     }
 
     // 2. Delete removed recipe rows
@@ -8002,7 +8007,7 @@ window.loadCashFlowHub = async function() {
     try {
         let safeCash = 0;
         const accSnap = await getDocs(collection(db, "cash_accounts"));
-        accSnap.forEach(doc => { safeCash += (doc.data().balance || 0); });
+        accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
 
         let branchFloating = {};
         if (window.globalActiveBranches) {
@@ -8017,9 +8022,10 @@ window.loadCashFlowHub = async function() {
             let data = doc.data();
             let branch = data.branch;
             
-            // 🚨 THE FIX: Total expected physical cash is simply what the cashier declared!
-            // (We assume they took the starting cash out to leave for tomorrow)
-            let physicalCashToRemit = (parseFloat(data.declaredCash) || 0) - (parseFloat(data.startingCash) || 0);
+            // 🚨 THE FIX: Force parseFloat so it never fails on a string!
+            let startCash = parseFloat(data.startingCash) || 0;
+            let decCash = parseFloat(data.declaredCash) || 0;
+            let physicalCashToRemit = decCash - startCash;
             
             if (physicalCashToRemit > 0 && branchFloating[branch] !== undefined) {
                 branchFloating[branch] += physicalCashToRemit;
@@ -8033,11 +8039,10 @@ window.loadCashFlowHub = async function() {
             let branch = data.branch;
             
             if (data.status === "Pending") {
-                pendingVerifications += (data.amount || 0);
+                pendingVerifications += (parseFloat(data.amount) || 0);
             }
 
             // 🚨 THE FIX: Subtract the money if it's Pending OR Received!
-            // If it's Pending, it's out of the drawer and on its way to HQ.
             if (branchFloating[branch] !== undefined) {
                 if (data.status === "Received" || data.status === "Pending") {
                     branchFloating[branch] -= (parseFloat(data.amount) || 0);
@@ -8071,7 +8076,7 @@ window.loadCashFlowHub = async function() {
 
     } catch (e) {
         console.error("Cash Flow Hub Error:", e);
-        document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow: ${e.message}</div>`;
+        document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow.</div>`;
     }
 };
 
