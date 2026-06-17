@@ -2113,11 +2113,13 @@
   <div id="timeClockModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
       <div style="background: white; width: 400px; border-radius: 12px; overflow: hidden; text-align: center;">
           <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between;">
-              <h2 style="margin: 0; font-size: 18px;">📸 Staff Time Clock</h2>
+              <h2 style="margin: 0; font-size: 18px;">📸 AI Time Clock</h2>
               <span onclick="closeTimeClock()" style="cursor: pointer; font-size: 24px;">&times;</span>
           </div>
           <div style="padding: 20px;">
-              <p style="font-size: 13px; color: #64748b; margin-top: 0;">Look at the camera to verify your attendance.</p>
+              <div id="faceAiStatus" style="font-size: 13px; font-weight: bold; color: #3b82f6; margin-bottom: 8px; background: #eff6ff; padding: 6px; border-radius: 6px; border: 1px dashed #bfdbfe;">
+                  🤖 Initializing AI Engine...
+              </div>
               
               <div style="width: 100%; height: 250px; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 15px; position: relative;">
                   <video id="clockVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
@@ -2129,7 +2131,7 @@
                   <option value="">-- Loading Staff --</option>
               </select>
               
-              <input type="password" id="clockStaffPin" placeholder="Enter 4-Digit PIN" maxlength="4" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; text-align: center; letter-spacing: 10px; font-size: 18px; outline: none;">
+              <input type="password" id="clockStaffPin" placeholder="Enter PIN (Leave blank if Face ID is registered)" maxlength="4" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; text-align: center; letter-spacing: 2px; font-size: 14px; outline: none;">
   
               <div style="display: flex; gap: 10px;">
                   <button onclick="submitAttendance('TIME IN')" style="flex: 1; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;">TIME IN</button>
@@ -3836,6 +3838,7 @@ window.printParkedReceipt = function(docId) {
 };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script>
         window.nativeAlert = window.alert;
         window.alert = function(message) {
