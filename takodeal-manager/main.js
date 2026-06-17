@@ -473,6 +473,9 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empSSS').value = data.sss || '';
     document.getElementById('empPhilhealth').value = data.philhealth || '';
     document.getElementById('empPagibig').value = data.pagibig || '';
+    document.getElementById('empEmergencyName').value = data.emergencyName || '';
+    document.getElementById('empEmergencyPhone').value = data.emergencyPhone || '';
+    document.getElementById('empEmail').value = data.email || '';
     document.getElementById('empScheduleName').value = data.scheduleName || '';
     document.getElementById('employeeProfileModal').style.display = 'flex';
     
@@ -533,6 +536,9 @@ window.saveEmployeeProfile = async function() {
         sss: document.getElementById('empSSS').value.trim(),
         philhealth: document.getElementById('empPhilhealth').value.trim(),
         pagibig: document.getElementById('empPagibig').value.trim(),
+        emergencyName: document.getElementById('empEmergencyName').value.trim(),
+        emergencyPhone: document.getElementById('empEmergencyPhone').value.trim(),
+        email: document.getElementById('empEmail').value.trim(),
         scheduleName: document.getElementById('empScheduleName').value.trim(),
     };
 
@@ -674,7 +680,16 @@ window.switchView = function (viewId) {
   document.getElementById('view-' + viewId).classList.add('active');
   // Highlight the requested sidebar item
   document.getElementById('nav-' + viewId).classList.add('active');
-
+  
+  if (viewId === 'payroll' || viewId === 'ledger' || viewId === 'schedule') {
+      title = "🧑‍💼 Human Resources Hub";
+      // Force the sidebar to highlight the HR tab no matter which sub-tab they click!
+      let hrNav = document.getElementById('nav-payroll');
+      if (hrNav) hrNav.classList.add('active');
+      
+      // Wake up the specific engines
+      if (viewId === 'schedule') loadFromCloud();
+  }
   // Change the top title
   let title = "Global Dashboard";
   if (viewId === 'transfers') title = "Cash Transfers Explorer";
@@ -692,13 +707,8 @@ window.switchView = function (viewId) {
   if (viewId === 'zreadings') title = "Z-Reading Reports";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
-  if (viewId === 'ledger') title = "Staff Loans & Ledger";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
   if (viewId === 'receipt') title = "Thermal Printer Setup";
-  if (viewId === 'schedule') {
-        title = "Schedule & Shift Manager";
-        loadFromCloud(); // Wakes up your new imported engine!
-    }
   document.getElementById('pageTitle').innerText = title;
 
   // Trigger the engine for that specific page
@@ -708,14 +718,12 @@ window.switchView = function (viewId) {
   if (viewId === 'addons') window.loadGlobalAddons();
   if (viewId === 'inventory') window.loadInventoryData();
   if (viewId === 'accounts') window.loadAccountsAndBudget();
-  if (viewId === 'payroll') window.loadPayrollDashboard();
   if (viewId === 'inbox') window.loadInbox();
   if (viewId === 'products') window.loadMenuCosting();
   if (viewId === 'purchases') window.loadPurchasesAndAlerts();
   if (viewId === 'dispatch') window.loadDispatchDashboard();
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
-  if (viewId === 'ledger') window.loadLedger();
   if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); }
   if (viewId === 'admin') { window.loadAdminDashboard(); window.loadBranchManager(); }
 };
