@@ -140,14 +140,7 @@ window.verifyPin = async function (pin) {
 
     if (!staffData) return null; // PIN is genuinely wrong
 
-    let deviceBranch = localStorage.getItem('takodeal_device_branch');
-
-    // 🛡️ THE DEVICE SECURITY WALL
-    if (staffData.branch !== deviceBranch && staffData.branch !== "Main Office") {
-      alert(`❌ Access Denied: You are assigned to ${staffData.branch || 'Unassigned'}, but this tablet is located at ${deviceBranch}.`);
-      return "BLOCKED"; // Blocks the login without double-alerting!
-    }
-
+    // 🔥 SECURITY WALL REMOVED! Floating staff are now authorized to log in anywhere.
     return staffData; // Allows the login!
 
   } catch (error) {
@@ -1742,26 +1735,64 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// ==========================================
+// 🤖 FACE RECOGNITION AI ENGINE
+// ==========================================
+window.isFaceAiReady = false;
+
+window.initFaceAI = async function() {
+    let statusEl = document.getElementById('faceAiStatus');
+    if (window.isFaceAiReady) {
+        if(statusEl) statusEl.innerHTML = "🤖 Face AI Ready. Look at the camera.";
+        return;
+    }
+    try {
+        if(statusEl) statusEl.innerHTML = "🤖 Downloading AI Models... Please wait.";
+        // We pull the raw models from the developer's public CDN
+        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        
+        window.isFaceAiReady = true;
+        if(statusEl) statusEl.innerHTML = "🤖 Face AI Ready. Select your name.";
+    } catch(e) {
+        console.error("Face AI Error:", e);
+        if(statusEl) statusEl.innerHTML = "⚠️ Face AI failed to load. Use PIN.";
+    }
+};
+
 window.openTimeClockModal = async function() {
     document.getElementById('timeClockModal').style.display = 'flex';
     document.getElementById('clockStaffPin').value = ''; 
     let select = document.getElementById('clockStaffName');
     select.innerHTML = '<option value="">Loading Staff...</option>';
+    
     try {
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        const q = query(collection(db, "cashiers"), where("branch", "in", [branch, "Main Office"]));
+        // 🔥 ALL STAFF FETCH: No branch limits. Anyone can log in here!
+        const q = query(collection(db, "cashiers"));
         const snap = await getDocs(q);
+        
         currentBranchStaffCache = [];
         let html = '<option value="">-- Select Your Name --</option>';
+        
         snap.forEach(docSnap => {
             let data = docSnap.data();
             currentBranchStaffCache.push(data); 
             html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
         });
         select.innerHTML = html;
+        
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
         document.getElementById('clockVideo').srcObject = cameraStream;
-    } catch (e) { console.error(e); alert("⚠️ Error loading Time Clock. Check Camera permissions."); }
+        
+        // 🤖 Start downloading the AI Brain in the background
+        window.initFaceAI();
+        
+    } catch (e) { 
+        console.error(e); 
+        alert("⚠️ Error loading Time Clock. Check Camera permissions."); 
+    }
 };
 
 window.closeTimeClock = function() {
@@ -1770,29 +1801,93 @@ window.closeTimeClock = function() {
 };
 
 window.submitAttendance = async function(type) {
-    // 1. INSTANTLY FREEZE BUTTONS TO PREVENT RAPID DOUBLE TAPPING!
     let buttons = document.querySelectorAll('#timeClockModal button');
     buttons.forEach(b => b.disabled = true);
 
     const staffName = document.getElementById('clockStaffName').value;
     const inputPin = document.getElementById('clockStaffPin').value.trim();
 
-    if (!staffName || !inputPin) { 
-        alert("❌ Please select your name and enter your PIN."); 
+    if (!staffName) { 
+        alert("❌ Please select your name."); 
         buttons.forEach(b => b.disabled = false);
         return; 
     }
 
     let staffProfile = currentBranchStaffCache.find(s => s.cashierName === staffName);
-    if (!staffProfile || staffProfile.pin !== inputPin) {
-        alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
-        document.getElementById('clockStaffPin').value = ''; 
-        buttons.forEach(b => b.disabled = false);
-        return;
+    
+    // ==========================================
+    // 🤖 FACE AI VERIFICATION & REGISTRATION
+    // ==========================================
+    let faceVerified = false;
+
+    if (window.isFaceAiReady) {
+        let statusEl = document.getElementById('faceAiStatus');
+        statusEl.innerHTML = "🤖 Scanning facial geometry... Hold still.";
+        const videoEl = document.getElementById('clockVideo');
+        
+        try {
+            // Detect the face and extract the unique 128-point descriptor
+            const detection = await faceapi.detectSingleFace(videoEl).withFaceLandmarks().withFaceDescriptor();
+
+            if (detection) {
+                if (staffProfile.faceDescriptor && staffProfile.faceDescriptor.length > 0) {
+                    // 🔒 VERIFICATION FLOW: They already have a face saved!
+                    const savedDescriptor = new Float32Array(staffProfile.faceDescriptor);
+                    const distance = faceapi.euclideanDistance(detection.descriptor, savedDescriptor);
+                    
+                    // 0.55 is a strict security threshold for identical matches
+                    if (distance < 0.55) {
+                        faceVerified = true;
+                        statusEl.innerHTML = "✅ Identity Verified!";
+                    } else {
+                        alert(`❌ AI Face Mismatch! (Security Distance: ${distance.toFixed(2)})\n\nYou do not match the registered face for ${staffName}.\nIf you are ${staffName}, please enter your PIN to bypass.`);
+                        statusEl.innerHTML = "🤖 Face AI Ready.";
+                    }
+                } else {
+                    // 🆕 REGISTRATION FLOW: First time logging in!
+                    if (inputPin && staffProfile.pin === inputPin) {
+                        const cashierQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
+                        const cashierSnap = await getDocs(cashierQ);
+                        if (!cashierSnap.empty) {
+                            await updateDoc(cashierSnap.docs[0].ref, {
+                                faceDescriptor: Array.from(detection.descriptor) // Save to Firebase!
+                            });
+                            alert("✅ Face ID Successfully Registered!\n\nFor your next shift, you can leave the PIN blank and just look at the camera.");
+                            faceVerified = true;
+                        }
+                    } else {
+                        alert("🤖 Face Registration Required!\n\nYou do not have a Face ID saved yet. Please enter your 4-Digit PIN to register your face securely.");
+                        buttons.forEach(b => b.disabled = false);
+                        statusEl.innerHTML = "🤖 Enter PIN to register face.";
+                        return;
+                    }
+                }
+            } else {
+                if (!confirm("❌ AI could not detect a face clearly. Please ensure you are in a well-lit area and looking at the camera.\n\nClick OK to bypass the AI and use your manual PIN.")) {
+                    buttons.forEach(b => b.disabled = false);
+                    statusEl.innerHTML = "🤖 Ready. Look at camera.";
+                    return;
+                }
+            }
+        } catch(e) {
+            console.error("AI processing error:", e);
+        }
     }
 
     // ==========================================
-    // 🔥 THE BULLETPROOF ANTI-DOUBLE-PUNCH LOCK
+    // 🔒 FALLBACK: MANUAL PIN VERIFICATION
+    // ==========================================
+    if (!faceVerified) {
+        if (!inputPin || staffProfile.pin !== inputPin) {
+            alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
+            document.getElementById('clockStaffPin').value = ''; 
+            buttons.forEach(b => b.disabled = false);
+            return;
+        }
+    }
+
+    // ==========================================
+    // 🛡️ ANTI-DOUBLE PUNCH & 14-HOUR VIOLATION LOCK
     // ==========================================
     try {
         const q = query(collection(db, "attendance_logs"), 
@@ -1807,15 +1902,12 @@ window.submitAttendance = async function(type) {
             let lastType = lastLog.type; 
             let lastTime = lastLog.timestamp.toDate();
             let now = new Date();
-            
             let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
 
-            // 🛑 STRICT LOCK: Prevent Double "Time In" Misclicks
             if (type === "TIME IN" && lastType === "TIME IN") {
-                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.\n\n(If you forgot to Time Out yesterday, tell your Manager so they can fix your record.)`);
+                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
-            // 🛑 STRICT LOCK: Prevent Double "Time Out"
             if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
                 alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
@@ -1825,20 +1917,13 @@ window.submitAttendance = async function(type) {
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
 
-            // 🔥 NEW: 14-HOUR SHIFT VIOLATION DETECTOR
             if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog > 14) {
-                // Blast an urgent alert to the Manager App Security Feed!
                 await addDoc(collection(db, "manager_alerts"), {
-                    type: "ATTENDANCE_ALERT",
-                    branch: finalBranch,
-                    cashier: staffName,
+                    type: "ATTENDANCE_ALERT", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
                     message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
-                    timestamp: new Date(),
-                    isRead: false
+                    timestamp: new Date(), isRead: false
                 });
-                
-                // Show a massive red warning to the cashier, but STILL allow them to log out so they aren't stuck
-                alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit.\n\nIf you are working a Straight Duty (2 shifts), you MUST Time In and Time Out for Shift 1, then immediately Time In again for Shift 2.\n\nThe Manager has been notified to review this time punch.`);
+                alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
             }
         }
     } catch(e) {
@@ -1861,7 +1946,7 @@ window.submitAttendance = async function(type) {
     }
 
     // ==========================================
-    // 🌍 GPS & SMART NEAREST-BRANCH DETECTOR
+    // 🌍 GPS GEOFENCING & AUTO-ROUTING
     // ==========================================
     const video = document.getElementById('clockVideo');
     const canvas = document.getElementById('clockCanvas');
@@ -1879,45 +1964,28 @@ window.submitAttendance = async function(type) {
         const userLng = position.coords.longitude;
         
         let deviceBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let isVIP = (staffProfile.branch === 'Main Office' || deviceBranch === 'Main Office' || (staffProfile.role && staffProfile.role.includes('Owner')));
         
+        // 🔥 GPS ROUTING: Everyone is tracked based on the branch they are physically standing in!
         let finalBranch = deviceBranch;
         let finalDistance = 0;
 
-        if (isVIP && typeof BRANCH_ZONES !== 'undefined') {
-            // 🌟 NEAREST BRANCH RADAR FOR MANAGERS 🌟
-            let closestBranch = "Main Office";
-            let shortestDistance = Infinity;
+        const targetZone = BRANCH_ZONES[deviceBranch];
+        if (!targetZone) { 
+            alert(`❌ GPS Configuration Missing for ${deviceBranch}.`); 
+            buttons.forEach(b => b.disabled = false); return; 
+        }
+        
+        finalDistance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
 
-            for (const [branchName, zone] of Object.entries(BRANCH_ZONES)) {
-                let d = getDistanceInMeters(userLat, userLng, zone.lat, zone.lng);
-                if (d < shortestDistance) {
-                    shortestDistance = d;
-                    closestBranch = branchName;
-                }
-            }
-            // Assign them to the branch they are physically closest to!
-            finalBranch = closestBranch; 
-            finalDistance = shortestDistance;
-        } else {
-            // NORMAL STAFF LOGIC (Strict Geofencing)
-            const targetZone = BRANCH_ZONES[deviceBranch];
-            if (!targetZone) { 
-                alert(`❌ GPS Configuration Missing for ${deviceBranch}.`); 
-                buttons.forEach(b => b.disabled = false); return; 
-            }
-            finalDistance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
-
-            if (finalDistance > ALLOWED_RADIUS_METERS) {
-                alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(finalDistance)}m away from ${deviceBranch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
-                buttons.forEach(b => b.disabled = false); return;
-            }
+        if (finalDistance > ALLOWED_RADIUS_METERS) {
+            alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(finalDistance)}m away from ${deviceBranch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
+            buttons.forEach(b => b.disabled = false); return;
         }
         
         try {
             await addDoc(collection(db, "attendance_logs"), {
                 staffName: staffName, 
-                branch: finalBranch, // Will save as the auto-detected branch!
+                branch: finalBranch, 
                 type: type, 
                 timestamp: new Date(),
                 locationLat: userLat, 
