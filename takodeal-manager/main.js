@@ -4771,19 +4771,16 @@ window.fetchZReadings = async function() {
         let displayCount = 0;
 
         // 🧠 JAVASCRIPT FILTERING: We loop through them and hide what we don't want!
-        allShifts.forEach(s => {
-            if (displayCount >= 50) return; // Only show 50 to keep the app fast
+        allShifts.forEach((s, index) => {
+            if (displayCount >= 50) return;
 
-            // If the manager selected a specific branch, skip the others!
             if (selectedBranch !== "All" && s.branch !== selectedBranch) return;
 
-            // If the manager selected a specific date, skip the others!
             if (selectedDate && s.endTime) {
                 let shiftDate = s.endTime.toDate().toISOString().split('T')[0];
                 if (shiftDate !== selectedDate) return; 
             }
 
-            // If it survived the filters, build the HTML!
             displayCount++;
             let startStr = s.startTime ? s.startTime.toDate().toLocaleString() : 'N/A';
             let endStr = s.endTime ? s.endTime.toDate().toLocaleString() : 'N/A';
@@ -4793,7 +4790,26 @@ window.fetchZReadings = async function() {
             let cSales = s.totalCashSales !== undefined ? s.totalCashSales : s.grossSales;
             let diffText = s.difference !== undefined ? `<span style="color:${varColor}; font-weight:bold;">₱${s.difference.toFixed(2)}</span>` : '-';
             
-            // Safe JSON strings for the View button
+            // 🚨 PREVIOUS SHIFT FLOAT CHECKER 🚨
+            let securityWarning = '';
+            // We check the next item in the array (because it's sorted newest-first, the "next" item is actually the previous shift!)
+            if (index < allShifts.length - 1) {
+                let prevShift = allShifts[index + 1]; 
+                
+                // Only compare if they are from the exact same branch!
+                if (s.branch === prevShift.branch) {
+                    let startCash = parseFloat(s.startingCash) || 0;
+                    let prevEndCash = parseFloat(prevShift.declaredCash) || parseFloat(prevShift.actualCash) || 0;
+                    
+                    // If the difference is more than 5 pesos (allowance for loose coins), trigger alarm!
+                    if (Math.abs(startCash - prevEndCash) > 5) { 
+                        securityWarning = `<br><span style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;" title="Previous shift closed with ₱${prevEndCash}. This shift started with ₱${startCash}.">⚠️ Float Mismatch</span>`;
+                    } else {
+                        securityWarning = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 5px;">✅ Float Verified</span>`;
+                    }
+                }
+            }
+
             let breakdownStr = encodeURIComponent(JSON.stringify(s.cashBreakdown || {}));
             let stockStr = encodeURIComponent(JSON.stringify(s.physicalStockCount || {}));
             let safeCashier = s.cashier ? s.cashier.replace(/'/g, "\\'") : 'Unknown';
@@ -4801,7 +4817,7 @@ window.fetchZReadings = async function() {
 
             html += `<tr>
                 <td style="font-weight:bold; color:var(--primary);">${s.id.slice(0,6).toUpperCase()}</td>
-                <td><strong style="font-size: 14px;">${safeBranch}</strong><br><span style="font-size:11px; color:#666;">${safeCashier}</span></td>
+                <td><strong style="font-size: 14px;">${safeBranch}</strong><br><span style="font-size:11px; color:#666;">${safeCashier}</span>${securityWarning}</td>
                 <td style="font-size:12px; color:#555;">${startStr} <br> ${endStr}</td>
                 <td style="font-weight:bold;">₱${(cSales || 0).toLocaleString()} <br> <span style="font-size:11px; color:var(--primary);">+₱${digitalTotal.toLocaleString()} Digital</span></td>
                 <td style="font-weight:bold; color:#dc3545;">-₱${(s.cashOut || s.expenses || 0).toLocaleString()}</td>
@@ -8642,6 +8658,25 @@ window.submitManualAttendance = async function() {
     try {
         // Convert the HTML datetime-local input into a proper Javascript Date object
         let logDate = new Date(dateTimeRaw);
+        // 📅 GOOGLE CALENDAR WEBHOOK ENGINE (Optional)
+        // To use this, create a Zapier or Make.com Webhook and paste the URL here.
+        const CALENDAR_WEBHOOK_URL = ""; // e.g., "https://hooks.zapier.com/hooks/catch/..."
+        
+        if (CALENDAR_WEBHOOK_URL) {
+            try {
+                fetch(CALENDAR_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        staffName: staffName,
+                        branch: branch,
+                        action: type,
+                        time: logDate.toLocaleString('en-US'),
+                        type: "Manual Override"
+                    })
+                }).catch(e => console.warn("Calendar Webhook silent fail (CORS/Network)"));
+            } catch(e) {}
+        }
 
         await addDoc(collection(db, "attendance_logs"), {
             staffName: staffName,
