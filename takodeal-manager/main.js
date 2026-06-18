@@ -6904,7 +6904,7 @@ window.openPayslipModal = async function(staffName) {
     safeSetText('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
     
     let today = new Date();
-    safeSetText('psPayDistributed', today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }));
+    safeSetVal('psPayDistributed', today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }));
 
     safeSetVal('psOvertime', data.nightBonus || 0);
     safeSetVal('psStraightBonus', data.straightBonus || 0); // 🔥 PUSHES THE ₱50 STRAIGHT DUTY BONUS!
