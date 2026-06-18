@@ -2122,10 +2122,11 @@ window.loadInventoryData = async function() {
             let conv = parseFloat(d.conversionRate) || parseFloat(d.conversion) || 1;
             
             // 🛡️ Bulletproof Asset Value Math
-            let baseCost = conv > 0 ? (cost / conv) : 0;
-            if (stock > 0 && baseCost > 0) {
-                totalValue += (baseCost * stock);
+            let baseCost = parseFloat(d.baseCost) || 0;
+            if (baseCost === 0 && d.purchaseCost && d.conversionRate) {
+                 baseCost = d.purchaseCost / d.conversionRate;
             }
+            if (stock > 0 && !isNaN(baseCost)) totalValue += (baseCost * stock);
             
             let isLow = stock <= parseFloat(d.reorderLevel || d.lowStockAlert || 5);
             let statusHtml = isLow ? `<span style="color:#ef4444; background:#fef2f2; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Low Stock</span>` : `<span style="color:#16a34a; font-weight:bold; font-size:11px;">In Stock</span>`;
@@ -2142,6 +2143,7 @@ window.loadInventoryData = async function() {
                     <td style="padding: 12px;">${statusHtml}</td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
                     <td style="padding: 12px; display:flex; gap:5px;">
+                        <button onclick="window.openItemLedger('${d.branch}', '${d.name.replace(/'/g, "\\'")}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Trace</button>
                         <button onclick="window.openEditInvModal('${d.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
                     </td>
                 </tr>
