@@ -198,56 +198,74 @@
         .modal { width: 95% !important; max-width: 95% !important; margin: 0 auto !important; }
         .modal-body { padding: 15px !important; }
     }
+    /* ========================================= */
     /* 📱 SIDEBAR COLLAPSE ENGINE */
+    /* ========================================= */
     .sidebar { transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow-x: hidden; }
-    .sidebar.collapsed { width: 70px !important; }
-    .sidebar.collapsed .text, .sidebar.collapsed .logo-text, .sidebar.collapsed .nav-item-text { display: none !important; }
+    .sidebar.collapsed { width: 75px !important; }
+    
+    /* Hide the text, the logo text, and the inbox badge when collapsed */
+    .sidebar.collapsed .nav-text, 
+    .sidebar.collapsed .logo-text, 
+    .sidebar.collapsed #inboxBadge { display: none !important; }
+    
+    /* Center the emoji icons perfectly */
     .sidebar.collapsed .nav-item { justify-content: center; padding: 15px 0; }
-    .sidebar.collapsed .nav-item span { margin: 0; font-size: 22px; }
+    .sidebar.collapsed .nav-item .nav-icon { margin: 0; font-size: 22px; }
+    
+    /* Hide the user profile box at the bottom */
     .sidebar.collapsed .user-profile { display: none !important; }
+    
+    /* Keep the hamburger menu visible and centered */
+    .sidebar.collapsed .hamburger-icon { display: block !important; margin: 0 auto; }
   </style>
 </head>
 
 <body>
-  <nav class="sidebar">
-    <div class="brand" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); width: 100%; box-sizing: border-box;">
-      <div style="display: flex; align-items: center; gap: 10px; overflow: hidden; cursor: pointer;" onclick="document.querySelector('.sidebar').classList.toggle('collapsed')">
-          <img src="logo.jpg" alt="Logo" style="width: 35px; height: 35px; border-radius: 8px; object-fit: cover; border: 2px solid var(--primary);">
-          <div class="logo-text" style="display: flex; flex-direction: column;">
+  <nav class="sidebar" id="sidebar">
+    
+    <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); width: 100%; box-sizing: border-box;">
+      <div style="display: flex; align-items: center; gap: 10px; overflow: hidden; cursor: pointer;" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">
+          <img src="logo.jpg" alt="Logo" style="width: 35px; height: 35px; border-radius: 8px; object-fit: cover; border: 2px solid var(--primary); flex-shrink: 0;">
+          <div class="logo-text" style="display: flex; flex-direction: column; white-space: nowrap;">
               <span style="font-weight: 900; font-size: 14px; letter-spacing: 1px; line-height: 1;">TAKODEÁL</span>
               <span style="font-size: 10px; color: var(--primary); font-weight: bold;">MAIN OFFICE</span>
           </div>
       </div>
-      <span class="logo-text" onclick="document.querySelector('.sidebar').classList.toggle('collapsed')" style="cursor: pointer; font-size: 20px; color: #94a3b8;">☰</span>
+      <span class="takoyaki-icon" onclick="document.getElementById('sidebar').classList.toggle('collapsed')" style="cursor: pointer; font-size: 20px; color: #94a3b8; flex-shrink: 0;">☰</span>
     </div>
+
     <div class="nav-menu">
-      <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')">📊 Global Dashboard</a>
-      <a href="#" class="nav-item" id="nav-accounts" onclick="switchView('accounts')">💼 Cash & Budget</a>
-      <a href="#" class="nav-item" id="nav-transfers" onclick="switchView('transfers'); loadCashExplorer(); window.loadCashFlowHub();">🏦 EOD Remittance Hub</a>
-      <a href="#" class="nav-item" id="nav-payables" onclick="switchView('payables'); loadPayablesDashboard();">🚚 Supplier Payables</a>
-      <a href="#" class="nav-item" id="nav-devices" onclick="switchView('devices'); loadDeviceFleet();">💻 Device
-        Fleet</a>
-      <a href="#" class="nav-item" id="nav-payroll" onclick="switchView('payroll')">🧑‍💼 Human Resources</a>
-      <a href="#" class="nav-item" id="nav-inbox" onclick="switchView('inbox')">📥 Request Inbox <span id="inboxBadge" style="display:none; background:var(--danger); color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:5px; font-weight:bold;">0</span></a>
-      <a href="#" class="nav-item" id="nav-products" onclick="switchView('products')">🏷️ Menu Costing & BOM</a>
-      <a href="#" class="nav-item" id="nav-dispatch" onclick="switchView('dispatch')">🚚 Dispatch Stock</a>
-      <a href="#" class="nav-item" id="nav-zreadings" onclick="switchView('zreadings')">📊 Z-Reading Reports</a>
-      <a href="#" class="nav-item" id="nav-history" onclick="switchView('history')">🧾 Sales History</a>
-      <a href="#" class="nav-item" id="nav-expenses" onclick="switchView('expenses')">💸 Expense & Restock Feed</a>
-      <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')">👥 Staff & Security</a>
-      <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')">🍔 Menu Editor</a>
-      <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();">⚙️ POS Config Hub</a>
-      <a href="#" class="nav-item" id="nav-inventory" onclick="switchView('inventory'); loadInventoryData();">📦 Live
-        Inventory</a>
-      <a href="#" class="nav-item" id="nav-alerts" onclick="switchView('alerts')">🚨 Security Alerts</a>
+      <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')"><span class="nav-icon">📊</span> <span class="nav-text">Global Dashboard</span></a>
+      <a href="#" class="nav-item" id="nav-accounts" onclick="switchView('accounts')"><span class="nav-icon">💼</span> <span class="nav-text">Cash & Budget</span></a>
+      <a href="#" class="nav-item" id="nav-transfers" onclick="switchView('transfers'); loadCashExplorer(); window.loadCashFlowHub();"><span class="nav-icon">🏦</span> <span class="nav-text">EOD Remittance Hub</span></a>
+      <a href="#" class="nav-item" id="nav-payables" onclick="switchView('payables'); loadPayablesDashboard();"><span class="nav-icon">🚚</span> <span class="nav-text">Supplier Payables</span></a>
+      <a href="#" class="nav-item" id="nav-devices" onclick="switchView('devices'); loadDeviceFleet();"><span class="nav-icon">💻</span> <span class="nav-text">Device Fleet</span></a>
+      
+      <a href="#" class="nav-item" id="nav-payroll" onclick="switchView('payroll')"><span class="nav-icon">🧑‍💼</span> <span class="nav-text">Human Resources</span></a>
+      
+      <a href="#" class="nav-item" id="nav-inbox" onclick="switchView('inbox')"><span class="nav-icon">📥</span> <span class="nav-text">Request Inbox</span> <span id="inboxBadge" style="display:none; background:var(--danger); color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:5px; font-weight:bold;">0</span></a>
+      <a href="#" class="nav-item" id="nav-products" onclick="switchView('products')"><span class="nav-icon">🏷️</span> <span class="nav-text">Menu Costing & BOM</span></a>
+      <a href="#" class="nav-item" id="nav-dispatch" onclick="switchView('dispatch')"><span class="nav-icon">🚚</span> <span class="nav-text">Dispatch Stock</span></a>
+      <a href="#" class="nav-item" id="nav-zreadings" onclick="switchView('zreadings')"><span class="nav-icon">📊</span> <span class="nav-text">Z-Reading Reports</span></a>
+      <a href="#" class="nav-item" id="nav-history" onclick="switchView('history')"><span class="nav-icon">🧾</span> <span class="nav-text">Sales History</span></a>
+      <a href="#" class="nav-item" id="nav-expenses" onclick="switchView('expenses')"><span class="nav-icon">💸</span> <span class="nav-text">Expense & Restock Feed</span></a>
+      <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')"><span class="nav-icon">👥</span> <span class="nav-text">Staff & Security</span></a>
+      <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')"><span class="nav-icon">🍔</span> <span class="nav-text">Menu Editor</span></a>
+      <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();"><span class="nav-icon">⚙️</span> <span class="nav-text">POS Config Hub</span></a>
+      <a href="#" class="nav-item" id="nav-inventory" onclick="switchView('inventory'); loadInventoryData();"><span class="nav-icon">📦</span> <span class="nav-text">Live Inventory</span></a>
+      <a href="#" class="nav-item" id="nav-alerts" onclick="switchView('alerts')"><span class="nav-icon">🚨</span> <span class="nav-text">Security Alerts</span></a>
+      
       <a href="#" class="nav-item" id="nav-reports" onclick="switchView('reports')">
-        <span style="font-size: 18px;">🧠</span>
-        <div class="nav-item-text" style="font-weight: 900; background: -webkit-linear-gradient(45deg, #0ea5e9, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">AI Insights</div>
+        <span class="nav-icon" style="font-size: 18px;">🧠</span>
+        <div class="nav-text" style="font-weight: 900; background: -webkit-linear-gradient(45deg, #0ea5e9, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">AI Insights</div>
       </a>
 
-      <a href="#" class="nav-item" id="nav-admin" onclick="switchView('admin')"
-        style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 15px;">⚙️ Access Control</a>
+      <a href="#" class="nav-item" id="nav-admin" onclick="switchView('admin')" style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 15px;">
+        <span class="nav-icon">⚙️</span> <span class="nav-text">Access Control</span>
+      </a>
     </div>
+
     <div class="user-profile">
       <div class="avatar">👨‍💼</div>
       <div class="details">
