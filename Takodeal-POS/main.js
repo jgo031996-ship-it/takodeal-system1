@@ -3042,7 +3042,9 @@ window.renderDeliveriesTab = function() {
                         <span style="background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">🚚 Driver: ${dispatch.driver}</span>
                     </div>
                 </div>
-                
+                <div style="background: #fff1f2; color: #be123c; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 15px; border: 1px dashed #fecaca;">
+                    ⚠️ IMPORTANT: Enter the physical quantity using the UNIT SHOWN below (e.g. Jars, Bottles, Sacks). DO NOT type grams or mL. The system will convert it automatically!
+                </div>
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; text-align: left; font-size: 13px;">
                     <thead>
                         <tr style="background: #f8fafc; color: #475569; border-bottom: 1px solid #cbd5e1;">
