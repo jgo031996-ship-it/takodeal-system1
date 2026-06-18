@@ -7800,9 +7800,7 @@ window.generateAutoPayslips = async function() {
             let amt = parseFloat(b.amount) || 0;
             // Pushes the money into the Overtime / Night Diff box!
             staffData[name].nightBonusTotal += amt; 
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
-                <span>Straight Duty Bonus</span> <input type="number" id="psStraightBonus" class="ps-input" value="0.00" oninput="recalcPayslip()">
-            </div>
+
             // Creates a beautiful visual log at the bottom of their Payslip so they know they got it!
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             staffData[name].logs.push({
