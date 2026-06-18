@@ -11586,3 +11586,66 @@ window.loadSmartAIInsights = async function() {
         if(adviceBox) adviceBox.innerHTML = '<div style="color: red;">Error loading AI Insights.</div>';
     }
 };
+
+// ==========================================
+// 🔍 FORENSIC ITEM TRACE LEDGER ENGINE
+// ==========================================
+window.openItemLedger = async function(branch, itemName) {
+    document.getElementById('itemLedgerModal').style.display = 'flex';
+    document.getElementById('ledgerModalSubtitle').innerText = `${itemName} | ${branch}`;
+    const tbody = document.getElementById('itemLedgerBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Compiling forensic data...</td></tr>';
+
+    try {
+        // 1. Get Live Stock & UOM
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
+        const invSnap = await getDocs(invQ);
+        let currentStock = 0;
+        let uom = '';
+        if (!invSnap.empty) {
+            currentStock = parseFloat(invSnap.docs[0].data().currentStock) || 0;
+            uom = invSnap.docs[0].data().baseUom || invSnap.docs[0].data().uom || '';
+        }
+        document.getElementById('ledgerCurrentStock').innerText = `${currentStock.toFixed(2)} ${uom}`;
+
+        // 2. Fetch every single log for this item
+        const logQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("item", "==", itemName), orderBy("timestamp", "desc"));
+        const logSnap = await getDocs(logQ);
+
+        let html = '';
+        let lifetimeBought = 0;
+
+        logSnap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let variance = parseFloat(d.variance) || 0;
+            let type = d.type || "Unknown";
+            
+            // Add to lifetime purchased if it's a positive delivery/restock
+            if (variance > 0 && (type.includes("Restock") || type.includes("Delivery") || type.includes("Received") || type.includes("Purchase"))) {
+                lifetimeBought += variance;
+            }
+
+            let varColor = variance > 0 ? '#16a34a' : (variance < 0 ? '#dc2626' : '#64748b');
+            let varText = variance > 0 ? `+${variance}` : variance;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 10px; color: #64748b; font-size: 11px;">${dateStr}</td>
+                    <td style="padding: 10px; font-weight: bold; color: #334155;">${d.user || 'System'}</td>
+                    <td style="padding: 10px;"><span style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; color: #475569;">${type}</span></td>
+                    <td style="padding: 10px; font-weight: 900; color: ${varColor};">${varText}</td>
+                    <td style="padding: 10px; font-weight: bold; color: #0f172a;">${(parseFloat(d.newQty) || 0).toFixed(2)}</td>
+                    <td style="padding: 10px; font-size: 11px; color: #64748b; font-style: italic;">${d.note || '-'}</td>
+                </tr>
+            `;
+        });
+
+        document.getElementById('ledgerLifetimeBought').innerText = `${lifetimeBought.toFixed(2)} ${uom}`;
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8;">No historical data found.</td></tr>';
+
+    } catch (e) {
+        console.error("Item Ledger Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Failed to load trace data. Check F12 console. (May need a Firebase Index).</td></tr>';
+    }
+};
