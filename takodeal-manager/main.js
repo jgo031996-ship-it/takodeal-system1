@@ -5843,28 +5843,54 @@ window.saveToCloud = async function() {
 window.loadFromCloud = async function() {
     try {
         const snap = await getDoc(doc(db, "settings", "global_schedule"));
+        
+        // 🔥 THE FAILSAFE: Always grab today's actual date as a backup!
+        const today = new Date();
+        let safeYear = today.getFullYear();
+        let safeMonth = today.getMonth() + 1;
+
         if (snap.exists()) {
             const appData = snap.data();
             branchConfig = appData.branchConfig || JSON.parse(JSON.stringify(defaultSchedConfig));
             employees = appData.employees || [];
             unavailability = appData.unavailability || {};
             currentSchedule = appData.currentSchedule || {};
-            currentYear = appData.currentYear;
-            currentMonth = appData.currentMonth;
-            window.scheduleHolidays = appData.holidays || {}; // Load Holidays!
             
-            if (currentYear && currentMonth) {
-                const mm = currentMonth < 10 ? '0' + currentMonth : currentMonth;
-                document.getElementById("monthSelector").value = `${currentYear}-${mm}`;
-            }
+            // If the cloud has a date, use it. Otherwise, use the failsafe!
+            currentYear = appData.currentYear || safeYear;
+            currentMonth = appData.currentMonth || safeMonth;
+            
+            window.scheduleHolidays = appData.holidays || {}; 
         } else {
-            const today = new Date();
-            const mm = String(today.getMonth() + 1).padStart(2, '0');
-            document.getElementById("monthSelector").value = `${today.getFullYear()}-${mm}`;
+            // First time loading the app? Use the failsafe!
+            currentYear = safeYear;
+            currentMonth = safeMonth;
         }
-        window.renderConfigUI(); window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.updateHolidayList(); window.renderTables();
-    } catch(e) { console.error("Cloud Load Error:", e); }
+
+        // Lock the date into the HTML Date Picker
+        const mm = String(currentMonth).padStart(2, '0');
+        const monthInput = document.getElementById("monthSelector");
+        if (monthInput) monthInput.value = `${currentYear}-${mm}`;
+
+        // Render the screen!
+        window.renderConfigUI(); 
+        window.updateStaffDisplay(); 
+        window.updateAvailDropdown(); 
+        window.updateUnavailabilityList(); 
+        window.updateHolidayList(); 
+        window.renderTables();
+        
+    } catch(e) { 
+        console.error("Cloud Load Error:", e); 
+    }
 };
+
+// 🔥 AUTO-BOOT ENGINE: Quietly loads the schedule data in the background as soon as the app turns on!
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => { 
+        if (typeof window.loadFromCloud === 'function') window.loadFromCloud(); 
+    }, 2500); 
+});
 
 // 🏖️ HOLIDAY UI FUNCTIONS
 window.addHoliday = function() {
