@@ -216,8 +216,11 @@
     /* Hide the user profile box at the bottom */
     .sidebar.collapsed .user-profile { display: none !important; }
     
-    /* Keep the hamburger menu visible and centered */
-    .sidebar.collapsed .hamburger-icon { display: block !important; margin: 0 auto; }
+    /* Hide the hamburger icon when collapsed */
+    .sidebar.collapsed .hamburger-icon { display: none !important; }
+    
+    /* Center the logo perfectly when collapsed */
+    .sidebar.collapsed .sidebar-header { justify-content: center !important; padding: 15px 0 !important; }
   </style>
 </head>
 
