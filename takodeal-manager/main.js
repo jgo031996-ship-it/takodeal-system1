@@ -6888,6 +6888,7 @@ window.openPayslipModal = async function(staffName) {
         }
     }
 
+    // 🛡️ CRASH-PROOF ENGINE: Safely ignores missing HTML IDs
     const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
     const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
 
@@ -6906,11 +6907,14 @@ window.openPayslipModal = async function(staffName) {
     safeSetText('psPayDistributed', today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }));
 
     safeSetVal('psOvertime', data.nightBonus || 0);
+    safeSetVal('psStraightBonus', data.straightBonus || 0); // 🔥 PUSHES THE ₱50 STRAIGHT DUTY BONUS!
     safeSetVal('psHoliday', data.holidayPayTotal || 0);
     safeSetVal('psLate', data.lateDeduction || 0);
     safeSetVal('psSSS', data.sss || 0);
     safeSetVal('psPhil', data.philhealth || 0);
     safeSetVal('psPagibig', data.pagibig || 0);
+    
+    // 🔥 Explicitly route the separated deduction types!
     safeSetVal('psAdvance', data.advances || 0);
     safeSetVal('psLoans', data.loans || 0);
     safeSetVal('psFoods', data.meals || 0);
@@ -6921,7 +6925,7 @@ window.openPayslipModal = async function(staffName) {
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
         data.logs.forEach(log => {
-            // 🔥 FIX: Added 'text-align: center;' to beautifully align your table columns!
+            // 🔥 Centered table columns for beautiful printing
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 8px; text-align: center;">${log.date || ''}</td>
                 <td style="padding: 8px; font-weight: bold; color: #16a34a; text-align: center;">${log.in || ''}</td>
@@ -6953,6 +6957,7 @@ window.recalcPayslip = function() {
     }
 
     let overtime = getVal('psOvertime');
+    let straightBonus = getVal('psStraightBonus'); // 🔥 Grabs the value from the box
     let holiday = getVal('psHoliday');
     let late = getVal('psLate');
     let sss = getVal('psSSS');
@@ -6963,7 +6968,7 @@ window.recalcPayslip = function() {
     let foods = getVal('psFoods');
     let wifi = getVal('psWifi');
 
-    let gross = basic + overtime + holiday;
+    let gross = basic + overtime + straightBonus + holiday; // 🔥 Adds it perfectly to Gross!
     let deductions = late + sss + phil + pagibig + advance + loans + foods + wifi;
     let net = gross - deductions;
 
@@ -7703,9 +7708,12 @@ window.generateAutoPayslips = async function() {
 
                 let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
                 let shiftMultiplier = 1;
-
+                let thisShiftStraightBonus = 0; // 🔥 Track the Straight Duty Incentive
+        
                 if (hoursWorked >= 13.5) {
                     shiftMultiplier = 2;
+                    thisShiftStraightBonus = 50; // 🔥 50 Pesos Incentive per Straight Duty!
+                    staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
                 } else if (hoursWorked < 8) {
                     let missingHours = (8 - hoursWorked).toFixed(1);
@@ -7792,7 +7800,9 @@ window.generateAutoPayslips = async function() {
             let amt = parseFloat(b.amount) || 0;
             // Pushes the money into the Overtime / Night Diff box!
             staffData[name].nightBonusTotal += amt; 
-            
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
+                <span>Straight Duty Bonus</span> <input type="number" id="psStraightBonus" class="ps-input" value="0.00" oninput="recalcPayslip()">
+            </div>
             // Creates a beautiful visual log at the bottom of their Payslip so they know they got it!
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             staffData[name].logs.push({
@@ -7852,6 +7862,7 @@ window.generateAutoPayslips = async function() {
 
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        straightBonus: d.straightDutyBonusTotal || 0, // 🔥 Passes the Straight Duty Bonus to the Modal!
                         advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth, lateDeduction: d.lateDeduction,
                         shiftsWorked: d.shiftsWorked, basicPay: d.basicPay, rate: dailyRate,
@@ -7863,6 +7874,7 @@ window.generateAutoPayslips = async function() {
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
 
                 let bonusLabel = d.nightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonus} Night Bonus</span>` : '';
+                let straightLabel = (d.straightDutyBonusTotal || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightDutyBonusTotal.toFixed(2)} Straight Bonus</span>` : ''; // 🔥 Show it in the list!
                 let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
                 let foodLabel = d.meals > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.meals.toFixed(2)} (Meals)</span>` : '';
                 let valeLabel = d.advances > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.advances.toFixed(2)} (Vale)</span>` : '';
@@ -7870,8 +7882,8 @@ window.generateAutoPayslips = async function() {
                 let lateLabel = d.lateDeduction > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.lateDeduction.toFixed(2)} (Late)</span>` : '';
                 let govTotal = (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0);
                 let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov)</span>` : '';
-
-                let buttonHtml = isPaid 
+        
+                let buttonHtml = isPaid
                     ? `<button onclick="window.openPayslipModal('${name}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
                     : `<button onclick="window.openPayslipModal('${name}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
 
@@ -7881,8 +7893,9 @@ window.generateAutoPayslips = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${rowStyle}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${holLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">
+                        
                             Total: ₱${totalDeduct.toFixed(2)}
                             ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel} ${govLabel}
                         </td>
@@ -7899,80 +7912,6 @@ window.generateAutoPayslips = async function() {
         console.error("Payroll Engine Error:", error);
         tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding: 20px;">Failed to calculate payroll. Check Developer Console (F12).</td></tr>`;
     }
-};
-
-window.openPayslipModal = async function(staffName) {
-    let data = window.globalPayrollCache[staffName];
-    if (!data) return;
-
-    window.currentPayslipData = data; 
-    
-    let finalizeBtn = document.getElementById('btnFinalizePayslip');
-    if (finalizeBtn) {
-        if (data.isPaid) {
-            finalizeBtn.innerText = "✅ Paid & Done!";
-            finalizeBtn.disabled = true;
-            finalizeBtn.style.background = "#16a34a"; 
-            finalizeBtn.style.cursor = "not-allowed";
-        } else {
-            finalizeBtn.innerText = "✅ Mark Paid & Auto-Deduct";
-            finalizeBtn.disabled = false;
-            finalizeBtn.style.background = "#3b82f6"; 
-            finalizeBtn.style.cursor = "pointer";
-        }
-    }
-
-    // 🛡️ CRASH-PROOF ENGINE: Safely ignores missing HTML IDs
-    const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
-    const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
-
-    safeSetText('psName', data.name || "Unknown");
-    safeSetText('psBranch', data.branch || "Unassigned");
-    safeSetText('psStart', data.start || "");
-    safeSetText('psEnd', data.end || "");
-    safeSetText('psBasicPay', (data.basicPay || 0).toLocaleString(undefined, {minimumFractionDigits: 2}));
-    
-    // 🔥 NEW HR DATA
-    safeSetText('psDaysWorked', data.shiftsWorked || 0);
-    safeSetText('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
-    
-    let today = new Date();
-    safeSetText('psPayDistributed', today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }));
-
-    safeSetVal('psOvertime', data.nightBonus || 0);
-    safeSetVal('psHoliday', data.holidayPayTotal || 0);
-    safeSetVal('psLate', data.lateDeduction || 0);
-    safeSetVal('psSSS', data.sss || 0);
-    safeSetVal('psPhil', data.philhealth || 0);
-    safeSetVal('psPagibig', data.pagibig || 0);
-    
-    // 🔥 THE FIX: Explicitly route the separated deduction types!
-    safeSetVal('psAdvance', data.advances || 0);
-    safeSetVal('psLoans', data.loans || 0);
-    safeSetVal('psFoods', data.meals || 0);
-    
-    let wifiBox = document.getElementById('psWifi');
-    if(wifiBox) wifiBox.value = 0;
-
-    let attHtml = '';
-    if (data.logs && data.logs.length > 0) {
-        data.logs.forEach(log => {
-            attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px;">${log.date}</td>
-                <td style="padding: 8px; font-weight: bold; color: #16a34a;">${log.in}</td>
-                <td style="padding: 8px; font-weight: bold; color: #dc2626;">${log.out}</td>
-                <td style="padding: 8px; font-weight: bold;">${log.hrs}h</td>
-                <td style="padding: 8px; font-size:11px;">${log.remark}</td>
-            </tr>`;
-        });
-    } else {
-        attHtml = '<tr><td colspan="5" style="text-align:center; padding: 15px; color: #94a3b8;">No attendance logs found.</td></tr>';
-    }
-    let attBody = document.getElementById('psAttendanceBody');
-    if (attBody) attBody.innerHTML = attHtml;
-
-    if (typeof window.recalcPayslip === 'function') window.recalcPayslip();
-    document.getElementById('payslipModal').style.display = 'flex';
 };
 
 // Run the date setter when the dashboard loads!
