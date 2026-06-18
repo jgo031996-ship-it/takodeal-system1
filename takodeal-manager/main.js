@@ -4786,9 +4786,7 @@ window.fetchZReadings = async function() {
         // 🧠 JAVASCRIPT FILTERING: We loop through them and hide what we don't want!
         allShifts.forEach((s, index) => {
             if (displayCount >= 50) return;
-
             if (selectedBranch !== "All" && s.branch !== selectedBranch) return;
-
             if (selectedDate && s.endTime) {
                 let shiftDate = s.endTime.toDate().toISOString().split('T')[0];
                 if (shiftDate !== selectedDate) return; 
@@ -4805,16 +4803,12 @@ window.fetchZReadings = async function() {
             
             // 🚨 PREVIOUS SHIFT FLOAT CHECKER 🚨
             let securityWarning = '';
-            // We check the next item in the array (because it's sorted newest-first, the "next" item is actually the previous shift!)
             if (index < allShifts.length - 1) {
                 let prevShift = allShifts[index + 1]; 
-                
-                // Only compare if they are from the exact same branch!
                 if (s.branch === prevShift.branch) {
                     let startCash = parseFloat(s.startingCash) || 0;
                     let prevEndCash = parseFloat(prevShift.declaredCash) || parseFloat(prevShift.actualCash) || 0;
                     
-                    // If the difference is more than 5 pesos (allowance for loose coins), trigger alarm!
                     if (Math.abs(startCash - prevEndCash) > 5) { 
                         securityWarning = `<br><span style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;" title="Previous shift closed with ₱${prevEndCash}. This shift started with ₱${startCash}.">⚠️ Float Mismatch</span>`;
                     } else {
@@ -8046,11 +8040,9 @@ window.loadCashFlowHub = async function() {
             let data = doc.data();
             let branch = data.branch;
             
-            if (data.status === "Pending") {
-                pendingVerifications += (parseFloat(data.amount) || 0);
-            }
+            if (data.status === "Pending") pendingVerifications += (parseFloat(data.amount) || 0);
 
-            // 🚨 THE FIX: Subtract the money if it's Pending OR Received!
+            // 🚨 Subtract the money if it's Pending OR Received!
             if (branchFloating[branch] !== undefined) {
                 if (data.status === "Received" || data.status === "Pending") {
                     branchFloating[branch] -= (parseFloat(data.amount) || 0);
@@ -8060,7 +8052,7 @@ window.loadCashFlowHub = async function() {
 
         let branchHtml = '';
         for (let branch in branchFloating) {
-            // Prevent negative numbers if they over-remitted
+            // Cap at 0 so it never shows negative
             let owed = branchFloating[branch] < 0 ? 0 : branchFloating[branch];
             totalFloating += owed;
             
