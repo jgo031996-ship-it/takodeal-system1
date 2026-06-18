@@ -1334,7 +1334,7 @@ window.loadDispatchLogs = async function() {
               <span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span>
           </td>
           <td style="padding:15px; text-align:right;">
-              <button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}')" style="background: white; color: #ea580c; border: 1px solid #ea580c; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button>
+              <button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}', '${del.time}')" style="background: white; color: #ea580c; border: 1px solid #ea580c; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button>
           </td>
         </tr>`;
       });
@@ -1343,31 +1343,65 @@ window.loadDispatchLogs = async function() {
   } catch (e) { console.error(e); tbody.innerHTML = '<tr><td class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
 };
 
-// Opens the Modal and renders the Variance Table
-window.viewDispatchDetails = function(encodedItems, branch, driver, date) {
+// Opens the Modal and renders the Variance Table (UPGRADED)
+window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) {
     let items = JSON.parse(decodeURIComponent(encodedItems));
     let header = document.getElementById('dispatchDetailsHeader');
     let tbody = document.getElementById('dispatchDetailsBody');
     
-    header.innerHTML = `<strong>📍 Destination:</strong> ${branch} <br><br> <strong>🚚 Driver:</strong> ${driver} &nbsp;|&nbsp; <strong>📅 Date:</strong> ${date}`;
+    // 1. 🕵️‍♂️ Extract Receiver Info from the data!
+    // We check the first item to see who received the batch and when
+    let receivedItem = items.find(i => i.receivedBy);
+    let receiverName = receivedItem ? receivedItem.receivedBy : '<span style="color:#ef4444; font-style:italic;">Pending Receipt</span>';
+    
+    let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    if (receivedItem && receivedItem.receivedAt) {
+        // Handle Firebase Timestamp formatting
+        let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
+        receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    let dispatchTime = time || items[0].time || 'Unknown';
+
+    // 2. 🎨 Build the Beautiful Grid Header
+    header.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
+                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Dispatch Info</div>
+                <div style="margin-top: 5px;"><strong>📍 Destination:</strong> ${branch}</div>
+                <div style="margin-top: 5px;"><strong>🚚 Driver:</strong> ${driver}</div>
+                <div style="margin-top: 5px; color: #475569;"><strong>📅 Dispatched:</strong> ${date} at ${dispatchTime}</div>
+            </div>
+            <div>
+                <div style="font-size: 11px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Receiving Info</div>
+                <div style="margin-top: 5px;"><strong>👤 Received By:</strong> <span style="color: #0f766e; font-weight: bold;">${receiverName}</span></div>
+                <div style="margin-top: 5px; color: #475569;"><strong>⏰ Arrived:</strong> ${receivedTimeStr}</div>
+            </div>
+        </div>
+    `;
     
     let html = '';
     items.forEach(item => {
         let sent = parseFloat(item.displayQty || item.qty);
-        let received = item.receivedQty !== undefined ? parseFloat(item.receivedQty) : '-';
-        let variance = item.varianceQty !== undefined ? parseFloat(item.varianceQty) : '-';
+        let received = item.receivedDisplayQty !== undefined ? parseFloat(item.receivedDisplayQty) : '-';
         let status = item.status || 'In Transit';
         let uom = item.displayUom || item.uom;
         
-        let varColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#16a34a' : '#475569');
-        let varText = variance !== '-' ? (variance > 0 ? `+${variance}` : variance) + ' ' + uom : '-';
+        // 3. 🧮 FIX: Calculate Variance dynamically based on the exact UI inputs!
+        let displayVariance = '-';
+        if (received !== '-') {
+            displayVariance = received - sent;
+        }
+        
+        let varColor = displayVariance === '-' ? '#475569' : (displayVariance < 0 ? '#dc2626' : (displayVariance > 0 ? '#16a34a' : '#475569'));
+        let varText = displayVariance === '-' ? '-' : (displayVariance > 0 ? `+${displayVariance}` : displayVariance) + ' ' + uom;
 
-        html += `<tr style="border-bottom:1px solid #f1f5f9;">
+        html += `<tr style="border-bottom:1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
             <td style="padding:12px; font-weight:bold; color:#334155;">${item.item}</td>
             <td style="padding:12px; font-weight: bold;">${sent} ${uom}</td>
             <td style="padding:12px; color:#0284c7; font-weight:bold;">${received !== '-' ? received + ' ' + uom : 'Pending'}</td>
-            <td style="padding:12px; color:${varColor}; font-weight:bold;">${varText}</td>
-            <td style="padding:12px;">${status}</td>
+            <td style="padding:12px; color:${varColor}; font-weight:900;">${varText}</td>
+            <td style="padding:12px;"><span style="background: ${received !== '-' ? '#dcfce7' : '#fef9c3'}; color: ${received !== '-' ? '#16a34a' : '#ca8a04'}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${status}</span></td>
         </tr>`;
     });
     
