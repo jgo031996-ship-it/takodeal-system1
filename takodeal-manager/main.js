@@ -1343,7 +1343,9 @@ window.loadDispatchLogs = async function() {
   } catch (e) { console.error(e); tbody.innerHTML = '<tr><td class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
 };
 
-// Opens the Modal and renders the Variance Table (UPGRADED)
+// ========================================================
+// 🚚 UPGRADED DISPATCH DETAILS MODAL (WITH VARIANCE & TIME)
+// ========================================================
 window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) {
     let items = JSON.parse(decodeURIComponent(encodedItems));
     let header = document.getElementById('dispatchDetailsHeader');
@@ -1356,11 +1358,12 @@ window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) 
     
     let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
     if (receivedItem && receivedItem.receivedAt) {
-        // Handle Firebase Timestamp formatting
+        // Handle Firebase Timestamp formatting safely
         let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
         receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
     }
 
+    // Default to the time passed from the button, or extract from the first item
     let dispatchTime = time || items[0].time || 'Unknown';
 
     // 2. 🎨 Build the Beautiful Grid Header
@@ -1383,7 +1386,10 @@ window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) 
     let html = '';
     items.forEach(item => {
         let sent = parseFloat(item.displayQty || item.qty);
-        let received = item.receivedDisplayQty !== undefined ? parseFloat(item.receivedDisplayQty) : '-';
+        
+        // Safely extract what was actually received
+        let received = item.receivedDisplayQty !== undefined ? parseFloat(item.receivedDisplayQty) : (item.receivedQty !== undefined ? parseFloat(item.receivedQty) : '-');
+        
         let status = item.status || 'In Transit';
         let uom = item.displayUom || item.uom;
         
