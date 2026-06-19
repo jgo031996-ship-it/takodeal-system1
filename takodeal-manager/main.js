@@ -473,6 +473,9 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empSSS').value = data.sss || '';
     document.getElementById('empPhilhealth').value = data.philhealth || '';
     document.getElementById('empPagibig').value = data.pagibig || '';
+    document.getElementById('empSSSAmount').value = data.sssAmount || '';
+    document.getElementById('empPhilAmount').value = data.philHealthAmount || '';
+    document.getElementById('empPagibigAmount').value = data.pagibigAmount || '';
     document.getElementById('empEmergencyName').value = data.emergencyName || '';
     document.getElementById('empEmergencyPhone').value = data.emergencyPhone || '';
     document.getElementById('empEmail').value = data.email || '';
@@ -545,6 +548,9 @@ window.saveEmployeeProfile = async function() {
         sss: document.getElementById('empSSS').value.trim(),
         philhealth: document.getElementById('empPhilhealth').value.trim(),
         pagibig: document.getElementById('empPagibig').value.trim(),
+        sssAmount: parseFloat(document.getElementById('empSSSAmount').value) || 0,
+        philHealthAmount: parseFloat(document.getElementById('empPhilAmount').value) || 0,
+        pagibigAmount: parseFloat(document.getElementById('empPagibigAmount').value) || 0,
         emergencyName: document.getElementById('empEmergencyName').value.trim(),
         emergencyPhone: document.getElementById('empEmergencyPhone').value.trim(),
         email: document.getElementById('empEmail').value.trim(),
@@ -7906,13 +7912,18 @@ window.generateAutoPayslips = async function() {
                     d.pagibig = profile.pagibigDeduction || 0;
                     d.philhealth = profile.philhealthDeduction || 0;
 
+                    // 🔥 Extract Gov Contributions from Master Profile
+                    let profileSSS = staffDict[name] ? (parseFloat(staffDict[name].sssAmount) || 0) : 0;
+                    let profilePhil = staffDict[name] ? (parseFloat(staffDict[name].philHealthAmount) || 0) : 0;
+                    let profilePagibig = staffDict[name] ? (parseFloat(staffDict[name].pagibigAmount) || 0) : 0;
+                  
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
-                        straightBonus: d.straightDutyBonusTotal || 0, // 🔥 Passes the Straight Duty Bonus to the Modal!
+                        straightBonus: d.straightDutyBonusTotal || 0,
                         advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
-                        sss: d.sss, pagibig: d.pagibig, philhealth: d.philhealth, lateDeduction: d.lateDeduction,
-                        shiftsWorked: d.shiftsWorked, basicPay: d.basicPay, rate: dailyRate,
-                        start: startInput, end: endInput, profile: profile, logs: d.logs, isPaid: false
+                        basicPay: basicPay, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeductionTotal,
+                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startRaw, end: endRaw,
+                        sss: profileSSS, philhealth: profilePhil, pagibig: profilePagibig // 🔥 ROUTES TO THE PAYSLIP
                     };
                     d = window.globalPayrollCache[name]; 
                 }
