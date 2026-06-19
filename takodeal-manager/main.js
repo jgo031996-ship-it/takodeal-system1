@@ -674,8 +674,8 @@ window.switchView = function (viewId) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   // Remove highlight from all sidebar items
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  
   // --- SMART DATE CONTROLS ---
-  // Only show the date pickers on specific tabs
   const dateControls = document.getElementById('globalDateControls');
   if (dateControls) {
     const allowedViews = ['dashboard', 'accounts', 'payroll', 'dispatch'];
@@ -685,22 +685,22 @@ window.switchView = function (viewId) {
       dateControls.style.display = 'none';
     }
   }
-  // Show the requested view
-  document.getElementById('view-' + viewId).classList.add('active');
-  // Highlight the requested sidebar item
-  document.getElementById('nav-' + viewId).classList.add('active');
-  
+
+  // 🛡️ CRASH-PROOF HIGHLIGHTING: Only add 'active' if the element actually exists!
+  let viewEl = document.getElementById('view-' + viewId);
+  if (viewEl) viewEl.classList.add('active');
+
+  // Special handling for the HR Hub so the main sidebar tab stays lit up
   if (viewId === 'payroll' || viewId === 'ledger' || viewId === 'schedule') {
-      title = "🧑‍💼 Human Resources Hub";
-      // Force the sidebar to highlight the HR tab no matter which sub-tab they click!
       let hrNav = document.getElementById('nav-payroll');
       if (hrNav) hrNav.classList.add('active');
-      
-      // Wake up the specific engines
-      if (viewId === 'schedule') loadFromCloud();
+  } else {
+      let navEl = document.getElementById('nav-' + viewId);
+      if (navEl) navEl.classList.add('active');
   }
-  // Change the top title
-  let title = "Global Dashboard";
+
+  // Change the top title safely using 'var'
+  var title = "Global Dashboard";
   if (viewId === 'transfers') title = "Cash Transfers Explorer";
   if (viewId === 'devices') title = "Device Fleet Management";
   if (viewId === 'branches') title = "Staff & Security Management";
@@ -709,16 +709,22 @@ window.switchView = function (viewId) {
   if (viewId === 'alerts') title = "Security Alerts";
   if (viewId === 'inventory') title = "Live Inventory Dashboard";
   if (viewId === 'accounts') title = "Financial Control Center";
-  if (viewId === 'payroll') title = "Payroll Engine & HR Logs";
+  if (viewId === 'payroll') title = "Human Resources Hub";
   if (viewId === 'products') title = "Menu Costing & BOM";
   if (viewId === 'purchases') title = "Purchases & Alerts";
   if (viewId === 'dispatch') title = "Logistics & Dispatch";
   if (viewId === 'zreadings') title = "Z-Reading Reports";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
+  if (viewId === 'ledger') title = "Staff Loans & Ledger";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
-  if (viewId === 'receipt') title = "Thermal Printer Setup";
-  document.getElementById('pageTitle').innerText = title;
+  if (viewId === 'schedule') {
+      title = "Schedule & Shift Manager";
+      if (typeof loadFromCloud === 'function') loadFromCloud(); 
+  }
+  
+  let titleEl = document.getElementById('pageTitle');
+  if (titleEl) titleEl.innerText = title;
 
   // Trigger the engine for that specific page
   if (viewId === 'dashboard') window.loadGlobalDashboard();
@@ -7436,8 +7442,8 @@ window.adjustStaffLoan = async function(staffId, staffName, currentLoan, current
             type: "LOAN_ADJUSTMENT",
             branch: "Main Office",
             message: `Manual ledger override for ${staffName}. New Balance forced to ₱${newBalance.toFixed(2)}.`,
-            timestamp: window.serverTimestamp(),
-            isRead: true // Marks it read so it doesn't annoy you with notifications
+            timestamp: serverTimestamp(), // 🔥 FIXED: Removed window.
+            isRead: true 
         });
 
         alert("✅ Ledger successfully adjusted!");
