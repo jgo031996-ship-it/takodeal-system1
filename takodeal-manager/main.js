@@ -7922,7 +7922,10 @@ window.generateAutoPayslips = async function() {
                         straightBonus: d.straightDutyBonusTotal || 0,
                         advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeductionTotal,
-                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startRaw, end: endRaw,
+                        // 🔥 THE FIX: Directly grab the dates from the HTML boxes so it never gets lost!
+                        logs: staffData[name].logs, profile: staffDict[name] || null, 
+                        start: document.getElementById('payrollStart') ? document.getElementById('payrollStart').value : '', 
+                        end: document.getElementById('payrollEnd') ? document.getElementById('payrollEnd').value : '',
                         sss: profileSSS, philhealth: profilePhil, pagibig: profilePagibig // 🔥 ROUTES TO THE PAYSLIP
                     };
                     d = window.globalPayrollCache[name]; 
