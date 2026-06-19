@@ -10340,33 +10340,51 @@ window.viewLedgerHistory = async function(staffName) {
     }
 };
 
+// ==========================================
+// 🛡️ BULLETPROOF: MARK DEDUCTION PAID ENGINE
+// ==========================================
 window.forceMarkDeductionPaid = async function(docId, staffName, staffDocId) {
     if (!confirm(`⚠️ Are you sure you want to manually mark this Vale/Meal as PAID?\n\nThis will instantly remove it from ${staffName}'s outstanding balance and clear it from their next payslip.`)) return;
     
     try {
-        // 1. Force the database to clear the debt
+        // 1. Force the database to clear the debt (Using new Date() ensures it never crashes!)
         await updateDoc(doc(db, "staff_deductions", docId), {
             status: "Paid",
-            paidAt: serverTimestamp(),
+            paidAt: new Date(), 
             manualOverride: true
         });
-        alert("✅ Deduction successfully marked as Paid!");
         
-        // 2. Auto-refresh whichever modal you are currently looking at!
+        alert(`✅ Success! The ₱ deduction for ${staffName} is officially cleared.`);
+        
+        // 2. AGGRESSIVE UI REFRESH: Refresh whichever modal you are currently looking at!
         if (document.getElementById('ledgerHistoryModal') && document.getElementById('ledgerHistoryModal').style.display === 'flex') {
-            window.viewLedgerHistory(staffName);
-        }
-        if (document.getElementById('employeeProfileModal') && document.getElementById('employeeProfileModal').style.display === 'flex' && staffDocId) {
-            window.openEmployeeProfile(staffDocId);
+            if (typeof window.viewLedgerHistory === 'function') window.viewLedgerHistory(staffName);
         }
         
-        // 3. Refresh the background tables
-        if (typeof window.loadLedger === 'function') window.loadLedger();
-        if (typeof window.loadPayrollDashboard === 'function') window.loadPayrollDashboard();
+        if (document.getElementById('employeeProfileModal') && document.getElementById('employeeProfileModal').style.display === 'flex') {
+            if (staffDocId && typeof window.openEmployeeProfile === 'function') window.openEmployeeProfile(staffDocId);
+        }
+        
+        // 3. BACKGROUND REFRESH: Force the Ledger table to recalculate its math!
+        if (typeof window.loadLedger === 'function') {
+            window.loadLedger();
+        }
+        
+        // 4. PAYROLL REFRESH: If you are on the Payroll tab, force it to wipe the old math and regenerate!
+        let payrollTab = document.getElementById('view-payroll');
+        if (payrollTab && payrollTab.classList.contains('active')) {
+            let startRaw = document.getElementById('payrollStart').value;
+            let endRaw = document.getElementById('payrollEnd').value;
+            
+            // Only trigger the recalculation if they have dates entered
+            if (startRaw && endRaw && typeof window.generateAutoPayslips === 'function') {
+                window.generateAutoPayslips();
+            }
+        }
         
     } catch (e) {
-        console.error(e);
-        alert("❌ Failed to update deduction status.");
+        console.error("Error marking paid:", e);
+        alert("❌ Failed to update deduction status. Please check your internet connection.");
     }
 };
 
