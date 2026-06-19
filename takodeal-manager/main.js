@@ -7921,7 +7921,7 @@ window.generateAutoPayslips = async function() {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0,
                         advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
-                        basicPay: basicPay, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeductionTotal,
+                        basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeductionTotal,
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startRaw, end: endRaw,
                         sss: profileSSS, philhealth: profilePhil, pagibig: profilePagibig // 🔥 ROUTES TO THE PAYSLIP
                     };
