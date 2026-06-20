@@ -1867,33 +1867,6 @@
               onclick="appendNumpad('0')">0</button><button class="num-btn" onclick="clearNumpadOne()">⌫</button><button
               class="num-btn" style="grid-column: span 2;" onclick="setExactAmount()">Exact Amount</button><button
               class="num-btn" onclick="clearNumpadAll()">Clear</button></div>
-          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed #cbd5e1;">
-              <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; text-transform: uppercase;">🎁 Apply Order Discount</h4>
-              
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Type</label>
-                      <select id="paymentDiscountType" class="input-box" style="width: 100%; box-sizing: border-box;" onchange="window.calculatePaymentMath()">
-                          <option value="none">No Discount</option>
-                          <option value="percentage">Percentage (%)</option>
-                          <option value="fixed">Fixed Amount (₱)</option>
-                      </select>
-                  </div>
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #64748b;">Value</label>
-                      <input type="number" id="paymentDiscountValue" class="input-box" placeholder="0" style="width: 100%; box-sizing: border-box;" onkeyup="window.calculatePaymentMath()">
-                  </div>
-              </div>
-              
-              <div>
-                  <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Reason (Required if discounted)</label>
-                  <input type="text" id="paymentDiscountReason" class="input-box" placeholder="e.g., Senior Citizen, Anniversary Promo" style="width: 100%; box-sizing: border-box;">
-              </div>
-          
-              <div style="margin-top: 10px; font-size: 12px; font-weight: bold; color: #dc2626; text-align: right; display: none;" id="discountPreviewRow">
-                  Discount Applied: - ₱<span id="discountAmountPreview">0.00</span>
-              </div>
-          </div>
           <div class="section-title">Payment Method</div>
           <div class="payment-grid"></div>
         </div>
