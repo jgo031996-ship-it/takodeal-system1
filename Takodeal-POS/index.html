@@ -3099,16 +3099,7 @@ window.selectRealVariant = function(realName, vPrice, clickedBtn) {
         // 1. Calculate Checkout Discount
         let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
         let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
-        let dReason = document.getElementById('checkoutDiscountReason') ? document.getElementById('checkoutDiscountReason').value.trim() : '';
-        let dAmount = window.finalCheckoutDiscount || 0;
-
-        if (dAmount > 0 && dReason === "") {
-            alert("⚠️ A Discount Reason or ID Number is REQUIRED when applying a total order discount!");
-            btn.innerText = "Complete checkout"; 
-            btn.disabled = false;
-            return;
-        }
-      
+        
         let discountAmount = 0;
         if (dType === 'percentage' && dVal > 0) discountAmount = originalTotal * (dVal / 100);
         else if (dType === 'fixed' && dVal > 0) discountAmount = dVal;
@@ -3119,7 +3110,8 @@ window.selectRealVariant = function(realName, vPrice, clickedBtn) {
         window.finalCheckoutAmount = originalTotal - discountAmount;
         window.finalCheckoutDiscount = discountAmount;
         
-        document.getElementById('checkoutTotalPayable').innerText = '₱' + window.finalCheckoutAmount.toFixed(2);
+        let totalDisplay = document.getElementById('checkoutTotalPayable');
+        if (totalDisplay) totalDisplay.innerText = '₱' + window.finalCheckoutAmount.toFixed(2);
         
         let previewRow = document.getElementById('checkoutDiscountPreviewRow');
         if (previewRow) {
@@ -3136,7 +3128,8 @@ window.selectRealVariant = function(realName, vPrice, clickedBtn) {
         document.getElementById('checkoutReceived').innerText = '₱' + amountReceivedStr; 
         
         let change = received - window.finalCheckoutAmount; 
-        document.getElementById('checkoutChange').innerText = '₱' + (change > 0 ? change.toFixed(2) : '0.00'); 
+        let changeDisplay = document.getElementById('checkoutChange');
+        if (changeDisplay) changeDisplay.innerText = '₱' + (change > 0 ? change.toFixed(2) : '0.00'); 
 
         // 🔥 THE NEW SECURITY LOCK
         let btn = document.getElementById('btnSubmitFinal');
