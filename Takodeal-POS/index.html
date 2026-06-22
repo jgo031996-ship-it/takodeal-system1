@@ -1853,6 +1853,33 @@
             <div id="checkoutChange" style="font-size: 22px; font-weight: bold; color: #dc3545;">₱0.00</div>
           </div>
         </div>
+        <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed #cbd5e1;">
+            <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; text-transform: uppercase;">🎁 Apply Order Discount</h4>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <div>
+                    <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Type</label>
+                    <select id="checkoutDiscountType" class="input-box" style="width: 100%; box-sizing: border-box; padding: 10px;" onchange="window.updateNumpadDisplay()">
+                        <option value="none">No Discount</option>
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="fixed">Fixed Amount (₱)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 11px; font-weight: bold; color: #64748b;">Value</label>
+                    <input type="number" id="checkoutDiscountValue" class="input-box" placeholder="0" style="width: 100%; box-sizing: border-box; padding: 10px;" onkeyup="window.updateNumpadDisplay()" onchange="window.updateNumpadDisplay()">
+                </div>
+            </div>
+            
+            <div>
+                <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Reason / ID Number</label>
+                <input type="text" id="checkoutDiscountReason" class="input-box" placeholder="e.g., Senior Citizen ID, Promo Code" style="width: 100%; box-sizing: border-box; padding: 10px;">
+            </div>
+
+            <div style="margin-top: 10px; font-size: 14px; font-weight: bold; color: #dc2626; text-align: right; display: none;" id="checkoutDiscountPreviewRow">
+                Discount Applied: - ₱<span id="checkoutDiscountAmountPreview">0.00</span>
+            </div>
+        </div>
         <div id="standardPaymentArea">
           <div class="numpad-grid"><button class="num-btn" onclick="appendNumpad('1')">1</button><button class="num-btn"
               onclick="appendNumpad('2')">2</button><button class="num-btn"
