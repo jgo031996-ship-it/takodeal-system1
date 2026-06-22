@@ -16,6 +16,17 @@
   <link rel="icon" type="image/png" href="logo.jpg">
   
   <style>
+    /* 🔥 FIX: Forces SweetAlert to the absolute front so it never hides behind a modal! */
+    .swal2-container { 
+        z-index: 30000 !important; 
+    }
+    
+    /* Fix for SweetAlert Modals causing background scrolling/shifting */
+    body.swal2-shown:not(.swal2-no-backdrop):not(.swal2-toast-shown) {
+        height: 100% !important;
+        overflow-y: hidden !important;
+    }
+    
     /* 🔥 REMOVE THE CLUNKY WHITE BOX FROM THE PAGE TITLE */
     .topbar {
         background: transparent !important;
