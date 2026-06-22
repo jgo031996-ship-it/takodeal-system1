@@ -7066,15 +7066,64 @@ window.finalizePayslip = async function() {
         if(typeof window.loadAccountsAndBudget === 'function') await window.loadAccountsAndBudget();
     }
 
-    let accList = window.liveAccounts.map((a, i) => `[${i}] ${a.name} (Bal: ₱${a.balance.toLocaleString()})`).join('\n');
-    let accIdx = prompt(`DISBURSE PAYROLL\nNet Pay: ₱${finalNetPay.toLocaleString()}\n\nSelect Account to deduct this payment from (Enter Number):\n\n${accList}`);
+    // Build the dropdown options dynamically
+    let optionsHtml = '';
+    window.liveAccounts.forEach((a, i) => {
+        optionsHtml += `<option value="${i}">${a.name} (Bal: ₱${a.balance.toLocaleString(undefined, {minimumFractionDigits: 2})})</option>`;
+    });
 
-    if (accIdx === null || accIdx === "") return; // Cancelled
+    // Pop the beautiful SweetAlert Modal
+    const { value: accIdx, isConfirmed } = await Swal.fire({
+        title: '💸 Disburse Payroll',
+        html: `
+            <div style="font-size: 15px; color: #475569; margin-bottom: 20px;">
+                Net Pay to Disburse: <br>
+                <strong style="color: #16a34a; font-size: 28px;">₱${finalNetPay.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>
+            <div style="text-align: left;">
+                <label style="font-size: 12px; font-weight: bold; color: #334155; display: block; margin-bottom: 8px;">Select Account to Deduct From:</label>
+                <select id="swal-acc-select" class="input-box" style="width: 100%; padding: 12px; font-size: 14px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; cursor: pointer; box-sizing: border-box;">
+                    <option value="">-- Choose Account --</option>
+                    ${optionsHtml}
+                </select>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Confirm Payment',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' },
+        preConfirm: () => {
+            const val = document.getElementById('swal-acc-select').value;
+            if (!val) {
+                Swal.showValidationMessage('❌ Please select an account to deduct from.');
+            }
+            return val;
+        }
+    });
+
+    if (!isConfirmed || !accIdx) return; // User clicked Cancel
+
     let selAcc = window.liveAccounts[parseInt(accIdx)];
-    if (!selAcc) { alert("❌ Invalid account selected."); return; }
+    if (!selAcc) { 
+        Swal.fire('Error', 'Invalid account selected.', 'error');
+        return; 
+    }
 
     if (selAcc.balance < finalNetPay) {
-        if(!confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance.toLocaleString()}. Deducting this will make it negative. Continue?`)) return;
+        const confirmNegative = await Swal.fire({
+            title: '⚠️ Insufficient Funds',
+            html: `${selAcc.name} only has <strong>₱${selAcc.balance.toLocaleString()}</strong>.<br>Deducting this will make the account negative. Continue anyway?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Proceed',
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#94a3b8',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        if (!confirmNegative.isConfirmed) return;
     }
 
     let btn = document.getElementById('btnFinalizePayslip');
@@ -7161,7 +7210,13 @@ window.finalizePayslip = async function() {
             frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp()
         });
 
-        alert(`✅ Payroll Disbursed! ₱${finalNetPay.toLocaleString()} was deducted from ${selAcc.name}.\nAll Vales and Loans have been accurately updated.`);
+        Swal.fire({
+            title: '✅ Payroll Disbursed!',
+            html: `<strong>₱${finalNetPay.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong> was successfully deducted from <strong>${selAcc.name}</strong>.<br><br><span style="font-size: 13px; color: #64748b;">All Vales and Loans have been accurately updated.</span>`,
+            icon: 'success',
+            confirmButtonColor: '#16a34a',
+            customClass: { popup: 'rounded-2xl' }
+        });
         
         if (btn) {
             btn.innerText = "✅ Paid & Done!";
