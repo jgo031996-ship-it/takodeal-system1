@@ -473,6 +473,11 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empSSS').value = data.sss || '';
     document.getElementById('empPhilhealth').value = data.philhealth || '';
     document.getElementById('empPagibig').value = data.pagibig || '';
+    // Load Dynamic Deductions
+   document.getElementById('customDeductionsContainer').innerHTML = ''; 
+   if (data.customDeductions && data.customDeductions.length > 0) {
+       data.customDeductions.forEach(d => window.addCustomDeductionRow(d.name, d.amount));
+   }
     document.getElementById('empSSSAmount').value = data.sssAmount || '';
     document.getElementById('empPhilAmount').value = data.philHealthAmount || '';
     document.getElementById('empPagibigAmount').value = data.pagibigAmount || '';
@@ -528,6 +533,14 @@ window.saveEmployeeProfile = async function() {
         return;
     }
 
+      // Gather all dynamic deduction rows!
+     let customDeductionsArray = [];
+     document.querySelectorAll('.custom-deduct-row').forEach(row => {
+         let n = row.querySelector('.cd-name').value.trim();
+         let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
+         if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
+     });
+  
     let payload = {
         cashierName: name,
         branch: branch,
@@ -535,6 +548,7 @@ window.saveEmployeeProfile = async function() {
         dateHired: document.getElementById('empDateHired').value,
         hourlyRate: rate,
         pin: pin,
+        customDeductions: customDeductionsArray,
         
         // 🔥 NEW: Save the toggle state to the cloud!
         eligibleNightDiff: document.getElementById('empNightDiff') ? document.getElementById('empNightDiff').checked : true,
@@ -6974,7 +6988,7 @@ window.openPayslipModal = async function(staffName) {
     safeSetVal('psFoods', data.meals || 0);
     
     let wifiBox = document.getElementById('psWifi');
-    if(wifiBox) wifiBox.value = 0;
+    if(wifiBox) wifiBox.value = data.customDeductionsTotal || 0;
 
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
@@ -7925,6 +7939,9 @@ window.generateAutoPayslips = async function() {
                     let profileSSS = staffDict[name] ? (parseFloat(staffDict[name].sssAmount) || 0) : 0;
                     let profilePhil = staffDict[name] ? (parseFloat(staffDict[name].philHealthAmount) || 0) : 0;
                     let profilePagibig = staffDict[name] ? (parseFloat(staffDict[name].pagibigAmount) || 0) : 0;
+                    let profileCustomDeducts = staffDict[name] ? (staffDict[name].customDeductions || []) : [];
+                    let customDeductSum = 0;
+                    profileCustomDeducts.forEach(d => customDeductSum += d.amount);
                   
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
@@ -7935,7 +7952,7 @@ window.generateAutoPayslips = async function() {
                         logs: staffData[name].logs, profile: staffDict[name] || null, 
                         start: document.getElementById('payrollStart') ? document.getElementById('payrollStart').value : '', 
                         end: document.getElementById('payrollEnd') ? document.getElementById('payrollEnd').value : '',
-                        sss: profileSSS, philhealth: profilePhil, pagibig: profilePagibig // 🔥 ROUTES TO THE PAYSLIP
+                        sss: profileSSS, philhealth: profilePhil, pagibig: profilePagibig, customDeductionsTotal: customDeductSum
                     };
                     d = window.globalPayrollCache[name]; 
                 }
@@ -11701,4 +11718,21 @@ window.openItemLedger = async function(branch, itemName) {
         console.error("Item Ledger Error:", e);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Failed to load trace data. Check F12 console. (May need a Firebase Index).</td></tr>';
     }
+};
+
+// ==========================================
+// ➕ DYNAMIC PROFILE DEDUCTION BUILDER
+// ==========================================
+window.addCustomDeductionRow = function(name = '', amount = '') {
+    let container = document.getElementById('customDeductionsContainer');
+    let div = document.createElement('div');
+    div.className = 'custom-deduct-row';
+    div.style.display = 'flex';
+    div.style.gap = '10px';
+    div.innerHTML = `
+        <input type="text" class="cd-name input-box" placeholder="Name (e.g. Wi-Fi, Uniform)" value="${name}" style="flex: 2; padding: 10px;">
+        <input type="number" class="cd-amount input-box" placeholder="Amount (₱)" value="${amount}" style="flex: 1; padding: 10px;">
+        <button type="button" onclick="this.parentElement.remove()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 0 15px; cursor: pointer; font-weight: bold; transition: 0.2s;" title="Remove Row">✖</button>
+    `;
+    container.appendChild(div);
 };
