@@ -7133,6 +7133,15 @@ window.finalizePayslip = async function() {
         data.advances = actualValeDeducted;
         data.meals = actualFoodDeducted;
         
+        // Grab live edits directly from the screen so nothing is ever "undefined"
+        data.lateDeduction = parseFloat(document.getElementById('psLate').value) || 0;
+        data.sss = parseFloat(document.getElementById('psSSS').value) || 0;
+        data.philhealth = parseFloat(document.getElementById('psPhil').value) || 0;
+        data.pagibig = parseFloat(document.getElementById('psPagibig').value) || 0;
+        data.straightBonus = parseFloat(document.getElementById('psStraightBonus').value) || 0;
+        data.holidayPayTotal = parseFloat(document.getElementById('psHoliday').value) || 0;
+        data.nightBonus = parseFloat(document.getElementById('psOvertime').value) || 0;
+        
         await addDoc(collection(db, "payroll_records"), {
             staffName: data.name, startDate: data.start, endDate: data.end,
             frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp()
@@ -7921,7 +7930,7 @@ window.generateAutoPayslips = async function() {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0,
                         advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
-                        basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeductionTotal,
+                        basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0,
                         // 🔥 THE FIX: Directly grab the dates from the HTML boxes so it never gets lost!
                         logs: staffData[name].logs, profile: staffDict[name] || null, 
                         start: document.getElementById('payrollStart') ? document.getElementById('payrollStart').value : '', 
