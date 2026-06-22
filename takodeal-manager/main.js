@@ -7170,7 +7170,6 @@ window.finalizePayslip = async function() {
             btn.disabled = true;
         }
         
-        document.getElementById('payslipModal').style.display = 'none';
         window.downloadPayslipImage();
         
         window.loadLedger(); 
@@ -7188,17 +7187,23 @@ window.finalizePayslip = async function() {
 window.downloadPayslipImage = function() {
     const payslipElement = document.getElementById('printablePayslip');
     const btn = document.getElementById('btnDownloadPayslip');
-    let originalText = btn.innerText;
+    let originalText = btn ? btn.innerText : "Download";
     
-    btn.innerText = "⏳ Generating Image...";
-    btn.disabled = true;
+    if (btn) {
+        btn.innerText = "⏳ Generating Image...";
+        btn.disabled = true;
+    }
 
-    // Use html2canvas to take a high-quality screenshot of the div
+    // Scroll to the top of the modal just in case to ensure a perfect screenshot
+    let modalBody = document.querySelector('.modal-body');
+    if (modalBody) modalBody.scrollTop = 0;
+
+    // Use html2canvas to take a high-quality screenshot of the div while it is still visible!
     html2canvas(payslipElement, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
         let imgData = canvas.toDataURL("image/png");
         let link = document.createElement('a');
         
-        // Name the file beautifully: "Payslip_Dianne_2026-05-15.png"
+        // Name the file beautifully
         let staffName = document.getElementById('psName').innerText.replace(/\s+/g, '_');
         let endDate = document.getElementById('psEnd').innerText;
         link.download = `Payslip_${staffName}_${endDate}.png`;
@@ -7206,13 +7211,23 @@ window.downloadPayslipImage = function() {
         link.href = imgData;
         link.click();
 
-        btn.innerText = originalText;
-        btn.disabled = false;
+        if (btn) {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+
+        // 🔥 THE FIX: Now that the photo is safely downloaded, we can close the modal!
+        document.getElementById('payslipModal').style.display = 'none';
+
     }).catch(err => {
         console.error("Error generating image:", err);
         alert("❌ Failed to generate image. Please try again.");
-        btn.innerText = originalText;
-        btn.disabled = false;
+        if (btn) {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+        // Still close it if it fails so you aren't stuck
+        document.getElementById('payslipModal').style.display = 'none';
     });
 };
 
