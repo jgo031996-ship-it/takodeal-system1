@@ -1481,6 +1481,13 @@
                 <th>Action</th>
               </tr>
             </thead>
+            <div id="payrollGrandTotalContainer" style="display: none; background: #ecfdf5; border: 1px solid #10b981; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; align-items: center; justify-content: space-between; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);">
+                <div>
+                    <h3 style="margin: 0; color: #065f46; font-size: 18px;">Total Payroll Required</h3>
+                    <p style="margin: 0; color: #047857; font-size: 13px;">Exact amount to transfer to the payroll distributor bank.</p>
+                </div>
+                <div style="font-size: 32px; font-weight: 900; color: #15803d;" id="payrollGrandTotalAmount">₱0.00</div>
+            </div>
             <tbody id="payrollGeneratorBody">
               <tr><td colspan="5" class="text-center" style="padding: 30px; color: var(--text-muted);">Select your cutoff dates and click "Generate List" to begin.</td></tr>
               <tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts found for this cutoff period.</td></tr>
@@ -2807,7 +2814,7 @@
           </div>
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Category</label>
-            <select id="newInvCat" class="input-box" style="width: 100%; box-sizing: border-box;" onchange="window.handleCategoryDropdown(this)">
+            <select id="newInvCat" class="input-box" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; background: white; box-sizing: border-box; font-weight: bold; color: #1e293b;" onchange="window.handleCategoryDropdown(this)">
                 <option value="Ingredients">Ingredients</option>
                 <option value="Packaging">Packaging</option>
                 <option value="Beverage">Beverage</option>
@@ -2979,7 +2986,7 @@
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Category</label>
-                      <select id="editInvCat" class="input-box" style="width: 100%; box-sizing: border-box;" onchange="window.handleCategoryDropdown(this)">
+                      <select id="editInvCat" class="input-box" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; background: white; box-sizing: border-box; font-weight: bold; color: #1e293b;" onchange="window.handleCategoryDropdown(this)">
                           <option value="Ingredients">Ingredients</option>
                           <option value="Packaging">Packaging</option>
                           <option value="Beverage">Beverage</option>
