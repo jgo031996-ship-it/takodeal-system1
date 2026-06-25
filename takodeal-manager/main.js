@@ -4221,7 +4221,13 @@ window.saveInventoryEdit = async function() {
             });
         }
 
-        alert("✅ Item updated and synced across all branches successfully!");
+        Swal.fire({
+            title: '✅ Success!',
+            text: 'Item updated and synced across all branches successfully!',
+            icon: 'success',
+            confirmButtonColor: '#ea580c', // Matches the orange theme of your Edit Modal!
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
         document.getElementById('editInvModal').style.display = 'none';
         
         window.loadInventoryData();
