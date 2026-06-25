@@ -508,8 +508,10 @@ window.openEmployeeProfile = function(docId) {
                     <td style="padding:10px 8px; color: #64748b;">${dateStr}</td>
                     <td style="padding:10px 8px; font-weight: bold; color: #334155;">${d.type}</td>
                     <td style="padding:10px 8px; font-weight:bold; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                    <td style="padding:10px 8px; color:${color}; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">
-                        <span>${d.status}</span>
+                    <td style="padding:10px 8px; color:${color}; font-weight:bold;">
+                        ${d.status}
+                    </td>
+                    <td style="padding:10px 8px; text-align: center;">
                         ${actionHtml}
                     </td>
                 </tr>`;
