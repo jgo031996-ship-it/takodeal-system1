@@ -3094,6 +3094,7 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
     for (let item of items) {
         let isMissing = document.getElementById(`missing_check_${item.id}`).checked;
         let inputVal = document.getElementById(`recv_val_${item.id}`).value;
+        let remarkVal = document.getElementById(`remark_val_${item.id}`).value.trim();
         let actualDisplayQty = parseFloat(inputVal);
 
         if (isMissing) {
@@ -3105,7 +3106,8 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
         itemsToProcess.push({
             ...item,
             actualDisplayQty: actualDisplayQty,
-            isMissing: isMissing
+            isMissing: isMissing,
+            remarks: remarkVal
         });
     }
 
@@ -3159,7 +3161,8 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
                 variance: varianceBase,     
                 receivedDisplayQty: item.actualDisplayQty, 
                 receivedAt: serverTimestamp(),
-                receivedBy: localStorage.getItem('cashierName') || 'Cashier'
+                receivedBy: localStorage.getItem('cashierName') || 'Cashier',
+                receivingRemarks: item.remarks
             });
 
             if (item.isMissing || varianceBase !== 0) {
@@ -3167,7 +3170,7 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
                     type: "DELIVERY_DISCREPANCY",
                     branch: safeBranch,
                     cashier: localStorage.getItem('cashierName') || 'Cashier',
-                    message: `SH_ALERT: ${item.item} delivery discrepancy flagged at ${safeBranch}. Status: ${exceptionStatus}. Expected: ${expectedDisplayQty}, Got: ${item.actualDisplayQty}.`,
+                    message: `SH_ALERT: ${item.item} delivery discrepancy flagged at ${safeBranch}. Status: ${exceptionStatus}. Expected: ${expectedDisplayQty}, Got: ${item.actualDisplayQty}. Note: "${item.remarks || 'No remarks'}"`,
                     timestamp: serverTimestamp(),
                     isRead: false
                 });
