@@ -8401,34 +8401,44 @@ async function triggerPayableAlert(count) {
     }
 }
 
-// ========================================================
-// 📦 SMART RECEIVE & PAYABLES ENGINE
-// ========================================================
-
 window.payableItemsCart = [];
 window.payableInventoryOptions = [];
 
+// ========================================================
+// 📦 SMART RECEIVE & PAYABLES ENGINE (CRASH-PROOF UPGRADE)
+// ========================================================
+
 window.openAddPayableModal = async function() {
-    document.getElementById('addPayableModal').style.display = 'flex';
-    document.getElementById('paySupplierName').value = '';
-    document.getElementById('payInvoiceNum').value = '';
-    document.getElementById('payAmount').value = '';
+    let modal = document.getElementById('addPayableModal');
+    if(modal) modal.style.display = 'flex';
+    
+    // Safely clear inputs regardless of whether they use the old or new HTML IDs!
+    let suppName = document.getElementById('paySupplierName') || document.getElementById('suppName');
+    if(suppName) suppName.value = '';
+    
+    let invNum = document.getElementById('payInvoiceNum') || document.getElementById('suppInvoice');
+    if(invNum) invNum.value = '';
+    
+    let amountBox = document.getElementById('payAmount') || document.getElementById('suppAmount');
+    if(amountBox) amountBox.value = '';
+    
     window.payableItemsCart = [];
     window.renderPayableItems();
 
     let itemInput = document.getElementById('payItemSelect');
-    
-    // Transform select into a datalist search
-    if (itemInput.tagName === 'SELECT') {
-        let newInput = document.createElement('input');
-        newInput.id = 'payItemSelect';
-        newInput.setAttribute('list', 'payableDatalist');
-        newInput.placeholder = "Type to search Main Office item...";
-        newInput.style.cssText = "flex: 1; min-width: 0; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; outline: none; box-sizing: border-box;";
-        itemInput.parentNode.replaceChild(newInput, itemInput);
-        itemInput = newInput;
+    if (itemInput) {
+        // Transform select into a datalist search
+        if (itemInput.tagName === 'SELECT') {
+            let newInput = document.createElement('input');
+            newInput.id = 'payItemSelect';
+            newInput.setAttribute('list', 'payableDatalist');
+            newInput.placeholder = "Type to search Main Office item...";
+            newInput.style.cssText = "flex: 1; min-width: 0; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; outline: none; box-sizing: border-box;";
+            itemInput.parentNode.replaceChild(newInput, itemInput);
+            itemInput = newInput;
+        }
+        itemInput.value = '';
     }
-    itemInput.value = '';
 
     try {
         const q = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
@@ -8489,23 +8499,36 @@ window.renderPayableItems = function() {
 
 // 3. The Grand Double-Save (Updates Payables AND Live Inventory)
 window.saveNewPayable = async function() {
-    let pendingItem = document.getElementById('payItemSelect').value;
-    if (pendingItem && document.getElementById('payItemQty').value) window.addPayableItem(); 
+    let pendingItemBox = document.getElementById('payItemSelect');
+    let pendingQtyBox = document.getElementById('payItemQty');
+    if (pendingItemBox && pendingItemBox.value && pendingQtyBox && pendingQtyBox.value) {
+        window.addPayableItem(); 
+    }
 
-    let supplier = document.getElementById('paySupplierName').value.trim();
-    let invoice = document.getElementById('payInvoiceNum').value.trim();
-    let amount = parseFloat(document.getElementById('payAmount').value);
-    let terms = parseInt(document.getElementById('payTerms').value);
+    // Safely grab values regardless of old or new HTML IDs
+    let suppBox = document.getElementById('paySupplierName') || document.getElementById('suppName');
+    let invBox = document.getElementById('payInvoiceNum') || document.getElementById('suppInvoice');
+    let amtBox = document.getElementById('payAmount') || document.getElementById('suppAmount');
+    let termsBox = document.getElementById('payTerms') || document.getElementById('suppTerms');
 
-    if (!supplier || isNaN(amount) || amount <= 0) { alert("Please enter Supplier Name and a valid Amount."); return; }
+    let supplier = suppBox ? suppBox.value.trim() : '';
+    let invoice = invBox ? invBox.value.trim() : '';
+    let amount = amtBox ? parseFloat(amtBox.value) : 0;
+    let terms = termsBox ? parseInt(termsBox.value) : 0;
+
+    if (!supplier || isNaN(amount) || amount <= 0) { 
+        Swal.fire('Missing Details', 'Please enter Supplier Name and a valid Amount.', 'warning'); 
+        return; 
+    }
 
     let btn = document.getElementById('btnSavePayable');
-    btn.innerText = "⏳ Uploading & Saving..."; btn.disabled = true;
+    if(btn) { btn.innerText = "⏳ Uploading & Saving..."; btn.disabled = true; }
 
     try {
         // 🔥 UPLOAD THE INVOICE PHOTO TO FIREBASE STORAGE
         let photoUrl = "";
-        let fileInput = document.getElementById('payPhotoProof');
+        let fileInput = document.getElementById('payPhotoProof') || document.getElementById('suppPhoto');
+        
         if (fileInput && fileInput.files.length > 0) {
             const file = fileInput.files[0];
             const fileExt = file.name.split('.').pop();
@@ -8515,12 +8538,14 @@ window.saveNewPayable = async function() {
             photoUrl = await getDownloadURL(snapshot.ref);
         }
 
-        let deliveryDate = new Date(); let dueDate = new Date(); dueDate.setDate(deliveryDate.getDate() + terms);
+        let deliveryDate = new Date(); 
+        let dueDate = new Date(); 
+        dueDate.setDate(deliveryDate.getDate() + terms);
         
         await addDoc(collection(db, "payables"), {
             supplier: supplier, invoiceNum: invoice, amount: amount, termsDays: terms, deliveryDate: deliveryDate, dueDate: dueDate, status: "Unpaid",
             hasLinkedItems: window.payableItemsCart.length > 0, linkedItems: window.payableItemsCart,
-            photoUrl: photoUrl, // 🔥 SAVES THE PHOTO URL!
+            photoUrl: photoUrl, 
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
         });
 
@@ -8540,15 +8565,28 @@ window.saveNewPayable = async function() {
             }
         }
 
-        alert(`✅ Success! Invoice logged and inventory added to Main Office.`);
-        document.getElementById('addPayableModal').style.display = 'none';
+        Swal.fire({
+            title: '✅ Success!',
+            text: 'Invoice logged and inventory added to Main Office.',
+            icon: 'success',
+            confirmButtonColor: '#0f766e',
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
+
+        let modal = document.getElementById('addPayableModal');
+        if(modal) modal.style.display = 'none';
         
-        // Reset file input
         if (fileInput) fileInput.value = '';
         
         window.loadPayablesDashboard();
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
-    } catch (e) { alert(`❌ Failed to save. Error: ${e.message}`); } finally { btn.innerText = "💾 Log Delivery & Track Deadline"; btn.disabled = false; }
+        
+    } catch (e) { 
+        console.error(e);
+        Swal.fire('Error', `Failed to save. Error: ${e.message}`, 'error'); 
+    } finally { 
+        if(btn) { btn.innerText = "💾 Log Delivery & Track Deadline"; btn.disabled = false; } 
+    }
 };
 
 window.deletePayable = async function(id) {
