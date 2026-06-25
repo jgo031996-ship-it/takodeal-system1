@@ -2807,14 +2807,14 @@
           </div>
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Category</label>
-            <select id="newInvCat"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
-              <option value="Ingredients">Ingredients</option>
-              <option value="Packaging">Packaging</option>
-              <option value="Beverage">Beverage</option>
-              <option value="Prepared Batch">Prepared Batch</option>
-              <option value="Consumables">Consumables</option>
-              <option value="Cleaning Supplies">Cleaning Supplies</option>
+            <select id="newInvCat" class="input-box" style="width: 100%; box-sizing: border-box;" onchange="window.handleCategoryDropdown(this)">
+                <option value="Ingredients">Ingredients</option>
+                <option value="Packaging">Packaging</option>
+                <option value="Beverage">Beverage</option>
+                <option value="Prepared Batch">Prepared Batch</option>
+                <option value="Consumables">Consumables</option>
+                <option value="Cleaning Supplies">Cleaning Supplies</option>
+                <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Category...</option>
             </select>
           </div>
         </div>
@@ -2979,13 +2979,14 @@
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Category</label>
-                      <select id="editInvCat" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; outline: none; font-weight: 500;">
+                      <select id="editInvCat" class="input-box" style="width: 100%; box-sizing: border-box;" onchange="window.handleCategoryDropdown(this)">
                           <option value="Ingredients">Ingredients</option>
                           <option value="Packaging">Packaging</option>
                           <option value="Beverage">Beverage</option>
                           <option value="Prepared Batch">Prepared Batch</option>
                           <option value="Consumables">Consumables</option>
                           <option value="Cleaning Supplies">Cleaning Supplies</option>
+                          <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Category...</option>
                       </select>
                   </div>
 
