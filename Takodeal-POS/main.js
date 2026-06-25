@@ -428,7 +428,7 @@ window.processCheckout = async function (payload) {
             }
         } catch (err) { console.warn("Ledger auto-route queued locally.", err); }
 
-        // 2. Inventory Updates
+        // 2. Inventory Updates (SILENT MODE - NO SPAM LOGS!)
         try {
             let lowStockTriggered = false;
             for (let cartItem of payload.cart) {
@@ -445,13 +445,9 @@ window.processCheckout = async function (payload) {
                     if (!invSnap.empty) {
                         let invData = invSnap.docs[0].data();
                         let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
-                        await updateDoc(invSnap.docs[0].ref, { currentStock: newStock });
                         
-                        await addDoc(collection(db, "stock_logs"), {
-                            branch: payload.branch, item: recipeData.ingredientName, uom: invData.uom || 'units',
-                            oldQty: invData.currentStock || 0, newQty: newStock, variance: -totalAmountToDeduct, 
-                            type: "Sales Auto-Deduct", note: `Receipt: ${receiptId}`, user: payload.cashier, timestamp: serverTimestamp()
-                        });
+                        // Just update the live stock silently
+                        await updateDoc(invSnap.docs[0].ref, { currentStock: newStock });
                         if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                     }
                 }
@@ -466,13 +462,9 @@ window.processCheckout = async function (payload) {
                             if (!addonInvSnap.empty) {
                                 let invData = addonInvSnap.docs[0].data();
                                 let newStock = (invData.currentStock || 0) - totalAddonDeduct;
-                                await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
                                 
-                                await addDoc(collection(db, "stock_logs"), {
-                                    branch: payload.branch, item: addon.linkedIngredient, uom: invData.uom || 'units',
-                                    oldQty: invData.currentStock || 0, newQty: newStock, variance: -totalAddonDeduct, 
-                                    type: "Sales Auto-Deduct (Addon)", note: `Receipt: ${receiptId}`, user: payload.cashier, timestamp: serverTimestamp()
-                                });
+                                // Just update the live stock silently
+                                await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
                                 if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                             }
                         }
@@ -1019,10 +1011,36 @@ window.submitComprehensiveCloseShift = async function () {
         let totalCashSales = 0;
         let totalDigitalSales = 0;
         let digitalBreakdown = {}; // 🔥 Tracker for Auto-Sweep
+        let shiftIngredientBurn = {}; // 🔥 Tracks all ingredients used in this shift
 
         if (transactions && transactions.length > 0) {
             transactions.forEach(tx => {
                 if (tx.status !== 'Voided') {
+                    // 🔥 SUM UP ALL INGREDIENTS BURNED IN THIS RECEIPT
+                    if (tx.cart) {
+                        tx.cart.forEach(item => {
+                            let itemName = item.name || item.itemName;
+                            let qty = item.qty || 1;
+
+                            // Tally Main Recipe
+                            let recipe = masterPOSData.bom.filter(b => b.menuItem === itemName);
+                            recipe.forEach(r => {
+                                if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
+                                shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
+                            });
+
+                            // Tally Add-ons
+                            if (item.addons) {
+                                for (let key in item.addons) {
+                                    let addon = item.addons[key];
+                                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                        if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
+                                        shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
+                                    }
+                                }
+                            }
+                        });
+                    }
                     // 🔥 NEW: Process Split Breakdowns for Shift Closing!
                     if (tx.splitDetails) {
                         tx.splitDetails.forEach(split => {
@@ -1132,6 +1150,27 @@ window.submitComprehensiveCloseShift = async function () {
             });
         }
 
+        // ========================================================
+        // 📊 THE BATCH-LOG ENGINE (SAVES CLOUD STORAGE & CLEANS TRACE LEDGER!)
+        // ========================================================
+        let currentCashier = localStorage.getItem('cashierName') || 'Unknown';
+        for (let ingName in shiftIngredientBurn) {
+            let totalBurn = shiftIngredientBurn[ingName];
+            if (totalBurn > 0) {
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: branchName,
+                    item: ingName,
+                    uom: "Units", 
+                    oldQty: "Shift",
+                    newQty: "Summary",
+                    variance: -totalBurn,
+                    type: "Shift Sales Deduction",
+                    note: `Total ingredients used during ${currentCashier}'s shift`,
+                    user: currentCashier,
+                    timestamp: serverTimestamp()
+                });
+            }
+        }
         alert(`✅ Shift Closed & Bookkeeping Complete!\n\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}\n\n(Digital sales were automatically swept to HQ Bank ledgers).`);
 
         // 🛑 THE HARD MEMORY WIPE & KILL SWITCH
