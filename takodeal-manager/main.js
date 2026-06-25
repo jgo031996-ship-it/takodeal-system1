@@ -7196,7 +7196,7 @@ window.finalizePayslip = async function() {
         data.advances = actualValeDeducted;
         data.meals = actualFoodDeducted;
         
-        // Grab live edits directly from the screen so nothing is ever "undefined"
+        // Grab live edits directly from the screen
         data.lateDeduction = parseFloat(document.getElementById('psLate').value) || 0;
         data.sss = parseFloat(document.getElementById('psSSS').value) || 0;
         data.philhealth = parseFloat(document.getElementById('psPhil').value) || 0;
@@ -7204,7 +7204,15 @@ window.finalizePayslip = async function() {
         data.straightBonus = parseFloat(document.getElementById('psStraightBonus').value) || 0;
         data.holidayPayTotal = parseFloat(document.getElementById('psHoliday').value) || 0;
         data.nightBonus = parseFloat(document.getElementById('psOvertime').value) || 0;
-        
+
+        // 🛡️ THE ULTIMATE CRASH PREVENTER: Wipe out ANY undefined values!
+        // Firebase strictly forbids 'undefined'. If a number gets lost in memory, this forces it to 0.
+        Object.keys(data).forEach(key => {
+            if (data[key] === undefined) {
+                data[key] = 0; 
+            }
+        });
+
         await addDoc(collection(db, "payroll_records"), {
             staffName: data.name, startDate: data.start, endDate: data.end,
             frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp()
@@ -11805,4 +11813,31 @@ window.addCustomDeductionRow = function(name = '', amount = '') {
         <button type="button" onclick="this.parentElement.remove()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 0 15px; cursor: pointer; font-weight: bold; transition: 0.2s;" title="Remove Row">✖</button>
     `;
     container.appendChild(div);
+};
+
+// ==========================================
+// ➕ DYNAMIC INVENTORY CATEGORY BUILDER
+// ==========================================
+window.handleCategoryDropdown = function(selectElement) {
+    if (selectElement.value === "ADD_NEW") {
+        let newCat = prompt("Enter the name of your new custom category:");
+        
+        if (newCat && newCat.trim() !== "") {
+            newCat = newCat.trim();
+            
+            // Create the new option
+            let newOption = document.createElement("option");
+            newOption.value = newCat;
+            newOption.innerText = newCat;
+            
+            // Insert it right before the "+ Add Custom Category..." button
+            selectElement.insertBefore(newOption, selectElement.lastElementChild);
+            
+            // Auto-select the newly created category!
+            selectElement.value = newCat;
+        } else {
+            // If they click cancel or leave it blank, revert back to the top option
+            selectElement.selectedIndex = 0;
+        }
+    }
 };
