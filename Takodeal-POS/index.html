@@ -3938,5 +3938,19 @@ window.printParkedReceipt = function(docId) {
         };
     </script>
     <script type="module" src="main.js"></script>
+    <script>
+    // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(registration => {
+            console.log('✅ App securely installed to tablet hard drive.', registration.scope);
+          })
+          .catch(err => {
+            console.error('❌ Hard drive installation failed: ', err);
+          });
+      });
+    }
+  </script>
 </body>
 </html>
