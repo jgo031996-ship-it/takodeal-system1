@@ -11874,3 +11874,83 @@ window.handleCategoryDropdown = function(selectElement) {
         }
     }
 };
+
+// ==========================================
+// 📜 OFFBOARDING & COE GENERATOR ENGINE
+// ==========================================
+window.processResignation = async function() {
+    let docId = document.getElementById('empProfileId').value;
+    let name = document.getElementById('empFullName').value.trim();
+    let dateHired = document.getElementById('empDateHired').value;
+    let role = document.getElementById('empRole').value;
+    
+    if (!docId) { 
+        Swal.fire('Error', 'Please save this employee to the database first before offboarding them.', 'error'); 
+        return; 
+    }
+
+    const { value: reason, isConfirmed } = await Swal.fire({
+        title: 'Offboard Staff Member?',
+        html: `Process resignation for <strong>${name}</strong>?<br><br><span style="font-size: 13px; color: #64748b;">This will immediately REVOKE their POS login PIN so they cannot access the registers, and it will automatically generate their Certificate of Employment.</span>`,
+        input: 'text',
+        inputPlaceholder: 'Reason (e.g. Finished Contract, Resigned)',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Yes, Offboard & Generate COE',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (isConfirmed) {
+        Swal.fire({ title: 'Processing Offboarding...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+        
+        try {
+            // 1. Revoke their POS Access in Firebase
+            await updateDoc(doc(db, "cashiers", docId), {
+                pin: 'REVOKED', // Changes PIN to letters so the Numpad can never log them in again!
+                status: 'Resigned',
+                resignationReason: reason || 'N/A',
+                dateResigned: new Date().toISOString().split('T')[0]
+            });
+            
+            // 2. Generate and Download the COE Image
+            window.generateCOEImage(name, dateHired, role);
+            
+            // 3. Refresh the UI
+            document.getElementById('employeeProfileModal').style.display = 'none';
+            if (typeof window.loadHRModule === 'function') window.loadHRModule(); 
+            
+            Swal.fire('Success!', `${name} has been successfully offboarded. Their login is revoked, and the COE is downloading!`, 'success');
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to process resignation. Check your internet connection.', 'error');
+        }
+    }
+};
+
+window.generateCOEImage = function(name, dateHired, role) {
+    let template = document.getElementById('coeTemplate');
+    template.style.display = 'block'; // Briefly show it to the camera
+    
+    // Inject the data
+    document.getElementById('coeName').innerText = name.toUpperCase();
+    document.getElementById('coeRole').innerText = role || "Staff Member";
+    
+    // Format the dates beautifully
+    let hiredDate = dateHired ? new Date(dateHired).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : "their start date";
+    let todayDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    document.getElementById('coeDateHired').innerText = hiredDate;
+    document.getElementById('coeDateToday').innerText = todayDate;
+    
+    // Take the screenshot!
+    html2canvas(template, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+        let link = document.createElement('a');
+        link.download = `COE_${name.replace(/\s+/g, '_')}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        
+        template.style.display = 'none'; // Hide it again so it doesn't mess up your screen!
+    });
+};
