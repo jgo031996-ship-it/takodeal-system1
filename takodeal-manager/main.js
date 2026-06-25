@@ -386,13 +386,24 @@ window.loadHRModule = async function() {
     } else {
       // Store globally so the modal can read it easily
       window.globalStaffData = {};
-
+      
+      // 1. EXTRACT: Put everyone into an array first
+      let staffList = [];
       snap.forEach(docSnap => {
-        let data = docSnap.data();
-        window.globalStaffData[docSnap.id] = data; // Cache data
+          staffList.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      // 2. SORT: Arrange the array alphabetically by their name
+      staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
+
+      // 3. BUILD: Generate the HTML from the sorted list
+      staffList.forEach(data => {
+        window.globalStaffData[data.id] = data; // Cache data
 
         // 🔐 PIN LOGIC: Real PIN for Owner, Stars for Managers
         let pinDisplay = isOwner ? (data.pin || '0000') : '****';
+        if (data.pin === 'REVOKED') pinDisplay = 'REVOKED'; // Always show revoked status!
+        
         let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/day` : `<span style="color:#ef4444; font-size:11px;">Rate Missing</span>`;
 
         html += `
@@ -410,7 +421,7 @@ window.loadHRModule = async function() {
               ${pinDisplay}
             </td>
             <td>
-              <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 8px 12px; font-weight: bold; border-radius: 6px;" onclick="openEmployeeProfile('${docSnap.id}')">📂 Open Profile</button>
+              <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 8px 12px; font-weight: bold; border-radius: 6px;" onclick="window.openEmployeeProfile('${data.id}')">📂 Open Profile</button>
             </td>
           </tr>
         `;
