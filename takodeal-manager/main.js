@@ -11839,8 +11839,8 @@ window.addCustomDeductionRow = function(name = '', amount = '') {
     div.style.display = 'flex';
     div.style.gap = '10px';
     div.innerHTML = `
-        <input type="text" class="cd-name input-box" placeholder="Name (e.g. Wi-Fi, Uniform)" value="${name}" style="flex: 2; padding: 10px;">
-        <input type="number" class="cd-amount input-box" placeholder="Amount (₱)" value="${amount}" style="flex: 1; padding: 10px;">
+        <input type="text" class="cd-name input-box" placeholder="Name (e.g. Wi-Fi, Uniform)" value="${name}" style="flex: 2; padding: 10px; border: 1px solid #fde68a; border-radius: 6px; outline: none;">
+        <input type="number" class="cd-amount input-box" placeholder="Amount (₱)" value="${amount}" style="flex: 1; padding: 10px; border: 1px solid #fde68a; border-radius: 6px; outline: none; font-weight: bold; color: #d97706;">
         <button type="button" onclick="this.parentElement.remove()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 0 15px; cursor: pointer; font-weight: bold; transition: 0.2s;" title="Remove Row">✖</button>
     `;
     container.appendChild(div);
