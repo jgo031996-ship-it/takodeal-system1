@@ -34,6 +34,8 @@ window.getDocs = getDocs;
 window.deleteDoc = deleteDoc;
 window.doc = doc;
 window.updateDoc = updateDoc;
+window.getDoc = getDoc;
+window.setDoc = setDoc;
 
 console.log("🚀 TAKODEÁL Cashier Offline Mode is ACTIVE!");
 
