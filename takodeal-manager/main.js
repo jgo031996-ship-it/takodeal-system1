@@ -4207,7 +4207,7 @@ window.saveInventoryEdit = async function() {
             baseCost: (purchCost / conversion), 
             lowStockAlert: lowStock, reorderLevel: lowStock, 
             currentStock: finalQty, 
-            showInPrep: showPrepVal // 🔥 Re-attached!
+            showInPrep: document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : false,
             (photoUrl !== undefined && { image: photoUrl })
         });
 
@@ -8192,23 +8192,28 @@ window.loadCashFlowHub = async function() {
         accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
 
         let branchFloating = {};
+        let lifetimeRemitted = {};
+        
         if (window.globalActiveBranches) {
-            window.globalActiveBranches.forEach(b => { if (b !== "Main Office") branchFloating[b] = 0; });
+            window.globalActiveBranches.forEach(b => { 
+                if (b !== "Main Office") {
+                    branchFloating[b] = 0; 
+                    lifetimeRemitted[b] = 0;
+                }
+            });
         }
         let pendingVerifications = 0;
         let totalFloating = 0;
 
-        // 1. Calculate Expected Money (All Closed Shifts)
+        // 1. Calculate Expected Money (All Closed Shifts / Z-Readings)
         const shiftSnap = await getDocs(query(collection(db, "shifts"), where("status", "==", "Closed")));
         shiftSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
             
-            // 🔥 THE FIX: We calculate exactly what they SHOULD have remitted (Cash Sales - Cash Expenses)
-            // We do NOT trust 'declaredCash' because cashiers make mistakes. Math never lies.
+            // EXACT MATH: Cash Sales - Cash Expenses
             let totalCashSales = parseFloat(data.totalCashSales) || 0;
             let totalCashOut = parseFloat(data.cashOut) || parseFloat(data.expenses) || 0;
-            
             let expectedCashToRemit = totalCashSales - totalCashOut;
             
             if (expectedCashToRemit > 0 && branchFloating[branch] !== undefined) {
@@ -8216,22 +8221,37 @@ window.loadCashFlowHub = async function() {
             }
         });
 
-        // 2. Subtract Money That Has Already Been Remitted!
+        // 2. ADD: Live Drawer "Starting Cash" from Active Shifts
+        // (Because this money is physically in the store right now, it counts as unremitted!)
+        const activeShiftSnap = await getDocs(query(collection(db, "shifts"), where("active", "==", true)));
+        activeShiftSnap.forEach(doc => {
+            let data = doc.data();
+            let branch = data.branch;
+            if (branchFloating[branch] !== undefined) {
+                let startCash = parseFloat(data.startingCash) || 0;
+                branchFloating[branch] += startCash;
+            }
+        });
+
+        // 3. Subtract Money That Has Already Been Remitted (And track Lifetime Totals!)
         const remitSnap = await getDocs(collection(db, "remittances"));
         remitSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
+            let amt = parseFloat(data.amount) || 0;
             
-            if (data.status === "Pending") pendingVerifications += (parseFloat(data.amount) || 0);
+            if (data.status === "Pending") pendingVerifications += amt;
 
-            // 🚨 Subtract the money if it's Pending OR Received!
+            // Subtract the money if it's Pending OR Approved/Received!
             if (branchFloating[branch] !== undefined) {
-                if (data.status === "Received" || data.status === "Pending") {
-                    branchFloating[branch] -= (parseFloat(data.amount) || 0);
+                if (data.status === "Received" || data.status === "Pending" || data.status === "Approved" || data.status === "Completed") {
+                    branchFloating[branch] -= amt;
+                    lifetimeRemitted[branch] += amt; // Add to Lifetime Tracker!
                 }
             }
         });
 
+        // 4. Render the UI
         let branchHtml = '';
         for (let branch in branchFloating) {
             // Cap at 0 so it never shows negative
@@ -8250,6 +8270,18 @@ window.loadCashFlowHub = async function() {
                 </div>
             `;
         }
+
+        // 5. Inject Lifetime Tabs into the UI
+        let lifetimeHtml = '';
+        for (let b in lifetimeRemitted) {
+            lifetimeHtml += `
+            <div style="flex: 1; text-align: center; padding: 15px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); min-width: 150px;">
+                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px;">📍 ${b}</div>
+                <div style="font-size: 20px; font-weight: 900; color: #0f766e;">₱${lifetimeRemitted[b].toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+            </div>`;
+        }
+        let lifetimeContainer = document.getElementById('lifetimeRemittanceTabs');
+        if (lifetimeContainer) lifetimeContainer.innerHTML = lifetimeHtml;
 
         document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('hubFloatingCash').innerText = `₱${totalFloating.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
