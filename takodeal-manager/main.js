@@ -7878,12 +7878,18 @@ window.generateAutoPayslips = async function() {
                 let shiftMultiplier = 1;
                 let thisShiftStraightBonus = 0; // 🔥 Track the Straight Duty Incentive
         
-                if (hoursWorked >= 13.5) {
+                // 🔥 THE MISCLICK IGNORER: If shift is less than 1 hour, it was a misclick! Don't pay a full day's wage for it.
+                if (hoursWorked < 1) {
+                    shiftMultiplier = 0; // 0 shifts worked!
+                    remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
+                } 
+                else if (hoursWorked >= 13.5) {
                     shiftMultiplier = 2;
-                    thisShiftStraightBonus = 50; // 🔥 50 Pesos Incentive per Straight Duty!
+                    thisShiftStraightBonus = 50; 
                     staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
-                } else if (hoursWorked < 8) {
+                } 
+                else if (hoursWorked < 8) {
                     let missingHours = (8 - hoursWorked).toFixed(1);
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
@@ -7982,6 +7988,7 @@ window.generateAutoPayslips = async function() {
       
         let html = '';
         let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
+        let masterPayrollTotal = 0; // Tracks the grand total for the bank
 
         if (allStaffNames.size === 0) {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
@@ -8049,7 +8056,10 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-
+                // Calculate estimated Net Pay for the Bank Total
+                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightDutyBonusTotal || 0) + (d.holidayPayTotal || 0);
+                let estNet = estGross - totalDeduct;
+                if (estNet > 0) masterPayrollTotal += estNet;
                 let bonusLabel = d.nightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonus} Night Bonus</span>` : '';
                 let straightLabel = (d.straightDutyBonusTotal || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightDutyBonusTotal.toFixed(2)} Straight Bonus</span>` : ''; // 🔥 Show it in the list!
                 let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
@@ -8084,6 +8094,12 @@ window.generateAutoPayslips = async function() {
             }
         }
         tableBody.innerHTML = html;
+
+        let grandTotalContainer = document.getElementById('payrollGrandTotalContainer');
+        if (grandTotalContainer && allStaffNames.size > 0) {
+            grandTotalContainer.style.display = 'flex';
+            document.getElementById('payrollGrandTotalAmount').innerText = '₱' + masterPayrollTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
+        }
 
     } catch (error) {
         console.error("Payroll Engine Error:", error);
