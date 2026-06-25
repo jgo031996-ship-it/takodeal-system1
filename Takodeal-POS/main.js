@@ -2267,7 +2267,6 @@ window.loadKitchenPrep = async function() {
             let itemCat = (d.category || "").trim().toLowerCase();
             
             // 🔥 STRICT FILTER: Only show items if their category is in the POS Config Hub!
-            // (We completely bypass the tedious checkbox)
             if (!allowedCats.includes(itemCat)) return;
             if (d.showInPrep === false) return;
             
@@ -2276,16 +2275,20 @@ window.loadKitchenPrep = async function() {
             let baseUom = d.uom || d.baseUom || 'units';
             let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
 
+            // 🔥 SAFELY SET UP IMAGES OUTSIDE THE HTML BLOCK
+            let imgSrc = d.image || d.imageUrl;
+            let iconHtml = imgSrc 
+                ? `<img src="${imgSrc}" style="width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 2px solid #e2e8f0; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">` 
+                : `<div style="width: 55px; height: 55px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 10px; border: 2px solid #e2e8f0;">🔪</div>`;
+
+            // INJECT INTO HTML STRING
             html += `
                 <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; transition: transform 0.2s;">
-                    let imgSrc = d.image || d.imageUrl;
-                    let iconHtml = imgSrc 
-                        ? `<img src="${imgSrc}" style="width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 2px solid #e2e8f0; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">` 
-                        : `<div style="width: 55px; height: 55px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 10px; border: 2px solid #e2e8f0;">🔪</div>`;
+                    ${iconHtml}
                     <h3 style="margin: 0 0 5px 0; color: #1e293b; font-size: 16px; font-weight: 900;">${d.name}</h3>
                     <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(parseFloat(d.currentStock)||0).toFixed(1)} ${baseUom}</span>
                     
-                    <button onclick="window.logPrepBatch('${d.id}', '${d.name}', '${branch}', '${purchUom}', '${baseUom}')" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">
+                    <button onclick="window.logPrepBatch('${d.id}', '${d.name.replace(/'/g, "\\'")}', '${branch}', '${purchUom}', '${baseUom}')" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">
                         + Log Prep (${purchUom})
                     </button>
                 </div>
