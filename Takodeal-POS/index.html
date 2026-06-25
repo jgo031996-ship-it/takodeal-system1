@@ -1059,6 +1059,17 @@
       border-color: var(--primary);
     }
 
+    /* 🔥 FIX: Automatically shrinks the top right buttons on smaller tablets so they don't squish! */
+    @media screen and (max-width: 1250px) {
+        .top-bar-right div { gap: 5px !important; }
+        .top-bar-right button { 
+            padding: 6px 10px !important; 
+            font-size: 12px !important; 
+            white-space: nowrap !important;
+        }
+        .top-title { font-size: 15px !important; }
+    }
+    
     @media screen and (max-width: 1024px) {
         .sidebar { width: 75px; } /* Automatically shrinks sidebar to save space */
         .sidebar .brand-container, .sidebar .nav-item-text, .sidebar .sidebar-footer { display: none; }
