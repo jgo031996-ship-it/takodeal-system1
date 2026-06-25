@@ -1667,45 +1667,6 @@ window.removeFromDispatchCart = function (index) {
   renderDispatchCart();
 };
 
-function renderDispatchCart() {
-  const tbody = document.getElementById('dispatchCartBody');
-  if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center">Cart is empty.</td></tr>'; return; }
-
-  let html = '';
-  dispatchCart.forEach((item, idx) => {
-    let qtyText = item.displayMsg || `${item.qty} ${item.uom}`;
-    
-    html += `<tr>
-      <td><strong>${item.itemName}</strong></td>
-      <td style="font-size:14px; font-weight:bold; color:var(--primary);">${qtyText}</td>
-      <td><button class="btn-refresh" style="color:var(--danger); border-color:var(--danger); padding:4px 8px; font-size:11px;" onclick="removeFromDispatchCart(${idx})">✖ Remove</button></td>
-    </tr>`;
-  });
-  tbody.innerHTML = html;
-}
-
-async function loadDispatchLogs() {
-  const tbody = document.getElementById('dispatchLogBody');
-  tbody.innerHTML = '<tr><td class="text-center">Loading logs...</td></tr>';
-  try {
-    // Only fetch the 20 most recent deliveries to keep it lightning fast
-    const qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
-    const snap = await getDocs(qLogs);
-    let html = '';
-    if (snap.empty) { html = '<tr><td class="text-center">No recent deliveries.</td></tr>'; }
-    else {
-      snap.forEach(doc => {
-        let d = doc.data();
-        html += `<tr><td>
-          <div style="font-weight:bold; color:var(--primary); font-size:14px;">${d.item} <span style="color:var(--text-main);">(${d.qty} ${d.uom})</span></div>
-          <div style="font-size:12px; color:var(--text-muted);">${d.details} | ${d.date} ${d.time}</div>
-        </td></tr>`;
-      });
-    }
-    tbody.innerHTML = html;
-  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td class="text-center" style="color:red;">Error loading logs</td></tr>'; }
-}
-
 // --- THE MENU EDITOR ENGINE ---
 window.loadMenuEditor = async function() {
   const tbody = document.getElementById('menuTableBody');
@@ -8669,67 +8630,6 @@ window.confirmPayableSettlement = async function() {
     }
 };
 
-window.exportTransactionsCSV = async function() {
-    let select = document.getElementById('histShiftSelect');
-    
-    if (!select || select.selectedIndex <= 0) { 
-        alert("Please select a specific shift to export."); 
-        return; 
-    }
-
-    let selectedOption = select.options[select.selectedIndex];
-    let startOfDay = new Date(selectedOption.getAttribute('data-start'));
-    let endOfDay = new Date(selectedOption.getAttribute('data-end'));
-    let shiftBranch = selectedOption.getAttribute('data-branch');
-    let safeName = selectedOption.innerText.replace(/[^a-zA-Z0-9]/g, '_'); // Makes a safe file name
-
-    let btn = document.getElementById('btnExportSales') || document.querySelector('button[onclick*="exportTransactionsCSV"]');
-    let oldText = btn ? btn.innerText : "Export Excel";
-    if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
-
-    try {
-        const q = query(collection(db, "transactions"), where("branch", "==", shiftBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-        const snap = await getDocs(q);
-
-        // Standard CSV Headers for Bookkeeping
-        let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Net Total\n";
-
-        snap.forEach(docSnap => {
-            let tx = docSnap.data();
-            let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            let dateStr = d.toLocaleDateString('en-PH');
-            let timeStr = d.toLocaleTimeString('en-PH');
-            
-            // Compress all items into one column
-            let itemsArr = [];
-            if (tx.cart) {
-                tx.cart.forEach(item => {
-                    itemsArr.push(`${item.qty}x ${item.name || item.itemName}`);
-                });
-            }
-            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); // Escape quotes for Excel
-            
-            csv += `"${tx.receiptId}","${dateStr}","${timeStr}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${tx.netTotal}"\n`;
-        });
-
-        // Trigger Download
-        let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-        let downloadLink = document.createElement("a");
-        downloadLink.download = `Takodeal_Sales_${safeName}.csv`;
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-
-    } catch (e) {
-        console.error("Export Error:", e);
-        alert("Failed to export sales data.");
-    } finally {
-        if (btn) { btn.innerText = oldText; btn.disabled = false; }
-    }
-};
-
 // ========================================================
 // 📈 PRODUCT OPTIMIZATION & ANALYTICS ENGINE
 // ========================================================
@@ -11437,19 +11337,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
     }, 1500); 
 });
-
-window.initializeCoreBranches = async function() {
-    let core = ["Main Office", "Cabantian", "Citygate", "Maa"];
-    for (let b of core) {
-        await addDoc(collection(db, "branches"), { name: b, isCore: true, createdAt: serverTimestamp() });
-    }
-    window.loadBranchManager();
-};
-
-window.openAddBranchModal = function() {
-    document.getElementById('addBranchModal').style.display = 'flex';
-    document.getElementById('newBranchName').value = '';
-};
 
 window.saveNewBranch = async function() {
     let name = document.getElementById('newBranchName').value.trim();
