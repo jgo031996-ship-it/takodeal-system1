@@ -4111,6 +4111,9 @@ window.calcEditVariance = function() {
     varianceEl.style.color = diff < 0 ? "#ef4444" : "#16a34a";
 };
 
+// ==========================================
+// ✏️ UPGRADED INVENTORY EDIT ENGINE (CRASH-PROOF)
+// ==========================================
 window.saveInventoryEdit = async function() {
     let docId = document.getElementById('editInvId').value;
     let branch = document.getElementById('editInvBranch').value;
@@ -4142,6 +4145,7 @@ window.saveInventoryEdit = async function() {
 
     let btn = document.getElementById('btnSaveInvEdit');
     btn.innerText = "⏳ Saving & Syncing Globally..."; btn.disabled = true;
+
     // 🔥 UPLOAD INVENTORY PHOTO TO STORAGE
     let photoUrl = undefined;
     let fileInput = document.getElementById('editInvPhoto');
@@ -4158,8 +4162,8 @@ window.saveInventoryEdit = async function() {
     try {
         let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
 
-        // 1. Update the Main Item
-        await updateDoc(doc(db, "inventory", docId), {
+        // 1. Prepare Main Payload
+        let updatePayload = {
             branch: branch, category: category, name: name,
             purchaseUom: purchUom, purchUom: purchUom,
             baseUom: baseUom, uom: baseUom, 
@@ -4168,25 +4172,39 @@ window.saveInventoryEdit = async function() {
             baseCost: (purchCost / conversion), 
             lowStockAlert: lowStock, reorderLevel: lowStock, 
             currentStock: finalQty, 
-            showInPrep: document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : false,
-            (photoUrl !== undefined && { image: photoUrl })
-        });
+            showInPrep: showPrepVal
+        };
+
+        // SAFELY inject the image only if it was uploaded!
+        if (photoUrl !== undefined) {
+            updatePayload.image = photoUrl;
+        }
+
+        // Update the Main Item
+        await updateDoc(doc(db, "inventory", docId), updatePayload);
 
         // 🔥 2. GLOBAL UOM & PREP SYNC 🔥
         const syncQ = query(collection(db, "inventory"), where("name", "==", name));
         const syncSnap = await getDocs(syncQ);
         let syncPromises = [];
+        
         syncSnap.forEach(d => {
             if (d.id !== docId) {
-                syncPromises.push(updateDoc(doc(db, "inventory", d.id), {
+                let syncPayload = {
                     category: category, 
                     purchaseUom: purchUom, purchUom: purchUom,
                     baseUom: baseUom, uom: baseUom, 
                     conversion: conversion, conversionRate: conversion,
                     purchaseCost: purchCost, purchCost: purchCost, cost: purchCost,
                     baseCost: (purchCost / conversion),
-                    showInPrep: showPrepVal // 🔥 Syncs the hidden status to ALL branches instantly!
-                }));
+                    showInPrep: showPrepVal 
+                };
+                
+                if (photoUrl !== undefined) {
+                    syncPayload.image = photoUrl;
+                }
+                
+                syncPromises.push(updateDoc(doc(db, "inventory", d.id), syncPayload));
             }
         });
         await Promise.all(syncPromises);
@@ -4207,7 +4225,6 @@ window.saveInventoryEdit = async function() {
         document.getElementById('editInvModal').style.display = 'none';
         
         window.loadInventoryData();
-        // Force the Costing memory to wipe and fetch the new UOM!
         if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
 
     } catch (e) {
