@@ -4168,6 +4168,18 @@ window.saveInventoryEdit = async function() {
 
     let btn = document.getElementById('btnSaveInvEdit');
     btn.innerText = "⏳ Saving & Syncing Globally..."; btn.disabled = true;
+    // 🔥 UPLOAD INVENTORY PHOTO TO STORAGE
+    let photoUrl = undefined;
+    let fileInput = document.getElementById('editInvPhoto');
+    if (fileInput && fileInput.files.length > 0) {
+        btn.innerText = "⏳ Uploading Photo...";
+        const file = fileInput.files[0];
+        const fileExt = file.name.split('.').pop();
+        const fileName = `inventory_images/${docId}_${Date.now()}.${fileExt}`;
+        const storageReference = ref(window.storage, fileName);
+        const snapshot = await uploadBytes(storageReference, file);
+        photoUrl = await getDownloadURL(snapshot.ref);
+    }
 
     try {
         let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
@@ -4183,6 +4195,7 @@ window.saveInventoryEdit = async function() {
             lowStockAlert: lowStock, reorderLevel: lowStock, 
             currentStock: finalQty, 
             showInPrep: showPrepVal // 🔥 Re-attached!
+            (photoUrl !== undefined && { image: photoUrl })
         });
 
         // 🔥 2. GLOBAL UOM & PREP SYNC 🔥
@@ -8162,13 +8175,15 @@ window.loadCashFlowHub = async function() {
             let data = doc.data();
             let branch = data.branch;
             
-            // 🚨 THE FIX: Force parseFloat so it never fails on a string!
-            let startCash = parseFloat(data.startingCash) || 0;
-            let decCash = parseFloat(data.declaredCash) || 0;
-            let physicalCashToRemit = decCash - startCash;
+            // 🔥 THE FIX: We calculate exactly what they SHOULD have remitted (Cash Sales - Cash Expenses)
+            // We do NOT trust 'declaredCash' because cashiers make mistakes. Math never lies.
+            let totalCashSales = parseFloat(data.totalCashSales) || 0;
+            let totalCashOut = parseFloat(data.cashOut) || parseFloat(data.expenses) || 0;
             
-            if (physicalCashToRemit > 0 && branchFloating[branch] !== undefined) {
-                branchFloating[branch] += physicalCashToRemit;
+            let expectedCashToRemit = totalCashSales - totalCashOut;
+            
+            if (expectedCashToRemit > 0 && branchFloating[branch] !== undefined) {
+                branchFloating[branch] += expectedCashToRemit;
             }
         });
 
