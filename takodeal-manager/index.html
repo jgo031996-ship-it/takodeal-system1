@@ -3025,8 +3025,8 @@
                       <input type="number" id="editInvLowStock" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
                   </div>
                   <div>
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Item Photo (For Kitchen Prep Station)</label>
-                      <input type="file" id="editInvPhoto" accept="image/jpeg, image/png, image/webp" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; margin-top: 5px; box-sizing: border-box;">
+                      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Item Photo (For Kitchen Prep Station)</label>
+                      <input type="file" id="editInvPhoto" accept="image/jpeg, image/png, image/webp" class="input-box" style="width: 100%; box-sizing: border-box; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; outline: none; cursor: pointer; font-size: 13px; color: #475569;">
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">System Qty (Expected Base UOMs)</label>
@@ -3304,10 +3304,12 @@
 
       </div>
 
-      <div class="modal-foot" style="display: flex; gap: 10px;">
-          <button class="btn-clear" onclick="closeModal('employeeProfileModal')" style="flex: 1;">Cancel</button>
-          <button style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; flex: 1.5; font-size: 14px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard & Get COE</button>
-          <button class="btn-place" id="btnSaveEmpProfile" onclick="window.saveEmployeeProfile()" style="flex: 2;">💾 Save Employee Data</button>
+      <div class="modal-foot" style="display: flex; gap: 12px; padding: 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; border-radius: 0 0 12px 12px;">
+          <button class="btn-clear" onclick="closeModal('employeeProfileModal')" style="flex: 1; padding: 14px; font-weight: bold; border-radius: 8px; font-size: 14px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer;">Cancel</button>
+          
+          <button style="flex: 1.5; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard & Get COE</button>
+          
+          <button class="btn-place" id="btnSaveEmpProfile" onclick="window.saveEmployeeProfile()" style="flex: 2; padding: 14px; font-weight: bold; border-radius: 8px; font-size: 15px; background: #d97706; color: white; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.2);">💾 Save Employee Data</button>
       </div>
 
     </div>
