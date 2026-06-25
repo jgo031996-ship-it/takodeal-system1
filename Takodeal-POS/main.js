@@ -1592,26 +1592,45 @@ window.openRemittanceModal = async function() {
     document.getElementById('remittanceModal').style.display = 'flex';
     document.getElementById('remitCashier').value = safeCashierName;
     
-    let today = new Date().toISOString().split('T')[0];
-    document.getElementById('remitEndDate').value = today;
-    document.getElementById('remitStartDate').value = "Loading..."; // Visual cue
+    let todayObj = new Date();
+    let todayStr = todayObj.toISOString().split('T')[0];
+    document.getElementById('remitEndDate').value = todayStr;
+    document.getElementById('remitStartDate').value = "Loading..."; 
+
+    // 🔥 MONDAY COUNTDOWN ENGINE
+    let dayOfWeek = todayObj.getDay(); // 0 is Sunday, 1 is Monday...
+    let daysUntilMonday = (1 + 7 - dayOfWeek) % 7;
+    if (daysUntilMonday === 0) daysUntilMonday = 7; // If today is Monday, next is 7 days
+
+    let alertBox = document.getElementById('remitCountdownAlert');
+    if (daysUntilMonday === 7) {
+        alertBox.innerText = "🚨 TODAY IS MANDATORY REMITTANCE DAY! (MONDAY)";
+        alertBox.style.background = "#fef2f2"; alertBox.style.color = "#dc2626"; alertBox.style.borderColor = "#fca5a5";
+    } else {
+        alertBox.innerText = `⏳ Next Mandatory Remittance: Monday (${daysUntilMonday} days left)`;
+        alertBox.style.background = "#eff6ff"; alertBox.style.color = "#1d4ed8"; alertBox.style.borderColor = "#3b82f6";
+    }
 
     try {
         let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        // 🔥 Fetch the exact date of the last successful remittance!
+        // Pull the exact end date of their LAST remittance
         const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(1));
         const snap = await getDocs(q);
         
         if (!snap.empty) {
-            let lastDate = snap.docs[0].data().timestamp.toDate();
-            // We set the start date to the exact date they last sent money
-            document.getElementById('remitStartDate').value = lastDate.toISOString().split('T')[0];
+            let lastData = snap.docs[0].data();
+            let lastEndDateStr = lastData.salesPeriodEnd || lastData.timestamp.toDate().toISOString().split('T')[0];
+            
+            // Set Start Date to the day AFTER they last remitted
+            let nextStartDate = new Date(lastEndDateStr);
+            nextStartDate.setDate(nextStartDate.getDate() + 1);
+            document.getElementById('remitStartDate').value = nextStartDate.toISOString().split('T')[0];
         } else {
-            document.getElementById('remitStartDate').value = today; // Fallback
+            document.getElementById('remitStartDate').value = todayStr; 
         }
     } catch (e) {
         console.error("Error fetching last remittance:", e);
-        document.getElementById('remitStartDate').value = today;
+        document.getElementById('remitStartDate').value = todayStr;
     }
     
     window.switchRemittanceTab('form');
@@ -2259,7 +2278,10 @@ window.loadKitchenPrep = async function() {
 
             html += `
                 <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; transition: transform 0.2s;">
-                    <div style="width: 50px; height: 50px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 10px; border: 1px solid #cbd5e1;">🔪</div>
+                    let imgSrc = d.image || d.imageUrl;
+                    let iconHtml = imgSrc 
+                        ? `<img src="${imgSrc}" style="width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 2px solid #e2e8f0; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">` 
+                        : `<div style="width: 55px; height: 55px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 10px; border: 2px solid #e2e8f0;">🔪</div>`;
                     <h3 style="margin: 0 0 5px 0; color: #1e293b; font-size: 16px; font-weight: 900;">${d.name}</h3>
                     <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(parseFloat(d.currentStock)||0).toFixed(1)} ${baseUom}</span>
                     
@@ -2668,17 +2690,22 @@ window.renderMenuToggleList = function(itemsToRender) {
         let statusText = isAvail ? 'Available' : 'Sold Out';
         let bgClass = isAvail ? 'white' : '#f8fafc';
 
+        let imgSrc = item.image || item.imageUrl;
+        let imgHtml = imgSrc 
+            ? `<img src="${imgSrc}" style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">` 
+            : `<div style="width: 50px; height: 50px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 24px; border: 1px solid #cbd5e1;">🍲</div>`;
+
         html += `
-            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; background: ${bgClass}; display: flex; flex-direction: column; justify-content: space-between; gap: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; background: white; display: flex; flex-direction: column; justify-content: space-between; gap: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <div style="display: flex; align-items: center; gap: 15px;">
-                    <div style="width: 45px; height: 45px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid #e2e8f0;">🍲</div>
+                    ${imgHtml}
                     <div style="flex: 1;">
                         <div style="font-weight: bold; color: #1e293b; font-size: 15px; line-height: 1.2;">${item.name}</div>
                         <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">${item.category || 'Uncategorized'}</div>
                     </div>
                 </div>
-                <button onclick="window.toggleItemStatus('${item.id}', ${!isAvail})" style="width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 14px; border: 2px solid ${statusColor}; color: ${statusColor}; background: ${isAvail ? 'transparent' : '#fef2f2'}; cursor: pointer; transition: all 0.2s;">
-                    ${statusText} (Click to Change)
+                <button onclick="window.toggleItemStatus('${item.id}', ${!isAvail})" style="width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 14px; border: 2px solid ${statusColor}; color: ${statusColor}; background: ${isAvail ? '#f0fdf4' : '#fef2f2'}; cursor: pointer; transition: all 0.2s;">
+                    ${statusText}
                 </button>
             </div>
         `;
