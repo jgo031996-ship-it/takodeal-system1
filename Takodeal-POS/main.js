@@ -1990,8 +1990,8 @@ window.submitAttendance = async function(type) {
                 alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.05) {
-                alert(`❌ You just Timed In a few minutes ago!\n\nWait until your shift is over to Time Out.`);
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.25) {
+                alert(`❌ You just Timed In a few minutes ago!\n\nTo prevent double-shifts and payroll errors, you must wait at least 15 minutes before Timing Out.`);
                 document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
             }
 
