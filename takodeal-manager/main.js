@@ -10089,7 +10089,13 @@ window.saveGlobalPosConfig = async function() {
             timestamp: serverTimestamp()
         }, { merge: true });
 
-        alert("✅ Success! The POS configurations have been updated globally. All Cashier tablets will update on their next refresh.");
+        Swal.fire({
+            title: '✅ Success!',
+            text: 'Invoice logged and inventory added to Main Office.',
+            icon: 'success',
+            confirmButtonColor: '#0f766e', // Matches your teal modal theme!
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
         
     } catch (error) {
         console.error("Error saving config:", error);
