@@ -2366,102 +2366,110 @@ window.loadBatchItemsDropdown = async function () {
   }
 };
 
+// ========================================================
+// 🔥 THE KITCHEN BATCH PREP ENGINE (CONVERSION MATH FIX) 🔥
+// ========================================================
 window.executeBatchPrep = async function () {
-  let branch = document.getElementById('batchBranch').value;
-  let targetItem = document.getElementById('batchItem').value;
-  let prepQty = parseFloat(document.getElementById('batchQty').value);
+    let branch = document.getElementById('batchBranch').value;
+    let targetItem = document.getElementById('batchItem').value;
+    let prepQty = parseFloat(document.getElementById('batchQty').value);
 
-  if (!branch || !targetItem || isNaN(prepQty) || prepQty <= 0) {
-    alert("Please fill all fields correctly."); return;
-  }
-
-  let btn = document.getElementById('btnExecuteBatch');
-  btn.innerText = "⏳ Checking Raw Materials..."; btn.disabled = true;
-
-  try {
-    // 1. Get the Recipe (BOM) for the item they want to make
-    const bomQ = query(collection(db, "bom"), where("menuItem", "==", targetItem));
-    const bomSnap = await getDocs(bomQ);
-
-    if (bomSnap.empty) {
-      alert(`❌ Missing Recipe!\n\nYou haven't set up a recipe for "${targetItem}" in the Menu Costing & BOM tab yet.`);
-      btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-      return;
+    if (!branch || !targetItem || isNaN(prepQty) || prepQty <= 0) {
+        alert("Please fill all fields correctly."); return;
     }
 
-    // 2. Build the exact requirement list and CHECK STOCK FIRST
-    let requirements = [];
-    for (let docSnap of bomSnap.docs) {
-      let recipeIngredient = docSnap.data();
-      let totalNeeded = recipeIngredient.qty * prepQty;
+    let btn = document.getElementById('btnExecuteBatch');
+    btn.innerText = "⏳ Checking Raw Materials..."; btn.disabled = true;
 
-      // Find this ingredient in the selected branch's inventory
-      const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", recipeIngredient.ingredientName));
-      const invSnap = await getDocs(invQ);
+    try {
+        // 1. Get the Recipe (BOM) for the item they want to make
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", targetItem));
+        const bomSnap = await getDocs(bomQ);
 
-      if (invSnap.empty) {
-        alert(`❌ Missing Inventory Item!\n\nYour recipe requires "${recipeIngredient.ingredientName}", but it doesn't exist in the ${branch} warehouse.`);
+        if (bomSnap.empty) {
+            alert(`❌ Missing Recipe!\n\nYou haven't set up a recipe for "${targetItem}" in the Menu Costing & BOM tab yet.`);
+            btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
+            return;
+        }
+
+        // 2. Build the exact requirement list and CHECK STOCK FIRST
+        let requirements = [];
+        for (let docSnap of bomSnap.docs) {
+            let recipeIngredient = docSnap.data();
+            let totalNeeded = recipeIngredient.qty * prepQty;
+
+            // Find this ingredient in the selected branch's inventory
+            const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", recipeIngredient.ingredientName));
+            const invSnap = await getDocs(invQ);
+
+            if (invSnap.empty) {
+                alert(`❌ Missing Inventory Item!\n\nYour recipe requires "${recipeIngredient.ingredientName}", but it doesn't exist in the ${branch} warehouse.`);
+                btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
+                return;
+            }
+
+            let invRef = invSnap.docs[0].ref;
+            let currentStock = invSnap.docs[0].data().currentStock || 0;
+
+            if (currentStock < totalNeeded) {
+                alert(`❌ Insufficient Raw Materials!\n\nYou need ${totalNeeded} of ${recipeIngredient.ingredientName} to make this batch, but you only have ${currentStock} in stock at ${branch}.`);
+                btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
+                return;
+            }
+
+            requirements.push({ ref: invRef, newStock: currentStock - totalNeeded });
+        }
+
+        // 3. IF WE MADE IT HERE, WE HAVE ENOUGH OF EVERYTHING! LETS DEDUCT.
+        btn.innerText = "⏳ Mixing Batch...";
+        for (let req of requirements) {
+            await updateDoc(req.ref, { currentStock: req.newStock });
+        }
+
+        // 4. ADD the new prepared batch to the inventory (🔥 CONVERSION MATH FIX)
+        const targetQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", targetItem));
+        const targetSnap = await getDocs(targetQ);
+        let targetRef = targetSnap.docs[0].ref;
+        let targetData = targetSnap.docs[0].data(); 
+        let targetStock = targetData.currentStock || 0;
+        
+        // Multiply the batches they prepared by the base conversion rate!
+        let convRate = parseFloat(targetData.conversionRate) || parseFloat(targetData.conversion) || 1;
+        let baseQtyToAdd = prepQty * convRate;
+
+        await updateDoc(targetRef, { currentStock: targetStock + baseQtyToAdd });
+
+        // 5. LOG TO HISTORY WITH PROPER UOM
+        let pUom = targetData.purchaseUom || "Batch";
+        let bUom = targetData.baseUom || targetData.uom || "units";
+
+        await addDoc(collection(db, "stock_logs"), {
+            branch: branch,
+            item: targetItem,
+            uom: bUom,
+            oldQty: targetStock,
+            newQty: targetStock + baseQtyToAdd,
+            variance: baseQtyToAdd,
+            type: "Manager Prep Batch",
+            note: `Prepared ${prepQty} ${pUom}(s) via Manager HQ`,
+            user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: new Date()
+        });
+
+        // Success!
+        alert(`🥣 Kitchen Success!\n\nPrepared ${prepQty} ${pUom}(s) of ${targetItem}.\n(Added +${baseQtyToAdd.toLocaleString()} ${bUom} to stock!)\n\nAll raw ingredients were automatically deducted from ${branch}.`);
+        document.getElementById('batchModal').style.display = 'none';
+        
+        if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
+            if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
+            if(typeof window.loadInventoryData === 'function') window.loadInventoryData();
+        }
+
+    } catch (error) {
+        console.error(error); alert("Failed to prepare batch.");
+    } finally {
         btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-        return;
-      }
-
-      let invRef = invSnap.docs[0].ref;
-      let currentStock = invSnap.docs[0].data().currentStock || 0;
-
-      // ANTI-FRAUD: Check if they actually have enough raw materials to make this batch!
-      if (currentStock < totalNeeded) {
-        alert(`❌ Insufficient Raw Materials!\n\nYou need ${totalNeeded} of ${recipeIngredient.ingredientName} to make this batch, but you only have ${currentStock} in stock at ${branch}.`);
-        btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-        return;
-      }
-
-      // Save the calculation for the actual deduction phase
-      requirements.push({ ref: invRef, newStock: currentStock - totalNeeded });
     }
-
-    // 3. IF WE MADE IT HERE, WE HAVE ENOUGH OF EVERYTHING! LETS DEDUCT.
-    btn.innerText = "⏳ Mixing Batch...";
-    for (let req of requirements) {
-      await updateDoc(req.ref, { currentStock: req.newStock });
-    }
-
-    // 4. ADD the new prepared batch to the inventory
-    const targetQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", targetItem));
-    const targetSnap = await getDocs(targetQ);
-    let targetRef = targetSnap.docs[0].ref;
-    let targetData = targetSnap.docs[0].data(); // Grab data to get UOM
-    let targetStock = targetData.currentStock || 0;
-
-    await updateDoc(targetRef, { currentStock: targetStock + prepQty });
-
-    // 🔥 5. NEW: LOG TO HISTORY SO IT SHOWS IN THE DASHBOARD!
-    await addDoc(collection(db, "stock_logs"), {
-        branch: branch,
-        item: targetItem,
-        uom: targetData.uom || "units",
-        oldQty: targetStock,
-        newQty: targetStock + prepQty,
-        variance: prepQty,
-        type: "Manager Prep Batch",
-        note: `Prepared via Manager HQ`,
-        user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-        timestamp: new Date()
-    });
-
-    // Success!
-    alert(`🥣 Kitchen Success!\n\nPrepared ${prepQty} units of ${targetItem}.\nAll raw ingredients were automatically deducted from ${branch}.`);
-    document.getElementById('batchModal').style.display = 'none';
-    
-    // Refresh the view you are currently on
-    if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
-        if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
-    }
-
-  } catch (error) {
-    console.error(error); alert("Failed to prepare batch.");
-  } finally {
-    btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-  }
 };
 
 // ==========================================
