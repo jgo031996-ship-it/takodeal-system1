@@ -2411,12 +2411,14 @@ window.executeBatchPrep = async function () {
             let invRef = invSnap.docs[0].ref;
             let currentStock = invSnap.docs[0].data().currentStock || 0;
 
+            // ANTI-FRAUD: Check if they actually have enough raw materials to make this batch!
             if (currentStock < totalNeeded) {
                 alert(`❌ Insufficient Raw Materials!\n\nYou need ${totalNeeded} of ${recipeIngredient.ingredientName} to make this batch, but you only have ${currentStock} in stock at ${branch}.`);
                 btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
                 return;
             }
 
+            // Save the calculation for the actual deduction phase
             requirements.push({ ref: invRef, newStock: currentStock - totalNeeded });
         }
 
@@ -2433,7 +2435,7 @@ window.executeBatchPrep = async function () {
         let targetData = targetSnap.docs[0].data(); 
         let targetStock = targetData.currentStock || 0;
         
-        // Multiply the batches they prepared by the base conversion rate!
+        // 🔥 Multiply the batches they prepared by the base conversion rate!
         let convRate = parseFloat(targetData.conversionRate) || parseFloat(targetData.conversion) || 1;
         let baseQtyToAdd = prepQty * convRate;
 
@@ -2460,6 +2462,7 @@ window.executeBatchPrep = async function () {
         alert(`🥣 Kitchen Success!\n\nPrepared ${prepQty} ${pUom}(s) of ${targetItem}.\n(Added +${baseQtyToAdd.toLocaleString()} ${bUom} to stock!)\n\nAll raw ingredients were automatically deducted from ${branch}.`);
         document.getElementById('batchModal').style.display = 'none';
         
+        // Refresh the view you are currently on
         if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
             if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
             if(typeof window.loadInventoryData === 'function') window.loadInventoryData();
