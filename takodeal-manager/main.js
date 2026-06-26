@@ -4037,7 +4037,6 @@ window.openEditInvModal = async function(id) {
         
         if (docSnap.exists()) {
             let itemData = docSnap.data();
-            console.log("Loading item data:", itemData);
             
             document.getElementById('editInvId').value = id;
             document.getElementById('editInvBranch').value = itemData.branch || 'Main Office';
@@ -4051,10 +4050,19 @@ window.openEditInvModal = async function(id) {
             document.getElementById('editInvLowStock').value = itemData.lowStockAlert || itemData.reorderLevel || 0;
             
             document.getElementById('editInvOldQty').value = itemData.currentStock || 0;
-            document.getElementById('editInvNewQty').value = '';
             
-            if (document.getElementById('editInvCountType')) {
-                document.getElementById('editInvCountType').value = 'base';
+            // Clear the physical count box so they don't accidentally save an old number
+            let newQtyEl = document.getElementById('editInvNewQty');
+            if (newQtyEl) {
+                newQtyEl.value = '';
+                newQtyEl.onkeyup = window.calcEditVariance; // Updates math while typing
+            }
+            
+            // Set the dropdown to default and attach the click listener
+            let countTypeEl = document.getElementById('editInvCountType');
+            if (countTypeEl) {
+                countTypeEl.value = 'base';
+                countTypeEl.onchange = window.calcEditVariance; // Updates math when switching UOMs!
             }
             
             document.getElementById('editInvNote').value = '';
@@ -4065,14 +4073,17 @@ window.openEditInvModal = async function(id) {
                 varianceEl.style.color = '#d97706';
             }
 
-            // Precisely referencing itemData to bypass the undefined 'data' ReferenceError
             if (document.getElementById('editInvShowPrep')) {
                 document.getElementById('editInvShowPrep').checked = itemData.showInPrep !== false;
             }
 
             document.getElementById('editInvModal').style.display = 'flex';
+
+            // 🔥 FORCE THE UI TO INJECT THE UOM NAMES INSTANTLY
+            window.calcEditVariance();
+
         } else {
-            alert("The requested inventory item could not be located in the central database infrastructure.");
+            alert("The requested inventory item could not be located in the central database.");
         }
     } catch (e) {
         console.error("Error opening edit modal:", e);
@@ -4092,23 +4103,49 @@ window.calcEditCost = function() {
 window.calcEditVariance = function() {
     let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
     let newQRaw = document.getElementById('editInvNewQty').value;
-    let countType = document.getElementById('editInvCountType').value;
+    let countTypeEl = document.getElementById('editInvCountType');
+    let countType = countTypeEl ? countTypeEl.value : 'base';
     let conv = parseFloat(document.getElementById('editInvConversion').value) || 1;
     let varianceEl = document.getElementById('editInvVariance');
-    
+
+    // 🔥 DYNAMIC UI REDESIGN: Fetch the actual UOM names you typed!
+    let pUom = document.getElementById('editInvPurchUom').value || 'Purchase UOM';
+    let bUom = document.getElementById('editInvBaseUom').value || 'Base UOM';
+
+    // 1. Inject the real names into the Dropdown Options instantly
+    if (countTypeEl) {
+        let currentSel = countTypeEl.value; // Remember what they clicked
+        countTypeEl.innerHTML = `
+            <option value="base">Count in ${bUom}</option>
+            <option value="purch">Count in ${pUom}</option>
+        `;
+        countTypeEl.value = currentSel; // Put the selection back
+    }
+
+    // 2. Inject the real name into the Variance Label
+    if (varianceEl && varianceEl.previousElementSibling) {
+        varianceEl.previousElementSibling.innerText = `Calculated Variance (${bUom}): `;
+    }
+
+    // 3. Do the Math
     if (newQRaw === "") {
-        varianceEl.innerText = "0";
-        varianceEl.style.color = "#d97706";
+        if(varianceEl) {
+            varianceEl.innerText = "0";
+            varianceEl.style.color = "#d97706";
+        }
         return;
     }
 
-    // 🔥 THE FIX: Convert to Base UOM if they are counting in Purchase UOM
+    // Convert to Base UOM if they are counting in Purchase UOM
     let parsedInput = parseFloat(newQRaw);
     let finalBaseQty = countType === 'purch' ? (parsedInput * conv) : parsedInput;
     
     let diff = finalBaseQty - oldQ;
-    varianceEl.innerText = (diff > 0 ? "+" : "") + diff;
-    varianceEl.style.color = diff < 0 ? "#ef4444" : "#16a34a";
+    let sign = diff > 0 ? "+" : "";
+    if (varianceEl) {
+        varianceEl.innerText = `${sign}${diff.toFixed(2)}`; // Clean 2 decimal places
+        varianceEl.style.color = diff < 0 ? "#ef4444" : "#16a34a";
+    }
 };
 
 // ==========================================
@@ -11772,7 +11809,7 @@ window.openItemLedger = async function(branch, itemName) {
     document.getElementById('itemLedgerModal').style.display = 'flex';
     document.getElementById('ledgerModalSubtitle').innerText = `${itemName} | ${branch}`;
     const tbody = document.getElementById('itemLedgerBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Compiling forensic data...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Compiling forensic data...</td></tr>';
 
     try {
         // 1. Get Live Stock & UOM
@@ -11786,7 +11823,21 @@ window.openItemLedger = async function(branch, itemName) {
         }
         document.getElementById('ledgerCurrentStock').innerText = `${currentStock.toFixed(2)} ${uom}`;
 
-        // 2. Fetch every single log for this item
+        // 🔥 2. INJECT NEW TABLE HEADERS DYNAMICALLY (Adds 'Old Qty')
+        let headerRow = tbody.previousElementSibling.querySelector('tr');
+        if (headerRow) {
+            headerRow.innerHTML = `
+                <th style="padding: 10px; color: #475569; text-align: left;">Date & Time</th>
+                <th style="padding: 10px; color: #475569; text-align: left;">User</th>
+                <th style="padding: 10px; color: #475569; text-align: left;">Action Type</th>
+                <th style="padding: 10px; color: #475569; text-align: right;">Old Qty</th>
+                <th style="padding: 10px; color: #475569; text-align: right;">Variance</th>
+                <th style="padding: 10px; color: #0f766e; text-align: right;">New Qty</th>
+                <th style="padding: 10px; color: #475569; text-align: left; padding-left: 20px;">Notes</th>
+            `;
+        }
+
+        // 3. Fetch every single log for this item
         const logQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("item", "==", itemName), orderBy("timestamp", "desc"));
         const logSnap = await getDocs(logQ);
 
@@ -11799,32 +11850,36 @@ window.openItemLedger = async function(branch, itemName) {
             let variance = parseFloat(d.variance) || 0;
             let type = d.type || "Unknown";
             
-            // Add to lifetime purchased if it's a positive delivery/restock
             if (variance > 0 && (type.includes("Restock") || type.includes("Delivery") || type.includes("Received") || type.includes("Purchase"))) {
                 lifetimeBought += variance;
             }
 
             let varColor = variance > 0 ? '#16a34a' : (variance < 0 ? '#dc2626' : '#64748b');
             let varText = variance > 0 ? `+${variance}` : variance;
+            
+            // Extract Old & New Qty safely
+            let oldQtyDisplay = d.oldQty !== undefined ? (parseFloat(d.oldQty)||0).toFixed(2) : '-';
+            let newQtyDisplay = d.newQty !== undefined ? (parseFloat(d.newQty)||0).toFixed(2) : '-';
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                     <td style="padding: 10px; color: #64748b; font-size: 11px;">${dateStr}</td>
                     <td style="padding: 10px; font-weight: bold; color: #334155;">${d.user || 'System'}</td>
                     <td style="padding: 10px;"><span style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; color: #475569;">${type}</span></td>
-                    <td style="padding: 10px; font-weight: 900; color: ${varColor};">${varText}</td>
-                    <td style="padding: 10px; font-weight: bold; color: #0f172a;">${(parseFloat(d.newQty) || 0).toFixed(2)}</td>
-                    <td style="padding: 10px; font-size: 11px; color: #64748b; font-style: italic;">${d.note || '-'}</td>
+                    <td style="padding: 10px; text-align: right; color: #94a3b8; font-weight: bold;">${oldQtyDisplay}</td>
+                    <td style="padding: 10px; font-weight: 900; color: ${varColor}; text-align: right;">${varText}</td>
+                    <td style="padding: 10px; font-weight: 900; color: #0f766e; text-align: right;">${newQtyDisplay}</td>
+                    <td style="padding: 10px; font-size: 11px; color: #64748b; font-style: italic; padding-left: 20px;">${d.note || '-'}</td>
                 </tr>
             `;
         });
 
         document.getElementById('ledgerLifetimeBought').innerText = `${lifetimeBought.toFixed(2)} ${uom}`;
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8;">No historical data found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #94a3b8;">No historical data found.</td></tr>';
 
     } catch (e) {
         console.error("Item Ledger Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Failed to load trace data. Check F12 console. (May need a Firebase Index).</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: red;">Failed to load trace data. Check F12 console.</td></tr>';
     }
 };
 
