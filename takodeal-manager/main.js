@@ -58,32 +58,44 @@ window.applyPermissions = function() {
     document.getElementById('nav-admin').style.display = 'none'; 
 };
 
-// --- PERSISTENT LOGIN LISTENER ---
+// --- PERSISTENT LOGIN & FRANCHISEE LISTENER ---
 auth.onAuthStateChanged(async (user) => {
   const loginScreen = document.getElementById('loginOverlay');
   if (user) {
     let isAuthorized = false;
     let userPerms = ['all'];
+    let assignedBranch = 'Main Office'; // Default for Master
+    let isFranchisee = false;
 
     try {
         if (user.email === MASTER_EMAIL) {
             isAuthorized = true;
             userPerms = ['all'];
+            assignedBranch = 'All'; // Master sees everything
         } else {
-            // 🔥 FIX: Defined 'snap' inside the try block so it is always available
             const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
             const snap = await getDocs(q);
             
             if (!snap.empty) {
                 isAuthorized = true;
-                userPerms = snap.docs[0].data().permissions || ['all'];
+                let data = snap.docs[0].data();
+                userPerms = data.permissions || ['all'];
+                
+                // 🔥 THE FRANCHISEE LOCK
+                if (data.role === 'Franchisee' && data.assignedBranch) {
+                    assignedBranch = data.assignedBranch;
+                    isFranchisee = true;
+                } else if (data.assignedBranch) {
+                    assignedBranch = data.assignedBranch;
+                }
             } else {
                 const checkAny = await getDocs(query(collection(db, "hq_managers"), limit(1)));
                 if (checkAny.empty) {
                     await addDoc(collection(db, "hq_managers"), {
                         email: user.email, 
                         role: 'Owner', 
-                        permissions: ['all']
+                        permissions: ['all'],
+                        assignedBranch: 'All'
                     });
                     isAuthorized = true;
                     userPerms = ['all'];
@@ -97,16 +109,17 @@ auth.onAuthStateChanged(async (user) => {
     if (isAuthorized) {
       window.sessionUser = {
         email: user.email,
-        branch: 'Main Office',
+        branch: assignedBranch, 
+        isFranchisee: isFranchisee, // Tells the app to lock dropdowns!
         cashierName: user.displayName || 'Manager',
-        isOwner: (user.email === MASTER_EMAIL || userPerms.includes('all')), 
+        isOwner: (user.email === MASTER_EMAIL || (!isFranchisee && userPerms.includes('all'))), 
         permissions: userPerms
       };
       
       window.applyPermissions(); // Run the tab hider!
 
       let brDisp = document.getElementById('displayBranch');
-      if (brDisp) brDisp.innerText = "📍 " + window.sessionUser.branch;
+      if (brDisp) brDisp.innerText = isFranchisee ? `📍 Franchise: ${assignedBranch}` : `📍 HQ: ${assignedBranch}`;
       let caDisp = document.getElementById('displayCashier');
       if (caDisp) caDisp.innerText = "👤 " + window.sessionUser.cashierName;
 
@@ -133,7 +146,7 @@ window.loginWithGoogle = async function() {
   }
 };
 
-// --- ACCESS CONTROL ENGINE ---
+// --- ACCESS CONTROL ENGINE (FRANCHISE UPGRADE) ---
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
   if (!tbody) return;
@@ -153,13 +166,18 @@ window.loadAdminDashboard = async function() {
       let data = docSnap.data();
       let perms = data.permissions ? data.permissions.join(', ') : 'all';
       
+      // Visual badge difference for Franchisees
+      let roleBadge = data.role === 'Franchisee' 
+          ? `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Franchise Owner (${data.assignedBranch})</span>`
+          : `<span class="badge badge-closed">Appointed Manager</span>`;
+      
       html += `
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td>
             <strong>${data.email}</strong><br>
             <span style="font-size: 11px; color: #64748b;">Access: [${perms}]</span>
           </td>
-          <td><span class="badge badge-closed">Appointed Manager</span></td>
+          <td>${roleBadge}</td>
           <td style="display: flex; gap: 5px;">
             <button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:4px 8px; font-size:11px;" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}')">⚙️ Edit Permissions</button>
             <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:4px 8px; font-size:11px;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button>
@@ -191,14 +209,33 @@ window.addHqManager = async function () {
       emailInput.value = ''; return;
     }
 
+    // 🔥 Ask what type of account to create
+    let accountType = prompt(`What role is this account?\n\nType "1" for Standard Manager (HQ)\nType "2" for Franchisee Owner`);
+    
+    if (accountType === null) return; // Cancelled
+    
+    let roleStr = 'Manager';
+    let branchStr = 'All';
+
+    // If Franchisee, ask which branch they own!
+    if (accountType === "2") {
+        roleStr = 'Franchisee';
+        let branchList = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office").join(", ") : "Cabantian, Citygate, Maa";
+        branchStr = prompt(`Which branch does this Franchisee own?\n\nAvailable Branches:\n${branchList}`);
+        if (!branchStr) return; // Cancelled
+    }
+
     await addDoc(collection(db, "hq_managers"), {
       email: email,
+      role: roleStr,
+      assignedBranch: branchStr, // Locks them to this branch
+      permissions: ['dashboard', 'inventory', 'purchases', 'zreadings', 'history'], // Default safe franchise tabs
       addedAt: new Date()
     });
 
-    alert(`✅ Success! ${email} has been granted access to the HQ.`);
+    alert(`✅ Success! ${email} has been added as a ${roleStr} for ${branchStr}.`);
     emailInput.value = '';
-    loadAdminDashboard();
+    window.loadAdminDashboard();
   } catch (e) {
     console.error(e); alert("Failed to add manager.");
   }
