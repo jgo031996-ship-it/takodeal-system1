@@ -279,28 +279,59 @@ window.removeHqManager = async function (docId, email) {
   } catch (e) { console.error(e); alert("Failed to remove manager."); }
 };
 
-// --- THE GLOBAL RADAR ENGINE (TRANSACTION-FIRST UPGRADE) ---
+// --- THE GLOBAL RADAR ENGINE (FRANCHISE ISOLATION UPGRADE) ---
 window.loadGlobalDashboard = async function() {
-  const startDateInput = document.getElementById('dashStartDate');
-  const endDateInput = document.getElementById('dashEndDate');
+    const startDateInput = document.getElementById('dashStartDate');
+    const endDateInput = document.getElementById('dashEndDate');
 
-  if (!startDateInput.value) startDateInput.valueAsDate = new Date();
-  if (!endDateInput.value) endDateInput.valueAsDate = new Date();
+    if (!startDateInput.value) startDateInput.valueAsDate = new Date();
+    if (!endDateInput.value) endDateInput.valueAsDate = new Date();
 
-  const startOfDay = new Date(startDateInput.value);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(endDateInput.value);
-  endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = new Date(startDateInput.value);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(endDateInput.value);
+    endOfDay.setHours(23, 59, 59, 999);
 
-  let globalGross = 0; let globalNet = 0; let globalExp = 0;
-  const branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ['Cabantian', 'Citygate', 'Maa'];
-  let tableHtml = '';
+    // 🔥 INJECT THE BRANCH PICKER NEXT TO THE DATE CONTROLS
+    let dashFilter = document.getElementById('dashBranchFilter');
+    if (!dashFilter) {
+        let dateControls = document.getElementById('globalDateControls');
+        if (dateControls) {
+            dateControls.insertAdjacentHTML('afterbegin', `
+                <select id="dashBranchFilter" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f766e; margin-right: 10px; background: white; outline: none; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" onchange="window.loadGlobalDashboard()">
+                    <option value="All">🌐 All Branches</option>
+                </select>
+            `);
+            dashFilter = document.getElementById('dashBranchFilter');
+            if (typeof window.injectDynamicBranchDropdowns === 'function') window.injectDynamicBranchDropdowns();
+        }
+    }
 
-  try {
-    for (let branch of branches) {
-      // 1. FETCH SHIFT DATA FIRST (True Shift Logic)
-      const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"), limit(1));
-      const shiftSnap = await getDocs(shiftQ);
+    let selectedBranch = dashFilter ? dashFilter.value : "All";
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    
+    // 🔒 FORCE LOCK FOR FRANCHISEES
+    if (isFranchisee && dashFilter) {
+        selectedBranch = window.sessionUser.branch;
+        dashFilter.value = selectedBranch;
+        dashFilter.disabled = true;
+    }
+
+    let globalGross = 0; let globalNet = 0; let globalExp = 0;
+    
+    // 🔥 SCAN ONLY THE SELECTED BRANCH (OR ALL)
+    let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
+    if (selectedBranch !== "All") {
+        branches = [selectedBranch];
+    }
+
+    let tableHtml = '';
+
+    try {
+        for (let branch of branches) {
+            // 1. FETCH SHIFT DATA FIRST (True Shift Logic)
+            const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"), limit(1));
+            const shiftSnap = await getDocs(shiftQ);
 
       let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
       let isActive = shiftData && shiftData.active === true;
@@ -9076,13 +9107,19 @@ window.submitManualOvertime = async function() {
 };
 
 // ========================================================
-// 📈 ADVANCED CHART.JS ANALYTICS ENGINE (BRANCH WARS)
+// 📈 ADVANCED CHART.JS ANALYTICS ENGINE (FRANCHISE SECURED)
 // ========================================================
 window.revenueChartInstance = null;
 window.categoryChartInstance = null;
 
 window.renderDashboardCharts = async function() {
     try {
+        // Grab the Branch Filter value
+        let dashFilter = document.getElementById('dashBranchFilter');
+        let selectedBranch = dashFilter ? dashFilter.value : "All";
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+        if (isFranchisee) selectedBranch = window.sessionUser.branch;
+
         // 1. Setup Dates for the 7-Day Trend
         let today = new Date();
         today.setHours(23, 59, 59, 999);
@@ -9090,7 +9127,12 @@ window.renderDashboardCharts = async function() {
         sevenDaysAgo.setDate(today.getDate() - 6); // Look back 6 days + today
         sevenDaysAgo.setHours(0, 0, 0, 0);
 
-        const txQ = query(collection(db, "transactions"), where("timestamp", ">=", sevenDaysAgo), where("timestamp", "<=", today));
+        // 🔒 Apply Branch Filter to the Database Query!
+        let txQ = query(collection(db, "transactions"), where("timestamp", ">=", sevenDaysAgo), where("timestamp", "<=", today));
+        if (selectedBranch !== "All") {
+            txQ = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", sevenDaysAgo), where("timestamp", "<=", today));
+        }
+        
         const txSnap = await getDocs(txQ);
 
         // 2. Setup Date Labels for the X-Axis
@@ -11492,7 +11534,7 @@ window.deleteBranch = async function(docId, name) {
 // 💉 THE DOM INJECTOR (FRANCHISE LOCK UPGRADE)
 window.injectDynamicBranchDropdowns = function() {
     const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
-    const filterSelects = ['invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect'];
+    const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect'];
     
     let stdHtml = '';
     let filterHtml = '<option value="All">🌐 All Branches</option>';
