@@ -194,51 +194,81 @@ window.loadAdminDashboard = async function() {
 }
 
 window.addHqManager = async function () {
-  let emailInput = document.getElementById('newManagerEmail');
-  let email = emailInput.value.trim().toLowerCase();
+    let emailInput = document.getElementById('newManagerEmail');
+    let email = emailInput.value.trim().toLowerCase();
 
-  if (!email || !email.includes('@')) { alert("Please enter a valid email address."); return; }
-  if (email === MASTER_EMAIL) { alert("That is the Master Key email. It already has permanent access."); emailInput.value = ''; return; }
-
-  try {
-    // Check if they are already on the list
-    const q = query(collection(db, "hq_managers"), where("email", "==", email));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      alert("This email is already on the VIP list!");
-      emailInput.value = ''; return;
+    if (!email || !email.includes('@')) { 
+        return Swal.fire('Invalid Email', 'Please enter a valid email address.', 'error'); 
+    }
+    if (email === MASTER_EMAIL) { 
+        emailInput.value = ''; 
+        return Swal.fire('Master Key', 'That is the Master Key email. It already has permanent access.', 'info'); 
     }
 
-    // 🔥 Ask what type of account to create
-    let accountType = prompt(`What role is this account?\n\nType "1" for Standard Manager (HQ)\nType "2" for Franchisee Owner`);
-    
-    if (accountType === null) return; // Cancelled
-    
-    let roleStr = 'Manager';
-    let branchStr = 'All';
+    try {
+        const q = query(collection(db, "hq_managers"), where("email", "==", email));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            emailInput.value = ''; 
+            return Swal.fire('Exists', 'This email is already on the VIP list!', 'warning');
+        }
 
-    // If Franchisee, ask which branch they own!
-    if (accountType === "2") {
-        roleStr = 'Franchisee';
-        let branchList = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office").join(", ") : "Cabantian, Citygate, Maa";
-        branchStr = prompt(`Which branch does this Franchisee own?\n\nAvailable Branches:\n${branchList}`);
-        if (!branchStr) return; // Cancelled
+        // Build branch dropdown options
+        let branchOptions = '';
+        let branchesToAssign = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
+        branchesToAssign.forEach(b => { branchOptions += `<option value="${b}">${b}</option>`; });
+
+        // 🔥 UI UPGRADE: Custom Franchisee Assignment Form
+        const { value: formValues, isConfirmed } = await Swal.fire({
+            title: 'Assign Access Level',
+            html: `
+                <div style="text-align: left; margin-top: 10px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Role:</label>
+                    <select id="swal-role" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="document.getElementById('swal-branch-container').style.display = this.value === 'Franchisee' ? 'block' : 'none'">
+                        <option value="Manager">Standard Manager (HQ Access)</option>
+                        <option value="Franchisee">Franchise Owner</option>
+                    </select>
+
+                    <div id="swal-branch-container" style="display: none;">
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Assign to Branch:</label>
+                        <select id="swal-branch" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none;">
+                            ${branchOptions}
+                        </select>
+                    </div>
+                </div>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonColor: '#d97706',
+            confirmButtonText: 'Grant Access',
+            customClass: { popup: 'rounded-2xl shadow-xl' },
+            preConfirm: () => {
+                return { 
+                    role: document.getElementById('swal-role').value, 
+                    branch: document.getElementById('swal-branch').value 
+                };
+            }
+        });
+
+        if (!isConfirmed) return; // User clicked Cancel
+
+        let roleStr = formValues.role;
+        let branchStr = formValues.role === 'Franchisee' ? formValues.branch : 'All';
+        let permissions = formValues.role === 'Franchisee' 
+            ? ['dashboard', 'inventory', 'purchases', 'zreadings', 'history'] // Safe default tabs for Franchisees
+            : ['all'];
+
+        await addDoc(collection(db, "hq_managers"), {
+            email: email, role: roleStr, assignedBranch: branchStr, permissions: permissions, addedAt: new Date()
+        });
+
+        Swal.fire('✅ Success!', `${email} has been added as a ${roleStr} for ${branchStr}.`, 'success');
+        emailInput.value = '';
+        window.loadAdminDashboard();
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to add manager.', 'error');
     }
-
-    await addDoc(collection(db, "hq_managers"), {
-      email: email,
-      role: roleStr,
-      assignedBranch: branchStr, // Locks them to this branch
-      permissions: ['dashboard', 'inventory', 'purchases', 'zreadings', 'history'], // Default safe franchise tabs
-      addedAt: new Date()
-    });
-
-    alert(`✅ Success! ${email} has been added as a ${roleStr} for ${branchStr}.`);
-    emailInput.value = '';
-    window.loadAdminDashboard();
-  } catch (e) {
-    console.error(e); alert("Failed to add manager.");
-  }
 };
 
 window.removeHqManager = async function (docId, email) {
@@ -11363,29 +11393,31 @@ window.openAddBranchModal = function() {
 
 window.saveNewBranch = async function() {
     let name = document.getElementById('newBranchName').value.trim();
-    let lat = document.getElementById('newBranchLat').value;
-    let lng = document.getElementById('newBranchLng').value;
-
-    if (!name) return alert("Branch name is required!");
-    if (window.globalActiveBranches.includes(name)) return alert("A branch with this name already exists!");
+    if (!name) return Swal.fire('Error', 'Branch name is required!', 'error');
+    
+    if (window.globalActiveBranches.includes(name)) {
+        return Swal.fire('Duplicate', 'A branch with this name already exists!', 'warning');
+    }
 
     let btn = document.getElementById('btnSaveNewBranch');
     btn.innerText = "⏳ Provisioning..."; btn.disabled = true;
 
     try {
-        await addDoc(collection(db, "branches"), { 
-            name: name, 
-            isCore: false, 
-            latitude: lat,
-            longitude: lng,
-            printerSize: "58mm", // Default settings for the new cashier app
-            createdAt: serverTimestamp() 
+        await addDoc(collection(db, "branches"), { name: name, isCore: false, createdAt: serverTimestamp() });
+        
+        // 🔥 UI UPGRADE: Beautiful Success Modal
+        Swal.fire({
+            title: '🎉 Branch Online!',
+            text: `${name} is now officially integrated into the TAKODEÁL system!`,
+            icon: 'success',
+            confirmButtonColor: '#8b5cf6', // Matches your purple modal theme
+            customClass: { popup: 'rounded-2xl shadow-xl' }
         });
-        alert(`🎉 Congratulations! ${name} is now online and mapped at [${lat}, ${lng}].`);
+        
         document.getElementById('addBranchModal').style.display = 'none';
         window.loadBranchManager();
     } catch (e) {
-        console.error(e); alert("Failed to add branch.");
+        console.error(e); Swal.fire('Error', 'Failed to add branch.', 'error');
     } finally {
         btn.innerText = "🚀 Launch Branch"; btn.disabled = false;
     }
@@ -11436,46 +11468,6 @@ window.saveBranchSettings = async function() {
 };
 
 // 💉 THE DOM INJECTOR
-window.injectDynamicBranchDropdowns = function() {
-    const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
-    const filterSelects = ['invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect'];
-    
-    let stdHtml = '';
-    let filterHtml = '<option value="All">🌐 All Branches</option>';
-    let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; 
-
-    window.globalActiveBranches.forEach(b => {
-        let icon = b === "Main Office" ? "🏢" : "📍";
-        let label = `${icon} ${b}`;
-        
-        stdHtml += `<option value="${b}">${b}</option>`;
-        filterHtml += `<option value="${b}">${label}</option>`;
-        plainFilterHtml += `<option value="${b}">${b}</option>`;
-    });
-
-    standardSelects.forEach(id => {
-        let el = document.getElementById(id);
-        if (el) { let oldVal = el.value; el.innerHTML = stdHtml; if (oldVal) el.value = oldVal; }
-    });
-
-    filterSelects.forEach(id => {
-        let el = document.getElementById(id);
-        if (el) {
-            let oldVal = el.value;
-            if (id === 'burnRateBranch' || id === 'auditModalBranch' || id === 'forecasterBranchSelect') el.innerHTML = plainFilterHtml;
-            else el.innerHTML = filterHtml;
-            if (oldVal) el.value = oldVal;
-        }
-    });
-
-    if (typeof branchConfig !== 'undefined') {
-        window.globalActiveBranches.forEach(b => {
-            if (b !== "Main Office" && !branchConfig[b]) {
-                branchConfig[b] = JSON.parse(JSON.stringify(defaultSchedConfig["Cabantian"] || [])); 
-            }
-        });
-    }
-};
 
 // Fire the engine up as soon as the app loads!
 document.addEventListener("DOMContentLoaded", () => {
@@ -11483,29 +11475,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
     }, 1500); 
 });
-
-window.saveNewBranch = async function() {
-    let name = document.getElementById('newBranchName').value.trim();
-    if (!name) return alert("Branch name is required!");
-    
-    if (window.globalActiveBranches.includes(name)) {
-        return alert("A branch with this name already exists!");
-    }
-
-    let btn = document.getElementById('btnSaveNewBranch');
-    btn.innerText = "⏳ Provisioning..."; btn.disabled = true;
-
-    try {
-        await addDoc(collection(db, "branches"), { name: name, isCore: false, createdAt: serverTimestamp() });
-        alert(`🎉 Congratulations! ${name} is now online and integrated into the system!`);
-        document.getElementById('addBranchModal').style.display = 'none';
-        window.loadBranchManager();
-    } catch (e) {
-        console.error(e); alert("Failed to add branch.");
-    } finally {
-        btn.innerText = "🚀 Launch Branch"; btn.disabled = false;
-    }
-};
 
 window.deleteBranch = async function(docId, name) {
     if (!confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?\n\nThis will remove it from all dropdowns. Existing data (sales, inventory) will still exist but might be orphaned.`)) return;
@@ -11520,43 +11489,61 @@ window.deleteBranch = async function(docId, name) {
     } catch (e) { console.error(e); alert("Failed to delete branch."); }
 };
 
-// 💉 THE DOM INJECTOR
+// 💉 THE DOM INJECTOR (FRANCHISE LOCK UPGRADE)
 window.injectDynamicBranchDropdowns = function() {
-    // 1. Lists where it just needs the branch names
     const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
-    
-    // 2. Lists where it needs an "All Branches" option at the top
     const filterSelects = ['invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect'];
     
     let stdHtml = '';
     let filterHtml = '<option value="All">🌐 All Branches</option>';
-    let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; // For inputs that need a blank start
+    let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; 
 
-    window.globalActiveBranches.forEach(b => {
-        let icon = b === "Main Office" ? "🏢" : "📍";
-        let label = `${icon} ${b}`;
-        
-        stdHtml += `<option value="${b}">${b}</option>`;
-        filterHtml += `<option value="${b}">${label}</option>`;
-        plainFilterHtml += `<option value="${b}">${b}</option>`;
-    });
+    // 🔥 PHASE 2: FRANCHISEE ISOLATION PROTOCOL
+    let isFranchiseMode = window.sessionUser && window.sessionUser.isFranchisee;
+    let franchiseBranch = window.sessionUser ? window.sessionUser.branch : null;
 
+    if (isFranchiseMode && franchiseBranch) {
+        // Build the HTML to ONLY contain their assigned branch
+        let icon = "📍";
+        let label = `${icon} ${franchiseBranch}`;
+        stdHtml = `<option value="${franchiseBranch}">${franchiseBranch}</option>`;
+        filterHtml = `<option value="${franchiseBranch}">${label}</option>`;
+        plainFilterHtml = `<option value="${franchiseBranch}">${franchiseBranch}</option>`;
+    } else {
+        // Standard HQ view (builds all branches)
+        window.globalActiveBranches.forEach(b => {
+            let icon = b === "Main Office" ? "🏢" : "📍";
+            let label = `${icon} ${b}`;
+            stdHtml += `<option value="${b}">${b}</option>`;
+            filterHtml += `<option value="${b}">${label}</option>`;
+            plainFilterHtml += `<option value="${b}">${b}</option>`;
+        });
+    }
+
+    // Inject into standard dropdowns and lock them if needed
     standardSelects.forEach(id => {
         let el = document.getElementById(id);
-        if (el) { let oldVal = el.value; el.innerHTML = stdHtml; if (oldVal) el.value = oldVal; }
+        if (el) { 
+            let oldVal = el.value; 
+            el.innerHTML = stdHtml; 
+            if (!isFranchiseMode && oldVal) el.value = oldVal; 
+            if (isFranchiseMode) { el.value = franchiseBranch; el.disabled = true; } // LOCK
+        }
     });
 
+    // Inject into filter dropdowns and lock them if needed
     filterSelects.forEach(id => {
         let el = document.getElementById(id);
         if (el) {
             let oldVal = el.value;
             if (id === 'burnRateBranch' || id === 'auditModalBranch' || id === 'forecasterBranchSelect') el.innerHTML = plainFilterHtml;
             else el.innerHTML = filterHtml;
-            if (oldVal) el.value = oldVal;
+            
+            if (!isFranchiseMode && oldVal) el.value = oldVal;
+            if (isFranchiseMode) { el.value = franchiseBranch; el.disabled = true; } // LOCK
         }
     });
 
-    // Append to Scheduler config dynamically
     if (typeof branchConfig !== 'undefined') {
         window.globalActiveBranches.forEach(b => {
             if (b !== "Main Office" && !branchConfig[b]) {
