@@ -466,14 +466,28 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-// --- THE HR & SECURITY ENGINE (ENTERPRISE UPGRADE) ---
+// --- THE HR & SECURITY ENGINE (ENTERPRISE FRANCHISE UPGRADE) ---
 window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
 
   try {
-    const snap = await getDocs(collection(db, "cashiers"));
+    // 🛡️ FRANCHISE SECURITY WALL
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let myBranch = window.sessionUser ? window.sessionUser.branch : null;
+    
+    let q = collection(db, "cashiers");
+    // If they are a franchisee, ONLY fetch their specific branch employees!
+    if (isFranchisee && myBranch) {
+        q = query(collection(db, "cashiers"), where("branch", "==", myBranch));
+    }
+    
+    const snap = await getDocs(q);
+    let html = '';
+
+    // 🛡️ THE GATEKEEPER: Check if the logged-in person is the Master Owner
+    const isOwner = window.sessionUser && window.sessionUser.isOwner;
     let html = '';
 
     // 🛡️ THE GATEKEEPER: Check if the logged-in person is the Master Owner
@@ -6724,7 +6738,14 @@ window.loadInbox = async function() {
     pendingBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading requests...</td></tr>';
 
     try {
-        const q = query(collection(db, "staff_requests"), orderBy("timestamp", "desc"));
+        // 🛡️ INBOX SECURITY WALL
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+        let q = query(collection(db, "staff_requests"), orderBy("timestamp", "desc"));
+        
+        if (isFranchisee && window.sessionUser.branch) {
+            // Franchisees only download requests from their own staff
+            q = query(collection(db, "staff_requests"), where("branch", "==", window.sessionUser.branch), orderBy("timestamp", "desc"));
+        }
         const snap = await getDocs(q);
 
         let pendingHtml = '';
