@@ -1145,21 +1145,43 @@ let dispatchCart = [];
 let dispatchInventoryList = [];
 
 window.loadDispatchDashboard = async function() {
-  const branches = ["Main Office", "Cabantian", "Citygate", "Maa"];
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+  let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+
+  const branches = window.globalActiveBranches ? window.globalActiveBranches : ["Main Office", "Cabantian", "Citygate", "Maa", "SM Lanang"];
+  
   let fromHtml = '<option value="">-- Select Source --</option>';
   let toHtml = '<option value="">-- Select Destination --</option>';
 
-  branches.forEach(b => {
-    fromHtml += `<option value="${b}">${b}</option>`;
-    toHtml += `<option value="${b}">${b}</option>`;
-  });
+  let btn = document.getElementById('btnSubmitDispatch');
 
-  document.getElementById('dispFrom').innerHTML = fromHtml;
-  document.getElementById('dispFrom').value = "Main Office";
-  document.getElementById('dispTo').innerHTML = toHtml;
+  if (isFranchisee) {
+      // 🔒 LOCK UI FOR FRANCHISEES
+      fromHtml = `<option value="Main Office">Main Office (HQ)</option>`;
+      toHtml = `<option value="${myBranch}">${myBranch}</option>`;
+      if (btn) btn.innerText = "📝 Request Stock from HQ";
+      
+      document.getElementById('dispFrom').innerHTML = fromHtml;
+      document.getElementById('dispFrom').value = "Main Office";
+      document.getElementById('dispTo').innerHTML = toHtml;
+      document.getElementById('dispTo').value = myBranch;
+  } else {
+      // 🌍 UNLOCKED UI FOR MASTER
+      branches.forEach(b => {
+        fromHtml += `<option value="${b}">${b}</option>`;
+        toHtml += `<option value="${b}">${b}</option>`;
+      });
+      document.getElementById('dispFrom').innerHTML = fromHtml;
+      document.getElementById('dispFrom').value = "Main Office";
+      document.getElementById('dispTo').innerHTML = toHtml;
+      
+      if (btn) btn.innerText = "🚀 Send Dispatch Delivery";
+  }
 
   dispatchCart = [];
-  window.renderDispatchCart();
+  if (typeof renderDispatchCart === 'function') renderDispatchCart();
+  else window.renderDispatchCart();
+  
   await window.loadDispatchInventory();
   await window.loadDispatchLogs();
 };
@@ -1214,10 +1236,19 @@ window.loadDispatchInventory = async function () {
     // Alphabetical sort so it's easy to browse
     sortedStock.sort((a, b) => a.name.localeCompare(b.name));
 
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+
     sortedStock.forEach(data => {
         dispatchInventoryList.push(data);
         let safeStock = parseFloat(data.currentStock).toFixed(1);
-        datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
+        
+        if (isFranchisee) {
+            // 🔒 PRIVACY LOCK: Hide actual HQ stock amounts from franchisees
+            datalistHtml += `<option value="${data.name}">${data.name} (Request in ${data.uom})</option>`;
+        } else {
+            // 🌍 MASTER VIEW: Show exactly how much is available
+            datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
+        }
     });
     
     datalistHtml += '</datalist>';
@@ -1338,60 +1369,6 @@ window.addToDispatchCart = function () {
   if (typeof renderDispatchCart === 'function') renderDispatchCart();
 };
 
-window.submitMultiDispatch = async function () {
-  let fromBranch = document.getElementById('dispFrom').value;
-  let toBranch = document.getElementById('dispTo').value;
-
-  if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
-  if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
-  if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
-
-  let btn = document.getElementById('btnSubmitDispatch');
-  btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
-
-  try {
-    let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
-    if (!driverName) {
-        btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
-        return; 
-    }
-
-    for (let item of dispatchCart) {
-      let sourceRef = doc(db, "inventory", item.sourceId);
-      let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
-      await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
-
-      await addDoc(collection(db, "dispatch_logs"), {
-        date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-        time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-        timestamp: new Date(),
-        item: item.itemName,
-        qty: item.qty, 
-        uom: item.uom, 
-        details: `${fromBranch} ➡️ ${toBranch}`,
-        toBranch: toBranch,
-        driver: driverName,
-        status: "In Transit",
-        displayQty: item.rawQty || item.qty,      
-        displayUom: item.friendlyUom || item.uom, 
-        convRate: item.convRate || 1,
-        category: item.category,
-        purchaseUom: item.purchaseUom,
-        cost: item.cost,
-        reorderLevel: item.reorderLevel
-      });
-    }
-
-    alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
-    dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); 
-    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
-    btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
-  } catch (e) { 
-      console.error(e); alert("Dispatch failed."); 
-      btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
-  }
-};
-
 window.removeFromDispatchCart = function (index) {
   dispatchCart.splice(index, 1);
   window.renderDispatchCart();
@@ -1431,67 +1408,130 @@ window.renderDispatchCart = function() {
 window.loadDispatchLogs = async function() {
   const tbody = document.getElementById('dispatchLogBody');
   if(!tbody) return;
-  tbody.innerHTML = '<tr><td class="text-center" style="padding: 20px;">Loading deliveries...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 20px;">Loading logistics data...</td></tr>';
   
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+  let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+
   try {
-    const qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
+    // 1. Fetch Pending Purchase Orders
+    let poQuery = query(collection(db, "purchase_orders"), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
+    if (isFranchisee) {
+        poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
+    }
+    const poSnap = await getDocs(poQuery);
+    
+    let poHtml = '';
+    poSnap.forEach(docSnap => {
+        let po = docSnap.data();
+        let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+        
+        let actionBtn = isFranchisee 
+            ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
+            : `<button onclick="window.approvePurchaseOrder('${docSnap.id}')" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3);">✅ Fulfill Order</button>`;
+        
+        poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
+            <td style="padding:15px;">
+                <div style="font-weight:900; color:#d97706; font-size:15px;">📝 Purchase Order from ${po.branch}</div>
+                <div style="font-size:12px; color:#b45309; margin-top: 4px; font-weight:bold;">Requested by: ${po.requestedBy}</div>
+                <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
+            </td>
+            <td style="padding:15px; text-align:center;">
+                <span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending PO</span>
+            </td>
+            <td style="padding:15px; text-align:right;">
+                ${actionBtn}
+            </td>
+        </tr>`;
+    });
+
+    // 2. Fetch Dispatch Logs (Actual Deliveries)
+    let qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
+    if (isFranchisee) {
+        qLogs = query(collection(db, "dispatch_logs"), where("toBranch", "==", myBranch), orderBy("timestamp", "desc"));
+    }
     const snap = await getDocs(qLogs);
     
     let deliveries = {};
-    
     snap.forEach(doc => {
         let d = doc.data();
         d.id = doc.id;
-        
-        // Group individual items into a single "Delivery Run"
         let groupKey = `${d.date}_${d.toBranch}_${d.driver || 'Unknown'}`;
         if(!deliveries[groupKey]) {
             deliveries[groupKey] = {
-                date: d.date,
-                time: d.time,
-                toBranch: d.toBranch,
-                driver: d.driver || 'Unknown',
-                items: [],
-                status: 'In Transit',
-                timestamp: d.timestamp
+                date: d.date, time: d.time, toBranch: d.toBranch, driver: d.driver || 'Unknown',
+                items: [], status: 'In Transit', timestamp: d.timestamp
             };
         }
         deliveries[groupKey].items.push(d);
-        
-        // Auto-update status if any items are flagged
         if(d.status === "Received") deliveries[groupKey].status = "Received";
         if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
     });
 
-    let html = '';
+    let html = poHtml; // Attach POs at the top!
     let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
 
-    if (sortedKeys.length === 0) { 
-        html = '<tr><td class="text-center" style="padding: 20px;">No recent deliveries.</td></tr>'; 
+    if (sortedKeys.length === 0 && poHtml === '') { 
+        html = '<tr><td colspan="3" class="text-center" style="padding: 30px; color:#64748b; font-weight:bold;">No recent deliveries or requests.</td></tr>'; 
     } else {
-      sortedKeys.slice(0, 20).forEach(key => {
-        let del = deliveries[key];
-        let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : '#f59e0b');
-        
-        let safeItemsJson = encodeURIComponent(JSON.stringify(del.items));
+        sortedKeys.slice(0, 20).forEach(key => {
+            let del = deliveries[key];
+            let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : '#f59e0b');
+            let safeItemsJson = encodeURIComponent(JSON.stringify(del.items));
 
-        html += `<tr style="border-bottom:1px solid #e2e8f0; background: white;">
-          <td style="padding:15px;">
-            <div style="font-weight:bold; color:#0f172a; font-size:14px;">📍 To: ${del.toBranch}</div>
-            <div style="font-size:12px; color:#64748b; margin-top: 4px;">🚚 Driver: ${del.driver}</div>
-            <div style="font-size:11px; color:#94a3b8; margin-top:4px;">📅 ${del.date} at ${del.time}</div>
-          </td>
-          <td style="padding:15px; text-align:center;">
-              <span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span>
-          </td>
-          <td style="padding:15px; text-align:right;">
-              <button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}', '${del.time}')" style="background: white; color: #ea580c; border: 1px solid #ea580c; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button>
-          </td>
-        </tr>`;
-      });
+            html += `<tr style="border-bottom:1px solid #e2e8f0; background: white;">
+                <td style="padding:15px;">
+                    <div style="font-weight:bold; color:#0f172a; font-size:14px;">📍 To: ${del.toBranch}</div>
+                    <div style="font-size:12px; color:#64748b; margin-top: 4px;">🚚 Driver: ${del.driver}</div>
+                    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">📅 ${del.date} at ${del.time}</div>
+                </td>
+                <td style="padding:15px; text-align:center;">
+                    <span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span>
+                </td>
+                <td style="padding:15px; text-align:right;">
+                    <button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}', '${del.time}')" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button>
+                </td>
+            </tr>`;
+        });
     }
     tbody.innerHTML = html;
-  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
+  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
+};
+
+window.approvePurchaseOrder = async function(poId) {
+    try {
+        const poRef = doc(db, "purchase_orders", poId);
+        const poSnap = await getDoc(poRef);
+        if (!poSnap.exists()) return;
+        
+        let po = poSnap.data();
+        
+        // 1. Load their requested items into YOUR Dispatch Cart
+        dispatchCart = po.items;
+        
+        // 2. Auto-fill the form so you don't have to
+        document.getElementById('dispFrom').value = "Main Office";
+        document.getElementById('dispTo').value = po.branch;
+        
+        // 3. Mark the PO as approved so it clears from the pending list
+        await updateDoc(poRef, { status: "Approved" });
+        
+        // 4. Update the screen instantly
+        if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+        window.loadDispatchLogs();
+        
+        Swal.fire({
+            title: '✅ Purchase Order Loaded!',
+            html: `${po.branch}'s request has been placed into your Dispatch Cart.<br><br><span style="font-size: 13px; color: #64748b;">You can now adjust quantities or remove out-of-stock items before clicking <b>Send Dispatch Delivery</b> to physically pack it.</span>`,
+            icon: 'info',
+            confirmButtonColor: '#0f766e',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+    } catch(e) {
+        console.error("Error approving PO:", e);
+        Swal.fire('Error', 'Failed to load Purchase Order.', 'error');
+    }
 };
 
 // ========================================================
@@ -1725,7 +1765,39 @@ window.submitMultiDispatch = async function () {
   if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
   if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
 
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
   let btn = document.getElementById('btnSubmitDispatch');
+
+  // ==========================================
+  // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
+  // ==========================================
+  if (isFranchisee) {
+      btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
+      try {
+          await addDoc(collection(db, "purchase_orders"), {
+              branch: toBranch,
+              items: dispatchCart,
+              status: "Pending",
+              requestedBy: window.sessionUser.cashierName,
+              timestamp: serverTimestamp()
+          });
+          
+          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request for ${dispatchCart.length} items. You will receive the delivery once approved.`, 'success');
+          
+          dispatchCart = []; 
+          if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+          if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+      } catch (e) {
+          console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error');
+      } finally {
+          btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false;
+      }
+      return; // STOP HERE FOR FRANCHISEES!
+  }
+
+  // ==========================================
+  // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
+  // ==========================================
   btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
   try {
@@ -1736,40 +1808,30 @@ window.submitMultiDispatch = async function () {
     }
 
     for (let item of dispatchCart) {
-      // 1. Deduct from Main Office
       let sourceRef = doc(db, "inventory", item.sourceId);
       let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
       await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
 
-      // 2. Log it as "In Transit"!
       await addDoc(collection(db, "dispatch_logs"), {
         date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
         time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
         timestamp: new Date(),
-        item: item.itemName,
-        qty: item.qty, 
-        uom: item.uom, 
-        details: `${fromBranch} ➡️ ${toBranch}`,
-        toBranch: toBranch,
-        driver: driverName,
-        status: "In Transit",
-        displayQty: item.rawQty || item.qty,      
-        displayUom: item.friendlyUom || item.uom, 
-        convRate: item.convRate || 1,
-        // 🔥 NEW: Pass the DNA to the Cashier!
-        category: item.category,
-        purchaseUom: item.purchaseUom,
-        cost: item.cost,
-        reorderLevel: item.reorderLevel
+        item: item.itemName, qty: item.qty, uom: item.uom, 
+        details: `${fromBranch} ➡️ ${toBranch}`, toBranch: toBranch, driver: driverName, status: "In Transit",
+        displayQty: item.rawQty || item.qty, displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1,
+        category: item.category, purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
       });
     }
 
     alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
-    dispatchCart = []; renderDispatchCart(); window.loadDispatchInventory(); 
-    if (typeof loadDispatchLogs === 'function') loadDispatchLogs();
-    btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
+    dispatchCart = []; 
+    if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+    window.loadDispatchInventory(); 
+    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+    
   } catch (e) { 
       console.error(e); alert("Dispatch failed."); 
+  } finally {
       btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
   }
 };
