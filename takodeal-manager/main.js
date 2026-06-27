@@ -151,7 +151,7 @@ window.loginWithGoogle = async function() {
   }
 };
 
-// --- ACCESS CONTROL ENGINE (FRANCHISE UPGRADE) ---
+// --- ACCESS CONTROL ENGINE (FRANCHISE PROFILES) ---
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
   if (!tbody) return;
@@ -171,7 +171,10 @@ window.loadAdminDashboard = async function() {
       let data = docSnap.data();
       let perms = data.permissions ? data.permissions.join(', ') : 'all';
       
-      // Visual badge difference for Franchisees
+      // 🔥 BEAUTIFUL PROFILE INJECTION
+      let nameStr = data.fullName ? `<br><span style="color:#0f766e; font-size:13px; font-weight:bold;">👤 ${data.fullName}</span>` : '';
+      let phoneStr = data.phone ? `<br><span style="color:#64748b; font-size:11px;">📞 ${data.phone}</span>` : '';
+      
       let roleBadge = data.role === 'Franchisee' 
           ? `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Franchise Owner (${data.assignedBranch})</span>`
           : `<span class="badge badge-closed">Appointed Manager</span>`;
@@ -179,13 +182,15 @@ window.loadAdminDashboard = async function() {
       html += `
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td>
-            <strong>${data.email}</strong><br>
-            <span style="font-size: 11px; color: #64748b;">Access: [${perms}]</span>
+            <strong>${data.email}</strong>
+            ${nameStr}
+            ${phoneStr}
+            <br><span style="font-size: 11px; color: #94a3b8; display:inline-block; margin-top:4px;">Access: [${perms}]</span>
           </td>
           <td>${roleBadge}</td>
-          <td style="display: flex; gap: 5px;">
-            <button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:4px 8px; font-size:11px;" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}')">⚙️ Edit Permissions</button>
-            <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:4px 8px; font-size:11px;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button>
+          <td style="display: flex; gap: 5px; align-items: center;">
+            <button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}')">⚙️ Edit Permissions</button>
+            <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button>
           </td>
         </tr>
       `;
@@ -196,7 +201,7 @@ window.loadAdminDashboard = async function() {
     console.error(e);
     tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red;">Error loading VIP list.</td></tr>';
   }
-}
+};
 
 window.addHqManager = async function () {
     let emailInput = document.getElementById('newManagerEmail');
@@ -934,7 +939,10 @@ window.switchView = function (viewId) {
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
   if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); }
-  if (viewId === 'admin') { window.loadAdminDashboard(); window.loadBranchManager(); }
+  if (viewId === 'admin') { 
+      window.loadAdminDashboard(); 
+      if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
+  }
 };
 
 // ========================================================
@@ -5082,10 +5090,24 @@ window.loadZReadingArchive = async function() {
 
 window.fetchZReadings = async function() {
     let tbody = document.getElementById('zReadingBody');
+    if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px;">Fetching Z-Readings...</td></tr>';
 
-    let selectedBranch = document.getElementById('zBranchFilter').value;
-    let selectedDate = document.getElementById('zDateFilter').value;
+    let branchFilterEl = document.getElementById('zBranchFilter');
+    let dateFilterEl = document.getElementById('zDateFilter');
+
+    let selectedBranch = branchFilterEl ? branchFilterEl.value : "All";
+    let selectedDate = dateFilterEl ? dateFilterEl.value : "";
+
+    // 🔒 FRANCHISE HARD LOCK
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee) {
+        selectedBranch = window.sessionUser.branch; // Force it to their branch
+        if (branchFilterEl) {
+            branchFilterEl.value = selectedBranch;
+            branchFilterEl.disabled = true;
+        }
+    }
 
     try {
         // 🔥 THE INDEX-FREE QUERY 🔥
@@ -5648,18 +5670,35 @@ window.processBulkUpload = function (event) {
 };
 
 // ========================================================
-// 📊 Z-READING & VARIANCE AUDIT DASHBOARD
+// 📊 Z-READING & VARIANCE AUDIT DASHBOARD (SECURED)
 // ========================================================
 window.loadZReadingReports = async function () {
   const tbody = document.getElementById('zReadingTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading audit reports from cloud...</td></tr>';
 
-  let dateFilter = document.getElementById('zReadingDateFilter') ? document.getElementById('zReadingDateFilter').value : "";
-  let branchFilter = document.getElementById('zReadingBranchFilter') ? document.getElementById('zReadingBranchFilter').value : "All";
+  let dateFilterEl = document.getElementById('zReadingDateFilter');
+  let branchFilterEl = document.getElementById('zReadingBranchFilter');
+  
+  let dateFilter = dateFilterEl ? dateFilterEl.value : "";
+  let branchFilter = branchFilterEl ? branchFilterEl.value : "All";
+
+  // 🔒 FRANCHISE HARD LOCK
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+  if (isFranchisee) {
+      branchFilter = window.sessionUser.branch; // Force it to their branch
+      if (branchFilterEl) {
+          branchFilterEl.value = branchFilter;
+          branchFilterEl.disabled = true;
+      }
+  }
 
   try {
+    // 🔒 Enforce branch filter at the database level!
     let q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"));
+    if (branchFilter !== "All") {
+        q = query(collection(db, "shifts"), where("branch", "==", branchFilter), where("status", "==", "Closed"), orderBy("endTime", "desc"));
+    }
     const snap = await getDocs(q);
 
     let html = '';
@@ -9522,7 +9561,7 @@ window.runProductReport = function() {
 };
 
 // ========================================================
-// 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE
+// 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE (SECURED)
 // ========================================================
 window.loadSalesHistoryTab = async function() {
     const tbodyTx = document.getElementById('historyTableBody');
@@ -9530,7 +9569,19 @@ window.loadSalesHistoryTab = async function() {
     const tbodyDaily = document.getElementById('historyDailyBody');
     const tbodyMonthly = document.getElementById('historyMonthlyBody');
     
-    let branchFilter = document.getElementById('histBranchFilter').value;
+    let branchFilterEl = document.getElementById('histBranchFilter');
+    let branchFilter = branchFilterEl ? branchFilterEl.value : "All";
+    
+    // 🔒 FRANCHISE HARD LOCK
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee) {
+        branchFilter = window.sessionUser.branch; // Force it to their branch
+        if (branchFilterEl) {
+            branchFilterEl.value = branchFilter;
+            branchFilterEl.disabled = true;
+        }
+    }
+
     let startDateRaw = document.getElementById('histStartDate').value;
     let endDateRaw = document.getElementById('histEndDate').value;
 
