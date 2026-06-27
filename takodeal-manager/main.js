@@ -424,11 +424,40 @@ window.loadGlobalDashboard = async function() {
 
   // 🐙 THE TAKOYAKI MILESTONE TRACKER
     try {
+        let dashFilter = document.getElementById('dashBranchFilter');
+        let selectedBranch = dashFilter ? dashFilter.value : "All";
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+        if (isFranchisee) selectedBranch = window.sessionUser.branch;
+
         const statsSnap = await getDoc(doc(db, "settings", "global_stats"));
         if (statsSnap.exists()) {
-            let totalBalls = statsSnap.data().totalTakoyakiBalls || 0;
+            let data = statsSnap.data();
+            let totalBalls = 0;
+            
+            // 🔒 Pull specific branch stats if filtered
+            if (selectedBranch !== "All") {
+                totalBalls = data[`balls_${selectedBranch}`] || 0;
+            } else {
+                totalBalls = data.totalTakoyakiBalls || 0;
+            }
+            
             let milestoneDiv = document.getElementById('milestoneCounter');
-            if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
+            
+            // Change the text above the milestone to show the specific branch
+            let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
+            if (titleDiv) {
+                titleDiv.innerText = selectedBranch !== "All" 
+                    ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` 
+                    : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
+            }
+
+            if (milestoneDiv) {
+                if (totalBalls === 0 && selectedBranch !== "All") {
+                    milestoneDiv.innerText = "Tracking Initial Sales...";
+                } else {
+                    milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
+                }
+            }
         }
     } catch(e) { console.log("Tracker still waiting for first sale."); }
 
@@ -7800,12 +7829,16 @@ window.calculateGrabFinancials = async function() {
             startDateInput = todayStr; endDateInput = todayStr;
         }
 
-        let startOfDay = new Date(startDateInput + 'T00:00:00');
-        let endOfDay = new Date(endDateInput + 'T23:59:59');
-        let daysDiff = Math.max(1, Math.ceil((endOfDay - startOfDay) / (1000 * 60 * 60 * 24)));
+        let dashFilter = document.getElementById('dashBranchFilter');
+        let selectedBranch = dashFilter ? dashFilter.value : "All";
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+        if (isFranchisee) selectedBranch = window.sessionUser.branch;
 
-        // 1. Fetch Sales
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        // 1. Fetch Sales 🔒 (Filtered by Branch)
+        let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        if (selectedBranch !== "All") {
+            q = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        }
         const snap = await getDocs(q);
         
         let branchData = {}; 
@@ -7822,22 +7855,12 @@ window.calculateGrabFinancials = async function() {
             }
         });
 
-        // 2. Fetch Actual Payouts Logged by Cashier
-        const payoutQ = query(collection(db, "grab_payouts"), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
-        const payoutSnap = await getDocs(payoutQ);
-        
-        let actualGrabPayout = 0;
-        let payoutLogsHtml = '';
-        
-        if (payoutSnap.empty) {
-            payoutLogsHtml = '<div style="color:#94a3b8; font-size:12px; font-style:italic;">No manual Grab earnings logged by cashiers yet.</div>';
-        } else {
-            payoutSnap.forEach(docSnap => {
-                let p = docSnap.data();
-                actualGrabPayout += (p.amount || 0);
-                payoutLogsHtml += `<div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #e2e8f0; padding:4px 0; color:#334155;"><span>📅 ${p.dateStr} (${p.branch})</span><span style="font-weight:bold; color:#00b14f;">₱${p.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>`;
-            });
+        // 2. Fetch Actual Payouts Logged by Cashier 🔒 (Filtered by Branch)
+        let payoutQ = query(collection(db, "grab_payouts"), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
+        if (selectedBranch !== "All") {
+            payoutQ = query(collection(db, "grab_payouts"), where("branch", "==", selectedBranch), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
         }
+        const payoutSnap = await getDocs(payoutQ);
 
         // 3. Build UI
         let breakdownHtml = `
@@ -10816,20 +10839,40 @@ window.loadWasteTabLogs = async function() {
 };
 
 window.editSalesTarget = async function() {
-    let newTarget = prompt("Enter new Monthly Sales Target (₱):");
+    let dashFilter = document.getElementById('dashBranchFilter');
+    let selectedBranch = dashFilter ? dashFilter.value : "All";
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee) selectedBranch = window.sessionUser.branch;
+
+    let newTarget = prompt(`Enter new Monthly Sales Target for ${selectedBranch} (₱):`);
     if (!newTarget || isNaN(newTarget)) return;
     
-    await setDoc(doc(db, "settings", "sales_target"), {
-        amount: parseFloat(newTarget),
-        updatedAt: serverTimestamp()
-    });
+    // 🔥 THE FIX: We moved the watchdog reset switch directly inside the main function!
+    window.hasLoadedSalesTarget = false;
+
+    let payload = { updatedAt: serverTimestamp() };
+    if (selectedBranch === "All") payload.amount = parseFloat(newTarget);
+    else payload[selectedBranch] = parseFloat(newTarget);
+
+    await setDoc(doc(db, "settings", "sales_target"), payload, { merge: true });
     window.loadMonthlyTarget();
 };
 
 window.loadMonthlyTarget = async function() {
     try {
+        let dashFilter = document.getElementById('dashBranchFilter');
+        let selectedBranch = dashFilter ? dashFilter.value : "All";
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+        if (isFranchisee) selectedBranch = window.sessionUser.branch;
+
         const snap = await getDoc(doc(db, "settings", "sales_target"));
-        let targetAmount = snap.exists() ? (parseFloat(snap.data().amount) || 0) : 0;
+        
+        // Grab the specific branch target, or fallback to the global 'amount'
+        let targetAmount = 0;
+        if (snap.exists()) {
+            let data = snap.data();
+            targetAmount = (selectedBranch !== "All" && data[selectedBranch] !== undefined) ? parseFloat(data[selectedBranch]) : (parseFloat(data.amount) || 0);
+        }
         
         let now = new Date();
         let firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -10838,31 +10881,26 @@ window.loadMonthlyTarget = async function() {
         let currentDay = now.getDate();
         let daysLeft = daysInMonth - currentDay + 1; // +1 includes today
         
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", firstDay));
+        // 🔒 Apply Branch Filter to Query!
+        let q = query(collection(db, "transactions"), where("timestamp", ">=", firstDay));
+        if (selectedBranch !== "All") {
+            q = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", firstDay));
+        }
+
         const txSnap = await getDocs(q);
         
         let mtdSales = 0;
         txSnap.forEach(d => {
             let tx = d.data();
             if (tx.status !== 'Voided') {
-                // 🔥 THE NEW NET REVENUE ENGINE
-                // Scans every payment method. If it's Grab, it automatically deducts 18% Commission!
                 if (tx.splitDetails && tx.splitDetails.length > 0) {
                     tx.splitDetails.forEach(split => {
                         let amount = parseFloat(split.amount) || 0;
-                        if (split.method === 'Grab') {
-                            mtdSales += (amount * 0.82); // Removes 18%
-                        } else {
-                            mtdSales += amount;
-                        }
+                        if (split.method === 'Grab') mtdSales += (amount * 0.82); else mtdSales += amount;
                     });
                 } else {
                     let amount = parseFloat(tx.netTotal) || 0;
-                    if (tx.paymentMethod === 'Grab') {
-                        mtdSales += (amount * 0.82); // Removes 18%
-                    } else {
-                        mtdSales += amount;
-                    }
+                    if (tx.paymentMethod === 'Grab') mtdSales += (amount * 0.82); else mtdSales += amount;
                 }
             }
         });
@@ -10888,25 +10926,17 @@ window.loadMonthlyTarget = async function() {
         let paceEl = document.getElementById('targetPaceText');
         
         if (targetAmount === 0) {
-            statusEl.innerText = "Target Not Set";
-            statusEl.style.color = "#94a3b8";
-            paceEl.innerText = "Click Edit Target to begin";
-            paceEl.style.color = "#94a3b8";
+            statusEl.innerText = "Target Not Set"; statusEl.style.color = "#94a3b8";
+            paceEl.innerText = `Click Edit Target to begin for ${selectedBranch}`; paceEl.style.color = "#94a3b8";
         } else if (remainingToTarget <= 0) {
-            statusEl.innerText = "🏆 Target Hit!";
-            statusEl.style.color = "#10b981";
-            paceEl.innerText = "Goal achieved!";
-            paceEl.style.color = "#10b981";
+            statusEl.innerText = "🏆 Target Hit!"; statusEl.style.color = "#10b981";
+            paceEl.innerText = "Goal achieved!"; paceEl.style.color = "#10b981";
         } else if (isBehind) {
-            statusEl.innerText = "Behind Target";
-            statusEl.style.color = "#ef4444";
-            paceEl.innerText = `₱${(expectedPace - mtdSales).toLocaleString(undefined, {minimumFractionDigits:2})} below pace`;
-            paceEl.style.color = "#ef4444";
+            statusEl.innerText = "Behind Target"; statusEl.style.color = "#ef4444";
+            paceEl.innerText = `₱${(expectedPace - mtdSales).toLocaleString(undefined, {minimumFractionDigits:2})} below pace`; paceEl.style.color = "#ef4444";
         } else {
-            statusEl.innerText = "🔥 On Pace";
-            statusEl.style.color = "#10b981";
-            paceEl.innerText = `₱${(mtdSales - expectedPace).toLocaleString(undefined, {minimumFractionDigits:2})} ahead of pace`;
-            paceEl.style.color = "#10b981";
+            statusEl.innerText = "🔥 On Pace"; statusEl.style.color = "#10b981";
+            paceEl.innerText = `₱${(mtdSales - expectedPace).toLocaleString(undefined, {minimumFractionDigits:2})} ahead of pace`; paceEl.style.color = "#10b981";
         }
         
     } catch(e) {
@@ -10935,13 +10965,6 @@ setInterval(() => {
         window.hasLoadedSalesTarget = true; 
     }
 }, 2000);
-
-// Reset the watchdog if they edit the target
-const originalEditTarget = window.editSalesTarget;
-window.editSalesTarget = async function() {
-    window.hasLoadedSalesTarget = false; 
-    await originalEditTarget();
-};
 
 // ========================================================
 // 🧠 TAKODEÁL CEO AI ORACLE ENGINE (INDEX-FREE)
