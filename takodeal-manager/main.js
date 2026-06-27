@@ -118,6 +118,11 @@ auth.onAuthStateChanged(async (user) => {
       
       window.applyPermissions(); // Run the tab hider!
 
+      // 🔥 UPDATE THE SIDEBAR LOGO TEXT!
+      let brandNameEl = document.getElementById('sidebarBrandName');
+      if (brandNameEl) {
+          brandNameEl.innerText = isFranchisee ? assignedBranch.toUpperCase() : "MAIN OFFICE";
+      }
       let brDisp = document.getElementById('displayBranch');
       if (brDisp) brDisp.innerText = isFranchisee ? `📍 Franchise: ${assignedBranch}` : `📍 HQ: ${assignedBranch}`;
       let caDisp = document.getElementById('displayCashier');
@@ -218,11 +223,20 @@ window.addHqManager = async function () {
         let branchesToAssign = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
         branchesToAssign.forEach(b => { branchOptions += `<option value="${b}">${b}</option>`; });
 
-        // 🔥 UI UPGRADE: Custom Franchisee Assignment Form
+        // 🔥 UI UPGRADE: Full Franchisee Registration Profile Form
         const { value: formValues, isConfirmed } = await Swal.fire({
-            title: 'Assign Access Level',
+            title: 'Register Control Center Access',
             html: `
                 <div style="text-align: left; margin-top: 10px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #475569;">Email Address:</label>
+                    <input type="email" id="swal-email" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; background: #f8fafc; outline: none;" value="${email}" readonly>
+
+                    <label style="font-size: 12px; font-weight: bold; color: #475569;">Full Name:</label>
+                    <input type="text" id="swal-name" class="input-box" placeholder="e.g. Juan Dela Cruz" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+
+                    <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number:</label>
+                    <input type="text" id="swal-phone" class="input-box" placeholder="09XX XXX XXXX" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+
                     <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Role:</label>
                     <select id="swal-role" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="document.getElementById('swal-branch-container').style.display = this.value === 'Franchisee' ? 'block' : 'none'">
                         <option value="Manager">Standard Manager (HQ Access)</option>
@@ -239,35 +253,45 @@ window.addHqManager = async function () {
             `,
             focusConfirm: false,
             showCancelButton: true,
-            confirmButtonColor: '#d97706',
+            confirmButtonColor: '#0f766e',
             confirmButtonText: 'Grant Access',
             customClass: { popup: 'rounded-2xl shadow-xl' },
             preConfirm: () => {
                 return { 
+                    name: document.getElementById('swal-name').value,
+                    phone: document.getElementById('swal-phone').value,
                     role: document.getElementById('swal-role').value, 
                     branch: document.getElementById('swal-branch').value 
                 };
             }
         });
 
-        if (!isConfirmed) return; // User clicked Cancel
+        if (!isConfirmed) return; 
 
         let roleStr = formValues.role;
         let branchStr = formValues.role === 'Franchisee' ? formValues.branch : 'All';
+        
+        // 🔥 GIVES FRANCHISEES ALL THE TABS THEY NEED TO RUN THEIR STORE!
         let permissions = formValues.role === 'Franchisee' 
-            ? ['dashboard', 'inventory', 'purchases', 'zreadings', 'history'] // Safe default tabs for Franchisees
+            ? ['dashboard', 'inventory', 'purchases', 'zreadings', 'history', 'payroll', 'schedule', 'ledger', 'inbox', 'branches'] 
             : ['all'];
 
         await addDoc(collection(db, "hq_managers"), {
-            email: email, role: roleStr, assignedBranch: branchStr, permissions: permissions, addedAt: new Date()
+            email: email, 
+            fullName: formValues.name,
+            phone: formValues.phone,
+            role: roleStr, 
+            assignedBranch: branchStr, 
+            permissions: permissions, 
+            addedAt: new Date()
         });
 
-        Swal.fire('✅ Success!', `${email} has been added as a ${roleStr} for ${branchStr}.`, 'success');
+        Swal.fire('✅ Success!', `${formValues.name || email} has been successfully registered as a ${roleStr} for ${branchStr}.`, 'success');
         emailInput.value = '';
         window.loadAdminDashboard();
 
     } catch (e) {
-        console.error(e); Swal.fire('Error', 'Failed to add manager.', 'error');
+        console.error(e); Swal.fire('Error', 'Failed to register account.', 'error');
     }
 };
 
@@ -468,7 +492,7 @@ window.loadGlobalDashboard = async function() {
 
     // 🔥 NEW: WAKE UP THE PRODUCT ANALYTICS ENGINE!
     if (typeof window.loadProductAnalytics === 'function') {
-        window.loadProductAnalytics(startOfDay, endOfDay);
+        window.loadProductAnalytics(startOfDay, endOfDay, selectedBranch);
     }
   
     // 📈 WAKE UP THE ADVANCED CHARTS!
@@ -8929,8 +8953,11 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
             recipeCosts[bom.menuItem] += (invCosts[bom.ingredientName] || 0) * (bom.qty || 1);
         });
 
-        // 3. Fetch Transactions within the Date Range
-        const txQ = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        // 3. Fetch Transactions within the Date Range (🔒 FRANCHISE LOCKED)
+        let txQ = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        if (branchFilter && branchFilter !== "All") {
+            txQ = query(collection(db, "transactions"), where("branch", "==", branchFilter), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        }
         const txSnap = await getDocs(txQ);
 
         let productStats = {};
