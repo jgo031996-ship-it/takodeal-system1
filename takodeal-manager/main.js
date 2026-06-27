@@ -1140,7 +1140,9 @@ window.confirmMultiRestock = async function () {
   }
 };
 
-// --- THE DISPATCH & LOGISTICS ENGINE ---
+// ========================================================
+// 🚚 THE DISPATCH & LOGISTICS ENGINE (FRANCHISE UPGRADE)
+// ========================================================
 let dispatchCart = [];
 let dispatchInventoryList = [];
 
@@ -1156,7 +1158,6 @@ window.loadDispatchDashboard = async function() {
   let btn = document.getElementById('btnSubmitDispatch');
 
   if (isFranchisee) {
-      // 🔒 LOCK UI FOR FRANCHISEES
       fromHtml = `<option value="Main Office">Main Office (HQ)</option>`;
       toHtml = `<option value="${myBranch}">${myBranch}</option>`;
       if (btn) btn.innerText = "📝 Request Stock from HQ";
@@ -1166,7 +1167,6 @@ window.loadDispatchDashboard = async function() {
       document.getElementById('dispTo').innerHTML = toHtml;
       document.getElementById('dispTo').value = myBranch;
   } else {
-      // 🌍 UNLOCKED UI FOR MASTER
       branches.forEach(b => {
         fromHtml += `<option value="${b}">${b}</option>`;
         toHtml += `<option value="${b}">${b}</option>`;
@@ -1190,18 +1190,14 @@ window.loadDispatchInventory = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
   let itemInput = document.getElementById('dispItem');
 
-  // 🔥 Transform the old <select> into a Smart Search <input> automatically!
   if (itemInput.tagName === 'SELECT') {
       let newInput = document.createElement('input');
       newInput.id = 'dispItem';
       newInput.setAttribute('list', 'dispatchDatalist');
       newInput.placeholder = "Type to search item to send...";
       newInput.style.cssText = "width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #334155;";
-      
-      // Bind the updating functions to typing and clicking
       newInput.onchange = window.updateDispatchUomLabel;
       newInput.onkeyup = window.updateDispatchUomLabel; 
-      
       itemInput.parentNode.replaceChild(newInput, itemInput);
       itemInput = newInput;
   }
@@ -1222,38 +1218,28 @@ window.loadDispatchInventory = async function () {
     const q = query(collection(db, "inventory"), where("branch", "==", fromBranch));
     const snap = await getDocs(q);
     
-    // Build the invisible datalist for the search bar
     let datalistHtml = '<datalist id="dispatchDatalist">';
-    
     let sortedStock = [];
     snap.forEach(docSnap => {
         let data = docSnap.data();
-        if (data.currentStock > 0) {
-            sortedStock.push({ id: docSnap.id, ...data });
-        }
+        if (data.currentStock > 0) sortedStock.push({ id: docSnap.id, ...data });
     });
     
-    // Alphabetical sort so it's easy to browse
     sortedStock.sort((a, b) => a.name.localeCompare(b.name));
-
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
 
     sortedStock.forEach(data => {
         dispatchInventoryList.push(data);
         let safeStock = parseFloat(data.currentStock).toFixed(1);
-        
         if (isFranchisee) {
             // 🔒 PRIVACY LOCK: Hide actual HQ stock amounts from franchisees
             datalistHtml += `<option value="${data.name}">${data.name} (Request in ${data.uom})</option>`;
         } else {
-            // 🌍 MASTER VIEW: Show exactly how much is available
             datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
         }
     });
-    
     datalistHtml += '</datalist>';
 
-    // Inject the datalist into the HTML body
     let existingList = document.getElementById('dispatchDatalist');
     if (existingList) existingList.remove();
     document.body.insertAdjacentHTML('beforeend', datalistHtml);
@@ -1261,36 +1247,26 @@ window.loadDispatchInventory = async function () {
     itemInput.placeholder = 'Type to search item...';
     window.updateDispatchUomLabel();
   } catch (e) { 
-    console.error(e); 
-    itemInput.placeholder = 'Error loading stock'; 
+    console.error(e); itemInput.placeholder = 'Error loading stock'; 
   }
 };
 
 window.updateDispatchUomLabel = function() {
     let itemName = document.getElementById('dispItem').value.trim();
     let uomDrop = document.getElementById('dispUomSelect');
-    
-    if (!itemName) {
-        uomDrop.innerHTML = '<option value="base">Units</option>';
-        return;
-    }
+    if (!itemName) { uomDrop.innerHTML = '<option value="base">Units</option>'; return; }
 
     let invItem = dispatchInventoryList.find(i => i.name === itemName);
     if (invItem) {
         let baseUom = invItem.uom || 'units';
         let purchUom = invItem.purchaseUom || 'Bulk';
-        
-        uomDrop.innerHTML = `
-            <option value="purch">${purchUom}</option>
-            <option value="base">${baseUom}</option>
-        `;
+        uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
     }
 };
 
 window.addToDispatchCart = function () {
   let itemName = document.getElementById('dispItem').value;
   let rawQty = parseFloat(document.getElementById('dispQty').value);
-  
   if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
 
   let invItem = dispatchInventoryList.find(i => i.name === itemName);
@@ -1300,7 +1276,6 @@ window.addToDispatchCart = function () {
   let displayMsg = `${rawQty} ${invItem.uom}`;
   let convRate = 1;
   let friendlyUom = invItem.uom;
-  
   let uomSelect = document.getElementById('dispUomSelect');
   let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
 
@@ -1311,50 +1286,22 @@ window.addToDispatchCart = function () {
       displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
   }
 
-  if (finalBaseQty > invItem.currentStock) { 
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+  
+  if (!isFranchisee && finalBaseQty > invItem.currentStock) { 
       let stockInPurch = invItem.currentStock / convRate;
       let msg = `You are trying to send <strong>${rawQty} ${friendlyUom}</strong> (${finalBaseQty} ${invItem.uom}), but the Main Office only has <strong>${stockInPurch.toFixed(2)} ${friendlyUom}</strong> (${invItem.currentStock} ${invItem.uom}) available.`; 
-      
-      // 🔥 BEAUTIFUL SWEETALERT WITH JUMP ROUTING 🔥
       Swal.fire({
           title: '❌ Not enough stock!',
-          html: `<div style="font-size: 14px; color: #334155; line-height: 1.5; text-align: left;">${msg.replace(/\n/g, '<br>')}</div>`,
-          icon: 'error',
-          showCancelButton: true,
-          confirmButtonColor: '#0ea5e9',
-          cancelButtonColor: '#94a3b8',
-          confirmButtonText: '🔍 Go to Live Inventory',
-          cancelButtonText: 'Dismiss'
-      }).then((result) => {
-          if (result.isConfirmed) {
-              // 1. Click the side tab to switch pages
-              let inventoryTab = document.getElementById('nav-inventory');
-              if (inventoryTab) inventoryTab.click();
-              
-              // 2. Wait for the page to render, then auto-fill the search box and trigger the search!
-              setTimeout(() => {
-                  let branchFilter = document.getElementById('invBranchFilter');
-                  let searchBox = document.getElementById('liveInvSearch');
-                  
-                  if (branchFilter && searchBox) {
-                      branchFilter.value = 'Main Office';
-                      searchBox.value = itemName;
-                      
-                      // Trigger the search function directly!
-                      if (typeof window.loadInventoryData === 'function') {
-                          window.loadInventoryData();
-                      }
-                  }
-              }, 500); // Half second delay ensures the HTML is ready
-          }
+          html: `<div style="font-size: 14px; color: #334155; line-height: 1.5; text-align: left;">${msg}</div>`,
+          icon: 'error', confirmButtonColor: '#0ea5e9'
       });
       return; 
   }
 
   let existing = dispatchCart.find(i => i.itemName === itemName);
   if (existing) { 
-      existing.qty += finalBaseQty; 
-      existing.rawQty += rawQty;
+      existing.qty += finalBaseQty; existing.rawQty += rawQty;
       existing.displayMsg = `${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
   } else { 
       dispatchCart.push({ 
@@ -1364,30 +1311,84 @@ window.addToDispatchCart = function () {
       });
   }
 
-  document.getElementById('dispQty').value = '';
-  document.getElementById('dispItem').value = ''; 
-  if (typeof renderDispatchCart === 'function') renderDispatchCart();
+  document.getElementById('dispQty').value = ''; document.getElementById('dispItem').value = ''; 
+  if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
 };
 
-window.removeFromDispatchCart = function (index) {
-  dispatchCart.splice(index, 1);
-  window.renderDispatchCart();
+window.submitMultiDispatch = async function () {
+  let fromBranch = document.getElementById('dispFrom').value;
+  let toBranch = document.getElementById('dispTo').value;
+
+  if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
+  if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
+  if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
+
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+  let btn = document.getElementById('btnSubmitDispatch');
+
+  // ==========================================
+  // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
+  // ==========================================
+  if (isFranchisee) {
+      btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
+      try {
+          await addDoc(collection(db, "purchase_orders"), {
+              branch: toBranch, items: dispatchCart, status: "Pending",
+              requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
+          });
+          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request for ${dispatchCart.length} items.`, 'success');
+          dispatchCart = []; 
+          if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+          if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+      } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
+      finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
+      return; 
+  }
+
+  // ==========================================
+  // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
+  // ==========================================
+  btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
+
+  try {
+    let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
+    if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
+
+    for (let item of dispatchCart) {
+      let sourceRef = doc(db, "inventory", item.sourceId);
+      let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
+      await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
+
+      await addDoc(collection(db, "dispatch_logs"), {
+        date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
+        time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date(),
+        item: item.itemName, qty: item.qty, uom: item.uom, details: `${fromBranch} ➡️ ${toBranch}`,
+        toBranch: toBranch, driver: driverName, status: "In Transit", displayQty: item.rawQty || item.qty,      
+        displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1, category: item.category,
+        purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
+      });
+    }
+
+    alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
+    dispatchCart = []; 
+    if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+    window.loadDispatchInventory(); 
+    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+  } catch (e) { console.error(e); alert("Dispatch failed."); } 
+  finally { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
 };
+
+window.removeFromDispatchCart = function (index) { dispatchCart.splice(index, 1); window.renderDispatchCart(); };
 
 window.renderDispatchCart = function() {
   const tbody = document.getElementById('dispatchCartBody');
-  
-  // 🔥 THE FIX: Inject a scrollable container around the table!
   let table = tbody.closest('table');
   if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
       let wrapper = document.createElement('div');
       wrapper.className = 'table-scroll-wrapper';
-      wrapper.style.maxHeight = '250px';
-      wrapper.style.overflowY = 'auto';
-      wrapper.style.borderBottom = '1px solid #e2e8f0';
-      wrapper.style.marginBottom = '10px';
-      table.parentNode.insertBefore(wrapper, table);
-      wrapper.appendChild(table);
+      wrapper.style.maxHeight = '250px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
+      table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
   }
 
   if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
@@ -1395,12 +1396,7 @@ window.renderDispatchCart = function() {
   let html = '';
   dispatchCart.forEach((item, idx) => {
     let qtyText = item.displayMsg || `${item.qty} ${item.uom}`;
-    
-    html += `<tr>
-      <td style="padding:10px;"><strong>${item.itemName}</strong></td>
-      <td style="font-size:14px; font-weight:bold; color:var(--primary); padding:10px;">${qtyText}</td>
-      <td style="text-align:right; padding:10px;"><button class="btn-refresh" style="color:var(--danger); border:1px solid var(--danger); background:#fef2f2; padding:4px 8px; font-size:11px; font-weight:bold;" onclick="window.removeFromDispatchCart(${idx})">✖ Remove</button></td>
-    </tr>`;
+    html += `<tr><td style="padding:10px;"><strong>${item.itemName}</strong></td><td style="font-size:14px; font-weight:bold; color:var(--primary); padding:10px;">${qtyText}</td><td style="text-align:right; padding:10px;"><button class="btn-refresh" style="color:var(--danger); border:1px solid var(--danger); background:#fef2f2; padding:4px 8px; font-size:11px; font-weight:bold;" onclick="window.removeFromDispatchCart(${idx})">✖ Remove</button></td></tr>`;
   });
   tbody.innerHTML = html;
 };
@@ -1416,9 +1412,7 @@ window.loadDispatchLogs = async function() {
   try {
     // 1. Fetch Pending Purchase Orders
     let poQuery = query(collection(db, "purchase_orders"), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
-    if (isFranchisee) {
-        poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
-    }
+    if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
     const poSnap = await getDocs(poQuery);
     
     let poHtml = '';
@@ -1439,30 +1433,20 @@ window.loadDispatchLogs = async function() {
             <td style="padding:15px; text-align:center;">
                 <span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending PO</span>
             </td>
-            <td style="padding:15px; text-align:right;">
-                ${actionBtn}
-            </td>
+            <td style="padding:15px; text-align:right;">${actionBtn}</td>
         </tr>`;
     });
 
     // 2. Fetch Dispatch Logs (Actual Deliveries)
     let qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
-    if (isFranchisee) {
-        qLogs = query(collection(db, "dispatch_logs"), where("toBranch", "==", myBranch), orderBy("timestamp", "desc"));
-    }
+    if (isFranchisee) qLogs = query(collection(db, "dispatch_logs"), where("toBranch", "==", myBranch), orderBy("timestamp", "desc"));
     const snap = await getDocs(qLogs);
     
     let deliveries = {};
     snap.forEach(doc => {
-        let d = doc.data();
-        d.id = doc.id;
+        let d = doc.data(); d.id = doc.id;
         let groupKey = `${d.date}_${d.toBranch}_${d.driver || 'Unknown'}`;
-        if(!deliveries[groupKey]) {
-            deliveries[groupKey] = {
-                date: d.date, time: d.time, toBranch: d.toBranch, driver: d.driver || 'Unknown',
-                items: [], status: 'In Transit', timestamp: d.timestamp
-            };
-        }
+        if(!deliveries[groupKey]) deliveries[groupKey] = { date: d.date, time: d.time, toBranch: d.toBranch, driver: d.driver || 'Unknown', items: [], status: 'In Transit', timestamp: d.timestamp };
         deliveries[groupKey].items.push(d);
         if(d.status === "Received") deliveries[groupKey].status = "Received";
         if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
@@ -1485,12 +1469,8 @@ window.loadDispatchLogs = async function() {
                     <div style="font-size:12px; color:#64748b; margin-top: 4px;">🚚 Driver: ${del.driver}</div>
                     <div style="font-size:11px; color:#94a3b8; margin-top:4px;">📅 ${del.date} at ${del.time}</div>
                 </td>
-                <td style="padding:15px; text-align:center;">
-                    <span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span>
-                </td>
-                <td style="padding:15px; text-align:right;">
-                    <button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}', '${del.time}')" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button>
-                </td>
+                <td style="padding:15px; text-align:center;"><span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span></td>
+                <td style="padding:15px; text-align:right;"><button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}', '${del.time}')" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button></td>
             </tr>`;
         });
     }
@@ -1505,33 +1485,20 @@ window.approvePurchaseOrder = async function(poId) {
         if (!poSnap.exists()) return;
         
         let po = poSnap.data();
-        
-        // 1. Load their requested items into YOUR Dispatch Cart
         dispatchCart = po.items;
-        
-        // 2. Auto-fill the form so you don't have to
         document.getElementById('dispFrom').value = "Main Office";
         document.getElementById('dispTo').value = po.branch;
-        
-        // 3. Mark the PO as approved so it clears from the pending list
         await updateDoc(poRef, { status: "Approved" });
         
-        // 4. Update the screen instantly
         if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
         window.loadDispatchLogs();
         
         Swal.fire({
             title: '✅ Purchase Order Loaded!',
             html: `${po.branch}'s request has been placed into your Dispatch Cart.<br><br><span style="font-size: 13px; color: #64748b;">You can now adjust quantities or remove out-of-stock items before clicking <b>Send Dispatch Delivery</b> to physically pack it.</span>`,
-            icon: 'info',
-            confirmButtonColor: '#0f766e',
-            customClass: { popup: 'rounded-2xl' }
+            icon: 'info', confirmButtonColor: '#0f766e', customClass: { popup: 'rounded-2xl' }
         });
-        
-    } catch(e) {
-        console.error("Error approving PO:", e);
-        Swal.fire('Error', 'Failed to load Purchase Order.', 'error');
-    }
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load Purchase Order.', 'error'); }
 };
 
 // ========================================================
