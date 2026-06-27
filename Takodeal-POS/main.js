@@ -3614,3 +3614,23 @@ window.toggleMobileOrderingStatus = async function() {
         btn.disabled = false;
     }
 };
+
+// ==========================================
+// 📍 UI INITIALIZATION: LOGIN SCREEN BRANCH DISPLAY
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+    // This looks for however you currently save the tablet's branch in local memory
+    let savedBranch = localStorage.getItem("branch") || localStorage.getItem("branchName") || localStorage.getItem("pos_branch");
+    
+    let branchDisplay = document.getElementById("loginBranchDisplay");
+    
+    if (branchDisplay) {
+        if (savedBranch) {
+            branchDisplay.innerText = `📍 ${savedBranch}`;
+        } else {
+            // If the tablet hasn't been registered to a branch yet
+            branchDisplay.innerText = `📍 Unassigned Device`;
+            branchDisplay.style.color = "#ef4444"; // Turns red to alert you!
+        }
+    }
+});
