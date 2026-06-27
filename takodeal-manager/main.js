@@ -161,9 +161,9 @@ window.loadAdminDashboard = async function() {
     const snap = await getDocs(collection(db, "hq_managers"));
     let html = `
       <tr>
-        <td><strong>${MASTER_EMAIL}</strong></td>
-        <td><span class="badge badge-open">System Architect (Master Key)</span></td>
-        <td style="color: var(--text-muted); font-size: 12px;">Cannot be removed</td>
+        <td style="padding: 15px 10px;"><strong>${MASTER_EMAIL}</strong></td>
+        <td style="padding: 15px 10px;"><span class="badge badge-open">System Architect (Master Key)</span></td>
+        <td style="padding: 15px 10px; color: var(--text-muted); font-size: 12px;">Cannot be removed</td>
       </tr>
     `;
 
@@ -179,18 +179,25 @@ window.loadAdminDashboard = async function() {
           ? `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Franchise Owner (${data.assignedBranch})</span>`
           : `<span class="badge badge-closed">Appointed Manager</span>`;
       
+      // Pass safe strings for the edit buttons
+      let safePerms = data.permissions ? data.permissions.join(',') : 'all';
+      let safeName = data.fullName ? data.fullName.replace(/'/g, "\\'") : '';
+
       html += `
         <tr style="border-bottom: 1px solid #f1f5f9;">
-          <td>
-            <strong>${data.email}</strong>
+          <td style="padding: 15px 10px;">
+            <strong style="font-size: 14px; color: #1e293b;">${data.email}</strong>
             ${nameStr}
             ${phoneStr}
             <br><span style="font-size: 11px; color: #94a3b8; display:inline-block; margin-top:4px;">Access: [${perms}]</span>
           </td>
-          <td>${roleBadge}</td>
-          <td style="display: flex; gap: 5px; align-items: center;">
-            <button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}')">⚙️ Edit Permissions</button>
-            <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button>
+          <td style="padding: 15px 10px;">${roleBadge}</td>
+          <td style="padding: 15px 10px;">
+            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <button class="btn-refresh" style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="window.editManagerProfile('${docSnap.id}', '${safeName}', '${data.phone || ''}', '${data.email}')">✏️ Profile</button>
+                <button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}', '${safePerms}')">🔐 Access</button>
+                <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button>
+            </div>
           </td>
         </tr>
       `;
@@ -297,6 +304,55 @@ window.addHqManager = async function () {
 
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to register account.', 'error');
+    }
+};
+
+window.editManagerProfile = async function(docId, currentName, currentPhone, email) {
+    const { value: formValues, isConfirmed } = await Swal.fire({
+        title: '✏️ Edit Profile',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Email (Uneditable):</label>
+                <input type="text" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; background: #f1f5f9; outline: none; color: #94a3b8;" value="${email}" readonly>
+
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Full Name:</label>
+                <input type="text" id="edit-profile-name" class="input-box" placeholder="e.g. Juan Dela Cruz" value="${currentName}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number:</label>
+                <input type="text" id="edit-profile-phone" class="input-box" placeholder="09XX XXX XXXX" value="${currentPhone}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonColor: '#0f766e',
+        confirmButtonText: 'Save Profile',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return { 
+                name: document.getElementById('edit-profile-name').value.trim(),
+                phone: document.getElementById('edit-profile-phone').value.trim()
+            };
+        }
+    });
+
+    if (!isConfirmed) return;
+
+    try {
+        await updateDoc(doc(db, "hq_managers", docId), {
+            fullName: formValues.name,
+            phone: formValues.phone
+        });
+        Swal.fire({
+            title: '✅ Profile Saved!',
+            icon: 'success',
+            timer: 1500,
+            showConfirmButton: false,
+            customClass: { popup: 'rounded-2xl' }
+        });
+        window.loadAdminDashboard();
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to update profile.', 'error');
     }
 };
 
@@ -10403,20 +10459,50 @@ window.saveGlobalPosConfig = async function() {
     }
 };
 
-window.editManagerPermissions = async function(docId, email) {
-    let currentPerms = prompt(`Edit permissions for ${email}.\n\nType the EXACT names of the tabs they can see, separated by commas (no spaces).\n\nAvailable Options:\naccounts, transfers, payables, devices, payroll, inbox, ledger, schedule, products, purchases, dispatch, zreadings, history, expenses, branches, menu, receipt, inventory, alerts\n\nType 'all' to grant full access.`, "all");
+window.editManagerPermissions = async function(docId, email, existingPerms) {
+    const { value: currentPerms, isConfirmed } = await Swal.fire({
+        title: '🔐 Edit Permissions',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <p style="font-size: 13px; color: #475569; margin-bottom: 15px;">Editing access for <strong>${email}</strong>.</p>
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Authorized Tabs (Comma Separated):</label>
+                <textarea id="swal-perms" class="input-box" style="width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none; font-family: monospace; resize: none;">${existingPerms}</textarea>
+                <div style="font-size: 11px; color: #64748b; background: #f8fafc; padding: 8px; border-radius: 6px; border: 1px dashed #cbd5e1;">
+                    <strong>Available Options:</strong> accounts, transfers, payables, devices, payroll, inbox, ledger, schedule, products, purchases, dispatch, zreadings, history, expenses, branches, menu, receipt, inventory, alerts<br><br>
+                    Type <strong>all</strong> to grant full Master Access.
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonColor: '#2563eb', // Blue to match the button
+        confirmButtonText: 'Update Access',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return document.getElementById('swal-perms').value.trim();
+        }
+    });
+
+    if (!isConfirmed || !currentPerms) return;
     
-    if (!currentPerms) return;
-    
-    // Clean up their typing
+    // Clean up their typing (forces lowercase, removes spaces)
     let permArray = currentPerms.split(',').map(t => t.trim().toLowerCase());
     
     try {
         await updateDoc(doc(db, "hq_managers", docId), { permissions: permArray });
-        alert(`✅ Permissions updated for ${email}! They must refresh their app for changes to take effect.`);
+        
+        Swal.fire({
+            title: '✅ Access Updated!',
+            text: `${email} must refresh their app to see the new tabs.`,
+            icon: 'success',
+            confirmButtonColor: '#16a34a',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
         window.loadAdminDashboard();
     } catch (e) {
-        console.error(e); alert("Failed to update permissions.");
+        console.error(e); 
+        Swal.fire('Error', 'Failed to update permissions.', 'error');
     }
 };
 
