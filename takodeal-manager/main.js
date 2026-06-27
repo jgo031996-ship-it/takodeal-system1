@@ -488,10 +488,6 @@ window.loadHRModule = async function() {
 
     // 🛡️ THE GATEKEEPER: Check if the logged-in person is the Master Owner
     const isOwner = window.sessionUser && window.sessionUser.isOwner;
-    let html = '';
-
-    // 🛡️ THE GATEKEEPER: Check if the logged-in person is the Master Owner
-    const isOwner = window.sessionUser && window.sessionUser.isOwner;
 
     if (snap.empty) {
       html = '<tr><td colspan="5" class="text-center">No staff found. Click "Add New Staff" to create one.</td></tr>';
