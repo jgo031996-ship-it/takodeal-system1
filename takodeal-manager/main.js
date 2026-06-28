@@ -885,15 +885,37 @@ onSnapshot(query(collection(db, "manager_alerts"), orderBy("timestamp", "desc"))
         timeStr = data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
       }
 
-      // Unread alerts have a red background, read alerts are faded out
+      let alertMsg = data.message || "Unknown Alert";
+      
+      // 🎨 THE COLOR CODER ENGINE
+      let textColor = "var(--danger)";
+      let rowBg = "var(--danger-light)";
+      let icon = "⚠️";
+
+      if (alertMsg.includes("CASH OVER") || alertMsg.includes("Over") || alertMsg.includes("Overage")) {
+          textColor = "#10b981"; // Success Green
+          rowBg = "#ecfdf5"; 
+          icon = "📈";
+      } else if (alertMsg.includes("CASH SHORT") || alertMsg.includes("Short") || alertMsg.includes("Shortage")) {
+          textColor = "#ef4444"; // Danger Red
+          rowBg = "#fef2f2"; 
+          icon = "📉";
+      }
+
+      // If it is read, fade it out to gray
+      if (data.isRead) {
+          rowBg = "transparent";
+          textColor = "var(--text-muted)";
+      }
+
       html += `
-              <tr style="${data.isRead ? 'opacity: 0.5; background: transparent;' : 'background: var(--danger-light);'}">
-                <td style="font-size: 12px; color: var(--text-muted); font-family: monospace;">${timeStr}</td>
-                <td><strong>📍 ${data.branch}</strong></td>
-                <td><span style="color: ${data.isRead ? 'var(--text-muted)' : 'var(--danger)'}; font-weight: ${data.isRead ? 'normal' : 'bold'};">⚠️ ${data.message}</span></td>
-                <td>
+              <tr style="background: ${rowBg}; opacity: ${data.isRead ? '0.6' : '1'}; transition: 0.2s;">
+                <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px;">${timeStr}</td>
+                <td style="padding: 12px;"><strong>📍 ${data.branch}</strong></td>
+                <td style="padding: 12px;"><span style="color: ${textColor}; font-weight: ${data.isRead ? 'normal' : 'bold'};">${icon} ${alertMsg}</span></td>
+                <td style="padding: 12px; text-align: right;">
                   ${!data.isRead
-          ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white;" onclick="dismissAlert('${docSnap.id}')">✓ Mark Resolved</button>`
+          ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="dismissAlert('${docSnap.id}')">✓ Mark Resolved</button>`
           : '<span style="color: var(--success); font-weight: bold; font-size: 13px;">✓ Resolved</span>'}
                 </td>
               </tr>
@@ -918,7 +940,6 @@ onSnapshot(query(collection(db, "manager_alerts"), orderBy("timestamp", "desc"))
 
 window.dismissAlert = async function (docId) {
   try {
-    // When you click Mark Resolved, it instantly updates the cloud
     await updateDoc(doc(db, "manager_alerts", docId), { isRead: true });
   } catch (e) {
     console.error(e); alert("Failed to dismiss alert. Check connection.");
@@ -11441,7 +11462,7 @@ window.loadForecasterEngine = async function() {
 };
 
 // ========================================================
-// 📝 MASTER GENERAL AUDIT ENGINE (WITH SMART SYNC & CONVERSIONS)
+// 📝 MASTER GENERAL AUDIT ENGINE (WITH SMART CONVERSIONS)
 // ========================================================
 window.globalAuditItems = [];
 
@@ -11477,7 +11498,7 @@ window.loadAuditModalItems = async function() {
                 systemQty: parseFloat(data.currentStock) || 0,
                 uom: data.uom || 'units',
                 purchUom: data.purchaseUom || data.uom || 'units',
-                convRate: parseFloat(data.conversionRate) || 1,
+                convRate: parseFloat(data.conversionRate) || parseFloat(data.conversion) || 1,
                 
                 // Memories for when they use the search bar
                 tempRawValue: undefined, 
@@ -11554,11 +11575,10 @@ window.submitGeneralAudit = async function() {
     try {
         let auditCounts = [];
 
-        // 1. Process all items
         for (let i = 0; i < window.globalAuditItems.length; i++) {
             let item = window.globalAuditItems[i];
             
-            // 🧠 CALCULATE FINAL QUANTITY
+            // 🧠 CALCULATE FINAL QUANTITY BASED ON UOM DROPDOWN
             let physicalQty;
             let noteText = "Live Sync via Audit Tool";
 
@@ -11593,7 +11613,7 @@ window.submitGeneralAudit = async function() {
                 });
             }
 
-            // Always add to the Master Audit Record
+            // Always add to the Master Audit Record for the dashboard KPIs
             auditCounts.push({
                 name: item.name,
                 systemQty: item.systemQty,
@@ -11601,7 +11621,7 @@ window.submitGeneralAudit = async function() {
             });
         }
 
-        // 2. Save the overarching Audit Record to stock_counts
+        // Save the overarching Audit Record to stock_counts
         await addDoc(collection(db, "stock_counts"), {
             branch: branch,
             cashier: window.sessionUser ? window.sessionUser.cashierName : "Manager",
