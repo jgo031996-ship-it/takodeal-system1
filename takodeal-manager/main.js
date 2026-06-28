@@ -10311,22 +10311,24 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qt
     document.getElementById('gaPrice').value = price;
     document.getElementById('gaQty').value = qty;
     
-    let catEl = document.getElementById('gaCategory');
-    if (catEl) catEl.value = cat;
-
     let btn = document.getElementById('btnSaveGA');
     if (btn) btn.innerText = id ? "💾 Update Add-On" : "💾 Save New Add-On";
 
     document.getElementById('globalAddonModal').style.display = 'flex';
     
     let select = document.getElementById('gaIngredient');
+    let catEl = document.getElementById('gaCategory');
+    
     select.innerHTML = '<option value="">Scanning inventory...</option>';
+    if (catEl) catEl.innerHTML = '<option value="All">Scanning menu categories...</option>';
+
     try {
-        const snap = await getDocs(collection(db, "inventory"));
+        // 1. Fetch Live Inventory for the "Linked Raw Material" Dropdown
+        const invSnap = await getDocs(collection(db, "inventory"));
         let html = '<option value="">-- No Linked Ingredient --</option>';
         
         let invItems = [];
-        snap.forEach(d => invItems.push(d.data().name));
+        invSnap.forEach(d => invItems.push(d.data().name));
         invItems.sort();
 
         invItems.forEach(invName => { 
@@ -10335,7 +10337,32 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qt
         });
         
         select.innerHTML = html;
-    } catch(e) { console.error(e); }
+
+        // 2. 🔥 THE FIX: Fetch Live Categories for the "Menu Category" Dropdown
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let uniqueCats = new Set();
+        
+        // Scan the entire menu and collect every unique category
+        menuSnap.forEach(d => {
+            if (d.data().category) uniqueCats.add(d.data().category.trim());
+        });
+
+        if (catEl) {
+            let catHtml = '<option value="All">All Menu Items</option>';
+            
+            // Sort them alphabetically and build the dropdown list!
+            Array.from(uniqueCats).sort().forEach(c => {
+                let isSelected = (c === cat) ? "selected" : "";
+                catHtml += `<option value="${c}" ${isSelected}>${c}</option>`;
+            });
+            
+            catEl.innerHTML = catHtml;
+            catEl.value = cat; // Ensure the correct option stays highlighted!
+        }
+
+    } catch(e) { 
+        console.error("Modal Data Load Error:", e); 
+    }
 };
 
 // 🔥 NEW: EXTRACT EXISTING ADDONS FROM MENU TO GLOBAL HUB
