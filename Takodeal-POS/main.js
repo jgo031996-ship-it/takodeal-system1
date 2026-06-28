@@ -4036,45 +4036,27 @@ window.safeSubmitComprehensiveCloseShift = async function() {
     if(btn) { btn.innerText = "Verifying Count..."; btn.disabled = true; }
 
     try {
-        // 1. Calculate the total cash they typed into the denomination boxes
-        let totalDeclared = 0;
-        let inputs = document.querySelectorAll('#denominationTable input');
-        inputs.forEach(inp => {
-            let val = parseFloat(inp.value) || 0;
-            let denom = parseFloat(inp.getAttribute('data-val')) || 0;
-            totalDeclared += (val * denom);
-        });
+        // 1. PULL DECLARED CASH DIRECTLY FROM THE GRAND TOTAL DISPLAY!
+        let totalDeclaredStr = document.getElementById('grandTotalCash').innerText.replace(/[₱,]/g, '').trim();
+        let totalDeclared = parseFloat(totalDeclaredStr) || 0;
 
-        // 2. Secretly calculate the Expected Cash from the Cloud
-        let shiftId = currentShift.shiftId;
-        let expectedCash = currentShift.startingCash || 0;
-
-        // Add Cash Sales
-        const txSnap = await getDocs(query(collection(db, "transactions"), where("shiftId", "==", shiftId), where("status", "==", "Paid")));
-        txSnap.forEach(doc => {
-            let tx = doc.data();
-            if (!tx.paymentMethod || tx.paymentMethod === 'Cash') expectedCash += parseFloat(tx.netTotal || 0);
-            if (tx.paymentMethod === 'Split' && tx.splitDetails) {
-                tx.splitDetails.forEach(s => { if (s.method === 'Cash') expectedCash += parseFloat(s.amount || 0); });
-            }
-        });
-
-        // Subtract Expenses & Remittances
-        const expSnap = await getDocs(query(collection(db, "expenses"), where("shiftId", "==", shiftId)));
-        expSnap.forEach(doc => expectedCash -= parseFloat(doc.data().amount || 0));
-
-        const remSnap = await getDocs(query(collection(db, "remittances"), where("shiftId", "==", shiftId)));
-        remSnap.forEach(doc => expectedCash -= parseFloat(doc.data().amount || 0));
+        // 2. PULL EXPECTED CASH FROM THE OFFICIAL SHIFT MEMORY ENGINE!
+        let expectedCash = 0;
+        let details = await window.getLiveShiftDetails(sessionUser.branch);
+        if (details) {
+            // Formula: Starting Cash + Cash Sales - Cash Out (Expenses/Remittances)
+            expectedCash = (details.startingCash || 0) + (details.cashSales || 0) - (details.cashOut || 0);
+        }
 
         let variance = totalDeclared - expectedCash;
 
-        // 3. 🚨 THE BLIND COUNT UI (No amounts revealed!)
+        // 3. 🚨 THE STRICT BLIND COUNT UI (No amounts revealed!)
         let title = "";
         let messageHtml = "";
         let icon = "warning";
         let confirmButtonColor = "";
 
-        // Allowing a tiny 5 centavo tolerance for floating point math
+        // We allow a tiny 5 centavo tolerance for JavaScript decimal math
         if (Math.abs(variance) <= 0.05) {
             title = 'Perfect Shift! 🎯';
             confirmButtonColor = '#10b981';
@@ -4103,10 +4085,6 @@ window.safeSubmitComprehensiveCloseShift = async function() {
             html: `
                 <div style="text-align: center; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
                     ${messageHtml}
-                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1; font-size: 14px; color: #334155;">
-                        You are declaring a total of:<br>
-                        <strong style="font-size: 24px; color: #0f172a;">₱${totalDeclared.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
-                    </div>
                 </div>
                 <br><p style="font-size: 13px; color: #64748b; font-weight: bold; margin:0;">Do you want to permanently submit this Z-Reading?</p>
             `,
