@@ -12318,3 +12318,68 @@ window.generateCOEImage = function(name, dateHired, role) {
         template.style.display = 'none'; // Hide it again so it doesn't mess up your screen!
     });
 };
+
+// ========================================================
+// 📦 STORE USE & CONSUMABLES HISTORY VIEWER
+// ========================================================
+window.viewStoreUseLogs = async function() {
+    Swal.fire({ title: 'Fetching Logs...', didOpen: () => { Swal.showLoading(); } });
+
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let selectedBranch = isFranchisee ? window.sessionUser.branch : "All"; 
+
+    try {
+        let q = query(collection(db, "store_use_logs"), orderBy("timestamp", "desc"), limit(50));
+        if (isFranchisee) {
+            q = query(collection(db, "store_use_logs"), where("branch", "==", selectedBranch), orderBy("timestamp", "desc"), limit(50));
+        }
+
+        const snap = await getDocs(q);
+        
+        let html = `
+        <div style="max-height: 50vh; overflow-y: auto; text-align: left; margin-top: 10px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead style="position: sticky; top: 0; background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                    <tr style="color: #64748b; border-bottom: 2px solid #e2e8f0;">
+                        <th style="padding: 10px; text-align: left;">Date & Time</th>
+                        <th style="padding: 10px; text-align: left;">Branch</th>
+                        <th style="padding: 10px; text-align: left;">Items Used</th>
+                        <th style="padding: 10px; text-align: right;">Total Cost Hit</th>
+                        <th style="padding: 10px; text-align: left;">Logged By</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        if (snap.empty) {
+            html += `<tr><td colspan="5" style="text-align:center; padding:30px; color:#94a3b8; font-weight: bold;">No store use logs found.</td></tr>`;
+        } else {
+            snap.forEach(doc => {
+                let d = doc.data();
+                let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
+                let itemsList = d.items ? d.items.map(i => `<span style="color:#0ea5e9; font-weight:bold;">${i.qty}x</span> ${i.name}`).join('<br>') : 'Unknown';
+
+                html += `
+                <tr style="border-bottom: 1px solid #f8fafc;">
+                    <td style="padding: 12px 10px; color: #475569;">${dateStr}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #0f766e;">${d.branch}</td>
+                    <td style="padding: 12px 10px;">${itemsList}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #ef4444; text-align: right;">₱${parseFloat(d.totalCost||0).toFixed(2)}</td>
+                    <td style="padding: 12px 10px; color: #64748b;">👤 ${d.loggedBy}</td>
+                </tr>`;
+            });
+        }
+
+        html += `</tbody></table></div>`;
+
+        Swal.fire({
+            title: '📦 Store Use & Consumables Log',
+            html: html, width: '800px', showCloseButton: true,
+            confirmButtonText: 'Close Viewer', confirmButtonColor: '#0f766e',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to load history logs.', 'error');
+    }
+};
