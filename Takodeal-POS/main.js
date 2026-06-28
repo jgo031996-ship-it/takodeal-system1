@@ -3895,3 +3895,222 @@ window.submitStockRequest = async function() {
         console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
     }
 };
+
+// ========================================================
+// 🛡️ SHIFT SECURITY & GAP TRACKER ENGINE
+// ========================================================
+
+window.openShiftModal = function() {
+    if (!systemReady) return;
+    
+    if (!currentShift) {
+        document.getElementById('shiftViewOpen').style.display = "block";
+        document.getElementById('shiftViewClose').style.display = "none";
+        
+        let nameEl = document.getElementById('inputShiftCashier'); 
+        if (nameEl) nameEl.value = ""; 
+        
+        let inputStart = document.getElementById('inputStartingCash');
+        inputStart.placeholder = "Loading previous shift...";
+        inputStart.value = "";
+
+        // 🔥 THE GAP TRACKER: Fetch the last shift's ending cash!
+        const q = query(collection(db, "shifts"), where("branch", "==", sessionUser.branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+        getDocs(q).then(snap => {
+            let noteEl = document.getElementById('lastShiftNote');
+            if(!noteEl) {
+                noteEl = document.createElement('div');
+                noteEl.id = 'lastShiftNote';
+                noteEl.style.cssText = "font-size: 12px; color: #10b981; font-weight: bold; margin-top: 8px; background: #dcfce7; padding: 6px; border-radius: 4px; border: 1px dashed #34d399;";
+                inputStart.parentNode.appendChild(noteEl);
+            }
+
+            if(!snap.empty) {
+                window.lastEndingCash = parseFloat(snap.docs[0].data().declaredCash) || 0;
+                inputStart.value = window.lastEndingCash;
+                noteEl.innerHTML = `✅ Previous shift left <b>₱${window.lastEndingCash.toFixed(2)}</b> in the drawer.`;
+                noteEl.style.display = "block";
+            } else {
+                window.lastEndingCash = 0;
+                inputStart.value = 0;
+                noteEl.style.display = "none";
+            }
+        });
+
+        document.getElementById('shiftModal').style.display = "flex";
+    } else {
+        let btn = document.getElementById('btnTopShift'); let oldText = btn.innerText; btn.innerText = "⏳ Data..."; btn.disabled = true;
+        window.getLiveShiftDetails(sessionUser.branch).then(details => {
+            if (!details) return; activeShiftDetails = details;
+            document.getElementById('shiftViewOpen').style.display = "none"; document.getElementById('shiftViewClose').style.display = "block";
+            document.getElementById('shiftActiveDetails').innerText = `Started By: ${details.startedBy}  |  Start Time: ${new Date(details.startTime).toLocaleString()}`;
+            document.getElementById('scStartingCash').innerText = '₱' + details.startingCash.toFixed(2);
+            document.getElementById('scCashOut').innerText = '- ₱' + details.cashOut.toFixed(2);
+            document.getElementById('shiftModal').style.display = "flex"; btn.innerText = oldText; btn.disabled = false;
+        });
+    }
+};
+
+window.submitOpenShift = async function() {
+    try {
+        let shiftName = sessionUser.cashierName || localStorage.getItem('cashierName') || 'Unknown';
+        let startEl = document.getElementById('inputStartingCash');
+        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
+        let lastEndingCash = window.lastEndingCash || 0;
+
+        // 🔥 THE INTERCEPTOR: If they type less cash than the previous shift left!
+        if (startCash !== lastEndingCash && lastEndingCash > 0) {
+            let diff = lastEndingCash - startCash;
+            if (diff > 0) {
+                let result = await Swal.fire({
+                    title: '⚠️ Missing Cash Detected!',
+                    html: `The previous shift left <b>₱${lastEndingCash.toFixed(2)}</b> in the drawer.<br>You are trying to start with only <b>₱${startCash.toFixed(2)}</b>.<br><br><span style="color:#ef4444; font-weight:bold; font-size: 16px;">Where did the ₱${diff.toFixed(2)} go?</span>`,
+                    icon: 'warning',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: 'Owner/Manager Took It',
+                    denyButtonText: 'I Don\'t Know (Shortage)',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#10b981',
+                    denyButtonColor: '#ef4444',
+                    customClass: { popup: 'rounded-2xl' }
+                });
+
+                if (result.isConfirmed) {
+                    // Auto-log it as a Remittance so it fixes the accounting!
+                    await addDoc(collection(db, "remittances"), {
+                        branch: sessionUser.branch,
+                        cashierName: "Auto-Logged (Shift Start)",
+                        amount: diff,
+                        type: "Cash Collection",
+                        channel: "Owner Collection",
+                        timestamp: serverTimestamp(),
+                        dateStr: new Date().toLocaleDateString('en-CA')
+                    });
+                    Swal.fire('Logged!', `₱${diff} was auto-logged as an Owner Collection.`, 'success');
+                } else if (result.isDenied) {
+                    // Log it as an unexplained missing expense
+                    await addDoc(collection(db, "expenses"), {
+                        branch: sessionUser.branch,
+                        amount: diff,
+                        category: "Unexplained Shortage",
+                        description: `Missing cash between shifts (Expected: ₱${lastEndingCash}, Started With: ₱${startCash})`,
+                        loggedBy: shiftName,
+                        timestamp: serverTimestamp()
+                    });
+                    Swal.fire('Logged', `₱${diff} was recorded as an unexplained shortage.`, 'info');
+                } else {
+                    return; // User clicked Cancel
+                }
+            }
+        }
+
+        let btn = document.getElementById('btnOpenShiftSubmit');
+        if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
+
+        let shiftId = await window.openNewShift(sessionUser.branch, shiftName, startCash);
+        if (shiftId) {
+            await window.checkCurrentShift();
+            closeModal('shiftModal');
+        } else {
+            alert("Failed to open shift. Check connection!");
+        }
+        if (btn) { btn.innerText = "Open Shift"; btn.disabled = false; }
+    } catch (e) { console.error(e); }
+};
+
+// ========================================================
+// 📊 Z-READING PRE-FLIGHT CHECK ENGINE
+// ========================================================
+
+window.safeSubmitComprehensiveCloseShift = async function() {
+    let parked = await window.getParkedOrders(sessionUser.branch);
+    if (parked && parked.length > 0) {
+        alert("⚠️ STRICT SYSTEM LOCK!\n\nYou have " + parked.length + " parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.");
+        closeModal('endShiftModal');
+        return;
+    }
+
+    let btn = document.querySelector('.btn-place[onclick="safeSubmitComprehensiveCloseShift()"]');
+    let origText = btn ? btn.innerText : 'Confirm & End Shift';
+    if(btn) { btn.innerText = "Calculating Variance..."; btn.disabled = true; }
+
+    try {
+        // 1. Calculate the total cash they typed into the denomination boxes
+        let totalDeclared = 0;
+        let inputs = document.querySelectorAll('#denominationTable input');
+        inputs.forEach(inp => {
+            let val = parseFloat(inp.value) || 0;
+            let denom = parseFloat(inp.getAttribute('data-val')) || 0;
+            totalDeclared += (val * denom);
+        });
+
+        // 2. Secretly calculate the Expected Cash from the Cloud
+        let shiftId = currentShift.shiftId;
+        let expectedCash = currentShift.startingCash || 0;
+
+        // Add Cash Sales
+        const txSnap = await getDocs(query(collection(db, "transactions"), where("shiftId", "==", shiftId), where("status", "==", "Paid")));
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (!tx.paymentMethod || tx.paymentMethod === 'Cash') expectedCash += parseFloat(tx.netTotal || 0);
+            if (tx.paymentMethod === 'Split' && tx.splitDetails) {
+                tx.splitDetails.forEach(s => { if (s.method === 'Cash') expectedCash += parseFloat(s.amount || 0); });
+            }
+        });
+
+        // Subtract Expenses & Remittances
+        const expSnap = await getDocs(query(collection(db, "expenses"), where("shiftId", "==", shiftId)));
+        expSnap.forEach(doc => expectedCash -= parseFloat(doc.data().amount || 0));
+
+        const remSnap = await getDocs(query(collection(db, "remittances"), where("shiftId", "==", shiftId)));
+        remSnap.forEach(doc => expectedCash -= parseFloat(doc.data().amount || 0));
+
+        let variance = totalDeclared - expectedCash;
+
+        // 3. Display the gorgeous pre-flight popup!
+        let title = variance === 0 ? 'Perfect Shift! 🎯' : (variance > 0 ? 'Cash Overage! 📈' : 'Cash Shortage! 📉');
+        let color = variance === 0 ? '#10b981' : (variance > 0 ? '#f59e0b' : '#ef4444');
+        let icon = variance === 0 ? 'success' : 'warning';
+
+        let confirm = await Swal.fire({
+            title: title,
+            html: `
+                <div style="text-align: left; font-size: 14px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 5px; color: #475569;"><span>System Expected Cash:</span> <strong>₱${expectedCash.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 5px; color: #475569;"><span>Your Declared Cash:</span> <strong>₱${totalDeclared.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; margin-top: 10px; border-top: 1px dashed #cbd5e1; padding-top: 10px; color: ${color}; font-size: 18px;">
+                        <span>Variance:</span> <strong>₱${variance.toFixed(2)}</strong>
+                    </div>
+                </div>
+                <br><p style="font-size: 13px; color: #64748b; font-weight: bold;">Do you want to permanently submit this Z-Reading?</p>
+            `,
+            icon: icon,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, End Shift',
+            cancelButtonText: 'No, Re-count Cash',
+            confirmButtonColor: '#ea580c',
+            cancelButtonColor: '#64748b',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        if (!confirm.isConfirmed) {
+            if(btn) { btn.innerText = origText; btn.disabled = false; }
+            return;
+        }
+
+        // 4. They confirmed! Proceed to the actual submit function!
+        if (typeof window.submitComprehensiveCloseShift === 'function') {
+            window.submitComprehensiveCloseShift(); 
+        } else if (typeof submitComprehensiveCloseShift === 'function') {
+            submitComprehensiveCloseShift();
+        }
+
+    } catch(e) {
+        console.error(e);
+        alert("Error calculating variance. Proceeding to force close.");
+        if (typeof window.submitComprehensiveCloseShift === 'function') window.submitComprehensiveCloseShift();
+    } finally {
+        if(btn) { btn.innerText = origText; btn.disabled = false; }
+    }
+};
