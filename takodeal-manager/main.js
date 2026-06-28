@@ -3847,7 +3847,6 @@ window.saveAdvancedInventoryItem = async function () {
 // ========================================================
 window.currentAdvRecipe = []; // Stores the live rows in the modal
 
-// 🛠️ FIX 2: Pre-load the Add-ons BEFORE opening the modal!
 window.openBomEditor = async function (menuItemName) {
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdName').value = menuItemName;
@@ -3881,9 +3880,64 @@ window.openBomEditor = async function (menuItemName) {
       window.currentAdvRecipe.push(data);
     });
     window.renderAdvRecipeTable();
+
+    // 🔥 INJECT THE NEW "AUTO-LOAD CATEGORY ADD-ONS" BUTTON
+    let cloneControls = document.getElementById('addonCloneSelect');
+    if (cloneControls && !document.getElementById('btnAutoLoadAddons')) {
+        let parentDiv = cloneControls.parentElement;
+        let autoBtn = document.createElement('button');
+        autoBtn.id = "btnAutoLoadAddons";
+        autoBtn.className = "btn-refresh";
+        autoBtn.innerHTML = "⚡ Auto-Load Category Add-Ons";
+        autoBtn.style.cssText = "background: #f59e0b; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);";
+        autoBtn.onclick = window.autoLoadCategoryAddons;
+        parentDiv.appendChild(autoBtn);
+    }
+
   } catch (e) {
     console.error(e); alert("Failed to load product details.");
   }
+};
+
+window.autoLoadCategoryAddons = async function() {
+    let currentCat = document.getElementById('advProdCat').value;
+    if (!currentCat) return Swal.fire('Error', 'Please ensure this product has a Category assigned first.', 'warning');
+
+    let btn = document.getElementById('btnAutoLoadAddons');
+    if (btn) { btn.innerText = "⏳ Fetching..."; btn.disabled = true; }
+
+    try {
+        const snap = await getDocs(collection(db, "global_addons"));
+        let addedCount = 0;
+
+        // Map out what is already in the table so we don't duplicate them!
+        let existingAddons = [];
+        document.querySelectorAll('#addonTableBody .addon-name').forEach(inp => {
+            if(inp.value.trim()) existingAddons.push(inp.value.trim().toLowerCase());
+        });
+
+        snap.forEach(doc => {
+            let d = doc.data();
+            // Match the product's category OR grab universal "All" add-ons
+            if (d.category === currentCat || d.category === "All" || !d.category) {
+                if (!existingAddons.includes(d.name.toLowerCase())) {
+                    window.addAddonRow(d.name, d.price, d.linkedIngredient, d.deductQty);
+                    addedCount++;
+                }
+            }
+        });
+
+        if (addedCount > 0) {
+            Swal.fire({ title: '✅ Success!', text: `Auto-loaded ${addedCount} add-ons for the "${currentCat}" category! Don't forget to hit Save.`, icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
+        } else {
+            Swal.fire('Up to Date', `No missing add-ons found for the "${currentCat}" category in the Global Hub.`, 'info');
+        }
+    } catch (e) {
+        console.error("Error loading category addons:", e);
+        Swal.fire('Error', 'Failed to load add-ons from cloud.', 'error');
+    } finally {
+        if (btn) { btn.innerText = "⚡ Auto-Load Category Add-Ons"; btn.disabled = false; }
+    }
 };
 
   // The automatic Wake-Up trigger for the clone dropdown
@@ -10164,13 +10218,31 @@ window.viewShiftReportModal = function(shiftId) {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 };
 
-// ==========================================
-// 🍟 GLOBAL ADD-ONS CRUD ENGINE
-// ==========================================
+// ========================================================
+// 🍟 GLOBAL ADD-ONS CRUD ENGINE (WITH MASS SYNC)
+// ========================================================
 window.loadGlobalAddons = async function() {
     const tbody = document.getElementById('globalAddonsBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching Add-Ons...</td></tr>';
+    
+    // 🔥 INJECT THE MASS SYNC BUTTON DYNAMICALLY ABOVE THE TABLE
+    let tableContainer = tbody.closest('table').parentElement;
+    if (!document.getElementById('btnMassSyncAddons')) {
+        let syncBtnHtml = `
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0; color: #d97706; font-size: 15px;">🚀 Mass Sync Engine</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 12px; color: #92400e;">Clicking sync will automatically push all Global Add-Ons to your Menu Items based on their assigned Category.</p>
+                </div>
+                <button id="btnMassSyncAddons" onclick="window.syncGlobalAddonsToMenu()" style="background: #0ea5e9; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3);">
+                    🔄 Mass Sync to Entire Menu
+                </button>
+            </div>
+        `;
+        tableContainer.insertAdjacentHTML('beforebegin', syncBtnHtml);
+    }
+
     try {
         const snap = await getDocs(collection(db, "global_addons"));
         let html = '';
@@ -10190,6 +10262,97 @@ window.loadGlobalAddons = async function() {
         });
         tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No Global Add-Ons setup yet.</td></tr>';
     } catch(e) { console.error(e); }
+};
+
+window.syncGlobalAddonsToMenu = async function() {
+    let confirmSync = await Swal.fire({
+        title: '🚀 Mass Sync Add-Ons?',
+        html: `This will scan your <b>entire menu</b> and automatically attach add-ons based on their Category.<br><br><span style="font-size: 12px; color: #ef4444;">Note: Existing add-ons will have their prices updated to match the Global Hub!</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#0ea5e9',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Yes, Sync Everything!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!confirmSync.isConfirmed) return;
+
+    let btn = document.getElementById('btnMassSyncAddons');
+    if (btn) { btn.innerText = "⏳ Scanning & Syncing Menu..."; btn.disabled = true; }
+
+    try {
+        // 1. Fetch Global Addons
+        const globalSnap = await getDocs(collection(db, "global_addons"));
+        let globalAddons = [];
+        globalSnap.forEach(d => globalAddons.push({ id: d.id, ...d.data() }));
+
+        if (globalAddons.length === 0) {
+            Swal.fire('No Add-ons', 'You have no Global Add-ons setup yet.', 'info');
+            return;
+        }
+
+        // 2. Fetch all Menu Items
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let updateCount = 0;
+        let batchPromises = [];
+
+        menuSnap.forEach(docSnap => {
+            let menuItem = docSnap.data();
+            let menuCat = menuItem.category || "Uncategorized";
+            let currentAddons = menuItem.addons || [];
+            let modified = false;
+
+            // 3. Find matching global addons for this item's category (or universal 'All')
+            let matchingGlobals = globalAddons.filter(ga => ga.category === menuCat || ga.category === "All");
+
+            matchingGlobals.forEach(ga => {
+                let existingIndex = currentAddons.findIndex(a => a.name.toLowerCase() === ga.name.toLowerCase());
+                
+                let addonPayload = {
+                    name: ga.name,
+                    price: parseFloat(ga.price) || 0,
+                    linkedIngredient: ga.linkedIngredient || "",
+                    deductQty: parseFloat(ga.deductQty) || 0
+                };
+
+                if (existingIndex >= 0) {
+                    // Update existing (to sync price/ingredient changes)
+                    let ea = currentAddons[existingIndex];
+                    if (ea.price !== addonPayload.price || ea.linkedIngredient !== addonPayload.linkedIngredient || ea.deductQty !== addonPayload.deductQty) {
+                        currentAddons[existingIndex] = addonPayload;
+                        modified = true;
+                    }
+                } else {
+                    // Add brand new Add-on to the product
+                    currentAddons.push(addonPayload);
+                    modified = true;
+                }
+            });
+
+            // 4. Update the document if changes were made
+            if (modified) {
+                batchPromises.push(updateDoc(doc(db, "menu", docSnap.id), { addons: currentAddons }));
+                updateCount++;
+            }
+        });
+
+        // Execute all updates simultaneously
+        await Promise.all(batchPromises);
+        
+        Swal.fire({
+            title: '✅ Global Sync Complete!',
+            text: `Successfully synced add-ons and prices to ${updateCount} menu items!`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+    } catch (error) {
+        console.error("Sync error:", error);
+        Swal.fire('Error', 'Failed to mass-sync add-ons. Check console.', 'error');
+    } finally {
+        if (btn) { btn.innerText = "🔄 Mass Sync to Entire Menu"; btn.disabled = false; }
+    }
 };
 
 window.openGlobalAddonModal = async function() {
