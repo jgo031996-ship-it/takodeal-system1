@@ -1434,25 +1434,23 @@ window.submitMultiDispatch = async function () {
 
   if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
   if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
-  if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
 
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
   let btn = document.getElementById('btnSubmitDispatch');
 
   // ==========================================
   // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
   // ==========================================
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
   if (isFranchisee) {
+      if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
       btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
       try {
           await addDoc(collection(db, "purchase_orders"), {
               branch: toBranch, items: dispatchCart, status: "Pending",
               requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
           });
-          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request for ${dispatchCart.length} items.`, 'success');
-          dispatchCart = []; 
-          if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
-          if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
+          dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
       } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
       finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
       return; 
@@ -1461,13 +1459,31 @@ window.submitMultiDispatch = async function () {
   // ==========================================
   // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
   // ==========================================
+  // 🔥 SMART FEATURE: Read the custom quantities the Manager typed into the Cart before submitting!
+  for (let i = 0; i < dispatchCart.length; i++) {
+      let inp = document.getElementById(`cartQty_${i}`);
+      if (inp) {
+          let val = parseFloat(inp.value) || 0;
+          let conv = dispatchCart[i].convRate || 1;
+          dispatchCart[i].rawQty = val;
+          dispatchCart[i].qty = val * conv;
+      }
+  }
+
+  // Filter out any items the Manager decided NOT to send (qty = 0)
+  let validCart = dispatchCart.filter(i => i.qty > 0);
+  
+  if (validCart.length === 0) { 
+      return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); 
+  }
+
   btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
   try {
     let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
     if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
 
-    for (let item of dispatchCart) {
+    for (let item of validCart) {
       let sourceRef = doc(db, "inventory", item.sourceId);
       let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
       await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
@@ -1483,11 +1499,8 @@ window.submitMultiDispatch = async function () {
       });
     }
 
-    alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
-    dispatchCart = []; 
-    if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
-    window.loadDispatchInventory(); 
-    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+    alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
+    dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); window.loadDispatchLogs();
   } catch (e) { console.error(e); alert("Dispatch failed."); } 
   finally { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
 };
@@ -1500,7 +1513,7 @@ window.renderDispatchCart = function() {
   if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
       let wrapper = document.createElement('div');
       wrapper.className = 'table-scroll-wrapper';
-      wrapper.style.maxHeight = '250px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
+      wrapper.style.maxHeight = '350px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
       table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
   }
 
@@ -1508,8 +1521,35 @@ window.renderDispatchCart = function() {
 
   let html = '';
   dispatchCart.forEach((item, idx) => {
-    let qtyText = item.displayMsg || `${item.qty} ${item.uom}`;
-    html += `<tr><td style="padding:10px;"><strong>${item.itemName}</strong></td><td style="font-size:14px; font-weight:bold; color:var(--primary); padding:10px;">${qtyText}</td><td style="text-align:right; padding:10px;"><button class="btn-refresh" style="color:var(--danger); border:1px solid var(--danger); background:#fef2f2; padding:4px 8px; font-size:11px; font-weight:bold;" onclick="window.removeFromDispatchCart(${idx})">✖ Remove</button></td></tr>`;
+    // 🔥 NEW: Show the cashier's variance report directly in the Manager's cart!
+    let varianceHtml = '';
+    if (item.requestType) {
+        let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
+        varianceHtml = `<br><span style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">
+            ${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})
+        </span>`;
+    } else if (item.displayMsg) {
+        varianceHtml = `<br><span style="font-size: 11px; color: #64748b;">${item.displayMsg}</span>`;
+    }
+
+    // Manager can type the quantity to send directly into the cart!
+    let safeQty = item.rawQty || item.qty || 0;
+    
+    html += `<tr>
+        <td style="padding:10px; line-height: 1.4;">
+            <strong style="font-size: 14px; color: #1e293b;">${item.itemName}</strong>
+            ${varianceHtml}
+        </td>
+        <td style="padding:10px;">
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <input type="number" id="cartQty_${idx}" value="${safeQty}" style="width: 70px; padding: 6px; border: 2px solid #0ea5e9; border-radius: 6px; text-align: center; font-weight: bold; outline: none; color: #0f172a;" placeholder="Qty">
+                <span style="font-size: 12px; font-weight: bold; color: #64748b;">${item.friendlyUom || item.uom}</span>
+            </div>
+        </td>
+        <td style="text-align:right; padding:10px;">
+            <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
+        </td>
+    </tr>`;
   });
   tbody.innerHTML = html;
 };
@@ -1835,85 +1875,6 @@ window.updateDispatchUomLabel = function() {
             <option value="base">${baseUom}</option>
         `;
     }
-};
-
-window.submitMultiDispatch = async function () {
-  let fromBranch = document.getElementById('dispFrom').value;
-  let toBranch = document.getElementById('dispTo').value;
-
-  if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
-  if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
-  if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
-
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-  let btn = document.getElementById('btnSubmitDispatch');
-
-  // ==========================================
-  // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
-  // ==========================================
-  if (isFranchisee) {
-      btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
-      try {
-          await addDoc(collection(db, "purchase_orders"), {
-              branch: toBranch,
-              items: dispatchCart,
-              status: "Pending",
-              requestedBy: window.sessionUser.cashierName,
-              timestamp: serverTimestamp()
-          });
-          
-          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request for ${dispatchCart.length} items. You will receive the delivery once approved.`, 'success');
-          
-          dispatchCart = []; 
-          if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
-          if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
-      } catch (e) {
-          console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error');
-      } finally {
-          btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false;
-      }
-      return; // STOP HERE FOR FRANCHISEES!
-  }
-
-  // ==========================================
-  // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
-  // ==========================================
-  btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
-
-  try {
-    let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
-    if (!driverName) {
-        btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false;
-        return; 
-    }
-
-    for (let item of dispatchCart) {
-      let sourceRef = doc(db, "inventory", item.sourceId);
-      let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
-      await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
-
-      await addDoc(collection(db, "dispatch_logs"), {
-        date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-        time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-        timestamp: new Date(),
-        item: item.itemName, qty: item.qty, uom: item.uom, 
-        details: `${fromBranch} ➡️ ${toBranch}`, toBranch: toBranch, driver: driverName, status: "In Transit",
-        displayQty: item.rawQty || item.qty, displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1,
-        category: item.category, purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
-      });
-    }
-
-    alert(`🚚 Success! ${dispatchCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
-    dispatchCart = []; 
-    if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
-    window.loadDispatchInventory(); 
-    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
-    
-  } catch (e) { 
-      console.error(e); alert("Dispatch failed."); 
-  } finally {
-      btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
-  }
 };
 
 window.removeFromDispatchCart = function (index) {
