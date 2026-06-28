@@ -4020,7 +4020,7 @@ window.submitOpenShift = async function() {
 };
 
 // ========================================================
-// 📊 Z-READING PRE-FLIGHT CHECK ENGINE
+// 📊 Z-READING PRE-FLIGHT CHECK ENGINE (BLIND COUNT SECURED)
 // ========================================================
 
 window.safeSubmitComprehensiveCloseShift = async function() {
@@ -4033,7 +4033,7 @@ window.safeSubmitComprehensiveCloseShift = async function() {
 
     let btn = document.querySelector('.btn-place[onclick="safeSubmitComprehensiveCloseShift()"]');
     let origText = btn ? btn.innerText : 'Confirm & End Shift';
-    if(btn) { btn.innerText = "Calculating Variance..."; btn.disabled = true; }
+    if(btn) { btn.innerText = "Verifying Count..."; btn.disabled = true; }
 
     try {
         // 1. Calculate the total cash they typed into the denomination boxes
@@ -4068,30 +4068,55 @@ window.safeSubmitComprehensiveCloseShift = async function() {
 
         let variance = totalDeclared - expectedCash;
 
-        // 3. Display the gorgeous pre-flight popup!
-        let title = variance === 0 ? 'Perfect Shift! 🎯' : (variance > 0 ? 'Cash Overage! 📈' : 'Cash Shortage! 📉');
-        let color = variance === 0 ? '#10b981' : (variance > 0 ? '#f59e0b' : '#ef4444');
-        let icon = variance === 0 ? 'success' : 'warning';
+        // 3. 🚨 THE BLIND COUNT UI (No amounts revealed!)
+        let title = "";
+        let messageHtml = "";
+        let icon = "warning";
+        let confirmButtonColor = "";
+
+        // Allowing a tiny 5 centavo tolerance for floating point math
+        if (Math.abs(variance) <= 0.05) {
+            title = 'Perfect Shift! 🎯';
+            confirmButtonColor = '#10b981';
+            icon = 'success';
+            messageHtml = `<div style="color: #10b981; font-size: 16px; font-weight: bold; margin-bottom: 5px;">Your cash count matches the system perfectly!</div>`;
+        } else if (variance > 0.05) {
+            title = 'Cash Overage Detected 📈';
+            confirmButtonColor = '#f59e0b'; // Warning Orange
+            icon = 'warning';
+            messageHtml = `
+                <div style="color: #d97706; font-size: 16px; font-weight: bold; margin-bottom: 8px;">Your declared cash is MORE than expected.</div>
+                <div style="font-size: 13px; color: #475569;">Do not remove any overage. Submit the full amount for HQ review.</div>
+            `;
+        } else {
+            title = 'Cash Shortage Detected 📉';
+            confirmButtonColor = '#ef4444'; // Danger Red
+            icon = 'error';
+            messageHtml = `
+                <div style="color: #dc2626; font-size: 16px; font-weight: bold; margin-bottom: 8px;">Your declared cash is LESS than expected.</div>
+                <div style="font-size: 13px; color: #475569;">Please double-check your drawer for dropped bills or missing receipts.</div>
+            `;
+        }
 
         let confirm = await Swal.fire({
             title: title,
             html: `
-                <div style="text-align: left; font-size: 14px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 5px; color: #475569;"><span>System Expected Cash:</span> <strong>₱${expectedCash.toFixed(2)}</strong></div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 5px; color: #475569;"><span>Your Declared Cash:</span> <strong>₱${totalDeclared.toFixed(2)}</strong></div>
-                    <div style="display:flex; justify-content:space-between; margin-top: 10px; border-top: 1px dashed #cbd5e1; padding-top: 10px; color: ${color}; font-size: 18px;">
-                        <span>Variance:</span> <strong>₱${variance.toFixed(2)}</strong>
+                <div style="text-align: center; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    ${messageHtml}
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1; font-size: 14px; color: #334155;">
+                        You are declaring a total of:<br>
+                        <strong style="font-size: 24px; color: #0f172a;">₱${totalDeclared.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
                     </div>
                 </div>
-                <br><p style="font-size: 13px; color: #64748b; font-weight: bold;">Do you want to permanently submit this Z-Reading?</p>
+                <br><p style="font-size: 13px; color: #64748b; font-weight: bold; margin:0;">Do you want to permanently submit this Z-Reading?</p>
             `,
             icon: icon,
             showCancelButton: true,
             confirmButtonText: 'Yes, End Shift',
             cancelButtonText: 'No, Re-count Cash',
-            confirmButtonColor: '#ea580c',
+            confirmButtonColor: confirmButtonColor,
             cancelButtonColor: '#64748b',
-            customClass: { popup: 'rounded-2xl' }
+            customClass: { popup: 'rounded-2xl shadow-xl' }
         });
 
         if (!confirm.isConfirmed) {
