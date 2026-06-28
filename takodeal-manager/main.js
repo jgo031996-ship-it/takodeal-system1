@@ -9346,25 +9346,35 @@ window.renderDashboardCharts = async function() {
 
         // --- DATA BUCKETS ---
         let branchDailyTrend = {}; 
-        let periodBranchMix = {}; // Tracks pie chart mix for the whole period
+        let periodBranchMix = {}; 
 
-        // 5. Crunch the numbers dynamically
+        // 5. Crunch the numbers dynamically (BULLETPROOF SALES ONLY FILTER)
         txSnap.forEach(doc => {
             let tx = doc.data();
+            
+            // 🚫 STRICT ACCOUNTING LOCK: Ignore voids, remittances, and expenses!
             if (tx.status === "Voided") return;
+            if (tx.type === "Remittance" || tx.type === "Cash Drop" || tx.type === "Expense" || tx.isRemittance === true) return;
 
             let txDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
             let dateLabel = txDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             let branch = tx.branch || "Unknown";
 
             let grossTx = 0;
-            if (tx.cart) { 
-                tx.cart.forEach(item => { grossTx += ((item.variantPrice || item.basePrice || 0) * (item.qty || 1)); }); 
+            // If it has a cart, it is a real food order. Add up the true item prices!
+            if (tx.cart && tx.cart.length > 0) { 
+                tx.cart.forEach(item => { 
+                    grossTx += ((parseFloat(item.variantPrice) || parseFloat(item.basePrice) || 0) * (parseFloat(item.qty) || 1)); 
+                }); 
             } else { 
-                grossTx = tx.netTotal || 0; 
+                // Fallback for older transactions
+                grossTx = parseFloat(tx.netTotal) || 0; 
             }
 
-            // A. Populate the Line Chart Data (Fill empty days with 0 so the line connects properly)
+            // 🚫 FINAL SAFETY CHECK: Real sales cannot be negative. Ignore cash-outs!
+            if (grossTx <= 0) return;
+
+            // A. Populate the Line Chart Data 
             if (!branchDailyTrend[branch]) {
                 branchDailyTrend[branch] = new Array(dateLabels.length).fill(0); 
             }
@@ -9373,7 +9383,7 @@ window.renderDashboardCharts = async function() {
                 branchDailyTrend[branch][dayIndex] += grossTx;
             }
 
-            // B. Populate the Doughnut Chart Data (For the entire selected period!)
+            // B. Populate the Doughnut Chart Data 
             if (!periodBranchMix[branch]) periodBranchMix[branch] = 0;
             periodBranchMix[branch] += grossTx;
         });
