@@ -9298,48 +9298,57 @@ window.submitManualOvertime = async function() {
 };
 
 // ========================================================
-// 📈 ADVANCED CHART.JS ANALYTICS ENGINE (FRANCHISE SECURED)
+// 📈 ADVANCED CHART.JS ANALYTICS ENGINE (DATE SYNC UPGRADE)
 // ========================================================
 window.revenueChartInstance = null;
 window.categoryChartInstance = null;
 
 window.renderDashboardCharts = async function() {
     try {
-        // Grab the Branch Filter value
+        // 1. Grab the Branch Filter value
         let dashFilter = document.getElementById('dashBranchFilter');
         let selectedBranch = dashFilter ? dashFilter.value : "All";
         let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
         if (isFranchisee) selectedBranch = window.sessionUser.branch;
 
-        // 1. Setup Dates for the 7-Day Trend
-        let today = new Date();
-        today.setHours(23, 59, 59, 999);
-        let sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(today.getDate() - 6); // Look back 6 days + today
-        sevenDaysAgo.setHours(0, 0, 0, 0);
-
-        // 🔒 Apply Branch Filter to the Database Query!
-        let txQ = query(collection(db, "transactions"), where("timestamp", ">=", sevenDaysAgo), where("timestamp", "<=", today));
-        if (selectedBranch !== "All") {
-            txQ = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", sevenDaysAgo), where("timestamp", "<=", today));
-        }
+        // 2. Grab Dates directly from the Date Picker at the top of the dashboard!
+        let startInput = document.getElementById('dashStartDate').value;
+        let endInput = document.getElementById('dashEndDate').value;
         
+        let startDay = new Date(startInput + 'T00:00:00');
+        let endDay = new Date(endInput + 'T23:59:59');
+
+        // Calculate how many days they selected
+        let diffDays = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24));
+        
+        // 🔥 SMART DEFAULT: If they only pick ONE day (like today), a line chart looks broken with only 1 dot.
+        // So we automatically stretch the chart 7 days backwards to give them a trend!
+        if (diffDays <= 1) {
+            startDay = new Date(endDay);
+            startDay.setDate(endDay.getDate() - 6);
+            startDay.setHours(0,0,0,0);
+        }
+
+        // 3. Setup Date Labels for the X-Axis dynamically based on their selection
+        let dateLabels = [];
+        let currentDate = new Date(startDay);
+        while (currentDate <= endDay) {
+            dateLabels.push(currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        // 4. Fetch the Data from Firebase
+        let txQ = query(collection(db, "transactions"), where("timestamp", ">=", startDay), where("timestamp", "<=", endDay));
+        if (selectedBranch !== "All") {
+            txQ = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startDay), where("timestamp", "<=", endDay));
+        }
         const txSnap = await getDocs(txQ);
 
-        // 2. Setup Date Labels for the X-Axis
-        let dateLabels = [];
-        for(let i = 6; i >= 0; i--) {
-            let d = new Date(today);
-            d.setDate(today.getDate() - i);
-            dateLabels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-        }
-        let todayString = dateLabels[6]; // The last one in the array is today
-
         // --- DATA BUCKETS ---
-        let branchDailyTrend = {}; // Tracks 7 days of sales per branch
-        let todayBranchMix = {};   // Tracks today's pie chart split
+        let branchDailyTrend = {}; 
+        let periodBranchMix = {}; // Tracks pie chart mix for the whole period
 
-        // 3. Crunch the numbers dynamically
+        // 5. Crunch the numbers dynamically
         txSnap.forEach(doc => {
             let tx = doc.data();
             if (tx.status === "Voided") return;
@@ -9348,7 +9357,6 @@ window.renderDashboardCharts = async function() {
             let dateLabel = txDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             let branch = tx.branch || "Unknown";
 
-            // Calculate transaction gross
             let grossTx = 0;
             if (tx.cart) { 
                 tx.cart.forEach(item => { grossTx += ((item.variantPrice || item.basePrice || 0) * (item.qty || 1)); }); 
@@ -9356,30 +9364,28 @@ window.renderDashboardCharts = async function() {
                 grossTx = tx.netTotal || 0; 
             }
 
-            // A. Populate the Line Chart Data (Initialize the branch array with 7 zeros if it's new)
+            // A. Populate the Line Chart Data (Fill empty days with 0 so the line connects properly)
             if (!branchDailyTrend[branch]) {
-                branchDailyTrend[branch] = [0, 0, 0, 0, 0, 0, 0]; 
+                branchDailyTrend[branch] = new Array(dateLabels.length).fill(0); 
             }
             let dayIndex = dateLabels.indexOf(dateLabel);
             if (dayIndex !== -1) {
                 branchDailyTrend[branch][dayIndex] += grossTx;
             }
 
-            // B. Populate the Doughnut Chart Data (Only if the transaction happened TODAY)
-            if (dateLabel === todayString) {
-                if (!todayBranchMix[branch]) todayBranchMix[branch] = 0;
-                todayBranchMix[branch] += grossTx;
-            }
+            // B. Populate the Doughnut Chart Data (For the entire selected period!)
+            if (!periodBranchMix[branch]) periodBranchMix[branch] = 0;
+            periodBranchMix[branch] += grossTx;
         });
 
         // 🎨 Beautiful Auto-Assigned Colors for the Branches
         const themeColors = ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#f43f5e', '#64748b'];
 
         // ==========================================
-        // 📉 DRAW THE 7-DAY LINE CHART (BRANCH WARS)
+        // 📉 DRAW THE DYNAMIC LINE CHART 
         // ==========================================
         const revCtx = document.getElementById('revenueTrendChart');
-        if (window.revenueChartInstance) window.revenueChartInstance.destroy(); // Prevent ghosting!
+        if (window.revenueChartInstance) window.revenueChartInstance.destroy(); 
 
         let lineDatasets = [];
         let colorIndex = 0;
@@ -9389,15 +9395,9 @@ window.renderDashboardCharts = async function() {
             lineDatasets.push({
                 label: branch,
                 data: branchDailyTrend[branch],
-                borderColor: c,
-                backgroundColor: c, 
-                borderWidth: 3,
-                pointBackgroundColor: 'white',
-                pointBorderColor: c,
-                pointBorderWidth: 2,
-                pointRadius: 4,
-                fill: false,
-                tension: 0.4 // Smooth curves
+                borderColor: c, backgroundColor: c, borderWidth: 3,
+                pointBackgroundColor: 'white', pointBorderColor: c,
+                pointBorderWidth: 2, pointRadius: 4, fill: false, tension: 0.4
             });
             colorIndex++;
         }
@@ -9407,32 +9407,24 @@ window.renderDashboardCharts = async function() {
             data: { labels: dateLabels, datasets: lineDatasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { 
-                    legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } } 
-                },
-                scales: { 
-                    y: { beginAtZero: true, grid: { color: '#f8fafc' } },
-                    x: { grid: { display: false } }
-                },
-                interaction: { mode: 'index', intersect: false } // Shows tooltip for all branches on hover!
+                plugins: { legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } } },
+                scales: { y: { beginAtZero: true, grid: { color: '#f8fafc' } }, x: { grid: { display: false } } },
+                interaction: { mode: 'index', intersect: false } 
             }
         });
 
         // ==========================================
-        // 🐙 Today's Branch Mix CHART (BY BRANCH)
+        // 🐙 DYNAMIC PIE CHART (SELECTED PERIOD)
         // ==========================================
         const catCtx = document.getElementById('categoryMixChart');
         if (window.categoryChartInstance) window.categoryChartInstance.destroy();
 
-        let mixLabels = Object.keys(todayBranchMix);
-        let mixData = Object.values(todayBranchMix);
+        let mixLabels = Object.keys(periodBranchMix);
+        let mixData = Object.values(periodBranchMix);
         
-        // Failsafe if there are no sales today
         let doughnutColors = themeColors.slice(0, mixLabels.length);
         if (mixLabels.length === 0) { 
-            mixLabels = ["No Sales Yet"]; 
-            mixData = [1]; 
-            doughnutColors = ['#e2e8f0']; 
+            mixLabels = ["No Sales in Period"]; mixData = [1]; doughnutColors = ['#e2e8f0']; 
         }
 
         window.categoryChartInstance = new Chart(catCtx, {
@@ -9440,20 +9432,20 @@ window.renderDashboardCharts = async function() {
             data: {
                 labels: mixLabels,
                 datasets: [{
-                    data: mixData,
-                    backgroundColor: doughnutColors,
-                    borderWidth: 2,
-                    borderColor: 'white',
-                    hoverOffset: 6
+                    data: mixData, backgroundColor: doughnutColors,
+                    borderWidth: 2, borderColor: 'white', hoverOffset: 6
                 }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
-                cutout: '75%', // Sleek thin ring
-                plugins: {
-                    legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } }
-                }
+                responsive: true, maintainAspectRatio: false, cutout: '75%', 
+                plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } } }
             }
+        });
+
+        // 🔥 SNEAKY UI RENAME: Update the static HTML text dynamically so it makes sense!
+        document.querySelectorAll('div, h3, span').forEach(el => {
+            if (el.innerText === "7-Day Gross Revenue Trend") el.innerText = "📈 Dynamic Gross Revenue Trend";
+            if (el.innerText === "Today's Sales Mix") el.innerText = "🍕 Sales Mix (Selected Period)";
         });
 
     } catch (e) {
