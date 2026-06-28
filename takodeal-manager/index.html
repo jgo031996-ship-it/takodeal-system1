@@ -1203,6 +1203,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <button onclick="switchInvTab('StockLogs')" style="height: 42px; padding: 0 18px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 2px 5px rgba(59, 130, 246, 0.2);"><span style="font-size: 16px;">📜</span> History Logs</button>
             <button class="btn-refresh" style="height: 42px; padding: 0 15px; background: white; color: #16a34a; border: 1.5px solid #16a34a; font-weight: 700; border-radius: 8px; white-space: nowrap; cursor: pointer;" onclick="exportInventoryCSV()">⬇️ Download CSV</button>
+            <button class="btn-refresh" style="background: #f59e0b; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(245,158,11,0.3);" onclick="window.viewStoreUseLogs()">📦 Store Use Logs</button>
             <label style="height: 42px; padding: 0 15px; background: #16a34a; color: white; border-radius: 8px; display: flex; align-items: center; font-weight: 700; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">
               ⬆️ Smart Sync
               <input type="file" id="csvInvUpload" style="display: none;" onchange="smartImportCSV(event)">
