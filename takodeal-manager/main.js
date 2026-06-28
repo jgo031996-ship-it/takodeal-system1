@@ -118,6 +118,7 @@ auth.onAuthStateChanged(async (user) => {
       };
       
       window.applyPermissions(); // Run the tab hider!
+      if (typeof window.startPOListener === 'function') window.startPOListener();
 
       // 🔥 UPDATE THE SIDEBAR LOGO TEXT!
       let brandNameEl = document.getElementById('sidebarBrandName');
