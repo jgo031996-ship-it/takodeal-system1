@@ -1256,7 +1256,7 @@ window.confirmMultiRestock = async function () {
 };
 
 // ========================================================
-// 🚚 THE DISPATCH & LOGISTICS ENGINE (FRANCHISE UPGRADE)
+// 🚚 THE DISPATCH & LOGISTICS ENGINE (SMART COMMAND CENTER)
 // ========================================================
 let dispatchCart = [];
 let dispatchInventoryList = [];
@@ -1269,34 +1269,37 @@ window.loadDispatchDashboard = async function() {
   
   let fromHtml = '<option value="">-- Select Source --</option>';
   let toHtml = '<option value="">-- Select Destination --</option>';
-
   let btn = document.getElementById('btnSubmitDispatch');
 
   if (isFranchisee) {
       fromHtml = `<option value="Main Office">Main Office (HQ)</option>`;
       toHtml = `<option value="${myBranch}">${myBranch}</option>`;
       if (btn) btn.innerText = "📝 Request Stock from HQ";
-      
-      document.getElementById('dispFrom').innerHTML = fromHtml;
-      document.getElementById('dispFrom').value = "Main Office";
-      document.getElementById('dispTo').innerHTML = toHtml;
-      document.getElementById('dispTo').value = myBranch;
   } else {
       branches.forEach(b => {
         fromHtml += `<option value="${b}">${b}</option>`;
         toHtml += `<option value="${b}">${b}</option>`;
       });
-      document.getElementById('dispFrom').innerHTML = fromHtml;
-      document.getElementById('dispFrom').value = "Main Office";
-      document.getElementById('dispTo').innerHTML = toHtml;
-      
       if (btn) btn.innerText = "🚀 Send Dispatch Delivery";
   }
 
-  dispatchCart = [];
-  if (typeof renderDispatchCart === 'function') renderDispatchCart();
-  else window.renderDispatchCart();
+  document.getElementById('dispFrom').innerHTML = fromHtml;
+  document.getElementById('dispFrom').value = "Main Office";
+  document.getElementById('dispTo').innerHTML = toHtml;
+
+  // 💾 VAULT RECOVERY: Restore Cart if they accidentally refreshed!
+  let savedCart = localStorage.getItem('takodeal_dispatch_cart');
+  if (savedCart && !isFranchisee) {
+      try { dispatchCart = JSON.parse(savedCart); } catch(e) { dispatchCart = []; }
+      let savedTo = localStorage.getItem('takodeal_dispatch_to');
+      if (savedTo) setTimeout(() => { document.getElementById('dispTo').value = savedTo; }, 100);
+  } else {
+      dispatchCart = [];
+  }
   
+  if (isFranchisee) document.getElementById('dispTo').value = myBranch;
+
+  if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
   await window.loadDispatchInventory();
   await window.loadDispatchLogs();
 };
@@ -1307,26 +1310,16 @@ window.loadDispatchInventory = async function () {
 
   if (itemInput.tagName === 'SELECT') {
       let newInput = document.createElement('input');
-      newInput.id = 'dispItem';
-      newInput.setAttribute('list', 'dispatchDatalist');
+      newInput.id = 'dispItem'; newInput.setAttribute('list', 'dispatchDatalist');
       newInput.placeholder = "Type to search item to send...";
       newInput.style.cssText = "width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #334155;";
-      newInput.onchange = window.updateDispatchUomLabel;
-      newInput.onkeyup = window.updateDispatchUomLabel; 
-      itemInput.parentNode.replaceChild(newInput, itemInput);
-      itemInput = newInput;
+      newInput.onchange = window.updateDispatchUomLabel; newInput.onkeyup = window.updateDispatchUomLabel; 
+      itemInput.parentNode.replaceChild(newInput, itemInput); itemInput = newInput;
   }
 
-  if (!fromBranch) { 
-      itemInput.placeholder = 'Select source branch first...'; 
-      itemInput.disabled = true; 
-      itemInput.value = '';
-      return; 
-  }
+  if (!fromBranch) { itemInput.placeholder = 'Select source branch first...'; itemInput.disabled = true; itemInput.value = ''; return; }
   
-  itemInput.disabled = false; 
-  itemInput.placeholder = 'Scanning warehouse...'; 
-  itemInput.value = '';
+  itemInput.disabled = false; itemInput.placeholder = 'Scanning warehouse...'; itemInput.value = '';
   dispatchInventoryList = [];
 
   try {
@@ -1335,10 +1328,7 @@ window.loadDispatchInventory = async function () {
     
     let datalistHtml = '<datalist id="dispatchDatalist">';
     let sortedStock = [];
-    snap.forEach(docSnap => {
-        let data = docSnap.data();
-        if (data.currentStock > 0) sortedStock.push({ id: docSnap.id, ...data });
-    });
+    snap.forEach(docSnap => { let data = docSnap.data(); if (data.currentStock > 0) sortedStock.push({ id: docSnap.id, ...data }); });
     
     sortedStock.sort((a, b) => a.name.localeCompare(b.name));
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
@@ -1346,12 +1336,8 @@ window.loadDispatchInventory = async function () {
     sortedStock.forEach(data => {
         dispatchInventoryList.push(data);
         let safeStock = parseFloat(data.currentStock).toFixed(1);
-        if (isFranchisee) {
-            // 🔒 PRIVACY LOCK: Hide actual HQ stock amounts from franchisees
-            datalistHtml += `<option value="${data.name}">${data.name} (Request in ${data.uom})</option>`;
-        } else {
-            datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
-        }
+        if (isFranchisee) datalistHtml += `<option value="${data.name}">${data.name} (Request in ${data.uom})</option>`;
+        else datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
     });
     datalistHtml += '</datalist>';
 
@@ -1359,11 +1345,8 @@ window.loadDispatchInventory = async function () {
     if (existingList) existingList.remove();
     document.body.insertAdjacentHTML('beforeend', datalistHtml);
 
-    itemInput.placeholder = 'Type to search item...';
-    window.updateDispatchUomLabel();
-  } catch (e) { 
-    console.error(e); itemInput.placeholder = 'Error loading stock'; 
-  }
+    itemInput.placeholder = 'Type to search item...'; window.updateDispatchUomLabel();
+  } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
 };
 
 window.updateDispatchUomLabel = function() {
@@ -1373,8 +1356,7 @@ window.updateDispatchUomLabel = function() {
 
     let invItem = dispatchInventoryList.find(i => i.name === itemName);
     if (invItem) {
-        let baseUom = invItem.uom || 'units';
-        let purchUom = invItem.purchaseUom || 'Bulk';
+        let baseUom = invItem.uom || 'units'; let purchUom = invItem.purchaseUom || 'Bulk';
         uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
     }
 };
@@ -1387,31 +1369,19 @@ window.addToDispatchCart = function () {
   let invItem = dispatchInventoryList.find(i => i.name === itemName);
   if (!invItem) return;
 
-  let finalBaseQty = rawQty;
-  let displayMsg = `${rawQty} ${invItem.uom}`;
-  let convRate = 1;
-  let friendlyUom = invItem.uom;
-  let uomSelect = document.getElementById('dispUomSelect');
-  let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
+  let finalBaseQty = rawQty; let convRate = 1; let friendlyUom = invItem.uom; let displayMsg = `${rawQty} ${invItem.uom}`;
+  let uomSelect = document.getElementById('dispUomSelect'); let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
 
   if (selectedUomType === 'purch') {
-      convRate = parseFloat(invItem.conversionRate) || 1;
-      finalBaseQty = rawQty * convRate; 
-      friendlyUom = invItem.purchaseUom || "Bulk";
+      convRate = parseFloat(invItem.conversionRate) || 1; finalBaseQty = rawQty * convRate; friendlyUom = invItem.purchaseUom || "Bulk";
       displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
   }
 
   let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-  
   if (!isFranchisee && finalBaseQty > invItem.currentStock) { 
       let stockInPurch = invItem.currentStock / convRate;
-      let msg = `You are trying to send <strong>${rawQty} ${friendlyUom}</strong> (${finalBaseQty} ${invItem.uom}), but the Main Office only has <strong>${stockInPurch.toFixed(2)} ${friendlyUom}</strong> (${invItem.currentStock} ${invItem.uom}) available.`; 
-      Swal.fire({
-          title: '❌ Not enough stock!',
-          html: `<div style="font-size: 14px; color: #334155; line-height: 1.5; text-align: left;">${msg}</div>`,
-          icon: 'error', confirmButtonColor: '#0ea5e9'
-      });
-      return; 
+      let msg = `You are trying to send <strong>${rawQty} ${friendlyUom}</strong> (${finalBaseQty} ${invItem.uom}), but HQ only has <strong>${stockInPurch.toFixed(2)} ${friendlyUom}</strong> available.`; 
+      Swal.fire({ title: '❌ Not enough stock!', html: msg, icon: 'error', confirmButtonColor: '#0ea5e9' }); return; 
   }
 
   let existing = dispatchCart.find(i => i.itemName === itemName);
@@ -1438,11 +1408,11 @@ window.submitMultiDispatch = async function () {
   if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
 
   let btn = document.getElementById('btnSubmitDispatch');
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
 
   // ==========================================
   // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
   // ==========================================
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
   if (isFranchisee) {
       if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
       btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
@@ -1461,23 +1431,20 @@ window.submitMultiDispatch = async function () {
   // ==========================================
   // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
   // ==========================================
-  // 🔥 SMART FEATURE: Read the custom quantities the Manager typed into the Cart before submitting!
+  // Read the custom quantities the Manager typed directly into the Cart inputs!
   for (let i = 0; i < dispatchCart.length; i++) {
       let inp = document.getElementById(`cartQty_${i}`);
       if (inp) {
           let val = parseFloat(inp.value) || 0;
           let conv = dispatchCart[i].convRate || 1;
-          dispatchCart[i].rawQty = val;
-          dispatchCart[i].qty = val * conv;
+          dispatchCart[i].rawQty = val; dispatchCart[i].qty = val * conv;
+          // Update local storage live memory just in case
+          localStorage.setItem(`takodeal_draft_qty_${i}`, val);
       }
   }
 
-  // Filter out any items the Manager decided NOT to send (qty = 0)
   let validCart = dispatchCart.filter(i => i.qty > 0);
-  
-  if (validCart.length === 0) { 
-      return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); 
-  }
+  if (validCart.length === 0) { return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); }
 
   btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
@@ -1492,13 +1459,22 @@ window.submitMultiDispatch = async function () {
 
       await addDoc(collection(db, "dispatch_logs"), {
         date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-        time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-        timestamp: new Date(),
+        time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
         item: item.itemName, qty: item.qty, uom: item.uom, details: `${fromBranch} ➡️ ${toBranch}`,
         toBranch: toBranch, driver: driverName, status: "In Transit", displayQty: item.rawQty || item.qty,      
         displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1, category: item.category,
         purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
       });
+    }
+
+    // 🔒 CLEAR MEMORY AND MARK PO AS COMPLETED
+    localStorage.removeItem('takodeal_dispatch_cart');
+    localStorage.removeItem('takodeal_dispatch_to');
+    
+    let activePoId = localStorage.getItem('takodeal_active_po');
+    if (activePoId) {
+        try { await updateDoc(doc(db, "purchase_orders", activePoId), { status: "Completed" }); } catch(e){}
+        localStorage.removeItem('takodeal_active_po');
     }
 
     alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
@@ -1513,38 +1489,36 @@ window.renderDispatchCart = function() {
   const tbody = document.getElementById('dispatchCartBody');
   let table = tbody.closest('table');
   if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
-      let wrapper = document.createElement('div');
-      wrapper.className = 'table-scroll-wrapper';
+      let wrapper = document.createElement('div'); wrapper.className = 'table-scroll-wrapper';
       wrapper.style.maxHeight = '350px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
       table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
   }
+
+  // 💾 LIVE SAVE TO VAULT EVERY TIME UI UPDATES
+  localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+  let dest = document.getElementById('dispTo'); if(dest && dest.value) localStorage.setItem('takodeal_dispatch_to', dest.value);
 
   if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
 
   let html = '';
   dispatchCart.forEach((item, idx) => {
-    // 🔥 NEW: Show the cashier's variance report directly in the Manager's cart!
     let varianceHtml = '';
     if (item.requestType) {
         let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
-        varianceHtml = `<br><span style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">
-            ${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})
-        </span>`;
+        varianceHtml = `<br><span style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</span>`;
     } else if (item.displayMsg) {
         varianceHtml = `<br><span style="font-size: 11px; color: #64748b;">${item.displayMsg}</span>`;
     }
 
-    // Manager can type the quantity to send directly into the cart!
-    let safeQty = item.rawQty || item.qty || 0;
+    // Recover typed quantity if it exists in memory, otherwise default to item.rawQty or 0
+    let memoryQty = localStorage.getItem(`takodeal_draft_qty_${idx}`);
+    let safeQty = memoryQty !== null ? memoryQty : (item.rawQty || item.qty || 0);
     
     html += `<tr>
-        <td style="padding:10px; line-height: 1.4;">
-            <strong style="font-size: 14px; color: #1e293b;">${item.itemName}</strong>
-            ${varianceHtml}
-        </td>
+        <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${item.itemName}</strong>${varianceHtml}</td>
         <td style="padding:10px;">
             <div style="display: flex; align-items: center; gap: 5px;">
-                <input type="number" id="cartQty_${idx}" value="${safeQty}" style="width: 70px; padding: 6px; border: 2px solid #0ea5e9; border-radius: 6px; text-align: center; font-weight: bold; outline: none; color: #0f172a;" placeholder="Qty">
+                <input type="number" id="cartQty_${idx}" value="${safeQty}" onchange="localStorage.setItem('takodeal_draft_qty_${idx}', this.value)" style="width: 70px; padding: 6px; border: 2px solid #0ea5e9; border-radius: 6px; text-align: center; font-weight: bold; outline: none; color: #0f172a;" placeholder="Qty">
                 <span style="font-size: 12px; font-weight: bold; color: #64748b;">${item.friendlyUom || item.uom}</span>
             </div>
         </td>
@@ -1565,9 +1539,9 @@ window.loadDispatchLogs = async function() {
   let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
 
   try {
-    // 1. Fetch Pending Purchase Orders
-    let poQuery = query(collection(db, "purchase_orders"), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
-    if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "==", "Pending"), orderBy("timestamp", "desc"));
+    // 1. Fetch Pending AND Drafting Purchase Orders
+    let poQuery = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
+    if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
     const poSnap = await getDocs(poQuery);
     
     let poHtml = '';
@@ -1575,19 +1549,23 @@ window.loadDispatchLogs = async function() {
         let po = docSnap.data();
         let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
         
+        let statusBadge = po.status === "Drafting" 
+            ? `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>` 
+            : `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`;
+
         let actionBtn = isFranchisee 
             ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
-            : `<button onclick="window.approvePurchaseOrder('${docSnap.id}')" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3);">✅ Fulfill Order</button>`;
+            : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
         
+        let titleTxt = po.type === 'Internal Request' ? '📢 Stock Issue Report' : '📝 Purchase Order';
+
         poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
             <td style="padding:15px;">
-                <div style="font-weight:900; color:#d97706; font-size:15px;">${po.type === 'Internal Request' ? '📢 Stock Issue Report' : '📝 Purchase Order'} from ${po.branch}</div>
+                <div style="font-weight:900; color:#d97706; font-size:15px;">${titleTxt} from ${po.branch}</div>
                 <div style="font-size:12px; color:#b45309; margin-top: 4px; font-weight:bold;">Requested by: ${po.requestedBy}</div>
                 <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
             </td>
-            <td style="padding:15px; text-align:center;">
-                <span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending PO</span>
-            </td>
+            <td style="padding:15px; text-align:center;">${statusBadge}</td>
             <td style="padding:15px; text-align:right;">${actionBtn}</td>
         </tr>`;
     });
@@ -1607,12 +1585,11 @@ window.loadDispatchLogs = async function() {
         if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
     });
 
-    let html = poHtml; // Attach POs at the top!
+    let html = poHtml; 
     let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
 
-    if (sortedKeys.length === 0 && poHtml === '') { 
-        html = '<tr><td colspan="3" class="text-center" style="padding: 30px; color:#64748b; font-weight:bold;">No recent deliveries or requests.</td></tr>'; 
-    } else {
+    if (sortedKeys.length === 0 && poHtml === '') { html = '<tr><td colspan="3" class="text-center" style="padding: 30px; color:#64748b; font-weight:bold;">No recent deliveries or requests.</td></tr>'; } 
+    else {
         sortedKeys.slice(0, 20).forEach(key => {
             let del = deliveries[key];
             let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : '#f59e0b');
@@ -1631,6 +1608,82 @@ window.loadDispatchLogs = async function() {
     }
     tbody.innerHTML = html;
   } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
+};
+
+// ==========================================
+// 🔍 THE REVIEW REQUEST MODAL 
+// ==========================================
+window.reviewPurchaseOrder = async function(poId) {
+    try {
+        Swal.fire({ title: 'Cross-checking inventory...', didOpen: () => Swal.showLoading() });
+        const poRef = doc(db, "purchase_orders", poId);
+        const poSnap = await getDoc(poRef);
+        if (!poSnap.exists()) return Swal.fire('Error', 'Request not found.', 'error');
+        
+        let po = poSnap.data();
+        
+        // Fetch HQ Live Stock to show the Manager inside the review modal!
+        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+        let hqStock = {};
+        hqSnap.forEach(d => hqStock[d.data().name] = parseFloat(d.data().currentStock || 0));
+
+        let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <tr>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Item Requested</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Branch Report</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: right; color: #16a34a;">HQ Stock</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+        
+        po.items.forEach(item => {
+            let hqAvail = hqStock[item.itemName] || 0;
+            let reportTxt = item.requestType ? 
+                `<span style="color: #dc2626; font-weight: bold;">${item.requestType}</span><br><span style="font-size:10px; color:#64748b; font-weight:bold;">Actual: ${item.physicalStock} | Sys: ${item.systemStock}</span>` : 
+                `<span style="color: #0f766e; font-weight: bold;">Requested: ${item.qty} ${item.uom}</span>`;
+            
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
+                <td style="padding: 10px;">${reportTxt}</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold; color: #16a34a; font-size: 14px;">${hqAvail} <span style="font-size:10px; color:#94a3b8; font-weight:normal;">${item.uom}</span></td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        
+        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
+        
+        Swal.fire({
+            title: titleTxt, html: html, width: '700px',
+            showCancelButton: true, showDenyButton: true,
+            confirmButtonColor: '#0ea5e9', cancelButtonColor: '#94a3b8', denyButtonColor: '#dc2626',
+            confirmButtonText: '📥 Load into Dispatch Cart', cancelButtonText: 'Set Aside (Close)', denyButtonText: '✖ Delete Request',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                // Wipe the old draft quantities from memory so it's a fresh start
+                Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+
+                dispatchCart = po.items.map(i => ({...i, rawQty: i.qty || 0})); 
+                document.getElementById('dispFrom').value = "Main Office"; document.getElementById('dispTo').value = po.branch;
+                
+                // SAVE IT AS THE ACTIVE DRAFT IN THE VAULT
+                localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+                localStorage.setItem('takodeal_dispatch_to', po.branch);
+                localStorage.setItem('takodeal_active_po', poId);
+                
+                await updateDoc(poRef, { status: "Drafting" });
+                
+                window.renderDispatchCart(); window.loadDispatchLogs();
+                Swal.fire({title: 'Loaded!', text: 'Items are safely locked in the cart. You can refresh the page without losing them.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+            } else if (result.isDenied) {
+                if (confirm("Permanently delete this request from the queue?")) {
+                    await deleteDoc(poRef); window.loadDispatchLogs();
+                }
+            }
+        });
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
 };
 
 window.approvePurchaseOrder = async function(poId) {
