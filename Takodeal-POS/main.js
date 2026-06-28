@@ -3725,20 +3725,19 @@ window.loadStockRequestUI = async function() {
     container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching live inventory...</div>';
 
     try {
-        const q = query(collection(db, "inventory"), where("branch", "==", window.currentBranch));
+        // 🔥 THE FIX: Now using sessionUser.branch!
+        const q = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch));
         const snap = await getDocs(q);
         
         window.stockReqItems = [];
         snap.forEach(docSnap => {
             let data = docSnap.data();
-            // Exclude secret items
             let cat = (data.category || "").toLowerCase();
             if (!cat.includes("prepared batch") && !cat.includes("prep batch")) {
                 window.stockReqItems.push({ id: docSnap.id, ...data });
             }
         });
 
-        // Sort alphabetically
         window.stockReqItems.sort((a, b) => a.name.localeCompare(b.name));
 
         let html = '';
@@ -3787,14 +3786,12 @@ window.submitStockRequest = async function() {
             let idx = input.getAttribute('data-index');
             let itemData = window.stockReqItems[idx];
             
-            // Get what they typed as the actual physical count
             let actualCountEl = document.getElementById(`actualCount_${idx}`);
             let actualCount = actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : parseFloat(itemData.currentStock || 0);
 
-            // Structure it EXACTLY like a Franchisee PO, but attach the variance data!
             requestItems.push({
                 itemName: itemData.name,
-                qty: reqQty, // This is what the manager's dispatch cart needs
+                qty: reqQty, 
                 uom: itemData.uom,
                 sourceId: itemData.id,
                 systemStock: parseFloat(itemData.currentStock || 0),
@@ -3815,11 +3812,11 @@ window.submitStockRequest = async function() {
         Swal.fire({ title: 'Sending to HQ...', didOpen: () => { Swal.showLoading(); } });
 
         await addDoc(collection(db, "purchase_orders"), {
-            branch: window.currentBranch,
+            branch: sessionUser.branch, // 🔥 THE FIX
             items: requestItems,
             status: "Pending",
-            type: "Internal Request", // Distinguishes it from Franchisee POs
-            requestedBy: window.cashierName || "Staff",
+            type: "Internal Request", 
+            requestedBy: sessionUser.cashierName || "Staff", // 🔥 THE FIX
             timestamp: serverTimestamp()
         });
 
@@ -3829,7 +3826,6 @@ window.submitStockRequest = async function() {
             icon: 'success', customClass: { popup: 'rounded-2xl' }
         });
 
-        // Clear the form
         window.loadStockRequestUI();
 
     } catch (e) {
