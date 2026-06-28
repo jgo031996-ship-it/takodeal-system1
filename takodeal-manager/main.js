@@ -10260,14 +10260,19 @@ window.loadGlobalAddons = async function() {
     let tableContainer = tbody.closest('table').parentElement;
     if (!document.getElementById('btnMassSyncAddons')) {
         let syncBtnHtml = `
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d;">
-                <div style="flex: 1;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; flex-wrap: wrap; gap: 15px;">
+                <div style="flex: 1; min-width: 300px;">
                     <h3 style="margin: 0; color: #d97706; font-size: 15px;">🚀 Mass Sync Engine</h3>
-                    <p style="margin: 4px 0 0 0; font-size: 12px; color: #92400e;">Clicking sync will automatically push all Global Add-Ons to your Menu Items based on their assigned Category.</p>
+                    <p style="margin: 4px 0 0 0; font-size: 12px; color: #92400e;">Click <b>Extract</b> to pull add-ons you already made. Click <b>Mass Sync</b> to push updates to the menu.</p>
                 </div>
-                <button id="btnMassSyncAddons" onclick="window.syncGlobalAddonsToMenu()" style="background: #0ea5e9; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3);">
-                    🔄 Mass Sync to Entire Menu
-                </button>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="window.extractAddonsToGlobal()" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.1);">
+                        📥 Extract Existing Add-ons
+                    </button>
+                    <button id="btnMassSyncAddons" onclick="window.syncGlobalAddonsToMenu()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3);">
+                        🔄 Mass Sync to Entire Menu
+                    </button>
+                </div>
             </div>
         `;
         tableContainer.insertAdjacentHTML('beforebegin', syncBtnHtml);
@@ -10301,7 +10306,6 @@ window.loadGlobalAddons = async function() {
 };
 
 window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qty = '0', linkedIng = '', cat = 'All') {
-    // 1. Fill the inputs with the data (Empty if creating a new one, filled if editing!)
     document.getElementById('gaId').value = id;
     document.getElementById('gaName').value = name;
     document.getElementById('gaPrice').value = price;
@@ -10310,7 +10314,6 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qt
     let catEl = document.getElementById('gaCategory');
     if (catEl) catEl.value = cat;
 
-    // Change the modal button text so the user knows if they are Editing or Adding
     let btn = document.getElementById('btnSaveGA');
     if (btn) btn.innerText = id ? "💾 Update Add-On" : "💾 Save New Add-On";
 
@@ -10326,7 +10329,6 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qt
         snap.forEach(d => invItems.push(d.data().name));
         invItems.sort();
 
-        // Check if this item is the linked one to auto-select it!
         invItems.forEach(invName => { 
             let isSelected = (invName === linkedIng) ? "selected" : "";
             html += `<option value="${invName}" ${isSelected}>${invName}</option>`; 
@@ -10334,6 +10336,68 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qt
         
         select.innerHTML = html;
     } catch(e) { console.error(e); }
+};
+
+// 🔥 NEW: EXTRACT EXISTING ADDONS FROM MENU TO GLOBAL HUB
+window.extractAddonsToGlobal = async function() {
+    let confirmExtract = await Swal.fire({
+        title: '📥 Extract Add-ons?',
+        text: 'This will scan your entire menu and pull any existing add-ons into the Global Hub so you do not have to recreate them.',
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonColor: '#0ea5e9',
+        confirmButtonText: 'Yes, Extract Them'
+    });
+
+    if (!confirmExtract.isConfirmed) return;
+    Swal.fire({ title: 'Scanning Menu...', didOpen: () => Swal.showLoading() });
+
+    try {
+        // Get what we already have globally so we don't duplicate
+        const globalSnap = await getDocs(collection(db, "global_addons"));
+        let existingGlobalNames = [];
+        globalSnap.forEach(d => existingGlobalNames.push(d.data().name.toLowerCase()));
+        
+        // Scan the Menu
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let extractedCount = 0;
+        let uniqueExtracted = {};
+        
+        menuSnap.forEach(docSnap => {
+            let menuItem = docSnap.data();
+            let menuCat = menuItem.category || "All";
+            
+            if (menuItem.addons && Array.isArray(menuItem.addons)) {
+                menuItem.addons.forEach(a => {
+                    let nameLower = a.name.toLowerCase();
+                    // If we haven't seen it yet globally, and we haven't tracked it in this run...
+                    if (!existingGlobalNames.includes(nameLower) && !uniqueExtracted[nameLower]) {
+                        uniqueExtracted[nameLower] = {
+                            name: a.name,
+                            price: parseFloat(a.price) || 0,
+                            linkedIngredient: a.linkedIngredient || "",
+                            deductQty: parseFloat(a.deductQty) || 0,
+                            category: menuCat // Assigns it to the category of the item it was found on!
+                        };
+                    }
+                });
+            }
+        });
+        
+        // Save them all to Global Hub
+        let addPromises = [];
+        for (let key in uniqueExtracted) {
+            addPromises.push(addDoc(collection(db, "global_addons"), uniqueExtracted[key]));
+            extractedCount++;
+        }
+        await Promise.all(addPromises);
+        
+        Swal.fire('✅ Extraction Complete!', `Found and copied ${extractedCount} unique add-ons into the Global Hub.`, 'success');
+        window.loadGlobalAddons();
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to extract add-ons.', 'error');
+    }
 };
 
 window.syncGlobalAddonsToMenu = async function() {
@@ -10354,7 +10418,6 @@ window.syncGlobalAddonsToMenu = async function() {
     if (btn) { btn.innerText = "⏳ Scanning & Syncing Menu..."; btn.disabled = true; }
 
     try {
-        // 1. Fetch Global Addons
         const globalSnap = await getDocs(collection(db, "global_addons"));
         let globalAddons = [];
         globalSnap.forEach(d => globalAddons.push({ id: d.id, ...d.data() }));
@@ -10364,19 +10427,23 @@ window.syncGlobalAddonsToMenu = async function() {
             return;
         }
 
-        // 2. Fetch all Menu Items
         const menuSnap = await getDocs(collection(db, "menu"));
         let updateCount = 0;
         let batchPromises = [];
 
         menuSnap.forEach(docSnap => {
             let menuItem = docSnap.data();
-            let menuCat = menuItem.category || "Uncategorized";
+            let menuCat = (menuItem.category || "Uncategorized").toLowerCase();
             let currentAddons = menuItem.addons || [];
             let modified = false;
 
-            // 3. Find matching global addons for this item's category (or universal 'All')
-            let matchingGlobals = globalAddons.filter(ga => ga.category === menuCat || ga.category === "All");
+            // 🔥 THE SMART MATCHING UPGRADE
+            // "Takoyaki" will now successfully match "Bonito Takoyaki" or "Cheesy Takoyaki"!
+            let matchingGlobals = globalAddons.filter(ga => {
+                if (ga.category === "All") return true;
+                let globalCatLower = (ga.category || "").toLowerCase();
+                return menuCat.includes(globalCatLower); 
+            });
 
             matchingGlobals.forEach(ga => {
                 let existingIndex = currentAddons.findIndex(a => a.name.toLowerCase() === ga.name.toLowerCase());
@@ -10402,14 +10469,12 @@ window.syncGlobalAddonsToMenu = async function() {
                 }
             });
 
-            // 4. Update the document if changes were made
             if (modified) {
                 batchPromises.push(updateDoc(doc(db, "menu", docSnap.id), { addons: currentAddons }));
                 updateCount++;
             }
         });
 
-        // Execute all updates simultaneously
         await Promise.all(batchPromises);
         
         Swal.fire({
@@ -10428,7 +10493,7 @@ window.syncGlobalAddonsToMenu = async function() {
 };
 
 window.saveGlobalAddon = async function() {
-    let id = document.getElementById('gaId').value; // We check this to see if it's an Edit!
+    let id = document.getElementById('gaId').value; 
     let name = document.getElementById('gaName').value.trim();
     let price = parseFloat(document.getElementById('gaPrice').value) || 0;
     let qty = parseFloat(document.getElementById('gaQty').value) || 0;
@@ -10442,20 +10507,12 @@ window.saveGlobalAddon = async function() {
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
-        let payload = {
-            name: name, 
-            price: price, 
-            deductQty: qty, 
-            linkedIngredient: ing, 
-            category: cat
-        };
+        let payload = { name: name, price: price, deductQty: qty, linkedIngredient: ing, category: cat };
 
         if (id) {
-            // 🔥 EDIT MODE: Update existing Add-On
             await updateDoc(doc(db, "global_addons", id), payload);
             alert(`✅ Success! ${name} has been updated.`);
         } else {
-            // 🔥 ADD MODE: Create new Add-On
             await addDoc(collection(db, "global_addons"), payload);
             alert(`✅ Success! ${name} added globally.`);
         }
@@ -10463,20 +10520,59 @@ window.saveGlobalAddon = async function() {
         document.getElementById('globalAddonModal').style.display = 'none';
         window.loadGlobalAddons();
     } catch(e) { 
-        console.error(e); 
-        alert("Failed to save."); 
+        console.error(e); alert("Failed to save."); 
     } finally { 
-        btn.innerText = origText; 
-        btn.disabled = false; 
+        btn.innerText = origText; btn.disabled = false; 
     }
 };
 
+// 🔥 CASCADE DELETE UPGRADE
 window.deleteGlobalAddon = async function(id, name) {
-    if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+    let confirmDelete = await Swal.fire({
+        title: `Delete "${name}"?`,
+        html: `Are you sure you want to completely delete this add-on?<br><br><span style="color: #ef4444; font-weight: bold;">This will permanently remove it from the Global Hub AND strip it from every single menu item!</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Yes, Delete Everywhere!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!confirmDelete.isConfirmed) return;
+
+    Swal.fire({ title: 'Deleting & Syncing...', didOpen: () => Swal.showLoading() });
+
     try {
+        // 1. Delete from Global Hub
         await deleteDoc(doc(db, "global_addons", id));
+        
+        // 2. Scan entire menu and strip it from all products!
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let batchPromises = [];
+        let updateCount = 0;
+        
+        menuSnap.forEach(docSnap => {
+            let menuItem = docSnap.data();
+            if (menuItem.addons && Array.isArray(menuItem.addons)) {
+                let originalLength = menuItem.addons.length;
+                let filteredAddons = menuItem.addons.filter(a => a.name.toLowerCase() !== name.toLowerCase());
+                
+                if (filteredAddons.length !== originalLength) {
+                    batchPromises.push(updateDoc(doc(db, "menu", docSnap.id), { addons: filteredAddons }));
+                    updateCount++;
+                }
+            }
+        });
+        
+        await Promise.all(batchPromises);
+
+        Swal.fire('✅ Deleted!', `"${name}" removed from Global Hub and stripped from ${updateCount} menu items.`, 'success');
         window.loadGlobalAddons();
-    } catch(e) { console.error(e); alert("Failed to delete."); }
+    } catch(e) { 
+        console.error(e); 
+        Swal.fire('Error', 'Failed to execute cascade delete.', 'error'); 
+    }
 };
 
 // 🔥 FIX THE PESO SIGN EXCEL BUG! The \uFEFF code forces Excel to read it as UTF-8!
