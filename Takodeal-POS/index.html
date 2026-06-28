@@ -1564,11 +1564,11 @@
           <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
         </div>
 
-        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 12px; color: #64748b; text-transform: uppercase;">
-            <div>Item Name</div>
-            <div style="text-align: center;">System Stock</div>
-            <div style="text-align: center; color: #d97706;">Actual Count</div>
-            <div style="text-align: center; color: #0ea5e9;">Qty Needed</div>
+        <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
+            <div>Item & HQ Status</div>
+            <div style="text-align: center;">Branch Stock</div>
+            <div style="text-align: center; color: #d97706;">Report Status</div>
+            <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
         </div>
 
         <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
