@@ -3713,3 +3713,126 @@ window.processStoreUse = async function() {
         if (btn) { btn.innerText = "📦 Consumables"; btn.disabled = false; }
     }
 };
+
+// ========================================================
+// 📦 INTERNAL STOCK REQUEST ENGINE (CASHIER -> HQ)
+// ========================================================
+window.stockReqItems = [];
+
+window.loadStockRequestUI = async function() {
+    let container = document.getElementById('stockReqList');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching live inventory...</div>';
+
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", window.currentBranch));
+        const snap = await getDocs(q);
+        
+        window.stockReqItems = [];
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            // Exclude secret items
+            let cat = (data.category || "").toLowerCase();
+            if (!cat.includes("prepared batch") && !cat.includes("prep batch")) {
+                window.stockReqItems.push({ id: docSnap.id, ...data });
+            }
+        });
+
+        // Sort alphabetically
+        window.stockReqItems.sort((a, b) => a.name.localeCompare(b.name));
+
+        let html = '';
+        window.stockReqItems.forEach((item, index) => {
+            let safeStock = parseFloat(item.currentStock || 0).toFixed(2);
+            let uom = item.uom || 'units';
+
+            html += `
+            <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
+                <div style="font-weight: bold; color: #334155; font-size: 14px;">
+                    ${item.name} <br><span style="font-size: 11px; color: #94a3b8; font-weight: normal;">${uom}</span>
+                </div>
+                <div style="text-align: center; font-family: monospace; font-size: 14px; color: #64748b;">
+                    ${safeStock}
+                </div>
+                <div>
+                    <input type="number" id="actualCount_${index}" placeholder="0" class="input-box" style="text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px;">
+                </div>
+                <div>
+                    <input type="number" id="requestQty_${index}" placeholder="Qty" class="input-box req-qty-input" data-index="${index}" style="text-align: center; border-color: #bae6fd; background: #f0f9ff; font-weight: bold; color: #0ea5e9; padding: 8px;">
+                </div>
+            </div>`;
+        });
+
+        container.innerHTML = html;
+    } catch (e) {
+        console.error(e); container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load inventory.</div>';
+    }
+};
+
+window.filterStockReq = function() {
+    let input = document.getElementById('stockReqSearch').value.toLowerCase();
+    document.querySelectorAll('.stock-req-row').forEach(row => {
+        if (row.getAttribute('data-name').includes(input)) row.style.display = 'grid';
+        else row.style.display = 'none';
+    });
+};
+
+window.submitStockRequest = async function() {
+    let requestItems = [];
+    let inputs = document.querySelectorAll('.req-qty-input');
+
+    inputs.forEach(input => {
+        let reqQty = parseFloat(input.value);
+        if (reqQty > 0) {
+            let idx = input.getAttribute('data-index');
+            let itemData = window.stockReqItems[idx];
+            
+            // Get what they typed as the actual physical count
+            let actualCountEl = document.getElementById(`actualCount_${idx}`);
+            let actualCount = actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : parseFloat(itemData.currentStock || 0);
+
+            // Structure it EXACTLY like a Franchisee PO, but attach the variance data!
+            requestItems.push({
+                itemName: itemData.name,
+                qty: reqQty, // This is what the manager's dispatch cart needs
+                uom: itemData.uom,
+                sourceId: itemData.id,
+                systemStock: parseFloat(itemData.currentStock || 0),
+                physicalStock: actualCount,
+                category: itemData.category || "Ingredients",
+                purchaseUom: itemData.purchaseUom || itemData.uom,
+                convRate: itemData.conversionRate || 1
+            });
+        }
+    });
+
+    if (requestItems.length === 0) {
+        Swal.fire('Empty Request', 'Please enter a requested quantity for at least one item.', 'warning');
+        return;
+    }
+
+    try {
+        Swal.fire({ title: 'Sending to HQ...', didOpen: () => { Swal.showLoading(); } });
+
+        await addDoc(collection(db, "purchase_orders"), {
+            branch: window.currentBranch,
+            items: requestItems,
+            status: "Pending",
+            type: "Internal Request", // Distinguishes it from Franchisee POs
+            requestedBy: window.cashierName || "Staff",
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '✅ Request Sent!',
+            text: 'HQ has been notified of your stock request.',
+            icon: 'success', customClass: { popup: 'rounded-2xl' }
+        });
+
+        // Clear the form
+        window.loadStockRequestUI();
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
+    }
+};
