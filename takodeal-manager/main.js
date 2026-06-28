@@ -12345,3 +12345,86 @@ window.viewStoreUseLogs = async function() {
         console.error(e); Swal.fire('Error', 'Failed to load history logs.', 'error');
     }
 };
+
+// ========================================================
+// 🔔 REAL-TIME LOGISTICS NOTIFICATION ENGINE
+// ========================================================
+window.poUnsubscribe = null;
+
+window.startPOListener = function() {
+    if (window.poUnsubscribe) window.poUnsubscribe(); // Clear old listener
+
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+
+    // 🔒 Listen for Pending Requests (Master hears all, Franchisee hears their own)
+    let q = query(collection(db, "purchase_orders"), where("status", "==", "Pending"));
+    if (isFranchisee) {
+        q = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "==", "Pending"));
+    }
+
+    let initialLoad = true;
+
+    window.poUnsubscribe = window.onSnapshot(q, (snapshot) => {
+        let pendingCount = snapshot.docs.length;
+        let newOrderArrived = false;
+
+        // Check if the change is a BRAND NEW request (not just the app loading)
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added" && !initialLoad) {
+                newOrderArrived = true;
+            }
+        });
+
+        // 1. Update the Red Badge on the Sidebar
+        let badge = document.getElementById('poNotificationBadge');
+        if (badge) {
+            if (pendingCount > 0) {
+                badge.innerText = pendingCount;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // 2. Auto-Refresh the Dispatch Table if the Manager is currently looking at it!
+        let dispatchView = document.getElementById('view-dispatch');
+        if (dispatchView && dispatchView.classList.contains('active')) {
+            if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+        }
+
+        // 3. Trigger the DING! and the Pop-up Toast
+        if (newOrderArrived) {
+            window.playManagerPing();
+            Swal.fire({
+                title: '🔔 New Stock Request!',
+                text: 'A branch just reported an inventory variance or sent a Purchase Order.',
+                icon: 'info',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 5000,
+                customClass: { popup: 'shadow-2xl border border-blue-200' }
+            });
+        }
+
+        initialLoad = false;
+    });
+};
+
+// 🔊 The Audio Engine (Loud Bell Sound)
+window.playManagerPing = function() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'bell';
+        osc.frequency.setValueAtTime(987.77, ctx.currentTime); // High pitch B5
+        gain.gain.setValueAtTime(1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.8);
+    } catch (e) { console.log("Audio blocked by browser policy."); }
+};
