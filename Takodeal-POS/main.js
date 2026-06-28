@@ -3715,51 +3715,79 @@ window.processStoreUse = async function() {
 };
 
 // ========================================================
-// 📦 INTERNAL STOCK REQUEST ENGINE (CASHIER -> HQ)
+// 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES)
 // ========================================================
-window.stockReqItems = [];
+window.stockReqItemsFlat = [];
 
 window.loadStockRequestUI = async function() {
     let container = document.getElementById('stockReqList');
     if (!container) return;
-    container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching live inventory...</div>';
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching live inventory & HQ status...</div>';
 
     try {
-        // 🔥 THE FIX: Now using sessionUser.branch!
-        const q = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch));
-        const snap = await getDocs(q);
-        
-        window.stockReqItems = [];
-        snap.forEach(docSnap => {
+        // 1. Fetch Branch Inventory
+        const qBranch = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch));
+        const snapBranch = await getDocs(qBranch);
+
+        // 2. Fetch Main Office Inventory (To see if HQ has stock!)
+        const qHQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const snapHQ = await getDocs(qHQ);
+        let hqStockMap = {};
+        snapHQ.forEach(doc => { hqStockMap[doc.data().name] = parseFloat(doc.data().currentStock || 0); });
+
+        // 3. Process & Group by Category
+        let itemsByCategory = {};
+        snapBranch.forEach(docSnap => {
             let data = docSnap.data();
-            let cat = (data.category || "").toLowerCase();
-            if (!cat.includes("prepared batch") && !cat.includes("prep batch")) {
-                window.stockReqItems.push({ id: docSnap.id, ...data });
+            let cat = data.category || "Uncategorized";
+            if (!cat.toLowerCase().includes("prepared batch") && !cat.toLowerCase().includes("prep batch")) {
+                if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
+                itemsByCategory[cat].push({ id: docSnap.id, ...data });
             }
         });
 
-        window.stockReqItems.sort((a, b) => a.name.localeCompare(b.name));
-
+        window.stockReqItemsFlat = [];
         let html = '';
-        window.stockReqItems.forEach((item, index) => {
-            let safeStock = parseFloat(item.currentStock || 0).toFixed(2);
-            let uom = item.uom || 'units';
 
-            html += `
-            <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
-                <div style="font-weight: bold; color: #334155; font-size: 14px;">
-                    ${item.name} <br><span style="font-size: 11px; color: #94a3b8; font-weight: normal;">${uom}</span>
-                </div>
-                <div style="text-align: center; font-family: monospace; font-size: 14px; color: #64748b;">
-                    ${safeStock}
-                </div>
-                <div>
-                    <input type="number" id="actualCount_${index}" placeholder="0" class="input-box" style="text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px;">
-                </div>
-                <div>
-                    <input type="number" id="requestQty_${index}" placeholder="Qty" class="input-box req-qty-input" data-index="${index}" style="text-align: center; border-color: #bae6fd; background: #f0f9ff; font-weight: bold; color: #0ea5e9; padding: 8px;">
-                </div>
-            </div>`;
+        Object.keys(itemsByCategory).sort().forEach(category => {
+            // Category Header
+            html += `<div class="stock-req-category" style="background: #e2e8f0; padding: 10px 15px; font-weight: bold; color: #334155; margin-top: 10px; font-size: 14px; text-transform: uppercase; border-radius: 6px;">📁 ${category}</div>`;
+
+            let items = itemsByCategory[category];
+            items.sort((a, b) => a.name.localeCompare(b.name));
+
+            items.forEach((item) => {
+                window.stockReqItemsFlat.push(item);
+                let safeStock = parseFloat(item.currentStock || 0).toFixed(2);
+                
+                // HQ Availability Badge
+                let hqStock = hqStockMap[item.name] || 0;
+                let hqStatus = hqStock > 0
+                    ? `<span style="color: #16a34a; font-weight: bold; font-size: 10px; background: #dcfce7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🟢 HQ HAS STOCK</span>`
+                    : `<span style="color: #dc2626; font-weight: bold; font-size: 10px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🔴 HQ OUT OF STOCK</span>`;
+
+                html += `
+                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
+                    <div style="font-weight: bold; color: #334155; font-size: 14px;">
+                        ${item.name} <br>
+                        ${hqStatus}
+                    </div>
+                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column;">
+                        <strong style="font-size: 14px; color: #334155;">${safeStock}</strong>
+                        <span style="font-size: 10px; color: #94a3b8;">${item.uom || 'units'}</span>
+                    </div>
+                    <div>
+                        <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
+                            <option value="None">--- Normal ---</option>
+                            <option value="Low Stock">⚠️ Low Stock</option>
+                            <option value="Out of Stock">❌ Out of Stock</option>
+                        </select>
+                    </div>
+                    <div>
+                        <input type="number" id="actualCount_${item.id}" placeholder="Count?" class="input-box" style="text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; display: none; width: 100%; box-sizing: border-box;">
+                    </div>
+                </div>`;
+            });
         });
 
         container.innerHTML = html;
@@ -3768,30 +3796,71 @@ window.loadStockRequestUI = async function() {
     }
 };
 
+window.toggleActualCount = function(id) {
+    let select = document.getElementById(`reqType_${id}`);
+    let actualInput = document.getElementById(`actualCount_${id}`);
+    
+    if (select.value === "Low Stock") {
+        actualInput.style.display = "block";
+        actualInput.value = "";
+        actualInput.readOnly = false;
+        actualInput.style.background = "#fffbeb";
+        actualInput.style.borderColor = "#fcd34d";
+        actualInput.style.color = "#d97706";
+    } else if (select.value === "Out of Stock") {
+        actualInput.style.display = "block";
+        actualInput.value = "0"; // Auto-fill 0 to save them a headache!
+        actualInput.readOnly = true; 
+        actualInput.style.background = "#fee2e2";
+        actualInput.style.borderColor = "#f87171";
+        actualInput.style.color = "#dc2626";
+    } else {
+        actualInput.style.display = "none";
+        actualInput.value = "";
+    }
+};
+
 window.filterStockReq = function() {
     let input = document.getElementById('stockReqSearch').value.toLowerCase();
-    document.querySelectorAll('.stock-req-row').forEach(row => {
-        if (row.getAttribute('data-name').includes(input)) row.style.display = 'grid';
-        else row.style.display = 'none';
+    let rows = document.querySelectorAll('.stock-req-row');
+    let categories = document.querySelectorAll('.stock-req-category');
+
+    rows.forEach(row => {
+        if (row.getAttribute('data-name').includes(input)) {
+            row.style.display = 'grid';
+            row.classList.add('visible-row');
+        } else {
+            row.style.display = 'none';
+            row.classList.remove('visible-row');
+        }
+    });
+
+    categories.forEach(cat => {
+        let nextEl = cat.nextElementSibling;
+        let hasVisible = false;
+        while(nextEl && nextEl.classList.contains('stock-req-row')) {
+            if (nextEl.classList.contains('visible-row')) { hasVisible = true; break; }
+            nextEl = nextEl.nextElementSibling;
+        }
+        cat.style.display = hasVisible || input === '' ? 'block' : 'none';
     });
 };
 
 window.submitStockRequest = async function() {
     let requestItems = [];
-    let inputs = document.querySelectorAll('.req-qty-input');
+    let selects = document.querySelectorAll('.req-type-select');
 
-    inputs.forEach(input => {
-        let reqQty = parseFloat(input.value);
-        if (reqQty > 0) {
-            let idx = input.getAttribute('data-index');
-            let itemData = window.stockReqItems[idx];
-            
-            let actualCountEl = document.getElementById(`actualCount_${idx}`);
-            let actualCount = actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : parseFloat(itemData.currentStock || 0);
+    selects.forEach(select => {
+        if (select.value !== "None") {
+            let id = select.getAttribute('data-id');
+            let itemData = window.stockReqItemsFlat.find(i => i.id === id);
+            let actualCountEl = document.getElementById(`actualCount_${id}`);
+            let actualCount = actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
 
             requestItems.push({
                 itemName: itemData.name,
-                qty: reqQty, 
+                qty: 0, // 0 For now! Manager will decide the real qty in the Dispatch app!
+                requestType: select.value, 
                 uom: itemData.uom,
                 sourceId: itemData.id,
                 systemStock: parseFloat(itemData.currentStock || 0),
@@ -3804,28 +3873,22 @@ window.submitStockRequest = async function() {
     });
 
     if (requestItems.length === 0) {
-        Swal.fire('Empty Request', 'Please enter a requested quantity for at least one item.', 'warning');
-        return;
+        return Swal.fire('Empty Request', 'Please mark at least one item as Low Stock or Out of Stock.', 'warning');
     }
 
     try {
         Swal.fire({ title: 'Sending to HQ...', didOpen: () => { Swal.showLoading(); } });
 
         await addDoc(collection(db, "purchase_orders"), {
-            branch: sessionUser.branch, // 🔥 THE FIX
+            branch: sessionUser.branch,
             items: requestItems,
             status: "Pending",
             type: "Internal Request", 
-            requestedBy: sessionUser.cashierName || "Staff", // 🔥 THE FIX
+            requestedBy: sessionUser.cashierName || "Staff",
             timestamp: serverTimestamp()
         });
 
-        Swal.fire({
-            title: '✅ Request Sent!',
-            text: 'HQ has been notified of your stock request.',
-            icon: 'success', customClass: { popup: 'rounded-2xl' }
-        });
-
+        Swal.fire('✅ Report Sent!', 'HQ has received your variance report and will dispatch stock shortly.', 'success');
         window.loadStockRequestUI();
 
     } catch (e) {
