@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebas
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+window.onSnapshot = onSnapshot;
 
 const firebaseConfig = {
   apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -1579,7 +1580,7 @@ window.loadDispatchLogs = async function() {
         
         poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
             <td style="padding:15px;">
-                <div style="font-weight:900; color:#d97706; font-size:15px;">📝 Purchase Order from ${po.branch}</div>
+                <div style="font-weight:900; color:#d97706; font-size:15px;">${po.type === 'Internal Request' ? '📢 Stock Issue Report' : '📝 Purchase Order'} from ${po.branch}</div>
                 <div style="font-size:12px; color:#b45309; margin-top: 4px; font-weight:bold;">Requested by: ${po.requestedBy}</div>
                 <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
             </td>
