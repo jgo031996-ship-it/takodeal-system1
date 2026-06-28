@@ -7977,13 +7977,24 @@ window.calculateGrabFinancials = async function() {
     if(document.getElementById('grabRemainingLoan')) document.getElementById('grabRemainingLoan').innerText = `₱${currentLoanBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
     try {
-        let startDateInput = document.getElementById('dashStartDate').value;
-        let endDateInput = document.getElementById('dashEndDate').value;
+        // 🔥 THE FIX 1: Safely define the Start and End dates for the query!
+        let startDateInputEl = document.getElementById('dashStartDate');
+        let endDateInputEl = document.getElementById('dashEndDate');
+        
+        let startDateInput = startDateInputEl ? startDateInputEl.value : null;
+        let endDateInput = endDateInputEl ? endDateInputEl.value : null;
         
         if (!startDateInput || !endDateInput) {
             let todayStr = new Date().toISOString().split('T')[0];
             startDateInput = todayStr; endDateInput = todayStr;
         }
+
+        let startOfDay = new Date(startDateInput + 'T00:00:00');
+        let endOfDay = new Date(endDateInput + 'T23:59:59');
+        
+        // 🔥 THE FIX 2: Calculate how many days they selected to compute the Loan Cut!
+        let daysDiff = Math.round((endOfDay - startOfDay) / (1000 * 60 * 60 * 24));
+        if (daysDiff < 1) daysDiff = 1;
 
         let dashFilter = document.getElementById('dashBranchFilter');
         let selectedBranch = dashFilter ? dashFilter.value : "All";
@@ -8017,6 +8028,20 @@ window.calculateGrabFinancials = async function() {
             payoutQ = query(collection(db, "grab_payouts"), where("branch", "==", selectedBranch), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
         }
         const payoutSnap = await getDocs(payoutQ);
+
+        // 🔥 THE FIX 3: Calculate the ACTUAL payouts logged by the cashiers!
+        let actualGrabPayout = 0;
+        let payoutLogsHtml = '';
+        payoutSnap.forEach(docSnap => {
+            let p = docSnap.data();
+            let pAmt = parseFloat(p.amount) || 0;
+            actualGrabPayout += pAmt;
+            payoutLogsHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:2px 0;">
+                <span style="color:#64748b; font-size:12px;">${p.dateStr} (${p.branch})</span>
+                <strong style="color:#0f172a; font-size:12px;">₱${pAmt.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>`;
+        });
+        if (actualGrabPayout === 0) payoutLogsHtml = `<div style="color:#94a3b8; font-size:11px; font-style:italic;">No payouts logged for this period.</div>`;
 
         // 3. Build UI
         let breakdownHtml = `
@@ -8059,8 +8084,9 @@ window.calculateGrabFinancials = async function() {
         let finalExpectedPayout = totalGrabGross - globalCommission - globalLoanCut;
         
         let variance = actualGrabPayout - finalExpectedPayout;
-        let varianceColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#10b981' : '#475569');
-        let varianceText = variance === 0 ? "Perfect Match" : `₱${variance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        // Allowing a generous 5 peso tolerance for floating point rounding issues!
+        let varianceColor = variance < -5 ? '#dc2626' : (variance > 5 ? '#10b981' : '#475569');
+        let varianceText = Math.abs(variance) <= 5 ? "Perfect Match" : `₱${variance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
         // Inject data into the cards
         if (document.getElementById('grabTotalGross')) document.getElementById('grabTotalGross').innerText = `₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
@@ -8085,7 +8111,7 @@ window.calculateGrabFinancials = async function() {
                         </div>
                     </div>
 
-                    <div style="display: flex; justify-content: space-between; background: ${variance < 0 ? '#fef2f2' : (variance > 0 ? '#f0fdf4' : '#f8fafc')}; padding: 10px; border-radius: 6px; border: 1px solid ${variance < 0 ? '#fecaca' : (variance > 0 ? '#bbf7d0' : '#e2e8f0')};">
+                    <div style="display: flex; justify-content: space-between; background: ${variance < -5 ? '#fef2f2' : (variance > 5 ? '#f0fdf4' : '#f8fafc')}; padding: 10px; border-radius: 6px; border: 1px solid ${variance < -5 ? '#fecaca' : (variance > 5 ? '#bbf7d0' : '#e2e8f0')};">
                         <span style="font-weight: bold; color: ${varianceColor}; font-size: 15px;">RECONCILIATION VARIANCE:</span>
                         <span style="font-weight: 900; color: ${varianceColor}; font-size: 16px;">${varianceText}</span>
                     </div>
