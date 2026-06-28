@@ -1964,7 +1964,6 @@ window.loadMenuEditor = async function() {
   if(!tbody) return;
   tbody.innerHTML = '<tr><td colspan="4" class="text-center">Fetching global menu...</td></tr>';
 
-  // Grab the selected filter category
   let catFilterEl = document.getElementById('menuEditorCatFilter');
   let selectedCat = catFilterEl ? catFilterEl.value : 'All';
 
@@ -1980,14 +1979,12 @@ window.loadMenuEditor = async function() {
     let items = [];
     let uniqueCategories = new Set();
 
-    // Collect all items and dynamically find all categories
     snap.forEach(doc => {
         let data = doc.data();
         items.push({ id: doc.id, ...data });
         if (data.category) uniqueCategories.add(data.category.trim());
     });
 
-    // Populate the dropdown with the categories found in the database
     if (catFilterEl) {
         let optionsHtml = '<option value="All">All Categories</option>';
         Array.from(uniqueCategories).sort().forEach(cat => {
@@ -1997,20 +1994,20 @@ window.loadMenuEditor = async function() {
         catFilterEl.innerHTML = optionsHtml;
     }
 
-    // Sort items alphabetically
     items.sort((a, b) => a.name.localeCompare(b.name));
 
     let count = 0;
     items.forEach(data => {
       let cat = data.category || 'Uncategorized';
-      
-      // 🔥 THE FILTER: Skip items that don't match the selected category
       if (selectedCat !== 'All' && cat !== selectedCat) return;
       
       count++;
       let safePrice = parseFloat(data.price) || 0;
       
-      // 🖼️ Generate Thumbnail or Placeholder
+      // 🔥 Escape apostrophes so names like "Chef's Special" don't break the code!
+      let safeName = data.name ? data.name.replace(/'/g, "\\'") : 'Unnamed';
+      let safeCat = cat.replace(/'/g, "\\'");
+      
       let imgHtml = data.image 
           ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">` 
           : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">🍲</div>`;
@@ -2021,14 +2018,15 @@ window.loadMenuEditor = async function() {
           <td><span class="badge badge-closed">${cat}</span></td>
           <td style="font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
           <td style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <button class="btn-refresh" onclick="editMenuItem('${data.id}', '${data.name}', ${safePrice}); setTimeout(function(){ if(window.loadCloneDropdown) window.loadCloneDropdown(); }, 200);">✏️ Edit Price</button>
+            
+            <button class="btn-refresh" onclick="window.editMenuItem('${data.id}', '${safeName}', '${safeCat}', ${safePrice})">✏️ Edit Details</button>
             
             <label style="cursor: pointer; background: #f0fdf4; border: 1px solid #16a34a; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin: 0; display: inline-flex; align-items: center;">
                 📷 Upload Pic
                 <input type="file" accept="image/jpeg, image/png, image/webp" style="display:none;" onchange="window.uploadMenuImage(event, '${data.id}')">
             </label>
 
-            <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${data.name}')">🗑️ Delete</button>
+            <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${safeName}')">🗑️ Delete</button>
           </td>
         </tr>
       `;
@@ -2055,7 +2053,6 @@ window.addMenuItem = async function () {
   if (isNaN(price) || price < 0) { alert("❌ Error: Invalid price."); return; }
 
   try {
-    // Saves it directly to the cloud!
     await addDoc(collection(db, "menu"), { name: name, category: category, price: price });
     alert(`✅ Success! ${name} added to the global menu.`);
     window.loadMenuEditor();
@@ -2064,31 +2061,64 @@ window.addMenuItem = async function () {
   }
 };
 
-window.editMenuItem = async function (docId, name, currentPrice) {
-  let newPriceStr = prompt(`Enter new price for ${name}:`, currentPrice);
-  if (!newPriceStr) return;
+window.editMenuItem = async function (docId, currentName, currentCat, currentPrice) {
+    // 🔥 THE FIX: A beautiful, all-in-one edit form instead of an ugly prompt!
+    const { value: formValues, isConfirmed } = await Swal.fire({
+        title: '✏️ Edit Menu Item',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Item Name:</label>
+                <input type="text" id="swal-menu-name" class="input-box" value="${currentName}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
 
-  let newPrice = parseFloat(newPriceStr);
-  if (isNaN(newPrice) || newPrice < 0) { alert("❌ Error: Invalid price."); return; }
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Category:</label>
+                <input type="text" id="swal-menu-cat" class="input-box" value="${currentCat}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
 
-  try {
-    await updateDoc(doc(db, "menu", docId), { price: newPrice, basePrice: newPrice });
-    alert(`✅ Success! ${name} is now ₱${newPrice.toFixed(2)}.`);
-    window.loadMenuEditor();
-  } catch (error) {
-    console.error(error); alert("❌ Failed to update price.");
-  }
-  // Wake up the cloning dropdown!
-    if (typeof window.loadCloneDropdown === "function") {
-        window.loadCloneDropdown();
-    }
-  // The automatic Wake-Up trigger for the clone dropdown
-    setTimeout(() => {
-        if (typeof window.loadCloneDropdown === "function") {
-            window.loadCloneDropdown();
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Base Price (₱):</label>
+                <input type="number" id="swal-menu-price" class="input-box" value="${currentPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonColor: '#0ea5e9',
+        confirmButtonText: 'Save Changes',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return {
+                name: document.getElementById('swal-menu-name').value.trim(),
+                category: document.getElementById('swal-menu-cat').value.trim(),
+                price: parseFloat(document.getElementById('swal-menu-price').value)
+            };
         }
-    }, 200);
-  };
+    });
+
+    if (!isConfirmed || !formValues.name || isNaN(formValues.price)) return;
+
+    try {
+        await updateDoc(doc(db, "menu", docId), { 
+            name: formValues.name, 
+            category: formValues.category, 
+            price: formValues.price, 
+            basePrice: formValues.price 
+        });
+        
+        Swal.fire({
+            title: '✅ Saved!',
+            text: `${formValues.name} has been successfully updated.`,
+            icon: 'success',
+            timer: 1500,
+            showConfirmButton: false,
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        window.loadMenuEditor();
+    } catch (error) {
+        console.error(error); Swal.fire('Error', 'Failed to update price.', 'error');
+    }
+
+    // Wake up the cloning dropdown!
+    if (typeof window.loadCloneDropdown === "function") window.loadCloneDropdown();
+    setTimeout(() => { if (typeof window.loadCloneDropdown === "function") window.loadCloneDropdown(); }, 200);
+};
 
 // --- 🖼️ IMAGE UPLOAD ENGINE ---
 window.uploadMenuImage = async function(event, docId) {
@@ -10219,14 +10249,14 @@ window.viewShiftReportModal = function(shiftId) {
 };
 
 // ========================================================
-// 🍟 GLOBAL ADD-ONS CRUD ENGINE (WITH MASS SYNC)
+// 🍟 GLOBAL ADD-ONS CRUD ENGINE (WITH MASS SYNC & EDITING)
 // ========================================================
 window.loadGlobalAddons = async function() {
     const tbody = document.getElementById('globalAddonsBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching Add-Ons...</td></tr>';
     
-    // 🔥 INJECT THE MASS SYNC BUTTON DYNAMICALLY ABOVE THE TABLE
+    // INJECT THE MASS SYNC BUTTON DYNAMICALLY ABOVE THE TABLE
     let tableContainer = tbody.closest('table').parentElement;
     if (!document.getElementById('btnMassSyncAddons')) {
         let syncBtnHtml = `
@@ -10248,6 +10278,11 @@ window.loadGlobalAddons = async function() {
         let html = '';
         snap.forEach(doc => {
             let d = doc.data();
+            // Escape strings so apostrophes don't break the Edit button!
+            let safeName = d.name ? d.name.replace(/'/g, "\\'") : '';
+            let safeIng = d.linkedIngredient ? d.linkedIngredient.replace(/'/g, "\\'") : '';
+            let safeCat = d.category ? d.category.replace(/'/g, "\\'") : 'All';
+
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="font-weight: bold; color: #1e293b; padding: 12px;">${d.name}</td>
@@ -10255,12 +10290,49 @@ window.loadGlobalAddons = async function() {
                     <td style="color: #64748b; padding: 12px;">${d.linkedIngredient || 'None'} <span style="font-size:11px;">(Deducts: ${d.deductQty || 0})</span></td>
                     <td style="padding: 12px;"><span class="badge badge-open">${d.category || 'All'}</span></td>
                     <td style="padding: 12px; display:flex; gap: 5px;">
-                        <button onclick="window.deleteGlobalAddon('${doc.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>
+                        <button onclick="window.openGlobalAddonModal('${doc.id}', '${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}', '${safeCat}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
+                        <button onclick="window.deleteGlobalAddon('${doc.id}', '${safeName}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>
                     </td>
                 </tr>
             `;
         });
         tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No Global Add-Ons setup yet.</td></tr>';
+    } catch(e) { console.error(e); }
+};
+
+window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qty = '0', linkedIng = '', cat = 'All') {
+    // 1. Fill the inputs with the data (Empty if creating a new one, filled if editing!)
+    document.getElementById('gaId').value = id;
+    document.getElementById('gaName').value = name;
+    document.getElementById('gaPrice').value = price;
+    document.getElementById('gaQty').value = qty;
+    
+    let catEl = document.getElementById('gaCategory');
+    if (catEl) catEl.value = cat;
+
+    // Change the modal button text so the user knows if they are Editing or Adding
+    let btn = document.getElementById('btnSaveGA');
+    if (btn) btn.innerText = id ? "💾 Update Add-On" : "💾 Save New Add-On";
+
+    document.getElementById('globalAddonModal').style.display = 'flex';
+    
+    let select = document.getElementById('gaIngredient');
+    select.innerHTML = '<option value="">Scanning inventory...</option>';
+    try {
+        const snap = await getDocs(collection(db, "inventory"));
+        let html = '<option value="">-- No Linked Ingredient --</option>';
+        
+        let invItems = [];
+        snap.forEach(d => invItems.push(d.data().name));
+        invItems.sort();
+
+        // Check if this item is the linked one to auto-select it!
+        invItems.forEach(invName => { 
+            let isSelected = (invName === linkedIng) ? "selected" : "";
+            html += `<option value="${invName}" ${isSelected}>${invName}</option>`; 
+        });
+        
+        select.innerHTML = html;
     } catch(e) { console.error(e); }
 };
 
@@ -10355,24 +10427,8 @@ window.syncGlobalAddonsToMenu = async function() {
     }
 };
 
-window.openGlobalAddonModal = async function() {
-    document.getElementById('gaId').value = '';
-    document.getElementById('gaName').value = '';
-    document.getElementById('gaPrice').value = '0';
-    document.getElementById('gaQty').value = '0';
-    document.getElementById('globalAddonModal').style.display = 'flex';
-    
-    let select = document.getElementById('gaIngredient');
-    select.innerHTML = '<option value="">Scanning inventory...</option>';
-    try {
-        const snap = await getDocs(collection(db, "inventory"));
-        let html = '<option value="">-- No Linked Ingredient --</option>';
-        snap.forEach(d => { html += `<option value="${d.data().name}">${d.data().name}</option>`; });
-        select.innerHTML = html;
-    } catch(e) { console.error(e); }
-};
-
 window.saveGlobalAddon = async function() {
+    let id = document.getElementById('gaId').value; // We check this to see if it's an Edit!
     let name = document.getElementById('gaName').value.trim();
     let price = parseFloat(document.getElementById('gaPrice').value) || 0;
     let qty = parseFloat(document.getElementById('gaQty').value) || 0;
@@ -10382,17 +10438,37 @@ window.saveGlobalAddon = async function() {
     if (!name) { alert("Add-on name is required!"); return; }
     
     let btn = document.getElementById('btnSaveGA');
+    let origText = btn.innerText;
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
-        await addDoc(collection(db, "global_addons"), {
-            name: name, price: price, deductQty: qty, linkedIngredient: ing, category: cat
-        });
-        alert(`✅ Success! ${name} added globally.`);
+        let payload = {
+            name: name, 
+            price: price, 
+            deductQty: qty, 
+            linkedIngredient: ing, 
+            category: cat
+        };
+
+        if (id) {
+            // 🔥 EDIT MODE: Update existing Add-On
+            await updateDoc(doc(db, "global_addons", id), payload);
+            alert(`✅ Success! ${name} has been updated.`);
+        } else {
+            // 🔥 ADD MODE: Create new Add-On
+            await addDoc(collection(db, "global_addons"), payload);
+            alert(`✅ Success! ${name} added globally.`);
+        }
+
         document.getElementById('globalAddonModal').style.display = 'none';
         window.loadGlobalAddons();
-    } catch(e) { console.error(e); alert("Failed to save."); } 
-    finally { btn.innerText = "💾 Save Add-On"; btn.disabled = false; }
+    } catch(e) { 
+        console.error(e); 
+        alert("Failed to save."); 
+    } finally { 
+        btn.innerText = origText; 
+        btn.disabled = false; 
+    }
 };
 
 window.deleteGlobalAddon = async function(id, name) {
