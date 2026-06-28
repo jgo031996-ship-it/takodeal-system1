@@ -1376,6 +1376,11 @@
         <div class="nav-item-text">Menu Toggle</div>
       </div>
 
+      <div class="nav-item" id="nav-stockreq" onclick="switchView('stockreq'); window.loadStockRequestUI();">
+        <span style="font-size: 18px;">📦</span>
+        <div class="nav-item-text">Request Stock</div>
+      </div>
+      
       <div class="nav-item" id="nav-waste" onclick="switchView('waste'); window.loadWasteItems(); window.loadWasteHistory();">
         <span style="font-size: 18px;">🗑️</span>
         <div class="nav-item-text">Log Waste</div>
@@ -1539,6 +1544,37 @@
             </table>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="view-container" id="view-stockreq" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 900px; margin: 0 auto; border: 1px solid var(--border);">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
+          <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.5rem;">📦 Request Stock from HQ</h2>
+            <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Report your physical count. HQ will see the variance and dispatch new stock.</p>
+          </div>
+          <button onclick="window.submitStockRequest()" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.3);">
+            ✈️ Send Request to HQ
+          </button>
+        </div>
+
+        <div style="margin-bottom: 15px;">
+          <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 12px; color: #64748b; text-transform: uppercase;">
+            <div>Item Name</div>
+            <div style="text-align: center;">System Stock</div>
+            <div style="text-align: center; color: #d97706;">Actual Count</div>
+            <div style="text-align: center; color: #0ea5e9;">Qty Needed</div>
+        </div>
+
+        <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
+          <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
+        </div>
+
       </div>
     </div>
     
