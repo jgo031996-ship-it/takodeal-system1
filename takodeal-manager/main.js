@@ -11388,7 +11388,7 @@ window.loadForecasterEngine = async function() {
 };
 
 // ========================================================
-// 📝 MASTER GENERAL AUDIT ENGINE (WITH SMART SYNC)
+// 📝 MASTER GENERAL AUDIT ENGINE (WITH SMART SYNC & CONVERSIONS)
 // ========================================================
 window.globalAuditItems = [];
 
@@ -11423,7 +11423,13 @@ window.loadAuditModalItems = async function() {
                 category: data.category || 'Uncategorized',
                 systemQty: parseFloat(data.currentStock) || 0,
                 uom: data.uom || 'units',
-                tempValue: undefined // Memory for search filtering
+                purchUom: data.purchaseUom || data.uom || 'units',
+                convRate: parseFloat(data.conversionRate) || 1,
+                
+                // Memories for when they use the search bar
+                tempRawValue: undefined, 
+                tempConvRate: 1, 
+                tempDisplayUom: data.uom || 'units'
             });
         });
 
@@ -11446,15 +11452,35 @@ window.renderAuditModalItems = function() {
         if (search && !item.name.toLowerCase().includes(search) && !item.category.toLowerCase().includes(search)) return;
 
         // Restore value from memory if they previously typed it
-        let displayValue = item.tempValue !== undefined ? item.tempValue : '';
+        let displayValue = item.tempRawValue !== undefined ? item.tempRawValue : '';
+
+        // 🧠 THE SMART UOM DROPDOWN
+        let uomDropdownHtml = '';
+        if (item.purchUom !== item.uom && item.convRate !== 1) {
+            let selBase = item.tempConvRate === 1 ? 'selected' : '';
+            let selPurch = item.tempConvRate === item.convRate ? 'selected' : '';
+            
+            uomDropdownHtml = `
+                <select onchange="window.globalAuditItems[${index}].tempConvRate = parseFloat(this.options[this.selectedIndex].dataset.conv); window.globalAuditItems[${index}].tempDisplayUom = this.options[this.selectedIndex].text;" style="padding: 10px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; background: #fffcf0; color: #92400e; font-weight: bold; outline: none; cursor: pointer; box-sizing: border-box; height: 100%;">
+                    <option value="base" data-conv="1" ${selBase}>${item.uom}</option>
+                    <option value="purch" data-conv="${item.convRate}" ${selPurch}>${item.purchUom}</option>
+                </select>
+            `;
+        } else {
+            // No conversion available, just display standard unit text
+            uomDropdownHtml = `<span style="padding: 11px 10px; background: #f8fafc; color: #64748b; border: 2px solid #e2e8f0; border-left: none; border-radius: 0 6px 6px 0; font-size: 11px; font-weight: bold; display: flex; align-items: center; box-sizing: border-box; height: 100%;">${item.uom}</span>`;
+        }
 
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 12px; font-weight: bold; color: #1e293b; font-size: 14px;">${item.name}</td>
                 <td style="padding: 12px; text-align: center;"><span class="badge badge-closed">${item.category}</span></td>
                 <td style="padding: 12px; text-align: center; font-weight: bold; color: #64748b; font-size: 15px;">${item.systemQty.toFixed(1)} <span style="font-size:11px; font-weight:normal;">${item.uom}</span></td>
-                <td style="padding: 12px; text-align: center; border-left: 2px dashed #e2e8f0; background: #fffcf0;">
-                    <input type="number" onchange="window.globalAuditItems[${index}].tempValue = parseFloat(this.value)" value="${displayValue}" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; max-width: 120px; padding: 10px; border: 2px solid #fdba74; border-radius: 6px; text-align: center; font-weight: 900; color: #ea580c; font-size: 16px; outline: none;">
+                <td style="padding: 12px; border-left: 2px dashed #e2e8f0; background: #fffcf0;">
+                    <div style="display: flex; justify-content: center; align-items: stretch; max-width: 180px; margin: 0 auto; height: 42px;">
+                        <input type="number" onchange="window.globalAuditItems[${index}].tempRawValue = parseFloat(this.value)" value="${displayValue}" placeholder="${item.systemQty.toFixed(1)}" style="flex: 1; width: 100%; padding: 10px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; color: #ea580c; font-size: 16px; outline: none; box-sizing: border-box; height: 100%;">
+                        ${uomDropdownHtml}
+                    </div>
                 </td>
             </tr>
         `;
@@ -11479,8 +11505,18 @@ window.submitGeneralAudit = async function() {
         for (let i = 0; i < window.globalAuditItems.length; i++) {
             let item = window.globalAuditItems[i];
             
-            // If they didn't type anything, assume the count is perfect
-            let physicalQty = item.tempValue !== undefined && !isNaN(item.tempValue) ? item.tempValue : item.systemQty;
+            // 🧠 CALCULATE FINAL QUANTITY
+            let physicalQty;
+            let noteText = "Live Sync via Audit Tool";
+
+            if (item.tempRawValue !== undefined && !isNaN(item.tempRawValue)) {
+                // Multiply their raw input by whatever Unit multiplier they chose!
+                physicalQty = item.tempRawValue * item.tempConvRate;
+                noteText = `General Audit (${item.tempRawValue} ${item.tempDisplayUom})`;
+            } else {
+                // They left it blank, meaning it matched perfectly.
+                physicalQty = item.systemQty;
+            }
 
             // If a variance is detected, push it to the database
             if (physicalQty !== item.systemQty) {
@@ -11498,7 +11534,7 @@ window.submitGeneralAudit = async function() {
                     newQty: physicalQty,
                     variance: variance,
                     type: "Manager General Audit",
-                    note: "Live Sync via Audit Tool",
+                    note: noteText, // 📝 Beautiful logging: e.g. "General Audit (5 Packs)"
                     user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
                     timestamp: serverTimestamp()
                 });
@@ -11524,7 +11560,7 @@ window.submitGeneralAudit = async function() {
         document.getElementById('generalAuditModal').style.display = 'none';
         
         // Refresh the UI
-        window.loadInventoryAudits(); 
+        if (typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits(); 
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
 
     } catch (e) {
