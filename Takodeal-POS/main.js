@@ -3634,3 +3634,82 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 });
+
+// ========================================================
+// 📦 INTERNAL STORE USE ENGINE (EXPENSE & P&L TRACKER)
+// ========================================================
+window.processStoreUse = async function() {
+    if (!window.cart || window.cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+        return;
+    }
+
+    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
+    if (btn) { btn.innerText = "⏳ Logging..."; btn.disabled = true; }
+
+    try {
+        let totalCost = 0;
+        let itemsLogged = [];
+
+        for (let item of window.cart) {
+            // 1. Find the item in the Live Inventory to get its TRUE COST and CURRENT STOCK
+            const invQ = query(collection(db, "inventory"), where("branch", "==", window.currentBranch), where("name", "==", item.name));
+            const invSnap = await getDocs(invQ);
+
+            if (!invSnap.empty) {
+                let invDoc = invSnap.docs[0];
+                let invData = invDoc.data();
+                let currentStock = invData.currentStock || 0;
+                
+                // 🔥 Calculate the actual cost to the business, not the "Selling Price"
+                let trueCostPerUnit = parseFloat(invData.baseCost) || parseFloat(invData.cost) || 0;
+                totalCost += (trueCostPerUnit * item.qty);
+
+                // 2. Deduct from Live Stock
+                await updateDoc(invDoc.ref, { currentStock: currentStock - item.qty });
+
+                // 3. Log to the Trace Ledger
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: window.currentBranch, item: item.name,
+                    oldQty: currentStock, newQty: currentStock - item.qty, variance: -item.qty,
+                    type: "Store Use", note: `Internal Consumables used by staff`,
+                    user: window.cashierName || "Staff", timestamp: serverTimestamp()
+                });
+            }
+            itemsLogged.push(`${item.qty}x ${item.name}`);
+        }
+
+        // 4. Hit the P&L! Send the cost directly to the Expenses Database
+        if (totalCost > 0) {
+            await addDoc(collection(db, "expenses"), {
+                branch: window.currentBranch, amount: totalCost, 
+                category: "Store Consumables", description: `Internal Use: ${itemsLogged.join(', ')}`,
+                loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
+            });
+        }
+
+        // 5. Send to the Manager's Dedicated History Log
+        await addDoc(collection(db, "store_use_logs"), {
+            branch: window.currentBranch, items: window.cart, totalCost: totalCost,
+            loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '📦 Logged for Store Use!',
+            text: 'Items deducted from stock and recorded as an operating expense.',
+            icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }
+        });
+
+        // Close the modal and clear the cart!
+        let modal = document.getElementById('paymentModal') || document.getElementById('checkoutModal');
+        if (modal) modal.style.display = 'none';
+        
+        window.cart = [];
+        if (typeof renderCart === 'function') renderCart();
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to log consumables.', 'error');
+    } finally {
+        if (btn) { btn.innerText = "📦 Consumables"; btn.disabled = false; }
+    }
+};
