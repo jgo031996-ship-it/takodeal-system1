@@ -13002,75 +13002,46 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 1000);
 });
 
-// 🔥 THE BULLETPROOF "DOM CLIMBER" TAB SWITCHER
+// ========================================================
+// ⚖️ HR DISCIPLINARY & SANCTION ENGINE (WITH PDF EXPORT)
+// ========================================================
+
+// 🔥 THE BULLETPROOF TAB SWITCHER
 window.switchPayrollTab = function(tabName) {
-    let viewContainer = document.getElementById('view-payroll');
-    if (!viewContainer) return;
+    // If it's a separate page, use your native page switcher!
+    if (tabName === 'Schedule') { window.switchView('schedule'); return; }
+    if (tabName === 'Ledger') { window.switchView('ledger'); return; }
 
-    // Smart Section Finder: Climbs up the HTML tree to find the main wrapper for each section!
-    function getSectionWrapper(innerElementId) {
-        let el = document.getElementById(innerElementId);
-        if (!el) return null;
-        while (el && el.parentElement !== viewContainer && el.tagName !== 'BODY') {
-            el = el.parentElement;
-        }
-        return el;
-    }
+    let viewPayroll = document.getElementById('view-payroll');
+    let sancSec = document.getElementById('payrollSectionSanctions');
+    
+    // Selects the Payslip and Attendance boxes
+    let allCards = viewPayroll.querySelectorAll('.card'); 
 
-    // 1. Precisely locate the four main sections based on the actual tables/grids inside them
-    let feedSec = document.getElementById('payrollSectionFeed') || getSectionWrapper('payrollGeneratorBody');
-    let schedSec = document.getElementById('payrollSectionSchedule') || getSectionWrapper('shiftConfigGrid');
-    let ledgSec = document.getElementById('payrollSectionLedger') || getSectionWrapper('ledgerTableBody');
-    let sancSec = document.getElementById('payrollSectionSanctions') || getSectionWrapper('sanctionsTableBody');
-
-    // 2. Hide them all safely
-    if (feedSec) feedSec.style.display = 'none';
-    if (schedSec) schedSec.style.display = 'none';
-    if (ledgSec) ledgSec.style.display = 'none';
-    if (sancSec) sancSec.style.display = 'none';
-
-    // 3. Reset all tab buttons to gray
-    document.querySelectorAll('#view-payroll .tab-btn').forEach(btn => {
+    // Reset tab buttons
+    viewPayroll.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
         btn.style.color = '#64748b';
         btn.style.borderBottomColor = 'transparent';
     });
 
-    // 4. Highlight the active tab button dynamically
-    document.querySelectorAll(`#view-payroll .tab-btn[onclick*="'${tabName}'"]`).forEach(btn => {
-        btn.classList.add('active');
-        btn.style.color = '#0f766e'; // Matches your Teal UI Theme
-        btn.style.borderBottomColor = '#0f766e';
-    });
+    // Highlight active tab
+    let activeBtn = document.getElementById('tabHr' + tabName);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+        activeBtn.style.color = '#0f766e';
+        activeBtn.style.borderBottomColor = '#0f766e';
+    }
 
-    // 5. Show the correct section and trigger its specific loading engine!
-    if (tabName === 'Feed' && feedSec) { 
-        feedSec.style.display = 'block'; 
-    }
-    if (tabName === 'Schedule' && schedSec) { 
-        schedSec.style.display = 'block'; 
-        if (typeof window.loadFromCloud === 'function') window.loadFromCloud(); 
-    }
-    if (tabName === 'Ledger' && ledgSec) { 
-        ledgSec.style.display = 'block'; 
-        if (typeof window.loadLedger === 'function') window.loadLedger(); 
-    }
-    if (tabName === 'Sanctions' && sancSec) { 
-        sancSec.style.display = 'block'; 
-        if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard(); 
-        
-        // Populate branch filter dynamically if it's empty
-        let filter = document.getElementById('sanctionBranchFilter');
-        if (filter && filter.options.length <= 1 && window.globalActiveBranches) {
-            let html = '<option value="All">All Branches</option>';
-            window.globalActiveBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
-            filter.innerHTML = html;
-            
-            // Lock the dropdown if a Franchisee is viewing it
-            if (window.sessionUser && window.sessionUser.isFranchisee) {
-                filter.value = window.sessionUser.branch;
-                filter.disabled = true;
-            }
+    // Toggle visibility seamlessly
+    if (tabName === 'Feed') {
+        if (sancSec) sancSec.style.display = 'none';
+        allCards.forEach(card => card.style.display = 'block');
+    } else if (tabName === 'Sanctions') {
+        allCards.forEach(card => card.style.display = 'none');
+        if (sancSec) {
+            sancSec.style.display = 'block';
+            if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
         }
     }
 };
@@ -13106,7 +13077,7 @@ window.loadSanctionsDashboard = async function() {
                 
                 // Show the staff's reply and their digital signature!
                 let signatureHtml = d.signatureBase64 
-                    ? `<img src="${d.signatureBase64}" style="height: 40px; border-bottom: 1px solid #cbd5e1; margin-top: 5px; display: block;">` 
+                    ? `<img src="${d.signatureBase64}" style="height: 40px; border-bottom: 1px solid #cbd5e1; margin-top: 5px; display: block; border-radius: 4px; background: white;">` 
                     : '';
 
                 statusBadge = `
@@ -13119,9 +13090,9 @@ window.loadSanctionsDashboard = async function() {
                     </div>
                 `;
 
-                // 🔥 THE NEW PRINT BUTTON (Only available after they reply!)
+                // 🔥 THE NEW PRINT/PDF BUTTON (Only available after they sign & reply!)
                 let safeDocStr = encodeURIComponent(JSON.stringify(d));
-                printBtn = `<button onclick="window.printFormalNTE('${safeDocStr}')" style="background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%; margin-top: 5px;">📄 Print Formal Doc</button>`;
+                printBtn = `<button onclick="window.printFormalNTE('${safeDocStr}')" style="background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%; margin-top: 5px;">📄 Export as PDF / Print</button>`;
             }
 
             let severityColor = d.severity.includes('Warning') ? '#ea580c' : '#dc2626';
