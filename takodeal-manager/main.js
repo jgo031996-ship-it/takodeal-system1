@@ -13326,6 +13326,11 @@ window.switchSopTab = function(tab) {
 };
 
 window.loadSopManager = async function() {
+    let pageTitle = document.getElementById('pageTitle');
+    if (pageTitle) {
+        pageTitle.innerText = "📋 SOP Manager";
+    }
+  
     let bSelect = document.getElementById('sopBuilderBranch');
     let lSelect = document.getElementById('sopLogBranch');
     
