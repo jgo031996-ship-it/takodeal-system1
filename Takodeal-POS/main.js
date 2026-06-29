@@ -3896,10 +3896,6 @@ window.submitStockRequest = async function() {
     }
 };
 
-// ========================================================
-// 🛡️ SHIFT SECURITY & GAP TRACKER ENGINE
-// ========================================================
-
 window.openShiftModal = function() {
     if (!systemReady) return;
     
@@ -3911,28 +3907,46 @@ window.openShiftModal = function() {
         if (nameEl) nameEl.value = ""; 
         
         let inputStart = document.getElementById('inputStartingCash');
-        inputStart.placeholder = "Loading previous shift...";
-        inputStart.value = "";
+        inputStart.placeholder = "Enter physical cash count...";
+        inputStart.value = ""; // 🔥 BLIND COUNT: Never auto-fill this box!
 
-        // 🔥 THE GAP TRACKER: Fetch the last shift's ending cash!
+        // 🔥 THE BEHAVIORAL WARNING: Check the last shift's variance!
         const q = query(collection(db, "shifts"), where("branch", "==", sessionUser.branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
         getDocs(q).then(snap => {
             let noteEl = document.getElementById('lastShiftNote');
             if(!noteEl) {
                 noteEl = document.createElement('div');
                 noteEl.id = 'lastShiftNote';
-                noteEl.style.cssText = "font-size: 12px; color: #10b981; font-weight: bold; margin-top: 8px; background: #dcfce7; padding: 6px; border-radius: 4px; border: 1px dashed #34d399;";
+                noteEl.style.cssText = "font-size: 13px; font-weight: bold; margin-top: 15px; padding: 12px; border-radius: 6px; text-align: center; line-height: 1.4;";
                 inputStart.parentNode.appendChild(noteEl);
             }
 
             if(!snap.empty) {
-                window.lastEndingCash = parseFloat(snap.docs[0].data().declaredCash) || 0;
-                inputStart.value = window.lastEndingCash;
-                noteEl.innerHTML = `✅ Previous shift left <b>₱${window.lastEndingCash.toFixed(2)}</b> in the drawer.`;
+                let lastShift = snap.docs[0].data();
+                
+                // Grab the math from the previous shift to see if it was short/over
+                let expected = parseFloat(lastShift.expectedCash) || 0;
+                let declared = parseFloat(lastShift.declaredCash) || parseFloat(lastShift.actualCash) || 0;
+                let diff = declared - expected;
+
+                // Save to memory for the interceptor, but keep it hidden from UI!
+                window.lastEndingCash = declared; 
+
+                // We allow a tiny 5 centavo tolerance for floating point math
+                if (Math.abs(diff) <= 0.05) {
+                    noteEl.innerHTML = `✅ The previous shift closed with a <b>Perfect Count</b>.`;
+                    noteEl.style.background = "#dcfce7"; noteEl.style.color = "#16a34a"; noteEl.style.border = "1px solid #bbf7d0";
+                } else if (diff > 0.05) {
+                    noteEl.innerHTML = `⚠️ The previous shift closed with a <b>CASH OVERAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b45309;">Please double-count the drawer carefully.</span>`;
+                    noteEl.style.background = "#fffbeb"; noteEl.style.color = "#d97706"; noteEl.style.border = "1px solid #fde68a";
+                } else {
+                    noteEl.innerHTML = `🚨 The previous shift closed with a <b>CASH SHORTAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b91c1c;">Please double-count the drawer carefully.</span>`;
+                    noteEl.style.background = "#fef2f2"; noteEl.style.color = "#dc2626"; noteEl.style.border = "1px solid #fecaca";
+                }
                 noteEl.style.display = "block";
             } else {
                 window.lastEndingCash = 0;
-                inputStart.value = 0;
+                inputStart.value = "";
                 noteEl.style.display = "none";
             }
         });
