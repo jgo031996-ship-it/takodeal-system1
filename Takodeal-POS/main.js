@@ -4545,3 +4545,140 @@ window.submitSanctionReply = async function() {
         btn.innerText = "Submit Explanation & Unlock"; btn.disabled = false;
     }
 };
+
+// ========================================================
+// 📋 DAILY SOP CHECKLIST ENGINE (CASHIER)
+// ========================================================
+window.cashierSopData = {}; // Caches templates from Firebase
+window.currentSopTasks = []; // Holds the active list
+
+window.openSopModal = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) { alert("Device branch not set!"); return; }
+
+    document.getElementById('sopModalBranchText').innerText = branch;
+    document.getElementById('sopModal').style.display = 'flex';
+    document.getElementById('sopChecklistContainer').innerHTML = '<div style="text-align:center; padding: 40px; color:#94a3b8;">Select your role above to view your tasks.</div>';
+    
+    let select = document.getElementById('sopRoleSelect');
+    select.innerHTML = '<option value="">⏳ Downloading checklists...</option>';
+
+    try {
+        const docSnap = await getDoc(doc(db, "settings", "sop_" + branch));
+        if (docSnap.exists() && docSnap.data().roles) {
+            window.cashierSopData = docSnap.data().roles;
+            let html = '<option value="">-- Choose Your Shift / Role --</option>';
+            Object.keys(window.cashierSopData).forEach(role => {
+                html += `<option value="${role}">${role}</option>`;
+            });
+            select.innerHTML = html;
+        } else {
+            select.innerHTML = '<option value="">No checklists setup by Manager yet.</option>';
+        }
+    } catch (e) {
+        console.error("SOP Fetch Error:", e);
+        select.innerHTML = '<option value="">❌ Connection Error</option>';
+    }
+};
+
+window.renderSopChecklist = function() {
+    let role = document.getElementById('sopRoleSelect').value;
+    let container = document.getElementById('sopChecklistContainer');
+    
+    if (!role) {
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color:#94a3b8; font-weight: bold;">Select your role above to view your tasks.</div>';
+        window.currentSopTasks = [];
+        return;
+    }
+
+    let tasks = window.cashierSopData[role] || [];
+    window.currentSopTasks = tasks.map(t => ({ task: t, status: null, remark: "" })); // Init state
+
+    let html = '';
+    window.currentSopTasks.forEach((item, index) => {
+        html += `
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                <div style="font-size: 15px; font-weight: bold; color: #1e293b; margin-bottom: 10px; line-height: 1.4;">${index + 1}. ${item.task}</div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button id="btn_sop_done_${index}" onclick="window.markSopTask(${index}, 'done')" style="flex: 1; padding: 12px; border-radius: 6px; border: 2px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; cursor: pointer; transition: 0.2s;">✅ Done</button>
+                    <button id="btn_sop_fail_${index}" onclick="window.markSopTask(${index}, 'fail')" style="flex: 1; padding: 12px; border-radius: 6px; border: 2px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; cursor: pointer; transition: 0.2s;">❌ Missed</button>
+                </div>
+
+                <div id="sop_remark_container_${index}" style="display: none; margin-top: 10px;">
+                    <input type="text" id="sop_remark_${index}" placeholder="Why was this missed? (Required)" onkeyup="window.currentSopTasks[${index}].remark = this.value" style="width: 100%; padding: 10px; border: 1px solid #fca5a5; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-weight: bold; outline: none; box-sizing: border-box;">
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+};
+
+// Extremely tactile feedback when they click the buttons!
+window.markSopTask = function(index, status) {
+    window.currentSopTasks[index].status = status;
+    
+    let btnDone = document.getElementById(`btn_sop_done_${index}`);
+    let btnFail = document.getElementById(`btn_sop_fail_${index}`);
+    let remarkBox = document.getElementById(`sop_remark_container_${index}`);
+
+    if (status === 'done') {
+        btnDone.style.background = '#dcfce7'; btnDone.style.borderColor = '#16a34a'; btnDone.style.color = '#15803d';
+        btnFail.style.background = 'white'; btnFail.style.borderColor = '#cbd5e1'; btnFail.style.color = '#64748b';
+        remarkBox.style.display = 'none';
+        window.currentSopTasks[index].remark = ""; // Clear remark if they change their mind
+        document.getElementById(`sop_remark_${index}`).value = "";
+    } else {
+        btnFail.style.background = '#fee2e2'; btnFail.style.borderColor = '#dc2626'; btnFail.style.color = '#b91c1c';
+        btnDone.style.background = 'white'; btnDone.style.borderColor = '#cbd5e1'; btnDone.style.color = '#64748b';
+        remarkBox.style.display = 'block';
+    }
+};
+
+window.submitSopChecklist = async function() {
+    let role = document.getElementById('sopRoleSelect').value;
+    if (!role || window.currentSopTasks.length === 0) return alert("Please select a role first.");
+
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashierName = localStorage.getItem('cashierName') || "Unknown Cashier";
+
+    // 🛑 VALIDATION: Ensure every task is marked, and every 'fail' has a reason!
+    let totalTasks = window.currentSopTasks.length;
+    let completedTasks = 0;
+
+    for (let i = 0; i < totalTasks; i++) {
+        let t = window.currentSopTasks[i];
+        if (t.status === null) {
+            return Swal.fire('Incomplete', `You forgot to mark Task #${i + 1} as Done or Missed!`, 'warning');
+        }
+        if (t.status === 'fail' && t.remark.trim() === '') {
+            return Swal.fire('Reason Required', `You marked Task #${i + 1} as Missed. You must type a reason why!`, 'error');
+        }
+        if (t.status === 'done') completedTasks++;
+    }
+
+    let btn = document.getElementById('btnSubmitSop');
+    btn.innerText = "⏳ Submitting..."; btn.disabled = true;
+
+    try {
+        let score = Math.round((completedTasks / totalTasks) * 100);
+
+        await addDoc(collection(db, "sop_logs"), {
+            branch: branch,
+            staffName: cashierName,
+            roleName: role,
+            tasks: window.currentSopTasks,
+            scorePercentage: score,
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire('✅ Submitted!', `SOP Checklist submitted securely to management. Score: ${score}%`, 'success');
+        document.getElementById('sopModal').style.display = 'none';
+    } catch (e) {
+        console.error("SOP Submit Error:", e);
+        Swal.fire('Error', 'Failed to submit checklist. Check connection.', 'error');
+    } finally {
+        btn.innerText = "📤 Submit Checklist"; btn.disabled = false;
+    }
+};
