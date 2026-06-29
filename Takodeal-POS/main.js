@@ -3265,105 +3265,222 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
 };
 
 // ========================================================
-// 🗑️ WASTE & SPOILAGE LOG ENGINE
+// 🗑️ UPGRADED WASTE & SPOILAGE ENGINE (MULTI-CART & ALERTS)
 // ========================================================
+window.wasteCart = [];
 window.wasteInventoryCache = [];
+window.selectedWasteItem = null;
 
 window.loadWasteItems = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
-    let select = document.getElementById('wasteItemSelect');
-    if (!select || !branch) return;
+    if (!branch) return;
 
-    select.innerHTML = '<option value="">Scanning inventory...</option>';
     window.wasteInventoryCache = [];
-
     try {
         const q = query(collection(db, "inventory"), where("branch", "==", branch));
         const snap = await getDocs(q);
-        let html = '<option value="">-- Select Damaged Item --</option>';
-
-        let items = [];
-        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
         
-        // Sort alphabetically for easy finding
-        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-
-        items.forEach(item => {
-            window.wasteInventoryCache.push(item);
-            html += `<option value="${item.id}">${item.name} (Available: ${item.currentStock || 0} ${item.uom || ''})</option>`;
+        let items = [];
+        snap.forEach(doc => {
+            let data = doc.data();
+            data.id = doc.id;
+            items.push(data);
         });
-
-        select.innerHTML = html;
+        
+        // Sort alphabetically so the search works smoothly
+        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        window.wasteInventoryCache = items;
+        
+        window.loadWasteHistory(); // Load the table below it
     } catch (e) {
         console.error("Waste Items Error:", e);
-        select.innerHTML = '<option value="">❌ Error loading items</option>';
     }
 };
 
-window.submitWasteLog = async function() {
-    let itemId = document.getElementById('wasteItemSelect').value;
-    let qtyRaw = document.getElementById('wasteQty').value;
-    let qty = parseFloat(qtyRaw);
-    let reason = document.getElementById('wasteReason').value;
+window.filterWasteSearch = function() {
+    let input = document.getElementById('wasteSearchInput').value.toLowerCase();
+    let resultsDiv = document.getElementById('wasteSearchResults');
+    window.selectedWasteItem = null; // Reset selection
+
+    if (input.length < 1) { 
+        resultsDiv.style.display = 'none'; 
+        return; 
+    }
+
+    let filtered = window.wasteInventoryCache.filter(i => (i.name || '').toLowerCase().includes(input));
+    let html = '';
     
-    let branch = localStorage.getItem('takodeal_device_branch');
-    let cashierName = localStorage.getItem('cashierName') || "Cashier";
-    let safeFirstName = cashierName.split(' ')[0];
+    filtered.forEach(item => {
+        let safeItemStr = encodeURIComponent(JSON.stringify(item));
+        html += `<div onclick="window.selectWasteItem('${safeItemStr}')" style="padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 14px; font-weight: bold; color: #334155; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">🗑️ ${item.name} <span style="font-size:11px; color:#94a3b8; font-weight: normal; margin-left: 5px;">(Live Stock: ${parseFloat(item.currentStock||0).toFixed(1)} ${item.uom || ''})</span></div>`;
+    });
 
-    if (!itemId) { alert("Please select an item first."); return; }
-    if (isNaN(qty) || qty <= 0) { alert("Please enter a valid quantity."); return; }
+    if (html === '') html = `<div style="padding: 12px 15px; font-size: 13px; color: #64748b; font-style: italic;">No items match your search.</div>`;
 
-    let itemData = window.wasteInventoryCache.find(i => i.id === itemId);
-    if (!itemData) return;
+    resultsDiv.innerHTML = html;
+    resultsDiv.style.display = 'block';
+};
 
-    // Safety check: Prevent them from wasting more than they have (unless they force it)
+window.selectWasteItem = function(encodedItem) {
+    let item = JSON.parse(decodeURIComponent(encodedItem));
+    window.selectedWasteItem = item;
+    
+    document.getElementById('wasteSearchInput').value = item.name;
+    document.getElementById('wasteSearchResults').style.display = 'none';
+    document.getElementById('wasteQty').focus(); // Automatically move cursor to the Qty box!
+};
+
+window.addWasteToCart = function() {
+    if (!window.selectedWasteItem) { 
+        Swal.fire('Select Item', 'Please search and select an item from the dropdown list first.', 'warning'); 
+        return; 
+    }
+    
+    let qty = parseFloat(document.getElementById('wasteQty').value);
+    let reason = document.getElementById('wasteReason').value;
+
+    if (isNaN(qty) || qty <= 0) { 
+        Swal.fire('Invalid Qty', 'Please enter a valid quantity greater than 0.', 'warning'); 
+        return; 
+    }
+
+    let itemData = window.selectedWasteItem;
+
+    // Safety Warning: Prevent negative stock visually
     if (qty > itemData.currentStock) {
-        if (!confirm(`⚠️ WARNING: You are trying to log ${qty} ${itemData.uom || ''} as waste, but the system says you only have ${itemData.currentStock} left.\n\nThis will force the inventory into the negatives. Are you sure you want to proceed?`)) {
+        if (!confirm(`⚠️ WARNING: The system says you only have ${itemData.currentStock} ${itemData.uom || ''} left.\nWasting ${qty} will push your inventory into the negatives. Continue?`)) {
             return;
         }
     }
 
-    if (!confirm(`Confirm deduction: Remove ${qty} ${itemData.uom || ''} of ${itemData.name} from inventory?`)) return;
+    // Add to the temporary cart array
+    window.wasteCart.push({
+        id: itemData.id,
+        name: itemData.name,
+        qty: qty,
+        uom: itemData.uom || 'units',
+        reason: reason,
+        cost: parseFloat(itemData.baseCost) || parseFloat(itemData.cost) || 0
+    });
 
-    let btn = document.getElementById('btnSubmitWaste');
+    // Clear inputs for the next item
+    document.getElementById('wasteSearchInput').value = '';
+    document.getElementById('wasteQty').value = '';
+    window.selectedWasteItem = null;
+    
+    window.renderWasteCart();
+};
+
+window.removeWasteItem = function(index) {
+    window.wasteCart.splice(index, 1);
+    window.renderWasteCart();
+};
+
+window.renderWasteCart = function() {
+    let tbody = document.getElementById('wasteCartBody');
+    let container = document.getElementById('wasteCartContainer');
+    
+    if (window.wasteCart.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    let html = '';
+    window.wasteCart.forEach((item, index) => {
+        html += `
+            <tr style="border-bottom: 1px dashed #cbd5e1;">
+                <td style="padding: 10px; font-weight: bold; color: #b91c1c;">${item.name}</td>
+                <td style="padding: 10px; font-weight: 900; font-size: 15px;">${item.qty} <span style="font-size:11px; font-weight:normal; color:#64748b;">${item.uom}</span></td>
+                <td style="padding: 10px; color: #475569; font-style: italic;">${item.reason}</td>
+                <td style="padding: 10px; text-align: right;">
+                    <button onclick="window.removeWasteItem(${index})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-weight: bold; font-size: 11px;">✖ Remove</button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+};
+
+window.submitWasteCart = async function() {
+    if (window.wasteCart.length === 0) {
+        Swal.fire('Empty List', 'Please add items to the waste list before submitting.', 'info');
+        return;
+    }
+
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashierName = localStorage.getItem('cashierName') || "Cashier";
+    
+    if (!confirm(`Are you sure you want to permanently deduct these ${window.wasteCart.length} items from your inventory?`)) return;
+
+    let btn = document.getElementById('btnSubmitWasteCart');
     let origText = btn.innerText;
-    btn.innerText = "⏳ Processing Deduction...";
+    btn.innerText = "⏳ Processing Waste...";
     btn.disabled = true;
 
     try {
-        let newStock = itemData.currentStock - qty;
+        let totalValueLost = 0;
+        let wasteDetailsString = [];
 
-        // 1. Instantly Deduct from Live Inventory
-        await updateDoc(doc(db, "inventory", itemId), { currentStock: newStock });
+        // Loop through everything in the cart and deduct it
+        for (let item of window.wasteCart) {
+            let invRef = doc(db, "inventory", item.id);
+            let invSnap = await getDoc(invRef);
+            
+            if (invSnap.exists()) {
+                let currentStock = parseFloat(invSnap.data().currentStock) || 0;
+                let newStock = currentStock - item.qty;
 
-        // 2. Log it to the Global Stock History! 
-        await addDoc(collection(db, "stock_logs"), {
+                // 1. Deduct from Live Inventory
+                await updateDoc(invRef, { currentStock: newStock });
+
+                // 2. Log to Global Stock History
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: branch,
+                    item: item.name,
+                    uom: item.uom,
+                    oldQty: currentStock,
+                    newQty: newStock,
+                    variance: -Math.abs(item.qty),
+                    type: "Waste / Spoilage",
+                    note: `Reason: ${item.reason}`,
+                    user: cashierName,
+                    timestamp: serverTimestamp()
+                });
+
+                // Calculate the financial loss
+                let itemLoss = item.qty * item.cost;
+                totalValueLost += itemLoss;
+                wasteDetailsString.push(`${item.qty}x ${item.name}`);
+            }
+        }
+
+        // 🚨 3. FIRE THE MANAGER SECURITY ALERT!
+        await addDoc(collection(db, "manager_alerts"), {
+            type: "WASTE_ALERT",
             branch: branch,
-            item: itemData.name,
-            uom: itemData.uom || 'units',
-            oldQty: itemData.currentStock,
-            newQty: newStock,
-            variance: -Math.abs(qty), // Negative variance because it's a loss
-            type: "Waste / Spoilage",
-            note: `Reason: ${reason}`,
-            user: cashierName,
-            timestamp: serverTimestamp()
+            cashier: cashierName,
+            message: `WASTE REPORT: ${cashierName} logged ${window.wasteCart.length} item(s) as waste (${wasteDetailsString.join(', ')}). Est Value Lost: ₱${totalValueLost.toFixed(2)}.`,
+            timestamp: serverTimestamp(),
+            isRead: false
         });
 
-        alert(`✅ Waste successfully recorded.\n\n${qty} ${itemData.uom || ''} of ${itemData.name} has been deducted from your inventory.`);
-        
-        // Reset the form
-        document.getElementById('wasteQty').value = '';
-        document.getElementById('wasteItemSelect').value = '';
-        document.getElementById('wasteReason').value = 'Dropped / Spilled';
-        
-        // Refresh the dropdown and history table
-        window.loadWasteItems();
+        Swal.fire({
+            title: '✅ Waste Logged',
+            text: `Successfully deducted ${window.wasteCart.length} items from inventory. Management has been notified.`,
+            icon: 'success',
+            confirmButtonColor: '#16a34a',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        // Clean up the screen
+        window.wasteCart = [];
+        window.renderWasteCart();
         window.loadWasteHistory();
 
     } catch (e) {
-        console.error("Waste Error:", e);
-        alert("❌ Failed to log waste. Check your internet connection.");
+        console.error("Waste Cart Error:", e);
+        Swal.fire('Error', 'Failed to log waste. Check internet connection.', 'error');
     } finally {
         btn.innerText = origText;
         btn.disabled = false;
@@ -3396,7 +3513,7 @@ window.loadWasteHistory = async function() {
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 15px; color: #64748b; font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 15px; font-weight: bold; color: #334155; font-size: 15px;">${d.item}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #334155; font-size: 14px;">${d.item}</td>
                     <td style="padding: 15px; font-weight: 900; color: #ef4444; font-size: 16px;">-${Math.abs(d.variance)} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${d.uom}</span></td>
                     <td style="padding: 15px; color: #475569; font-style: italic;">${d.note}</td>
                 </tr>
