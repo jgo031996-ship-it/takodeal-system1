@@ -13315,9 +13315,9 @@ window.deleteSanction = async function(docId) {
 };
 
 // ========================================================
-// 📋 STANDARD OPERATING PROCEDURES (SOP) ENGINE
+// 📋 STANDARD OPERATING PROCEDURES (SOP) ENGINE - MANAGER
 // ========================================================
-window.globalSopData = {}; // Caches the templates
+window.globalSopData = {}; 
 
 window.switchSopTab = function(tab) {
     document.getElementById('sopTabBuilder').style.display = tab === 'Builder' ? 'block' : 'none';
@@ -13326,7 +13326,6 @@ window.switchSopTab = function(tab) {
 };
 
 window.loadSopManager = async function() {
-    // Populate dropdowns with active branches
     let bSelect = document.getElementById('sopBuilderBranch');
     let lSelect = document.getElementById('sopLogBranch');
     
@@ -13343,7 +13342,6 @@ window.loadSopManager = async function() {
     if (bSelect && bSelect.options.length <= 1) bSelect.innerHTML = opts;
     if (lSelect && lSelect.options.length <= 2) lSelect.innerHTML = logOpts;
 
-    // Set default log date to today
     let today = new Date();
     today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
     document.getElementById('sopLogDate').value = today.toISOString().split('T')[0];
@@ -13376,13 +13374,13 @@ window.createNewSopRole = async function() {
     let branch = document.getElementById('sopBuilderBranch').value;
     if (!branch) return Swal.fire('Wait!', 'Please select a branch first.', 'warning');
     
-    let roleName = prompt(`Enter new Role/Shift name for ${branch}:\n(e.g. "Staff 1 (9AM-5PM)" or "Closer")`);
+    let roleName = prompt(`Enter new Role/Shift name for ${branch}:\n(e.g. "Staff 1 (9AM-5PM)")`);
     if (!roleName || roleName.trim() === "") return;
     roleName = roleName.trim();
 
     if (window.globalSopData[roleName]) return Swal.fire('Duplicate', 'This role already exists.', 'error');
     
-    window.globalSopData[roleName] = []; // Empty task array
+    window.globalSopData[roleName] = []; 
     
     try {
         await setDoc(doc(db, "settings", "sop_" + branch), { roles: window.globalSopData }, { merge: true });
@@ -13418,7 +13416,7 @@ window.loadSopTasks = function() {
     
     list.innerHTML = '';
     if (tasks.length === 0) {
-        window.addSopTaskRow(); // Add one blank row to start
+        window.addSopTaskRow(); 
     } else {
         tasks.forEach(t => window.addSopTaskRow(t));
     }
@@ -13432,7 +13430,7 @@ window.addSopTaskRow = function(taskText = "") {
     div.style.cssText = "display: flex; gap: 10px; align-items: center;";
     div.innerHTML = `
         <span style="color: #94a3b8; cursor: grab;">↕️</span>
-        <input type="text" class="sop-task-input" value="${taskText.replace(/"/g, '&quot;')}" placeholder="e.g. Count and verify cash drawer..." style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+        <input type="text" class="sop-task-input" value="${taskText.replace(/"/g, '&quot;')}" placeholder="e.g. Count and verify cash drawer..." style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155;">
         <button onclick="this.parentElement.remove()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 15px; cursor: pointer; font-weight: bold;">✖</button>
     `;
     list.appendChild(div);
