@@ -4211,3 +4211,142 @@ window.logoutCashier = function() {
     localStorage.removeItem('cashierPermissions');
     location.reload(); // Hard refresh to kick them out
 };
+
+// ========================================================
+// 🛑 HR SANCTION LOCK SCREEN ENGINE (WITH SIGNATURE)
+// ========================================================
+window.hasSignedNTE = false;
+
+window.initSignaturePad = function() {
+    const canvas = document.getElementById('signatureCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+
+    // Reset variables on load
+    window.hasSignedNTE = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Style the pen
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#0f172a';
+
+    const startPosition = (e) => {
+        isDrawing = true;
+        window.hasSignedNTE = true; // Flips to true the moment they touch the pad!
+        draw(e);
+    };
+
+    const stopPosition = () => {
+        isDrawing = false;
+        ctx.beginPath(); // Prevents lines from connecting weirdly
+    };
+
+    const draw = (e) => {
+        if (!isDrawing) return;
+        e.preventDefault(); // CRITICAL: Stops the tablet screen from scrolling while drawing!
+
+        let x, y;
+        const rect = canvas.getBoundingClientRect();
+        
+        // Handle both Touch (Tablets) and Mouse (PC)
+        if (e.type.includes('touch')) {
+            x = e.touches[0].clientX - rect.left;
+            y = e.touches[0].clientY - rect.top;
+        } else {
+            x = e.clientX - rect.left;
+            y = e.clientY - rect.top;
+        }
+
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+    };
+
+    // Mouse listeners
+    canvas.addEventListener('mousedown', startPosition);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopPosition);
+    canvas.addEventListener('mouseout', stopPosition);
+
+    // Touch listeners (for tablets/phones)
+    canvas.addEventListener('touchstart', startPosition, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopPosition);
+};
+
+window.clearSignature = function() {
+    const canvas = document.getElementById('signatureCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        window.hasSignedNTE = false;
+    }
+};
+
+window.checkActiveSanctions = async function(staffName) {
+    if (!staffName) return;
+    
+    try {
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            let sanction = snap.docs[0].data();
+            let sanctionId = snap.docs[0].id;
+
+            document.getElementById('activeSanctionId').value = sanctionId;
+            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
+            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
+            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
+            document.getElementById('sanctionStaffReply').value = ""; 
+
+            document.getElementById('hrSanctionModal').style.display = 'flex';
+            
+            // 🔥 WAKE UP THE SIGNATURE PAD!
+            setTimeout(() => { window.initSignaturePad(); }, 300);
+        }
+    } catch (e) { console.error("Error checking sanctions:", e); }
+};
+
+window.submitSanctionReply = async function() {
+    let sanctionId = document.getElementById('activeSanctionId').value;
+    let replyText = document.getElementById('sanctionStaffReply').value.trim();
+
+    if (!replyText || replyText.length < 15) {
+        Swal.fire('Too Short', 'You must provide a detailed written explanation (at least 15 characters).', 'warning');
+        return;
+    }
+
+    if (!window.hasSignedNTE) {
+        Swal.fire('Signature Required', 'Please sign inside the signature box to legally acknowledge this notice.', 'error');
+        return;
+    }
+
+    let btn = document.getElementById('btnSubmitSanctionReply');
+    btn.innerText = "⏳ Submitting..."; btn.disabled = true;
+
+    try {
+        // 🔥 CAPTURE THE SIGNATURE AS AN IMAGE!
+        const canvas = document.getElementById('signatureCanvas');
+        const signatureDataUrl = canvas.toDataURL('image/png');
+
+        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
+            staffReply: replyText,
+            signatureBase64: signatureDataUrl, // Saves the drawing to the cloud!
+            status: "Replied",
+            repliedAt: serverTimestamp()
+        });
+
+        Swal.fire('✅ Submitted', 'Your explanation and signature have been securely logged. The POS is now unlocked.', 'success');
+        document.getElementById('hrSanctionModal').style.display = 'none';
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to submit. Check internet connection.', 'error');
+    } finally {
+        btn.innerText = "Submit Explanation & Unlock"; btn.disabled = false;
+    }
+};
