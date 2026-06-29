@@ -12968,12 +12968,31 @@ window.playManagerPing = function() {
 };
 
 // ========================================================
-// ⚖️ HR DISCIPLINARY & SANCTION ENGINE (AUTO-HEALING)
+// ⚖️ HR DISCIPLINARY & SANCTION ENGINE (SAFE AUTO-HEALING)
 // ========================================================
 
-// 🔥 THE DOM HEALER: Fixes HTML copy-paste errors automatically!
+// 🔥 THE DOM HEALER & EXTRACTOR
 document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => {
+        let viewContainer = document.getElementById('view-payroll');
+        if (!viewContainer) return;
+
+        // Safely extract any sections that accidentally got pasted inside each other
+        function extractTrappedSection(innerElementId) {
+            let el = document.getElementById(innerElementId);
+            if (!el) return;
+            while (el && el.parentElement && el.parentElement !== viewContainer && el.tagName !== 'BODY') {
+                el = el.parentElement;
+            }
+            if (el && el.parentElement !== viewContainer) {
+                viewContainer.appendChild(el);
+            }
+        }
+
+        extractTrappedSection('shiftConfigGrid');     // Rescues Schedule
+        extractTrappedSection('ledgerTableBody');     // Rescues Ledger
+        extractTrappedSection('sanctionsTableBody');  // Rescues Sanctions
+
         // Inject the missing tab button into ALL tab containers in the HR Hub
         document.querySelectorAll('#view-payroll .tabs-container').forEach(container => {
             if (!container.innerHTML.includes("switchPayrollTab('Sanctions')")) {
@@ -12983,68 +13002,64 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 1000);
 });
 
-// 🔥 THE BULLETPROOF SMART TAB SWITCHER
+// 🔥 THE BULLETPROOF "DOM CLIMBER" TAB SWITCHER
 window.switchPayrollTab = function(tabName) {
     let viewContainer = document.getElementById('view-payroll');
     if (!viewContainer) return;
 
-    // 1. Reset all tab buttons to gray
+    // Smart Section Finder: Climbs up the HTML tree to find the main wrapper for each section!
+    function getSectionWrapper(innerElementId) {
+        let el = document.getElementById(innerElementId);
+        if (!el) return null;
+        while (el && el.parentElement !== viewContainer && el.tagName !== 'BODY') {
+            el = el.parentElement;
+        }
+        return el;
+    }
+
+    // 1. Precisely locate the four main sections based on the actual tables/grids inside them
+    let feedSec = document.getElementById('payrollSectionFeed') || getSectionWrapper('payrollGeneratorBody');
+    let schedSec = document.getElementById('payrollSectionSchedule') || getSectionWrapper('shiftConfigGrid');
+    let ledgSec = document.getElementById('payrollSectionLedger') || getSectionWrapper('ledgerTableBody');
+    let sancSec = document.getElementById('payrollSectionSanctions') || getSectionWrapper('sanctionsTableBody');
+
+    // 2. Hide them all safely
+    if (feedSec) feedSec.style.display = 'none';
+    if (schedSec) schedSec.style.display = 'none';
+    if (ledgSec) ledgSec.style.display = 'none';
+    if (sancSec) sancSec.style.display = 'none';
+
+    // 3. Reset all tab buttons to gray
     document.querySelectorAll('#view-payroll .tab-btn').forEach(btn => {
         btn.classList.remove('active');
         btn.style.color = '#64748b';
         btn.style.borderBottomColor = 'transparent';
     });
 
-    // 2. Highlight the active tab button dynamically
+    // 4. Highlight the active tab button dynamically
     document.querySelectorAll(`#view-payroll .tab-btn[onclick*="'${tabName}'"]`).forEach(btn => {
         btn.classList.add('active');
         btn.style.color = '#0f766e'; // Matches your Teal UI Theme
         btn.style.borderBottomColor = '#0f766e';
     });
 
-    // 3. Identify the major sections
-    let schedSec = document.getElementById('payrollSectionSchedule') || viewContainer.querySelector('[id*="Schedule"]'); 
-    let ledgSec = document.getElementById('payrollSectionLedger') || viewContainer.querySelector('[id*="Ledger"]');
-    let sancSec = document.getElementById('payrollSectionSanctions');
-    let tabsContainer = viewContainer.querySelector('.tabs-container');
-
-    // 4. SMART SCANNER: Loop through ALL items on the page
-    Array.from(viewContainer.children).forEach(child => {
-        // Ignore the tab buttons container itself, do not hide it!
-        if (child === tabsContainer || child.classList.contains('tabs-container')) return;
-
-        // Hide everything initially
-        child.style.display = 'none';
-
-        // Show the correct section based on the clicked tab
-        if (tabName === 'Schedule') {
-            if (child === schedSec) {
-                child.style.display = 'block';
-                if (typeof window.loadFromCloud === 'function') window.loadFromCloud(); 
-            }
-        } 
-        else if (tabName === 'Ledger') {
-            if (child === ledgSec) {
-                child.style.display = 'block';
-                if (typeof window.loadLedger === 'function') window.loadLedger(); 
-            }
-        } 
-        else if (tabName === 'Sanctions') {
-            if (child === sancSec) {
-                child.style.display = 'block';
-                if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard(); 
-            }
-        } 
-        else if (tabName === 'Feed') {
-            // 🔥 THE FIX: If it's the Feed tab, show everything that IS NOT Schedule, Ledger, or Sanctions!
-            if (child !== schedSec && child !== ledgSec && child !== sancSec) {
-                child.style.display = 'block';
-            }
-        }
-    });
-
-    // 5. Populate branch filter dynamically if it's empty (for Sanctions)
-    if (tabName === 'Sanctions') {
+    // 5. Show the correct section and trigger its specific loading engine!
+    if (tabName === 'Feed' && feedSec) { 
+        feedSec.style.display = 'block'; 
+    }
+    if (tabName === 'Schedule' && schedSec) { 
+        schedSec.style.display = 'block'; 
+        if (typeof window.loadFromCloud === 'function') window.loadFromCloud(); 
+    }
+    if (tabName === 'Ledger' && ledgSec) { 
+        ledgSec.style.display = 'block'; 
+        if (typeof window.loadLedger === 'function') window.loadLedger(); 
+    }
+    if (tabName === 'Sanctions' && sancSec) { 
+        sancSec.style.display = 'block'; 
+        if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard(); 
+        
+        // Populate branch filter dynamically if it's empty
         let filter = document.getElementById('sanctionBranchFilter');
         if (filter && filter.options.length <= 1 && window.globalActiveBranches) {
             let html = '<option value="All">All Branches</option>';
