@@ -13093,25 +13093,47 @@ window.loadSanctionsDashboard = async function() {
 
         snap.forEach(docSnap => {
             let d = docSnap.data();
+            d.id = docSnap.id; // Save ID for the printer
+            
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
             
             let statusBadge = '';
+            let printBtn = '';
+
             if (d.status === 'Pending Reply') {
                 statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; margin-bottom: 4px;">⏳ Awaiting Staff Reply</span><br><span style="font-size: 11px; color: #64748b;">(POS is locked for this user)</span>`;
-            } else if (d.status === 'Replied') {
+            } else if (d.status === 'Replied' || d.status === 'Resolved') {
+                
+                // Show the staff's reply and their digital signature!
+                let signatureHtml = d.signatureBase64 
+                    ? `<img src="${d.signatureBase64}" style="height: 40px; border-bottom: 1px solid #cbd5e1; margin-top: 5px; display: block;">` 
+                    : '';
+
                 statusBadge = `
-                    <span style="background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; margin-bottom: 4px;">📩 Staff Replied</span><br>
-                    <div style="font-size: 12px; color: #334155; font-style: italic; border-left: 2px solid #0ea5e9; padding-left: 8px; margin-top: 4px; max-width: 250px; white-space: normal;">"${d.staffReply}"</div>
+                    <span style="background: ${d.status === 'Resolved' ? '#dcfce7' : '#e0f2fe'}; color: ${d.status === 'Resolved' ? '#16a34a' : '#0284c7'}; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; margin-bottom: 4px;">
+                        ${d.status === 'Resolved' ? '✅ Resolved / Closed' : '📩 Staff Replied'}
+                    </span><br>
+                    <div style="font-size: 12px; color: #334155; font-style: italic; border-left: 2px solid ${d.status === 'Resolved' ? '#16a34a' : '#0ea5e9'}; padding-left: 8px; margin-top: 4px; max-width: 250px; white-space: normal;">
+                        "${d.staffReply}"
+                        ${signatureHtml}
+                    </div>
                 `;
-            } else {
-                statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Resolved / Closed</span>`;
+
+                // 🔥 THE NEW PRINT BUTTON (Only available after they reply!)
+                let safeDocStr = encodeURIComponent(JSON.stringify(d));
+                printBtn = `<button onclick="window.printFormalNTE('${safeDocStr}')" style="background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%; margin-top: 5px;">📄 Print Formal Doc</button>`;
             }
 
             let severityColor = d.severity.includes('Warning') ? '#ea580c' : '#dc2626';
 
-            let actionBtn = d.status === 'Replied' 
-                ? `<button onclick="window.resolveSanction('${docSnap.id}', '${d.staffName}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">Accept & Resolve</button>`
-                : `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">🗑️ Delete</button>`;
+            let actionBtn = '';
+            if (d.status === 'Replied') {
+                actionBtn = `<button onclick="window.resolveSanction('${docSnap.id}', '${d.staffName}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">Accept & Resolve</button>`;
+            } else if (d.status === 'Resolved') {
+                actionBtn = `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">🗑️ Delete Record</button>`;
+            } else {
+                actionBtn = `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">🗑️ Cancel Notice</button>`;
+            }
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -13126,7 +13148,12 @@ window.loadSanctionsDashboard = async function() {
                     </td>
                     <td style="padding: 15px;"><strong style="color: ${severityColor};">${d.severity}</strong></td>
                     <td style="padding: 15px;">${statusBadge}</td>
-                    <td style="padding: 15px;">${actionBtn}</td>
+                    <td style="padding: 15px;">
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                            ${actionBtn}
+                            ${printBtn}
+                        </div>
+                    </td>
                 </tr>
             `;
         });
@@ -13136,6 +13163,98 @@ window.loadSanctionsDashboard = async function() {
         console.error("Sanctions Load Error:", e);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading data.</td></tr>';
     }
+};
+
+// ========================================================
+// 🖨️ THE FORMAL NTE DOCUMENT GENERATOR (LEGAL FORMAT)
+// ========================================================
+window.printFormalNTE = function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    
+    let issueDate = d.timestamp ? new Date(d.timestamp.seconds * 1000).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown Date';
+    let repliedDate = d.repliedAt ? new Date(d.repliedAt.seconds * 1000).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A';
+    
+    // Open a new hidden window optimized specifically for A4 printing
+    let printWindow = window.open('', '', 'width=800,height=900');
+    
+    let html = `
+        <html>
+        <head>
+            <title>Official Record - ${d.staffName}</title>
+            <style>
+                body { font-family: 'Times New Roman', serif; margin: 40px; color: #000; line-height: 1.6; }
+                .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
+                .title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 30px; letter-spacing: 1px; text-transform: uppercase; }
+                .field-row { margin-bottom: 10px; }
+                .field-label { font-weight: bold; width: 150px; display: inline-block; }
+                .box { border: 1px solid #000; padding: 15px; margin-bottom: 25px; min-height: 80px; background: #fff; }
+                .signature-section { display: flex; justify-content: space-between; margin-top: 50px; }
+                .sig-box { width: 45%; text-align: center; }
+                .sig-line { border-top: 1px solid #000; margin-top: 60px; padding-top: 5px; font-weight: bold; }
+                
+                @media print {
+                    body { margin: 0; padding: 20px; }
+                    button { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1 style="margin:0; font-size: 32px; letter-spacing: 3px; font-family: Arial, sans-serif;">TAKODEÁL</h1>
+                <div style="font-size: 14px; font-family: Arial, sans-serif; color: #555;">Human Resources Department • ${d.branch} Branch</div>
+            </div>
+
+            <div class="title">OFFICIAL DISCIPLINARY RECORD / NOTICE TO EXPLAIN</div>
+
+            <div class="field-row"><span class="field-label">Date Issued:</span> ${issueDate}</div>
+            <div class="field-row"><span class="field-label">To (Employee):</span> <strong>${d.staffName}</strong></div>
+            <div class="field-row"><span class="field-label">From (Manager):</span> ${d.issuedBy || 'Management'}</div>
+            <div class="field-row"><span class="field-label">Violation Type:</span> ${d.type}</div>
+            <div class="field-row"><span class="field-label">Severity Level:</span> <strong style="text-transform: uppercase;">${d.severity}</strong></div>
+
+            <p style="margin-top: 30px; font-weight: bold;">I. INCIDENT REPORT (MANAGEMENT)</p>
+            <div class="box">
+                ${d.details}
+            </div>
+
+            <p style="margin-top: 20px; font-weight: bold;">II. EMPLOYEE WRITTEN EXPLANATION</p>
+            <div style="font-size: 12px; margin-bottom: 5px;">Submitted digitally via POS System on: ${repliedDate}</div>
+            <div class="box">
+                ${d.staffReply}
+            </div>
+
+            <div class="signature-section">
+                <div class="sig-box">
+                    <img src="${d.signatureBase64}" style="height: 60px; display: block; margin: 0 auto -10px auto;">
+                    <div class="sig-line">${d.staffName}</div>
+                    <div style="font-size: 12px;">Employee Signature / Date</div>
+                </div>
+                
+                <div class="sig-box">
+                    <div class="sig-line">${d.issuedBy || 'Management'}</div>
+                    <div style="font-size: 12px;">Authorized Management Signature</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 50px; text-align: center; font-size: 10px; color: #666; border-top: 1px dashed #ccc; padding-top: 10px;">
+                * This document was generated electronically through the Takodeal Operating System and constitutes a formal HR record. *<br>
+                Record ID: ${d.id}
+            </div>
+            
+            <script>
+                // Automatically open the print dialog!
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 500);
+                }
+            </script>
+        </body>
+        </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
 };
 
 window.openIssueSanctionModal = async function() {
