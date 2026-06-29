@@ -8833,18 +8833,21 @@ window.loadPayablesDashboard = async function() {
             let photoBtn = data.photoUrl ? `<br><button onclick="window.viewSelfie('${data.photoUrl}', 'Invoice: ${data.invoiceNum || 'N/A'}')" style="margin-top:5px; background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; cursor:pointer;">📸 View OR</button>` : '';
 
             // 🔥 DELETE BUTTON
-            let deleteBtn = `<button onclick="window.deletePayable('${docSnap.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; margin-left:5px;" title="Delete">🗑️</button>`;
+            let deleteBtn = `<button onclick="window.deletePayable('${docSnap.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; margin-left:0;" title="Delete">🗑️</button>`;
 
+            // 🔥 THE FIX: Added "vertical-align: middle;" to all cells, and wrapped the buttons in an alignment div!
             html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td><strong style="color: var(--primary); font-size: 15px;">${data.supplier}</strong>${itemsHtml}</td>
-                    <td style="font-family: monospace; color: #64748b;">${data.invoiceNum || 'N/A'} ${photoBtn}</td>
-                    <td style="font-size: 13px;">${deliveryDate.toLocaleDateString()}</td>
-                    <td style="font-weight: bold; color: ${dateColor};">${dueDate.toLocaleDateString()}</td>
-                    <td style="font-weight: bold; font-size: 15px; color: #1e293b;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                    <td>${statusHtml}</td>
-                    <td style="display: flex; gap: 5px;">
-                        <button onclick="window.openSettlePayable('${docSnap.id}', '${data.supplier}', ${amount}, '${data.invoiceNum}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">💸 Pay Now</button>
-                        ${deleteBtn}
+                    <td style="vertical-align: middle; padding: 12px;"><strong style="color: var(--primary); font-size: 15px;">${data.supplier}</strong>${itemsHtml}</td>
+                    <td style="font-family: monospace; color: #64748b; vertical-align: middle; padding: 12px;">${data.invoiceNum || 'N/A'} ${photoBtn}</td>
+                    <td style="font-size: 13px; vertical-align: middle; padding: 12px;">${deliveryDate.toLocaleDateString()}</td>
+                    <td style="font-weight: bold; color: ${dateColor}; vertical-align: middle; padding: 12px;">${dueDate.toLocaleDateString()}</td>
+                    <td style="font-weight: bold; font-size: 15px; color: #1e293b; vertical-align: middle; padding: 12px;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="vertical-align: middle; padding: 12px;">${statusHtml}</td>
+                    <td style="vertical-align: middle; padding: 12px;">
+                        <div style="display: flex; gap: 5px; align-items: center;">
+                            <button onclick="window.openSettlePayable('${docSnap.id}', '${data.supplier}', ${amount}, '${data.invoiceNum}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">💸 Pay Now</button>
+                            ${deleteBtn}
+                        </div>
                     </td>
                 </tr>`;
         });
