@@ -12968,43 +12968,58 @@ window.playManagerPing = function() {
 };
 
 // ========================================================
-// ⚖️ HR DISCIPLINARY & SANCTION ENGINE
+// ⚖️ HR DISCIPLINARY & SANCTION ENGINE (AUTO-HEALING)
 // ========================================================
+
+// 🔥 THE DOM HEALER: Fixes HTML copy-paste errors automatically!
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        // Fix 1: Break the Sanctions section out if it got trapped inside the Feed section
+        let feedSec = document.getElementById('payrollSectionFeed');
+        let sancSec = document.getElementById('payrollSectionSanctions');
+        if (sancSec && feedSec && sancSec.parentElement === feedSec) {
+            feedSec.parentElement.appendChild(sancSec);
+            console.log("🛠️ Auto-Healed: Moved Sanctions section out of Feed section.");
+        }
+
+        // Fix 2: Inject the missing tab button into ALL tab containers in the HR Hub
+        document.querySelectorAll('#view-payroll .tabs-container').forEach(container => {
+            if (!container.innerHTML.includes("switchPayrollTab('Sanctions')")) {
+                container.insertAdjacentHTML('beforeend', `<button class="tab-btn" onclick="window.switchPayrollTab('Sanctions')">⚖️ Disciplinary Actions</button>`);
+                console.log("🛠️ Auto-Healed: Injected missing Disciplinary Actions tab.");
+            }
+        });
+    }, 1000);
+});
 
 // 🔥 THE BULLETPROOF TAB SWITCHER
 window.switchPayrollTab = function(tabName) {
-    // 1. Find all the sections
     let feedSec = document.getElementById('payrollSectionFeed');
     let schedSec = document.getElementById('payrollSectionSchedule');
     let ledgSec = document.getElementById('payrollSectionLedger');
     let sancSec = document.getElementById('payrollSectionSanctions');
     
-    // 2. Hide everything safely
+    // 1. Hide everything safely
     if(feedSec) feedSec.style.display = 'none';
     if(schedSec) schedSec.style.display = 'none';
     if(ledgSec) ledgSec.style.display = 'none';
     if(sancSec) sancSec.style.display = 'none';
 
-    // 3. Reset all tab buttons to gray
-    let tabs = ['Feed', 'Schedule', 'Ledger', 'Sanctions'];
-    tabs.forEach(t => {
-        let btn = document.getElementById('tabHr' + t);
-        if (btn) {
-            btn.classList.remove('active');
-            btn.style.color = '#64748b';
-            btn.style.borderBottomColor = 'transparent';
-        }
+    // 2. Reset all tab buttons across the ENTIRE page to gray
+    document.querySelectorAll('#view-payroll .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        btn.style.color = '#64748b';
+        btn.style.borderBottomColor = 'transparent';
     });
 
-    // 4. Highlight the active tab button
-    let activeBtn = document.getElementById('tabHr' + tabName);
-    if (activeBtn) {
-        activeBtn.classList.add('active');
-        activeBtn.style.color = '#0f766e'; // Matches your teal UI theme
-        activeBtn.style.borderBottomColor = '#0f766e';
-    }
+    // 3. Highlight the active tab button(s) dynamically
+    document.querySelectorAll(`#view-payroll .tab-btn[onclick*="'${tabName}'"]`).forEach(btn => {
+        btn.classList.add('active');
+        btn.style.color = '#0f766e'; // Teal UI Theme
+        btn.style.borderBottomColor = '#0f766e';
+    });
 
-    // 5. Show the correct section and trigger its specific loading engine!
+    // 4. Show the correct section and trigger its specific loading engine!
     if (tabName === 'Feed' && feedSec) { 
         feedSec.style.display = 'block'; 
     }
@@ -13016,8 +13031,6 @@ window.switchPayrollTab = function(tabName) {
         ledgSec.style.display = 'block'; 
         if (typeof window.loadLedger === 'function') window.loadLedger(); 
     }
-    
-    // 🔥 THE NEW SANCTIONS TAB
     if (tabName === 'Sanctions' && sancSec) { 
         sancSec.style.display = 'block'; 
         if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard(); 
