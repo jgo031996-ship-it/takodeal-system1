@@ -1623,38 +1623,6 @@
 
       </div>
     </div>
-
-    <div id="view-sop" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-        <div style="width: 100%; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
-            <div style="background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
-                
-                <div style="background: #0f766e; border-bottom: 1px solid #0d9488; padding: 20px 25px;">
-                    <h2 style="margin: 0; color: white; font-size: 22px;">📋 Daily SOP Checklist</h2>
-                    <span style="font-size: 13px; color: #ccfbf1;" id="sopViewBranchText">Branch Name</span>
-                </div>
-                
-                <div style="padding: 25px; background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-                    <label style="font-size: 13px; font-weight: bold; color: #475569;">Select Your Shift / Role:</label>
-                    <select id="sopRoleSelect" onchange="window.handleSopRoleChange()" style="width: 100%; padding: 14px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f766e; font-size: 16px; margin-top: 8px; cursor: pointer; box-sizing: border-box;">
-                        <option value="">Loading roles...</option>
-                    </select>
-                    <div style="margin-top: 10px; font-size: 12px; color: #64748b; font-style: italic; display: flex; gap: 8px; align-items: center;">
-                        <span style="font-size: 16px;">💾</span> Your progress is automatically saved to this tablet. You can leave this tab and come back later to finish your tasks.
-                    </div>
-                </div>
-
-                <div style="flex: 1; padding: 25px; min-height: 300px;" id="sopChecklistContainer">
-                    <div style="text-align: center; color: #94a3b8; padding: 60px; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>
-                </div>
-
-                <div style="padding: 20px 25px; background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-                    <div style="font-size: 13px; color: #dc2626; font-weight: bold;">All tasks must be marked Done or Missed (with reason).</div>
-                    <button id="btnSubmitSop" onclick="window.submitSopChecklist()" style="padding: 14px 30px; border-radius: 8px; border: none; background: #0f766e; color: white; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">📤 Submit Checklist</button>
-                </div>
-
-            </div>
-        </div>
-    </div>
     
     <div class="view-container" id="view-waste" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       <div style="width: 100%; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
@@ -1728,6 +1696,39 @@
         
       </div>
     </div>
+
+    <div id="view-sop" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+        <div style="width: 100%; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
+            <div style="background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
+                
+                <div style="background: #0f766e; border-bottom: 1px solid #0d9488; padding: 20px 25px;">
+                    <h2 style="margin: 0; color: white; font-size: 22px;">📋 Daily SOP Checklist</h2>
+                    <span style="font-size: 13px; color: #ccfbf1;" id="sopViewBranchText">Branch Name</span>
+                </div>
+                
+                <div style="padding: 25px; background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                    <label style="font-size: 13px; font-weight: bold; color: #475569;">Select Your Shift / Role:</label>
+                    <select id="sopRoleSelect" onchange="window.handleSopRoleChange()" style="width: 100%; padding: 14px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f766e; font-size: 16px; margin-top: 8px; cursor: pointer; box-sizing: border-box;">
+                        <option value="">Loading roles...</option>
+                    </select>
+                    <div style="margin-top: 10px; font-size: 12px; color: #64748b; font-style: italic; display: flex; gap: 8px; align-items: center;">
+                        <span style="font-size: 16px;">💾</span> Your progress is automatically saved to this tablet. You can leave this tab and come back later to finish your tasks.
+                    </div>
+                </div>
+
+                <div style="flex: 1; padding: 25px; min-height: 300px;" id="sopChecklistContainer">
+                    <div style="text-align: center; color: #94a3b8; padding: 60px; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>
+                </div>
+
+                <div style="padding: 20px 25px; background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 13px; color: #dc2626; font-weight: bold;">All tasks must be marked Done or Missed (with reason).</div>
+                    <button id="btnSubmitSop" onclick="window.submitSopChecklist()" style="padding: 14px 30px; border-radius: 8px; border: none; background: #0f766e; color: white; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">📤 Submit Checklist</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    
     <div class="view-container" id="view-prep" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
           <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🔪 Kitchen Prep Station</h2>
