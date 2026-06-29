@@ -12971,62 +12971,72 @@ window.playManagerPing = function() {
 // ⚖️ HR DISCIPLINARY & SANCTION ENGINE
 // ========================================================
 
-// Update the Payroll Tab Switcher to include Sanctions
-if (typeof window.switchPayrollTab === 'function') {
-    const originalSwitchPayrollTab = window.switchPayrollTab;
-    window.switchPayrollTab = function(tabName) {
-        // Run the original logic if it exists
-        try { originalSwitchPayrollTab(tabName); } catch(e){}
-        
-        // Hide all sections first
-        let feedSec = document.getElementById('payrollSectionFeed');
-        let schedSec = document.getElementById('payrollSectionSchedule');
-        let ledgSec = document.getElementById('payrollSectionLedger');
-        let sancSec = document.getElementById('payrollSectionSanctions');
-        
-        if(feedSec) feedSec.style.display = 'none';
-        if(schedSec) schedSec.style.display = 'none';
-        if(ledgSec) ledgSec.style.display = 'none';
-        if(sancSec) sancSec.style.display = 'none';
+// 🔥 THE BULLETPROOF TAB SWITCHER
+window.switchPayrollTab = function(tabName) {
+    // 1. Find all the sections
+    let feedSec = document.getElementById('payrollSectionFeed');
+    let schedSec = document.getElementById('payrollSectionSchedule');
+    let ledgSec = document.getElementById('payrollSectionLedger');
+    let sancSec = document.getElementById('payrollSectionSanctions');
+    
+    // 2. Hide everything safely
+    if(feedSec) feedSec.style.display = 'none';
+    if(schedSec) schedSec.style.display = 'none';
+    if(ledgSec) ledgSec.style.display = 'none';
+    if(sancSec) sancSec.style.display = 'none';
 
-        // Reset all buttons
-        document.querySelectorAll('#view-payroll .tabs-container .tab-btn').forEach(btn => {
+    // 3. Reset all tab buttons to gray
+    let tabs = ['Feed', 'Schedule', 'Ledger', 'Sanctions'];
+    tabs.forEach(t => {
+        let btn = document.getElementById('tabHr' + t);
+        if (btn) {
             btn.classList.remove('active');
             btn.style.color = '#64748b';
             btn.style.borderBottomColor = 'transparent';
-        });
-
-        // Show the active one
-        let activeBtn = document.getElementById('tabHr' + tabName);
-        if (activeBtn) {
-            activeBtn.classList.add('active');
-            activeBtn.style.color = '#0f766e';
-            activeBtn.style.borderBottomColor = '#0f766e';
         }
+    });
 
-        if (tabName === 'Feed' && feedSec) { feedSec.style.display = 'block'; }
-        if (tabName === 'Schedule' && schedSec) { schedSec.style.display = 'block'; if (typeof loadFromCloud === 'function') loadFromCloud(); }
-        if (tabName === 'Ledger' && ledgSec) { ledgSec.style.display = 'block'; window.loadLedger(); }
+    // 4. Highlight the active tab button
+    let activeBtn = document.getElementById('tabHr' + tabName);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+        activeBtn.style.color = '#0f766e'; // Matches your teal UI theme
+        activeBtn.style.borderBottomColor = '#0f766e';
+    }
+
+    // 5. Show the correct section and trigger its specific loading engine!
+    if (tabName === 'Feed' && feedSec) { 
+        feedSec.style.display = 'block'; 
+    }
+    if (tabName === 'Schedule' && schedSec) { 
+        schedSec.style.display = 'block'; 
+        if (typeof window.loadFromCloud === 'function') window.loadFromCloud(); 
+    }
+    if (tabName === 'Ledger' && ledgSec) { 
+        ledgSec.style.display = 'block'; 
+        if (typeof window.loadLedger === 'function') window.loadLedger(); 
+    }
+    
+    // 🔥 THE NEW SANCTIONS TAB
+    if (tabName === 'Sanctions' && sancSec) { 
+        sancSec.style.display = 'block'; 
+        if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard(); 
         
-        if (tabName === 'Sanctions' && sancSec) { 
-            sancSec.style.display = 'block'; 
-            window.loadSanctionsDashboard(); 
+        // Populate branch filter dynamically if it's empty
+        let filter = document.getElementById('sanctionBranchFilter');
+        if (filter && filter.options.length <= 1 && window.globalActiveBranches) {
+            let html = '<option value="All">All Branches</option>';
+            window.globalActiveBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+            filter.innerHTML = html;
             
-            // Populate branch filter if it's empty
-            let filter = document.getElementById('sanctionBranchFilter');
-            if (filter && filter.options.length <= 1 && window.globalActiveBranches) {
-                let html = '<option value="All">All Branches</option>';
-                window.globalActiveBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
-                filter.innerHTML = html;
-                
-                if (window.sessionUser && window.sessionUser.isFranchisee) {
-                    filter.value = window.sessionUser.branch;
-                    filter.disabled = true;
-                }
+            // Lock the dropdown if a Franchisee is viewing it
+            if (window.sessionUser && window.sessionUser.isFranchisee) {
+                filter.value = window.sessionUser.branch;
+                filter.disabled = true;
             }
         }
-    };
-}
+    }
+};
 
 window.loadSanctionsDashboard = async function() {
     const tbody = document.getElementById('sanctionsTableBody');
