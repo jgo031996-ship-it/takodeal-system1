@@ -13313,3 +13313,228 @@ window.deleteSanction = async function(docId) {
         window.loadSanctionsDashboard();
     } catch (e) { alert("Failed to delete."); }
 };
+
+// ========================================================
+// 📋 STANDARD OPERATING PROCEDURES (SOP) ENGINE
+// ========================================================
+window.globalSopData = {}; // Caches the templates
+
+window.switchSopTab = function(tab) {
+    document.getElementById('sopTabBuilder').style.display = tab === 'Builder' ? 'block' : 'none';
+    document.getElementById('sopTabLogs').style.display = tab === 'Logs' ? 'block' : 'none';
+    if (tab === 'Logs') window.loadSopLogs();
+};
+
+window.loadSopManager = async function() {
+    // Populate dropdowns with active branches
+    let bSelect = document.getElementById('sopBuilderBranch');
+    let lSelect = document.getElementById('sopLogBranch');
+    
+    let opts = '<option value="">-- Choose Branch --</option>';
+    let logOpts = '<option value="All">All Branches</option>';
+    
+    if (window.globalActiveBranches) {
+        window.globalActiveBranches.forEach(b => {
+            opts += `<option value="${b}">${b}</option>`;
+            logOpts += `<option value="${b}">${b}</option>`;
+        });
+    }
+    
+    if (bSelect && bSelect.options.length <= 1) bSelect.innerHTML = opts;
+    if (lSelect && lSelect.options.length <= 2) lSelect.innerHTML = logOpts;
+
+    // Set default log date to today
+    let today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+    document.getElementById('sopLogDate').value = today.toISOString().split('T')[0];
+};
+
+window.loadSopRoles = async function() {
+    let branch = document.getElementById('sopBuilderBranch').value;
+    let roleSelect = document.getElementById('sopBuilderRole');
+    document.getElementById('sopTasksContainer').style.display = 'none';
+    
+    if (!branch) { roleSelect.innerHTML = '<option value="">-- Choose Role --</option>'; return; }
+    
+    roleSelect.innerHTML = '<option value="">Loading...</option>';
+    
+    try {
+        const docSnap = await getDoc(doc(db, "settings", "sop_" + branch));
+        window.globalSopData = docSnap.exists() ? docSnap.data().roles || {} : {};
+        
+        let html = '<option value="">-- Choose Role --</option>';
+        Object.keys(window.globalSopData).forEach(role => {
+            html += `<option value="${role}">${role}</option>`;
+        });
+        roleSelect.innerHTML = html;
+    } catch (e) {
+        console.error(e); roleSelect.innerHTML = '<option value="">Error</option>';
+    }
+};
+
+window.createNewSopRole = async function() {
+    let branch = document.getElementById('sopBuilderBranch').value;
+    if (!branch) return Swal.fire('Wait!', 'Please select a branch first.', 'warning');
+    
+    let roleName = prompt(`Enter new Role/Shift name for ${branch}:\n(e.g. "Staff 1 (9AM-5PM)" or "Closer")`);
+    if (!roleName || roleName.trim() === "") return;
+    roleName = roleName.trim();
+
+    if (window.globalSopData[roleName]) return Swal.fire('Duplicate', 'This role already exists.', 'error');
+    
+    window.globalSopData[roleName] = []; // Empty task array
+    
+    try {
+        await setDoc(doc(db, "settings", "sop_" + branch), { roles: window.globalSopData }, { merge: true });
+        Swal.fire('Created!', `${roleName} added. You can now add tasks to it.`, 'success');
+        window.loadSopRoles();
+    } catch (e) { console.error(e); }
+};
+
+window.deleteSopRole = async function() {
+    let branch = document.getElementById('sopBuilderBranch').value;
+    let roleName = document.getElementById('sopBuilderRole').value;
+    if (!branch || !roleName) return;
+
+    if (!confirm(`Are you sure you want to permanently delete the SOP for ${roleName}?`)) return;
+
+    delete window.globalSopData[roleName];
+    try {
+        await setDoc(doc(db, "settings", "sop_" + branch), { roles: window.globalSopData });
+        document.getElementById('sopTasksContainer').style.display = 'none';
+        window.loadSopRoles();
+    } catch (e) { console.error(e); }
+};
+
+window.loadSopTasks = function() {
+    let roleName = document.getElementById('sopBuilderRole').value;
+    let container = document.getElementById('sopTasksContainer');
+    let list = document.getElementById('sopTasksList');
+    
+    if (!roleName) { container.style.display = 'none'; return; }
+    
+    document.getElementById('sopTaskTitle').innerText = `Tasks for: ${roleName}`;
+    let tasks = window.globalSopData[roleName] || [];
+    
+    list.innerHTML = '';
+    if (tasks.length === 0) {
+        window.addSopTaskRow(); // Add one blank row to start
+    } else {
+        tasks.forEach(t => window.addSopTaskRow(t));
+    }
+    
+    container.style.display = 'block';
+};
+
+window.addSopTaskRow = function(taskText = "") {
+    let list = document.getElementById('sopTasksList');
+    let div = document.createElement('div');
+    div.style.cssText = "display: flex; gap: 10px; align-items: center;";
+    div.innerHTML = `
+        <span style="color: #94a3b8; cursor: grab;">↕️</span>
+        <input type="text" class="sop-task-input" value="${taskText.replace(/"/g, '&quot;')}" placeholder="e.g. Count and verify cash drawer..." style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+        <button onclick="this.parentElement.remove()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 15px; cursor: pointer; font-weight: bold;">✖</button>
+    `;
+    list.appendChild(div);
+};
+
+window.saveSopTasks = async function() {
+    let branch = document.getElementById('sopBuilderBranch').value;
+    let roleName = document.getElementById('sopBuilderRole').value;
+    if (!branch || !roleName) return;
+
+    let tasks = [];
+    document.querySelectorAll('.sop-task-input').forEach(inp => {
+        if (inp.value.trim() !== "") tasks.push(inp.value.trim());
+    });
+
+    let btn = document.getElementById('btnSaveSop');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        window.globalSopData[roleName] = tasks;
+        await setDoc(doc(db, "settings", "sop_" + branch), { roles: window.globalSopData }, { merge: true });
+        Swal.fire({ title: '✅ Saved!', text: `Checklist for ${roleName} updated globally. Cashier apps will sync instantly.`, icon: 'success', customClass: { popup: 'rounded-2xl' }});
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to save tasks.', 'error');
+    } finally {
+        btn.innerText = "💾 Save Checklist to Cloud"; btn.disabled = false;
+    }
+};
+
+window.loadSopLogs = async function() {
+    const tbody = document.getElementById('sopLogsBody');
+    let dateFilter = document.getElementById('sopLogDate').value;
+    let branchFilter = document.getElementById('sopLogBranch').value;
+
+    if (!dateFilter) return;
+
+    let startOfDay = new Date(dateFilter + 'T00:00:00');
+    let endOfDay = new Date(dateFilter + 'T23:59:59');
+
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading logs...</td></tr>';
+
+    try {
+        let q = query(collection(db, "sop_logs"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            if (branchFilter !== "All" && d.branch !== branchFilter) return;
+
+            let timeStr = d.timestamp.toDate().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+            let scoreColor = d.scorePercentage === 100 ? '#16a34a' : (d.scorePercentage >= 80 ? '#d97706' : '#dc2626');
+            let dataEncoded = encodeURIComponent(JSON.stringify(d));
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; color: #64748b;">${timeStr}</td>
+                    <td style="padding: 12px;"><span class="badge badge-closed">${d.branch}</span></td>
+                    <td style="padding: 12px; font-weight: bold; color: #1e293b;">${d.staffName}</td>
+                    <td style="padding: 12px; color: #0284c7; font-weight: bold;">${d.roleName}</td>
+                    <td style="padding: 12px; font-weight: 900; color: ${scoreColor}; font-size: 15px;">${d.scorePercentage}%</td>
+                    <td style="padding: 12px;">
+                        <button onclick="window.viewSopLog('${dataEncoded}')" style="background: white; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; color: #334155; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View Details</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No checklists submitted on this date.</td></tr>';
+    } catch (e) {
+        console.error("Log Fetch Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading logs.</td></tr>';
+    }
+};
+
+window.viewSopLog = function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    
+    document.getElementById('vSopStaff').innerText = d.staffName;
+    document.getElementById('vSopRole').innerText = `${d.roleName} | ${d.timestamp.seconds ? new Date(d.timestamp.seconds * 1000).toLocaleString() : 'Unknown'}`;
+
+    let html = '';
+    d.tasks.forEach(t => {
+        let isDone = t.status === 'done';
+        let icon = isDone ? '✅' : '❌';
+        let color = isDone ? '#16a34a' : '#dc2626';
+        let bg = isDone ? '#f0fdf4' : '#fef2f2';
+        let remarkHtml = !isDone ? `<div style="margin-top: 8px; font-size: 12px; color: #b91c1c; background: white; padding: 8px; border-radius: 4px; border: 1px dashed #fca5a5;"><strong>Reason:</strong> ${t.remark}</div>` : '';
+
+        html += `
+            <div style="background: ${bg}; border: 1px solid ${color}; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <span style="font-size: 18px;">${icon}</span>
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; color: #1e293b; font-size: 14px; line-height: 1.4;">${t.task}</div>
+                        ${remarkHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    document.getElementById('vSopTasksContent').innerHTML = html;
+    document.getElementById('viewSopModal').style.display = 'flex';
+};
