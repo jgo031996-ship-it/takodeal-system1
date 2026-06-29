@@ -9031,7 +9031,14 @@ window.saveNewPayable = async function() {
     let supplier = suppBox ? suppBox.value.trim() : '';
     let invoice = invBox ? invBox.value.trim() : '';
     let amount = amtBox ? parseFloat(amtBox.value) : 0;
-    let terms = termsBox ? parseInt(termsBox.value) : 0;
+    
+    // 🔥 THE FIX: Safely parse the terms. If it's text like "Cash / COD", it becomes NaN. 
+    // We catch that and force it to be 0 days!
+    let termsRaw = termsBox ? termsBox.value : "0";
+    let terms = parseInt(termsRaw);
+    if (isNaN(terms)) {
+        terms = 0;
+    }
 
     if (!supplier || isNaN(amount) || amount <= 0) { 
         Swal.fire('Missing Details', 'Please enter Supplier Name and a valid Amount.', 'warning'); 
@@ -9055,6 +9062,7 @@ window.saveNewPayable = async function() {
             photoUrl = await getDownloadURL(snapshot.ref);
         }
 
+        // Calculate exact due date based on the safe number
         let deliveryDate = new Date(); 
         let dueDate = new Date(); 
         dueDate.setDate(deliveryDate.getDate() + terms);
