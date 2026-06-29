@@ -12966,3 +12966,217 @@ window.playManagerPing = function() {
         osc.stop(ctx.currentTime + 0.8);
     } catch (e) { console.log("Audio blocked by browser policy."); }
 };
+
+// ========================================================
+// ⚖️ HR DISCIPLINARY & SANCTION ENGINE
+// ========================================================
+
+// Update the Payroll Tab Switcher to include Sanctions
+if (typeof window.switchPayrollTab === 'function') {
+    const originalSwitchPayrollTab = window.switchPayrollTab;
+    window.switchPayrollTab = function(tabName) {
+        // Run the original logic if it exists
+        try { originalSwitchPayrollTab(tabName); } catch(e){}
+        
+        // Hide all sections first
+        let feedSec = document.getElementById('payrollSectionFeed');
+        let schedSec = document.getElementById('payrollSectionSchedule');
+        let ledgSec = document.getElementById('payrollSectionLedger');
+        let sancSec = document.getElementById('payrollSectionSanctions');
+        
+        if(feedSec) feedSec.style.display = 'none';
+        if(schedSec) schedSec.style.display = 'none';
+        if(ledgSec) ledgSec.style.display = 'none';
+        if(sancSec) sancSec.style.display = 'none';
+
+        // Reset all buttons
+        document.querySelectorAll('#view-payroll .tabs-container .tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+            btn.style.color = '#64748b';
+            btn.style.borderBottomColor = 'transparent';
+        });
+
+        // Show the active one
+        let activeBtn = document.getElementById('tabHr' + tabName);
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+            activeBtn.style.color = '#0f766e';
+            activeBtn.style.borderBottomColor = '#0f766e';
+        }
+
+        if (tabName === 'Feed' && feedSec) { feedSec.style.display = 'block'; }
+        if (tabName === 'Schedule' && schedSec) { schedSec.style.display = 'block'; if (typeof loadFromCloud === 'function') loadFromCloud(); }
+        if (tabName === 'Ledger' && ledgSec) { ledgSec.style.display = 'block'; window.loadLedger(); }
+        
+        if (tabName === 'Sanctions' && sancSec) { 
+            sancSec.style.display = 'block'; 
+            window.loadSanctionsDashboard(); 
+            
+            // Populate branch filter if it's empty
+            let filter = document.getElementById('sanctionBranchFilter');
+            if (filter && filter.options.length <= 1 && window.globalActiveBranches) {
+                let html = '<option value="All">All Branches</option>';
+                window.globalActiveBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+                filter.innerHTML = html;
+                
+                if (window.sessionUser && window.sessionUser.isFranchisee) {
+                    filter.value = window.sessionUser.branch;
+                    filter.disabled = true;
+                }
+            }
+        }
+    };
+}
+
+window.loadSanctionsDashboard = async function() {
+    const tbody = document.getElementById('sanctionsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading disciplinary records...</td></tr>';
+
+    let branchFilter = document.getElementById('sanctionBranchFilter') ? document.getElementById('sanctionBranchFilter').value : "All";
+
+    try {
+        let q = query(collection(db, "hr_sanctions"), orderBy("timestamp", "desc"));
+        if (branchFilter !== "All") {
+            q = query(collection(db, "hr_sanctions"), where("branch", "==", branchFilter), orderBy("timestamp", "desc"));
+        }
+        
+        const snap = await getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
+            
+            let statusBadge = '';
+            if (d.status === 'Pending Reply') {
+                statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; margin-bottom: 4px;">⏳ Awaiting Staff Reply</span><br><span style="font-size: 11px; color: #64748b;">(POS is locked for this user)</span>`;
+            } else if (d.status === 'Replied') {
+                statusBadge = `
+                    <span style="background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; margin-bottom: 4px;">📩 Staff Replied</span><br>
+                    <div style="font-size: 12px; color: #334155; font-style: italic; border-left: 2px solid #0ea5e9; padding-left: 8px; margin-top: 4px; max-width: 250px; white-space: normal;">"${d.staffReply}"</div>
+                `;
+            } else {
+                statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Resolved / Closed</span>`;
+            }
+
+            let severityColor = d.severity.includes('Warning') ? '#ea580c' : '#dc2626';
+
+            let actionBtn = d.status === 'Replied' 
+                ? `<button onclick="window.resolveSanction('${docSnap.id}', '${d.staffName}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">Accept & Resolve</button>`
+                : `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">🗑️ Delete</button>`;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                    <td style="padding: 15px;">
+                        <strong style="color: #0f172a; font-size: 14px;">👤 ${d.staffName}</strong><br>
+                        <span style="font-size: 11px; color: #94a3b8;">${d.branch}</span>
+                    </td>
+                    <td style="padding: 15px;">
+                        <strong style="color: #334155;">${d.type}</strong><br>
+                        <span style="font-size: 11px; color: #64748b; font-style: italic; max-width: 200px; display: inline-block;">"${d.details}"</span>
+                    </td>
+                    <td style="padding: 15px;"><strong style="color: ${severityColor};">${d.severity}</strong></td>
+                    <td style="padding: 15px;">${statusBadge}</td>
+                    <td style="padding: 15px;">${actionBtn}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #64748b;">No disciplinary records found.</td></tr>';
+    } catch (e) {
+        console.error("Sanctions Load Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading data.</td></tr>';
+    }
+};
+
+window.openIssueSanctionModal = async function() {
+    document.getElementById('issueSanctionModal').style.display = 'flex';
+    document.getElementById('sanctionDetails').value = '';
+    
+    let select = document.getElementById('sanctionStaffSelect');
+    select.innerHTML = '<option value="">Loading staff...</option>';
+    
+    try {
+        const snap = await getDocs(collection(db, "cashiers"));
+        let html = '<option value="">-- Select Staff Member --</option>';
+        let staffList = [];
+        
+        let branchFilter = document.getElementById('sanctionBranchFilter') ? document.getElementById('sanctionBranchFilter').value : "All";
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+        
+        snap.forEach(doc => {
+            let data = doc.data();
+            // Filter list to only show staff in the relevant branch!
+            if (branchFilter !== "All" && data.branch !== branchFilter) return;
+            if (isFranchisee && data.branch !== window.sessionUser.branch) return;
+            
+            staffList.push({ name: data.cashierName, branch: data.branch });
+        });
+        
+        staffList.sort((a,b) => a.name.localeCompare(b.name)).forEach(s => {
+            html += `<option value="${s.name}" data-branch="${s.branch}">${s.name} (${s.branch})</option>`;
+        });
+        
+        select.innerHTML = html;
+    } catch (e) {
+        console.error("Staff Load Error:", e);
+        select.innerHTML = '<option value="">Error loading staff.</option>';
+    }
+};
+
+window.submitNewSanction = async function() {
+    let selectEl = document.getElementById('sanctionStaffSelect');
+    if (!selectEl.value) return alert("Please select a staff member.");
+    
+    let staffName = selectEl.value;
+    let branch = selectEl.options[selectEl.selectedIndex].getAttribute('data-branch');
+    let type = document.getElementById('sanctionType').value;
+    let severity = document.getElementById('sanctionSeverity').value;
+    let details = document.getElementById('sanctionDetails').value.trim();
+
+    if (!details) return alert("Please provide details of the incident.");
+
+    let btn = document.getElementById('btnSaveSanction');
+    btn.innerText = "⏳ Issuing Notice..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "hr_sanctions"), {
+            staffName: staffName,
+            branch: branch,
+            type: type,
+            severity: severity,
+            details: details,
+            status: "Pending Reply", // Automatically locks their POS!
+            issuedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: serverTimestamp()
+        });
+
+        alert(`✅ Success! A Notice to Explain (NTE) has been issued to ${staffName}. Their POS is now locked until they reply.`);
+        document.getElementById('issueSanctionModal').style.display = 'none';
+        window.loadSanctionsDashboard();
+
+    } catch (e) {
+        console.error("Error issuing sanction:", e);
+        alert("Failed to issue notice.");
+    } finally {
+        btn.innerText = "🚀 Issue Digital Notice"; btn.disabled = false;
+    }
+};
+
+window.resolveSanction = async function(docId, staffName) {
+    if (!confirm(`Mark this issue as resolved for ${staffName}?`)) return;
+    try {
+        await updateDoc(doc(db, "hr_sanctions", docId), { status: "Resolved", resolvedAt: serverTimestamp() });
+        window.loadSanctionsDashboard();
+    } catch (e) { alert("Failed to resolve."); }
+};
+
+window.deleteSanction = async function(docId) {
+    if (!confirm(`Are you sure you want to delete this record?`)) return;
+    try {
+        await deleteDoc(doc(db, "hr_sanctions", docId));
+        window.loadSanctionsDashboard();
+    } catch (e) { alert("Failed to delete."); }
+};
