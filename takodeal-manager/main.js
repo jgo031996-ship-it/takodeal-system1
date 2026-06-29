@@ -2456,7 +2456,6 @@ window.loadInventoryData = async function() {
             let itemName = (d.name || "").toLowerCase();
             let itemCat = d.category || "Uncategorized";
             
-            // 🔥 THE SMART CATEGORY & SEARCH FILTER LOGIC
             if (catFilter !== "All" && itemCat !== catFilter) return; 
             if (search && !itemName.includes(search)) return; 
             
@@ -2475,6 +2474,26 @@ window.loadInventoryData = async function() {
             let isLow = stock <= parseFloat(d.reorderLevel || d.lowStockAlert || 5);
             let statusHtml = isLow ? `<span style="color:#ef4444; background:#fef2f2; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Low Stock</span>` : `<span style="color:#16a34a; font-weight:bold; font-size:11px;">In Stock</span>`;
             
+            // 🔥 THE NEW DOUBLE-UOM INJECTOR
+            let pUom = d.purchaseUom || d.purchUom || d.uom || 'units';
+            let bUom = d.baseUom || d.uom || 'units';
+            let purchStock = conv > 0 ? (stock / conv) : stock;
+            
+            let stockHtml = `
+                <div style="font-weight: 900; color: ${isLow ? '#ef4444' : '#334155'}; font-size: 15px;">
+                    ${stock.toFixed(1)} <span style="font-size: 11px; font-weight: normal; color: #64748b;">${bUom}</span>
+                </div>
+            `;
+            // Only show the blue box if there is actually a conversion set up!
+            if (conv !== 1 && pUom !== bUom) {
+                stockHtml += `
+                <div style="margin-top: 4px;">
+                    <span style="background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px dashed #bae6fd; display: inline-block;">
+                        ${purchStock.toFixed(2)} ${pUom}s
+                    </span>
+                </div>`;
+            }
+
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                     <td style="padding: 12px; text-align: center;">
@@ -2483,7 +2502,7 @@ window.loadInventoryData = async function() {
                     <td style="padding: 12px; font-weight:bold; color:#64748b; font-size:12px;">${d.branch}</td>
                     <td style="padding: 12px; font-weight:900; color:#1e293b;">${d.name}</td>
                     <td style="padding: 12px; font-size:12px; font-weight:bold; color:var(--primary);">${itemCat}</td>
-                    <td style="padding: 12px; font-weight:900; color:${isLow ? '#ef4444' : '#334155'}; font-size:15px;">${stock.toFixed(1)} <span style="font-size:11px; font-weight:normal; color:#64748b;">${d.baseUom || ''}</span></td>
+                    <td style="padding: 12px;">${stockHtml}</td>
                     <td style="padding: 12px;">${statusHtml}</td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
                     <td style="padding: 12px; display:flex; gap:5px;">
@@ -11927,29 +11946,21 @@ window.renderAuditModalItems = function() {
     let html = '';
 
     window.globalAuditItems.forEach((item, index) => {
-        // Search Filter
         if (search && !item.name.toLowerCase().includes(search) && !item.category.toLowerCase().includes(search)) return;
 
-        // Restore value from memory if they previously typed it
-        let displayValue = item.tempRawValue !== undefined ? item.tempRawValue : '';
-
-        // 🧠 THE SMART UOM DROPDOWN
         let uomDropdownHtml = '';
         if (item.purchUom !== item.uom && item.convRate !== 1) {
-            let selBase = item.tempConvRate === 1 ? 'selected' : '';
-            let selPurch = item.tempConvRate === item.convRate ? 'selected' : '';
-            
             uomDropdownHtml = `
-                <select onchange="window.globalAuditItems[${index}].tempConvRate = parseFloat(this.options[this.selectedIndex].dataset.conv); window.globalAuditItems[${index}].tempDisplayUom = this.options[this.selectedIndex].text;" style="padding: 10px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; background: #fffcf0; color: #92400e; font-weight: bold; outline: none; cursor: pointer; box-sizing: border-box; height: 100%;">
-                    <option value="base" data-conv="1" ${selBase}>${item.uom}</option>
-                    <option value="purch" data-conv="${item.convRate}" ${selPurch}>${item.purchUom}</option>
+                <select id="auditUom_${index}" style="padding: 10px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; background: #fffcf0; color: #92400e; font-weight: bold; outline: none; cursor: pointer; box-sizing: border-box; height: 100%;">
+                    <option value="base" data-conv="1">${item.uom}</option>
+                    <option value="purch" data-conv="${item.convRate}">${item.purchUom}</option>
                 </select>
             `;
         } else {
-            // No conversion available, just display standard unit text
             uomDropdownHtml = `<span style="padding: 11px 10px; background: #f8fafc; color: #64748b; border: 2px solid #e2e8f0; border-left: none; border-radius: 0 6px 6px 0; font-size: 11px; font-weight: bold; display: flex; align-items: center; box-sizing: border-box; height: 100%;">${item.uom}</span>`;
         }
 
+        // 🔥 THE FIX: We use a static ID for the input box so Javascript can grab it reliably!
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 12px; font-weight: bold; color: #1e293b; font-size: 14px;">${item.name}</td>
@@ -11957,7 +11968,7 @@ window.renderAuditModalItems = function() {
                 <td style="padding: 12px; text-align: center; font-weight: bold; color: #64748b; font-size: 15px;">${item.systemQty.toFixed(1)} <span style="font-size:11px; font-weight:normal;">${item.uom}</span></td>
                 <td style="padding: 12px; border-left: 2px dashed #e2e8f0; background: #fffcf0;">
                     <div style="display: flex; justify-content: center; align-items: stretch; max-width: 180px; margin: 0 auto; height: 42px;">
-                        <input type="number" onchange="window.globalAuditItems[${index}].tempRawValue = parseFloat(this.value)" value="${displayValue}" placeholder="${item.systemQty.toFixed(1)}" style="flex: 1; width: 100%; padding: 10px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; color: #ea580c; font-size: 16px; outline: none; box-sizing: border-box; height: 100%;">
+                        <input type="number" id="auditInput_${index}" placeholder="${item.systemQty.toFixed(1)}" style="flex: 1; width: 100%; padding: 10px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; color: #ea580c; font-size: 16px; outline: none; box-sizing: border-box; height: 100%;">
                         ${uomDropdownHtml}
                     </div>
                 </td>
@@ -11972,38 +11983,45 @@ window.submitGeneralAudit = async function() {
     let branch = document.getElementById('auditModalBranch').value;
     if (!branch) { alert("Please select a branch first."); return; }
 
-    if (!confirm(`⚠️ CRITICAL ACTION: Are you sure you want to finalize this audit for ${branch}?\n\nThis will force-sync the live database to match your physical counts.`)) return;
+    if (!confirm(`⚠️ CRITICAL ACTION: Are you sure you want to finalize this audit for ${branch}?`)) return;
 
     let btn = document.getElementById('btnSubmitGeneralAudit');
     btn.innerText = "⏳ Syncing Database..."; btn.disabled = true;
 
     try {
         let auditCounts = [];
+        let itemsAudited = 0;
 
         for (let i = 0; i < window.globalAuditItems.length; i++) {
             let item = window.globalAuditItems[i];
             
-            // 🧠 CALCULATE FINAL QUANTITY BASED ON UOM DROPDOWN
-            let physicalQty;
-            let noteText = "Live Sync via Audit Tool";
+            // 🔥 THE FIX: Grab the exact value they typed from the screen!
+            let inputEl = document.getElementById(`auditInput_${i}`);
+            
+            // 🚨 STRICT CHECK: If the box is blank, WE SKIP IT ENTIRELY! It will NOT affect accuracy.
+            if (!inputEl || inputEl.value.trim() === "") continue;
 
-            if (item.tempRawValue !== undefined && !isNaN(item.tempRawValue)) {
-                // Multiply their raw input by whatever Unit multiplier they chose!
-                physicalQty = item.tempRawValue * item.tempConvRate;
-                noteText = `General Audit (${item.tempRawValue} ${item.tempDisplayUom})`;
-            } else {
-                // They left it blank, meaning it matched perfectly.
-                physicalQty = item.systemQty;
+            let rawVal = parseFloat(inputEl.value);
+            itemsAudited++;
+
+            let uomSelect = document.getElementById(`auditUom_${i}`);
+            let convRate = 1;
+            let displayUom = item.uom;
+
+            if (uomSelect && uomSelect.tagName === 'SELECT') {
+                let selOpt = uomSelect.options[uomSelect.selectedIndex];
+                convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+                displayUom = selOpt.text;
             }
 
+            let physicalQty = rawVal * convRate;
+            let noteText = `General Audit (${rawVal} ${displayUom})`;
+            let variance = physicalQty - item.systemQty;
+
             // If a variance is detected, push it to the database
-            if (physicalQty !== item.systemQty) {
-                let variance = physicalQty - item.systemQty;
-                
-                // Update Live Inventory
+            if (variance !== 0) {
                 await updateDoc(doc(db, "inventory", item.id), { currentStock: physicalQty });
 
-                // Write to History Logs so the CEO AI can track it
                 await addDoc(collection(db, "stock_logs"), {
                     branch: branch,
                     item: item.name,
@@ -12012,13 +12030,13 @@ window.submitGeneralAudit = async function() {
                     newQty: physicalQty,
                     variance: variance,
                     type: "Manager General Audit",
-                    note: noteText, // 📝 Beautiful logging: e.g. "General Audit (5 Packs)"
+                    note: noteText,
                     user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
                     timestamp: serverTimestamp()
                 });
             }
 
-            // Always add to the Master Audit Record for the dashboard KPIs
+            // ONLY push items they actually counted into the accuracy scorecard!
             auditCounts.push({
                 name: item.name,
                 systemQty: item.systemQty,
@@ -12026,7 +12044,13 @@ window.submitGeneralAudit = async function() {
             });
         }
 
-        // Save the overarching Audit Record to stock_counts
+        // 🚨 PREVENT BLANK SUBMISSIONS
+        if (itemsAudited === 0) {
+            Swal.fire('No Items Audited', 'You left all inputs blank. Please enter the physical counts before syncing.', 'info');
+            btn.innerText = "💾 Sync & Finalize Audit"; btn.disabled = false;
+            return;
+        }
+
         await addDoc(collection(db, "stock_counts"), {
             branch: branch,
             cashier: window.sessionUser ? window.sessionUser.cashierName : "Manager",
@@ -12034,10 +12058,9 @@ window.submitGeneralAudit = async function() {
             counts: auditCounts
         });
 
-        alert(`✅ Audit Complete! Live inventory for ${branch} has been strictly synchronized.`);
+        alert(`✅ Audit Complete! ${itemsAudited} items were accurately audited and synced.`);
         document.getElementById('generalAuditModal').style.display = 'none';
         
-        // Refresh the UI
         if (typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits(); 
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
 
