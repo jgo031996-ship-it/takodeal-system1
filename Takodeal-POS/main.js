@@ -4550,8 +4550,8 @@ window.submitSanctionReply = async function() {
 // ========================================================
 // 📋 DAILY SOP CHECKLIST ENGINE (TAB-BASED WITH AUTO-SAVE)
 // ========================================================
-window.cashierSopData = {}; // Caches templates from Firebase
-window.currentSopTasks = []; // Holds the active list
+window.cashierSopData = {}; 
+window.currentSopTasks = []; 
 
 window.loadSopView = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
