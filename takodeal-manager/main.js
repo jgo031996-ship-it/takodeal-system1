@@ -12968,57 +12968,24 @@ window.playManagerPing = function() {
 };
 
 // ========================================================
-// ⚖️ HR DISCIPLINARY & SANCTION ENGINE (SAFE AUTO-HEALING)
-// ========================================================
-
-// 🔥 THE DOM HEALER & EXTRACTOR
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
-        let viewContainer = document.getElementById('view-payroll');
-        if (!viewContainer) return;
-
-        // Safely extract any sections that accidentally got pasted inside each other
-        function extractTrappedSection(innerElementId) {
-            let el = document.getElementById(innerElementId);
-            if (!el) return;
-            while (el && el.parentElement && el.parentElement !== viewContainer && el.tagName !== 'BODY') {
-                el = el.parentElement;
-            }
-            if (el && el.parentElement !== viewContainer) {
-                viewContainer.appendChild(el);
-            }
-        }
-
-        extractTrappedSection('shiftConfigGrid');     // Rescues Schedule
-        extractTrappedSection('ledgerTableBody');     // Rescues Ledger
-        extractTrappedSection('sanctionsTableBody');  // Rescues Sanctions
-
-        // Inject the missing tab button into ALL tab containers in the HR Hub
-        document.querySelectorAll('#view-payroll .tabs-container').forEach(container => {
-            if (!container.innerHTML.includes("switchPayrollTab('Sanctions')")) {
-                container.insertAdjacentHTML('beforeend', `<button class="tab-btn" onclick="window.switchPayrollTab('Sanctions')">⚖️ Disciplinary Actions</button>`);
-            }
-        });
-    }, 1000);
-});
-
-// ========================================================
-// ⚖️ HR DISCIPLINARY & SANCTION ENGINE (WITH PDF EXPORT)
+// ⚖️ HR DISCIPLINARY & SANCTION ENGINE (CRASH-FREE)
 // ========================================================
 
 // 🔥 THE BULLETPROOF TAB SWITCHER
 window.switchPayrollTab = function(tabName) {
-    // If it's a separate page, use your native page switcher!
+    // 1. If it's a separate page, use your native page switcher to jump there!
     if (tabName === 'Schedule') { window.switchView('schedule'); return; }
     if (tabName === 'Ledger') { window.switchView('ledger'); return; }
 
     let viewPayroll = document.getElementById('view-payroll');
+    if (!viewPayroll) return;
+
     let sancSec = document.getElementById('payrollSectionSanctions');
     
-    // Selects the Payslip and Attendance boxes
-    let allCards = viewPayroll.querySelectorAll('.card'); 
+    // Selects the Payslip and Attendance boxes (they have the "card" class)
+    let feedCards = viewPayroll.querySelectorAll('.card'); 
 
-    // Reset tab buttons
+    // Reset tab buttons inside the HR Hub
     viewPayroll.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
         btn.style.color = '#64748b';
@@ -13036,15 +13003,33 @@ window.switchPayrollTab = function(tabName) {
     // Toggle visibility seamlessly
     if (tabName === 'Feed') {
         if (sancSec) sancSec.style.display = 'none';
-        allCards.forEach(card => card.style.display = 'block');
+        feedCards.forEach(card => card.style.display = 'block');
     } else if (tabName === 'Sanctions') {
-        allCards.forEach(card => card.style.display = 'none');
+        feedCards.forEach(card => card.style.display = 'none');
         if (sancSec) {
             sancSec.style.display = 'block';
             if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
         }
     }
 };
+
+// Make sure to populate the Branch Filter when the page loads
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        let filter = document.getElementById('sanctionBranchFilter');
+        if (filter && filter.options.length <= 1 && window.globalActiveBranches) {
+            let html = '<option value="All">All Branches</option>';
+            window.globalActiveBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+            filter.innerHTML = html;
+            
+            // Lock the dropdown if a Franchisee is viewing it
+            if (window.sessionUser && window.sessionUser.isFranchisee) {
+                filter.value = window.sessionUser.branch;
+                filter.disabled = true;
+            }
+        }
+    }, 2000);
+});
 
 window.loadSanctionsDashboard = async function() {
     const tbody = document.getElementById('sanctionsTableBody');
