@@ -4166,13 +4166,13 @@ window.submitOpenShift = async function() {
 window.safeSubmitComprehensiveCloseShift = async function() {
     let parked = await window.getParkedOrders(sessionUser.branch);
     if (parked && parked.length > 0) {
-        alert("⚠️ STRICT SYSTEM LOCK!\n\nYou have " + parked.length + " parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.");
+        Swal.fire('⚠️ Strict System Lock', `You have ${parked.length} parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.`, 'warning');
         closeModal('endShiftModal');
         return;
     }
 
-    let btn = document.querySelector('.btn-place[onclick="safeSubmitComprehensiveCloseShift()"]');
-    let origText = btn ? btn.innerText : 'Confirm & End Shift';
+    let btn = document.querySelector('button[onclick="safeSubmitComprehensiveCloseShift()"]');
+    let origText = btn ? btn.innerText : '🛑 Confirm & End Shift';
     if(btn) { btn.innerText = "Verifying Count..."; btn.disabled = true; }
 
     try {
@@ -4183,9 +4183,10 @@ window.safeSubmitComprehensiveCloseShift = async function() {
         // 2. PULL EXPECTED CASH FROM THE OFFICIAL SHIFT MEMORY ENGINE!
         let expectedCash = 0;
         let details = await window.getLiveShiftDetails(sessionUser.branch);
+        
         if (details) {
-            // Formula: Starting Cash + Cash Sales - Cash Out (Expenses/Remittances)
-            expectedCash = (details.startingCash || 0) + (details.cashSales || 0) - (details.cashOut || 0);
+            // 🔥 THE FIX: We bypass manual math entirely and just grab the exact expectedCash calculated by the Master Shift Engine!
+            expectedCash = parseFloat(details.expectedCash) || 0;
         }
 
         let variance = totalDeclared - expectedCash;
@@ -4250,8 +4251,8 @@ window.safeSubmitComprehensiveCloseShift = async function() {
         }
 
     } catch(e) {
-        console.error(e);
-        alert("Error calculating variance. Proceeding to force close.");
+        console.error("Z-Reading Error:", e);
+        Swal.fire("Error", "Error calculating variance. Proceeding to force close.", "warning");
         if (typeof window.submitComprehensiveCloseShift === 'function') window.submitComprehensiveCloseShift();
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
