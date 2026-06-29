@@ -175,6 +175,12 @@ window.verifyPin = async function (pin) {
 
     if (!staffData) return null; // PIN is genuinely wrong
 
+    // 🛑 INJECT THE SANCTION CHECKER HERE BEFORE ALLOWING LOGIN!
+    // We don't 'await' it here so it doesn't slow down the login, but it will pop up instantly on the dashboard!
+    if (typeof window.checkActiveSanctions === 'function') {
+        window.checkActiveSanctions(staffData.cashierName);
+    }
+
     // 🔥 SECURITY WALL REMOVED! Floating staff are now authorized to log in anywhere.
     return staffData; // Allows the login!
 
@@ -4130,4 +4136,78 @@ window.safeSubmitComprehensiveCloseShift = async function() {
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
     }
+};
+
+// ========================================================
+// 🛑 HR SANCTION LOCK SCREEN ENGINE
+// ========================================================
+
+window.checkActiveSanctions = async function(staffName) {
+    if (!staffName) return;
+    
+    try {
+        // Query the database to see if this specific staff member has a "Pending Reply" notice
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            // THEY HAVE A SANCTION! Lock the screen immediately.
+            let sanction = snap.docs[0].data();
+            let sanctionId = snap.docs[0].id;
+
+            document.getElementById('activeSanctionId').value = sanctionId;
+            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
+            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
+            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
+            document.getElementById('sanctionStaffReply').value = ""; // Clear old text
+
+            // Force the modal to cover the entire screen
+            document.getElementById('hrSanctionModal').style.display = 'flex';
+        }
+    } catch (e) {
+        console.error("Error checking sanctions:", e);
+    }
+};
+
+window.submitSanctionReply = async function() {
+    let sanctionId = document.getElementById('activeSanctionId').value;
+    let replyText = document.getElementById('sanctionStaffReply').value.trim();
+
+    if (!replyText) {
+        alert('You must provide a written explanation to unlock the system.');
+        return;
+    }
+
+    if (replyText.length < 15) {
+        alert('Please provide a more detailed explanation (at least 15 characters).');
+        return;
+    }
+
+    let btn = document.getElementById('btnSubmitSanctionReply');
+    btn.innerText = "⏳ Submitting..."; btn.disabled = true;
+
+    try {
+        // Send the reply back to the Manager App!
+        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
+            staffReply: replyText,
+            status: "Replied",
+            repliedAt: serverTimestamp()
+        });
+
+        alert('✅ Your explanation has been sent to Management. The POS is now unlocked.');
+        document.getElementById('hrSanctionModal').style.display = 'none';
+
+    } catch (e) {
+        console.error(e);
+        alert('Failed to submit. Check internet connection.');
+    } finally {
+        btn.innerText = "Submit Explanation & Unlock"; btn.disabled = false;
+    }
+};
+
+window.logoutCashier = function() {
+    localStorage.removeItem('cashierName');
+    localStorage.removeItem('cashierBranch');
+    localStorage.removeItem('cashierPermissions');
+    location.reload(); // Hard refresh to kick them out
 };
