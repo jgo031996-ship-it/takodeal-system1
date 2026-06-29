@@ -1249,6 +1249,40 @@
       Lock Device</button>
   </div>
 
+  <div id="hrSanctionModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);">
+      <div style="background: white; width: 550px; max-width: 90%; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 2px solid #b91c1c;">
+          <div style="background: #b91c1c; padding: 25px; color: white; text-align: center;">
+              <h2 style="margin: 0; font-size: 24px;">🚨 OFFICIAL HR NOTICE 🚨</h2>
+              <p style="margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;">Your POS access has been temporarily suspended.</p>
+          </div>
+            
+          <div style="padding: 25px; text-align: left; background: #fff1f2;">
+              <p style="font-size: 14px; color: #475569; margin-top: 0;"><strong>Notice to Explain (NTE)</strong> issued by Management.</p>
+                
+              <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #fca5a5; margin-bottom: 20px;">
+                  <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Violation Type</div>
+                  <div id="sanctionLockType" style="font-size: 16px; font-weight: 900; color: #1e293b; margin-bottom: 10px;">Loading...</div>
+                    
+                  <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Severity</div>
+                  <div id="sanctionLockSeverity" style="font-size: 14px; font-weight: bold; color: #b91c1c; margin-bottom: 10px;">Loading...</div>
+
+                  <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Manager's Report</div>
+                  <div id="sanctionLockDetails" style="font-size: 14px; color: #334155; font-style: italic; background: #f8fafc; padding: 10px; border-radius: 4px; border-left: 3px solid #b91c1c;">Loading...</div>
+              </div>
+
+              <label style="font-size: 13px; font-weight: bold; color: #b91c1c;">Your Required Written Explanation:</label>
+              <p style="font-size: 11px; color: #64748b; margin: 2px 0 8px 0;">Please explain your side of the incident below. You cannot clock in until this is submitted.</p>
+              <textarea id="sanctionStaffReply" placeholder="Type your formal explanation here..." style="width: 100%; height: 120px; padding: 12px; border-radius: 6px; border: 2px solid #f87171; outline: none; resize: none; font-family: inherit; font-size: 14px; box-sizing: border-box;"></textarea>
+          </div>
+
+          <div style="padding: 15px 20px; background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+              <button onclick="window.logoutCashier()" style="padding: 10px 20px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-weight: bold; cursor: pointer; color: #475569;">Log Out</button>
+              <button id="btnSubmitSanctionReply" onclick="window.submitSanctionReply()" style="padding: 12px 25px; border-radius: 6px; border: none; background: #b91c1c; color: white; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 4px 6px rgba(185, 28, 28, 0.3);">Submit Explanation & Unlock</button>
+          </div>
+          <input type="hidden" id="activeSanctionId" value="">
+      </div>
+  </div>
+
   <script>
       async function submitLoginPin() {
           let passInput = document.getElementById('loginPasswordInput');
