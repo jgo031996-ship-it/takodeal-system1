@@ -265,6 +265,7 @@
       <a href="#" class="nav-item" id="nav-history" onclick="switchView('history')"><span class="nav-icon">🧾</span> <span class="nav-text">Sales History</span></a>
       <a href="#" class="nav-item" id="nav-expenses" onclick="switchView('expenses')"><span class="nav-icon">💸</span> <span class="nav-text">Expense & Restock Feed</span></a>
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')"><span class="nav-icon">👥</span> <span class="nav-text">Staff & Security</span></a>
+      <a href="#" class="nav-item" id="nav-sop" onclick="switchView('sop'); window.loadSopManager();"><span class="nav-icon">📋</span> <span class="nav-text">SOP Manager</span></a>
       <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')"><span class="nav-icon">🍔</span> <span class="nav-text">Menu Editor</span></a>
       <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();"><span class="nav-icon">⚙️</span> <span class="nav-text">POS Config Hub</span></a>
       <a href="#" class="nav-item" id="nav-inventory" onclick="switchView('inventory'); loadInventoryData();"><span class="nav-icon">📦</span> <span class="nav-text">Live Inventory</span></a>
@@ -2100,6 +2101,93 @@
                 Extracting database DNA and generating business strategy...
             </div>
 
+        </div>
+    </div>
+
+    <div id="view-sop" class="view">
+        <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h2 style="margin: 0; color: #0f766e;">📋 Standard Operating Procedures (SOP)</h2>
+                    <span style="font-size: 12px; color: var(--text-muted);">Build daily task lists for specific roles and track staff compliance.</span>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-refresh" style="background: white; border: 1px solid var(--border); color: var(--text-main);" onclick="window.switchSopTab('Logs')">📜 View Submitted Logs</button>
+                    <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="window.switchSopTab('Builder')">⚙️ SOP Builder</button>
+                </div>
+            </div>
+
+            <div id="sopTabBuilder" style="display: block; padding: 20px;">
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">1. Select Branch</label>
+                        <select id="sopBuilderBranch" class="input-box" onchange="window.loadSopRoles()" style="padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; min-width: 200px;">
+                            <option value="">-- Choose Branch --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">2. Select Role/Shift</label>
+                        <select id="sopBuilderRole" class="input-box" onchange="window.loadSopTasks()" style="padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; min-width: 250px;">
+                            <option value="">-- Choose Role --</option>
+                        </select>
+                    </div>
+                    <div style="margin-top: auto;">
+                        <button onclick="window.createNewSopRole()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 39px;">➕ Add New Role</button>
+                        <button onclick="window.deleteSopRole()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 9px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 39px; margin-left: 5px;">🗑️ Delete Role</button>
+                    </div>
+                </div>
+
+                <div id="sopTasksContainer" style="display: none; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+                        <h3 style="margin: 0; color: #334155; font-size: 16px;" id="sopTaskTitle">Tasks for Role</h3>
+                        <button onclick="window.addSopTaskRow()" style="background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">+ Add Task</button>
+                    </div>
+                    <div id="sopTasksList" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;"></div>
+                    <button id="btnSaveSop" onclick="window.saveSopTasks()" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.2);">💾 Save Checklist to Cloud</button>
+                </div>
+            </div>
+
+            <div id="sopTabLogs" style="display: none; padding: 20px;">
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
+                    <input type="date" id="sopLogDate" onchange="window.loadSopLogs()" class="input-box" style="padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold;">
+                    <select id="sopLogBranch" onchange="window.loadSopLogs()" class="input-box" style="padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; min-width: 200px;">
+                        <option value="All">All Branches</option>
+                    </select>
+                    <button onclick="window.loadSopLogs()" class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold;">🔄 Refresh Logs</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead style="background: #f8fafc;">
+                            <tr>
+                                <th>Date & Time</th>
+                                <th>Branch</th>
+                                <th>Staff Name</th>
+                                <th>Role / Shift</th>
+                                <th>Score</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sopLogsBody">
+                            <tr><td colspan="6" class="text-center">Loading logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="viewSopModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 10005; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+        <div style="background: white; width: 600px; max-width: 95%; max-height: 90vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+            <div style="background: #0f766e; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 18px;">📋 Submitted Checklist</h2>
+                <span onclick="document.getElementById('viewSopModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+            </div>
+            <div style="background: #f8fafc; padding: 15px 20px; border-bottom: 2px solid #e2e8f0;">
+                <div style="font-size: 18px; font-weight: bold; color: #1e293b;" id="vSopStaff">Staff Name</div>
+                <div style="font-size: 13px; color: #64748b;" id="vSopRole">Role / Date</div>
+            </div>
+            <div style="padding: 20px; flex: 1; overflow-y: auto;" id="vSopTasksContent">
+                </div>
         </div>
     </div>
     
