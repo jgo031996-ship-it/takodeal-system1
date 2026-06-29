@@ -872,21 +872,38 @@ window.resetStaffPin = async function (staffId, staffName) {
 onSnapshot(query(collection(db, "manager_alerts"), orderBy("timestamp", "desc")), (snapshot) => {
   let html = '';
   let unreadCount = 0;
+  let recentAlerts = new Set(); // 🔥 THE SPAM FILTER: Remembers alerts to prevent UI duplicates!
 
   if (snapshot.empty) {
     html = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: var(--success); font-weight: bold;">🛡️ No security alerts. Your empire is safe.</td></tr>';
   } else {
     snapshot.forEach(docSnap => {
       let data = docSnap.data();
-      if (!data.isRead) unreadCount++;
+      let nowMs = Date.now();
+      let alertMs = data.timestamp ? data.timestamp.toMillis() : nowMs;
+      let ageInDays = (nowMs - alertMs) / (1000 * 60 * 60 * 24);
 
-      let timeStr = "Just now";
-      if (data.timestamp && data.timestamp.toDate) {
-        timeStr = data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      // 🧹 7-DAY AUTO WIPE: If it is marked Resolved and is older than 7 days, delete it!
+      if (data.isRead && ageInDays > 7) {
+          deleteDoc(doc(db, "manager_alerts", docSnap.id)).catch(e => console.log(e));
+          return; // Skip rendering it on the screen
       }
 
       let alertMsg = data.message || "Unknown Alert";
       
+      // 🛡️ SPAM FILTER: If we already showed this exact message for this branch recently, hide the duplicate!
+      let dupKey = `${data.branch}_${alertMsg}`;
+      if (recentAlerts.has(dupKey)) return; 
+      recentAlerts.add(dupKey);
+
+      if (!data.isRead) unreadCount++;
+
+      let timeStr = "Just now";
+      if (data.timestamp && data.timestamp.toDate) {
+        // Removed the seconds to make the UI look cleaner
+        timeStr = data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      }
+
       // 🎨 THE COLOR CODER ENGINE
       let textColor = "var(--danger)";
       let rowBg = "var(--danger-light)";
