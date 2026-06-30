@@ -3445,7 +3445,9 @@ window.printReceipt = async function(type) {
     // ------------------------------------------
     // 🧾 CUSTOMER RECEIPT
     // ------------------------------------------
-    let proReceipt = "\x1B\x40\n";
+    // \x1B\x40 initializes the printer. 
+    // \x1B\x70\x00\x19\x96 fires a 50ms electrical pulse to Pin 2 to open the drawer!
+    let proReceipt = "\x1B\x40\x1B\x70\x00\x19\x96\n";
     proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
     if (storeAddress) proReceipt += centerTxt(storeAddress) + "\n";
     if (storeContact) proReceipt += centerTxt(storeContact) + "\n";
