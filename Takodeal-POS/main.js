@@ -1887,17 +1887,46 @@ window.closeTimeClock = function() {
     document.getElementById('timeClockModal').style.display = 'none';
 };
 
+window.isProcessingAttendance = false;
+
 window.submitAttendance = async function(type) {
+    // 1. INSTANT LOCAL LOCK (Stops double-tapping instantly)
+    if (window.isProcessingAttendance) return;
+    window.isProcessingAttendance = true;
+
     let buttons = document.querySelectorAll('#timeClockModal button');
-    buttons.forEach(b => b.disabled = true);
+    buttons.forEach(b => {
+        b.disabled = true;
+        if (b.innerText === type) b.innerText = "⏳ Syncing..."; 
+    });
 
     const staffName = document.getElementById('clockStaffName').value;
     const inputPin = document.getElementById('clockStaffPin').value.trim();
 
+    // Helper function to safely unlock the UI if something fails
+    const unlockUI = () => {
+        window.isProcessingAttendance = false;
+        buttons.forEach(b => b.disabled = false);
+        let btnIn = document.querySelector('button[onclick*="TIME IN"]');
+        if(btnIn) btnIn.innerText = "TIME IN";
+        let btnOut = document.querySelector('button[onclick*="TIME OUT"]');
+        if(btnOut) btnOut.innerText = "TIME OUT";
+    };
+
     if (!staffName) { 
         alert("❌ Please select your name."); 
-        buttons.forEach(b => b.disabled = false);
+        unlockUI();
         return; 
+    }
+
+    // 2. OFFLINE COOLDOWN LOCK (Prevents them from refreshing the app and trying again)
+    let punchCooldownKey = `takodeal_punch_${staffName}`;
+    let lastPunchTime = localStorage.getItem(punchCooldownKey);
+    if (lastPunchTime && (Date.now() - parseInt(lastPunchTime) < 60000)) { 
+        // 60,000 milliseconds = 1 full minute lockout
+        alert("⏳ Sync in progress!\n\nYour previous punch is still processing due to slow internet. Please wait 1 minute before trying again to prevent duplicate logs.");
+        unlockUI();
+        return;
     }
 
     let staffProfile = currentBranchStaffCache.find(s => s.cashierName === staffName);
@@ -1913,16 +1942,13 @@ window.submitAttendance = async function(type) {
         const videoEl = document.getElementById('clockVideo');
         
         try {
-            // Detect the face and extract the unique 128-point descriptor
             const detection = await faceapi.detectSingleFace(videoEl).withFaceLandmarks().withFaceDescriptor();
 
             if (detection) {
                 if (staffProfile.faceDescriptor && staffProfile.faceDescriptor.length > 0) {
-                    // 🔒 VERIFICATION FLOW: They already have a face saved!
                     const savedDescriptor = new Float32Array(staffProfile.faceDescriptor);
                     const distance = faceapi.euclideanDistance(detection.descriptor, savedDescriptor);
                     
-                    // 0.55 is a strict security threshold for identical matches
                     if (distance < 0.55) {
                         faceVerified = true;
                         statusEl.innerHTML = "✅ Identity Verified!";
@@ -1931,34 +1957,31 @@ window.submitAttendance = async function(type) {
                         statusEl.innerHTML = "🤖 Face AI Ready.";
                     }
                 } else {
-                    // 🆕 REGISTRATION FLOW: First time logging in!
                     if (inputPin && staffProfile.pin === inputPin) {
                         const cashierQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
                         const cashierSnap = await getDocs(cashierQ);
                         if (!cashierSnap.empty) {
                             await updateDoc(cashierSnap.docs[0].ref, {
-                                faceDescriptor: Array.from(detection.descriptor) // Save to Firebase!
+                                faceDescriptor: Array.from(detection.descriptor)
                             });
                             alert("✅ Face ID Successfully Registered!\n\nFor your next shift, you can leave the PIN blank and just look at the camera.");
                             faceVerified = true;
                         }
                     } else {
                         alert("🤖 Face Registration Required!\n\nYou do not have a Face ID saved yet. Please enter your 4-Digit PIN to register your face securely.");
-                        buttons.forEach(b => b.disabled = false);
                         statusEl.innerHTML = "🤖 Enter PIN to register face.";
+                        unlockUI();
                         return;
                     }
                 }
             } else {
                 if (!confirm("❌ AI could not detect a face clearly. Please ensure you are in a well-lit area and looking at the camera.\n\nClick OK to bypass the AI and use your manual PIN.")) {
-                    buttons.forEach(b => b.disabled = false);
                     statusEl.innerHTML = "🤖 Ready. Look at camera.";
+                    unlockUI();
                     return;
                 }
             }
-        } catch(e) {
-            console.error("AI processing error:", e);
-        }
+        } catch(e) { console.error("AI processing error:", e); }
     }
 
     // ==========================================
@@ -1968,7 +1991,7 @@ window.submitAttendance = async function(type) {
         if (!inputPin || staffProfile.pin !== inputPin) {
             alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
             document.getElementById('clockStaffPin').value = ''; 
-            buttons.forEach(b => b.disabled = false);
+            unlockUI();
             return;
         }
     }
@@ -1993,15 +2016,15 @@ window.submitAttendance = async function(type) {
 
             if (type === "TIME IN" && lastType === "TIME IN") {
                 alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
-                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
+                document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
             }
             if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
                 alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
-                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
+                document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
             }
             if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.25) {
                 alert(`❌ You just Timed In a few minutes ago!\n\nTo prevent double-shifts and payroll errors, you must wait at least 15 minutes before Timing Out.`);
-                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
+                document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
             }
 
             if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog > 14) {
@@ -2015,21 +2038,6 @@ window.submitAttendance = async function(type) {
         }
     } catch(e) {
         console.warn("Fast query failed. Using fallback lock method...");
-        const fallbackQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
-        const fallbackSnap = await getDocs(fallbackQ);
-        let latestLog = null;
-        
-        fallbackSnap.forEach(doc => {
-            let data = doc.data();
-            if (!latestLog || data.timestamp > latestLog.timestamp) latestLog = data;
-        });
-        
-        if (latestLog) {
-            if (type === "TIME IN" && latestLog.type === "TIME IN") {
-                alert(`❌ You are already Timed In! You must Time Out first.`);
-                document.getElementById('clockStaffPin').value = ''; buttons.forEach(b => b.disabled = false); return; 
-            }
-        }
     }
 
     // ==========================================
@@ -2043,7 +2051,7 @@ window.submitAttendance = async function(type) {
 
     if (!navigator.geolocation) { 
         alert("❌ Geolocation is not supported."); 
-        buttons.forEach(b => b.disabled = false); return; 
+        unlockUI(); return; 
     }
 
     navigator.geolocation.getCurrentPosition(async (position) => {
@@ -2051,22 +2059,20 @@ window.submitAttendance = async function(type) {
         const userLng = position.coords.longitude;
         
         let deviceBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        
-        // 🔥 GPS ROUTING: Everyone is tracked based on the branch they are physically standing in!
         let finalBranch = deviceBranch;
         let finalDistance = 0;
 
         const targetZone = BRANCH_ZONES[deviceBranch];
         if (!targetZone) { 
             alert(`❌ GPS Configuration Missing for ${deviceBranch}.`); 
-            buttons.forEach(b => b.disabled = false); return; 
+            unlockUI(); return; 
         }
         
         finalDistance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
 
         if (finalDistance > ALLOWED_RADIUS_METERS) {
             alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(finalDistance)}m away from ${deviceBranch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
-            buttons.forEach(b => b.disabled = false); return;
+            unlockUI(); return;
         }
         
         try {
@@ -2080,15 +2086,19 @@ window.submitAttendance = async function(type) {
                 distanceMeters: Math.round(finalDistance), 
                 photoBase64: photoBase64
             });
+            
+            // 3. APPLY THE 60-SECOND HARD LOCKOUT
+            localStorage.setItem(punchCooldownKey, Date.now());
+            
             alert(`✅ ${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`);
             window.closeTimeClock();
         } catch (error) { 
             console.error(error); alert("❌ Failed to log attendance."); 
         } 
-        finally { buttons.forEach(b => b.disabled = false); }
+        finally { unlockUI(); }
     }, (error) => { 
         alert("❌ GPS access required."); 
-        buttons.forEach(b => b.disabled = false); 
+        unlockUI(); 
     }, { enableHighAccuracy: true }); 
 };
 
