@@ -4768,3 +4768,19 @@ window.submitSopChecklist = async function() {
         btn.innerText = "📤 Submit Checklist"; btn.disabled = false;
     }
 };
+
+// ========================================================
+// 💵 PHYSICAL HARDWARE CASH DRAWER KICK ENGINE
+// ========================================================
+window.kickCashDrawer = function() {
+    // Standard ESC/POS sequence to trigger cash drawer kick on pin 2
+    let drawerPulseCommand = "\x1B\x40\x1B\x70\x00\x19\x96";
+    
+    try {
+        let base64Command = btoa(unescape(encodeURIComponent(drawerPulseCommand)));
+        window.location.href = "intent:base64," + base64Command + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        console.log("⚡ Hardware electrical pulse sent to cash drawer.");
+    } catch(e) {
+        console.error("Hardware control error:", e);
+    }
+};
