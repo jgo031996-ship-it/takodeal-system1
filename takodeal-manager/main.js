@@ -1424,9 +1424,15 @@ window.addToDispatchCart = function () {
 
   let existing = dispatchCart.find(i => i.itemName === itemName);
   if (existing) { 
-      existing.qty += finalBaseQty; existing.rawQty += rawQty;
-      existing.displayMsg = `${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
-  } else { 
+      existing.qty += finalBaseQty; 
+      existing.rawQty += rawQty;
+      
+      // 🔥 THE FIX: Update the UOM so the Cart reflects "Packs" instead of "Pieces"
+      existing.friendlyUom = friendlyUom; 
+      existing.convRate = convRate;
+      
+      existing.displayMsg = `Sending: ${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
+  } else {
       dispatchCart.push({ 
           itemName: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, displayMsg: displayMsg, rawQty: rawQty,            
           friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", purchaseUom: invItem.purchaseUom || invItem.uom,
@@ -1541,11 +1547,16 @@ window.renderDispatchCart = function() {
   let html = '';
   dispatchCart.forEach((item, idx) => {
     let varianceHtml = '';
+    
+    // 1. Show the Branch's Report Badge (e.g. Out of Stock)
     if (item.requestType) {
         let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
-        varianceHtml = `<br><span style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</span>`;
-    } else if (item.displayMsg) {
-        varianceHtml = `<br><span style="font-size: 11px; color: #64748b;">${item.displayMsg}</span>`;
+        varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
+    } 
+    
+    // 2. 🔥 THE FIX: Also show the Manager's Conversion Text (e.g. Sending 10 Packs)
+    if (item.displayMsg) {
+        varianceHtml += `<div style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">${item.displayMsg}</div>`;
     }
 
     // Recover typed quantity if it exists in memory, otherwise default to item.rawQty or 0
@@ -9589,15 +9600,28 @@ window.renderDashboardCharts = async function() {
             let branch = tx.branch || "Unknown";
 
             let grossTx = 0;
-            // If it has a cart, it is a real food order. Add up the true item prices!
-            if (tx.cart && tx.cart.length > 0) { 
+            if (tx.cart && Array.isArray(tx.cart)) { 
                 tx.cart.forEach(item => { 
-                    grossTx += ((parseFloat(item.variantPrice) || parseFloat(item.basePrice) || 0) * (parseFloat(item.qty) || 1)); 
+                    let qty = parseFloat(item.qty) || 1;
+                    let basePrice = parseFloat(item.variantPrice) || parseFloat(item.basePrice) || 0;
+                    
+                    // 🔥 THE FIX: Accurately calculate all Add-on prices!
+                    let addonTotal = 0;
+                    if (item.addons) {
+                        for (let k in item.addons) {
+                            addonTotal += (parseFloat(item.addons[k].price) || 0) * (parseFloat(item.addons[k].qty) || 0);
+                        }
+                    }
+                    
+                    grossTx += (basePrice + addonTotal) * qty; 
                 }); 
             } else { 
                 // Fallback for older transactions
-                grossTx = parseFloat(tx.netTotal) || 0; 
+                grossTx = parseFloat(tx.subTotalBeforeDiscount) || parseFloat(tx.netTotal) || 0; 
             }
+
+            // 🚫 FINAL SAFETY CHECK: Real sales cannot be negative. Ignore cash-outs!
+            if (grossTx <= 0) return;
 
             // 🚫 FINAL SAFETY CHECK: Real sales cannot be negative. Ignore cash-outs!
             if (grossTx <= 0) return;
