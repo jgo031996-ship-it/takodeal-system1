@@ -1328,6 +1328,23 @@
           document.getElementById('displayBranch').innerText = "📍 " + sessionUser.branch;
           document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
           document.getElementById('loginOverlay').style.display = 'none';
+
+          // 🔥 NEW: Check for Shortages on Login!
+          try {
+              const zQuery = query(collection(db, "z_readings"), where("cashierName", "==", identity.cashierName), orderBy("timestamp", "desc"), limit(1));
+              const zSnap = await getDocs(zQuery);
+              if (!zSnap.empty) {
+                  let lastZ = zSnap.docs[0].data();
+                  if (lastZ.cashVariance < -0.05) { // If they were short
+                      Swal.fire({
+                          title: '🚨 PREVIOUS SHIFT SHORTAGE',
+                          html: `Your last shift had a cash shortage of <strong>₱${Math.abs(lastZ.cashVariance).toFixed(2)}</strong>.<br><br>Please go to the <b>Staff Requests</b> tab and submit a Reason Letter immediately.`,
+                          icon: 'warning',
+                          confirmButtonColor: '#d97706'
+                      });
+                  }
+              }
+          } catch(e) { console.log("Shortage check skipped."); }
           
           if (typeof loadPOSData === 'function') await loadPOSData();
           if (typeof checkCurrentShift === 'function') await checkCurrentShift();
