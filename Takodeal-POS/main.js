@@ -5011,3 +5011,57 @@ window.loadStockRequestHistory = async function() {
         tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history.</td></tr>';
     }
 };
+
+// ========================================================
+// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE
+// ========================================================
+window.processStoreUse = async function() {
+    if (typeof cart === 'undefined' || cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please add items to the cart first before logging as Store Use.', 'warning');
+        return;
+    }
+
+    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
+
+    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashier = localStorage.getItem('cashierName') || 'Unknown';
+        let totalCostHit = 0;
+        let usedItems = [];
+        
+        cart.forEach(item => {
+            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
+            usedItems.push({ name: item.name, qty: item.qty });
+        });
+
+        // 1. Send it through the master checkout engine as 0 Revenue so Inventory still deducts the recipes!
+        let payload = {
+            branch: branch, cashier: cashier,
+            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
+            orderType: "Store Use", paymentMethod: "Store Use",
+            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
+            netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use" 
+        };
+
+        let receiptId = await window.processCheckout(payload);
+
+        // 2. Log to the dedicated Store Use Feed for the Manager App
+        if (receiptId) {
+            await addDoc(collection(db, "store_use_logs"), {
+                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: serverTimestamp()
+            });
+        }
+
+        cart = []; renderCart(); closeModal('checkoutModal');
+        Swal.fire('✅ Logged!', 'Items marked for store use and inventory safely deducted.', 'success');
+        
+    } catch(e) { 
+        console.error(e); Swal.fire('Error', 'Failed to log store use.', 'error'); 
+    } finally { 
+        btn.innerText = origText; btn.disabled = false; 
+    }
+};
