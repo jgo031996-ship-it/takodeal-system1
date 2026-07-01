@@ -2217,11 +2217,11 @@ window.submitStaffRequest = async function(requestType) {
                 payload.proofImageUrl = await getDownloadURL(snapshot.ref);
             } catch (e) { console.error("Upload failed", e); }
         }
-    } else if (requestType === "Reason Letter") {
-        let alertId = document.getElementById('explainAlertId').value;
-        if (!alertId || alertId.includes("Loading")) {
-             alert("❌ Please select a specific variance or shift to explain."); return;
-        }
+    } else if (type === 'Reason Letter') {
+        let cause = document.getElementById('explainCause').value;
+        let msg = document.getElementById('explainMessage').value.trim(); // <-- Make sure it grabs this!
+        if (!msg) return Swal.fire('Error', 'Please provide a detailed explanation.', 'error');
+        payload.details = `Cause: ${cause}\n"${msg}"`; // <-- This is what the Manager App reads!
     }
     
     try {
