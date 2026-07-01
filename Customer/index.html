@@ -5,196 +5,385 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TAKODEÁL | Authentic Japanese Street Food</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cream: '#fdfbf7',
+                        espresso: '#2c2421',
+                        gold: '#c89f5a',
+                        muted: '#6b635e'
+                    },
+                    fontFamily: {
+                        serif: ['"Playfair Display"', 'serif'],
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
-        :root {
-            --bg-cream: #fdfbf7;
-            --bg-card: #ffffff;
-            --text-dark: #2c2421;
-            --text-muted: #6b635e;
-            --accent-gold: #c89f5a;
-            --accent-hover: #b08945;
-            --dark-section: #2c2421;
-        }
-
-        body {
-            margin: 0;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            background-color: var(--bg-cream);
-            color: var(--text-dark);
-            overflow-x: hidden;
-        }
-
-        /* 👑 TOP NAVIGATION */
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 20px 5%;
-            background: transparent;
-            position: absolute;
-            top: 0;
-            width: 90%;
-            z-index: 10;
-        }
-
-        .nav-links a {
-            text-decoration: none;
-            color: var(--text-dark);
-            font-weight: 600;
-            font-size: 13px;
-            margin: 0 15px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: color 0.3s;
-        }
-        .nav-links a:hover { color: var(--accent-gold); }
-
-        /* 🌅 HERO SECTION */
-        .hero {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 120px 5% 60px 5%;
-            min-height: 70vh;
-            position: relative;
-        }
-        .hero-content { max-width: 500px; z-index: 2; }
-        .hero h1 { font-family: 'Playfair Display', serif; font-size: 64px; line-height: 1.1; margin: 0 0 10px 0; color: var(--text-dark); }
-        .hero-subtitle { font-family: 'Playfair Display', serif; font-size: 42px; font-style: italic; color: var(--accent-gold); margin: 0 0 20px 0; font-weight: 600; }
-        .hero p { font-size: 16px; line-height: 1.6; color: var(--text-muted); margin-bottom: 30px; }
-
-        .btn-primary {
-            background: var(--text-dark); color: white; border: none; padding: 16px 32px; border-radius: 30px;
-            font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: 0.3s;
-        }
-        .btn-primary:hover { background: var(--accent-gold); transform: translateY(-2px); }
-
-        .hero-image {
-            width: 55%; height: 500px; border-radius: 200px 0 0 200px;
-            background-image: url('https://images.unsplash.com/photo-1596649299486-5cdea741887e?q=80&w=1000&auto=format&fit=crop');
-            background-size: cover; background-position: center; position: absolute; right: 0; box-shadow: -20px 20px 60px rgba(0,0,0,0.1);
-        }
-
-        /* ✨ FEATURES STRIP */
-        .features { display: flex; justify-content: space-between; padding: 40px 10%; background: white; border-top: 1px solid #f0eae1; border-bottom: 1px solid #f0eae1; }
-        .feature-box { display: flex; align-items: center; gap: 15px; }
-        .feature-icon { font-size: 28px; }
-        .feature-text h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-dark); text-transform: uppercase; letter-spacing: 1px;}
-        .feature-text p { margin: 5px 0 0 0; font-size: 13px; color: var(--text-muted); }
-
-        /* 🍣 MENU GRID */
-        .menu-section { padding: 80px 5%; }
-        .section-header { text-align: center; margin-bottom: 50px; }
-        .section-header h2 { font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: var(--text-dark); }
-        .section-header p { font-family: 'Playfair Display', serif; font-style: italic; font-size: 20px; color: var(--accent-gold); margin: 5px 0 0 0; }
-
-        .menu-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 30px; max-width: 1200px; margin: 0 auto;
-        }
-
-        .menu-card {
-            background: var(--bg-card); border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.04);
-            transition: transform 0.3s; position: relative; display: flex; flex-direction: column;
-        }
-        .menu-card:hover { transform: translateY(-5px); box-shadow: 0 15px 40px rgba(0,0,0,0.08); }
-
-        .menu-img { width: 100%; height: 220px; border-radius: 12px; object-fit: cover; margin-bottom: 15px; background: #f0eae1; }
-        .menu-title { font-size: 18px; font-weight: 700; margin: 0 0 5px 0; }
-        .menu-desc { font-size: 12px; color: var(--accent-gold); font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f9fafb; overflow-x: hidden; }
         
-        .menu-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f0eae1; padding-top: 15px; margin-top: auto; }
-        .menu-price { font-size: 18px; font-weight: 800; color: var(--text-dark); }
+        /* 🔥 ANIMATIONS */
+        @keyframes floatUp { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+        .animate-float { animation: floatUp 0.4s ease-out forwards; }
         
-        .btn-add {
-            background: var(--accent-gold); color: white; border: none; width: 35px; height: 35px; border-radius: 50%;
-            font-size: 20px; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: 0.2s;
+        .toast-notification {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background: #16a34a; color: white; font-weight: bold; padding: 12px 24px;
+            border-radius: 50px; box-shadow: 0 10px 25px rgba(22, 163, 74, 0.4);
+            z-index: 9999; display: flex; align-items: center; gap: 10px;
+            opacity: 0; transition: opacity 0.3s, top 0.3s; pointer-events: none;
         }
-        .btn-add:hover { background: var(--text-dark); transform: scale(1.1); }
+        .toast-notification.show { opacity: 1; top: 40px; }
 
-        /* 🛒 FLOATING CART BUTTON */
-        .floating-cart {
-            position: fixed; bottom: 30px; right: 30px; background: var(--text-dark); color: white; border: none;
-            width: 70px; height: 70px; border-radius: 50%; font-size: 24px; cursor: pointer; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-            display: flex; justify-content: center; align-items: center; z-index: 100; transition: 0.3s;
-        }
-        .floating-cart:hover { transform: scale(1.1); background: var(--accent-gold); }
-        .cart-badge {
-            position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 12px; font-weight: bold;
-            width: 24px; height: 24px; border-radius: 50%; display: flex; justify-content: center; align-items: center;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .nav-links { display: none; }
-            .hero { padding: 100px 5% 40px 5%; flex-direction: column; text-align: center; }
-            .hero-image { position: relative; width: 100%; border-radius: 20px; margin-top: 30px; height: 300px; }
-            .features { flex-direction: column; gap: 20px; text-align: center; }
-            .hero h1 { font-size: 48px; }
+        /* Chef Animations */
+        @keyframes chefBodyBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        @keyframes pickWiggle { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-20deg) translateX(-2px); } }
+        @keyframes brushBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(12px) rotate(5deg); } }
+        .chef-container { position: relative; width: 220px; height: 220px; margin-bottom: 20px; }
+        .chef-body { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('cooking-chef.jpg') no-repeat center center; background-size: contain; animation: chefBodyBob 1s infinite ease-in-out; }
+        .chef-body::before { content: "🧑‍🍳"; font-size: 3rem; color: transparent; position: absolute; top: 56%; left: 33%; width: 40px; height: 40px; animation: pickWiggle 0.4s infinite ease-in-out; }
+        .chef-body::after { content: "🧑‍🍳"; font-size: 3rem; color: transparent; position: absolute; top: 56%; right: 28%; width: 50px; height: 50px; animation: brushBob 1.2s infinite ease-in-out; }
+        
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        
+        .hero-bg {
+            background-image: url('https://images.unsplash.com/photo-1596649299486-5cdea741887e?q=80&w=1200&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
         }
     </style>
 </head>
-<body>
 
-    <nav>
-        <div style="font-weight: 900; font-size: 24px; letter-spacing: 2px;">TAKODEÁL</div>
-        <div class="nav-links">
-            <a href="#">Home</a>
-            <a href="#menu">Live Menu</a>
-            <a href="#">Locations</a>
-        </div>
-        <a href="#menu" class="btn-primary" style="padding: 10px 20px;">Order Now</a>
-    </nav>
+<body class="pb-24 text-espresso">
 
-    <section class="hero">
-        <div class="hero-content">
-            <h1>STREET FOOD THAT CONNECTS.</h1>
-            <h2 class="hero-subtitle">Moments that last.</h2>
-            <p>From our sizzling grills to your moments, we are here to make every day a little better. Handcrafted takoyaki, refreshing milk teas, and perfect bites.</p>
-            <a href="#menu" style="text-decoration: none;"><button class="btn-primary">Explore Our Menu <span>›</span></button></a>
-        </div>
-        <div class="hero-image"></div>
-    </section>
+    <div id="cartToast" class="toast-notification">
+        <span class="text-xl">🐙</span> <span>Added to your cart!</span>
+    </div>
 
-    <section class="features">
-        <div class="feature-box">
-            <div class="feature-icon">🐙</div>
-            <div class="feature-text"><h4>Premium Ingredients</h4><p>Authentic Japanese flavors.</p></div>
-        </div>
-        <div class="feature-box">
-            <div class="feature-icon">🔥</div>
-            <div class="feature-text"><h4>Freshly Cooked</h4><p>Made to order, served hot.</p></div>
-        </div>
-        <div class="feature-box">
-            <div class="feature-icon">🛵</div>
-            <div class="feature-text"><h4>Fast Delivery</h4><p>Straight to your doorstep.</p></div>
-        </div>
-    </section>
+    <div id="greetingScreen" class="w-full min-h-screen bg-cream flex flex-col relative z-30 pb-10 transition-all duration-500">
+        
+        <nav class="flex justify-between items-center p-6 lg:px-12 w-full max-w-7xl mx-auto">
+            <div class="font-black text-2xl tracking-widest text-espresso">TAKODEÁL</div>
+            <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-muted">
+                <a href="#" class="hover:text-gold transition">Home</a>
+                <a href="#" onclick="window.enterOrderingScreen()" class="hover:text-gold transition">Menu</a>
+                <a href="#" class="hover:text-gold transition">Locations</a>
+            </div>
+            <button onclick="window.enterOrderingScreen()" class="bg-espresso text-white px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-gold transition-colors shadow-lg">
+                Order Now
+            </button>
+        </nav>
 
-    <section class="menu-section" id="menu">
-        <div class="section-header">
-            <p>Order Online</p>
-            <h2>OUR LIVE MENU</h2>
-        </div>
-
-        <div class="menu-grid" id="liveMenuContainer">
-            <div style="text-align: center; grid-column: 1/-1; padding: 50px; color: var(--accent-gold); font-size: 18px; font-weight: bold;">
-                ⏳ Fetching live menu from TAKODEÁL Headquarters...
+        <div class="flex flex-col-reverse lg:flex-row items-center justify-between px-6 lg:px-12 py-10 lg:py-16 max-w-7xl mx-auto w-full gap-10">
+            <div class="lg:w-1/2 text-center lg:text-left z-10">
+                <h1 class="font-serif text-5xl lg:text-7xl leading-tight text-espresso mb-2">STREET FOOD THAT CONNECTS.</h1>
+                <h2 class="font-serif text-3xl lg:text-5xl italic text-gold font-semibold mb-6">Moments that last.</h2>
+                <p class="text-muted leading-relaxed mb-8 max-w-md mx-auto lg:mx-0">From our sizzling grills to your moments, we are here to make every day a little better. Handcrafted takoyaki, refreshing milk teas, and perfect bites.</p>
+                <button onclick="window.enterOrderingScreen()" class="bg-espresso text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-gold transition-colors shadow-xl flex items-center justify-center mx-auto lg:mx-0 gap-3 group">
+                    Explore Our Menu <span class="group-hover:translate-x-1 transition-transform">›</span>
+                </button>
+            </div>
+            <div class="lg:w-1/2 w-full h-[400px] lg:h-[550px] hero-bg rounded-[40px] shadow-2xl relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
             </div>
         </div>
-    </section>
 
-    <button class="floating-cart" onclick="window.viewCart()">
+        <div class="bg-white border-y border-gray-200 py-10 mt-10">
+            <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8 text-center md:text-left">
+                <div class="flex items-center gap-4">
+                    <span class="text-4xl">🐙</span>
+                    <div>
+                        <h4 class="text-sm font-black uppercase tracking-wider text-espresso">Premium Ingredients</h4>
+                        <p class="text-xs text-muted mt-1">Authentic Japanese flavors.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-4xl">🔥</span>
+                    <div>
+                        <h4 class="text-sm font-black uppercase tracking-wider text-espresso">Freshly Cooked</h4>
+                        <p class="text-xs text-muted mt-1">Made to order, served hot.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-4xl">🛵</span>
+                    <div>
+                        <h4 class="text-sm font-black uppercase tracking-wider text-espresso">Fast Delivery</h4>
+                        <p class="text-xs text-muted mt-1">Straight to your doorstep.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-6 py-20 text-center max-w-7xl mx-auto w-full">
+            <p class="font-serif italic text-gold text-xl mb-2">Our Signatures</p>
+            <h2 class="font-serif text-4xl lg:text-5xl text-espresso mb-12">HANDCRAFTED FAVORITES</h2>
+            
+            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                <div class="col-span-full text-muted py-10 font-medium">⏳ Fetching live favorites from TAKODEÁL HQ...</div>
+            </div>
+
+            <button onclick="window.enterOrderingScreen()" class="mt-12 bg-white text-espresso border-2 border-espresso px-8 py-3 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-espresso hover:text-white transition-colors">
+                View Full Menu
+            </button>
+        </div>
+
+        <div class="bg-espresso text-white py-20 px-6 text-center mt-10">
+            <h2 class="font-serif text-4xl lg:text-5xl mb-4">WIN EXCITING PRIZES!</h2>
+            <p class="text-gray-300 max-w-2xl mx-auto mb-8 leading-relaxed">Join our VIP Loyalty Club. Every ₱500 purchase earns you a raffle ticket for our monthly grand prize, plus exclusive discounts on your favorite Takoyaki platters.</p>
+            <button class="bg-gold text-white px-8 py-3 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-espresso transition-colors">
+                Join The Club ›
+            </button>
+        </div>
+
+    </div>
+    <div id="appContainer" class="hidden max-w-md mx-auto bg-gray-50 min-h-screen shadow-2xl relative flex-col border-x border-gray-200 animate-float">
+        
+        <div class="sticky top-0 z-40 shadow-sm bg-white p-4 flex justify-between items-center border-b border-gray-100">
+            <div class="font-black text-xl tracking-widest text-espresso">TAKODEÁL</div>
+            <button onclick="location.reload()" class="text-sm font-bold text-muted hover:text-red-600">Home</button>
+        </div>
+
+        <div id="orderingScreen" class="flex-1 flex flex-col">
+            <div class="search-bar-container shadow-sm bg-white">
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">🔍</span>
+                    <input type="text" id="searchInput" onkeyup="filterMenu()" class="w-full bg-gray-100 rounded-lg pl-10 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-red-500 font-medium" placeholder="Search for takoyaki, drinks...">
+                </div>
+            </div>
+
+            <div class="p-6 pb-32">
+                <div class="mb-6 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                    <h3 class="text-sm font-black text-gray-800 mb-4 border-b border-gray-100 pb-2">🏪 Select Branch</h3>
+                    <select id="selectedBranch" class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 transition-colors cursor-pointer">
+                        <option value="Cabantian">TAKODEÁL Cabantian</option>
+                        <option value="Citygate">TAKODEÁL Citygate</option>
+                        <option value="Maa">TAKODEÁL Maa</option>
+                    </select>
+                    
+                    <h3 class="text-sm font-black text-gray-800 mb-4 border-b border-gray-100 pb-2 mt-5">👤 Your Details</h3>
+                    
+                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Full Name (Required)</label>
+                    <input type="text" id="customerName" required class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 mb-4 transition-colors" placeholder="e.g. Juan Dela Cruz">
+
+                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Contact Number (Required) 📞</label>
+                    <input type="tel" id="customerContact" required class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 transition-colors" placeholder="e.g. 0912 345 6789">
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-bold text-gray-700 mb-3">Menu Categories</label>
+                    <div id="liveMenuContainer" class="space-y-3">
+                        </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Order Type</label>
+                    <select id="orderType" class="block w-full rounded-xl border-gray-300 bg-white p-3 border focus:border-red-500 outline-none mb-3 font-bold text-gray-700 shadow-sm" onchange="window.toggleOrderTypeView()">
+                        <option value="Dine-In">Dine-In (Order Now)</option>
+                        <option value="Takeout">Pick-up / Take-out</option>
+                        <option value="Advance Dine-In">Advance Order (Dine-In)</option>
+                        <option value="Advance Pick-up">Advance Order (Pick-up)</option>
+                        <option value="Delivery" id="deliveryOption">Delivery (Loading status...)</option>
+                    </select>
+
+                    <div id="preferredTimeSection" class="hidden bg-orange-50 p-4 rounded-xl border border-orange-200 shadow-inner">
+                        <label class="block text-xs font-bold text-orange-800 mb-1 uppercase tracking-wider">⏰ Preferred Time</label>
+                        <input type="time" id="preferredTime" class="block w-full rounded-lg border-orange-300 bg-white p-3 text-sm outline-none focus:border-orange-500 font-bold text-gray-800">
+                    </div>
+                </div>
+
+                <div id="deliverySection" class="hidden bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6 shadow-inner">
+                    <p class="font-bold text-purple-800 mb-2">🚚 Delivery Details</p>
+                    
+                    <button type="button" onclick="window.openDeliveryMap()" class="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg mb-3 shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
+                        <span>📍 Pin My Exact Location on Map</span>
+                    </button>
+                    
+                    <div id="mapContainer" class="w-full h-48 rounded-lg mb-3 border-2 border-purple-300 hidden relative z-10"></div>
+                    <p id="mapStatusText" class="text-xs text-purple-600 font-bold mb-3 text-center hidden">✅ Location Pinned!</p>
+                    <input type="hidden" id="pinnedLat">
+                    <input type="hidden" id="pinnedLng">
+
+                    <p class="text-xs text-purple-600 mb-3 mt-4 font-medium">Please provide landmarks or house details for the rider.</p>
+                    <textarea id="deliveryAddress" class="block w-full rounded-lg border-purple-200 p-3 text-sm outline-none focus:border-purple-500 shadow-sm mb-4 bg-white" placeholder="e.g. Green gate, beside the bakery..." rows="2"></textarea>
+                    
+                    <label class="block text-xs font-bold text-purple-700 mb-2 uppercase tracking-wider">📸 Photo of House/Gate (Helpful!)</label>
+                    <input type="file" id="locationImage" accept="image/*" class="block w-full text-sm text-purple-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer">
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Mode of Payment</label>
+                    <select id="paymentMode" class="block w-full rounded-xl border-gray-300 bg-white p-3 border focus:border-red-500 outline-none font-bold text-gray-700 shadow-sm" onchange="window.togglePaymentView()">
+                        <option value="cash">Cash (Pay at counter / COD)</option>
+                        <option value="gcash">GCash</option>
+                    </select>
+                </div>
+
+                <div id="gcashSection" class="hidden bg-blue-50 p-5 rounded-xl border border-blue-200 text-center mb-6 shadow-inner">
+                    <p class="font-bold text-blue-800 mb-3">Pay via GCash</p>
+                    <div class="w-40 h-40 bg-white mx-auto flex items-center justify-center mb-3 rounded-lg shadow-sm border border-blue-100">
+                        <img src="QR.jpg" alt="GCash QR Code" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                    </div>
+                    <p class="text-sm font-bold text-gray-800">Account: JOSTUART O.</p>
+                    <p class="text-sm text-gray-600 mb-3">No: 09629721305</p>
+                    <input type="text" id="refNumber" class="block w-full rounded-lg border-gray-300 p-3 text-center font-bold text-sm outline-none focus:border-blue-500" placeholder="Enter Ref No. (Optional)">
+                </div>
+
+                <div id="codChangeSection" class="hidden bg-orange-50 p-5 rounded-xl border border-orange-200 mb-6 shadow-inner">
+                    <p class="font-bold text-orange-800 mb-1">💵 Cash on Delivery (COD)</p>
+                    <p class="text-xs text-orange-600 mb-3 font-medium">How much cash will you give the rider for change?</p>
+                    <input type="number" id="codAmount" class="block w-full rounded-lg border-orange-300 p-3 font-bold text-sm outline-none focus:border-orange-500 shadow-sm bg-white" placeholder="e.g. 500 or 1000">
+                </div>
+            </div>
+
+            <div class="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 shadow-[0_-4px_10px_-1px_rgba(0,0,0,0.05)] z-40 md:absolute md:max-w-md md:left-auto">
+                <button onclick="openCartModal()" id="reviewBtn" class="w-full bg-red-600 text-white font-black py-4 px-6 rounded-xl hover:bg-red-700 active:scale-95 transition-all shadow-lg flex justify-between items-center text-lg">
+                    <span>🛒 Review Order</span>
+                    <span id="floatingTotal" class="bg-red-800 px-3 py-1 rounded-lg">₱0.00</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="trackerScreen" class="hidden flex-1 flex flex-col items-center justify-center p-6 text-center bg-gray-50 z-30">
+            <div id="chefAnimation" class="chef-container">
+                <div class="chef-body"></div>
+            </div>
+            <div id="trackerIcon" class="hidden text-6xl mb-4">📤</div>
+            
+            <h2 id="trackerTitle" class="font-black text-3xl mb-1 text-gray-800">The grill is hot!</h2>
+            <p id="trackerSubtitle" class="text-gray-500 font-medium mb-4">The kitchen crew is reviewing your order.</p>
+            
+            <div class="bg-red-100 text-red-700 font-black px-5 py-2 rounded-full text-sm mb-6 shadow-sm border border-red-200 flex items-center gap-2">
+                <span>📍 Routed to:</span>
+                <span id="trackerBranchDisplay">Locating...</span>
+            </div>
+
+            <div class="w-full max-w-sm mx-auto mb-6 px-2">
+                <div class="flex justify-between items-center relative">
+                    <div class="absolute top-4 left-0 w-full h-1 bg-gray-200 z-0"></div>
+                    <div id="progressLine" class="absolute top-4 left-0 h-1 bg-red-600 w-0 z-0 transition-all duration-700 ease-in-out"></div>
+                    
+                    <div class="flex flex-col items-center relative z-10">
+                        <div id="step1Icon" class="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500">1</div>
+                        <span id="step1Text" class="text-[11px] font-bold text-red-600 mt-2">Received</span>
+                    </div>
+                    <div class="flex flex-col items-center relative z-10">
+                        <div id="step2Icon" class="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center font-bold text-sm shadow-sm transition-colors duration-500">2</div>
+                        <span id="step2Text" class="text-[11px] font-bold text-gray-400 mt-2">Cooking</span>
+                    </div>
+                    <div class="flex flex-col items-center relative z-10">
+                        <div id="step3Icon" class="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center font-bold text-sm shadow-sm transition-colors duration-500">3</div>
+                        <span id="step3Text" class="text-[11px] font-bold text-gray-400 mt-2">Ready</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 w-full mb-4 text-left relative overflow-hidden">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 border-b border-gray-100 pb-2">Your Order Summary</h3>
+                <div id="trackerOrderDetails" class="text-sm text-gray-700 space-y-2 max-h-32 overflow-y-auto mb-2 relative z-10"></div>
+                <div class="text-right font-black text-red-600 text-lg border-t border-gray-100 pt-2 relative z-10" id="trackerOrderTotal">₱0.00</div>
+            </div>
+            
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 w-full mb-8 relative overflow-hidden">
+                <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Estimated Wait Time</div>
+                <div id="waitTimeDisplay" class="text-2xl font-black text-red-600">10 - 15 Mins</div>
+                <div class="absolute -right-4 -bottom-4 opacity-5 text-6xl">⏱️</div>
+            </div>
+
+            <button onclick="window.startNewOrder()" class="bg-gray-200 text-gray-800 font-bold py-4 px-6 rounded-xl w-full hover:bg-gray-300 transition-colors">Place New Order</button>
+            
+            <div id="cancelOrderSection" class="w-full hidden mt-4">
+                <button onclick="window.cancelMyOrder()" class="bg-red-50 text-red-600 font-bold py-3 px-6 rounded-lg w-full border border-red-200 active:bg-red-100 transition">
+                    Cancel Order (<span id="cancelTimer">05:00</span>)
+                </button>
+                <p class="text-sm font-medium text-gray-500 mt-3 text-center">You can only cancel before the kitchen starts preparing.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <button id="floatingCartBtn" class="hidden fixed bottom-6 right-6 bg-espresso text-white border-none w-16 h-16 rounded-full text-2xl cursor-pointer shadow-2xl flex justify-center items-center z-50 transition-transform hover:scale-110" onclick="window.openCartModal()">
         🛒
-        <div class="cart-badge" id="cartCountBadge" style="display: none;">0</div>
+        <div class="cart-badge" id="cartCountBadge" style="display: none; position: absolute; top: -2px; right: -2px; background: #ef4444; color: white; font-size: 11px; font-weight: bold; width: 22px; height: 22px; border-radius: 50%; justify-content: center; align-items: center;">0</div>
     </button>
+
+    <div id="cartModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4">
+        <div class="bg-white w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[85vh] shadow-2xl">
+            <div class="bg-gray-50 p-5 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-black text-gray-800">🛒 Review Your Order</h2>
+                <button onclick="closeCartModal()" class="text-gray-400 hover:text-gray-600 text-3xl font-bold leading-none">&times;</button>
+            </div>
+            
+            <div id="cartModalItems" class="p-5 flex-1 overflow-y-auto space-y-3 bg-gray-50"></div>
+
+            <div class="p-5 bg-white border-t border-gray-200 shadow-[0_-4px_10px_-1px_rgba(0,0,0,0.05)]">
+                <div class="flex justify-between mb-4 text-gray-800 font-black text-xl">
+                    <span>Grand Total:</span>
+                    <span id="cartModalTotal" class="text-red-600">₱0.00</span>
+                </div>
+                <button onclick="submitOrder()" id="submitBtn" class="w-full bg-red-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-red-700 active:scale-95 transition-all text-lg flex justify-center items-center gap-2">
+                    <span>Send to Kitchen 🚀</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="itemModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4">
+        <div class="bg-white w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div id="modalImage" class="w-full h-48 bg-gray-200 flex items-center justify-center text-4xl">🍲</div>
+            <div class="p-5 flex-1 overflow-y-auto bg-white">
+                <div class="flex justify-between items-start mb-2">
+                    <h2 id="modalItemName" class="text-xl font-black text-gray-800">Item Name</h2>
+                    <span id="modalItemPrice" class="text-lg font-black text-red-600">₱0.00</span>
+                </div>
+                
+                <div id="modalVariantContainer" class="w-full mt-4 mb-2 hidden"></div>
+
+                <div id="modalAddonsContainer" class="mt-4 hidden">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Add-ons</h3>
+                    <div id="modalAddonsList" class="space-y-2"></div>
+                </div>
+
+                <div class="mt-5">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Special Instructions</h3>
+                    <input type="text" id="modalNotes" class="w-full border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-red-500 font-medium bg-gray-50" placeholder="e.g. No mayo, extra spicy...">
+                </div>
+            </div>
+
+            <div class="p-5 bg-gray-50 border-t border-gray-200 flex items-center gap-4">
+                <div class="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden h-12">
+                    <button onclick="changeModalQty(-1)" class="w-12 h-full font-bold text-gray-600 active:bg-gray-100 text-lg border-r border-gray-100">-</button>
+                    <span id="modalQty" class="w-10 text-center font-black text-gray-800">1</span>
+                    <button onclick="changeModalQty(1)" class="w-12 h-full font-bold text-gray-600 active:bg-gray-100 text-lg border-l border-gray-100">+</button>
+                </div>
+                <button onclick="addModalItemToCart()" class="flex-1 bg-espresso text-white font-bold h-12 rounded-xl shadow-md hover:bg-gold transition-colors active:scale-95 text-sm uppercase tracking-wide">
+                    Add to Order
+                </button>
+                <button onclick="closeItemModal()" class="w-12 h-12 flex items-center justify-center bg-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-300">✖</button>
+            </div>
+        </div>
+    </div>
+
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, where, orderBy, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
+        // ⚠️ WARNING: Ensure this config exactly matches your live database keys!
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
             authDomain: "takodeal-pos.firebaseapp.com",
@@ -206,178 +395,925 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const storage = getStorage(app);
 
-        window.liveMenuData = [];
-        window.customerCart = [];
+        window.masterMenu = [];
+        window.cart = [];
+        window.activeModalItem = null;
+        const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
+        window.phantomVariants = {}; 
 
-        // 1. Fetch Menu from Firebase
-        async function fetchMenu() {
+        // 1. Fetch the Menu and Build the UI
+        window.loadLiveMenu = async function() {
             try {
                 const q = query(collection(db, "menu"), orderBy("category"));
                 const snap = await getDocs(q);
-                
-                let html = '';
-                snap.forEach(doc => {
-                    let item = doc.data();
-                    item.id = doc.id;
-                    window.liveMenuData.push(item);
-
-                    let safePrice = parseFloat(item.price || item.basePrice || 0);
-                    let imgHtml = item.image 
-                        ? `<img src="${item.image}" class="menu-img" alt="${item.name}">` 
-                        : `<div class="menu-img" style="display:flex; justify-content:center; align-items:center; font-size: 50px;">🍲</div>`;
-
-                    html += `
-                        <div class="menu-card">
-                            ${imgHtml}
-                            <h3 class="menu-title">${item.name}</h3>
-                            <p class="menu-desc">${item.category || 'Specialty'}</p>
-                            <div class="menu-footer">
-                                <span class="menu-price">₱${safePrice.toFixed(2)}</span>
-                                <button class="btn-add" onclick="window.addToCart('${item.id}')">+</button>
-                            </div>
-                        </div>
-                    `;
+                let categoriesMap = {};
+                let rawItems = [];
+                snap.forEach(docSnap => {
+                    let item = docSnap.data();
+                    item.id = docSnap.id;
+                    rawItems.push(item);
                 });
 
-                document.getElementById('liveMenuContainer').innerHTML = html;
+                window.phantomVariants = {};
+
+                rawItems.forEach(item => {
+                    let catName = item.category || "Other";
+                    let isHidden = hiddenCategories.includes(catName.toLowerCase());
+
+                    if (item.isAvailable !== false && !isHidden) {
+                        let name = item.name;
+                        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad|Platter|Family)$/i);
+
+                        if (match) {
+                            let baseName = match[1].trim();
+                            let sizeName = match[2].trim();
+
+                            if (!window.phantomVariants[baseName]) {
+                                window.phantomVariants[baseName] = [];
+                                let baseItem = { ...item, name: baseName, isGrouped: true };
+                                window.masterMenu.push(baseItem);
+                                if (!categoriesMap[catName]) categoriesMap[catName] = [];
+                                categoriesMap[catName].push(baseItem);
+                            }
+
+                            window.phantomVariants[baseName].push({
+                                realName: item.name, sizeLabel: sizeName, price: parseFloat(item.price || item.basePrice) || 0, id: item.id
+                            });
+                            window.phantomVariants[baseName].sort((a, b) => a.price - b.price);
+                        } else {
+                            window.masterMenu.push(item);
+                            if (!categoriesMap[catName]) categoriesMap[catName] = [];
+                            categoriesMap[catName].push(item);
+                        }
+                    }
+                });
+
+                renderAccordions(categoriesMap);
+                renderPremiumFavorites(); // 🔥 This builds the Landing Page Grid!
+
             } catch (error) {
-                console.error("Error loading menu:", error);
-                document.getElementById('liveMenuContainer').innerHTML = '<div style="color:red; text-align:center; grid-column:1/-1;">Error loading menu. Please check your internet connection.</div>';
+                console.error(error);
+                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-400">Failed to load menu. Check connection.</div>';
+                document.getElementById('favoritesGrid').innerHTML = '<div class="col-span-full text-red-400">Failed to load favorites.</div>';
             }
         }
 
-        // 2. Cart Logic
-        window.addToCart = function(id) {
-            let item = window.liveMenuData.find(i => i.id === id);
-            if (!item) return;
+        // 🔥 THE NEW LANDING PAGE MENU RENDERER
+        function renderPremiumFavorites() {
+            let favHtml = '';
+            // Let's grab 4 items to feature (skip the grouped items for simplicity on the homepage card)
+            let favItems = window.masterMenu.filter(i => !i.isGrouped && i.image).slice(0, 4); 
+            // If they don't have images, just grab the first 4 items
+            if(favItems.length === 0 && window.masterMenu.length > 0) favItems = window.masterMenu.slice(0, 4); 
 
-            let existing = window.customerCart.find(i => i.id === id);
-            if (existing) {
-                existing.quantity += 1;
-            } else {
-                window.customerCart.push({
-                    id: item.id,
-                    name: item.name,
-                    price: parseFloat(item.price || item.basePrice || 0),
-                    quantity: 1
-                });
-            }
-
-            // Pop a subtle success toast
-            Swal.fire({
-                toast: true, position: 'bottom-end', showConfirmButton: false, timer: 1500,
-                icon: 'success', title: `${item.name} added to cart!`,
-                background: '#2c2421', color: 'white'
-            });
-
-            updateCartBadge();
-        };
-
-        function updateCartBadge() {
-            let totalItems = window.customerCart.reduce((sum, item) => sum + item.quantity, 0);
-            let badge = document.getElementById('cartCountBadge');
-            if (totalItems > 0) {
-                badge.innerText = totalItems;
-                badge.style.display = 'flex';
-            } else {
-                badge.style.display = 'none';
-            }
-        }
-
-        // 3. Checkout UI & Submission
-        window.viewCart = async function() {
-            if (window.customerCart.length === 0) {
-                return Swal.fire('Cart is Empty', 'Please add some delicious items first!', 'info');
-            }
-
-            let cartHtml = '<div style="max-height: 250px; overflow-y: auto; text-align: left; margin-bottom: 20px;">';
-            let grandTotal = 0;
-
-            window.customerCart.forEach((item, index) => {
-                let lineTotal = item.price * item.quantity;
-                grandTotal += lineTotal;
-                cartHtml += `
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px; border-bottom: 1px dashed #ccc; padding-bottom: 5px;">
-                        <div style="font-size: 14px;"><strong>${item.quantity}x</strong> ${item.name}</div>
-                        <div style="font-weight: bold; color: #c89f5a;">₱${lineTotal.toFixed(2)}</div>
+            favItems.forEach(item => {
+                let price = parseFloat(item.price || item.basePrice || 0);
+                let imgHtml = item.image 
+                    ? `<img src="${item.image}" class="w-full h-56 object-cover rounded-xl mb-4 bg-gray-100">` 
+                    : `<div class="w-full h-56 bg-gray-200 rounded-xl mb-4 flex items-center justify-center text-4xl">🍲</div>`;
+                let safeData = encodeURIComponent(JSON.stringify(item));
+                
+                favHtml += `
+                    <div class="bg-white p-5 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 text-left flex flex-col cursor-pointer border border-gray-100 group" onclick="window.openItemModal('${safeData}')">
+                        <div class="overflow-hidden rounded-xl mb-4">
+                            ${imgHtml.replace('class="', 'class="group-hover:scale-105 transition-transform duration-500 ')}
+                        </div>
+                        <h3 class="font-bold text-lg text-espresso mb-1 leading-tight">${item.name}</h3>
+                        <p class="text-[10px] text-gold font-black uppercase tracking-widest mb-4">${item.category}</p>
+                        <div class="mt-auto flex justify-between items-center border-t border-gray-100 pt-4">
+                            <span class="font-black text-xl text-espresso">₱${price.toFixed(2)}</span>
+                            <button class="w-10 h-10 rounded-full bg-gold text-white font-bold flex items-center justify-center group-hover:bg-espresso transition-colors text-xl shadow-md">+</button>
+                        </div>
                     </div>
                 `;
             });
-            cartHtml += `</div><div style="text-align:right; font-size: 20px; font-weight: 900;">Total: ₱${grandTotal.toFixed(2)}</div>`;
 
-            const { value: formValues, isConfirmed } = await Swal.fire({
-                title: 'Complete Your Order',
-                html: cartHtml + `
-                    <div style="text-align: left; margin-top: 20px;">
-                        <label style="font-size: 12px; font-weight: bold; color: #666;">Your Full Name:</label>
-                        <input id="swal-cust-name" class="swal2-input" style="margin-top: 5px; font-size: 14px;" placeholder="e.g. Maria Clara">
-                        
-                        <label style="font-size: 12px; font-weight: bold; color: #666; display:block; margin-top: 15px;">Pick-up / Delivery Branch:</label>
-                        <select id="swal-branch" class="swal2-input" style="margin-top: 5px; font-size: 14px; width: 100%;">
-                            <option value="Cabantian">Cabantian</option>
-                            <option value="Citygate">Citygate</option>
-                            <option value="Maa">Maa</option>
-                        </select>
+            const favGrid = document.getElementById('favoritesGrid');
+            if (favGrid) favGrid.innerHTML = favHtml;
+        }
 
-                        <label style="font-size: 12px; font-weight: bold; color: #666; display:block; margin-top: 15px;">Payment Method:</label>
-                        <select id="swal-payment" class="swal2-input" style="margin-top: 5px; font-size: 14px; width: 100%;">
-                            <option value="Cash">Cash on Pickup/Delivery</option>
-                            <option value="gcash">GCash</option>
-                        </select>
-                        <p style="font-size: 11px; color: #999; margin-top: 5px;">* GCash details will be provided by the branch upon confirmation.</p>
-                    </div>
-                `,
-                focusConfirm: false,
-                showCancelButton: true,
-                confirmButtonColor: '#2c2421',
-                confirmButtonText: 'Submit Order to Kitchen',
-                preConfirm: () => {
-                    let name = document.getElementById('swal-cust-name').value.trim();
-                    if (!name) Swal.showValidationMessage('Please enter your name!');
-                    return {
-                        name: name,
-                        branch: document.getElementById('swal-branch').value,
-                        payment: document.getElementById('swal-payment').value
-                    };
+        // Builds the Accordions inside the Ordering Screen
+        function renderAccordions(categoriesMap) {
+            const container = document.getElementById('liveMenuContainer');
+            container.innerHTML = '';
+
+            for (const [category, items] of Object.entries(categoriesMap)) {
+                let itemsHtml = items.map(item => {
+                    let price = parseFloat(item.price || item.basePrice || 0);
+                    let safeData = encodeURIComponent(JSON.stringify(item));
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-20 h-20 object-cover rounded-xl shadow-sm">` : `<div class="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center text-2xl border border-gray-200 shadow-sm">🍲</div>`;
+                    let badgeHtml = item.name.toLowerCase().includes('cheesy') ? `<span class="bg-red-500 text-white text-[9px] px-2 py-0.5 rounded-full ml-2 animate-pulse shadow-sm tracking-widest uppercase">🔥 Best Seller</span>` : '';
+                    let priceLabel = item.isGrouped ? `<span class="text-green-600 font-black">Select Size ➡</span>` : `₱${price.toFixed(2)}`;
+
+                    return `
+                        <div class="menu-item-row flex items-center p-3 bg-white border border-gray-100 rounded-2xl shadow-sm mb-3 cursor-pointer active:scale-95 transition-all hover:border-red-200 hover:shadow-md animate-float" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                            ${imgHtml}
+                            <div class="ml-3 flex-1">
+                                <h4 class="font-black text-sm text-gray-800 leading-tight">${item.name} ${badgeHtml}</h4>
+                                <p class="text-xs font-bold text-red-600 mt-1">${priceLabel}</p>
+                            </div>
+                            <div class="text-red-500 font-bold bg-red-50 w-8 h-8 rounded-full flex items-center justify-center border border-red-100">✚</div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML += `
+                    <details class="category-accordion bg-white rounded-xl shadow-sm border border-gray-200 group overflow-hidden mb-3">
+                        <summary class="font-black p-4 cursor-pointer flex justify-between items-center bg-gray-50 select-none">
+                            ${category.toUpperCase()} 
+                            <span class="group-open:rotate-180 transition-transform duration-300 text-gray-400">▼</span>
+                        </summary>
+                        <div class="p-3 bg-gray-50 border-t border-gray-100">${itemsHtml}</div>
+                    </details>
+                `;
+            }
+        }
+
+        // ==========================================
+        // 🚪 SCREEN TRANSITION ENGINE
+        // ==========================================
+        window.enterOrderingScreen = function() {
+            // Hide the landing page
+            document.getElementById('greetingScreen').classList.add('hidden');
+            
+            // Show the Mobile App interface
+            let appContainer = document.getElementById('appContainer');
+            appContainer.classList.remove('hidden');
+            appContainer.classList.add('flex');
+            
+            // Show the floating cart button
+            document.getElementById('floatingCartBtn').classList.remove('hidden');
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+
+        // ==========================================
+        // 🛍️ ITEM MODAL & CART ENGINE
+        // ==========================================
+        window.openItemModal = function(encodedData) {
+            const item = JSON.parse(decodeURIComponent(encodedData));
+            
+            let phantomSizes = window.phantomVariants ? window.phantomVariants[item.name] : null;
+            let hasSizes = phantomSizes && phantomSizes.length > 0;
+
+            if (hasSizes) {
+                item.isGrouped = true;
+                item.realName = phantomSizes[0].realName;
+                item.basePrice = phantomSizes[0].price;
+                item.price = phantomSizes[0].price;
+            } else {
+                item.realName = item.name;
+            }
+
+            window.activeModalItem = { ...item, selectedQty: 1 };
+            let price = parseFloat(item.price || item.basePrice || 0);
+
+            document.getElementById('modalItemName').innerText = item.name;
+            document.getElementById('modalQty').innerText = '1';
+            document.getElementById('modalNotes').value = '';
+
+            let priceHeader = document.getElementById('modalItemPrice');
+            if (hasSizes) priceHeader.style.display = 'none';
+            else { priceHeader.style.display = 'block'; priceHeader.innerText = '₱' + price.toFixed(2); }
+
+            const imgContainer = document.getElementById('modalImage');
+            if (item.image) {
+                imgContainer.innerHTML = `<img src="${item.image}" class="w-full h-full object-cover">`;
+            } else {
+                imgContainer.innerHTML = '🍲';
+            }
+
+            // Sizes Builder
+            let variantContainer = document.getElementById('modalVariantContainer');
+            if (variantContainer) {
+                if (hasSizes) {
+                    let sizeHtml = '<label class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">Select Size / Quantity</label>';
+                    sizeHtml += '<div class="grid grid-cols-2 gap-3 w-full box-border">';
+                    phantomSizes.forEach(sizeObj => {
+                        let isActive = (window.activeModalItem.realName === sizeObj.realName) ? 'bg-orange-50 border-orange-500 shadow-md' : 'bg-gray-50 border-gray-200 shadow-sm';
+                        sizeHtml += `
+                            <div class="modal-size-btn ${isActive} border-2 rounded-xl p-3 text-center cursor-pointer transition-all active:scale-95 flex flex-col justify-center items-center w-full"
+                                 onclick="window.selectMobileVariant('${sizeObj.realName}', ${sizeObj.price}, this)">
+                                <div class="font-black text-gray-800 text-sm mb-1">${sizeObj.sizeLabel}</div>
+                                <div class="font-bold text-red-600 text-xs">₱${sizeObj.price.toFixed(2)}</div>
+                            </div>
+                        `;
+                    });
+                    sizeHtml += '</div>';
+                    variantContainer.innerHTML = sizeHtml;
+                    variantContainer.classList.remove('hidden');
+                } else {
+                    variantContainer.classList.add('hidden');
                 }
+            }
+
+            // Add-ons Builder
+            const addonsContainer = document.getElementById('modalAddonsContainer');
+            const addonsList = document.getElementById('modalAddonsList');
+            addonsList.innerHTML = '';
+            
+            if (item.addons && item.addons.length > 0) {
+                addonsContainer.classList.remove('hidden');
+                let newUiHtml = '';
+                
+                let groupedAddons = {};
+                item.addons.forEach(a => {
+                    if (!groupedAddons[a.name]) {
+                        groupedAddons[a.name] = { name: a.name, price: parseFloat(a.price) || 0, linkedIngredient: a.linkedIngredient || '', deductQty: a.deductQty || 0 };
+                    } else {
+                        groupedAddons[a.name].price += (parseFloat(a.price) || 0);
+                    }
+                });
+
+                let addonsArr = Object.values(groupedAddons);
+                let hasSauce = addonsArr.some(a => a.name === "Regular Sauce" || a.name === "Spicy Sauce");
+
+                if (hasSauce) {
+                    let regAddon = addonsArr.find(a => a.name === "Regular Sauce") || { linkedIngredient: "Regular Sauce", deductQty: 1 };
+                    let spicyAddon = addonsArr.find(a => a.name === "Spicy Sauce") || { linkedIngredient: "Spicy Sauce", deductQty: 1 };
+
+                    newUiHtml += `
+                        <div class="mb-4">
+                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Base Flavor (Required)</h3>
+                            <div class="space-y-2 bg-orange-50 p-3 rounded-xl border border-orange-100">
+                                <label class="flex items-center justify-between cursor-pointer">
+                                    <div class="flex items-center gap-3">
+                                        <input type="radio" name="baseSauce" value="Regular Sauce|0|${regAddon.linkedIngredient}|${regAddon.deductQty}" checked class="w-5 h-5 text-orange-500 border-gray-300 focus:ring-orange-500 modal-addon-radio">
+                                        <span class="text-sm font-bold text-orange-900">Regular Sauce</span>
+                                    </div>
+                                    <span class="text-xs font-bold text-orange-600">Free</span>
+                                </label>
+                                <label class="flex items-center justify-between cursor-pointer">
+                                    <div class="flex items-center gap-3">
+                                        <input type="radio" name="baseSauce" value="Spicy Sauce|0|${spicyAddon.linkedIngredient}|${spicyAddon.deductQty}" class="w-5 h-5 text-red-600 border-gray-300 focus:ring-red-600 modal-addon-radio">
+                                        <span class="text-sm font-bold text-red-700">Spicy Sauce</span>
+                                    </div>
+                                    <span class="text-xs font-bold text-red-500">Free</span>
+                                </label>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                let extras = addonsArr.filter(a => a.name !== "Regular Sauce" && a.name !== "Spicy Sauce");
+                if (extras.length > 0) {
+                    newUiHtml += `<div class="mb-2"><h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Extra Add-ons (Optional)</h3><div class="space-y-2">`;
+                    extras.forEach(addon => {
+                        let aPrice = addon.price;
+                        let priceLabel = aPrice > 0 ? `(+₱${aPrice.toFixed(2)})` : '(Free)';
+                        newUiHtml += `
+                            <label class="flex items-center justify-between p-3 border rounded-xl bg-white shadow-sm cursor-pointer active:bg-gray-50 transition">
+                                <span class="text-sm font-bold text-gray-700">${addon.name} <span class="text-red-500 font-normal text-xs">${priceLabel}</span></span>
+                                <input type="checkbox" value="${addon.name}|${aPrice}|${addon.linkedIngredient}|${addon.deductQty}" class="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500 modal-addon-cb">
+                            </label>
+                        `;
+                    });
+                    newUiHtml += `</div></div>`;
+                }
+                addonsList.innerHTML = newUiHtml;
+            } else { 
+                addonsContainer.classList.add('hidden'); 
+            }
+            document.getElementById('itemModal').classList.remove('hidden');
+        };
+
+        window.selectMobileVariant = function(realName, vPrice, clickedBtn) {
+            document.querySelectorAll('.modal-size-btn').forEach(b => {
+                b.classList.remove('bg-orange-50', 'border-orange-500', 'shadow-md');
+                b.classList.add('bg-gray-50', 'border-gray-200', 'shadow-sm');
             });
+            clickedBtn.classList.remove('bg-gray-50', 'border-gray-200', 'shadow-sm');
+            clickedBtn.classList.add('bg-orange-50', 'border-orange-500', 'shadow-md');
 
-            if (isConfirmed) {
-                Swal.fire({ title: 'Sending to Kitchen...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+            window.activeModalItem.realName = realName;
+            window.activeModalItem.price = vPrice;
+            window.activeModalItem.basePrice = vPrice;
 
-                try {
-                    // Send to Firebase 'incoming_orders' collection (The Cashier App is listening to this!)
-                    await addDoc(collection(db, "incoming_orders"), {
-                        branch: formValues.branch,
-                        customerName: formValues.name,
-                        paymentMode: formValues.payment,
-                        items: window.customerCart, // Array of items
-                        totalAmount: grandTotal,
-                        status: "mobile_queue", // CRITICAL: This is the exact keyword the Cashier App listens for!
-                        timestamp: serverTimestamp()
-                    });
+            let priceHeader = document.getElementById('modalItemPrice');
+            priceHeader.style.display = 'block';
+            priceHeader.innerText = '₱' + vPrice.toFixed(2);
+        };
 
-                    Swal.fire({
-                        title: 'Order Sent!',
-                        text: `Your order has been sent to the ${formValues.branch} branch. Our staff will prepare it shortly!`,
-                        icon: 'success',
-                        confirmButtonColor: '#c89f5a'
-                    });
+        window.closeItemModal = function() {
+            document.getElementById('itemModal').classList.add('hidden');
+            window.activeModalItem = null;
+        };
 
-                    // Clear the cart
-                    window.customerCart = [];
-                    updateCartBadge();
-
-                } catch (e) {
-                    console.error("Order Submit Error:", e);
-                    Swal.fire('Error', 'Failed to send order. Please try again.', 'error');
-                }
+        window.changeModalQty = function(delta) {
+            if (!window.activeModalItem) return;
+            let current = window.activeModalItem.selectedQty;
+            if (current + delta > 0) {
+                window.activeModalItem.selectedQty = current + delta;
+                document.getElementById('modalQty').innerText = window.activeModalItem.selectedQty;
             }
         };
 
-        // Initialize!
-        fetchMenu();
+        window.addModalItemToCart = function() {
+            let basePrice = parseFloat(window.activeModalItem.price || window.activeModalItem.basePrice || 0);
+            let qty = window.activeModalItem.selectedQty;
+            let notes = document.getElementById('modalNotes').value.trim();
+            
+            let activeAddons = {};
+            let addonsTotal = 0;
+
+            document.querySelectorAll('#modalAddonsList .modal-addon-radio:checked').forEach(radio => {
+                let parts = radio.value.split('|');
+                activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1, linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) };
+                addonsTotal += parseFloat(parts[1]);
+            });
+
+            document.querySelectorAll('#modalAddonsList .modal-addon-cb:checked').forEach(cb => {
+                let parts = cb.value.split('|');
+                activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1, linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) };
+                addonsTotal += parseFloat(parts[1]);
+            });
+
+            window.cart.push({
+                name: window.activeModalItem.realName || window.activeModalItem.name,
+                quantity: qty,
+                price: basePrice,
+                variantName: 'Standard',
+                lineTotalFinal: (basePrice + addonsTotal) * qty,
+                addons: activeAddons,
+                notes: notes
+            });
+
+            window.updateCartUI();
+            window.closeItemModal();
+
+            const toast = document.getElementById('cartToast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+        };
+
+        window.updateCartUI = function() {
+            let grandTotal = 0; let totalItems = 0;
+            window.cart.forEach(item => { grandTotal += item.lineTotalFinal; totalItems += item.quantity; });
+            
+            let floatTotal = document.getElementById('floatingTotal');
+            if (floatTotal) floatTotal.innerText = `₱${grandTotal.toFixed(2)}`;
+            
+            let badge = document.getElementById('cartCountBadge');
+            if (badge) {
+                badge.innerText = totalItems;
+                badge.style.display = totalItems > 0 ? 'flex' : 'none';
+            }
+        };
+
+        window.openCartModal = function() {
+            if (window.cart.length === 0) {
+                Swal.fire('Your cart is empty', 'Add some delicious Takoyaki first!', 'info');
+                return;
+            }
+            window.renderCartModal();
+            document.getElementById('cartModal').classList.remove('hidden');
+        };
+
+        window.closeCartModal = function() {
+            document.getElementById('cartModal').classList.add('hidden');
+        };
+
+        window.renderCartModal = function() {
+            let container = document.getElementById('cartModalItems');
+            let totalDisplay = document.getElementById('cartModalTotal');
+            let grandTotal = 0;
+            let html = '';
+
+            window.cart.forEach((item, index) => {
+                grandTotal += item.lineTotalFinal;
+                
+                let addonsText = '';
+                if (item.addons) {
+                    for (let key in item.addons) {
+                        if (item.addons[key].qty > 0) {
+                            let addPrice = item.addons[key].price > 0 ? ` (+₱${item.addons[key].price})` : '';
+                            addonsText += `<div class="text-[11px] text-orange-600 font-bold">+ ${item.addons[key].qty}x ${key}${addPrice}</div>`;
+                        }
+                    }
+                }
+                let notesText = item.notes ? `<div class="text-[11px] italic text-gray-500 mt-1">✎ "${item.notes}"</div>` : '';
+
+                html += `
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                        <div class="flex-1">
+                            <div class="font-black text-gray-800 text-sm leading-tight">${item.quantity}x ${item.name}</div>
+                            ${addonsText}
+                            ${notesText}
+                            <div class="text-red-600 font-bold text-sm mt-1">₱${item.lineTotalFinal.toFixed(2)}</div>
+                        </div>
+                        <button onclick="window.removeCartItem(${index})" class="w-8 h-8 flex items-center justify-center bg-red-50 text-red-500 rounded-full font-bold active:bg-red-100 transition-colors ml-3 border border-red-100">✖</button>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            totalDisplay.innerText = '₱' + grandTotal.toFixed(2);
+        };
+
+        window.removeCartItem = function(index) {
+            window.cart.splice(index, 1);
+            window.updateCartUI();
+            window.renderCartModal();
+            if (window.cart.length === 0) window.closeCartModal();
+        };
+
+        window.resetSubmitButton = function(grandTotal) {
+            let submitBtn = document.getElementById('submitBtn');
+            if(submitBtn) { submitBtn.innerHTML = '<span>Send to Kitchen 🚀</span>'; submitBtn.disabled = false; }
+        };
+
+        // ==========================================
+        // 📍 SMART GPS & DELIVERY ENGINE
+        // ==========================================
+        const BRANCH_ZONES = {
+            "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
+            "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  
+            "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 }
+        };
+
+        window.currentOrderId = null;
+        window.cancelInterval = null;
+        window.pendingOrderData = null; 
+
+        // Listen for Store Killswitch
+        onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
+            let deliveryOpt = document.getElementById('deliveryOption');
+            let orderTypeSelect = document.getElementById('orderType');
+            
+            if(docSnap.exists()) {
+                let isEnabled = docSnap.data().enabled;
+                if(isEnabled) {
+                    if(deliveryOpt) { deliveryOpt.text = "Delivery"; deliveryOpt.disabled = false; }
+                } else {
+                    if(deliveryOpt) { deliveryOpt.text = "Delivery (Unavailable)"; deliveryOpt.disabled = true; }
+                    if(orderTypeSelect && orderTypeSelect.value === 'Delivery') {
+                        orderTypeSelect.value = 'Takeout';
+                        window.toggleOrderTypeView();
+                        Swal.fire("Delivery Paused", "The store is exceptionally busy and has paused deliveries. Your order was switched to Pick-up.", "info");
+                    }
+                }
+            }
+        });
+
+        window.toggleOrderTypeView = function() {
+            let orderType = document.getElementById('orderType').value;
+            if (orderType === 'Delivery') document.getElementById('deliverySection').classList.remove('hidden');
+            else document.getElementById('deliverySection').classList.add('hidden');
+            document.getElementById('preferredTimeSection').classList.remove('hidden');
+            window.togglePaymentView(); 
+        };
+
+        window.togglePaymentView = function() {
+            let payMode = document.getElementById('paymentMode').value;
+            let orderType = document.getElementById('orderType').value;
+
+            if (payMode === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
+            else document.getElementById('gcashSection').classList.add('hidden');
+
+            if (payMode === 'cash' && orderType === 'Delivery') document.getElementById('codChangeSection').classList.remove('hidden');
+            else document.getElementById('codChangeSection').classList.add('hidden');
+        };
+
+        window.deliveryMap = null;
+        window.deliveryMarker = null;
+
+        window.openDeliveryMap = function() {
+            let mapDiv = document.getElementById('mapContainer');
+            let statusText = document.getElementById('mapStatusText');
+            mapDiv.classList.remove('hidden');
+            statusText.classList.remove('hidden');
+            statusText.innerText = "⏳ Locating you via GPS...";
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        let lat = position.coords.latitude;
+                        let lng = position.coords.longitude;
+                        
+                        document.getElementById('pinnedLat').value = lat;
+                        document.getElementById('pinnedLng').value = lng;
+                        statusText.innerText = "✅ Location Pinned! (Drag the blue marker to adjust)";
+
+                        if (!window.deliveryMap) {
+                            window.deliveryMap = L.map('mapContainer').setView([lat, lng], 17);
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(window.deliveryMap);
+                            window.deliveryMarker = L.marker([lat, lng], {draggable: true}).addTo(window.deliveryMap);
+                            
+                            window.deliveryMarker.on('dragend', function(event) {
+                                let position = event.target.getLatLng();
+                                document.getElementById('pinnedLat').value = position.lat;
+                                document.getElementById('pinnedLng').value = position.lng;
+                            });
+                        } else {
+                            window.deliveryMap.setView([lat, lng], 17);
+                            window.deliveryMarker.setLatLng([lat, lng]);
+                        }
+                        setTimeout(() => window.deliveryMap.invalidateSize(), 300);
+                    },
+                    (error) => {
+                        statusText.innerText = "❌ Please enable GPS location on your phone!";
+                        statusText.classList.replace('text-purple-600', 'text-red-600');
+                    },
+                    { enableHighAccuracy: true }
+                );
+            } else {
+                statusText.innerText = "❌ GPS not supported.";
+            }
+        };
+
+        window.isStoreAcceptingOrders = true; 
+        window.statusListenerUnsubscribe = null;
+
+        window.listenToStoreStatus = function() {
+            let selectedBranch = document.getElementById('selectedBranch').value;
+            if (!selectedBranch) return;
+
+            if (window.statusListenerUnsubscribe) { window.statusListenerUnsubscribe(); }
+
+            window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
+                let checkoutButton = document.getElementById('reviewBtn'); 
+                
+                let statusBanner = document.getElementById('storeStatusBanner');
+                if (!statusBanner) {
+                    let container = document.getElementById('orderingScreen');
+                    let bannerHtml = `<div id="storeStatusBanner" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl relative text-center text-sm font-bold mb-4 shadow-sm mx-6">
+                        ⚠️ Due to high volume, this branch is temporarily pausing mobile orders. Please try again in a few minutes!
+                    </div>`;
+                    container.querySelector('.search-bar-container').insertAdjacentHTML('afterend', bannerHtml);
+                    statusBanner = document.getElementById('storeStatusBanner');
+                }
+
+                if (docSnap.exists()) {
+                    window.isStoreAcceptingOrders = docSnap.data().mobileOrdersActive !== false;
+                } else {
+                    window.isStoreAcceptingOrders = true;
+                }
+
+                if (!window.isStoreAcceptingOrders) {
+                    if (checkoutButton) {
+                        checkoutButton.disabled = true;
+                        checkoutButton.innerHTML = "<span>🛑 Store Paused</span>";
+                        checkoutButton.classList.replace('bg-red-600', 'bg-gray-400');
+                        checkoutButton.classList.replace('hover:bg-red-700', 'hover:bg-gray-500');
+                    }
+                    if (statusBanner) statusBanner.classList.remove('hidden');
+                } else {
+                    if (checkoutButton) {
+                        checkoutButton.disabled = false;
+                        let t = window.cart ? window.cart.reduce((sum, i) => sum + i.lineTotalFinal, 0) : 0;
+                        checkoutButton.innerHTML = `<span>🛒 Review Order</span> <span id="floatingTotal" class="bg-red-800 px-3 py-1 rounded-lg">₱${t.toFixed(2)}</span>`;
+                        checkoutButton.classList.replace('bg-gray-400', 'bg-red-600');
+                        checkoutButton.classList.replace('hover:bg-gray-500', 'hover:bg-red-700');
+                    }
+                    if (statusBanner) statusBanner.classList.add('hidden');
+                }
+            });
+        };
+
+        document.getElementById('selectedBranch').addEventListener('change', window.listenToStoreStatus);
+        
+        // --- ORDER SUBMISSION & TRACKING ---
+        window.filterMenu = function() {
+            let input = document.getElementById('searchInput').value.toLowerCase();
+            let accordions = document.querySelectorAll('.category-accordion');
+
+            accordions.forEach(acc => {
+                let items = acc.querySelectorAll('.menu-item-row');
+                let hasVisibleItems = false;
+                items.forEach(item => {
+                    let name = item.getAttribute('data-name');
+                    if (name.includes(input)) {
+                        item.style.display = 'flex'; hasVisibleItems = true;
+                    } else { item.style.display = 'none'; }
+                });
+                if (input.length > 0) acc.open = true;
+                acc.style.display = hasVisibleItems ? 'block' : 'none';
+            });
+        };
+
+        function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; const p1 = lat1 * Math.PI/180; const p2 = lat2 * Math.PI/180;
+            const deltaP = (lat2-lat1) * Math.PI/180; const deltaLon = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        window.submitOrder = async function() {
+            if (window.cart.length === 0) { alert("Your order is empty."); return; }
+
+            const name = document.getElementById('customerName').value.trim();
+            const contact = document.getElementById('customerContact').value.trim();
+            const selectedBranch = document.getElementById('selectedBranch').value;
+            
+            if (!name) { alert("👤 Please provide your name!"); window.closeCartModal(); document.getElementById('customerName').focus(); return; }
+            if (!contact) { alert("📞 Please provide a contact number!"); window.closeCartModal(); document.getElementById('customerContact').focus(); return; }
+
+            const paymentMode = document.getElementById('paymentMode').value;
+            const orderType = document.getElementById('orderType').value;
+            let deliveryNotes = document.getElementById('deliveryAddress').value.trim();
+
+            if (orderType === "Delivery" && !deliveryNotes) {
+                alert("Please provide delivery details/landmarks so our rider can find you easily!"); 
+                window.closeCartModal(); return;
+            }
+
+            if (orderType === "Delivery" && paymentMode === "cash") {
+                let codAmount = document.getElementById('codAmount').value.trim();
+                if (codAmount) deliveryNotes += `\n\n[RIDER: PREPARE CHANGE FOR ₱${codAmount}]`;
+            }
+
+            const activeShiftQ = query(collection(db, "shifts"), where("branch", "==", selectedBranch), where("active", "==", true));
+            const activeShiftSnap = await getDocs(activeShiftQ);
+
+            if (activeShiftSnap.empty) {
+                alert(`🚨 STORE CLOSED!\n\nThe ${selectedBranch} branch is currently closed. Please check back later or try selecting a different branch!`);
+                window.closeCartModal(); return; 
+            }
+            
+            let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
+            const btn = document.getElementById('submitBtn');
+
+            btn.innerHTML = '<span class="mx-auto">Uploading Photo...</span>'; 
+            btn.disabled = true;
+
+            let locationPicUrl = "";
+            let imageFile = document.getElementById('locationImage').files[0];
+            
+            if (orderType === "Delivery" && imageFile) {
+                try {
+                    const fileExt = imageFile.name.split('.').pop();
+                    const fileName = `location_pics/delivery_${Date.now()}.${fileExt}`;
+                    const storageRef = ref(storage, fileName);
+                    const snapshot = await uploadBytes(storageRef, imageFile);
+                    locationPicUrl = await getDownloadURL(snapshot.ref);
+                } catch (e) { console.error("Image upload failed", e); }
+            }
+
+            btn.innerHTML = '<span class="mx-auto">Routing Order...</span>'; 
+
+            const finalizeSubmission = async (userLat, userLng) => {
+                let preferredTime = document.getElementById('preferredTime').value;
+                let timeText = preferredTime ? ` | ⏰ Time: ${preferredTime}` : '';
+                let cashierVisibleName = `${name} (${orderType})${timeText} - 📞 ${contact}`;
+
+                window.pendingOrderData = {
+                    customerName: cashierVisibleName, 
+                    branch: selectedBranch, 
+                    orderType: orderType,  
+                    preferredTime: preferredTime,
+                    deliveryAddress: deliveryNotes,
+                    locationImage: locationPicUrl, 
+                    items: window.cart, 
+                    totalAmount: grandTotal,
+                    paymentMode: paymentMode, 
+                    gcashRef: paymentMode === 'gcash' ? (document.getElementById('refNumber')?.value || "") : null,
+                    locationLat: userLat, 
+                    locationLng: userLng,
+                    status: "mobile_queue", 
+                    timestamp: serverTimestamp()
+                };
+
+                try {
+                    const docRef = await addDoc(collection(db, "incoming_orders"), window.pendingOrderData);
+                    
+                    localStorage.setItem('activeTakodealOrderId', docRef.id);
+                    localStorage.setItem('activeTakodealBranch', selectedBranch);
+                    localStorage.setItem('activeTakodealCart', JSON.stringify(window.cart));
+                    localStorage.setItem('activeTakodealTotal', grandTotal);
+                    
+                    document.getElementById('cartModal').classList.add('hidden');
+                    document.getElementById('appContainer').classList.add('hidden'); // Hide ordering
+                    document.getElementById('floatingCartBtn').classList.add('hidden');
+                    
+                    // Show Tracker spanning full screen
+                    document.getElementById('trackerScreen').classList.remove('hidden');
+                    document.getElementById('trackerScreen').classList.add('flex');
+                    document.getElementById('trackerScreen').style.minHeight = '100vh';
+                    
+                    document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + selectedBranch;
+                    window.renderTrackerOrderDetails();
+                    
+                    window.scrollTo(0,0);
+                    window.startCancelTimer(); 
+                    window.monitorOrderStatus(docRef.id);
+
+                } catch (error) {
+                    console.error(error); 
+                    alert("Error sending order. Please check your connection.");
+                    window.resetSubmitButton(grandTotal);
+                }
+            };
+
+            let pinnedLat = document.getElementById('pinnedLat').value;
+            let pinnedLng = document.getElementById('pinnedLng').value;
+
+            if (pinnedLat && pinnedLng) {
+                let distance = getDistanceInMeters(pinnedLat, pinnedLng, BRANCH_ZONES[selectedBranch].lat, BRANCH_ZONES[selectedBranch].lng);
+                if (distance > 20000) {
+                    alert("📍 Out of Delivery Zone!\n\nSorry! TAKODEÁL currently only serves within Davao City.");
+                    window.resetSubmitButton(grandTotal); window.closeCartModal(); return; 
+                }
+                finalizeSubmission(pinnedLat, pinnedLng);
+            } else if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        let userLat = position.coords.latitude;
+                        let userLng = position.coords.longitude;
+                        let targetZone = BRANCH_ZONES[selectedBranch];
+                        if (targetZone) {
+                            let distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+                            if (distance > 20000) {
+                                alert("📍 Out of Delivery Zone!\n\nSorry! TAKODEÁL currently only serves within Davao City.");
+                                window.resetSubmitButton(grandTotal); window.closeCartModal(); return; 
+                            }
+                        }
+                        finalizeSubmission(userLat, userLng);
+                    }, 
+                    (error) => {
+                        alert("📍 Location Required!\n\nPlease allow GPS access or click 'Pin My Exact Location' so we can verify your address.");
+                        window.resetSubmitButton(grandTotal);
+                    }, 
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+            } else {
+                alert("📍 Location Required!\n\nYour device does not support GPS tracking.");
+                window.resetSubmitButton(grandTotal);
+            }
+        };
+
+        window.startCancelTimer = function() {
+            let expiresAt = localStorage.getItem('takodealCancelExpiresAt');
+            if (!expiresAt) {
+                expiresAt = Date.now() + 60000;
+                localStorage.setItem('takodealCancelExpiresAt', expiresAt);
+            }
+            document.getElementById('cancelOrderSection').classList.remove('hidden');
+            window.cancelInterval = setInterval(() => {
+                let timeLeft = Math.floor((expiresAt - Date.now()) / 1000);
+                if (timeLeft <= 0) {
+                    clearInterval(window.cancelInterval);
+                    document.getElementById('cancelOrderSection').classList.add('hidden'); 
+                    localStorage.removeItem('takodealCancelExpiresAt'); 
+                } else {
+                    let m = Math.floor(timeLeft / 60); let s = timeLeft % 60;
+                    document.getElementById('cancelTimer').innerText = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
+                }
+            }, 1000);
+        }
+
+        window.monitorOrderStatus = function(docId) {
+            window.currentOrderId = docId;
+            onSnapshot(doc(db, "incoming_orders", docId), (snapshot) => {
+                if (snapshot.exists()) {
+                    const currentStatus = snapshot.data().status;
+                    const chefAnimation = document.getElementById('chefAnimation');
+                    const oldIcon = document.getElementById('trackerIcon');
+                    const title = document.getElementById('trackerTitle');
+                    const subtitle = document.getElementById('trackerSubtitle');
+                    const waitTime = document.getElementById('waitTimeDisplay');
+
+                    if (currentStatus === "preparing") {
+                        if (chefAnimation) chefAnimation.classList.remove('hidden');
+                        if (oldIcon) oldIcon.classList.add('hidden');
+                        
+                        title.innerText = "Sizzling now! 🍳";
+                        title.classList.replace('text-gray-800', 'text-orange-600');
+                        subtitle.innerText = "The kitchen is actively cooking your order.";
+                        waitTime.innerText = "Almost Ready...";
+                        
+                        document.getElementById('progressLine').style.width = '50%';
+                        document.getElementById('step2Icon').className = 'w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500';
+                        document.getElementById('step2Text').className = 'text-[11px] font-bold text-orange-600 mt-2';
+                        
+                        clearInterval(window.cancelInterval);
+                        document.getElementById('cancelOrderSection').classList.add('hidden');
+                        localStorage.removeItem('takodealCancelExpiresAt');
+                        localStorage.removeItem('activeTakodealOrderId'); 
+                    } 
+                    else if (currentStatus === "rejected" || currentStatus === "rejected_by_customer") {
+                        if (chefAnimation) chefAnimation.classList.add('hidden');
+                        if (oldIcon) { oldIcon.classList.remove('hidden'); oldIcon.innerText = "❌"; oldIcon.classList.remove('animate-pulse'); }
+                        
+                        title.innerText = "Order Cancelled";
+                        title.classList.add('text-red-600');
+                        if (currentStatus === "rejected") subtitle.innerText = "We're sorry, but the store had to cancel your order.";
+                        waitTime.innerText = "--";
+                        
+                        document.getElementById('progressLine').style.width = '0%';
+                        document.getElementById('step1Icon').className = 'w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center font-bold text-sm shadow-sm transition-colors duration-500';
+                        document.getElementById('step1Text').className = 'text-[11px] font-bold text-gray-400 mt-2';
+
+                        clearInterval(window.cancelInterval);
+                        document.getElementById('cancelOrderSection').classList.add('hidden');
+                        localStorage.removeItem('activeTakodealOrderId');
+                        localStorage.removeItem('takodealCancelExpiresAt');
+                    }
+                } else {
+                    localStorage.removeItem('activeTakodealOrderId');
+                    localStorage.removeItem('takodealCancelExpiresAt');
+                    
+                    const chefAnimation = document.getElementById('chefAnimation');
+                    const oldIcon = document.getElementById('trackerIcon');
+                    
+                    if (chefAnimation) chefAnimation.classList.add('hidden');
+                    if (oldIcon) { oldIcon.classList.remove('hidden'); oldIcon.innerText = "🎉"; oldIcon.classList.remove('animate-pulse'); }
+                    
+                    const title = document.getElementById('trackerTitle');
+                    const subtitle = document.getElementById('trackerSubtitle');
+                    const waitTime = document.getElementById('waitTimeDisplay');
+
+                    title.innerText = "Order Complete!";
+                    title.classList.remove('text-gray-800', 'text-orange-600'); 
+                    title.classList.add('text-green-600');
+                    subtitle.innerText = "Thank you for ordering! Please pick up your food at the counter.";
+                    waitTime.innerText = "Ready!";
+                    
+                    document.getElementById('progressLine').style.width = '100%';
+                    document.getElementById('step2Icon').className = 'w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500';
+                    document.getElementById('step2Text').className = 'text-[11px] font-bold text-green-600 mt-2';
+                    document.getElementById('step3Icon').className = 'w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500';
+                    document.getElementById('step3Text').className = 'text-[11px] font-bold text-green-600 mt-2';
+
+                    document.getElementById('cancelOrderSection').classList.add('hidden');
+                }
+            });
+        };
+
+        window.checkActiveOrder = async function() {
+            let savedOrderId = localStorage.getItem('activeTakodealOrderId');
+            if (savedOrderId) {
+                // Hide Landing & Ordering
+                document.getElementById('greetingScreen').classList.add('hidden');
+                document.getElementById('appContainer').classList.add('hidden'); 
+                
+                // Show Tracker
+                let tracker = document.getElementById('trackerScreen');
+                tracker.classList.remove('hidden');
+                tracker.classList.add('flex');
+                tracker.style.minHeight = '100vh';
+                
+                let savedBranch = localStorage.getItem('activeTakodealBranch');
+                if (savedBranch) {
+                     document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + savedBranch;
+                }
+
+                window.renderTrackerOrderDetails();
+                window.monitorOrderStatus(savedOrderId);
+            }
+        }
+
+        window.renderTrackerOrderDetails = function() {
+            let savedCartStr = localStorage.getItem('activeTakodealCart');
+            let savedTotal = localStorage.getItem('activeTakodealTotal');
+            if(savedCartStr) {
+                let savedCart = JSON.parse(savedCartStr);
+                let html = '';
+                savedCart.forEach(item => {
+                    html += `<div class="flex justify-between border-b border-gray-50 pb-1"><span>${item.quantity}x ${item.name}</span><span class="font-bold text-gray-900">₱${item.lineTotalFinal.toFixed(2)}</span></div>`;
+                });
+                document.getElementById('trackerOrderDetails').innerHTML = html;
+                document.getElementById('trackerOrderTotal').innerText = `Total: ₱${parseFloat(savedTotal).toFixed(2)}`;
+            }
+        };
+
+        window.cancelMyOrder = async function() {
+            if(!window.currentOrderId) return;
+            try {
+                const orderRef = doc(db, "incoming_orders", window.currentOrderId);
+                const orderSnap = await getDoc(orderRef);
+                if (!orderSnap.exists()) return;
+
+                let diffMins = (new Date() - orderSnap.data().timestamp.toDate()) / 60000;
+
+                if (diffMins > 1) {
+                    alert("⚠️ Too Late to Cancel!\n\nYour order has already been received by the cashier and preparation has started.\n\nIf you really need to cancel, please contact the branch immediately using our business page:\nwww.facebook.com/Takodeal");
+                    return; 
+                }
+
+                if(!confirm("Are you sure you want to cancel your order?")) return;
+                await updateDoc(orderRef, { status: "rejected_by_customer" });
+            } catch(e) { console.error(e); }
+        };
+
+        window.startNewOrder = function() {
+            localStorage.removeItem('activeTakodealOrderId');
+            localStorage.removeItem('activeTakodealBranch');
+            localStorage.removeItem('takodealCancelExpiresAt');
+            localStorage.removeItem('activeTakodealCart');       
+            localStorage.removeItem('activeTakodealTotal');    
+            window.cart = [];
+            location.reload();
+        };
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            await window.checkActiveOrder();
+            window.loadLiveMenu(); 
+            window.listenToStoreStatus(); 
+        });
+
     </script>
 </body>
 </html>
