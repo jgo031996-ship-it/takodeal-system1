@@ -12648,18 +12648,15 @@ window.openItemLedger = async function(branch, itemName) {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Compiling forensic data...</td></tr>';
 
     try {
-        // 1. Get Live Stock & UOM
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
         const invSnap = await getDocs(invQ);
-        let currentStock = 0;
-        let uom = '';
+        let currentStock = 0; let uom = '';
         if (!invSnap.empty) {
             currentStock = parseFloat(invSnap.docs[0].data().currentStock) || 0;
             uom = invSnap.docs[0].data().baseUom || invSnap.docs[0].data().uom || '';
         }
         document.getElementById('ledgerCurrentStock').innerText = `${currentStock.toFixed(2)} ${uom}`;
 
-        // 🔥 2. INJECT NEW TABLE HEADERS DYNAMICALLY (Adds 'Old Qty')
         let headerRow = tbody.previousElementSibling.querySelector('tr');
         if (headerRow) {
             headerRow.innerHTML = `
@@ -12673,38 +12670,51 @@ window.openItemLedger = async function(branch, itemName) {
             `;
         }
 
-        // 3. Fetch every single log for this item
         const logQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("item", "==", itemName), orderBy("timestamp", "desc"));
         const logSnap = await getDocs(logQ);
 
-        let html = '';
+        let logsArray = [];
+        logSnap.forEach(doc => logsArray.push(doc.data()));
+
+        // 🔥 DYNAMIC REVERSE CALCULATOR (Fixes the "0 Old Qty" Bug!)
+        let runningNewQty = currentStock;
         let lifetimeBought = 0;
 
-        logSnap.forEach(doc => {
-            let d = doc.data();
+        logsArray.forEach(d => {
+            let variance = parseFloat(d.variance) || 0;
+            let type = d.type || "Unknown";
+            
+            // Calculate what the Old Qty MUST have been based on the variance
+            let calculatedOldQty = runningNewQty - variance;
+
+            d._renderNew = runningNewQty;
+            d._renderOld = calculatedOldQty;
+
+            // Shift the pointer backwards in time for the next row
+            runningNewQty = calculatedOldQty;
+
+            if (variance > 0 && (type.includes("Restock") || type.includes("Delivery") || type.includes("Received") || type.includes("Purchase"))) {
+                lifetimeBought += variance;
+            }
+        });
+
+        let html = '';
+        logsArray.forEach(d => {
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             let variance = parseFloat(d.variance) || 0;
             let type = d.type || "Unknown";
             
-            if (variance > 0 && (type.includes("Restock") || type.includes("Delivery") || type.includes("Received") || type.includes("Purchase"))) {
-                lifetimeBought += variance;
-            }
-
             let varColor = variance > 0 ? '#16a34a' : (variance < 0 ? '#dc2626' : '#64748b');
             let varText = variance > 0 ? `+${variance}` : variance;
             
-            // Extract Old & New Qty safely
-            let oldQtyDisplay = d.oldQty !== undefined ? (parseFloat(d.oldQty)||0).toFixed(2) : '-';
-            let newQtyDisplay = d.newQty !== undefined ? (parseFloat(d.newQty)||0).toFixed(2) : '-';
-
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                     <td style="padding: 10px; color: #64748b; font-size: 11px;">${dateStr}</td>
                     <td style="padding: 10px; font-weight: bold; color: #334155;">${d.user || 'System'}</td>
                     <td style="padding: 10px;"><span style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; color: #475569;">${type}</span></td>
-                    <td style="padding: 10px; text-align: right; color: #94a3b8; font-weight: bold;">${oldQtyDisplay}</td>
+                    <td style="padding: 10px; text-align: right; color: #94a3b8; font-weight: bold;">${d._renderOld.toFixed(2)}</td>
                     <td style="padding: 10px; font-weight: 900; color: ${varColor}; text-align: right;">${varText}</td>
-                    <td style="padding: 10px; font-weight: 900; color: #0f766e; text-align: right;">${newQtyDisplay}</td>
+                    <td style="padding: 10px; font-weight: 900; color: #0f766e; text-align: right;">${d._renderNew.toFixed(2)}</td>
                     <td style="padding: 10px; font-size: 11px; color: #64748b; font-style: italic; padding-left: 20px;">${d.note || '-'}</td>
                 </tr>
             `;
@@ -12715,7 +12725,7 @@ window.openItemLedger = async function(branch, itemName) {
 
     } catch (e) {
         console.error("Item Ledger Error:", e);
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: red;">Failed to load trace data. Check F12 console.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: red;">Failed to load trace data. Check console.</td></tr>';
     }
 };
 
@@ -13652,5 +13662,20 @@ window.saveSidebarLayout = async function() {
     } catch(e) { 
         console.error(e);
         Swal.fire('Error', 'Failed to save layout to cloud.', 'error');
+    }
+};
+
+window.filterAuditTable = function() {
+    let search = document.getElementById('auditModalSearch').value.toLowerCase();
+    let tbody = document.getElementById('auditModalBody');
+    let rows = tbody.getElementsByTagName('tr');
+    
+    for(let i = 0; i < rows.length; i++) {
+        let nameTd = rows[i].getElementsByTagName('td')[0];
+        let catTd = rows[i].getElementsByTagName('td')[1];
+        if(nameTd && catTd) {
+            let text = nameTd.innerText.toLowerCase() + " " + catTd.innerText.toLowerCase();
+            rows[i].style.display = text.includes(search) ? "" : "none";
+        }
     }
 };
