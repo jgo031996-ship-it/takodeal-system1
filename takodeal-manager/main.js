@@ -13679,3 +13679,54 @@ window.filterAuditTable = function() {
         }
     }
 };
+
+window.exportDashboardSalesCSV = async function() {
+    let startInput = document.getElementById('dashStartDate').value;
+    let endInput = document.getElementById('dashEndDate').value;
+    let branchFilter = document.getElementById('dashBranchFilter') ? document.getElementById('dashBranchFilter').value : "All";
+    
+    if (!startInput || !endInput) { 
+        alert("Please ensure Start and End dates are selected."); return; 
+    }
+
+    let btn = document.getElementById('btnExportSales');
+    let oldText = btn ? btn.innerText : "📥 Export Sales CSV";
+    if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
+
+    try {
+        let startOfDay = new Date(startInput + 'T00:00:00');
+        let endOfDay = new Date(endInput + 'T23:59:59');
+
+        let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        if (branchFilter !== "All") {
+            q = query(collection(db, "transactions"), where("branch", "==", branchFilter), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        }
+        
+        const snap = await getDocs(q);
+
+        let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Net Total\n";
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            
+            let itemsArr = [];
+            if (tx.cart) { tx.cart.forEach(item => { itemsArr.push(`${item.qty}x ${item.name || item.itemName}`); }); }
+            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); 
+            
+            csv += `"${tx.receiptId}","${d.toLocaleDateString('en-PH')}","${d.toLocaleTimeString('en-PH')}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${tx.netTotal}"\n`;
+        });
+
+        let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+        let downloadLink = document.createElement("a");
+        downloadLink.download = `Takodeal_Global_Sales_${startInput}_to_${endInput}.csv`;
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = "none";
+        document.body.appendChild(downloadLink); downloadLink.click(); document.body.removeChild(downloadLink);
+        
+    } catch (e) {
+        console.error("Export Error:", e); alert("Failed to export sales data.");
+    } finally {
+        if (btn) { btn.innerText = oldText; btn.disabled = false; }
+    }
+};
