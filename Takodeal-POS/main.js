@@ -4812,3 +4812,202 @@ window.applySidebarLayout = async function() {
         console.error("Failed to load sidebar layout from Cloud.", e);
     }
 };
+
+// ========================================================
+// 📦 SMART BRANCH STOCK REQUEST ENGINE (WITH HISTORY)
+// ========================================================
+window.switchStockReqTab = function(tab) {
+    document.getElementById('stockReqTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    document.getElementById('stockReqTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+    
+    document.getElementById('btnTabReqNew').style.background = tab === 'New' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqNew').style.color = tab === 'New' ? 'white' : '#475569';
+    document.getElementById('btnTabReqNew').style.border = tab === 'New' ? 'none' : '1px solid #cbd5e1';
+
+    document.getElementById('btnTabReqHist').style.background = tab === 'History' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqHist').style.color = tab === 'History' ? 'white' : '#475569';
+    document.getElementById('btnTabReqHist').style.border = tab === 'History' ? 'none' : '1px solid #cbd5e1';
+
+    if (tab === 'History') window.loadStockRequestHistory();
+};
+
+window.globalHqStockCache = [];
+
+window.loadStockRequestUI = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    const listDiv = document.getElementById('stockReqList');
+    if (!listDiv) return;
+    listDiv.innerHTML = '<div style="text-align:center; padding: 20px; color: #94a3b8;">Loading inventory data...</div>';
+
+    try {
+        // 1. Fetch HQ Stock
+        const hqQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const hqSnap = await getDocs(hqQ);
+        window.globalHqStockCache = [];
+        hqSnap.forEach(doc => {
+            let data = doc.data();
+            // 🔥 THE FIX: Respect the allowRequest toggle set by the Manager!
+            if (data.allowRequest !== false) {
+                window.globalHqStockCache.push({ id: doc.id, ...data });
+            }
+        });
+
+        window.globalHqStockCache.sort((a,b) => a.name.localeCompare(b.name));
+
+        // 2. Fetch Local Branch Stock for comparison
+        const brQ = query(collection(db, "inventory"), where("branch", "==", branch));
+        const brSnap = await getDocs(brQ);
+        let branchStockDict = {};
+        brSnap.forEach(doc => {
+            let d = doc.data();
+            branchStockDict[d.name] = d.currentStock || 0;
+        });
+
+        window.renderStockReqList(branchStockDict);
+
+    } catch (e) {
+        console.error("Request Stock Error:", e);
+        listDiv.innerHTML = '<div style="text-align:center; padding: 20px; color: red;">Failed to load data.</div>';
+    }
+};
+
+window.renderStockReqList = function(branchStockDict) {
+    let html = '';
+    window.globalHqStockCache.forEach((item, idx) => {
+        let hqStock = parseFloat(item.currentStock) || 0;
+        let localStock = branchStockDict[item.name] !== undefined ? branchStockDict[item.name] : 0;
+        let hqStatus = hqStock > 0 ? `<span style="color: #16a34a;">HQ Has Stock</span>` : `<span style="color: #dc2626;">HQ Out of Stock</span>`;
+
+        html += `
+            <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                <div>
+                    <strong style="color: #1e293b; font-size: 14px;">${item.name}</strong><br>
+                    <span style="font-size: 11px;">${hqStatus}</span>
+                </div>
+                <div style="text-align: center; font-weight: bold; color: #64748b;">
+                    ${parseFloat(localStock).toFixed(1)} <span style="font-size:10px;">${item.uom}</span>
+                </div>
+                <div style="text-align: center;">
+                    <select id="reqType_${idx}" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; font-size: 11px; font-weight: bold; color: #d97706; outline: none; width: 100%; cursor: pointer;">
+                        <option value="">-- No Request --</option>
+                        <option value="Low Stock">Low Stock</option>
+                        <option value="Out of Stock">Out of Stock</option>
+                        <option value="Stock Request">General Request</option>
+                    </select>
+                </div>
+                <div style="text-align: center;">
+                    <input type="number" id="reqQty_${idx}" placeholder="0" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #0ea5e9; font-weight: bold; color: #0284c7; text-align: center; outline: none; box-sizing: border-box;">
+                    <input type="hidden" id="reqItemName_${idx}" value="${item.name.replace(/"/g, '&quot;')}">
+                    <input type="hidden" id="reqItemUom_${idx}" value="${item.uom}">
+                    <input type="hidden" id="reqItemSysStock_${idx}" value="${localStock}">
+                </div>
+            </div>
+        `;
+    });
+    document.getElementById('stockReqList').innerHTML = html;
+};
+
+window.filterStockReq = function() {
+    let search = document.getElementById('stockReqSearch').value.toLowerCase();
+    document.querySelectorAll('.stock-req-row').forEach(row => {
+        if (row.getAttribute('data-name').includes(search)) row.style.display = 'grid';
+        else row.style.display = 'none';
+    });
+};
+
+window.submitStockRequest = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashier = localStorage.getItem('cashierName') || 'Staff';
+    let itemsToRequest = [];
+
+    for (let i = 0; i < window.globalHqStockCache.length; i++) {
+        let typeEl = document.getElementById(`reqType_${i}`);
+        let qtyEl = document.getElementById(`reqQty_${i}`);
+        
+        if (typeEl && typeEl.value !== "") {
+            let name = document.getElementById(`reqItemName_${i}`).value;
+            let uom = document.getElementById(`reqItemUom_${i}`).value;
+            let sysStock = document.getElementById(`reqItemSysStock_${i}`).value;
+            let physical = qtyEl.value ? parseFloat(qtyEl.value) : 0;
+
+            itemsToRequest.push({
+                itemName: name,
+                requestType: typeEl.value,
+                physicalStock: physical,
+                systemStock: parseFloat(sysStock),
+                uom: uom,
+                qty: physical // For the Manager's visual reference
+            });
+        }
+    }
+
+    if (itemsToRequest.length === 0) return Swal.fire('Empty Request', 'Please set a Report Status for at least one item.', 'warning');
+
+    let btn = document.querySelector('button[onclick="window.submitStockRequest()"]');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Sending..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "purchase_orders"), {
+            branch: branch,
+            type: "Internal Request",
+            items: itemsToRequest,
+            status: "Pending",
+            requestedBy: cashier,
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted. Check the History tab to track it.', 'success');
+        window.loadStockRequestUI(); // Resets the form
+        window.switchStockReqTab('History'); // Auto-switch to history!
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to send request.', 'error');
+    } finally {
+        btn.innerText = origText; btn.disabled = false;
+    }
+};
+
+window.loadStockRequestHistory = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    const tbody = document.getElementById('stockReqHistoryBody');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading history...</td></tr>';
+
+    try {
+        const q = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(20));
+        const snap = await getDocs(q);
+
+        let html = '';
+        snap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
+            
+            // Map the colors dynamically based on what the manager is doing with it!
+            let statusBg = '#f1f5f9'; let statusColor = '#475569';
+            if (d.status === 'Pending') { statusBg = '#fef3c7'; statusColor = '#d97706'; }
+            else if (d.status === 'Drafting') { statusBg = '#bae6fd'; statusColor = '#0284c7'; d.status = 'Preparing (HQ)'; }
+            else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; d.status = 'Dispatch on the way 🚚'; }
+            else if (d.status === 'Completed') { statusBg = '#f1f5f9'; statusColor = '#64748b'; }
+
+            let itemsList = d.items.map(i => `<div style="font-size: 11px; margin-bottom: 2px;">• <strong style="color:#0f172a;">${i.itemName}</strong> <span style="color:#ef4444;">(${i.requestType})</span></div>`).join('');
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${d.requestedBy || 'Staff'}</td>
+                    <td style="padding: 12px;">
+                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.status}</span>
+                    </td>
+                    <td style="padding: 12px;">${itemsList}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 20px;">No requests found.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history.</td></tr>';
+    }
+};
