@@ -5413,23 +5413,21 @@ window.fetchZReadings = async function() {
 // 🔍 THE BEAUTIFUL VARIANCE & BREAKDOWN MODAL
 // ========================================================
 window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, cashierName, branchName, declaredCash, variance) {
-  // 1. Open the UI
   document.getElementById('breakdownModal').style.display = 'flex';
   document.getElementById('bdTitle').innerText = `Z-Reading: ${cashierName.toUpperCase()} (${branchName})`;
-  document.getElementById('bdTotalCash').innerText = `Declared Total: ₱${parseFloat(declaredCash).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-  // --- 🚀 NEW: THE ENTERPRISE SALES MATH ENGINE ---
+  
   document.getElementById('bdNetSalesTotal').innerText = "⏳ Loading...";
   document.getElementById('bdPaymentBreakdown').innerHTML = "Loading...";
   document.getElementById('bdOrderTypeBreakdown').innerHTML = "Loading...";
 
+  let sTime, eTime; // We need these to fetch the Prep Logs!
+
   try {
-      // 1. Get the exact start and end time of this specific shift
       const shiftSnap = await getDoc(doc(db, "shifts", shiftId));
       if (shiftSnap.exists()) {
-          let sTime = shiftSnap.data().startTime.toDate();
-          let eTime = shiftSnap.data().endTime.toDate();
+          sTime = shiftSnap.data().startTime.toDate();
+          eTime = shiftSnap.data().endTime.toDate();
 
-          // 2. Query ALL transactions that happened exactly within that time block
           const txQ = query(collection(db, "transactions"), 
               where("branch", "==", branchName), 
               where("timestamp", ">=", sTime), 
@@ -5437,37 +5435,30 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
           );
           const txSnap = await getDocs(txQ);
 
-          let totalNet = 0;
-          let payments = {};
-          let orderTypes = {};
+          let totalNet = 0; let payments = {}; let orderTypes = {};
 
-          // 3. Crunch the numbers!
           txSnap.forEach(tDoc => {
               let tx = tDoc.data();
               if (tx.status !== "Voided") {
                   totalNet += (tx.netTotal || 0);
-
                   let payMeth = tx.paymentMethod || "Cash";
                   payments[payMeth] = (payments[payMeth] || 0) + (tx.netTotal || 0);
-
                   let oType = tx.orderType || "Dine-In";
                   orderTypes[oType] = (orderTypes[oType] || 0) + (tx.netTotal || 0);
               }
           });
 
-          // 4. Inject the data into your beautiful new UI
           document.getElementById('bdNetSalesTotal').innerText = "₱" + totalNet.toLocaleString(undefined, {minimumFractionDigits: 2});
 
           let payHtml = '';
           for (let p in payments) {
-              let amountVal = payments[p];
               payHtml += `
                 <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #cbd5e1; padding:4px 0;">
                     <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0; font-size:13px; color:#334155;">
-                        <input type="checkbox" class="pay-toggle-chk" value="${amountVal}" checked onchange="window.recalcModalNetSales()" style="width:16px; height:16px; cursor:pointer;">
+                        <input type="checkbox" class="pay-toggle-chk" value="${payments[p]}" checked onchange="window.recalcModalNetSales()" style="width:16px; height:16px; cursor:pointer;">
                         ${p}
                     </label>
-                    <strong style="color:#0f766e;">₱${amountVal.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+                    <strong style="color:#0f766e;">₱${payments[p].toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
                 </div>`;
           }
           document.getElementById('bdPaymentBreakdown').innerHTML = payHtml || "<i style='color:#94a3b8;'>No sales</i>";
@@ -5478,86 +5469,116 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
           }
           document.getElementById('bdOrderTypeBreakdown').innerHTML = typeHtml || "<i style='color:#94a3b8;'>No sales</i>";
       }
-  } catch(e) {
-      console.error("Sales Math Error:", e);
-  }
-  // --- END OF SALES MATH ENGINE ---
+  } catch(e) { console.error("Sales Math Error:", e); }
 
   let breakdown = JSON.parse(decodeURIComponent(breakdownStr));
-  let physicalStock = JSON.parse(decodeURIComponent(stockStr));
 
+  // 1. Build Cash Breakdown Grid (STRICT ORDER: 1000 -> 1)
+  let cashHtml = '';
+  const billOrder = ['₱1000', '₱500', '₱200', '₱100', '₱50', '₱20', '₱10', '₱5', '₱1'];
+  
+  billOrder.forEach(bill => {
+      let qty = breakdown[bill];
+      if (qty > 0) {
+          let total = parseInt(bill.replace('₱', '')) * qty;
+          cashHtml += `<div style="display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #f1f5f9;">
+                          <span style="color: #64748b;">${bill} x <strong style="color:#000;">${qty} pcs</strong></span>
+                          <span style="font-weight: bold;">₱${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                       </div>`;
+      }
+  });
+
+  // Catch any unexpected denominations
+  for (const [bill, qty] of Object.entries(breakdown)) {
+      if (qty > 0 && !billOrder.includes(bill)) {
+          let val = parseFloat(bill.replace('₱', '')) || 0;
+          let total = val * qty;
+          cashHtml += `<div style="display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #f1f5f9;">
+                          <span style="color: #64748b;">${bill} x <strong style="color:#000;">${qty} pcs</strong></span>
+                          <span style="font-weight: bold;">₱${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                       </div>`;
+      }
+  }
+
+  // 2. Position the Alert beautifully next to the Declared Total
   let varianceAlert = '';
   if (variance < -0.05) {
-      varianceAlert = `<div style="background: #fef2f2; border: 2px dashed #ef4444; color: #b91c1c; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">🚨 CASH SHORTAGE DETECTED: -₱${Math.abs(variance).toFixed(2)}</div>`;
+      varianceAlert = `<div style="background: #fef2f2; border: 2px dashed #ef4444; color: #b91c1c; padding: 10px 15px; border-radius: 8px; font-weight: bold; font-size: 14px; margin-right: 15px;">🚨 CASH SHORTAGE: -₱${Math.abs(variance).toFixed(2)}</div>`;
   } else if (variance > 0.05) {
-      varianceAlert = `<div style="background: #fffbeb; border: 2px dashed #f59e0b; color: #b45309; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">📈 CASH OVERAGE DETECTED: +₱${variance.toFixed(2)}</div>`;
+      varianceAlert = `<div style="background: #fffbeb; border: 2px dashed #f59e0b; color: #b45309; padding: 10px 15px; border-radius: 8px; font-weight: bold; font-size: 14px; margin-right: 15px;">📈 CASH OVERAGE: +₱${variance.toFixed(2)}</div>`;
   }
-  
-  // 2. Build Cash Breakdown Grid
-  let cashHtml = varianceAlert;
-  for (const [bill, qty] of Object.entries(breakdown)) {
-    if (qty > 0) {
-      let total = parseInt(bill.replace('₱', '')) * qty;
-      cashHtml += `<div style="display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #f1f5f9;">
-                            <span style="color: #64748b;">${bill} x <strong style="color:#000;">${qty} pcs</strong></span>
-                            <span style="font-weight: bold;">₱${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                         </div>`;
-    }
-  }
-  document.getElementById('bdCashContent').innerHTML = cashHtml || '<i>No cash breakdown logged.</i>';
 
-  // 3. The Variance Engine (Compare Physical vs Live DB)
+  document.getElementById('bdCashContent').innerHTML = cashHtml || '<i style="color:#94a3b8; grid-column: span 2;">No cash breakdown logged.</i>';
+
+  // Inject the variance alert into the total bar
+  let bdTotalCashEl = document.getElementById('bdTotalCash');
+  if (bdTotalCashEl) {
+      bdTotalCashEl.parentElement.innerHTML = `
+        <div style="display: flex; justify-content: flex-end; align-items: center; border-top: 2px dashed #cbd5e1; padding-top: 15px;">
+            ${varianceAlert}
+            <div style="font-weight: bold; font-size: 18px; color: #16a34a;" id="bdTotalCash">Declared Total: ₱${parseFloat(declaredCash).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+        </div>
+      `;
+  }
+
+  // 3. FETCH KITCHEN PREP LOGS FOR THIS EXACT SHIFT
   const tbody = document.getElementById('bdStockContent');
-  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:15px; color: #888;">⏳ Fetching Live DB stock for comparison...</td></tr>';
+  if (!tbody) return; // Failsafe if the HTML isn't updated yet
+
+  // Dynamically change the table headers via Javascript to avoid breaking the old HTML structure!
+  let tableHeader = tbody.previousElementSibling.querySelector('tr');
+  if (tableHeader) {
+      tableHeader.innerHTML = `
+          <th style="padding: 8px 5px; color:#475569;">Time</th>
+          <th style="padding: 8px 5px; color:#475569;">Item Prepared</th>
+          <th style="padding: 8px 5px; text-align:right; color:#475569;">Yield Added</th>
+      `;
+      // Change the title above the table
+      let titleHeader = tbody.closest('div').querySelector('h3');
+      if (titleHeader) titleHeader.innerHTML = '🔪 Kitchen Prep Logs (During Shift)';
+  }
+
+  tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:15px; color: #888;">⏳ Fetching Kitchen Prep logs...</td></tr>';
 
   try {
-    // Query the live inventory specifically for THIS branch
-    const q = query(collection(db, "inventory"), where("branch", "==", branchName));
-    const snap = await getDocs(q);
+      if (!sTime || !eTime) throw new Error("Missing shift times");
 
-    // Save the live DB items into a dictionary
-    let liveStockDb = {};
-    snap.forEach(doc => {
-      let item = doc.data();
-      let itemName = item.name || item.itemName || item.item;
-      let qty = item.currentStock || item.stock || item.quantity || 0;
-      if (itemName) liveStockDb[itemName] = qty;
-    });
+      const prepQ = query(collection(db, "stock_logs"), 
+          where("branch", "==", branchName), 
+          where("timestamp", ">=", sTime), 
+          where("timestamp", "<=", eTime)
+      );
+      const prepSnap = await getDocs(prepQ);
 
-    // Compare Cashier's count against the Live DB
-    let stockHtml = '';
-    for (const [itemName, cashierQty] of Object.entries(physicalStock)) {
-      let expectedQty = liveStockDb[itemName];
+      let prepLogs = [];
+      prepSnap.forEach(doc => {
+          let d = doc.data();
+          if (d.type && (d.type.toLowerCase().includes("prep") || d.type.toLowerCase().includes("batch"))) {
+              prepLogs.push(d);
+          }
+      });
 
-      let varianceHtml = '';
-      if (expectedQty === undefined) {
-        expectedQty = '<span title="Item spelling might not match DB">Not Found ⚠️</span>';
-        varianceHtml = '<span style="color: #94a3b8;">N/A</span>';
+      let prepHtml = '';
+      if (prepLogs.length > 0) {
+          prepLogs.sort((a,b) => b.timestamp - a.timestamp).forEach(log => {
+              let t = log.timestamp.toDate().toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'});
+              prepHtml += `
+                  <tr style="border-bottom: 1px solid #f8fafc;">
+                      <td style="padding: 10px 5px; color: #64748b; font-size:12px;">${t}</td>
+                      <td style="padding: 10px 5px; font-weight: bold; color: #334155;">${log.item}</td>
+                      <td style="padding: 10px 5px; font-weight: bold; color: #16a34a; text-align:right;">+${log.variance} ${log.uom}</td>
+                  </tr>
+              `;
+          });
       } else {
-        let variance = cashierQty - expectedQty;
-        if (variance === 0) {
-          varianceHtml = `<span style="color: #16a34a; font-weight: bold;">Perfect ✔️</span>`;
-        } else if (variance < 0) {
-          varianceHtml = `<span style="color: #dc2626; font-weight: bold;">${variance} (Short) 🔻</span>`;
-        } else {
-          varianceHtml = `<span style="color: #ea580c; font-weight: bold;">+${variance} (Over) 🔺</span>`;
-        }
+          prepHtml = '<tr><td colspan="3" style="text-align:center; padding:15px; color: #94a3b8; font-style:italic;">No kitchen prep logged during this shift.</td></tr>';
       }
-
-      stockHtml += `
-                <tr style="border-bottom: 1px solid #f8fafc;">
-                    <td style="padding: 10px 5px; font-weight: bold; color: #334155;">${itemName}</td>
-                    <td style="padding: 10px 5px; color: #64748b;">${expectedQty}</td>
-                    <td style="padding: 10px 5px; font-weight: bold; color: #0284c7;">${cashierQty}</td>
-                    <td style="padding: 10px 5px;">${varianceHtml}</td>
-                </tr>
-            `;
-    }
-    tbody.innerHTML = stockHtml;
+      
+      tbody.innerHTML = prepHtml;
 
   } catch (e) {
-    console.error("Error fetching live inventory:", e);
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#dc2626; padding:15px;">❌ Failed to fetch live inventory for variance check.</td></tr>';
+      console.error("Error fetching prep logs:", e);
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#dc2626; padding:15px;">Failed to fetch prep logs.</td></tr>';
   }
 };
 
