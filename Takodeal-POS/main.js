@@ -954,42 +954,109 @@ window.calculateDenominations = function () {
 };
 
 // Call this when clicking your "End Shift" button to open the new UI
-window.openEndShiftClearance = async function () {
-  buildDenominationTable();
-  document.getElementById('endShiftModal').style.display = 'flex';
+window.openEndShiftClearance = async function() {
+    if (typeof closeModal === 'function') closeModal('shiftModal');
+    let endModal = document.getElementById('endShiftModal');
+    if (endModal) endModal.style.display = 'flex';
 
-  let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-  const q = query(collection(db, "inventory"), where("branch", "==", branch));
-  const snap = await getDocs(q);
+    // 1. Render denominations table (Sorted 1000 down to 1)
+    let denomHtml = '';
+    let denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
+    denominations.forEach(val => {
+        denomHtml += `
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px 5px; font-weight: bold; color: #555;">₱${val}</td>
+            <td style="padding: 8px 5px;"><input type="number" class="denom-input input-box" data-val="${val}" placeholder="0" style="width: 100%; text-align: center; padding: 6px;" onkeyup="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()" onchange="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()"></td>
+            <td style="padding: 8px 5px; text-align: right; font-weight: bold; color: var(--primary);" class="denom-row-total">₱0.00</td>
+        </tr>`;
+    });
+    
+    // 🛡️ CRASH-PROOF WRAPPER: Only set innerHTML if the table actually exists!
+    let denomTable = document.getElementById('denominationTable');
+    if (denomTable) {
+        denomTable.innerHTML = denomHtml;
+    } else {
+        console.warn("HTML ID 'denominationTable' is missing. Skipping.");
+    }
+    
+    if (typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash(); 
 
-  // 🔥 THE VIP LIST: Type the EXACT names of the items you want them to count here!
-  // Make sure the spelling matches your Firebase inventory perfectly.
-  // 🔥 Reads directly from your Manager App's POS Config Hub!
-  let itemsToCount = [];
-  try {
-      const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
-      if (configSnap.exists() && configSnap.data().auditItems) {
-          itemsToCount = configSnap.data().auditItems;
-      }
-  } catch (e) {
-      console.error("Failed to fetch audit items from cloud", e);
-  }
+    // 2. FETCH KITCHEN PREP LOGS FOR THIS SHIFT
+    let prepContainer = document.getElementById('dynamicShiftPrepLogs');
+    
+    // 🛡️ CRASH-PROOF WRAPPER: Only fetch logs if the prep container exists!
+    if (prepContainer) {
+        prepContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #888; padding: 20px;">Fetching prep logs...</div>';
+        
+        try {
+            if (typeof currentShift === 'undefined' || !currentShift || !currentShift.startTime) {
+                prepContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">No active shift found.</div>';
+                return;
+            }
+            
+            // Remove "window." prefix for Firebase functions!
+            const q = query(collection(db, "stock_logs"), 
+                where("branch", "==", sessionUser.branch), 
+                where("timestamp", ">=", currentShift.startTime)
+            );
+            const snap = await getDocs(q);
+            
+            let logs = [];
+            snap.forEach(doc => {
+                let d = doc.data();
+                if (d.type && (d.type.toLowerCase().includes("prep") || d.type.toLowerCase().includes("batch"))) {
+                    logs.push(d);
+                }
+            });
 
-  let html = '';
-  snap.forEach(docSnap => {
-      let i = docSnap.data();
-      
-      // Only render the input box if the item's name is in our VIP list above
-      if (itemsToCount.includes(i.name)) {
-          html += `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #fcd34d; padding-bottom: 8px; margin-bottom: 8px;">
-                      <label style="font-size: 13px; font-weight: bold; color: #444;">${i.name}:</label>
-                      <input type="number" class="input-box shift-count-input" data-name="${i.name}" style="width: 80px; padding: 6px; text-align: center; border: 1px solid #ccc; border-radius: 6px;" placeholder="Qty">
-                   </div>`;
-      }
-  });
-  
-  if(html === '') html = '<div style="font-size:12px; color:#888; text-align: center; padding: 10px;">No tracking items found. Please check spelling in the VIP List.</div>';
-  document.getElementById('dynamicShiftStockCount').innerHTML = html;
+            logs.sort((a,b) => b.timestamp - a.timestamp); 
+            
+            let html = '';
+            if (logs.length > 0) {
+                logs.forEach(log => {
+                    let t = log.timestamp.toDate().toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'});
+                    html += `
+                        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #fcd34d; padding: 8px 0;">
+                            <div>
+                                <strong style="color: #92400e; font-size: 13px;">${log.item}</strong><br>
+                                <span style="font-size: 10px; color: #b45309;">${t}</span>
+                            </div>
+                            <strong style="color: #16a34a; font-size: 14px;">+${log.variance} ${log.uom}</strong>
+                        </div>
+                    `;
+                });
+            } else {
+                html = '<div style="text-align:center; font-size: 13px; color: #b45309; padding: 20px; font-style: italic;">No kitchen prep logged during this shift.</div>';
+            }
+            prepContainer.innerHTML = html;
+        } catch(e) {
+            console.error("Prep Fetch Error:", e);
+            prepContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">Error fetching logs. Check console.</div>';
+        }
+    } else {
+        console.warn("HTML ID 'dynamicShiftPrepLogs' is missing. Skipping prep fetch.");
+    }
+};
+
+// Also apply a crash-proof wrapper to the total calculator just in case!
+window.calculateGrandTotalCash = function() {
+    let total = 0;
+    document.querySelectorAll('.denom-input').forEach(input => {
+        let val = parseInt(input.getAttribute('data-val'));
+        let pcs = parseInt(input.value) || 0;
+        let rowTotal = val * pcs;
+        total += rowTotal;
+        
+        let rowTotalEl = input.parentElement.nextElementSibling;
+        if (rowTotalEl) {
+            rowTotalEl.innerText = '₱' + rowTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
+        }
+    });
+    
+    let grandTotalEl = document.getElementById('grandTotalCash');
+    if (grandTotalEl) {
+        grandTotalEl.innerText = '₱' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
+    }
 };
 
 // ========================================================
@@ -5150,5 +5217,58 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
     } catch(e) {
         console.error(e);
         alert("Failed to undo prep batch.");
+    }
+};
+
+// ========================================================
+// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE
+// ========================================================
+window.processStoreUse = async function() {
+    if (typeof cart === 'undefined' || cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+        return;
+    }
+
+    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
+
+    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashier = localStorage.getItem('cashierName') || 'Unknown';
+        let totalCostHit = 0;
+        let usedItems = [];
+        
+        cart.forEach(item => {
+            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
+            usedItems.push({ name: item.name, qty: item.qty });
+        });
+
+        let payload = {
+            branch: branch, cashier: cashier,
+            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
+            orderType: "Store Use", paymentMethod: "Store Use",
+            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
+            netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use" 
+        };
+
+        let receiptId = await window.processCheckout(payload);
+
+        if (receiptId) {
+            await window.addDoc(window.collection(window.db, "store_use_logs"), {
+                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: window.serverTimestamp()
+            });
+        }
+
+        cart = []; if (typeof renderCart === 'function') renderCart(); 
+        if (typeof closeModal === 'function') closeModal('checkoutModal');
+        Swal.fire('✅ Logged!', 'Items marked for store use and inventory safely deducted.', 'success');
+        
+    } catch(e) { 
+        console.error(e); Swal.fire('Error', 'Failed to log store use.', 'error'); 
+    } finally { 
+        btn.innerText = origText; btn.disabled = false; 
     }
 };
