@@ -1034,7 +1034,7 @@ window.switchView = function (viewId) {
   if (viewId === 'dispatch') window.loadDispatchDashboard();
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
-  if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); }
+  if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); window.loadSidebarLayout(); }
   if (viewId === 'admin') { 
       window.loadAdminDashboard(); 
       if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
@@ -13548,4 +13548,104 @@ window.viewSopLog = function(encodedData) {
 
     document.getElementById('vSopTasksContent').innerHTML = html;
     document.getElementById('viewSopModal').style.display = 'flex';
+};
+
+// ========================================================
+// 📱 SIDEBAR ARRANGEMENT ENGINE
+// ========================================================
+window.defaultSidebar = [
+    { id: "nav-pos", icon: "🖥️", text: "Point of Sale" },
+    { id: "nav-sales", icon: "🧾", text: "Shift Sales" },
+    { id: "nav-stockcount", icon: "📋", text: "Stock Count" },
+    { id: "nav-remit", icon: "💸", text: "Remit Cash to HQ" },
+    { id: "nav-staffreq", icon: "📝", text: "Staff Requests" },
+    { id: "nav-sop", icon: "📋", text: "Daily SOPs" },
+    { id: "nav-prep", icon: "🔪", text: "Kitchen Prep" },
+    { id: "nav-deliveries", icon: "🚚", text: "Incoming Stock" },
+    { id: "nav-menumgr", icon: "🍔", text: "Menu Toggle" },
+    { id: "nav-stockreq", icon: "📦", text: "Request Stock" },
+    { id: "nav-waste", icon: "🗑️", text: "Log Waste" },
+    { id: "nav-timeclock", icon: "📸", text: "Time Clock" },
+    { id: "nav-schedule", icon: "📅", text: "My Schedule" },
+    { id: "nav-grab", icon: "🟢", text: "Log Grab Earnings" },
+    { id: "nav-printer", icon: "🖨️", text: "Printer Setup" }
+];
+
+window.currentSidebarLayout = [];
+
+window.loadSidebarLayout = async function() {
+    const listDiv = document.getElementById('sidebarArrangementList');
+    if (!listDiv) return;
+    listDiv.innerHTML = '<div style="color: #64748b; text-align: center; padding: 20px;">Loading sidebar tabs...</div>';
+
+    try {
+        const docSnap = await getDoc(doc(db, "settings", "sidebar_layout"));
+        let layout = docSnap.exists() ? docSnap.data().tabs || [] : [];
+
+        // Smart merge: ensure all default tabs are present even if new ones were added later
+        let mergedLayout = [];
+        layout.forEach(item => {
+            let found = window.defaultSidebar.find(d => d.id === item.id);
+            if (found) mergedLayout.push(found);
+        });
+
+        // Push any missing default tabs to the bottom automatically
+        window.defaultSidebar.forEach(d => {
+            if (!mergedLayout.find(m => m.id === d.id)) mergedLayout.push(d);
+        });
+
+        window.currentSidebarLayout = mergedLayout;
+        window.renderSidebarEditor();
+    } catch(e) {
+        console.error("Sidebar Load Error:", e);
+        listDiv.innerHTML = '<div style="color: red; text-align: center;">Error loading layout data.</div>';
+    }
+};
+
+window.moveSidebarLayout = function(index, direction) {
+    let i = parseInt(index);
+    let newIndex = i + direction;
+    // Stop it from moving out of bounds
+    if (newIndex < 0 || newIndex >= window.currentSidebarLayout.length) return;
+    
+    // Swap elements in the array
+    let temp = window.currentSidebarLayout[i];
+    window.currentSidebarLayout[i] = window.currentSidebarLayout[newIndex];
+    window.currentSidebarLayout[newIndex] = temp;
+    
+    window.renderSidebarEditor();
+};
+
+window.renderSidebarEditor = function() {
+    let listDiv = document.getElementById('sidebarArrangementList');
+    let html = '';
+    
+    window.currentSidebarLayout.forEach((tab, index) => {
+        html += `
+            <div style="display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <button onclick="window.moveSidebarLayout('${index}', -1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▲ UP</button>
+                    <button onclick="window.moveSidebarLayout('${index}', 1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▼ DOWN</button>
+                </div>
+                <div style="width: 45px; height: 45px; border-radius: 8px; background: #fffbeb; border: 1px solid #fde68a; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;">${tab.icon}</div>
+                <div style="font-weight: 900; color: #1e293b; font-size: 16px; flex-grow: 1;">${tab.text}</div>
+                <div style="font-weight: bold; font-size: 12px; color: #94a3b8; background: #e2e8f0; padding: 4px 8px; border-radius: 6px;">Pos: ${index + 1}</div>
+            </div>`;
+    });
+    listDiv.innerHTML = html;
+};
+
+window.saveSidebarLayout = async function() {
+    try {
+        await setDoc(doc(db, "settings", "sidebar_layout"), { tabs: window.currentSidebarLayout }, { merge: true });
+        Swal.fire({
+            title: '✅ Saved!',
+            text: 'Sidebar arrangement saved. Cashier apps will update on refresh.',
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } catch(e) { 
+        console.error(e);
+        Swal.fire('Error', 'Failed to save layout to cloud.', 'error');
+    }
 };
