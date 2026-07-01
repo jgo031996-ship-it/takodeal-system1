@@ -243,6 +243,7 @@ window.processRawItemsIntoMenu = function(rawItems) {
 };
 
 window.loadPOSData = async function() {
+    window.applySidebarLayout(); // 🔥 Automatically reshuffles sidebar on boot!
     let products = await window.fetchMenu();
     masterPOSData.items = products;
     masterPOSData.variants = {}; // Legacy variants
@@ -4785,5 +4786,29 @@ window.kickCashDrawer = function() {
         console.log("⚡ Hardware electrical pulse sent to cash drawer.");
     } catch(e) {
         console.error("Hardware control error:", e);
+    }
+};
+
+// ========================================================
+// 📱 SIDEBAR AUTO-ARRANGEMENT ENGINE (SYNC)
+// ========================================================
+window.applySidebarLayout = async function() {
+    try {
+        const docSnap = await getDoc(doc(db, "settings", "sidebar_layout"));
+        if (docSnap.exists() && docSnap.data().tabs) {
+            let layout = docSnap.data().tabs;
+            let navMenu = document.querySelector('.nav-menu');
+            if (!navMenu) return;
+            
+            // Reorder the DOM elements! 
+            // By appending them, they automatically move to the bottom in order.
+            layout.forEach(tabData => {
+                let id = tabData.id;
+                let el = document.getElementById(id);
+                if (el) navMenu.appendChild(el); 
+            });
+        }
+    } catch (e) {
+        console.error("Failed to load sidebar layout from Cloud.", e);
     }
 };
