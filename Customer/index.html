@@ -6,10 +6,10 @@
     <title>TAKODEÁL | Authentic Japanese Street Food</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <style>
         :root {
-            /* Warm, earthy, premium color palette */
             --bg-cream: #fdfbf7;
             --bg-card: #ffffff;
             --text-dark: #2c2421;
@@ -50,22 +50,7 @@
             letter-spacing: 1px;
             transition: color 0.3s;
         }
-
         .nav-links a:hover { color: var(--accent-gold); }
-
-        .btn-order-nav {
-            background: var(--text-dark);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: 0.3s;
-        }
-        .btn-order-nav:hover { background: var(--accent-gold); }
 
         /* 🌅 HERO SECTION */
         .hero {
@@ -76,189 +61,69 @@
             min-height: 70vh;
             position: relative;
         }
-
-        .hero-content {
-            max-width: 500px;
-            z-index: 2;
-        }
-
-        .hero h1 {
-            font-family: 'Playfair Display', serif;
-            font-size: 64px;
-            line-height: 1.1;
-            margin: 0 0 10px 0;
-            color: var(--text-dark);
-        }
-
-        .hero-subtitle {
-            font-family: 'Playfair Display', serif;
-            font-size: 42px;
-            font-style: italic;
-            color: var(--accent-gold);
-            margin: 0 0 20px 0;
-            font-weight: 600;
-        }
-
-        .hero p {
-            font-size: 16px;
-            line-height: 1.6;
-            color: var(--text-muted);
-            margin-bottom: 30px;
-        }
+        .hero-content { max-width: 500px; z-index: 2; }
+        .hero h1 { font-family: 'Playfair Display', serif; font-size: 64px; line-height: 1.1; margin: 0 0 10px 0; color: var(--text-dark); }
+        .hero-subtitle { font-family: 'Playfair Display', serif; font-size: 42px; font-style: italic; color: var(--accent-gold); margin: 0 0 20px 0; font-weight: 600; }
+        .hero p { font-size: 16px; line-height: 1.6; color: var(--text-muted); margin-bottom: 30px; }
 
         .btn-primary {
-            background: var(--text-dark);
-            color: white;
-            border: none;
-            padding: 16px 32px;
-            border-radius: 30px;
-            font-size: 14px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            cursor: pointer;
-            transition: 0.3s;
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
+            background: var(--text-dark); color: white; border: none; padding: 16px 32px; border-radius: 30px;
+            font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: 0.3s;
         }
-        .btn-primary:hover { background: var(--accent-gold); }
+        .btn-primary:hover { background: var(--accent-gold); transform: translateY(-2px); }
 
         .hero-image {
-            width: 55%;
-            height: 500px;
-            border-radius: 200px 0 0 200px;
-            background-image: url('https://images.unsplash.com/photo-1596649299486-5cdea741887e?q=80&w=1000&auto=format&fit=crop'); /* Beautiful Takoyaki Placeholder */
-            background-size: cover;
-            background-position: center;
-            position: absolute;
-            right: 0;
-            box-shadow: -20px 20px 60px rgba(0,0,0,0.1);
+            width: 55%; height: 500px; border-radius: 200px 0 0 200px;
+            background-image: url('https://images.unsplash.com/photo-1596649299486-5cdea741887e?q=80&w=1000&auto=format&fit=crop');
+            background-size: cover; background-position: center; position: absolute; right: 0; box-shadow: -20px 20px 60px rgba(0,0,0,0.1);
         }
 
         /* ✨ FEATURES STRIP */
-        .features {
-            display: flex;
-            justify-content: space-between;
-            padding: 40px 10%;
-            background: white;
-            border-top: 1px solid #f0eae1;
-            border-bottom: 1px solid #f0eae1;
-        }
-
-        .feature-box {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
+        .features { display: flex; justify-content: space-between; padding: 40px 10%; background: white; border-top: 1px solid #f0eae1; border-bottom: 1px solid #f0eae1; }
+        .feature-box { display: flex; align-items: center; gap: 15px; }
         .feature-icon { font-size: 28px; }
-
         .feature-text h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-dark); text-transform: uppercase; letter-spacing: 1px;}
         .feature-text p { margin: 5px 0 0 0; font-size: 13px; color: var(--text-muted); }
 
         /* 🍣 MENU GRID */
-        .menu-section {
-            padding: 80px 5%;
-        }
-
-        .section-header {
-            text-align: center;
-            margin-bottom: 50px;
-        }
-
-        .section-header h2 {
-            font-family: 'Playfair Display', serif;
-            font-size: 42px;
-            margin: 0;
-            color: var(--text-dark);
-        }
-
-        .section-header p {
-            font-family: 'Playfair Display', serif;
-            font-style: italic;
-            font-size: 20px;
-            color: var(--accent-gold);
-            margin: 5px 0 0 0;
-        }
+        .menu-section { padding: 80px 5%; }
+        .section-header { text-align: center; margin-bottom: 50px; }
+        .section-header h2 { font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: var(--text-dark); }
+        .section-header p { font-family: 'Playfair Display', serif; font-style: italic; font-size: 20px; color: var(--accent-gold); margin: 5px 0 0 0; }
 
         .menu-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 30px;
-            max-width: 1200px;
-            margin: 0 auto;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 30px; max-width: 1200px; margin: 0 auto;
         }
 
         .menu-card {
-            background: var(--bg-card);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.04);
-            transition: transform 0.3s;
-            position: relative;
+            background: var(--bg-card); border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+            transition: transform 0.3s; position: relative; display: flex; flex-direction: column;
         }
         .menu-card:hover { transform: translateY(-5px); box-shadow: 0 15px 40px rgba(0,0,0,0.08); }
 
-        .menu-img {
-            width: 100%;
-            height: 220px;
-            border-radius: 12px;
-            object-fit: cover;
-            margin-bottom: 15px;
-            background: #f0eae1;
-        }
-
+        .menu-img { width: 100%; height: 220px; border-radius: 12px; object-fit: cover; margin-bottom: 15px; background: #f0eae1; }
         .menu-title { font-size: 18px; font-weight: 700; margin: 0 0 5px 0; }
-        .menu-desc { font-size: 13px; color: var(--text-muted); margin: 0 0 15px 0; line-height: 1.4; }
+        .menu-desc { font-size: 12px; color: var(--accent-gold); font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; }
         
-        .menu-footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-top: 1px solid #f0eae1;
-            padding-top: 15px;
-        }
-
+        .menu-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f0eae1; padding-top: 15px; margin-top: auto; }
         .menu-price { font-size: 18px; font-weight: 800; color: var(--text-dark); }
         
         .btn-add {
-            background: var(--accent-gold);
-            color: white;
-            border: none;
-            width: 35px;
-            height: 35px;
-            border-radius: 50%;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: 0.2s;
+            background: var(--accent-gold); color: white; border: none; width: 35px; height: 35px; border-radius: 50%;
+            font-size: 20px; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: 0.2s;
         }
         .btn-add:hover { background: var(--text-dark); transform: scale(1.1); }
 
-        /* 🎁 DARK PROMO BANNER */
-        .promo-banner {
-            background: var(--dark-section);
-            color: white;
-            padding: 80px 5%;
-            text-align: center;
+        /* 🛒 FLOATING CART BUTTON */
+        .floating-cart {
+            position: fixed; bottom: 30px; right: 30px; background: var(--text-dark); color: white; border: none;
+            width: 70px; height: 70px; border-radius: 50%; font-size: 24px; cursor: pointer; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            display: flex; justify-content: center; align-items: center; z-index: 100; transition: 0.3s;
         }
-
-        .promo-banner h2 {
-            font-family: 'Playfair Display', serif;
-            font-size: 42px;
-            margin: 0 0 15px 0;
-            color: white;
-        }
-
-        .promo-banner p {
-            color: #d1c8c3;
-            font-size: 16px;
-            max-width: 600px;
-            margin: 0 auto 30px auto;
-            line-height: 1.6;
+        .floating-cart:hover { transform: scale(1.1); background: var(--accent-gold); }
+        .cart-badge {
+            position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 12px; font-weight: bold;
+            width: 24px; height: 24px; border-radius: 50%; display: flex; justify-content: center; align-items: center;
         }
 
         /* Responsive */
@@ -267,9 +132,7 @@
             .hero { padding: 100px 5% 40px 5%; flex-direction: column; text-align: center; }
             .hero-image { position: relative; width: 100%; border-radius: 20px; margin-top: 30px; height: 300px; }
             .features { flex-direction: column; gap: 20px; text-align: center; }
-            .feature-box { flex-direction: column; gap: 5px; }
             .hero h1 { font-size: 48px; }
-            .hero-subtitle { font-size: 32px; }
         }
     </style>
 </head>
@@ -279,11 +142,10 @@
         <div style="font-weight: 900; font-size: 24px; letter-spacing: 2px;">TAKODEÁL</div>
         <div class="nav-links">
             <a href="#">Home</a>
-            <a href="#">Menu</a>
+            <a href="#menu">Live Menu</a>
             <a href="#">Locations</a>
-            <a href="#">Gallery</a>
         </div>
-        <a href="#" class="btn-order-nav">Order Now</a>
+        <a href="#menu" class="btn-primary" style="padding: 10px 20px;">Order Now</a>
     </nav>
 
     <section class="hero">
@@ -291,7 +153,7 @@
             <h1>STREET FOOD THAT CONNECTS.</h1>
             <h2 class="hero-subtitle">Moments that last.</h2>
             <p>From our sizzling grills to your moments, we are here to make every day a little better. Handcrafted takoyaki, refreshing milk teas, and perfect bites.</p>
-            <button class="btn-primary">Explore Our Menu <span>›</span></button>
+            <a href="#menu" style="text-decoration: none;"><button class="btn-primary">Explore Our Menu <span>›</span></button></a>
         </div>
         <div class="hero-image"></div>
     </section>
@@ -299,85 +161,223 @@
     <section class="features">
         <div class="feature-box">
             <div class="feature-icon">🐙</div>
-            <div class="feature-text">
-                <h4>Premium Ingredients</h4>
-                <p>Authentic Japanese flavors.</p>
-            </div>
+            <div class="feature-text"><h4>Premium Ingredients</h4><p>Authentic Japanese flavors.</p></div>
         </div>
         <div class="feature-box">
             <div class="feature-icon">🔥</div>
-            <div class="feature-text">
-                <h4>Freshly Cooked</h4>
-                <p>Made to order, served hot.</p>
-            </div>
+            <div class="feature-text"><h4>Freshly Cooked</h4><p>Made to order, served hot.</p></div>
         </div>
         <div class="feature-box">
             <div class="feature-icon">🛵</div>
-            <div class="feature-text">
-                <h4>Fast Delivery</h4>
-                <p>Straight to your doorstep.</p>
-            </div>
+            <div class="feature-text"><h4>Fast Delivery</h4><p>Straight to your doorstep.</p></div>
         </div>
     </section>
 
-    <section class="menu-section">
+    <section class="menu-section" id="menu">
         <div class="section-header">
-            <p>Our Signatures</p>
-            <h2>HANDCRAFTED FAVORITES</h2>
+            <p>Order Online</p>
+            <h2>OUR LIVE MENU</h2>
         </div>
 
-        <div class="menu-grid">
-            <div class="menu-card">
-                <img src="https://images.unsplash.com/photo-1625938146369-adc83368bda7?q=80&w=600&auto=format&fit=crop" class="menu-img" alt="Takoyaki">
-                <h3 class="menu-title">Cheesy Takoyaki</h3>
-                <p class="menu-desc">Golden crisp outside, soft inside, drowned in premium melted cheese and bonito flakes.</p>
-                <div class="menu-footer">
-                    <span class="menu-price">₱120</span>
-                    <button class="btn-add">+</button>
-                </div>
+        <div class="menu-grid" id="liveMenuContainer">
+            <div style="text-align: center; grid-column: 1/-1; padding: 50px; color: var(--accent-gold); font-size: 18px; font-weight: bold;">
+                ⏳ Fetching live menu from TAKODEÁL Headquarters...
             </div>
-
-            <div class="menu-card">
-                <img src="https://images.unsplash.com/photo-1558857563-b37103fb2bd9?q=80&w=600&auto=format&fit=crop" class="menu-img" alt="Milk Tea">
-                <h3 class="menu-title">Okinawa Milk Tea</h3>
-                <p class="menu-desc">Rich, roasted brown sugar flavor perfectly blended with creamy milk and chewy boba.</p>
-                <div class="menu-footer">
-                    <span class="menu-price">₱95</span>
-                    <button class="btn-add">+</button>
-                </div>
-            </div>
-
-            <div class="menu-card">
-                <img src="https://images.unsplash.com/photo-1623065422902-30a2d299bbe4?q=80&w=600&auto=format&fit=crop" class="menu-img" alt="Mango Graham">
-                <h3 class="menu-title">Mango Graham Shake</h3>
-                <p class="menu-desc">Sweet, ripe mangoes blended thick, layered with crushed graham crackers.</p>
-                <div class="menu-footer">
-                    <span class="menu-price">₱110</span>
-                    <button class="btn-add">+</button>
-                </div>
-            </div>
-            
-            <div class="menu-card">
-                <img src="https://images.unsplash.com/photo-1572490122747-3968b75bb69c?q=80&w=600&auto=format&fit=crop" class="menu-img" alt="Iced Coffee">
-                <h3 class="menu-title">Iced Caramel Macchiato</h3>
-                <p class="menu-desc">Smooth espresso poured over iced milk, finished with a buttery caramel drizzle.</p>
-                <div class="menu-footer">
-                    <span class="menu-price">₱105</span>
-                    <button class="btn-add">+</button>
-                </div>
-            </div>
-        </div>
-        
-        <div style="text-align: center; margin-top: 40px;">
-            <button class="btn-primary" style="background: white; color: var(--text-dark); border: 2px solid var(--text-dark);">View Full Menu</button>
         </div>
     </section>
 
-    <section class="promo-banner">
-        <h2>WIN EXCITING PRIZES!</h2>
-        <p>Join our VIP Loyalty Club. Every ₱500 purchase earns you a raffle ticket for our monthly grand prize, plus exclusive discounts on your favorite Takoyaki platters.</p>
-        <button class="btn-primary" style="background: var(--accent-gold); color: white;">Join The Club <span>›</span></button>
-    </section>
+    <button class="floating-cart" onclick="window.viewCart()">
+        🛒
+        <div class="cart-badge" id="cartCountBadge" style="display: none;">0</div>
+    </button>
 
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
+            authDomain: "takodeal-pos.firebaseapp.com",
+            projectId: "takodeal-pos",
+            storageBucket: "takodeal-pos.firebasestorage.app",
+            messagingSenderId: "248826111383",
+            appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.liveMenuData = [];
+        window.customerCart = [];
+
+        // 1. Fetch Menu from Firebase
+        async function fetchMenu() {
+            try {
+                const q = query(collection(db, "menu"), orderBy("category"));
+                const snap = await getDocs(q);
+                
+                let html = '';
+                snap.forEach(doc => {
+                    let item = doc.data();
+                    item.id = doc.id;
+                    window.liveMenuData.push(item);
+
+                    let safePrice = parseFloat(item.price || item.basePrice || 0);
+                    let imgHtml = item.image 
+                        ? `<img src="${item.image}" class="menu-img" alt="${item.name}">` 
+                        : `<div class="menu-img" style="display:flex; justify-content:center; align-items:center; font-size: 50px;">🍲</div>`;
+
+                    html += `
+                        <div class="menu-card">
+                            ${imgHtml}
+                            <h3 class="menu-title">${item.name}</h3>
+                            <p class="menu-desc">${item.category || 'Specialty'}</p>
+                            <div class="menu-footer">
+                                <span class="menu-price">₱${safePrice.toFixed(2)}</span>
+                                <button class="btn-add" onclick="window.addToCart('${item.id}')">+</button>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                document.getElementById('liveMenuContainer').innerHTML = html;
+            } catch (error) {
+                console.error("Error loading menu:", error);
+                document.getElementById('liveMenuContainer').innerHTML = '<div style="color:red; text-align:center; grid-column:1/-1;">Error loading menu. Please check your internet connection.</div>';
+            }
+        }
+
+        // 2. Cart Logic
+        window.addToCart = function(id) {
+            let item = window.liveMenuData.find(i => i.id === id);
+            if (!item) return;
+
+            let existing = window.customerCart.find(i => i.id === id);
+            if (existing) {
+                existing.quantity += 1;
+            } else {
+                window.customerCart.push({
+                    id: item.id,
+                    name: item.name,
+                    price: parseFloat(item.price || item.basePrice || 0),
+                    quantity: 1
+                });
+            }
+
+            // Pop a subtle success toast
+            Swal.fire({
+                toast: true, position: 'bottom-end', showConfirmButton: false, timer: 1500,
+                icon: 'success', title: `${item.name} added to cart!`,
+                background: '#2c2421', color: 'white'
+            });
+
+            updateCartBadge();
+        };
+
+        function updateCartBadge() {
+            let totalItems = window.customerCart.reduce((sum, item) => sum + item.quantity, 0);
+            let badge = document.getElementById('cartCountBadge');
+            if (totalItems > 0) {
+                badge.innerText = totalItems;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // 3. Checkout UI & Submission
+        window.viewCart = async function() {
+            if (window.customerCart.length === 0) {
+                return Swal.fire('Cart is Empty', 'Please add some delicious items first!', 'info');
+            }
+
+            let cartHtml = '<div style="max-height: 250px; overflow-y: auto; text-align: left; margin-bottom: 20px;">';
+            let grandTotal = 0;
+
+            window.customerCart.forEach((item, index) => {
+                let lineTotal = item.price * item.quantity;
+                grandTotal += lineTotal;
+                cartHtml += `
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px; border-bottom: 1px dashed #ccc; padding-bottom: 5px;">
+                        <div style="font-size: 14px;"><strong>${item.quantity}x</strong> ${item.name}</div>
+                        <div style="font-weight: bold; color: #c89f5a;">₱${lineTotal.toFixed(2)}</div>
+                    </div>
+                `;
+            });
+            cartHtml += `</div><div style="text-align:right; font-size: 20px; font-weight: 900;">Total: ₱${grandTotal.toFixed(2)}</div>`;
+
+            const { value: formValues, isConfirmed } = await Swal.fire({
+                title: 'Complete Your Order',
+                html: cartHtml + `
+                    <div style="text-align: left; margin-top: 20px;">
+                        <label style="font-size: 12px; font-weight: bold; color: #666;">Your Full Name:</label>
+                        <input id="swal-cust-name" class="swal2-input" style="margin-top: 5px; font-size: 14px;" placeholder="e.g. Maria Clara">
+                        
+                        <label style="font-size: 12px; font-weight: bold; color: #666; display:block; margin-top: 15px;">Pick-up / Delivery Branch:</label>
+                        <select id="swal-branch" class="swal2-input" style="margin-top: 5px; font-size: 14px; width: 100%;">
+                            <option value="Cabantian">Cabantian</option>
+                            <option value="Citygate">Citygate</option>
+                            <option value="Maa">Maa</option>
+                        </select>
+
+                        <label style="font-size: 12px; font-weight: bold; color: #666; display:block; margin-top: 15px;">Payment Method:</label>
+                        <select id="swal-payment" class="swal2-input" style="margin-top: 5px; font-size: 14px; width: 100%;">
+                            <option value="Cash">Cash on Pickup/Delivery</option>
+                            <option value="gcash">GCash</option>
+                        </select>
+                        <p style="font-size: 11px; color: #999; margin-top: 5px;">* GCash details will be provided by the branch upon confirmation.</p>
+                    </div>
+                `,
+                focusConfirm: false,
+                showCancelButton: true,
+                confirmButtonColor: '#2c2421',
+                confirmButtonText: 'Submit Order to Kitchen',
+                preConfirm: () => {
+                    let name = document.getElementById('swal-cust-name').value.trim();
+                    if (!name) Swal.showValidationMessage('Please enter your name!');
+                    return {
+                        name: name,
+                        branch: document.getElementById('swal-branch').value,
+                        payment: document.getElementById('swal-payment').value
+                    };
+                }
+            });
+
+            if (isConfirmed) {
+                Swal.fire({ title: 'Sending to Kitchen...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+
+                try {
+                    // Send to Firebase 'incoming_orders' collection (The Cashier App is listening to this!)
+                    await addDoc(collection(db, "incoming_orders"), {
+                        branch: formValues.branch,
+                        customerName: formValues.name,
+                        paymentMode: formValues.payment,
+                        items: window.customerCart, // Array of items
+                        totalAmount: grandTotal,
+                        status: "mobile_queue", // CRITICAL: This is the exact keyword the Cashier App listens for!
+                        timestamp: serverTimestamp()
+                    });
+
+                    Swal.fire({
+                        title: 'Order Sent!',
+                        text: `Your order has been sent to the ${formValues.branch} branch. Our staff will prepare it shortly!`,
+                        icon: 'success',
+                        confirmButtonColor: '#c89f5a'
+                    });
+
+                    // Clear the cart
+                    window.customerCart = [];
+                    updateCartBadge();
+
+                } catch (e) {
+                    console.error("Order Submit Error:", e);
+                    Swal.fire('Error', 'Failed to send order. Please try again.', 'error');
+                }
+            }
+        };
+
+        // Initialize!
+        fetchMenu();
+    </script>
 </body>
 </html>
