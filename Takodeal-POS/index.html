@@ -1736,7 +1736,7 @@
                     </div>
                 </div>
 
-                <div style="flex: 1; padding: 25px; min-height: 300px;" id="sopChecklistContainer">
+                <div style="flex: 1; padding: 25px; min-height: 300px; max-height: 60vh; overflow-y: auto !important; -webkit-overflow-scrolling: touch;" id="sopChecklistContainer">
                     <div style="text-align: center; color: #94a3b8; padding: 60px; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>
                 </div>
 
@@ -3465,9 +3465,11 @@ window.printReceipt = async function(type) {
     // ------------------------------------------
     // 🧾 CUSTOMER RECEIPT
     // ------------------------------------------
-    // \x1B\x40 initializes the printer. 
-    // \x1B\x70\x00\x19\x96 fires a 50ms electrical pulse to Pin 2 to open the drawer!
-    let proReceipt = "\x1B\x40\x1B\x70\x00\x19\x96\n";
+    let proReceipt = "\x1B\x40\n"; 
+    // Only fire the electrical pulse if the Auto-Drawer switch is ON!
+    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') {
+        proReceipt = "\x1B\x40\x1B\x70\x00\x19\x96\n"; 
+    }
     proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
     if (storeAddress) proReceipt += centerTxt(storeAddress) + "\n";
     if (storeContact) proReceipt += centerTxt(storeContact) + "\n";
