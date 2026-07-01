@@ -3895,7 +3895,8 @@ window.saveAdvancedInventoryItem = async function () {
           currentStock: totalBaseStock, 
           reorderLevel: reorder,
           showToCashier: showCashier, // 🔥 THIS COMMA WAS MISSING!
-          showInPrep: document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true
+          showInPrep: document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true,
+          allowRequest: document.getElementById('newInvAllowRequest') ? document.getElementById('newInvAllowRequest').checked : true,
         });
     
     alert(`✅ Success! Added ${name} to ${branch}.`);
@@ -4498,7 +4499,9 @@ window.openEditInvModal = async function(id) {
             if (document.getElementById('editInvShowPrep')) {
                 document.getElementById('editInvShowPrep').checked = itemData.showInPrep !== false;
             }
-
+            if (document.getElementById('editInvAllowRequest')) {
+                document.getElementById('editInvAllowRequest').checked = itemData.allowRequest !== false;
+            }
             document.getElementById('editInvModal').style.display = 'flex';
 
             // 🔥 FORCE THE UI TO INJECT THE UOM NAMES INSTANTLY
@@ -4620,6 +4623,7 @@ window.saveInventoryEdit = async function() {
 
     try {
         let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
+        let allowReqVal = document.getElementById('editInvAllowRequest') ? document.getElementById('editInvAllowRequest').checked : true;
 
         // 1. Prepare Main Payload
         let updatePayload = {
@@ -4631,7 +4635,8 @@ window.saveInventoryEdit = async function() {
             baseCost: (purchCost / conversion), 
             lowStockAlert: lowStock, reorderLevel: lowStock, 
             currentStock: finalQty, 
-            showInPrep: showPrepVal
+            showInPrep: showPrepVal,
+            allowRequest: allowReqVal,
         };
 
         // SAFELY inject the image only if it was uploaded!
