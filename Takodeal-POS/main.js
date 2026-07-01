@@ -4175,6 +4175,8 @@ window.submitOpenShift = async function() {
 
 window.safeSubmitComprehensiveCloseShift = async function() {
     let parked = await window.getParkedOrders(sessionUser.branch);
+    let confirmBtn = document.querySelector('#endShiftModal .btn-place');
+    if (confirmBtn) { confirmBtn.innerText = "⏳ Verifying Count..."; confirmBtn.disabled = true; }
     if (parked && parked.length > 0) {
         Swal.fire('⚠️ Strict System Lock', `You have ${parked.length} parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.`, 'warning');
         closeModal('endShiftModal');
@@ -4267,6 +4269,7 @@ window.safeSubmitComprehensiveCloseShift = async function() {
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
     }
+    if(confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
 };
 
 // ========================================================
