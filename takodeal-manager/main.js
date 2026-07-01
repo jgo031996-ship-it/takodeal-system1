@@ -5481,6 +5481,13 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
   let breakdown = JSON.parse(decodeURIComponent(breakdownStr));
   let physicalStock = JSON.parse(decodeURIComponent(stockStr));
 
+  let varianceAlert = '';
+  if (d.cashVariance < -0.05) {
+      varianceAlert = `<div style="background: #fef2f2; border: 2px dashed #ef4444; color: #b91c1c; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">🚨 CASH SHORTAGE DETECTED: -₱${Math.abs(d.cashVariance).toFixed(2)}</div>`;
+  } else if (d.cashVariance > 0.05) {
+      varianceAlert = `<div style="background: #fffbeb; border: 2px dashed #f59e0b; color: #b45309; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">📈 CASH OVERAGE DETECTED: +₱${d.cashVariance.toFixed(2)}</div>`;
+  }
+  
   // 2. Build Cash Breakdown Grid
   let cashHtml = '';
   for (const [bill, qty] of Object.entries(breakdown)) {
@@ -5973,7 +5980,8 @@ window.loadZReadingReports = async function () {
           </td>
           <td>${varText}</td>
           <td>
-            <button onclick="viewZReadingDetails('${docSnap.id}', '${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared})" class="btn-refresh" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px;">🔍 Full Audit</button>
+            <button onclick="viewZReadingDetails('${docSnap.id}', '${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared}, ${data.declaredCash - data.expectedCash})" class="btn-refresh" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px; width: 100%;">🔍 Full Audit</button>
+            ${Math.abs(data.declaredCash - data.expectedCash) > 0.05 ? `<br><button onclick="alert('Notify the staff via your Group Chat to submit a Reason Letter in their POS.')" style="margin-top: 5px; background: white; color: #dc2626; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">✉️ Require Letter</button>` : ''}
           </td>
         </tr>
       `;
