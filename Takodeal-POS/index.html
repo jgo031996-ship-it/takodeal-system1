@@ -1472,47 +1472,39 @@
       <div class="top-bar-right">
         <div style="display: flex; gap: 10px; align-items: center;">
 
-          <!-- GROUPED: Mobile Orders, Accepting, AND Delivery -->
-          <div style="position: relative; display: inline-flex; align-items: center; border-radius: 20px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <button onclick="window.showMobileOrders()" style="position: relative; background: #e74c3c; color: white; border: none; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;">
-                📱 Mobile Orders
-                <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #f1c40f; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
+          <div style="position: relative;">
+              <button onclick="document.getElementById('posSettingsDropdown').classList.toggle('show')" 
+                  style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                  ⚙️ POS Settings ▼
               </button>
-              <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus()" style="background: #16a34a; color: white; border: none; padding: 8px 12px; cursor: pointer; font-size: 14px; font-weight: bold; border-left: 1px solid rgba(255,255,255,0.2);" title="Toggle App Ordering">
-                  🟢 Accepting
-              </button>
-              <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery()" style="background: #8b5cf6; color: white; border: none; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; border-left: 1px solid rgba(255,255,255,0.2);">
-                  🚚 Delivery: <span id="deliveryStatusText">ON</span>
-              </button>
+              
+              <div id="posSettingsDropdown" class="action-dropdown" style="top: 45px; right: 0; min-width: 240px; padding: 15px; gap: 12px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 100; flex-direction: column;">
+                  
+                  <button onclick="window.showMobileOrders()" style="width: 100%; position: relative; background: #e74c3c; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                    📱 Mobile Orders
+                    <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #f1c40f; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
+                  </button>
+                  
+                  <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus()" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 App Accepting</button>
+                  
+                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery()" style="width: 100%; background: #8b5cf6; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🚚 Delivery: <span id="deliveryStatusText">ON</span></button>
+
+                  <button onclick="window.showParkedOrders()" style="width: 100%; position: relative; background: #34495e; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                    🕒 Parked Orders
+                    <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #e74c3c; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
+                  </button>
+
+                  <button id="btnToggleBusy" onclick="window.toggleBusyMode()" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 Normal Prep (15m)</button>
+
+                  <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+                      <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center;">
+                          <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;">
+                          Auto-Open Drawer
+                      </label>
+                      <button onclick="window.kickCashDrawer()" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; font-weight: bold;">💵 Kick Drawer</button>
+                  </div>
+              </div>
           </div>
-
-          <!-- Parked Orders & Shift Controls -->
-          <button onclick="window.showParkedOrders()"
-            style="position: relative; background: #34495e; color: white; border: none; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-family: inherit; font-size: 14px; font-weight: 600;">
-            🕒 Parked Orders
-            <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #e74c3c; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
-          </button>
-
-          <button id="btnToggleBusy" onclick="window.toggleBusyMode()" 
-            style="background: #10b981; color: white; border: none; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            🟢 Normal Prep (15m)
-          </button>
-
-          <!-- 💵 SMART DRAWER TOGGLE -->
-          <div style="display: inline-flex; align-items: center; gap: 8px; background: white; border-radius: 20px; padding: 6px 12px; border: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-              <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-                  <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;">
-                  Auto-Open
-              </label>
-              <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
-              <button onclick="window.kickCashDrawer()" style="background: transparent; color: #f59e0b; border: none; cursor: pointer; font-size: 14px; font-weight: 800; padding: 0;">
-                  💵 Kick
-              </button>
-          </div>
-          <script>
-              if(localStorage.getItem('takodeal_auto_drawer') !== 'false') document.getElementById('autoDrawerToggle').checked = true;
-              else document.getElementById('autoDrawerToggle').checked = false;
-          </script>
 
           <button id="btnTopShift" onclick="openShiftModal()"
             style="background: white; color: #333; border: 1px solid #ddd; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-family: inherit; font-size: 14px; font-weight: 600;">
