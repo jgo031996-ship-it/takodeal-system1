@@ -1522,12 +1522,8 @@
               </button>
           </div>
           <script>
-              // Remember their switch preference
-              if(localStorage.getItem('takodeal_auto_drawer') !== 'false') {
-                  document.getElementById('autoDrawerToggle').checked = true;
-              } else {
-                  document.getElementById('autoDrawerToggle').checked = false;
-              }
+              if(localStorage.getItem('takodeal_auto_drawer') !== 'false') document.getElementById('autoDrawerToggle').checked = true;
+              else document.getElementById('autoDrawerToggle').checked = false;
           </script>
 
           <button id="btnTopShift" onclick="openShiftModal()"
