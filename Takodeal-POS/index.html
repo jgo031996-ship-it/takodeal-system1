@@ -1331,20 +1331,22 @@
 
           // 🔥 NEW: Check for Shortages on Login!
           try {
-              const zQuery = query(collection(db, "z_readings"), where("cashierName", "==", identity.cashierName), orderBy("timestamp", "desc"), limit(1));
-              const zSnap = await getDocs(zQuery);
+              const zQuery = window.query(window.collection(window.db, "shifts"), window.where("cashier", "==", identity.cashierName), window.where("status", "==", "Closed"), window.orderBy("endTime", "desc"), window.limit(1));
+              const zSnap = await window.getDocs(zQuery);
               if (!zSnap.empty) {
                   let lastZ = zSnap.docs[0].data();
-                  if (lastZ.cashVariance < -0.05) { // If they were short
+                  let variance = (lastZ.declaredCash || 0) - (lastZ.expectedCash || 0);
+                  if (variance < -0.05) { // If they were short
                       Swal.fire({
                           title: '🚨 PREVIOUS SHIFT SHORTAGE',
-                          html: `Your last shift had a cash shortage of <strong>₱${Math.abs(lastZ.cashVariance).toFixed(2)}</strong>.<br><br>Please go to the <b>Staff Requests</b> tab and submit a Reason Letter immediately.`,
+                          html: `Your last shift had a cash shortage of <strong>₱${Math.abs(variance).toFixed(2)}</strong>.<br><br>Please go to the <b>Staff Requests</b> tab and submit a Reason Letter immediately.`,
                           icon: 'warning',
-                          confirmButtonColor: '#d97706'
+                          confirmButtonColor: '#d97706',
+                          customClass: { popup: 'rounded-2xl shadow-2xl' }
                       });
                   }
               }
-          } catch(e) { console.log("Shortage check skipped."); }
+          } catch(e) { console.log("Shortage check skipped.", e); }
           
           if (typeof loadPOSData === 'function') await loadPOSData();
           if (typeof checkCurrentShift === 'function') await checkCurrentShift();
