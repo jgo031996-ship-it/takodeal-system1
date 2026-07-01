@@ -1493,10 +1493,25 @@
             🟢 Normal Prep (15m)
           </button>
 
-          <button onclick="window.kickCashDrawer()" 
-            style="background: #f59e0b; color: white; border: none; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            💵 Open Drawer
-          </button>
+          <!-- 💵 SMART DRAWER TOGGLE -->
+          <div style="display: inline-flex; align-items: center; gap: 8px; background: white; border-radius: 20px; padding: 6px 12px; border: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+              <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                  <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;">
+                  Auto-Open
+              </label>
+              <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
+              <button onclick="window.kickCashDrawer()" style="background: transparent; color: #f59e0b; border: none; cursor: pointer; font-size: 14px; font-weight: 800; padding: 0;">
+                  💵 Kick
+              </button>
+          </div>
+          <script>
+              // Remember their switch preference
+              if(localStorage.getItem('takodeal_auto_drawer') !== 'false') {
+                  document.getElementById('autoDrawerToggle').checked = true;
+              } else {
+                  document.getElementById('autoDrawerToggle').checked = false;
+              }
+          </script>
 
           <button id="btnTopShift" onclick="openShiftModal()"
             style="background: white; color: #333; border: 1px solid #ddd; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-family: inherit; font-size: 14px; font-weight: 600;">
