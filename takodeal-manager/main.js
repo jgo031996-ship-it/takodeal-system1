@@ -5407,7 +5407,7 @@ window.fetchZReadings = async function() {
 // ========================================================
 // 🔍 THE BEAUTIFUL VARIANCE & BREAKDOWN MODAL
 // ========================================================
-window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, cashierName, branchName, declaredCash) {
+window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, cashierName, branchName, declaredCash, variance) {
   // 1. Open the UI
   document.getElementById('breakdownModal').style.display = 'flex';
   document.getElementById('bdTitle').innerText = `Z-Reading: ${cashierName.toUpperCase()} (${branchName})`;
@@ -5482,14 +5482,14 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
   let physicalStock = JSON.parse(decodeURIComponent(stockStr));
 
   let varianceAlert = '';
-  if (d.cashVariance < -0.05) {
-      varianceAlert = `<div style="background: #fef2f2; border: 2px dashed #ef4444; color: #b91c1c; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">🚨 CASH SHORTAGE DETECTED: -₱${Math.abs(d.cashVariance).toFixed(2)}</div>`;
-  } else if (d.cashVariance > 0.05) {
-      varianceAlert = `<div style="background: #fffbeb; border: 2px dashed #f59e0b; color: #b45309; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">📈 CASH OVERAGE DETECTED: +₱${d.cashVariance.toFixed(2)}</div>`;
+  if (variance < -0.05) {
+      varianceAlert = `<div style="background: #fef2f2; border: 2px dashed #ef4444; color: #b91c1c; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">🚨 CASH SHORTAGE DETECTED: -₱${Math.abs(variance).toFixed(2)}</div>`;
+  } else if (variance > 0.05) {
+      varianceAlert = `<div style="background: #fffbeb; border: 2px dashed #f59e0b; color: #b45309; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px;">📈 CASH OVERAGE DETECTED: +₱${variance.toFixed(2)}</div>`;
   }
   
   // 2. Build Cash Breakdown Grid
-  let cashHtml = '';
+  let cashHtml = varianceAlert;
   for (const [bill, qty] of Object.entries(breakdown)) {
     if (qty > 0) {
       let total = parseInt(bill.replace('₱', '')) * qty;
