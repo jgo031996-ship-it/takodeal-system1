@@ -2219,9 +2219,9 @@ window.submitStaffRequest = async function(requestType) {
         }
     } else if (type === 'Reason Letter') {
         let cause = document.getElementById('explainCause').value;
-        let msg = document.getElementById('explainMessage').value.trim(); // <-- Make sure it grabs this!
+        let msg = document.getElementById('explainMessage').value.trim(); 
         if (!msg) return Swal.fire('Error', 'Please provide a detailed explanation.', 'error');
-        payload.details = `Cause: ${cause}\n"${msg}"`; // <-- This is what the Manager App reads!
+        payload.details = `Cause: ${cause}\n"${msg}"`; // This perfectly passes the text to the Manager App!
     }
     
     try {
@@ -4268,8 +4268,8 @@ window.safeSubmitComprehensiveCloseShift = async function() {
         if (typeof window.submitComprehensiveCloseShift === 'function') window.submitComprehensiveCloseShift();
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
+        if(confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
     }
-    if(confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
 };
 
 // ========================================================
