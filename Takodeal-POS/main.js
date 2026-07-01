@@ -5065,3 +5065,90 @@ window.processStoreUse = async function() {
         btn.innerText = origText; btn.disabled = false; 
     }
 };
+
+// ========================================================
+// 🔪 KITCHEN PREP TAB & HISTORY ENGINE
+// ========================================================
+window.switchPrepTab = function(tab) {
+    document.getElementById('prepTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    document.getElementById('prepTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+    
+    document.getElementById('btnTabPrepNew').style.background = tab === 'New' ? '#8b5cf6' : 'white';
+    document.getElementById('btnTabPrepNew').style.color = tab === 'New' ? 'white' : '#475569';
+    document.getElementById('btnTabPrepNew').style.border = tab === 'New' ? 'none' : '1px solid #cbd5e1';
+
+    document.getElementById('btnTabPrepHist').style.background = tab === 'History' ? '#8b5cf6' : 'white';
+    document.getElementById('btnTabPrepHist').style.color = tab === 'History' ? 'white' : '#475569';
+    document.getElementById('btnTabPrepHist').style.border = tab === 'History' ? 'none' : '1px solid #cbd5e1';
+
+    if (tab === 'History') window.loadKitchenPrepHistory();
+};
+
+window.loadKitchenPrepHistory = async function() {
+    const tbody = document.getElementById('kitchenPrepHistoryBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">Loading prep history...</td></tr>';
+    
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let today = new Date();
+    today.setHours(0,0,0,0);
+
+    try {
+        const q = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", today));
+        const snap = await getDocs(q);
+        
+        let logs = [];
+        snap.forEach(doc => {
+            let d = doc.data();
+            // Look for any log marked as Prep or Batch!
+            if (d.type && (d.type.toLowerCase().includes("prep") || d.type.toLowerCase().includes("batch"))) {
+                logs.push({ id: doc.id, ...d });
+            }
+        });
+
+        logs.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+
+        let html = '';
+        logs.forEach(log => {
+            let timeStr = log.timestamp ? log.timestamp.toDate().toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${timeStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #1e293b;">${log.item}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #10b981;">+${log.variance} ${log.uom}</td>
+                    <td style="padding: 12px;">
+                        <button onclick="window.undoKitchenPrep('${log.id}', '${log.item}', ${log.variance})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">✖ Undo</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" style="text-align:center; padding: 20px; color: #94a3b8;">No prep batches logged today.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: red;">Error loading history.</td></tr>';
+    }
+};
+
+window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
+    if(!confirm(`⚠️ Are you sure you want to UNDO the prep batch for ${itemName}?\n\nThis will instantly subtract ${varianceAmount} from the inventory.`)) return;
+    
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch');
+        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
+        const snap = await getDocs(q);
+        
+        if(!snap.empty) {
+            let itemRef = snap.docs[0].ref;
+            let currentStock = parseFloat(snap.docs[0].data().currentStock) || 0;
+            await updateDoc(itemRef, { currentStock: currentStock - varianceAmount });
+        }
+
+        await deleteDoc(doc(db, "stock_logs", logId)); // Delete the log
+        alert("✅ Prep batch successfully undone!");
+        window.loadKitchenPrepHistory(); // Refresh table
+    } catch(e) {
+        console.error(e);
+        alert("Failed to undo prep batch.");
+    }
+};
