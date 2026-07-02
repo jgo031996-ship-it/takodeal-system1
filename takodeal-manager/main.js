@@ -11176,12 +11176,12 @@ window.viewAuditDetails = async function(dateStr, branch, cashier, countsEncoded
     document.getElementById('auditModalSubtitle').innerText = `${dateStr} | ${branch} | By: ${cashier}`;
     
     const tbody = document.getElementById('auditDetailsBody');
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">Fetching Live DB stock for comparison...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">Fetching historical data...</td></tr>';
     
     let counts = JSON.parse(decodeURIComponent(countsEncoded));
     
     try {
-        // Fetch live inventory for this branch to get System Expected and Cost
+        // We only fetch live inventory to grab the ITEM COSTS, because old audits might not have saved the cost data!
         const q = query(collection(db, "inventory"), where("branch", "==", branch));
         const snap = await getDocs(q);
         
@@ -11189,8 +11189,7 @@ window.viewAuditDetails = async function(dateStr, branch, cashier, countsEncoded
         snap.forEach(docSnap => {
             let item = docSnap.data();
             liveStockDb[item.name] = {
-                qty: parseFloat(item.currentStock) || 0,
-                cost: parseFloat(item.baseCost) || 0,
+                cost: parseFloat(item.baseCost) || parseFloat(item.cost) || 0,
                 uom: item.uom || ''
             };
         });
@@ -11200,28 +11199,47 @@ window.viewAuditDetails = async function(dateStr, branch, cashier, countsEncoded
         let totalItemsCounted = 0;
         let perfectItems = 0;
 
-        // Compare Cashier's count to the Live Database!
         counts.forEach(countObj => {
-            let name = countObj.name;
-            let physQty = parseFloat(countObj.physicalQty) || 0;
-            let dbItem = liveStockDb[name] || { qty: 0, cost: 0, uom: '' };
-            
-            let sysQty = dbItem.qty;
+            let name = countObj.name || countObj.itemName;
+            let physQty = parseFloat(countObj.physicalQty !== undefined ? countObj.physicalQty : countObj.actualQty) || 0;
+            let dbItem = liveStockDb[name] || { cost: 0, uom: '' };
+            let uom = countObj.uom || dbItem.uom;
+            let cost = parseFloat(countObj.cost || dbItem.cost);
+
+            // 🔥 SMART HISTORICAL RECOVERY: 
+            // Look for the saved System Qty. If missing, look for saved Variance and work backward!
+            let sysQty = parseFloat(countObj.systemQty);
+            let savedVariance = parseFloat(countObj.variance);
+
+            if (isNaN(sysQty)) {
+                if (!isNaN(savedVariance)) {
+                    sysQty = physQty - savedVariance; // Reconstruct the past system expected!
+                } else {
+                    sysQty = physQty; // Fallback for deeply corrupted old data
+                }
+            }
+
+            // Calculate the true variance based on historical numbers
             let variance = physQty - sysQty;
-            let loss = variance < 0 ? Math.abs(variance) * dbItem.cost : 0;
+
+            // 🔥 MASSIVE LOSS FIX: ONLY calculate financial loss if variance is NEGATIVE (Shortage)
+            let loss = 0;
+            if (variance < 0) {
+                loss = Math.abs(variance) * cost;
+            }
             
             totalLoss += loss;
             totalItemsCounted++;
             if (variance === 0) perfectItems++;
 
             let varColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#16a34a' : '#64748b');
-            let varText = variance === 0 ? 'Perfect' : `${variance > 0 ? '+' : ''}${variance.toFixed(1)} ${dbItem.uom}`;
+            let varText = variance === 0 ? 'Perfect' : `${variance > 0 ? '+' : ''}${variance.toFixed(1)} ${uom}`;
 
             html += `
                 <tr style="border-bottom: 1px dashed #e2e8f0;">
                     <td style="padding: 10px; font-weight: bold; color: #334155;">${name}</td>
-                    <td style="padding: 10px; color: #64748b;">${sysQty.toFixed(1)} ${dbItem.uom}</td>
-                    <td style="padding: 10px; font-weight: bold; color: #0284c7;">${physQty.toFixed(1)} ${dbItem.uom}</td>
+                    <td style="padding: 10px; color: #64748b;">${sysQty.toFixed(1)} ${uom}</td>
+                    <td style="padding: 10px; font-weight: bold; color: #0284c7;">${physQty.toFixed(1)} ${uom}</td>
                     <td style="padding: 10px; font-weight: bold; color: ${varColor};">${varText}</td>
                     <td style="padding: 10px; text-align: right; color: #dc2626; font-weight: bold;">${loss > 0 ? `₱${loss.toFixed(2)}` : '-'}</td>
                 </tr>
@@ -11232,16 +11250,12 @@ window.viewAuditDetails = async function(dateStr, branch, cashier, countsEncoded
 
         let accuracy = totalItemsCounted > 0 ? (perfectItems / totalItemsCounted) * 100 : 0;
         
-        document.getElementById('auditModalAccuracy').innerText = `${accuracy.toFixed(1)}%`;
-        document.getElementById('auditModalLoss').innerText = `₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-
-        // Update the Top KPIs on the Dashboard!
-        if (document.getElementById('auditAccuracy')) document.getElementById('auditAccuracy').innerText = `${accuracy.toFixed(1)}%`;
-        if (document.getElementById('auditVariance')) document.getElementById('auditVariance').innerText = `₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if (document.getElementById('auditModalAccuracy')) document.getElementById('auditModalAccuracy').innerText = `${accuracy.toFixed(1)}%`;
+        if (document.getElementById('auditModalLoss')) document.getElementById('auditModalLoss').innerText = `₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
     } catch (e) {
         console.error("Audit Details Error:", e);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: red;">Failed to fetch live database for comparison.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: red;">Failed to load historical audit data.</td></tr>';
     }
 };
 
