@@ -1400,48 +1400,185 @@ window.updateDispatchUomLabel = function() {
 };
 
 window.addToDispatchCart = function () {
-  let itemName = document.getElementById('dispItem').value;
-  let rawQty = parseFloat(document.getElementById('dispQty').value);
-  if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
+    let itemName = document.getElementById('dispItem').value;
+    let rawQty = parseFloat(document.getElementById('dispQty').value);
+    if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
 
-  let invItem = dispatchInventoryList.find(i => i.name === itemName);
-  if (!invItem) return;
+    let invItem = dispatchInventoryList.find(i => i.name === itemName);
+    if (!invItem) return;
 
-  let finalBaseQty = rawQty; let convRate = 1; let friendlyUom = invItem.uom; let displayMsg = `${rawQty} ${invItem.uom}`;
-  let uomSelect = document.getElementById('dispUomSelect'); let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
+    let masterConvRate = parseFloat(invItem.conversionRate) || parseFloat(invItem.conversion) || 1;
+    let pUom = invItem.purchaseUom || invItem.purchUom || invItem.uom;
+    let bUom = invItem.baseUom || invItem.uom;
 
-  if (selectedUomType === 'purch') {
-      convRate = parseFloat(invItem.conversionRate) || 1; finalBaseQty = rawQty * convRate; friendlyUom = invItem.purchaseUom || "Bulk";
-      displayMsg = `${rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${finalBaseQty} ${invItem.uom})</span>`;
-  }
+    let uomSelect = document.getElementById('dispUomSelect'); 
+    let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
 
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-  if (!isFranchisee && finalBaseQty > invItem.currentStock) { 
-      let stockInPurch = invItem.currentStock / convRate;
-      let msg = `You are trying to send <strong>${rawQty} ${friendlyUom}</strong> (${finalBaseQty} ${invItem.uom}), but HQ only has <strong>${stockInPurch.toFixed(2)} ${friendlyUom}</strong> available.`; 
-      Swal.fire({ title: '❌ Not enough stock!', html: msg, icon: 'error', confirmButtonColor: '#0ea5e9' }); return; 
-  }
+    let finalBaseQty = rawQty; 
+    let convRate = 1; 
+    let friendlyUom = bUom; 
 
-  let existing = dispatchCart.find(i => i.itemName === itemName);
-  if (existing) { 
-      existing.qty += finalBaseQty; 
-      existing.rawQty += rawQty;
-      
-      // 🔥 THE FIX: Update the UOM so the Cart reflects "Packs" instead of "Pieces"
-      existing.friendlyUom = friendlyUom; 
-      existing.convRate = convRate;
-      
-      existing.displayMsg = `Sending: ${existing.rawQty} ${friendlyUom} <span style="font-size:11px; color:var(--text-muted);">(${existing.qty} ${invItem.uom})</span>`;
-  } else {
-      dispatchCart.push({ 
-          itemName: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, displayMsg: displayMsg, rawQty: rawQty,            
-          friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", purchaseUom: invItem.purchaseUom || invItem.uom,
-          cost: invItem.cost || 0, reorderLevel: invItem.reorderLevel || 10
-      });
-  }
+    // Calculate initial add
+    if (selectedUomType === 'purch' && pUom !== bUom) {
+        convRate = masterConvRate; 
+        finalBaseQty = rawQty * convRate; 
+        friendlyUom = pUom;
+    }
 
-  document.getElementById('dispQty').value = ''; document.getElementById('dispItem').value = ''; 
-  if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (!isFranchisee && finalBaseQty > invItem.currentStock) { 
+        let stockInPurch = invItem.currentStock / convRate;
+        let msg = `You are trying to send <strong>${rawQty} ${friendlyUom}</strong> (${finalBaseQty} ${bUom}), but HQ only has <strong>${invItem.currentStock} ${bUom}</strong> available.`; 
+        Swal.fire({ title: '❌ Not enough stock!', html: msg, icon: 'error', confirmButtonColor: '#0ea5e9' }); return; 
+    }
+
+    let existing = dispatchCart.find(i => i.itemName === itemName);
+    if (existing) { 
+        existing.rawQty += rawQty;
+        existing.friendlyUom = friendlyUom; 
+        existing.convRate = convRate;
+        existing.masterConvRate = masterConvRate;
+        existing.purchaseUom = pUom;
+        existing.qty = existing.rawQty * convRate; 
+    } else {
+        dispatchCart.push({ 
+            itemName: itemName, 
+            qty: finalBaseQty, 
+            uom: bUom, 
+            sourceId: invItem.id, 
+            rawQty: rawQty,            
+            friendlyUom: friendlyUom, 
+            convRate: convRate, 
+            masterConvRate: masterConvRate,
+            purchaseUom: pUom,
+            category: invItem.category || "Ingredients", 
+            cost: invItem.cost || 0, 
+            reorderLevel: invItem.reorderLevel || 10
+        });
+    }
+
+    document.getElementById('dispQty').value = ''; document.getElementById('dispItem').value = ''; 
+    if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+};
+
+// 🔥 THE NEW MEMORY ENGINE: Silently updates the math while you type
+window.updateCartItemQty = function(index, value) {
+    let val = parseFloat(value) || 0;
+    if (dispatchCart[index]) {
+        let item = dispatchCart[index];
+        item.rawQty = val;
+        item.qty = val * (item.convRate || 1);
+        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+        
+        // Dynamically update the subtext without losing input focus!
+        let subtextEl = document.getElementById(`cartSubtext_${index}`);
+        if (subtextEl) {
+            if (item.convRate !== 1 || item.friendlyUom !== item.uom) {
+                subtextEl.innerHTML = `Sending in <strong style="color:#0f766e;">${item.friendlyUom}</strong> <span style="font-size:11px; color:var(--text-muted);">(${item.qty} ${item.uom})</span>`;
+            } else {
+                subtextEl.innerHTML = `Sending in <strong style="color:#0f766e;">${item.uom}</strong>`;
+            }
+        }
+    }
+};
+
+// 🔥 THE UNIT TOGGLE ENGINE: Allows changing Pack/Piece directly inside the cart!
+window.updateCartItemUom = function(index, type) {
+    if (dispatchCart[index]) {
+        let item = dispatchCart[index];
+        
+        // Fallback retrieval in case of old PO data lacking the master rates
+        if (!item.masterConvRate || !item.purchaseUom) {
+            let invData = dispatchInventoryList.find(i => (i.id === item.sourceId || i.name === item.itemName));
+            if (invData) {
+                item.masterConvRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
+                item.purchaseUom = invData.purchaseUom || invData.purchUom || item.uom;
+            }
+        }
+
+        if (type === 'purch') {
+            item.convRate = item.masterConvRate || 1;
+            item.friendlyUom = item.purchaseUom || item.uom;
+        } else {
+            item.convRate = 1;
+            item.friendlyUom = item.uom;
+        }
+        
+        item.qty = item.rawQty * item.convRate;
+        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+        
+        // Re-render the whole cart so the text and math update instantly
+        window.renderDispatchCart();
+    }
+};
+
+window.renderDispatchCart = function() {
+    const tbody = document.getElementById('dispatchCartBody');
+    let table = tbody.closest('table');
+    if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
+        let wrapper = document.createElement('div'); wrapper.className = 'table-scroll-wrapper';
+        wrapper.style.maxHeight = '350px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
+        table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
+    }
+
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+    let dest = document.getElementById('dispTo'); if(dest && dest.value) localStorage.setItem('takodeal_dispatch_to', dest.value);
+
+    if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
+
+    let html = '';
+    dispatchCart.forEach((item, idx) => {
+        let varianceHtml = '';
+        
+        if (item.requestType) {
+            let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
+            varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
+        } 
+        
+        let safeQty = item.rawQty !== undefined ? item.rawQty : (item.qty || 0);
+        let fUom = item.friendlyUom || item.uom;
+        let bUom = item.uom;
+        let pUom = item.purchaseUom || bUom;
+        let conv = item.convRate || 1;
+        let masterConv = item.masterConvRate || conv;
+        let totalBase = safeQty * conv;
+
+        // The Smart Subtext
+        if (conv !== 1 || fUom !== bUom) {
+            varianceHtml += `<div id="cartSubtext_${idx}" style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${fUom}</strong> <span style="font-size:11px; color:var(--text-muted);">(${totalBase} ${bUom})</span></div>`;
+        } else {
+            varianceHtml += `<div id="cartSubtext_${idx}" style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${bUom}</strong></div>`;
+        }
+
+        // 🔥 THE FIX: Interactive UOM Dropdown perfectly merged with the input box!
+        let uomSelectorHtml = '';
+        if (pUom !== bUom && masterConv > 1) {
+            let isPurch = fUom === pUom;
+            uomSelectorHtml = `
+                <select onchange="window.updateCartItemUom(${idx}, this.value)" style="padding: 6px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; font-weight: bold; color: #92400e; outline: none; cursor: pointer; font-size: 12px; background: #fffcf0; height: 34px; box-sizing: border-box;">
+                    <option value="base" ${!isPurch ? 'selected' : ''}>${bUom}</option>
+                    <option value="purch" ${isPurch ? 'selected' : ''}>${pUom}</option>
+                </select>
+            `;
+        } else {
+            // If there's no conversion rate setup for this item, it just shows a static badge
+            uomSelectorHtml = `<span style="font-size: 12px; font-weight: bold; color: #64748b; padding: 6px 8px; background: #f8fafc; border: 1px solid #cbd5e1; border-left: none; border-radius: 0 6px 6px 0; height: 34px; display: inline-flex; align-items: center; box-sizing: border-box;">${bUom}</span>`;
+        }
+
+        html += `<tr>
+            <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${item.itemName || item.name}</strong><br>${varianceHtml}</td>
+            <td style="padding:10px; vertical-align: top;">
+                <div style="display: flex; align-items: stretch; justify-content: flex-start; max-width: 150px; margin-top: 2px;">
+                    <input type="number" id="cartQty_${idx}" value="${safeQty}" onkeyup="window.updateCartItemQty(${idx}, this.value)" onchange="window.updateCartItemQty(${idx}, this.value)" style="flex: 1; width: 60px; padding: 6px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; outline: none; color: #ea580c; font-size: 14px; height: 34px; box-sizing: border-box;" placeholder="Qty">
+                    ${uomSelectorHtml}
+                </div>
+            </td>
+            <td style="text-align:right; padding:10px; vertical-align: top;">
+                <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer; margin-top: 2px;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
+            </td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
 };
 
 window.submitMultiDispatch = async function () {
@@ -1543,69 +1680,6 @@ window.removeFromDispatchCart = function (index) {
     // Purge ghosts when deleting rows
     Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
     window.renderDispatchCart(); 
-};
-
-// 🔥 THE NEW MEMORY ENGINE: Silently updates the math while you type
-window.updateCartItemQty = function(index, value) {
-    let val = parseFloat(value) || 0;
-    if (dispatchCart[index]) {
-        dispatchCart[index].rawQty = val;
-        let conv = dispatchCart[index].convRate || 1;
-        dispatchCart[index].qty = val * conv;
-        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
-        
-        // Dynamically update the subtext without reloading the table so you don't lose focus!
-        let subtextEl = document.getElementById(`cartSubtext_${index}`);
-        if (subtextEl) subtextEl.innerText = `(${dispatchCart[index].qty} ${dispatchCart[index].uom})`;
-    }
-};
-
-window.renderDispatchCart = function() {
-  const tbody = document.getElementById('dispatchCartBody');
-  let table = tbody.closest('table');
-  if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
-      let wrapper = document.createElement('div'); wrapper.className = 'table-scroll-wrapper';
-      wrapper.style.maxHeight = '350px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
-      table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
-  }
-
-  localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
-  let dest = document.getElementById('dispTo'); if(dest && dest.value) localStorage.setItem('takodeal_dispatch_to', dest.value);
-
-  if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
-
-  let html = '';
-  dispatchCart.forEach((item, idx) => {
-      let varianceHtml = '';
-      
-      if (item.requestType) {
-          let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
-          varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
-      } 
-      
-      let safeQty = item.rawQty !== undefined ? item.rawQty : (item.qty || 0);
-      let fUom = item.friendlyUom || item.uom;
-      let conv = item.convRate || 1;
-      let totalBase = safeQty * conv;
-
-      if (conv !== 1 || fUom !== item.uom) {
-          varianceHtml += `<div style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in ${fUom} <span id="cartSubtext_${idx}" style="font-size:11px; color:var(--text-muted);">(${totalBase} ${item.uom})</span></div>`;
-      }
-
-      html += `<tr>
-          <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${item.itemName || item.name}</strong><br>${varianceHtml}</td>
-          <td style="padding:10px;">
-              <div style="display: flex; align-items: center; gap: 5px;">
-                  <input type="number" id="cartQty_${idx}" value="${safeQty}" onkeyup="window.updateCartItemQty(${idx}, this.value)" onchange="window.updateCartItemQty(${idx}, this.value)" style="width: 70px; padding: 6px; border: 2px solid #0ea5e9; border-radius: 6px; text-align: center; font-weight: bold; outline: none; color: #0f172a;" placeholder="Qty">
-                  <span style="font-size: 12px; font-weight: bold; color: #64748b;">${fUom}</span>
-              </div>
-          </td>
-          <td style="text-align:right; padding:10px;">
-              <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
-          </td>
-      </tr>`;
-  });
-  tbody.innerHTML = html;
 };
 
 window.loadDispatchLogs = async function() {
