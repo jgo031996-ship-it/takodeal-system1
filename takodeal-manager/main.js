@@ -5499,7 +5499,7 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
       }
   });
 
-  // Catch any unexpected denominations
+  // Catch any unexpected denominations safely
   for (const [bill, qty] of Object.entries(breakdown)) {
       if (qty > 0 && !billOrder.includes(bill)) {
           let val = parseFloat(bill.replace('₱', '')) || 0;
@@ -5514,20 +5514,20 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
   // 2. Position the Alert beautifully next to the Declared Total
   let varianceAlert = '';
   if (variance < -0.05) {
-      varianceAlert = `<div style="background: #fef2f2; border: 2px dashed #ef4444; color: #b91c1c; padding: 10px 15px; border-radius: 8px; font-weight: bold; font-size: 14px; margin-right: 15px;">🚨 CASH SHORTAGE: -₱${Math.abs(variance).toFixed(2)}</div>`;
+      varianceAlert = `<span style="border: 2px dashed #ef4444; color: #b91c1c; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 13px;">🚨 CASH SHORTAGE: -₱${Math.abs(variance).toFixed(2)}</span>`;
   } else if (variance > 0.05) {
-      varianceAlert = `<div style="background: #fffbeb; border: 2px dashed #f59e0b; color: #b45309; padding: 10px 15px; border-radius: 8px; font-weight: bold; font-size: 14px; margin-right: 15px;">📈 CASH OVERAGE: +₱${variance.toFixed(2)}</div>`;
+      varianceAlert = `<span style="border: 2px dashed #f59e0b; color: #b45309; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 13px;">📈 CASH OVERAGE DETECTED: +₱${variance.toFixed(2)}</span>`;
   }
 
   document.getElementById('bdCashContent').innerHTML = cashHtml || '<i style="color:#94a3b8; grid-column: span 2;">No cash breakdown logged.</i>';
 
-  // Inject the variance alert into the total bar
+  // Safely inject the variance alert into the total bar without deleting the other HTML!
   let bdTotalCashEl = document.getElementById('bdTotalCash');
   if (bdTotalCashEl) {
-      bdTotalCashEl.parentElement.innerHTML = `
-        <div style="display: flex; justify-content: flex-end; align-items: center; border-top: 2px dashed #cbd5e1; padding-top: 15px;">
-            ${varianceAlert}
-            <div style="font-weight: bold; font-size: 18px; color: #16a34a;" id="bdTotalCash">Declared Total: ₱${parseFloat(declaredCash).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+      bdTotalCashEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div style="flex-grow: 1; text-align: left;">${varianceAlert}</div>
+            <div>Declared Total: ₱${parseFloat(declaredCash).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
         </div>
       `;
   }
