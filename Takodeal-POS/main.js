@@ -1060,18 +1060,26 @@ window.calculateGrandTotalCash = function() {
 // 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH AUTO-SWEEP & SECURITY LOCK)
 // ========================================================
 window.submitComprehensiveCloseShift = async function () {
-    let declaredCash = calculateDenominations();
-
+    
+    // 1. Crash-Proof Cash Breakdown Reader
+    let declaredCash = 0;
     let cashBreakdown = {};
-    denominations.forEach(d => {
-        cashBreakdown[`₱${d}`] = parseInt(document.getElementById(`qty${d}`).value) || 0;
+    
+    document.querySelectorAll('.denom-input').forEach(input => {
+        let val = parseInt(input.getAttribute('data-val'));
+        let pcs = parseInt(input.value) || 0;
+        if (pcs > 0) {
+            cashBreakdown["₱" + val] = pcs;
+            declaredCash += (val * pcs);
+        }
     });
 
+    // 2. Bypass Physical Stock (Since we replaced it with Kitchen Prep Logs in the UI!)
     let physicalStock = {};
-    document.querySelectorAll('.shift-count-input').forEach(inp => {
-        let val = parseInt(inp.value) || 0;
-        physicalStock[inp.getAttribute('data-name')] = val;
-    });
+
+    let confirmBtn = document.querySelector('#endShiftModal .btn-place:last-child') || document.querySelector('button[onclick*="submitComprehensiveCloseShift"]');
+    let origText = confirmBtn ? confirmBtn.innerText : '🛑 Confirm & End Shift';
+    if (confirmBtn) { confirmBtn.innerText = "⏳ Verifying Count..."; confirmBtn.disabled = true; }
 
     try {
         let shiftId = activeShiftDetails.logId;
@@ -1144,6 +1152,7 @@ window.submitComprehensiveCloseShift = async function () {
         // ========================================================
         if (expectedCash > 0 && declaredCash === 0) {
             alert(`⛔ SECURITY LOCKOUT!\n\nThe system expects ₱${expectedCash.toFixed(2)} in your drawer.\n\nYou cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`);
+            if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
             return; // Stops the shift from closing!
         }
         // ========================================================
@@ -1264,6 +1273,8 @@ window.submitComprehensiveCloseShift = async function () {
     } catch (error) {
         console.error("Error closing shift:", error);
         alert("❌ Failed to close shift. Check your connection.");
+    } finally {
+        if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
     }
 };
 
