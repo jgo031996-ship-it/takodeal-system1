@@ -1565,10 +1565,15 @@ window.renderDispatchCart = function() {
 };
 
 window.clearDispatchCart = async function() {
-    let activePoId = localStorage.getItem('takodeal_active_po');
-    if (activePoId) {
-        // Revert the database status back to Pending
-        try { await updateDoc(doc(db, "purchase_orders", activePoId), { status: "Pending" }); } catch(e){}
+    let activePoStr = localStorage.getItem('takodeal_active_po');
+    if (activePoStr) {
+        // Revert ALL active POs back to Pending
+        let poIds = activePoStr.split(',');
+        for (let id of poIds) {
+            if (id) {
+                try { await updateDoc(doc(db, "purchase_orders", id), { status: "Pending" }); } catch(e){}
+            }
+        }
     }
     
     dispatchCart = [];
@@ -1583,34 +1588,6 @@ window.clearDispatchCart = async function() {
     window.renderDispatchCart();
     window.loadDispatchLogs();
 };
-
-window.submitMultiDispatch = async function () {
-  let fromBranch = document.getElementById('dispFrom').value;
-  let toBranch = document.getElementById('dispTo').value;
-
-  if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
-  if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
-
-  let btn = document.getElementById('btnSubmitDispatch');
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-
-  // ==========================================
-  // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
-  // ==========================================
-  if (isFranchisee) {
-      if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
-      btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
-      try {
-          await addDoc(collection(db, "purchase_orders"), {
-              branch: toBranch, items: dispatchCart, status: "Pending",
-              requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
-          });
-          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
-          dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
-      } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
-      finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
-      return; 
-  }
 
   // ==========================================
   // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
@@ -1894,7 +1871,6 @@ window.reviewPurchaseOrder = async function(poId) {
         
         let po = poSnap.data();
         
-        // Fetch HQ Live Stock to show the Manager inside the review modal!
         const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
         let hqStock = {};
         hqSnap.forEach(d => hqStock[d.data().name] = parseFloat(d.data().currentStock || 0));
@@ -1934,21 +1910,48 @@ window.reviewPurchaseOrder = async function(poId) {
             customClass: { popup: 'rounded-2xl shadow-xl' }
         }).then(async (result) => {
             if (result.isConfirmed) {
-                // Wipe the old draft quantities from memory so it's a fresh start
-                Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+                let currentDest = document.getElementById('dispTo').value;
+                
+                // 🔥 1. THE SECURITY FIX: Prevent mixing branches in the cart!
+                if (dispatchCart.length > 0 && currentDest && currentDest !== po.branch) {
+                    Swal.fire('Branch Mismatch', `Your cart has items for ${currentDest}. Please dispatch or clear the cart first before loading requests for ${po.branch}.`, 'warning');
+                    return;
+                }
 
-                dispatchCart = po.items.map(i => ({...i, rawQty: i.qty || 0})); 
+                // Only wipe draft inputs if we are starting a completely fresh cart
+                if (dispatchCart.length === 0) {
+                    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+                }
+
+                // 🔥 2. THE MULTI-MERGE FIX: Append to cart without overwriting existing items!
+                po.items.forEach(newItem => {
+                    let mappedItem = {...newItem, rawQty: newItem.qty || 0};
+                    let existing = dispatchCart.find(i => (i.itemName || i.name) === (newItem.itemName || newItem.name));
+                    
+                    if (existing) {
+                        existing.requestType = newItem.requestType;
+                        existing.physicalStock = newItem.physicalStock;
+                        existing.systemStock = newItem.systemStock;
+                    } else {
+                        dispatchCart.push(mappedItem);
+                    }
+                });
+
                 document.getElementById('dispFrom').value = "Main Office"; document.getElementById('dispTo').value = po.branch;
                 
-                // SAVE IT AS THE ACTIVE DRAFT IN THE VAULT
+                // 🔥 3. THE MULTI-ID VAULT: Store a comma-separated list of all loaded POs!
+                let activePos = localStorage.getItem('takodeal_active_po') || "";
+                let poArray = activePos ? activePos.split(',') : [];
+                if (!poArray.includes(poId)) poArray.push(poId);
+                
                 localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
                 localStorage.setItem('takodeal_dispatch_to', po.branch);
-                localStorage.setItem('takodeal_active_po', poId);
+                localStorage.setItem('takodeal_active_po', poArray.join(','));
                 
                 await updateDoc(poRef, { status: "Drafting" });
                 
                 window.renderDispatchCart(); window.loadDispatchLogs();
-                Swal.fire({title: 'Loaded!', text: 'Items are safely locked in the cart. You can refresh the page without losing them.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+                Swal.fire({title: 'Loaded!', text: 'Items are securely added to the cart.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
             } else if (result.isDenied) {
                 if (confirm("Permanently delete this request from the queue?")) {
                     await deleteDoc(poRef); window.loadDispatchLogs();
