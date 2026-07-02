@@ -1475,15 +1475,13 @@ window.submitMultiDispatch = async function () {
   // ==========================================
   // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
   // ==========================================
-  // Read the custom quantities the Manager typed directly into the Cart inputs!
+  // Read the custom quantities directly from the live memory array!
   for (let i = 0; i < dispatchCart.length; i++) {
       let inp = document.getElementById(`cartQty_${i}`);
       if (inp) {
           let val = parseFloat(inp.value) || 0;
           let conv = dispatchCart[i].convRate || 1;
           dispatchCart[i].rawQty = val; dispatchCart[i].qty = val * conv;
-          // Update local storage live memory just in case
-          localStorage.setItem(`takodeal_draft_qty_${i}`, val);
       }
   }
 
@@ -1493,55 +1491,74 @@ window.submitMultiDispatch = async function () {
   btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
   try {
-    let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
-    if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
+      let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
+      if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
 
-    for (let item of validCart) {
-      // 🔥 THE FIX: Map the items by NAME to securely cross the bridge between branches!
-      let itemNameToFind = item.itemName || item.name;
-      let invItem = dispatchInventoryList.find(i => i.name === itemNameToFind);
+      for (let item of validCart) {
+          // 🔥 THE FIX: Map items strictly by NAME so Purchase Orders don't crash!
+          let itemNameToFind = item.itemName || item.name;
+          let invItem = dispatchInventoryList.find(i => i.name === itemNameToFind);
 
-      if (!invItem) {
-          alert(`❌ CRITICAL ERROR: The item "${itemNameToFind}" does not exist in the ${fromBranch} inventory database. Dispatch aborted.`);
-          throw new Error("Item ID Mapping Error");
+          if (!invItem) {
+              alert(`❌ CRITICAL ERROR: The item "${itemNameToFind}" does not exist in the ${fromBranch} inventory database. Dispatch aborted.`);
+              throw new Error("Item ID Mapping Error");
+          }
+
+          let sourceRef = doc(db, "inventory", invItem.id);
+          await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
+
+          await addDoc(collection(db, "dispatch_logs"), {
+              date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
+              time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
+              item: itemNameToFind, qty: item.qty, uom: item.uom, details: `${fromBranch} ➡️ ${toBranch}`,
+              toBranch: toBranch, driver: driverName, status: "In Transit", displayQty: item.rawQty || item.qty,      
+              displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1, category: item.category,
+              purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
+          });
       }
 
-      // Use the newly matched Main Office ID to deduct the stock!
-      let sourceRef = doc(db, "inventory", invItem.id);
-      await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
+      // 🧹 PURGE THE GHOST MEMORY!
+      localStorage.removeItem('takodeal_dispatch_cart');
+      localStorage.removeItem('takodeal_dispatch_to');
+      Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+      
+      let activePoId = localStorage.getItem('takodeal_active_po');
+      if (activePoId) {
+          try { await updateDoc(doc(db, "purchase_orders", activePoId), { status: "Completed" }); } catch(e){}
+          localStorage.removeItem('takodeal_active_po');
+      }
 
-      await addDoc(collection(db, "dispatch_logs"), {
-        date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-        time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
-        item: item.itemName || item.name, qty: item.qty, uom: item.uom, details: `${fromBranch} ➡️ ${toBranch}`,
-        toBranch: toBranch, driver: driverName, status: "In Transit", displayQty: item.rawQty || item.qty,      
-        displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1, category: item.category,
-        purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
-      });
-    }
-
-    // 🔒 CLEAR MEMORY AND MARK PO AS COMPLETED
-    localStorage.removeItem('takodeal_dispatch_cart');
-    localStorage.removeItem('takodeal_dispatch_to');
-    
-    let activePoId = localStorage.getItem('takodeal_active_po');
-    if (activePoId) {
-        try { await updateDoc(doc(db, "purchase_orders", activePoId), { status: "Completed" }); } catch(e){}
-        localStorage.removeItem('takodeal_active_po');
-    }
-
-    alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
-    dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); window.loadDispatchLogs();
+      alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
+      dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); window.loadDispatchLogs();
   } catch (e) { 
       console.error(e); 
-      // Removed the generic alert so the specific one above can show if it fails
   } 
   finally { 
       btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
   }
 };
 
-window.removeFromDispatchCart = function (index) { dispatchCart.splice(index, 1); window.renderDispatchCart(); };
+window.removeFromDispatchCart = function (index) { 
+    dispatchCart.splice(index, 1); 
+    // Purge ghosts when deleting rows
+    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+    window.renderDispatchCart(); 
+};
+
+// 🔥 THE NEW MEMORY ENGINE: Silently updates the math while you type
+window.updateCartItemQty = function(index, value) {
+    let val = parseFloat(value) || 0;
+    if (dispatchCart[index]) {
+        dispatchCart[index].rawQty = val;
+        let conv = dispatchCart[index].convRate || 1;
+        dispatchCart[index].qty = val * conv;
+        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+        
+        // Dynamically update the subtext without reloading the table so you don't lose focus!
+        let subtextEl = document.getElementById(`cartSubtext_${index}`);
+        if (subtextEl) subtextEl.innerText = `(${dispatchCart[index].qty} ${dispatchCart[index].uom})`;
+    }
+};
 
 window.renderDispatchCart = function() {
   const tbody = document.getElementById('dispatchCartBody');
@@ -1552,7 +1569,6 @@ window.renderDispatchCart = function() {
       table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
   }
 
-  // 💾 LIVE SAVE TO VAULT EVERY TIME UI UPDATES
   localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
   let dest = document.getElementById('dispTo'); if(dest && dest.value) localStorage.setItem('takodeal_dispatch_to', dest.value);
 
@@ -1560,35 +1576,34 @@ window.renderDispatchCart = function() {
 
   let html = '';
   dispatchCart.forEach((item, idx) => {
-    let varianceHtml = '';
-    
-    // 1. Show the Branch's Report Badge (e.g. Out of Stock)
-    if (item.requestType) {
-        let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
-        varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
-    } 
-    
-    // 2. 🔥 THE FIX: Also show the Manager's Conversion Text (e.g. Sending 10 Packs)
-    if (item.displayMsg) {
-        varianceHtml += `<div style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">${item.displayMsg}</div>`;
-    }
+      let varianceHtml = '';
+      
+      if (item.requestType) {
+          let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
+          varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
+      } 
+      
+      let safeQty = item.rawQty !== undefined ? item.rawQty : (item.qty || 0);
+      let fUom = item.friendlyUom || item.uom;
+      let conv = item.convRate || 1;
+      let totalBase = safeQty * conv;
 
-    // Recover typed quantity if it exists in memory, otherwise default to item.rawQty or 0
-    let memoryQty = localStorage.getItem(`takodeal_draft_qty_${idx}`);
-    let safeQty = memoryQty !== null ? memoryQty : (item.rawQty || item.qty || 0);
-    
-    html += `<tr>
-        <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${item.itemName}</strong>${varianceHtml}</td>
-        <td style="padding:10px;">
-            <div style="display: flex; align-items: center; gap: 5px;">
-                <input type="number" id="cartQty_${idx}" value="${safeQty}" onchange="localStorage.setItem('takodeal_draft_qty_${idx}', this.value)" style="width: 70px; padding: 6px; border: 2px solid #0ea5e9; border-radius: 6px; text-align: center; font-weight: bold; outline: none; color: #0f172a;" placeholder="Qty">
-                <span style="font-size: 12px; font-weight: bold; color: #64748b;">${item.friendlyUom || item.uom}</span>
-            </div>
-        </td>
-        <td style="text-align:right; padding:10px;">
-            <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
-        </td>
-    </tr>`;
+      if (conv !== 1 || fUom !== item.uom) {
+          varianceHtml += `<div style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in ${fUom} <span id="cartSubtext_${idx}" style="font-size:11px; color:var(--text-muted);">(${totalBase} ${item.uom})</span></div>`;
+      }
+
+      html += `<tr>
+          <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${item.itemName || item.name}</strong><br>${varianceHtml}</td>
+          <td style="padding:10px;">
+              <div style="display: flex; align-items: center; gap: 5px;">
+                  <input type="number" id="cartQty_${idx}" value="${safeQty}" onkeyup="window.updateCartItemQty(${idx}, this.value)" onchange="window.updateCartItemQty(${idx}, this.value)" style="width: 70px; padding: 6px; border: 2px solid #0ea5e9; border-radius: 6px; text-align: center; font-weight: bold; outline: none; color: #0f172a;" placeholder="Qty">
+                  <span style="font-size: 12px; font-weight: bold; color: #64748b;">${fUom}</span>
+              </div>
+          </td>
+          <td style="text-align:right; padding:10px;">
+              <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
+          </td>
+      </tr>`;
   });
   tbody.innerHTML = html;
 };
