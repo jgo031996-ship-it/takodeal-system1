@@ -3315,6 +3315,8 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
                 const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", item.item));
                 const targetSnap = await getDocs(targetQ);
 
+                let oldStockForLog = 0;
+
                 if (targetSnap.empty) {
                     await addDoc(collection(db, "inventory"), { 
                         branch: safeBranch, name: item.item, uom: baseUom, currentStock: actualBaseQty, 
@@ -3323,14 +3325,24 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
                     });
                 } else {
                     let tRef = targetSnap.docs[0].ref;
-                    let tStock = targetSnap.docs[0].data().currentStock || 0;
-                    await updateDoc(tRef, { currentStock: tStock + actualBaseQty });
+                    let originalStock = targetSnap.docs[0].data().currentStock || 0;
+                    oldStockForLog = originalStock;
+
+                    // 🔥 THE WIPE-THE-SLATE FIX
+                    // If current stock is negative (ghost debt), we force it to 0 before adding the delivery!
+                    let baseStockMath = originalStock < 0 ? 0 : originalStock;
+                    let newStock = baseStockMath + actualBaseQty;
+
+                    await updateDoc(tRef, { currentStock: newStock });
                 }
 
+                // Add a note in the Manager's Trace Ledger so they know the ghost debt was wiped!
+                let resetNote = oldStockForLog < 0 ? ` (Wiped ${oldStockForLog.toFixed(2)} negative ghost debt)` : '';
+
                 await addDoc(collection(db, "stock_logs"), {
-                    branch: safeBranch, item: item.item, uom: baseUom, oldQty: targetSnap.empty ? 0 : targetSnap.docs[0].data().currentStock || 0,
-                    newQty: (targetSnap.empty ? 0 : targetSnap.docs[0].data().currentStock || 0) + actualBaseQty, variance: actualBaseQty, 
-                    type: "Delivery Received", note: `Group Batch Shipment Confirmed`, user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
+                    branch: safeBranch, item: item.item, uom: baseUom, oldQty: oldStockForLog,
+                    newQty: (oldStockForLog < 0 ? 0 : oldStockForLog) + actualBaseQty, variance: actualBaseQty, 
+                    type: "Delivery Received", note: `Group Batch Shipment Confirmed${resetNote}`, user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
                 });
             }
 
@@ -4023,30 +4035,6 @@ window.loadStockRequestUI = async function() {
     }
 };
 
-window.toggleActualCount = function(id) {
-    let select = document.getElementById(`reqType_${id}`);
-    let actualInput = document.getElementById(`actualCount_${id}`);
-    
-    if (select.value === "Low Stock") {
-        actualInput.style.display = "block";
-        actualInput.value = "";
-        actualInput.readOnly = false;
-        actualInput.style.background = "#fffbeb";
-        actualInput.style.borderColor = "#fcd34d";
-        actualInput.style.color = "#d97706";
-    } else if (select.value === "Out of Stock") {
-        actualInput.style.display = "block";
-        actualInput.value = "0"; // Auto-fill 0 to save them a headache!
-        actualInput.readOnly = true; 
-        actualInput.style.background = "#fee2e2";
-        actualInput.style.borderColor = "#f87171";
-        actualInput.style.color = "#dc2626";
-    } else {
-        actualInput.style.display = "none";
-        actualInput.value = "";
-    }
-};
-
 window.filterStockReq = function() {
     let input = document.getElementById('stockReqSearch').value.toLowerCase();
     let rows = document.querySelectorAll('.stock-req-row');
@@ -4071,56 +4059,6 @@ window.filterStockReq = function() {
         }
         cat.style.display = hasVisible || input === '' ? 'block' : 'none';
     });
-};
-
-window.submitStockRequest = async function() {
-    let requestItems = [];
-    let selects = document.querySelectorAll('.req-type-select');
-
-    selects.forEach(select => {
-        if (select.value !== "None") {
-            let id = select.getAttribute('data-id');
-            let itemData = window.stockReqItemsFlat.find(i => i.id === id);
-            let actualCountEl = document.getElementById(`actualCount_${id}`);
-            let actualCount = actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
-
-            requestItems.push({
-                itemName: itemData.name,
-                qty: 0, // 0 For now! Manager will decide the real qty in the Dispatch app!
-                requestType: select.value, 
-                uom: itemData.uom,
-                sourceId: itemData.id,
-                systemStock: parseFloat(itemData.currentStock || 0),
-                physicalStock: actualCount,
-                category: itemData.category || "Ingredients",
-                purchaseUom: itemData.purchaseUom || itemData.uom,
-                convRate: itemData.conversionRate || 1
-            });
-        }
-    });
-
-    if (requestItems.length === 0) {
-        return Swal.fire('Empty Request', 'Please mark at least one item as Low Stock or Out of Stock.', 'warning');
-    }
-
-    try {
-        Swal.fire({ title: 'Sending to HQ...', didOpen: () => { Swal.showLoading(); } });
-
-        await addDoc(collection(db, "purchase_orders"), {
-            branch: sessionUser.branch,
-            items: requestItems,
-            status: "Pending",
-            type: "Internal Request", 
-            requestedBy: sessionUser.cashierName || "Staff",
-            timestamp: serverTimestamp()
-        });
-
-        Swal.fire('✅ Report Sent!', 'HQ has received your variance report and will dispatch stock shortly.', 'success');
-        window.loadStockRequestUI();
-
-    } catch (e) {
-        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
-    }
 };
 
 window.openShiftModal = function() {
@@ -4970,6 +4908,7 @@ window.renderStockReqList = function(branchStockDict) {
         let localStock = branchStockDict[item.name] !== undefined ? branchStockDict[item.name] : 0;
         let hqStatus = hqStock > 0 ? `<span style="color: #16a34a;">HQ Has Stock</span>` : `<span style="color: #dc2626;">HQ Out of Stock</span>`;
 
+        // 🔥 THE FIX: The Actual Count input is now wrapped in a container with the UOM Label!
         html += `
             <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                 <div>
@@ -4980,18 +4919,18 @@ window.renderStockReqList = function(branchStockDict) {
                     ${parseFloat(localStock).toFixed(1)} <span style="font-size:10px;">${item.uom}</span>
                 </div>
                 <div style="text-align: center;">
-                    <select id="reqType_${idx}" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; font-size: 11px; font-weight: bold; color: #d97706; outline: none; width: 100%; cursor: pointer;">
-                        <option value="">-- No Request --</option>
-                        <option value="Low Stock">Low Stock</option>
-                        <option value="Out of Stock">Out of Stock</option>
+                    <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
+                        <option value="None">-- No Request --</option>
+                        <option value="Low Stock">⚠️ Low Stock</option>
+                        <option value="Out of Stock">❌ Out of Stock</option>
                         <option value="Stock Request">General Request</option>
                     </select>
                 </div>
                 <div style="text-align: center;">
-                    <input type="number" id="reqQty_${idx}" placeholder="0" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #0ea5e9; font-weight: bold; color: #0284c7; text-align: center; outline: none; box-sizing: border-box;">
-                    <input type="hidden" id="reqItemName_${idx}" value="${item.name.replace(/"/g, '&quot;')}">
-                    <input type="hidden" id="reqItemUom_${idx}" value="${item.uom}">
-                    <input type="hidden" id="reqItemSysStock_${idx}" value="${localStock}">
+                    <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
+                        <input type="number" id="actualCount_${item.id}" placeholder="0" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; width: 100%; box-sizing: border-box; outline: none;">
+                        <span style="font-size: 12px; font-weight: bold; color: #64748b; white-space: nowrap;">${item.uom || 'units'}</span>
+                    </div>
                 </div>
             </div>
         `;
@@ -4999,41 +4938,79 @@ window.renderStockReqList = function(branchStockDict) {
     document.getElementById('stockReqList').innerHTML = html;
 };
 
-window.filterStockReq = function() {
-    let search = document.getElementById('stockReqSearch').value.toLowerCase();
-    document.querySelectorAll('.stock-req-row').forEach(row => {
-        if (row.getAttribute('data-name').includes(search)) row.style.display = 'grid';
-        else row.style.display = 'none';
-    });
+window.toggleActualCount = function(id) {
+    let select = document.getElementById(`reqType_${id}`);
+    let container = document.getElementById(`actualCountContainer_${id}`);
+    let actualInput = document.getElementById(`actualCount_${id}`);
+    
+    if (select.value === "Low Stock") {
+        if (container) container.style.display = "flex";
+        actualInput.value = "";
+        actualInput.readOnly = false;
+        actualInput.style.background = "#fffbeb";
+        actualInput.style.borderColor = "#fcd34d";
+        actualInput.style.color = "#d97706";
+    } else if (select.value === "Out of Stock") {
+        if (container) container.style.display = "flex";
+        actualInput.value = "0"; 
+        actualInput.readOnly = true; 
+        actualInput.style.background = "#fee2e2";
+        actualInput.style.borderColor = "#f87171";
+        actualInput.style.color = "#dc2626";
+    } else {
+        if (container) container.style.display = "none";
+        actualInput.value = "";
+    }
 };
 
 window.submitStockRequest = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     let cashier = localStorage.getItem('cashierName') || 'Staff';
     let itemsToRequest = [];
+    let fraudAlerts = []; // 🔥 THE SECRET TRAP
 
-    for (let i = 0; i < window.globalHqStockCache.length; i++) {
-        let typeEl = document.getElementById(`reqType_${i}`);
-        let qtyEl = document.getElementById(`reqQty_${i}`);
-        
-        if (typeEl && typeEl.value !== "") {
-            let name = document.getElementById(`reqItemName_${i}`).value;
-            let uom = document.getElementById(`reqItemUom_${i}`).value;
-            let sysStock = document.getElementById(`reqItemSysStock_${i}`).value;
-            let physical = qtyEl.value ? parseFloat(qtyEl.value) : 0;
+    let selects = document.querySelectorAll('.req-type-select');
+
+    selects.forEach(select => {
+        if (select.value !== "None") {
+            let id = select.getAttribute('data-id');
+            let itemData = window.stockReqItemsFlat.find(i => i.id === id);
+            
+            let actualCountEl = document.getElementById(`actualCount_${id}`);
+            let actualCount = actualCountEl && actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
+            let sysStock = parseFloat(itemData.currentStock || 0);
+
+            // 🚨 FRAUD DETECTION: Did they declare less than the system expected?
+            if (select.value === "Low Stock" || select.value === "Out of Stock") {
+                // We allow a 1 unit buffer for decimal math rounding
+                if (actualCount < (sysStock - 1)) {
+                    fraudAlerts.push({
+                        name: itemData.name,
+                        declared: actualCount,
+                        expected: sysStock,
+                        uom: itemData.uom
+                    });
+                }
+            }
 
             itemsToRequest.push({
-                itemName: name,
-                requestType: typeEl.value,
-                physicalStock: physical,
-                systemStock: parseFloat(sysStock),
-                uom: uom,
-                qty: physical // For the Manager's visual reference
+                itemName: itemData.name,
+                qty: 0, // 0 For now! Manager will decide the real qty in the Dispatch app!
+                requestType: select.value, 
+                uom: itemData.uom,
+                sourceId: itemData.id,
+                systemStock: sysStock,
+                physicalStock: actualCount,
+                category: itemData.category || "Ingredients",
+                purchaseUom: itemData.purchaseUom || itemData.uom,
+                convRate: itemData.conversionRate || 1
             });
         }
-    }
+    });
 
-    if (itemsToRequest.length === 0) return Swal.fire('Empty Request', 'Please set a Report Status for at least one item.', 'warning');
+    if (itemsToRequest.length === 0) {
+        return Swal.fire('Empty Request', 'Please mark at least one item as Low Stock or Out of Stock.', 'warning');
+    }
 
     let btn = document.querySelector('button[onclick="window.submitStockRequest()"]');
     let origText = btn.innerText;
@@ -5049,6 +5026,18 @@ window.submitStockRequest = async function() {
             timestamp: serverTimestamp()
         });
 
+        // 🔥 FIRE THE SILENT ALARMS TO THE MANAGER APP
+        for (let alert of fraudAlerts) {
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "STOCK_REQUEST_FRAUD",
+                branch: branch,
+                cashier: cashier,
+                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${alert.uom}. Possible missing stock!`,
+                timestamp: serverTimestamp(),
+                isRead: false
+            });
+        }
+
         Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted. Check the History tab to track it.', 'success');
         window.loadStockRequestUI(); // Resets the form
         window.switchStockReqTab('History'); // Auto-switch to history!
@@ -5058,6 +5047,14 @@ window.submitStockRequest = async function() {
     } finally {
         btn.innerText = origText; btn.disabled = false;
     }
+};
+
+window.filterStockReq = function() {
+    let search = document.getElementById('stockReqSearch').value.toLowerCase();
+    document.querySelectorAll('.stock-req-row').forEach(row => {
+        if (row.getAttribute('data-name').includes(search)) row.style.display = 'grid';
+        else row.style.display = 'none';
+    });
 };
 
 window.loadStockRequestHistory = async function() {
