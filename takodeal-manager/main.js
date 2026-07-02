@@ -1710,82 +1710,76 @@ window.removeFromDispatchCart = function (index) {
     window.renderDispatchCart(); 
 };
 
+window.activeLogisticsTab = 'Requests'; // Default tab memory
+
 window.loadDispatchLogs = async function() {
-  const tbody = document.getElementById('dispatchLogBody');
-  if(!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 20px;">Loading logistics data...</td></tr>';
-  
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-  let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
-
-  try {
-    // 1. Fetch Pending AND Drafting Purchase Orders
-    let poQuery = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
-    if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
-    const poSnap = await getDocs(poQuery);
+    const tbody = document.getElementById('dispatchLogBody');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 20px;">⏳ Loading logistics data...</td></tr>';
     
-    let poHtml = '';
-    poSnap.forEach(docSnap => {
-        let po = docSnap.data();
-        let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+
+    try {
+        // 1. Fetch Pending AND Drafting Purchase Orders
+        let poQuery = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
+        if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
+        const poSnap = await getDocs(poQuery);
         
-        let statusBadge = po.status === "Drafting" 
-            ? `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>` 
-            : `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`;
-
-        let actionBtn = isFranchisee 
-            ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
-            : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
+        let poHtml = '';
+        let poCount = 0;
         
-        let titleTxt = po.type === 'Internal Request' ? '📢 Stock Issue Report' : '📝 Purchase Order';
+        poSnap.forEach(docSnap => {
+            let po = docSnap.data();
+            poCount++;
+            let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            
+            let statusBadge = po.status === "Drafting" 
+                ? `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>` 
+                : `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`;
 
-        poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
-            <td style="padding:15px;">
-                <div style="font-weight:900; color:#d97706; font-size:15px;">${titleTxt} from ${po.branch}</div>
-                <div style="font-size:12px; color:#b45309; margin-top: 4px; font-weight:bold;">Requested by: ${po.requestedBy}</div>
-                <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
-            </td>
-            <td style="padding:15px; text-align:center;">${statusBadge}</td>
-            <td style="padding:15px; text-align:right;">${actionBtn}</td>
-        </tr>`;
-    });
+            let actionBtn = isFranchisee 
+                ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
+                : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
+            
+            let titleTxt = po.type === 'Internal Request' ? '📢 Stock Issue Report' : '📝 Purchase Order';
 
-    // 2. Fetch Dispatch Logs (Actual Deliveries)
-    let qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
-    if (isFranchisee) qLogs = query(collection(db, "dispatch_logs"), where("toBranch", "==", myBranch), orderBy("timestamp", "desc"));
-    const snap = await getDocs(qLogs);
-    
-    let deliveries = {};
-    snap.forEach(doc => {
-        let d = doc.data(); d.id = doc.id;
-        let groupKey = `${d.date}_${d.toBranch}_${d.driver || 'Unknown'}`;
-        if(!deliveries[groupKey]) deliveries[groupKey] = { date: d.date, time: d.time, toBranch: d.toBranch, driver: d.driver || 'Unknown', items: [], status: 'In Transit', timestamp: d.timestamp };
-        deliveries[groupKey].items.push(d);
-        if(d.status === "Received") deliveries[groupKey].status = "Received";
-        if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
-    });
+            poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
+                <td style="padding:15px;">
+                    <div style="font-weight:900; color:#d97706; font-size:15px;">${titleTxt} from ${po.branch}</div>
+                    <div style="font-size:12px; color:#b45309; margin-top: 4px; font-weight:bold;">Requested by: ${po.requestedBy}</div>
+                    <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
+                </td>
+                <td style="padding:15px; text-align:center;">${statusBadge}</td>
+                <td style="padding:15px; text-align:right;">${actionBtn}</td>
+            </tr>`;
+        });
 
-    // 🔥 THE FIX: Visually separate the two tables!
-    let finalHtml = '';
-    
-    if (poHtml !== '') {
-        finalHtml += `<tr><td colspan="3" style="background: #f8fafc; padding: 12px 15px; font-weight: 900; color: #0ea5e9; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #cbd5e1;">📢 Pending Stock Requests</td></tr>`;
-        finalHtml += poHtml;
-    }
+        // 2. Fetch Dispatch Logs (Actual Deliveries)
+        let qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
+        if (isFranchisee) qLogs = query(collection(db, "dispatch_logs"), where("toBranch", "==", myBranch), orderBy("timestamp", "desc"));
+        const snap = await getDocs(qLogs);
+        
+        let deliveries = {};
+        snap.forEach(doc => {
+            let d = doc.data(); d.id = doc.id;
+            let groupKey = `${d.date}_${d.toBranch}_${d.driver || 'Unknown'}`;
+            if(!deliveries[groupKey]) deliveries[groupKey] = { date: d.date, time: d.time, toBranch: d.toBranch, driver: d.driver || 'Unknown', items: [], status: 'In Transit', timestamp: d.timestamp };
+            deliveries[groupKey].items.push(d);
+            if(d.status === "Received") deliveries[groupKey].status = "Received";
+            if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
+            if(d.status === "Backloaded") deliveries[groupKey].status = "Backloaded";
+        });
 
-    finalHtml += `<tr><td colspan="3" style="background: #f8fafc; padding: 12px 15px; font-weight: 900; color: #475569; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #cbd5e1; border-top: 4px solid white;">🚚 Recent Deliveries</td></tr>`;
+        let deliveryHtml = '';
+        let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
 
-    let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
-
-    if (sortedKeys.length === 0) { 
-        finalHtml += '<tr><td colspan="3" class="text-center" style="padding: 30px; color:#64748b; font-weight:bold;">No recent deliveries on record.</td></tr>'; 
-    } else {
         sortedKeys.slice(0, 20).forEach(key => {
             let del = deliveries[key];
             let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : (del.status === 'Backloaded' ? '#475569' : '#f59e0b'));
             let safeItemsJson = encodeURIComponent(JSON.stringify(del.items));
 
-            finalHtml += `<tr style="border-bottom:1px solid #e2e8f0; background: white;">
+            deliveryHtml += `<tr style="border-bottom:1px solid #e2e8f0; background: white; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding:15px;">
                     <div style="font-weight:bold; color:#0f172a; font-size:14px;">📍 To: ${del.toBranch}</div>
                     <div style="font-size:12px; color:#64748b; margin-top: 4px;">🚚 Driver: ${del.driver}</div>
@@ -1795,9 +1789,80 @@ window.loadDispatchLogs = async function() {
                 <td style="padding:15px; text-align:right;"><button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}', '${del.time}')" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button></td>
             </tr>`;
         });
+
+        // 3. Save to Global Memory and Render Tabs
+        window.globalPoHtml = poHtml;
+        window.globalDeliveryHtml = deliveryHtml;
+        window.globalPoCount = poCount;
+        window.globalDeliveryCount = sortedKeys.length;
+
+        // Auto-switch to Requests if there are pending POs!
+        if (poCount > 0 && window.activeLogisticsTab !== 'Deliveries') {
+            window.activeLogisticsTab = 'Requests';
+        }
+
+        window.renderLogisticsFeed();
+
+    } catch (e) { 
+        console.error(e); 
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; 
     }
-    tbody.innerHTML = finalHtml;
-  } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
+};
+
+window.switchLogisticsTab = function(tab) {
+    window.activeLogisticsTab = tab;
+    window.renderLogisticsFeed();
+};
+
+window.renderLogisticsFeed = function() {
+    const tbody = document.getElementById('dispatchLogBody');
+    if (!tbody) return;
+    
+    let table = tbody.closest('table');
+    
+    // 🎨 Auto-rename the main card title!
+    let cardHeaders = table.closest('.card')?.querySelectorAll('h1, h2, h3, h4, h5, h6, .card-header');
+    if (cardHeaders) {
+        cardHeaders.forEach(h => {
+            if (h.innerText.includes('Recent Deliveries') || h.innerText.includes('Logistics Feed')) {
+                h.innerHTML = '📜 Logistics Feed';
+            }
+        });
+    }
+
+    // 🎨 Inject the beautifully styled Tab UI above the table!
+    if (!document.getElementById('logisticsTabContainer')) {
+        let tabHtml = `
+            <div id="logisticsTabContainer" style="display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 0px; background: #f8fafc; border-radius: 8px 8px 0 0; overflow: hidden;">
+                <button id="btnTabRequests" onclick="window.switchLogisticsTab('Requests')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s;">
+                    📢 Stock Requests (<span id="tabCountReq">0</span>)
+                </button>
+                <button id="btnTabDeliveries" onclick="window.switchLogisticsTab('Deliveries')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
+                    🚚 Deliveries (<span id="tabCountDel">0</span>)
+                </button>
+            </div>
+        `;
+        table.insertAdjacentHTML('beforebegin', tabHtml);
+        table.style.marginTop = "0px";
+    }
+
+    // Update the live counters inside the tabs
+    document.getElementById('tabCountReq').innerText = window.globalPoCount || 0;
+    document.getElementById('tabCountDel').innerText = window.globalDeliveryCount || 0;
+
+    let btnReq = document.getElementById('btnTabRequests');
+    let btnDel = document.getElementById('btnTabDeliveries');
+
+    // Toggle Colors and Content based on which tab is clicked
+    if (window.activeLogisticsTab === 'Requests') {
+        btnReq.style.color = '#0ea5e9'; btnReq.style.borderBottomColor = '#0ea5e9'; btnReq.style.background = '#f0f9ff';
+        btnDel.style.color = '#64748b'; btnDel.style.borderBottomColor = 'transparent'; btnDel.style.background = '#f8fafc';
+        tbody.innerHTML = window.globalPoHtml || '<tr><td colspan="3" class="text-center" style="padding:50px; color:#94a3b8; font-weight:bold;">No pending requests. You are all caught up! 🎉</td></tr>';
+    } else {
+        btnDel.style.color = '#0ea5e9'; btnDel.style.borderBottomColor = '#0ea5e9'; btnDel.style.background = '#f0f9ff';
+        btnReq.style.color = '#64748b'; btnReq.style.borderBottomColor = 'transparent'; btnReq.style.background = '#f8fafc';
+        tbody.innerHTML = window.globalDeliveryHtml || '<tr><td colspan="3" class="text-center" style="padding:50px; color:#94a3b8; font-weight:bold;">No recent deliveries on record.</td></tr>';
+    }
 };
 
 // ==========================================
