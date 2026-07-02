@@ -5295,3 +5295,225 @@ window.processStoreUse = async function() {
         btn.innerText = origText; btn.disabled = false; 
     }
 };
+
+// ========================================================
+// 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF)
+// ========================================================
+window.MASTER_CloseShift = async function () {
+    let confirmBtn = document.querySelector('button[onclick*="MASTER_CloseShift"]');
+    let origText = confirmBtn ? confirmBtn.innerText : 'Confirm & End Shift';
+
+    if (confirmBtn) {
+        confirmBtn.innerHTML = "⏳ Processing Shift...";
+        confirmBtn.disabled = true;
+    }
+
+    try {
+        // 1. Read Cash Drawer Securely
+        let declaredCash = 0;
+        let cashBreakdown = {};
+        document.querySelectorAll('.denom-input').forEach(input => {
+            let val = parseInt(input.getAttribute('data-val'));
+            let pcs = parseInt(input.value) || 0;
+            if (pcs > 0) {
+                cashBreakdown["₱" + val] = pcs;
+                declaredCash += (val * pcs);
+            }
+        });
+
+        // 2. Identify Shift Data
+        let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
+        if (!shiftId) throw new Error("No active shift found to close.");
+
+        let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashierName = localStorage.getItem('cashierName') || 'Unknown';
+
+        let startTime = new Date();
+        if (typeof activeShiftDetails !== 'undefined' && activeShiftDetails && activeShiftDetails.startTime) {
+            startTime = activeShiftDetails.startTime;
+            if (startTime.toDate) startTime = startTime.toDate();
+        } else {
+            startTime.setHours(0,0,0,0);
+        }
+
+        // 3. Crunch Sales & Split Payments
+        let totalCashSales = 0; let totalDigitalSales = 0;
+        let digitalBreakdown = {}; let shiftIngredientBurn = {};
+
+        const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const txSnap = await getDocs(txQ);
+
+        txSnap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status !== 'Voided') {
+                if (tx.cart) {
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let qty = item.qty || 1;
+                        let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                        recipe.forEach(r => {
+                            if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
+                            shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
+                        });
+                        if (item.addons) {
+                            for (let key in item.addons) {
+                                let addon = item.addons[key];
+                                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                    if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
+                                    shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
+                                }
+                            }
+                        }
+                    });
+                }
+
+                if (tx.splitDetails) {
+                    tx.splitDetails.forEach(split => {
+                        if (split.method === 'Cash') totalCashSales += split.amount;
+                        else {
+                            totalDigitalSales += split.amount;
+                            digitalBreakdown[split.method] = (digitalBreakdown[split.method] || 0) + split.amount;
+                        }
+                    });
+                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    totalCashSales += tx.netTotal;
+                } else {
+                    totalDigitalSales += tx.netTotal;
+                    digitalBreakdown[tx.paymentMethod] = (digitalBreakdown[tx.paymentMethod] || 0) + tx.netTotal;
+                }
+            }
+        });
+
+        const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const expSnap = await getDocs(expQ);
+        let cashOut = 0;
+        expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
+
+        let startingCash = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? (activeShiftDetails.startingCash || 0) : 0;
+        let expectedCash = startingCash + totalCashSales - cashOut;
+
+        // 4. Zero Cash Lockout Security
+        if (expectedCash > 0 && declaredCash === 0) {
+            Swal.fire('⛔ SECURITY LOCKOUT', `The system expects ₱${expectedCash.toFixed(2)} in your drawer.<br><br>You cannot submit a blank physical cash count.`, 'error');
+            if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+            return;
+        }
+
+        // 5. The Variance SweetAlert
+        let variance = declaredCash - expectedCash;
+        if (Math.abs(variance) > 2) {
+            let isOver = variance > 0;
+            let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
+            let alertHtml = isOver 
+                ? `Your declared cash is <b>₱${Math.abs(variance).toFixed(2)} MORE</b> than expected.<br><br>Do not remove any overage. Submit the full amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
+                : `Your declared cash is <b>₱${Math.abs(variance).toFixed(2)} SHORT</b> of what is expected.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
+
+            const result = await Swal.fire({
+                title: alertTitle,
+                html: alertHtml,
+                icon: isOver ? 'info' : 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, End Shift',
+                cancelButtonText: 'No, Re-count Cash',
+                confirmButtonColor: isOver ? '#d97706' : '#dc2626',
+                cancelButtonColor: '#64748b'
+            });
+
+            if (!result.isConfirmed) {
+                if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+                return; 
+            }
+
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
+                expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
+                message: `CASH ${isOver ? "OVER" : "SHORT"}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
+                explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
+                timestamp: serverTimestamp(), isRead: false
+            });
+        }
+
+        // 6. Push to Firebase
+        if (confirmBtn) confirmBtn.innerHTML = "⏳ Saving to Cloud...";
+        
+        await updateDoc(doc(db, "shifts", shiftId), {
+            active: false,
+            endTime: serverTimestamp(),
+            declaredCash: declaredCash,
+            expectedCash: expectedCash,
+            totalCashSales: totalCashSales, 
+            totalDigitalSales: totalDigitalSales,
+            digitalBreakdown: digitalBreakdown,
+            cashBreakdown: cashBreakdown, 
+            physicalStockCount: {}, 
+            status: "Closed"
+        });
+
+        // 7. Auto-Sweep Digital Funds
+        for (let method in digitalBreakdown) {
+            if (method.toLowerCase() === "gcash") continue; 
+            let amountToDeposit = digitalBreakdown[method];
+            if (amountToDeposit > 0) {
+                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
+                const accSnap = await getDocs(accQ);
+                if (!accSnap.empty) {
+                    let accDoc = accSnap.docs[0];
+                    let currentBal = accDoc.data().balance || 0;
+                    await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
+                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: serverTimestamp(), note: `From ${branchName}`
+                    });
+                } else {
+                    const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: serverTimestamp() });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
+                    });
+                }
+            }
+        }
+
+        // 8. Deduct Ingredient Burn
+        for (let ingName in shiftIngredientBurn) {
+            let totalBurn = shiftIngredientBurn[ingName];
+            if (totalBurn > 0) {
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
+                    variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
+                    user: cashierName, timestamp: serverTimestamp()
+                });
+            }
+        }
+
+        // 9. Memory Wipe & Force UI Lockout
+        localStorage.removeItem('currentShiftId');
+        localStorage.removeItem('takodeal_sop_progress');
+        if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
+        if (typeof currentShift !== 'undefined') currentShift = null;
+
+        let endModal = document.getElementById('endShiftModal');
+        if (endModal) endModal.style.display = 'none';
+
+        let topBtn = document.getElementById('btnTopShift');
+        let lock = document.getElementById('shiftLockout');
+        let placeBtn = document.getElementById('btnMainPlaceOrder');
+        if (topBtn) topBtn.innerText = "🔴 Shift Closed";
+        if (lock) lock.style.display = "flex";
+        if (placeBtn) placeBtn.disabled = true;
+
+        Swal.fire({
+            title: '✅ Shift Closed!',
+            text: `Bookkeeping Complete.\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        if (typeof checkCurrentShift === 'function') await checkCurrentShift();
+        if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
+
+    } catch (error) {
+        console.error("Error closing shift:", error);
+        Swal.fire('❌ Error', 'Failed to close shift: ' + error.message, 'error');
+        if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+    }
+};
