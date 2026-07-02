@@ -1615,7 +1615,31 @@ window.submitMultiDispatch = async function () {
   // ==========================================
   // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
   // ==========================================
-  // Read the custom quantities directly from the live memory array!
+window.submitMultiDispatch = async function () {
+  let fromBranch = document.getElementById('dispFrom').value;
+  let toBranch = document.getElementById('dispTo').value;
+
+  if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
+  if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
+
+  let btn = document.getElementById('btnSubmitDispatch');
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+
+  if (isFranchisee) {
+      if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
+      btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
+      try {
+          await addDoc(collection(db, "purchase_orders"), {
+              branch: toBranch, items: dispatchCart, status: "Pending",
+              requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
+          });
+          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
+          dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
+      } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
+      finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
+      return; 
+  }
+
   for (let i = 0; i < dispatchCart.length; i++) {
       let inp = document.getElementById(`cartQty_${i}`);
       if (inp) {
@@ -1626,7 +1650,13 @@ window.submitMultiDispatch = async function () {
   }
 
   let validCart = dispatchCart.filter(i => i.qty > 0);
-  if (validCart.length === 0) { return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); }
+  
+  // 🔥 THE FIX: Capture the requested items that the manager couldn't fulfill!
+  let skippedCart = dispatchCart.filter(i => i.qty <= 0 && i.requestType); 
+
+  if (validCart.length === 0) { 
+      return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send. If you want to return the whole list to the feed, click "Put Back / Set Aside Cart" below.', 'warning'); 
+  }
 
   btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
@@ -1635,7 +1665,6 @@ window.submitMultiDispatch = async function () {
       if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
 
       for (let item of validCart) {
-          // 🔥 THE FIX: Map items strictly by NAME so Purchase Orders don't crash!
           let itemNameToFind = item.itemName || item.name;
           let invItem = dispatchInventoryList.find(i => i.name === itemNameToFind);
 
@@ -1657,18 +1686,38 @@ window.submitMultiDispatch = async function () {
           });
       }
 
+      // 🔥 THE FIX: Push the unfulfilled out-of-stock items back into the feed as a new request!
+      if (skippedCart.length > 0) {
+          await addDoc(collection(db, "purchase_orders"), {
+              branch: toBranch,
+              items: skippedCart,
+              status: "Pending",
+              type: "Internal Request",
+              requestedBy: "System (Backlogged - Awaiting Stock)",
+              timestamp: serverTimestamp()
+          });
+      }
+
       // 🧹 PURGE THE GHOST MEMORY!
       localStorage.removeItem('takodeal_dispatch_cart');
       localStorage.removeItem('takodeal_dispatch_to');
       Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
       
-      let activePoId = localStorage.getItem('takodeal_active_po');
-      if (activePoId) {
-          try { await updateDoc(doc(db, "purchase_orders", activePoId), { status: "Completed" }); } catch(e){}
+      // Mark all connected POs as Completed
+      let activePoStr = localStorage.getItem('takodeal_active_po');
+      if (activePoStr) {
+          let poIds = activePoStr.split(',');
+          for (let id of poIds) {
+              if (id) {
+                  try { await updateDoc(doc(db, "purchase_orders", id), { status: "Completed" }); } catch(e){}
+              }
+          }
           localStorage.removeItem('takodeal_active_po');
       }
 
-      alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
+      let extraMessage = skippedCart.length > 0 ? `\n\n(${skippedCart.length} out of stock items were securely returned to the Logistics Feed).` : '';
+      alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${extraMessage}`);
+      
       dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); window.loadDispatchLogs();
   } catch (e) { 
       console.error(e); 
