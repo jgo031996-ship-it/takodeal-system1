@@ -1057,107 +1057,117 @@ window.calculateGrandTotalCash = function() {
 };
 
 // ========================================================
-// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH AUTO-SWEEP & SECURITY LOCK)
+// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (CRASH-PROOF EDITION)
 // ========================================================
 window.submitComprehensiveCloseShift = async function () {
-    
-    // 1. Crash-Proof Cash Breakdown Reader
-    let declaredCash = 0;
-    let cashBreakdown = {};
-    
-    document.querySelectorAll('.denom-input').forEach(input => {
-        let val = parseInt(input.getAttribute('data-val'));
-        let pcs = parseInt(input.value) || 0;
-        if (pcs > 0) {
-            cashBreakdown["₱" + val] = pcs;
-            declaredCash += (val * pcs);
-        }
-    });
-
-    // 2. Bypass Physical Stock (Since we replaced it with Kitchen Prep Logs in the UI!)
-    let physicalStock = {};
-
+    // 1. Prevent Double Execution
     let confirmBtn = document.querySelector('#endShiftModal .btn-place:last-child') || document.querySelector('button[onclick*="submitComprehensiveCloseShift"]');
-    let origText = confirmBtn ? confirmBtn.innerText : '🛑 Confirm & End Shift';
-    if (confirmBtn) { confirmBtn.innerText = "⏳ Verifying Count..."; confirmBtn.disabled = true; }
+    if (confirmBtn && confirmBtn.disabled) return; 
+    
+    if (confirmBtn) { 
+        confirmBtn.innerText = "⏳ Verifying Count..."; 
+        confirmBtn.disabled = true; 
+    }
 
     try {
-        let shiftId = activeShiftDetails.logId;
-        if (!shiftId) { alert("No active shift found to close."); return; }
+        // 2. Crash-Proof Cash Breakdown Reader
+        let declaredCash = 0;
+        let cashBreakdown = {};
+        
+        document.querySelectorAll('.denom-input').forEach(input => {
+            let val = parseInt(input.getAttribute('data-val'));
+            let pcs = parseInt(input.value) || 0;
+            if (pcs > 0) {
+                cashBreakdown["₱" + val] = pcs;
+                declaredCash += (val * pcs);
+            }
+        });
+
+        // Bypass Physical Stock (Since we replaced it with Kitchen Prep Logs)
+        let physicalStock = {};
+
+        let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
+        if (!shiftId) { throw new Error("No active shift found to close."); }
         
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let startTime = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.startTime : new Date(new Date().setHours(0,0,0,0));
 
-        // 1. FETCH TRANSACTIONS & SEPARATE DIGITAL FUNDS
-        let transactions = await window.getSalesDashboardData(branchName, activeShiftDetails.startTime);
+        // 3. FETCH TRANSACTIONS DIRECTLY (Bypasses any other broken functions)
         let totalCashSales = 0;
         let totalDigitalSales = 0;
-        let digitalBreakdown = {}; // 🔥 Tracker for Auto-Sweep
-        let shiftIngredientBurn = {}; // 🔥 Tracks all ingredients used in this shift
+        let digitalBreakdown = {}; 
+        let shiftIngredientBurn = {}; 
 
-        if (transactions && transactions.length > 0) {
-            transactions.forEach(tx => {
-                if (tx.status !== 'Voided') {
-                    // 🔥 SUM UP ALL INGREDIENTS BURNED IN THIS RECEIPT
-                    if (tx.cart) {
-                        tx.cart.forEach(item => {
-                            let itemName = item.name || item.itemName;
-                            let qty = item.qty || 1;
+        const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const txSnap = await getDocs(txQ);
 
-                            // Tally Main Recipe
-                            let recipe = masterPOSData.bom.filter(b => b.menuItem === itemName);
-                            recipe.forEach(r => {
-                                if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
-                                shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
-                            });
+        txSnap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status !== 'Voided') {
+                // Tally Ingredients Burned
+                if (tx.cart) {
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let qty = item.qty || 1;
 
-                            // Tally Add-ons
-                            if (item.addons) {
-                                for (let key in item.addons) {
-                                    let addon = item.addons[key];
-                                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                                        if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
-                                        shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
-                                    }
+                        // Safely check if BOM data exists
+                        let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                        recipe.forEach(r => {
+                            if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
+                            shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
+                        });
+
+                        if (item.addons) {
+                            for (let key in item.addons) {
+                                let addon = item.addons[key];
+                                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                    if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
+                                    shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
                                 }
                             }
-                        });
-                    }
-                    // 🔥 NEW: Process Split Breakdowns for Shift Closing!
-                    if (tx.splitDetails) {
-                        tx.splitDetails.forEach(split => {
-                            if (split.method === 'Cash') {
-                                totalCashSales += split.amount;
-                            } else {
-                                totalDigitalSales += split.amount;
-                                if (!digitalBreakdown[split.method]) digitalBreakdown[split.method] = 0;
-                                digitalBreakdown[split.method] += split.amount;
-                            }
-                        });
-                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                        totalCashSales += tx.netTotal;
-                    } else {
-                        totalDigitalSales += tx.netTotal;
-                        let method = tx.paymentMethod;
-                        if (!digitalBreakdown[method]) digitalBreakdown[method] = 0;
-                        digitalBreakdown[method] += tx.netTotal;
-                    }
+                        }
+                    });
                 }
-            });
-        }
+                
+                // Tally Split Payments
+                if (tx.splitDetails) {
+                    tx.splitDetails.forEach(split => {
+                        if (split.method === 'Cash') {
+                            totalCashSales += split.amount;
+                        } else {
+                            totalDigitalSales += split.amount;
+                            if (!digitalBreakdown[split.method]) digitalBreakdown[split.method] = 0;
+                            digitalBreakdown[split.method] += split.amount;
+                        }
+                    });
+                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    totalCashSales += tx.netTotal;
+                } else {
+                    totalDigitalSales += tx.netTotal;
+                    let method = tx.paymentMethod;
+                    if (!digitalBreakdown[method]) digitalBreakdown[method] = 0;
+                    digitalBreakdown[method] += tx.netTotal;
+                }
+            }
+        });
 
-        let expectedCash = activeShiftDetails.startingCash + totalCashSales - activeShiftDetails.cashOut;
+        // 4. FETCH EXPENSES FOR EXACT CASH MATH
+        const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const expSnap = await getDocs(expQ);
+        let cashOut = 0;
+        expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
 
-        // 🚨 ========================================================
-        // 🔒 THE "ZERO CASH" SECURITY LOCK
-        // ========================================================
+        let startingCash = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? (activeShiftDetails.startingCash || 0) : 0;
+        let expectedCash = startingCash + totalCashSales - cashOut;
+
+        // 🚨 SECURITY LOCKOUT
         if (expectedCash > 0 && declaredCash === 0) {
-            alert(`⛔ SECURITY LOCKOUT!\n\nThe system expects ₱${expectedCash.toFixed(2)} in your drawer.\n\nYou cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`);
-            if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
-            return; // Stops the shift from closing!
+            alert(`⛔ SECURITY LOCKOUT!\n\nThe system expects ₱${expectedCash.toFixed(2)} in your drawer.\n\nYou cannot submit a blank or zero physical cash count.`);
+            if (confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
+            return;
         }
-        // ========================================================
 
-        // 2. CLOSE THE SHIFT RECORD
+        // 5. CLOSE THE SHIFT RECORD
         await updateDoc(doc(db, "shifts", shiftId), {
             active: false,
             endTime: serverTimestamp(),
@@ -1165,50 +1175,31 @@ window.submitComprehensiveCloseShift = async function () {
             expectedCash: expectedCash,
             totalCashSales: totalCashSales, 
             totalDigitalSales: totalDigitalSales,
-            digitalBreakdown: digitalBreakdown, // Saves exact Grab/GCash amounts for reports
+            digitalBreakdown: digitalBreakdown,
             cashBreakdown: cashBreakdown, 
             physicalStockCount: physicalStock, 
             status: "Closed"
         });
 
-        // ========================================================
-        // 🧹 THE AUTO-SWEEP ENGINE (Teleports Digital Funds to HQ!)
-        // ========================================================
+        // 6. AUTO-SWEEP DIGITAL FUNDS TO HQ
         for (let method in digitalBreakdown) {
             if (method.toLowerCase() === "gcash") continue; 
             let amountToDeposit = digitalBreakdown[method];
             if (amountToDeposit > 0) {
-                // 🔥 THE FIX: We force the search to look ONLY in the "Main Office" branch!
                 const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
                 const accSnap = await getDocs(accQ);
          
                 if (!accSnap.empty) {
                     let accDoc = accSnap.docs[0];
                     let currentBal = accDoc.data().balance || 0;
-                    
-                    // Silently deposit the money into the Main Office!
                     await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
-                    
-                    // Create an audit log for the Manager App history tab
                     await addDoc(collection(db, "account_logs"), {
-                        accountId: accDoc.id,
-                        accountName: method,
-                        branch: "Main Office",
-                        action: "Auto-Sweep (Shift Close)",
-                        amount: amountToDeposit,
-                        newBalance: currentBal + amountToDeposit,
-                        user: localStorage.getItem('cashierName') || 'System Auto-Sweep',
-                        timestamp: serverTimestamp(),
-                        note: `Auto-deposit from ${branchName} Shift ID: ${shiftId.substring(0,6)}...`
+                        accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
+                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: localStorage.getItem('cashierName') || 'System',
+                        timestamp: serverTimestamp(), note: `Auto-deposit from ${branchName} Shift ID: ${shiftId.substring(0,6)}...`
                     });
                 } else {
-                    // FALLBACK: If you forgot to create a "GCash" account in the Main Office, it creates one for you!
-                    const newAccRef = await addDoc(collection(db, "cash_accounts"), {
-                        name: method,
-                        branch: "Main Office",
-                        balance: amountToDeposit,
-                        createdAt: serverTimestamp()
-                    });
+                    const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: serverTimestamp() });
                     await addDoc(collection(db, "account_logs"), {
                         accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account Generated)",
                         amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
@@ -1217,12 +1208,11 @@ window.submitComprehensiveCloseShift = async function () {
             }
         }
 
-        // 3. FRAUD ALARM ENGINE (For Physical Cash Only)
+        // 7. FRAUD ALARM ENGINE
         let variance = declaredCash - expectedCash;
         if (variance !== 0) {
             let currentCashier = localStorage.getItem('cashierName') || 'Unknown';
             let varianceType = variance < 0 ? "SHORT" : "OVER";
-            
             await addDoc(collection(db, "manager_alerts"), {
                 type: "VARIANCE_ALERT", branch: branchName, cashier: currentCashier, shiftId: shiftId,
                 expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: physicalStock, 
@@ -1232,49 +1222,46 @@ window.submitComprehensiveCloseShift = async function () {
             });
         }
 
-        // ========================================================
-        // 📊 THE BATCH-LOG ENGINE (SAVES CLOUD STORAGE & CLEANS TRACE LEDGER!)
-        // ========================================================
+        // 8. SHIFT DEDUCTION LOGS
         let currentCashier = localStorage.getItem('cashierName') || 'Unknown';
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
             if (totalBurn > 0) {
                 await addDoc(collection(db, "stock_logs"), {
-                    branch: branchName,
-                    item: ingName,
-                    uom: "Units", 
-                    oldQty: "Shift",
-                    newQty: "Summary",
-                    variance: -totalBurn,
-                    type: "Shift Sales Deduction",
-                    note: `Total ingredients used during ${currentCashier}'s shift`,
-                    user: currentCashier,
-                    timestamp: serverTimestamp()
+                    branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
+                    variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${currentCashier}'s shift`,
+                    user: currentCashier, timestamp: serverTimestamp()
                 });
             }
         }
-        alert(`✅ Shift Closed & Bookkeeping Complete!\n\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}\n\n(Digital sales were automatically swept to HQ Bank ledgers).`);
 
-        // 🛑 THE HARD MEMORY WIPE & KILL SWITCH
+        alert(`✅ Shift Closed & Bookkeeping Complete!\n\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}`);
+
+        // 9. HARD MEMORY WIPE & UI FORCE REFRESH
         localStorage.removeItem('currentShiftId');
         localStorage.removeItem('takodeal_sop_progress');
-        window.activeShiftDetails = null;
+        if (typeof window.activeShiftDetails !== 'undefined') window.activeShiftDetails = null;
         if (typeof window.currentShift !== 'undefined') window.currentShift = null;
 
-        if (typeof closeModal === 'function') closeModal('endShiftModal');
-        else document.getElementById('endShiftModal').style.display = 'none';
+        let endModal = document.getElementById('endShiftModal');
+        if (endModal) endModal.style.display = 'none';
 
-        // Instantly triggers the Lock Screen so the next cashier MUST open a new shift
+        // 🚀 FORCE THE UI TO UPDATE INSTANTLY!
+        let topBtn = document.getElementById('btnTopShift');
+        let lock = document.getElementById('shiftLockout');
+        let placeBtn = document.getElementById('btnMainPlaceOrder');
+        if (topBtn) topBtn.innerText = "🔴 Shift Closed";
+        if (lock) lock.style.display = "flex";
+        if (placeBtn) placeBtn.disabled = true;
+
         if (typeof checkCurrentShift === 'function') await checkCurrentShift();
-        
-        // Purge the sales dashboard UI so the next shift doesn't see old data
         if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
 
     } catch (error) {
         console.error("Error closing shift:", error);
-        alert("❌ Failed to close shift. Check your connection.");
+        alert("❌ Failed to close shift: " + error.message);
     } finally {
-        if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
+        if (confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
     }
 };
 
