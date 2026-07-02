@@ -937,20 +937,17 @@ window.buildDenominationTable = function () {
 };
 
 // This instantly calculates the math when they type a number
-window.calculateDenominations = function () {
-  let grandTotal = 0;
-
-  denominations.forEach(d => {
-    let input = document.getElementById(`qty${d}`);
-    let qty = parseInt(input.value) || 0;
-    let subtotal = qty * d;
-
-    document.getElementById(`tot${d}`).innerText = `₱${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    grandTotal += subtotal;
-  });
-
-  document.getElementById('grandTotalCash').innerText = `₱${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  return grandTotal;
+window.calculateDenominations = function() {
+    let breakdown = {};
+    // Grab all the dynamic inputs we created in the End Shift Modal
+    document.querySelectorAll('.denom-input').forEach(input => {
+        let val = input.getAttribute('data-val');
+        let pcs = parseInt(input.value) || 0;
+        if (pcs > 0) {
+            breakdown["₱" + val] = pcs;
+        }
+    });
+    return breakdown;
 };
 
 // Call this when clicking your "End Shift" button to open the new UI
