@@ -1497,14 +1497,23 @@ window.submitMultiDispatch = async function () {
     if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
 
     for (let item of validCart) {
-      let sourceRef = doc(db, "inventory", item.sourceId);
-      let invItem = dispatchInventoryList.find(i => i.id === item.sourceId);
+      // 🔥 THE FIX: Map the items by NAME to securely cross the bridge between branches!
+      let itemNameToFind = item.itemName || item.name;
+      let invItem = dispatchInventoryList.find(i => i.name === itemNameToFind);
+
+      if (!invItem) {
+          alert(`❌ CRITICAL ERROR: The item "${itemNameToFind}" does not exist in the ${fromBranch} inventory database. Dispatch aborted.`);
+          throw new Error("Item ID Mapping Error");
+      }
+
+      // Use the newly matched Main Office ID to deduct the stock!
+      let sourceRef = doc(db, "inventory", invItem.id);
       await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
 
       await addDoc(collection(db, "dispatch_logs"), {
         date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
         time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
-        item: item.itemName, qty: item.qty, uom: item.uom, details: `${fromBranch} ➡️ ${toBranch}`,
+        item: item.itemName || item.name, qty: item.qty, uom: item.uom, details: `${fromBranch} ➡️ ${toBranch}`,
         toBranch: toBranch, driver: driverName, status: "In Transit", displayQty: item.rawQty || item.qty,      
         displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1, category: item.category,
         purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
@@ -1523,8 +1532,13 @@ window.submitMultiDispatch = async function () {
 
     alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.`);
     dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); window.loadDispatchLogs();
-  } catch (e) { console.error(e); alert("Dispatch failed."); } 
-  finally { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
+  } catch (e) { 
+      console.error(e); 
+      // Removed the generic alert so the specific one above can show if it fails
+  } 
+  finally { 
+      btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
+  }
 };
 
 window.removeFromDispatchCart = function (index) { dispatchCart.splice(index, 1); window.renderDispatchCart(); };
@@ -11038,15 +11052,11 @@ window.editManagerPermissions = async function(docId, email, existingPerms) {
     }
 };
 
-// ========================================================
-// 🕵️‍♂️ INVENTORY AUDIT & RECONCILIATION ENGINE
-// ========================================================
 window.loadInventoryAudits = async function() {
     const tbody = document.getElementById('auditLogsBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Fetching audit logs...</td></tr>';
 
-    // 🔥 THE FIX: Safely check if the filters exist before reading their values!
     let durationFilterEl = document.getElementById('auditDurationFilter');
     let exactDateFilterEl = document.getElementById('auditExactDate');
     
@@ -11094,8 +11104,21 @@ window.loadInventoryAudits = async function() {
 
             counts.forEach(c => {
                 let cost = invDb[`${data.branch}_${c.name}`] || 0;
-                let variance = (parseFloat(c.physicalQty) || 0) - (parseFloat(c.systemQty) || 0);
                 
+                // 🔥 SMART RECALCULATOR: Fixes corrupted historical data
+                let physQty = parseFloat(c.physicalQty !== undefined ? c.physicalQty : c.actualQty) || 0;
+                let sysQty = parseFloat(c.systemQty);
+                let savedVariance = parseFloat(c.variance);
+
+                // Work backward if systemQty is missing
+                if (isNaN(sysQty)) {
+                    if (!isNaN(savedVariance)) sysQty = physQty - savedVariance; 
+                    else sysQty = physQty; 
+                }
+
+                let variance = physQty - sysQty;
+                
+                // Only charge money for shortages!
                 if (variance < 0) rowLoss += (Math.abs(variance) * cost);
                 if (variance === 0) rowPerfect++;
                 
@@ -11125,11 +11148,9 @@ window.loadInventoryAudits = async function() {
 
         let accuracy = globalTotalItems > 0 ? (globalPerfectItems / globalTotalItems) * 100 : 100;
         
-        // Safely update KPIs
         if (document.getElementById('auditKpiAccuracy')) document.getElementById('auditKpiAccuracy').innerText = `${accuracy.toFixed(1)}%`;
         if (document.getElementById('auditKpiLoss')) document.getElementById('auditKpiLoss').innerText = `₱${globalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-        // Smart Re-Audit Engine
         let nextAuditDateStr = "Awaiting Data";
         let nextAuditSubStr = "Need more audit logs";
         
