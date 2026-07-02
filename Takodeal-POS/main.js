@@ -1162,7 +1162,7 @@ window.submitComprehensiveCloseShift = async function () {
 
         // 🚨 ZERO CASH LOCKOUT
         if (expectedCash > 0 && declaredCash === 0) {
-            Swal.fire('⛔ SECURITY LOCKOUT', `The system expects ₱${expectedCash.toFixed(2)} in your drawer.<br><br>You cannot submit a blank physical cash count. Please recount your drawer and enter the actual physical bills.`, 'error');
+            Swal.fire('⛔ SECURITY LOCKOUT', `The system has logged cash sales for this shift.<br><br>You cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`, 'error');
             if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
             return;
         }
@@ -1174,8 +1174,8 @@ window.submitComprehensiveCloseShift = async function () {
             let isOver = variance > 0;
             let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
             let alertHtml = isOver 
-                ? `Your declared cash is <b>₱${Math.abs(variance).toFixed(2)} MORE</b> than expected.<br><br>Do not remove any overage. Submit the full amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
-                : `Your declared cash is <b>₱${Math.abs(variance).toFixed(2)} SHORT</b> of what is expected.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
+                ? `Your declared cash is <b>MORE</b> than the system expects.<br><br>Do not remove any overage. Submit the full physical amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
+                : `Your declared cash is <b>SHORT</b> of the system expectation.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
 
             const result = await Swal.fire({
                 title: alertTitle,
@@ -5394,7 +5394,7 @@ window.MASTER_CloseShift = async function () {
 
         // 4. Zero Cash Lockout Security
         if (expectedCash > 0 && declaredCash === 0) {
-            Swal.fire('⛔ SECURITY LOCKOUT', `The system expects ₱${expectedCash.toFixed(2)} in your drawer.<br><br>You cannot submit a blank physical cash count.`, 'error');
+            Swal.fire('⛔ SECURITY LOCKOUT', `The system has logged cash sales for this shift.<br><br>You cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`, 'error');
             if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
             return;
         }
@@ -5502,8 +5502,8 @@ window.MASTER_CloseShift = async function () {
         if (placeBtn) placeBtn.disabled = true;
 
         Swal.fire({
-            title: '✅ Shift Closed!',
-            text: `Bookkeeping Complete.\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}`,
+            title: '✅ SHIFT CLOSED!',
+            text: 'Your shift has been successfully ended and securely logged to HQ.',
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
