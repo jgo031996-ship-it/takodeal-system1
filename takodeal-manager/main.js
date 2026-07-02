@@ -1512,73 +1512,101 @@ window.updateCartItemUom = function(index, type) {
     }
 };
 
-window.renderDispatchCart = function() {
-    const tbody = document.getElementById('dispatchCartBody');
-    let table = tbody.closest('table');
-    if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
-        let wrapper = document.createElement('div'); wrapper.className = 'table-scroll-wrapper';
-        wrapper.style.maxHeight = '350px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
-        table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
+window.clearDispatchCart = async function() {
+    let activePoId = localStorage.getItem('takodeal_active_po');
+    if (activePoId) {
+        // Revert the database status back to Pending
+        try { await updateDoc(doc(db, "purchase_orders", activePoId), { status: "Pending" }); } catch(e){}
     }
+    
+    dispatchCart = [];
+    localStorage.removeItem('takodeal_dispatch_cart');
+    localStorage.removeItem('takodeal_dispatch_to');
+    localStorage.removeItem('takodeal_active_po');
+    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+    
+    document.getElementById('dispFrom').value = "Main Office";
+    document.getElementById('dispTo').value = "";
+    
+    window.renderDispatchCart();
+    window.loadDispatchLogs();
+};
 
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
-    let dest = document.getElementById('dispTo'); if(dest && dest.value) localStorage.setItem('takodeal_dispatch_to', dest.value);
+window.renderDispatchCart = function() {
+  const tbody = document.getElementById('dispatchCartBody');
+  let table = tbody.closest('table');
+  if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
+      let wrapper = document.createElement('div'); wrapper.className = 'table-scroll-wrapper';
+      wrapper.style.maxHeight = '350px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
+      table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
+  }
 
-    if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
+  localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+  let dest = document.getElementById('dispTo'); if(dest && dest.value) localStorage.setItem('takodeal_dispatch_to', dest.value);
 
-    let html = '';
-    dispatchCart.forEach((item, idx) => {
-        let varianceHtml = '';
-        
-        if (item.requestType) {
-            let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
-            varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
-        } 
-        
-        let safeQty = item.rawQty !== undefined ? item.rawQty : (item.qty || 0);
-        let fUom = item.friendlyUom || item.uom;
-        let bUom = item.uom;
-        let pUom = item.purchaseUom || bUom;
-        let conv = item.convRate || 1;
-        let masterConv = item.masterConvRate || conv;
-        let totalBase = safeQty * conv;
+  if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
 
-        // The Smart Subtext
-        if (conv !== 1 || fUom !== bUom) {
-            varianceHtml += `<div id="cartSubtext_${idx}" style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${fUom}</strong> <span style="font-size:11px; color:var(--text-muted);">(${totalBase} ${bUom})</span></div>`;
-        } else {
-            varianceHtml += `<div id="cartSubtext_${idx}" style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${bUom}</strong></div>`;
-        }
+  let html = '';
+  dispatchCart.forEach((item, idx) => {
+      let varianceHtml = '';
+      if (item.requestType) {
+          let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
+          varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
+      } 
+      
+      let safeQty = item.rawQty !== undefined ? item.rawQty : (item.qty || 0);
+      let fUom = item.friendlyUom || item.uom;
+      let bUom = item.uom;
+      let pUom = item.purchaseUom || bUom;
+      let conv = item.convRate || 1;
+      let masterConv = item.masterConvRate || conv;
+      let totalBase = safeQty * conv;
 
-        // 🔥 THE FIX: Interactive UOM Dropdown perfectly merged with the input box!
-        let uomSelectorHtml = '';
-        if (pUom !== bUom && masterConv > 1) {
-            let isPurch = fUom === pUom;
-            uomSelectorHtml = `
-                <select onchange="window.updateCartItemUom(${idx}, this.value)" style="padding: 6px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; font-weight: bold; color: #92400e; outline: none; cursor: pointer; font-size: 12px; background: #fffcf0; height: 34px; box-sizing: border-box;">
-                    <option value="base" ${!isPurch ? 'selected' : ''}>${bUom}</option>
-                    <option value="purch" ${isPurch ? 'selected' : ''}>${pUom}</option>
-                </select>
-            `;
-        } else {
-            // If there's no conversion rate setup for this item, it just shows a static badge
-            uomSelectorHtml = `<span style="font-size: 12px; font-weight: bold; color: #64748b; padding: 6px 8px; background: #f8fafc; border: 1px solid #cbd5e1; border-left: none; border-radius: 0 6px 6px 0; height: 34px; display: inline-flex; align-items: center; box-sizing: border-box;">${bUom}</span>`;
-        }
+      if (conv !== 1 || fUom !== bUom) {
+          varianceHtml += `<div id="cartSubtext_${idx}" style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${fUom}</strong> <span style="font-size:11px; color:var(--text-muted);">(${totalBase} ${bUom})</span></div>`;
+      } else {
+          varianceHtml += `<div id="cartSubtext_${idx}" style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${bUom}</strong></div>`;
+      }
 
-        html += `<tr>
-            <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${item.itemName || item.name}</strong><br>${varianceHtml}</td>
-            <td style="padding:10px; vertical-align: top;">
-                <div style="display: flex; align-items: stretch; justify-content: flex-start; max-width: 150px; margin-top: 2px;">
-                    <input type="number" id="cartQty_${idx}" value="${safeQty}" onkeyup="window.updateCartItemQty(${idx}, this.value)" onchange="window.updateCartItemQty(${idx}, this.value)" style="flex: 1; width: 60px; padding: 6px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; outline: none; color: #ea580c; font-size: 14px; height: 34px; box-sizing: border-box;" placeholder="Qty">
-                    ${uomSelectorHtml}
-                </div>
-            </td>
-            <td style="text-align:right; padding:10px; vertical-align: top;">
-                <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer; margin-top: 2px;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
-            </td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
+      let uomSelectorHtml = '';
+      if (pUom !== bUom && masterConv > 1) {
+          let isPurch = fUom === pUom;
+          uomSelectorHtml = `
+              <select onchange="window.updateCartItemUom(${idx}, this.value)" style="padding: 6px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; font-weight: bold; color: #92400e; outline: none; cursor: pointer; font-size: 12px; background: #fffcf0; height: 34px; box-sizing: border-box;">
+                  <option value="base" ${!isPurch ? 'selected' : ''}>${bUom}</option>
+                  <option value="purch" ${isPurch ? 'selected' : ''}>${pUom}</option>
+              </select>
+          `;
+      } else {
+          uomSelectorHtml = `<span style="font-size: 12px; font-weight: bold; color: #64748b; padding: 6px 8px; background: #f8fafc; border: 1px solid #cbd5e1; border-left: none; border-radius: 0 6px 6px 0; height: 34px; display: inline-flex; align-items: center; box-sizing: border-box;">${bUom}</span>`;
+      }
+
+      html += `<tr>
+          <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${item.itemName || item.name}</strong><br>${varianceHtml}</td>
+          <td style="padding:10px; vertical-align: top;">
+              <div style="display: flex; align-items: stretch; justify-content: flex-start; max-width: 150px; margin-top: 2px;">
+                  <input type="number" id="cartQty_${idx}" value="${safeQty}" onkeyup="window.updateCartItemQty(${idx}, this.value)" onchange="window.updateCartItemQty(${idx}, this.value)" style="flex: 1; width: 60px; padding: 6px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; outline: none; color: #ea580c; font-size: 14px; height: 34px; box-sizing: border-box;" placeholder="Qty">
+                  ${uomSelectorHtml}
+              </div>
+          </td>
+          <td style="text-align:right; padding:10px; vertical-align: top;">
+              <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer; margin-top: 2px;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
+          </td>
+      </tr>`;
+  });
+  
+  // 🔥 INJECT THE SET ASIDE BUTTON AT THE BOTTOM OF THE CART
+  html += `
+    <tr>
+        <td colspan="3" style="padding: 15px 10px 5px 10px;">
+            <button onclick="window.clearDispatchCart()" style="width: 100%; background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#f8fafc'">
+                📥 Put Back / Set Aside Cart
+            </button>
+        </td>
+    </tr>
+  `;
+  
+  tbody.innerHTML = html;
 };
 
 window.submitMultiDispatch = async function () {
@@ -1737,17 +1765,27 @@ window.loadDispatchLogs = async function() {
         if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
     });
 
-    let html = poHtml; 
+    // 🔥 THE FIX: Visually separate the two tables!
+    let finalHtml = '';
+    
+    if (poHtml !== '') {
+        finalHtml += `<tr><td colspan="3" style="background: #f8fafc; padding: 12px 15px; font-weight: 900; color: #0ea5e9; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #cbd5e1;">📢 Pending Stock Requests</td></tr>`;
+        finalHtml += poHtml;
+    }
+
+    finalHtml += `<tr><td colspan="3" style="background: #f8fafc; padding: 12px 15px; font-weight: 900; color: #475569; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #cbd5e1; border-top: 4px solid white;">🚚 Recent Deliveries</td></tr>`;
+
     let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
 
-    if (sortedKeys.length === 0 && poHtml === '') { html = '<tr><td colspan="3" class="text-center" style="padding: 30px; color:#64748b; font-weight:bold;">No recent deliveries or requests.</td></tr>'; } 
-    else {
+    if (sortedKeys.length === 0) { 
+        finalHtml += '<tr><td colspan="3" class="text-center" style="padding: 30px; color:#64748b; font-weight:bold;">No recent deliveries on record.</td></tr>'; 
+    } else {
         sortedKeys.slice(0, 20).forEach(key => {
             let del = deliveries[key];
-            let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : '#f59e0b');
+            let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : (del.status === 'Backloaded' ? '#475569' : '#f59e0b'));
             let safeItemsJson = encodeURIComponent(JSON.stringify(del.items));
 
-            html += `<tr style="border-bottom:1px solid #e2e8f0; background: white;">
+            finalHtml += `<tr style="border-bottom:1px solid #e2e8f0; background: white;">
                 <td style="padding:15px;">
                     <div style="font-weight:bold; color:#0f172a; font-size:14px;">📍 To: ${del.toBranch}</div>
                     <div style="font-size:12px; color:#64748b; margin-top: 4px;">🚚 Driver: ${del.driver}</div>
@@ -1758,7 +1796,7 @@ window.loadDispatchLogs = async function() {
             </tr>`;
         });
     }
-    tbody.innerHTML = html;
+    tbody.innerHTML = finalHtml;
   } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; }
 };
 
@@ -1864,27 +1902,73 @@ window.approvePurchaseOrder = async function(poId) {
 // ========================================================
 // 🚚 UPGRADED DISPATCH DETAILS MODAL (WITH VARIANCE & TIME)
 // ========================================================
+window.backloadDispatchItem = async function(logId, itemName, qtyToReturn, destinationBranch) {
+    if (!confirm(`⚠️ BACKLOAD ITEM\n\nAre you sure you want to cancel the delivery of ${qtyToReturn} units of "${itemName}" to ${destinationBranch}?\n\nThis will mark the item as "Backloaded" and securely return the physical stock to the Main Office warehouse.`)) return;
+
+    Swal.fire({ title: 'Processing Backload...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    try {
+        // 1. Mark the dispatch log as Backloaded
+        await updateDoc(doc(db, "dispatch_logs", logId), { 
+            status: "Backloaded", 
+            receivedDisplayQty: 0, 
+            receivedQty: 0 
+        });
+
+        // 2. Refund the stock back to the Main Office
+        const invQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("name", "==", itemName));
+        const invSnap = await getDocs(invQ);
+        
+        if (!invSnap.empty) {
+            let invDoc = invSnap.docs[0];
+            let currentStock = parseFloat(invDoc.data().currentStock) || 0;
+            let uom = invDoc.data().uom || 'units';
+            
+            await updateDoc(invDoc.ref, { currentStock: currentStock + qtyToReturn });
+
+            // 3. Write an official Stock Log for the return
+            await addDoc(collection(db, "stock_logs"), {
+                branch: "Main Office", item: itemName, uom: uom,
+                oldQty: currentStock, newQty: currentStock + qtyToReturn, variance: qtyToReturn,
+                type: "Delivery Backload", note: `Cancelled transit to ${destinationBranch}. Stock returned.`,
+                user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: new Date()
+            });
+        }
+
+        Swal.fire({
+            title: '✅ Item Backloaded',
+            text: `${itemName} has been successfully cancelled and returned to HQ inventory.`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        // Refresh UI
+        document.getElementById('dispatchDetailsModal').style.display = 'none';
+        window.loadDispatchLogs();
+        if(typeof window.loadInventoryData === 'function') window.loadInventoryData();
+        
+    } catch(e) {
+        console.error("Backload Error:", e);
+        Swal.fire('Error', 'Failed to backload item. Please check console.', 'error');
+    }
+};
+
 window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) {
     let items = JSON.parse(decodeURIComponent(encodedItems));
     let header = document.getElementById('dispatchDetailsHeader');
     let tbody = document.getElementById('dispatchDetailsBody');
     
-    // 1. 🕵️‍♂️ Extract Receiver Info from the data!
-    // We check the first item to see who received the batch and when
     let receivedItem = items.find(i => i.receivedBy);
     let receiverName = receivedItem ? receivedItem.receivedBy : '<span style="color:#ef4444; font-style:italic;">Pending Receipt</span>';
     
     let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
     if (receivedItem && receivedItem.receivedAt) {
-        // Handle Firebase Timestamp formatting safely
         let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
         receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
     }
 
-    // Default to the time passed from the button, or extract from the first item
     let dispatchTime = time || items[0].time || 'Unknown';
 
-    // 2. 🎨 Build the Beautiful Grid Header
     header.innerHTML = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
             <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
@@ -1904,28 +1988,40 @@ window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) 
     let html = '';
     items.forEach(item => {
         let sent = parseFloat(item.displayQty || item.qty);
-        
-        // Safely extract what was actually received
+        let baseQty = parseFloat(item.qty); // The raw background number used for refunds
         let received = item.receivedDisplayQty !== undefined ? parseFloat(item.receivedDisplayQty) : (item.receivedQty !== undefined ? parseFloat(item.receivedQty) : '-');
-        
         let status = item.status || 'In Transit';
         let uom = item.displayUom || item.uom;
         
-        // 3. 🧮 FIX: Calculate Variance dynamically based on the exact UI inputs!
         let displayVariance = '-';
-        if (received !== '-') {
+        if (received !== '-' && status !== 'Backloaded') {
             displayVariance = received - sent;
         }
         
         let varColor = displayVariance === '-' ? '#475569' : (displayVariance < 0 ? '#dc2626' : (displayVariance > 0 ? '#16a34a' : '#475569'));
         let varText = displayVariance === '-' ? '-' : (displayVariance > 0 ? `+${displayVariance}` : displayVariance) + ' ' + uom;
 
-        html += `<tr style="border-bottom:1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-            <td style="padding:12px; font-weight:bold; color:#334155;">${item.item}</td>
+        // 🔥 THE FIX: Inject the Backload Button if it is still in transit!
+        let cancelBtn = '';
+        if (status === 'In Transit') {
+            let safeItemName = (item.item || "").replace(/'/g, "\\'");
+            let safeBranch = (branch || "").replace(/'/g, "\\'");
+            cancelBtn = `<br><button onclick="window.backloadDispatchItem('${item.id}', '${safeItemName}', ${baseQty}, '${safeBranch}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; margin-top: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); width: 100%;">↩️ Backload / Cancel Item</button>`;
+        }
+
+        let bgRow = status === 'Backloaded' ? '#f8fafc' : 'white';
+        let statusBg = received !== '-' ? '#dcfce7' : (status === 'Backloaded' ? '#e2e8f0' : '#fef9c3');
+        let statusTextColor = received !== '-' ? '#16a34a' : (status === 'Backloaded' ? '#475569' : '#ca8a04');
+
+        html += `<tr style="border-bottom:1px solid #f1f5f9; background: ${bgRow}; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='${bgRow}'">
+            <td style="padding:12px; font-weight:bold; color:${status === 'Backloaded' ? '#94a3b8' : '#334155'}; ${status === 'Backloaded' ? 'text-decoration: line-through;' : ''}">${item.item}</td>
             <td style="padding:12px; font-weight: bold;">${sent} ${uom}</td>
-            <td style="padding:12px; color:#0284c7; font-weight:bold;">${received !== '-' ? received + ' ' + uom : 'Pending'}</td>
+            <td style="padding:12px; color:#0284c7; font-weight:bold;">${received !== '-' ? received + ' ' + uom : (status === 'Backloaded' ? '-' : 'Pending')}</td>
             <td style="padding:12px; color:${varColor}; font-weight:900;">${varText}</td>
-            <td style="padding:12px;"><span style="background: ${received !== '-' ? '#dcfce7' : '#fef9c3'}; color: ${received !== '-' ? '#16a34a' : '#ca8a04'}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${status}</span></td>
+            <td style="padding:12px; text-align: center;">
+                <span style="background: ${statusBg}; color: ${statusTextColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;">${status}</span>
+                ${cancelBtn}
+            </td>
         </tr>`;
     });
     
