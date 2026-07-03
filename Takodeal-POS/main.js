@@ -4908,7 +4908,7 @@ window.renderStockReqList = function(branchStockDict) {
         let localStock = branchStockDict[item.name] !== undefined ? branchStockDict[item.name] : 0;
         let hqStatus = hqStock > 0 ? `<span style="color: #16a34a;">HQ Has Stock</span>` : `<span style="color: #dc2626;">HQ Out of Stock</span>`;
 
-        // 🔥 THE FIX: The Actual Count input is now wrapped in a container with the UOM Label!
+        // 🔥 THE FIX: The local system stock is safely locked into the data-sys attribute so the button never loses it!
         html += `
             <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                 <div>
@@ -4919,7 +4919,7 @@ window.renderStockReqList = function(branchStockDict) {
                     ${parseFloat(localStock).toFixed(1)} <span style="font-size:10px;">${item.uom}</span>
                 </div>
                 <div style="text-align: center;">
-                    <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
+                    <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" data-sys="${localStock}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
                         <option value="None">-- No Request --</option>
                         <option value="Low Stock">⚠️ Low Stock</option>
                         <option value="Out of Stock">❌ Out of Stock</option>
@@ -4967,22 +4967,25 @@ window.submitStockRequest = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     let cashier = localStorage.getItem('cashierName') || 'Staff';
     let itemsToRequest = [];
-    let fraudAlerts = []; // 🔥 THE SECRET TRAP
+    let fraudAlerts = []; 
 
     let selects = document.querySelectorAll('.req-type-select');
 
     selects.forEach(select => {
         if (select.value !== "None") {
             let id = select.getAttribute('data-id');
-            let itemData = window.stockReqItemsFlat.find(i => i.id === id);
-            
+            // 🔥 THE FIX: Search the global cache directly so it never gets lost!
+            let itemData = window.globalHqStockCache.find(i => i.id === id);
+            if (!itemData) return; // Crash prevention skip
+
             let actualCountEl = document.getElementById(`actualCount_${id}`);
             let actualCount = actualCountEl && actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
-            let sysStock = parseFloat(itemData.currentStock || 0);
+            
+            // 🔥 THE FIX: Extract the LOCAL branch stock securely from the HTML data-sys attribute!
+            let sysStock = parseFloat(select.getAttribute('data-sys')) || 0;
 
-            // 🚨 FRAUD DETECTION: Did they declare less than the system expected?
+            // 🚨 FRAUD DETECTION
             if (select.value === "Low Stock" || select.value === "Out of Stock") {
-                // We allow a 1 unit buffer for decimal math rounding
                 if (actualCount < (sysStock - 1)) {
                     fraudAlerts.push({
                         name: itemData.name,
@@ -4995,11 +4998,11 @@ window.submitStockRequest = async function() {
 
             itemsToRequest.push({
                 itemName: itemData.name,
-                qty: 0, // 0 For now! Manager will decide the real qty in the Dispatch app!
+                qty: 0, 
                 requestType: select.value, 
                 uom: itemData.uom,
                 sourceId: itemData.id,
-                systemStock: sysStock,
+                systemStock: sysStock, // Accurately sends the Branch stock to HQ!
                 physicalStock: actualCount,
                 category: itemData.category || "Ingredients",
                 purchaseUom: itemData.purchaseUom || itemData.uom,
@@ -5040,12 +5043,12 @@ window.submitStockRequest = async function() {
 
         Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted. Check the History tab to track it.', 'success');
         window.loadStockRequestUI(); // Resets the form
-        window.switchStockReqTab('History'); // Auto-switch to history!
+        window.switchStockReqTab('History'); // Auto-switch to history
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to send request.', 'error');
     } finally {
-        btn.innerText = origText; btn.disabled = false;
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
 
