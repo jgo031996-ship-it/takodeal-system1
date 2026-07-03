@@ -6337,11 +6337,22 @@ window.loadZReadingReports = async function () {
 window.loadExpenseLogs = async function() {
     const tbody = document.getElementById('expenseLogsTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Loading logs...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Loading logs...</td></tr>';
+
+    // 🔥 DYNAMICALLY INJECT THE "ACTION" HEADER SO IT MATCHES THE NEW BUTTONS
+    let headerRow = tbody.previousElementSibling;
+    if (headerRow && headerRow.tagName === 'THEAD') {
+        headerRow = headerRow.querySelector('tr');
+    }
+    if (headerRow && headerRow.children.length === 5) {
+        let th = document.createElement('th');
+        th.style.cssText = "text-align: center; padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;";
+        th.innerText = "ACTION";
+        headerRow.appendChild(th);
+    }
 
     let dateFilter = document.getElementById('expenseDateFilter') ? document.getElementById('expenseDateFilter').value : "";
     
-    // 🔥 NEW: Variables to track the math!
     let totalExp = 0;
     let countExp = 0;
 
@@ -6363,32 +6374,108 @@ window.loadExpenseLogs = async function() {
             }
 
             let amount = parseFloat(data.amount) || 0;
+            let desc = data.description || data.note || data.category || 'Expense';
             
-            // 🔥 NEW: Add to our running totals!
             totalExp += amount;
             countExp++;
 
             let dateStr = jsDate.toLocaleString('en-PH');
+            
+            // Protect strings with apostrophes (e.g. "Manager's Meal") so they don't break the Edit button!
+            let safeDesc = desc.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
             html += `
-                <tr>
-                    <td>${dateStr}</td>
-                    <td><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
-                    <td><strong>${data.cashier || 'System'}</strong></td>
-                    <td>${data.description || data.note || data.category || 'Expense'}</td>
-                    <td style="text-align: right; color: #dc2626; font-weight: bold;">₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 15px 20px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 15px 20px;"><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
+                    <td style="padding: 15px 20px;"><strong>${data.cashier || 'System'}</strong></td>
+                    <td style="padding: 15px 20px; color: #475569;">${desc}</td>
+                    <td style="padding: 15px 20px; text-align: right; color: #dc2626; font-weight: bold; font-size: 15px;">₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 20px; text-align: center;">
+                        <div style="display: flex; gap: 5px; justify-content: center;">
+                            <button onclick="window.editExpenseLog('${docSnap.id}', ${amount}, '${safeDesc}')" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">✏️ Edit</button>
+                            <button onclick="window.deleteExpenseLog('${docSnap.id}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">🗑️ Delete</button>
+                        </div>
+                    </td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No expenses found for this date.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #64748b;">No expenses found for this date.</td></tr>';
         
-        // 🔥 NEW: Update the Dashboard Cards!
         if(document.getElementById('expSumTotal')) document.getElementById('expSumTotal').innerText = `₱${totalExp.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         if(document.getElementById('expSumCount')) document.getElementById('expSumCount').innerText = countExp;
 
     } catch (error) {
         console.error("Expense Log Error:", error);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading logs.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:red; padding: 40px;">Error loading logs. Check Developer Console.</td></tr>';
+    }
+};
+
+// ==========================================
+// ✏️ EXPENSE EDIT & DELETE ENGINE
+// ==========================================
+window.editExpenseLog = async function(docId, currentAmount, currentDesc) {
+    const { value: formValues, isConfirmed } = await Swal.fire({
+        title: '✏️ Edit Expense Log',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Description / Note:</label>
+                <input type="text" id="swal-exp-desc" class="input-box" value="${currentDesc}" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; box-sizing: border-box; font-weight: bold;">
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Amount Taken (₱):</label>
+                <input type="number" id="swal-exp-amt" class="input-box" value="${currentAmount}" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: 900; color: #dc2626; font-size: 16px;">
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Save Changes',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#0ea5e9',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-2xl' },
+        preConfirm: () => {
+            return {
+                desc: document.getElementById('swal-exp-desc').value.trim(),
+                amt: parseFloat(document.getElementById('swal-exp-amt').value)
+            }
+        }
+    });
+
+    if (isConfirmed && formValues) {
+        if (isNaN(formValues.amt) || !formValues.desc) {
+            return Swal.fire('Error', 'Invalid amount or description provided.', 'error');
+        }
+        
+        try {
+            Swal.fire({ title: 'Saving...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+            
+            // Update the document in Firebase
+            await updateDoc(doc(db, "expenses", docId), {
+                amount: formValues.amt,
+                description: formValues.desc,
+                note: formValues.desc // Save to both just in case older components use 'note'
+            });
+            
+            Swal.fire({ title: '✅ Updated!', text: 'The expense record has been successfully adjusted.', icon: 'success', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
+            
+            window.loadExpenseLogs(); // Instantly refresh the table!
+            
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to update expense record. Check your connection.', 'error');
+        }
+    }
+};
+
+window.deleteExpenseLog = async function(docId) {
+    if (!confirm("⚠️ URGENT WARNING:\n\nAre you sure you want to permanently delete this expense record?\nThis action cannot be undone and will affect your total profit calculations.")) return;
+    
+    try {
+        await deleteDoc(doc(db, "expenses", docId));
+        window.loadExpenseLogs(); // Instantly refresh the table!
+    } catch (e) {
+        console.error(e);
+        alert("❌ Failed to delete the record. Please try again.");
     }
 };
 
