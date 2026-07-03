@@ -14345,38 +14345,38 @@ window.openAddEquipmentModal = async function() {
         title: '🛠️ Register Equipment',
         html: `
             <div style="text-align: left; margin-top: 10px;">
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Equipment Name</label>
-                <input type="text" id="swal-eq-name" class="input-box" placeholder="e.g. Takoyaki 3-Pan Maker" style="margin-bottom: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Equipment Name</label>
+                <input type="text" id="swal-eq-name" placeholder="e.g. Takoyaki 3-Pan Maker" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px;">
                 
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Details / Serial No.</label>
-                <input type="text" id="swal-eq-details" class="input-box" placeholder="Brand, Model, Warranty info..." style="margin-bottom: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Details / Serial No.</label>
+                <input type="text" id="swal-eq-details" placeholder="Brand, Model, Warranty info..." style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px;">
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                     <div>
-                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Branch Assigned</label>
-                        <select id="swal-eq-branch" class="input-box" style="padding: 10px; cursor: pointer;">${branchOptions}</select>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Branch Assigned</label>
+                        <select id="swal-eq-branch" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; cursor: pointer; font-size: 14px;">${branchOptions}</select>
                     </div>
                     <div>
-                        <label style="font-size: 12px; font-weight: bold; color: #dc2626;">Cost (₱)</label>
-                        <input type="number" id="swal-eq-cost" class="input-box" placeholder="0.00" style="color: #dc2626; font-weight: bold;">
+                        <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px;">Cost (₱)</label>
+                        <input type="number" id="swal-eq-cost" placeholder="0.00" style="width: 100%; padding: 12px; border-radius: 6px; border: 2px solid #fca5a5; background: #fef2f2; outline: none; box-sizing: border-box; font-weight: 900; color: #dc2626; font-size: 15px;">
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                     <div>
-                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Purchase Date</label>
-                        <input type="date" id="swal-eq-pdate" class="input-box" style="padding: 10px;">
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Purchase Date</label>
+                        <input type="date" id="swal-eq-pdate" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px;">
                     </div>
                     <div>
-                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Operate Date (Installed)</label>
-                        <input type="date" id="swal-eq-odate" class="input-box" style="padding: 10px;">
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Operate Date (Installed)</label>
+                        <input type="date" id="swal-eq-odate" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px;">
                     </div>
                 </div>
 
                 <div style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 15px; border-radius: 8px;">
                     <label style="font-size: 12px; font-weight: bold; color: #0ea5e9; display: block; margin-bottom: 5px;">Optional: Financial Accounting (CAPEX)</label>
                     <span style="font-size: 11px; color: #64748b; margin-bottom: 10px; display: block;">Select an account below if you want this purchase to automatically deduct from your Cash & Budget ledger as an official expense.</span>
-                    <select id="swal-eq-account" class="input-box" style="padding: 10px; cursor: pointer;">${accountOptions}</select>
+                    <select id="swal-eq-account" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; cursor: pointer; font-size: 13px;">${accountOptions}</select>
                 </div>
             </div>
         `,
@@ -14384,7 +14384,7 @@ window.openAddEquipmentModal = async function() {
         showCancelButton: true,
         confirmButtonText: '💾 Save Equipment',
         confirmButtonColor: '#0ea5e9',
-        width: '500px',
+        width: '550px',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         didOpen: () => {
             let today = new Date().toISOString().split('T')[0];
