@@ -5240,109 +5240,6 @@ window.rejectRemittance = async function(docId, branchName) {
     }
 };
 
-// ========================================================
-// 🔍 REMITTANCE AUDIT ENGINE
-// ========================================================
-window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, amount, channel) {
-    if (!document.getElementById('remitAuditModal')) {
-        document.body.insertAdjacentHTML('beforeend', `
-            <div class="overlay" id="remitAuditModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
-                <div style="background:white; width:500px; border-radius:12px; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-                    <div style="background:#0f172a; color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
-                        <h3 style="margin:0; font-size:16px;">🔍 Financial Audit</h3>
-                        <span onclick="document.getElementById('remitAuditModal').style.display='none'" style="cursor:pointer; font-size:24px;">✖</span>
-                    </div>
-                    <div id="remitAuditBody" style="padding:20px; background:#f8fafc;">Loading financial data...</div>
-                </div>
-            </div>
-        `);
-    }
-
-    document.getElementById('remitAuditModal').style.display = 'flex';
-    let body = document.getElementById('remitAuditBody');
-    body.innerHTML = `<div style="text-align:center; padding: 40px; color: #64748b;">⏳ Crunching transactions from<br><strong>${startStr}</strong> to <strong>${endStr}</strong>...</div>`;
-
-    try {
-        let startObj = new Date(startStr); startObj.setHours(0,0,0,0);
-        let endObj = new Date(endStr); endObj.setHours(23,59,59,999);
-
-        if (isNaN(startObj.getTime()) || isNaN(endObj.getTime())) {
-            body.innerHTML = `<div style="color:red; text-align:center; padding: 20px;">Invalid date range provided by cashier. Cannot run audit.</div>`;
-            return;
-        }
-
-        // 1. Calculate Total Cash Sales in Period
-        let cashSales = 0;
-        const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startObj), where("timestamp", "<=", endObj));
-        const txSnap = await getDocs(txQ);
-        txSnap.forEach(d => {
-            let tx = d.data();
-            if (tx.status !== 'Voided') {
-                if (tx.splitDetails) {
-                    let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                    if (cashSplit) cashSales += cashSplit.amount;
-                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                    cashSales += (tx.netTotal || 0);
-                }
-            }
-        });
-
-        // 2. Calculate Total Expenses in Period
-        let cashExpenses = 0;
-        const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startObj), where("timestamp", "<=", endObj));
-        const expSnap = await getDocs(expQ);
-        expSnap.forEach(d => {
-            let exp = d.data();
-            if (!exp.description.includes("[REMITTANCE")) {
-                cashExpenses += (parseFloat(exp.amount) || 0);
-            }
-        });
-
-        let netCashGenerated = cashSales - cashExpenses;
-        let diff = amount - netCashGenerated;
-        let diffColor = diff === 0 ? '#16a34a' : (diff < 0 ? '#dc2626' : '#ea580c');
-        let diffNote = diff === 0 ? "Perfect Match ✔️" : (diff < 0 ? "Shorting Detected 🔻" : "Over Remitted 🔺");
-
-        body.innerHTML = `
-            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-                <div style="font-size:12px; color:#64748b; font-weight:bold; margin-bottom:5px;">AUDIT PERIOD</div>
-                <div style="font-size:14px; font-weight:bold; color:#0f172a;">${branch} (${startStr} to ${endStr})</div>
-            </div>
-            
-            <table style="width:100%; border-collapse: collapse; font-size: 14px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 12px; color:#475569;">Total Cash Sales</td>
-                    <td style="padding: 12px; text-align:right; font-weight:bold; color:#16a34a;">+ ₱${cashSales.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 12px; color:#475569;">Total Cash Expenses</td>
-                    <td style="padding: 12px; text-align:right; font-weight:bold; color:#dc2626;">- ₱${cashExpenses.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                </tr>
-                <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
-                    <td style="padding: 12px; font-weight:bold; color:#0f172a;">Net Cash Generated</td>
-                    <td style="padding: 12px; text-align:right; font-weight:900; color:#0f172a;">₱${netCashGenerated.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 12px; font-weight:bold; color:#0ea5e9;">Cashier Remitted</td>
-                    <td style="padding: 12px; text-align:right; font-weight:900; color:#0ea5e9;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                </tr>
-            </table>
-
-            <div style="margin-top: 15px; text-align: center; padding: 15px; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px;">
-                <div style="font-size: 12px; font-weight: bold; color: #b45309;">VARIANCE ANALYSIS</div>
-                <div style="font-size: 18px; font-weight: 900; color: ${diffColor}; margin-top: 5px;">${diffNote} (₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits:2})})</div>
-                <div style="font-size: 11px; color: #92400e; margin-top: 5px; font-style: italic;">*Note: Floating cash from days prior to ${startStr} are not included in this isolated period check.</div>
-            </div>
-            
-            <button onclick="window.approveRemittance('${remitId}', ${amount}, '${branch}', '${channel}'); document.getElementById('remitAuditModal').style.display='none';" style="width:100%; margin-top:15px; padding:15px; background:#16a34a; color:white; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:16px;">Approve ₱${amount.toLocaleString()} Remittance</button>
-        `;
-
-    } catch(e) {
-        console.error(e);
-        body.innerHTML = `<div style="color:red; text-align:center; padding: 20px;">Failed to run audit.</div>`;
-    }
-};
-
 // --- THE NEW SMART DEPOSIT APPROVAL BUTTON ---
 window.approveRemittance = async function (docId) {
     if (!confirm("✅ Mark this remittance as safely received and deposit it into your Cash Accounts?")) return;
@@ -9123,7 +9020,7 @@ window.autoFill7DaySupply = function() {
 };
 
 // ========================================================
-// 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE
+// 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE (TRUE LEDGER MATH)
 // ========================================================
 window.loadCashFlowHub = async function() {
     try {
@@ -9145,35 +9042,48 @@ window.loadCashFlowHub = async function() {
         let pendingVerifications = 0;
         let totalFloating = 0;
 
-        // 1. Calculate Expected Money (All Closed Shifts / Z-Readings)
+        // 1. Add ALL Historical Cash Sales & Subtract ALL Historical Cash Expenses (Closed Shifts)
         const shiftSnap = await getDocs(query(collection(db, "shifts"), where("status", "==", "Closed")));
         shiftSnap.forEach(doc => {
             let data = doc.data();
             let branch = data.branch;
-            
-            // EXACT MATH: Cash Sales - Cash Expenses
-            let totalCashSales = parseFloat(data.totalCashSales) || 0;
-            let totalCashOut = parseFloat(data.cashOut) || parseFloat(data.expenses) || 0;
-            let expectedCashToRemit = totalCashSales - totalCashOut;
-            
-            if (expectedCashToRemit > 0 && branchFloating[branch] !== undefined) {
-                branchFloating[branch] += expectedCashToRemit;
+            if (branchFloating[branch] !== undefined) {
+                branchFloating[branch] += (parseFloat(data.totalCashSales) || 0);
+                branchFloating[branch] -= (parseFloat(data.cashOut) || parseFloat(data.expenses) || 0);
             }
         });
 
-        // 2. ADD: Live Drawer "Starting Cash" from Active Shifts
-        // (Because this money is physically in the store right now, it counts as unremitted!)
+        // 2. Add LIVE Cash Sales & Subtract LIVE Cash Expenses (Active Shifts)
         const activeShiftSnap = await getDocs(query(collection(db, "shifts"), where("active", "==", true)));
-        activeShiftSnap.forEach(doc => {
-            let data = doc.data();
+        for (let docSnap of activeShiftSnap.docs) {
+            let data = docSnap.data();
             let branch = data.branch;
             if (branchFloating[branch] !== undefined) {
-                let startCash = parseFloat(data.startingCash) || 0;
-                branchFloating[branch] += startCash;
-            }
-        });
+                let validStartTime = data.startTime && data.startTime.toDate ? data.startTime.toDate() : new Date(data.startTime);
+                
+                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", validStartTime));
+                const txSnap = await getDocs(txQ);
+                txSnap.forEach(tDoc => {
+                    let tx = tDoc.data();
+                    if (tx.status !== 'Voided') {
+                        if (tx.splitDetails) {
+                            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                            if (cashSplit) branchFloating[branch] += cashSplit.amount;
+                        } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                            branchFloating[branch] += (tx.netTotal || 0);
+                        }
+                    }
+                });
 
-        // 3. Subtract Money That Has Already Been Remitted (And track Lifetime Totals!)
+                const expQ = query(collection(db, "expenses"), where("shiftId", "==", docSnap.id));
+                const expSnap = await getDocs(expQ);
+                expSnap.forEach(eDoc => {
+                    branchFloating[branch] -= (parseFloat(eDoc.data().amount) || 0);
+                });
+            }
+        }
+
+        // 3. Subtract ALL Remittances from the Running Balance
         const remitSnap = await getDocs(collection(db, "remittances"));
         remitSnap.forEach(doc => {
             let data = doc.data();
@@ -9182,11 +9092,11 @@ window.loadCashFlowHub = async function() {
             
             if (data.status === "Pending") pendingVerifications += amt;
 
-            // Subtract the money if it's Pending OR Approved/Received!
             if (branchFloating[branch] !== undefined) {
-                if (data.status === "Received" || data.status === "Pending" || data.status === "Approved" || data.status === "Completed") {
+                // If it isn't rejected, it means the money left the branch! Subtract it!
+                if (data.status !== "Rejected") {
                     branchFloating[branch] -= amt;
-                    lifetimeRemitted[branch] += amt; // Add to Lifetime Tracker!
+                    lifetimeRemitted[branch] += amt; 
                 }
             }
         });
@@ -9194,8 +9104,8 @@ window.loadCashFlowHub = async function() {
         // 4. Render the UI
         let branchHtml = '';
         for (let branch in branchFloating) {
-            // Cap at 0 so it never shows negative
-            let owed = branchFloating[branch] < 0 ? 0 : branchFloating[branch];
+            // Cap at 0 to clean up decimal micro-math errors
+            let owed = branchFloating[branch] < 0.1 ? 0 : branchFloating[branch];
             totalFloating += owed;
             
             let alertColor = owed > 5000 ? "#dc2626" : "#475569"; 
@@ -9231,6 +9141,142 @@ window.loadCashFlowHub = async function() {
     } catch (e) {
         console.error("Cash Flow Hub Error:", e);
         document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow.</div>`;
+    }
+};
+
+// ========================================================
+// 🔍 REMITTANCE AUDIT ENGINE (TRUE LEDGER MATH UPGRADE)
+// ========================================================
+window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, amount, channel) {
+    if (!document.getElementById('remitAuditModal')) {
+        document.body.insertAdjacentHTML('beforeend', `
+            <div class="overlay" id="remitAuditModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
+                <div style="background:white; width:500px; border-radius:12px; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+                    <div style="background:#0f172a; color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:16px;">🔍 Financial Audit</h3>
+                        <span onclick="document.getElementById('remitAuditModal').style.display='none'" style="cursor:pointer; font-size:24px;">✖</span>
+                    </div>
+                    <div id="remitAuditBody" style="padding:20px; background:#f8fafc; max-height: 80vh; overflow-y: auto;">Loading financial data...</div>
+                </div>
+            </div>
+        `);
+    }
+
+    document.getElementById('remitAuditModal').style.display = 'flex';
+    let body = document.getElementById('remitAuditBody');
+    body.innerHTML = `<div style="text-align:center; padding: 40px; color: #64748b;">⏳ Crunching true ledger balance for ${branch}...</div>`;
+
+    try {
+        let unremittedCashAvailable = 0;
+        
+        // 1. Fetch Closed Shifts
+        const shiftSnap = await getDocs(query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed")));
+        shiftSnap.forEach(doc => {
+            let d = doc.data();
+            unremittedCashAvailable += (parseFloat(d.totalCashSales) || 0);
+            unremittedCashAvailable -= (parseFloat(d.cashOut) || parseFloat(d.expenses) || 0);
+        });
+
+        // 2. Fetch Active Shifts
+        const activeSnap = await getDocs(query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true)));
+        for (let docSnap of activeSnap.docs) {
+            let d = docSnap.data();
+            let validStartTime = d.startTime && d.startTime.toDate ? d.startTime.toDate() : new Date(d.startTime);
+            
+            const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", validStartTime));
+            const txSnap = await getDocs(txQ);
+            txSnap.forEach(tDoc => {
+                let tx = tDoc.data();
+                if (tx.status !== 'Voided') {
+                    if (tx.splitDetails) {
+                        let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                        if (cashSplit) unremittedCashAvailable += cashSplit.amount;
+                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                        unremittedCashAvailable += (tx.netTotal || 0);
+                    }
+                }
+            });
+
+            const expQ = query(collection(db, "expenses"), where("shiftId", "==", docSnap.id));
+            const expSnap = await getDocs(expQ);
+            expSnap.forEach(eDoc => {
+                unremittedCashAvailable -= (parseFloat(eDoc.data().amount) || 0);
+            });
+        }
+
+        // 3. Fetch Remittances to subtract them AND build the History list
+        const remitSnap = await getDocs(query(collection(db, "remittances"), where("branch", "==", branch)));
+        let recentRemittancesHtml = '';
+        let remitsList = [];
+
+        remitSnap.forEach(doc => {
+            let d = doc.data();
+            if (d.status !== "Rejected") {
+                // VERY IMPORTANT: We DO NOT subtract the current remittance we are auditing! 
+                // We want to know exactly how much cash they had available BEFORE this remittance.
+                if (doc.id !== remitId) {
+                    unremittedCashAvailable -= (parseFloat(d.amount) || 0);
+                }
+            }
+            if (doc.id !== remitId) remitsList.push(d); // Add to history list
+        });
+
+        // Build the requested Remittance History list
+        remitsList.sort((a,b) => b.timestamp - a.timestamp).slice(0, 4).forEach(r => {
+            let rDate = r.timestamp ? r.timestamp.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '';
+            let sColor = r.status === 'Received' ? '#16a34a' : '#ea580c';
+            recentRemittancesHtml += `<div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #cbd5e1; padding:6px 0;">
+                <span style="color:#475569;">${rDate} <span style="font-size:10px; font-weight:bold; color:${sColor};">(${r.status})</span></span>
+                <strong style="color:#0f172a;">₱${parseFloat(r.amount).toLocaleString(undefined, {minimumFractionDigits:2})}</strong>
+            </div>`;
+        });
+        if (!recentRemittancesHtml) recentRemittancesHtml = '<div style="font-size:12px; color:#94a3b8; font-style:italic;">No previous remittances found.</div>';
+
+        // 4. Calculate Variance!
+        // Fix micro-decimal math errors
+        if (unremittedCashAvailable < 0.1) unremittedCashAvailable = 0; 
+        
+        let diff = amount - unremittedCashAvailable;
+        if (Math.abs(diff) < 0.1) diff = 0;
+
+        let diffColor = diff === 0 ? '#16a34a' : (diff < 0 ? '#dc2626' : '#ea580c');
+        let diffNote = diff === 0 ? "Perfect Match ✔️" : (diff < 0 ? "Shorting Detected 🔻" : "Over Remitted 🔺");
+
+        body.innerHTML = `
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                <div style="font-size:12px; color:#64748b; font-weight:bold; margin-bottom:5px;">TRUE LEDGER AUDIT</div>
+                <div style="font-size:14px; font-weight:bold; color:#0f172a;">📍 ${branch}</div>
+            </div>
+            
+            <table style="width:100%; border-collapse: collapse; font-size: 14px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+                <tr style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+                    <td style="padding: 15px; font-weight:bold; color:#0f172a;">Total Unremitted Cash Available</td>
+                    <td style="padding: 15px; text-align:right; font-weight:900; color:#0f172a;">₱${unremittedCashAvailable.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 15px; font-weight:bold; color:#0ea5e9;">Cashier Currently Remitting</td>
+                    <td style="padding: 15px; text-align:right; font-weight:900; color:#0ea5e9;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+            </table>
+
+            <div style="margin-top: 15px; text-align: center; padding: 15px; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px;">
+                <div style="font-size: 12px; font-weight: bold; color: #b45309;">VARIANCE ANALYSIS</div>
+                <div style="font-size: 18px; font-weight: 900; color: ${diffColor}; margin-top: 5px;">${diffNote} <br>(₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits:2})})</div>
+                <div style="font-size: 11px; color: #92400e; margin-top: 8px; font-style: italic;">*Note: This strictly calculates Unremitted Cash Profit (Sales minus Expenses) and completely ignores the drawer's starting float.</div>
+            </div>
+
+            <!-- 🔥 THE NEW REMITTANCE HISTORY BLOCK 🔥 -->
+            <div style="margin-top: 15px; text-align: left; padding: 15px; background: white; border: 1px solid #cbd5e1; border-radius: 8px;">
+                <div style="font-size: 11px; font-weight: bold; color: #64748b; margin-bottom: 5px; text-transform: uppercase;">Recent Remittance History</div>
+                ${recentRemittancesHtml}
+            </div>
+            
+            <button onclick="window.approveRemittance('${remitId}', ${amount}, '${branch}', '${channel}'); document.getElementById('remitAuditModal').style.display='none';" style="width:100%; margin-top:15px; padding:15px; background:#16a34a; color:white; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:16px; transition:0.2s;">Approve ₱${amount.toLocaleString()} Remittance</button>
+        `;
+
+    } catch(e) {
+        console.error(e);
+        body.innerHTML = `<div style="color:red; text-align:center; padding: 20px;">Failed to run audit. Check console.</div>`;
     }
 };
 
