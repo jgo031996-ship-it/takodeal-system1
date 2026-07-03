@@ -14086,6 +14086,7 @@ window.defaultSidebar = [
     { id: "nav-menumgr", icon: "🍔", text: "Menu Toggle" },
     { id: "nav-stockreq", icon: "📦", text: "Request Stock" },
     { id: "nav-waste", icon: "🗑️", text: "Log Waste" },
+    { id: "nav-equipment", icon: "🛠️", text: "Assets & Equipment" },
     { id: "nav-timeclock", icon: "📸", text: "Time Clock" },
     { id: "nav-schedule", icon: "📅", text: "My Schedule" },
     { id: "nav-grab", icon: "🟢", text: "Log Grab Earnings" },
@@ -14235,4 +14236,263 @@ window.exportDashboardSalesCSV = async function() {
     } finally {
         if (btn) { btn.innerText = oldText; btn.disabled = false; }
     }
+};
+
+// ========================================================
+// 🛠️ ASSETS & EQUIPMENT MANAGER ENGINE
+// ========================================================
+
+window.loadEquipmentDashboard = async function() {
+    const tbody = document.getElementById('equipmentTableBody');
+    if (!tbody) return;
+    
+    // Auto-populate branch filter
+    let branchFilterEl = document.getElementById('equipBranchFilter');
+    if (branchFilterEl && branchFilterEl.options.length <= 1) {
+        let opts = '<option value="All">🌐 All Branches</option>';
+        window.globalActiveBranches.forEach(b => opts += `<option value="${b}">${b}</option>`);
+        branchFilterEl.innerHTML = opts;
+    }
+    
+    let branchFilter = branchFilterEl ? branchFilterEl.value : "All";
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Scanning registered hardware...</td></tr>';
+
+    try {
+        let q = query(collection(db, "equipment_assets"), orderBy("purchaseDate", "desc"));
+        if (branchFilter !== "All") {
+            q = query(collection(db, "equipment_assets"), where("branch", "==", branchFilter), orderBy("purchaseDate", "desc"));
+        }
+        
+        const snap = await getDocs(q);
+        let html = '';
+        let activeValue = 0;
+        let brokenValue = 0;
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let cost = parseFloat(d.cost) || 0;
+            
+            if (d.status === "Active") activeValue += cost;
+            else brokenValue += cost;
+
+            let pDate = d.purchaseDate ? new Date(d.purchaseDate).toLocaleDateString() : '-';
+            let oDate = d.operateDate ? new Date(d.operateDate).toLocaleDateString() : '-';
+            let bDate = d.breakdownDate ? new Date(d.breakdownDate).toLocaleDateString() : '-';
+            
+            let timelineHtml = `
+                <div style="font-size: 11px; color: #64748b;">
+                    <div><strong style="color:#0f172a;">Purchased:</strong> ${pDate}</div>
+                    <div><strong style="color:#16a34a;">Operating:</strong> ${oDate}</div>
+                    ${d.status !== 'Active' ? `<div style="color:#dc2626;"><strong>Broken/Replaced:</strong> ${bDate}</div>` : ''}
+                </div>
+            `;
+
+            let statusBadge = d.status === "Active" 
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🟢 Active</span>`
+                : `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🔴 ${d.status}</span>`;
+
+            // Action Buttons
+            let actionHtml = `<div style="display:flex; gap: 5px; flex-direction:column;">`;
+            if (d.status === "Active") {
+                actionHtml += `<button onclick="window.markEquipmentBroken('${docSnap.id}', '${d.name.replace(/'/g, "\\'")}', '${d.branch}')" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⚠️ Report Breakdown</button>`;
+            } else {
+                actionHtml += `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">Archived</span>`;
+            }
+            actionHtml += `<button onclick="window.deleteEquipment('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">🗑️ Delete</button></div>`;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; ${d.status !== 'Active' ? 'opacity: 0.7; background: #f8fafc;' : ''}">
+                    <td style="padding: 15px;">
+                        <strong style="color: #1e293b; font-size: 14px;">${d.name}</strong><br>
+                        <span style="font-size: 11px; color: #64748b; font-style: italic;">${d.details || 'No details'}</span>
+                    </td>
+                    <td style="padding: 15px;"><span class="badge badge-open">${d.branch}</span></td>
+                    <td style="padding: 15px; font-weight: bold; color: ${d.status === 'Active' ? '#0f766e' : '#94a3b8'};">₱${cost.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px;">${timelineHtml}</td>
+                    <td style="padding: 15px;">${statusBadge}</td>
+                    <td style="padding: 15px; text-align: center;">${actionHtml}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8;">No equipment registered yet.</td></tr>';
+        
+        document.getElementById('equipTotalValue').innerText = `₱${activeValue.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('equipBrokenValue').innerText = `₱${brokenValue.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    } catch (e) {
+        console.error("Equipment Load Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading equipment data.</td></tr>';
+    }
+};
+
+window.openAddEquipmentModal = async function() {
+    let branchOptions = window.globalActiveBranches.map(b => `<option value="${b}">${b}</option>`).join('');
+    
+    // Check if accounts exist for the deduction integration
+    let accountOptions = '<option value="">-- Do Not Deduct / Just Log Asset --</option>';
+    if (window.liveAccounts) {
+        window.liveAccounts.forEach(a => {
+            if (a.branch === "Main Office") { // Only pull money from HQ accounts for CAPEX!
+                accountOptions += `<option value="${a.id}|${a.name}">Deduct from ${a.name} (Bal: ₱${a.balance.toLocaleString()})</option>`;
+            }
+        });
+    }
+
+    const { value: formValues, isConfirmed } = await Swal.fire({
+        title: '🛠️ Register Equipment',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Equipment Name</label>
+                <input type="text" id="swal-eq-name" class="input-box" placeholder="e.g. Takoyaki 3-Pan Maker" style="margin-bottom: 10px;">
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Details / Serial No.</label>
+                <input type="text" id="swal-eq-details" class="input-box" placeholder="Brand, Model, Warranty info..." style="margin-bottom: 10px;">
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Branch Assigned</label>
+                        <select id="swal-eq-branch" class="input-box" style="padding: 10px; cursor: pointer;">${branchOptions}</select>
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #dc2626;">Cost (₱)</label>
+                        <input type="number" id="swal-eq-cost" class="input-box" placeholder="0.00" style="color: #dc2626; font-weight: bold;">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Purchase Date</label>
+                        <input type="date" id="swal-eq-pdate" class="input-box" style="padding: 10px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Operate Date (Installed)</label>
+                        <input type="date" id="swal-eq-odate" class="input-box" style="padding: 10px;">
+                    </div>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 15px; border-radius: 8px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #0ea5e9; display: block; margin-bottom: 5px;">Optional: Financial Accounting (CAPEX)</label>
+                    <span style="font-size: 11px; color: #64748b; margin-bottom: 10px; display: block;">Select an account below if you want this purchase to automatically deduct from your Cash & Budget ledger as an official expense.</span>
+                    <select id="swal-eq-account" class="input-box" style="padding: 10px; cursor: pointer;">${accountOptions}</select>
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '💾 Save Equipment',
+        confirmButtonColor: '#0ea5e9',
+        width: '500px',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        didOpen: () => {
+            let today = new Date().toISOString().split('T')[0];
+            document.getElementById('swal-eq-pdate').value = today;
+            document.getElementById('swal-eq-odate').value = today;
+        },
+        preConfirm: () => {
+            return {
+                name: document.getElementById('swal-eq-name').value.trim(),
+                details: document.getElementById('swal-eq-details').value.trim(),
+                branch: document.getElementById('swal-eq-branch').value,
+                cost: parseFloat(document.getElementById('swal-eq-cost').value) || 0,
+                purchaseDate: document.getElementById('swal-eq-pdate').value,
+                operateDate: document.getElementById('swal-eq-odate').value,
+                accountData: document.getElementById('swal-eq-account').value // "id|name"
+            }
+        }
+    });
+
+    if (!isConfirmed || !formValues.name) return;
+
+    Swal.fire({ title: 'Registering Asset...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    try {
+        // 1. Save Asset
+        await addDoc(collection(db, "equipment_assets"), {
+            name: formValues.name,
+            details: formValues.details,
+            branch: formValues.branch,
+            cost: formValues.cost,
+            purchaseDate: formValues.purchaseDate,
+            operateDate: formValues.operateDate,
+            status: "Active",
+            timestamp: serverTimestamp()
+        });
+
+        // 2. Optional: Log to P&L Expenses
+        if (formValues.accountData && formValues.cost > 0) {
+            let [accId, accName] = formValues.accountData.split('|');
+            
+            // Deduct from Bank/Cash
+            let accRef = doc(db, "cash_accounts", accId);
+            let accSnap = await getDoc(accRef);
+            if (accSnap.exists()) {
+                await updateDoc(accRef, { balance: (accSnap.data().balance || 0) - formValues.cost });
+            }
+
+            // Log Expense
+            await addDoc(collection(db, "expenses"), {
+                branch: formValues.branch,
+                amount: formValues.cost,
+                category: "Equipment / CAPEX",
+                account: accName,
+                description: `Asset Purchase: ${formValues.name}`,
+                timestamp: new Date(formValues.purchaseDate + 'T12:00:00') // Log on purchase date
+            });
+            
+            if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
+        }
+
+        Swal.fire('✅ Asset Logged', `${formValues.name} successfully registered.`, 'success');
+        window.loadEquipmentDashboard();
+    } catch (e) {
+        console.error("Save Asset Error:", e);
+        Swal.fire('Error', 'Failed to register equipment.', 'error');
+    }
+};
+
+window.markEquipmentBroken = async function(docId, name, branch) {
+    const { value: reason, isConfirmed } = await Swal.fire({
+        title: `⚠️ Report Breakdown`,
+        html: `You are marking the <b>${name}</b> at <b>${branch}</b> as broken/inoperable.<br><br>`,
+        input: 'text',
+        inputPlaceholder: 'Reason (e.g. Motor burnt out, heating element died)',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d97706',
+        confirmButtonText: 'Flag as Broken'
+    });
+
+    if (isConfirmed) {
+        try {
+            let today = new Date().toISOString().split('T')[0];
+            await updateDoc(doc(db, "equipment_assets", docId), {
+                status: "Broken",
+                breakdownDate: today,
+                breakdownReason: reason || "Unspecified",
+                lastUpdated: serverTimestamp()
+            });
+
+            // Fire an alert to the security feed
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "ASSET_BREAKDOWN", branch: branch,
+                message: `🛠️ EQUIPMENT DOWN: ${name} was reported broken. Reason: ${reason || 'Unspecified'}.`,
+                timestamp: serverTimestamp(), isRead: false
+            });
+
+            Swal.fire('Updated', `Asset marked as broken.`, 'success');
+            window.loadEquipmentDashboard();
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to update asset.', 'error');
+        }
+    }
+};
+
+window.deleteEquipment = async function(docId) {
+    if (!confirm("Delete this equipment record permanently? This will not refund any expenses logged in the ledger.")) return;
+    try {
+        await deleteDoc(doc(db, "equipment_assets", docId));
+        window.loadEquipmentDashboard();
+    } catch(e) { console.error(e); alert("Failed to delete."); }
 };
