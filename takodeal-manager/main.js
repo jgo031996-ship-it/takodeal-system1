@@ -1013,6 +1013,7 @@ window.switchView = function (viewId) {
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'ledger') title = "Staff Loans & Ledger";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
+  if (viewId === 'equipment') title = "Assets & Equipment Tracker";
   if (viewId === 'schedule') {
       title = "Schedule & Shift Manager";
       if (typeof loadFromCloud === 'function') loadFromCloud(); 
@@ -1034,6 +1035,7 @@ window.switchView = function (viewId) {
   if (viewId === 'dispatch') window.loadDispatchDashboard();
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
+  if (viewId === 'equipment') window.loadEquipmentDashboard();
   if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); window.loadSidebarLayout(); }
   if (viewId === 'admin') { 
       window.loadAdminDashboard(); 
