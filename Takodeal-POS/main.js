@@ -5294,7 +5294,7 @@ window.processStoreUse = async function() {
 };
 
 // ========================================================
-// 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF)
+// 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF & BLIND)
 // ========================================================
 window.MASTER_CloseShift = async function () {
     let confirmBtn = document.querySelector('button[onclick*="MASTER_CloseShift"]');
@@ -5396,14 +5396,16 @@ window.MASTER_CloseShift = async function () {
             return;
         }
 
-        // 5. The Variance SweetAlert
+        // 5. The Variance SweetAlert (🔥 100% BLIND COUNT FIX)
         let variance = declaredCash - expectedCash;
         if (Math.abs(variance) > 2) {
             let isOver = variance > 0;
             let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
+            
+            // 🔥 REMOVED THE EXACT AMOUNTS FROM THE UI!
             let alertHtml = isOver 
-                ? `Your declared cash is <b>₱${Math.abs(variance).toFixed(2)} MORE</b> than expected.<br><br>Do not remove any overage. Submit the full amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
-                : `Your declared cash is <b>₱${Math.abs(variance).toFixed(2)} SHORT</b> of what is expected.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
+                ? `Your declared cash is <b>MORE</b> than the system expects.<br><br>Do not remove any overage. Submit the full amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
+                : `Your declared cash is <b>SHORT</b> of the system expectation.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
 
             const result = await Swal.fire({
                 title: alertTitle,
@@ -5413,7 +5415,8 @@ window.MASTER_CloseShift = async function () {
                 confirmButtonText: 'Yes, End Shift',
                 cancelButtonText: 'No, Re-count Cash',
                 confirmButtonColor: isOver ? '#d97706' : '#dc2626',
-                cancelButtonColor: '#64748b'
+                cancelButtonColor: '#64748b',
+                customClass: { popup: 'rounded-2xl shadow-2xl' }
             });
 
             if (!result.isConfirmed) {
@@ -5421,6 +5424,7 @@ window.MASTER_CloseShift = async function () {
                 return; 
             }
 
+            // We still silently log the exact variance to the Manager HQ Feed!
             await addDoc(collection(db, "manager_alerts"), {
                 type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                 expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
@@ -5430,9 +5434,9 @@ window.MASTER_CloseShift = async function () {
             });
         }
 
-        // 6. Push to Firebase
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Saving to Cloud...";
         
+        // 6. FIREBASE: CLOSE SHIFT
         await updateDoc(doc(db, "shifts", shiftId), {
             active: false,
             endTime: serverTimestamp(),
@@ -5446,7 +5450,7 @@ window.MASTER_CloseShift = async function () {
             status: "Closed"
         });
 
-        // 7. Auto-Sweep Digital Funds
+        // 7. FIREBASE: AUTO-SWEEP
         for (let method in digitalBreakdown) {
             if (method.toLowerCase() === "gcash") continue; 
             let amountToDeposit = digitalBreakdown[method];
@@ -5498,6 +5502,7 @@ window.MASTER_CloseShift = async function () {
         if (lock) lock.style.display = "flex";
         if (placeBtn) placeBtn.disabled = true;
 
+        // 🔥 THE SUCCESS FIX: Do not show exact Sales Totals!
         Swal.fire({
             title: '✅ SHIFT CLOSED!',
             text: 'Your shift has been successfully ended and securely logged to HQ.',
