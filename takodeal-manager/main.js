@@ -1602,6 +1602,9 @@ window.submitMultiDispatch = async function () {
   let btn = document.getElementById('btnSubmitDispatch');
   let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
 
+  // ==========================================
+  // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
+  // ==========================================
   if (isFranchisee) {
       if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
       btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
@@ -1617,6 +1620,9 @@ window.submitMultiDispatch = async function () {
       return; 
   }
 
+  // ==========================================
+  // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
+  // ==========================================
   for (let i = 0; i < dispatchCart.length; i++) {
       let inp = document.getElementById(`cartQty_${i}`);
       if (inp) {
@@ -1627,8 +1633,6 @@ window.submitMultiDispatch = async function () {
   }
 
   let validCart = dispatchCart.filter(i => i.qty > 0);
-  
-  // 🔥 THE FIX: Capture the requested items that the manager couldn't fulfill!
   let skippedCart = dispatchCart.filter(i => i.qty <= 0 && i.requestType); 
 
   if (validCart.length === 0) { 
@@ -1653,21 +1657,40 @@ window.submitMultiDispatch = async function () {
           let sourceRef = doc(db, "inventory", invItem.id);
           await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
 
+          // 🔥 THE FIX: Added strict fallbacks (||) so Firebase NEVER sees an 'undefined' value!
           await addDoc(collection(db, "dispatch_logs"), {
               date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
               time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
-              item: itemNameToFind, qty: item.qty, uom: item.uom, details: `${fromBranch} ➡️ ${toBranch}`,
-              toBranch: toBranch, driver: driverName, status: "In Transit", displayQty: item.rawQty || item.qty,      
-              displayUom: item.friendlyUom || item.uom, convRate: item.convRate || 1, category: item.category,
-              purchaseUom: item.purchaseUom, cost: item.cost, reorderLevel: item.reorderLevel
+              item: itemNameToFind, 
+              qty: item.qty || 0, 
+              uom: item.uom || invItem.uom || 'units', 
+              details: `${fromBranch} ➡️ ${toBranch}`,
+              toBranch: toBranch, 
+              driver: driverName, 
+              status: "In Transit", 
+              displayQty: item.rawQty || item.qty || 0,      
+              displayUom: item.friendlyUom || item.uom || invItem.uom || 'units', 
+              convRate: item.convRate || 1, 
+              category: item.category || invItem.category || "Uncategorized", 
+              purchaseUom: item.purchaseUom || invItem.purchaseUom || invItem.uom || 'units', 
+              cost: item.cost || invItem.cost || 0, 
+              reorderLevel: item.reorderLevel || invItem.reorderLevel || 10 
           });
       }
 
-      // 🔥 THE FIX: Push the unfulfilled out-of-stock items back into the feed as a new request!
+      // 🔥 THE FIX: Also strip 'undefined' from skipped items before throwing them back into the feed!
       if (skippedCart.length > 0) {
+          let safeSkippedCart = skippedCart.map(i => ({
+              ...i,
+              category: i.category || "Uncategorized",
+              purchaseUom: i.purchaseUom || i.uom || "units",
+              cost: i.cost || 0,
+              reorderLevel: i.reorderLevel || 10
+          }));
+
           await addDoc(collection(db, "purchase_orders"), {
               branch: toBranch,
-              items: skippedCart,
+              items: safeSkippedCart,
               status: "Pending",
               type: "Internal Request",
               requestedBy: "System (Backlogged - Awaiting Stock)",
@@ -1680,7 +1703,6 @@ window.submitMultiDispatch = async function () {
       localStorage.removeItem('takodeal_dispatch_to');
       Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
       
-      // Mark all connected POs as Completed
       let activePoStr = localStorage.getItem('takodeal_active_po');
       if (activePoStr) {
           let poIds = activePoStr.split(',');
@@ -1697,7 +1719,8 @@ window.submitMultiDispatch = async function () {
       
       dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); window.loadDispatchLogs();
   } catch (e) { 
-      console.error(e); 
+      console.error("Dispatch Execution Error:", e); 
+      Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error');
   } 
   finally { 
       btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
