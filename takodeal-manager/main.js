@@ -606,48 +606,52 @@ window.loadHRModule = async function() {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
 
+  // 🔥 THE ARCHIVE FIX: Memory switch for viewing resigned staff
+  window.showArchivedStaff = window.showArchivedStaff || false;
+  let archiveBtnHtml = `
+      <button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
+          ${window.showArchivedStaff ? '📂 Hide Archived Staff' : '📁 View Archived / Resigned Staff'}
+      </button>
+  `;
+  
+  if (!document.getElementById('archiveToggleBtn')) {
+      let btnWrapper = document.createElement('div');
+      btnWrapper.id = 'archiveToggleBtn';
+      btnWrapper.innerHTML = archiveBtnHtml;
+      tbody.closest('table').parentNode.insertBefore(btnWrapper, tbody.closest('table'));
+  } else {
+      document.getElementById('archiveToggleBtn').innerHTML = archiveBtnHtml;
+  }
+
   try {
-    // 🛡️ FRANCHISE SECURITY WALL
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     let myBranch = window.sessionUser ? window.sessionUser.branch : null;
     
     let q = collection(db, "cashiers");
-    // If they are a franchisee, ONLY fetch their specific branch employees!
     if (isFranchisee && myBranch) {
         q = query(collection(db, "cashiers"), where("branch", "==", myBranch));
     }
     
     const snap = await getDocs(q);
     let html = '';
-
-    // 🛡️ THE GATEKEEPER: Check if the logged-in person is the Master Owner
     const isOwner = window.sessionUser && window.sessionUser.isOwner;
 
     if (snap.empty) {
       html = '<tr><td colspan="5" class="text-center">No staff found. Click "Add New Staff" to create one.</td></tr>';
     } else {
-      // Store globally so the modal can read it easily
       window.globalStaffData = {};
-      
-      // 1. EXTRACT: Put everyone into an array first
       let staffList = [];
-      snap.forEach(docSnap => {
-          staffList.push({ id: docSnap.id, ...docSnap.data() });
-      });
-
-      // 2. SORT: Arrange the array alphabetically by their name
+      snap.forEach(docSnap => { staffList.push({ id: docSnap.id, ...docSnap.data() }); });
       staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
 
-      // 3. BUILD: Generate the HTML from the sorted list
       staffList.forEach(data => {
         // 🛑 THE ARCHIVE FILTER
-        if (!window.showArchivedStaff && data.status === 'Resigned') return; // Hide them!
-        if (window.showArchivedStaff && data.status !== 'Resigned') return;  // Show ONLY them!
-        window.globalStaffData[data.id] = data; // Cache data
+        if (!window.showArchivedStaff && data.status === 'Resigned') return; 
+        if (window.showArchivedStaff && data.status !== 'Resigned') return;  
 
-        // 🔐 PIN LOGIC: Real PIN for Owner, Stars for Managers
+        window.globalStaffData[data.id] = data; 
         let pinDisplay = isOwner ? (data.pin || '0000') : '****';
-        if (data.pin === 'REVOKED') pinDisplay = 'REVOKED'; // Always show revoked status!
+        if (data.pin === 'REVOKED') pinDisplay = 'REVOKED'; 
         
         let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/day` : `<span style="color:#ef4444; font-size:11px;">Rate Missing</span>`;
 
@@ -1761,9 +1765,9 @@ window.loadDispatchLogs = async function() {
     let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
 
     try {
-        // 1. Fetch Pending AND Drafting Purchase Orders
-        let poQuery = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
-        if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Drafting"]), orderBy("timestamp", "desc"));
+        // 🔥 THE FIX: Added "Delayed" to both queries perfectly!
+        let poQuery = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting", "Delayed"]), orderBy("timestamp", "desc"));
+        if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Drafting", "Delayed"]), orderBy("timestamp", "desc"));
         const poSnap = await getDocs(poQuery);
         
         let poHtml = '';
@@ -1774,6 +1778,7 @@ window.loadDispatchLogs = async function() {
             poCount++;
             let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
             
+            // 🔥 THE FIX: The Delayed Badges & Titles
             let statusBadge = '';
             if (po.status === "Delayed") {
                 statusBadge = `<span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Delayed (OOS)</span>`;
@@ -1783,8 +1788,12 @@ window.loadDispatchLogs = async function() {
                 statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`;
             }
             
-            let titleTxt = po.type === 'Internal Request' ? '📢 Stock Issue Report' : '📝 Purchase Order';
+            let titleTxt = po.type === 'Internal Request' ? '📢 Stock Issue Report' : (po.type === 'Delayed Delivery' ? '⏳ Postponed Delivery' : '📝 Purchase Order');
 
+            let actionBtn = isFranchisee 
+                ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
+                : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
+            
             poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
                 <td style="padding:15px;">
                     <div style="font-weight:900; color:#d97706; font-size:15px;">${titleTxt} from ${po.branch}</div>
@@ -1796,7 +1805,6 @@ window.loadDispatchLogs = async function() {
             </tr>`;
         });
 
-        // 2. Fetch Dispatch Logs (Actual Deliveries)
         let qLogs = query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc"));
         if (isFranchisee) qLogs = query(collection(db, "dispatch_logs"), where("toBranch", "==", myBranch), orderBy("timestamp", "desc"));
         const snap = await getDocs(qLogs);
@@ -1831,13 +1839,11 @@ window.loadDispatchLogs = async function() {
             </tr>`;
         });
 
-        // 3. Save to Global Memory and Render Tabs
         window.globalPoHtml = poHtml;
         window.globalDeliveryHtml = deliveryHtml;
         window.globalPoCount = poCount;
         window.globalDeliveryCount = sortedKeys.length;
 
-        // Auto-switch to Requests if there are pending POs!
         if (poCount > 0 && window.activeLogisticsTab !== 'Deliveries') {
             window.activeLogisticsTab = 'Requests';
         }
@@ -2790,7 +2796,6 @@ window.loadInventoryData = async function() {
         let totalItems = 0;
         let totalValue = 0;
 
-        // 🔥 THE FIX: Sort the array BEFORE we loop through it!
         let docsArray = snap.docs.map(d => ({id: d.id, ...d.data()}));
         docsArray.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
@@ -2806,7 +2811,6 @@ window.loadInventoryData = async function() {
             let stock = parseFloat(d.currentStock) || 0;
             let conv = parseFloat(d.conversionRate) || parseFloat(d.conversion) || 1;
             
-            // 🛡️ Bulletproof Asset Value Math
             let baseCost = parseFloat(d.baseCost) || 0;
             if (baseCost === 0 && d.purchaseCost && d.conversionRate) {
                  baseCost = d.purchaseCost / d.conversionRate;
@@ -2816,7 +2820,6 @@ window.loadInventoryData = async function() {
             let isLow = stock <= parseFloat(d.reorderLevel || d.lowStockAlert || 5);
             let statusHtml = isLow ? `<span style="color:#ef4444; background:#fef2f2; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Low Stock</span>` : `<span style="color:#16a34a; font-weight:bold; font-size:11px;">In Stock</span>`;
             
-            // 🔥 THE NEW DOUBLE-UOM INJECTOR
             let pUom = d.purchaseUom || d.purchUom || d.uom || 'units';
             let bUom = d.baseUom || d.uom || 'units';
             let purchStock = conv > 0 ? (stock / conv) : stock;
@@ -2826,7 +2829,6 @@ window.loadInventoryData = async function() {
                     ${stock.toFixed(1)} <span style="font-size: 11px; font-weight: normal; color: #64748b;">${bUom}</span>
                 </div>
             `;
-            // Only show the blue box if there is actually a conversion set up!
             if (conv !== 1 && pUom !== bUom) {
                 stockHtml += `
                 <div style="margin-top: 4px;">
@@ -2863,7 +2865,6 @@ window.loadInventoryData = async function() {
         if (tItemsEl) tItemsEl.innerText = totalItems;
         if (tValEl) tValEl.innerText = '₱' + totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-        // Update Command Center KPIs
         if(typeof window.calculateInventoryKPIs === 'function') window.calculateInventoryKPIs(docsArray.filter(i => {
             let bMatch = branchFilter === "All" || i.branch === branchFilter;
             let cMatch = catFilter === "All" || i.category === catFilter;
@@ -9833,7 +9834,6 @@ window.openManualAttendanceModal = async function() {
     let select = document.getElementById('manAttStaff');
     select.innerHTML = '<option value="">Loading Staff...</option>';
     
-    // Auto-set the datetime picker to right now to save time
     let now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('manAttDateTime').value = now.toISOString().slice(0,16);
@@ -9843,9 +9843,12 @@ window.openManualAttendanceModal = async function() {
         const snap = await getDocs(collection(db, "cashiers"));
         let html = '<option value="">-- Select Staff --</option>';
         let staffList = [];
-        snap.forEach(doc => staffList.push(doc.data().cashierName));
+        
         snap.forEach(doc => {
-            if (doc.data().status === 'Resigned') return; // 🛑 HIDE ARCHIVED STAFF
+            if (doc.data().status === 'Resigned') return; // 🛑 ARCHIVE FIX
+            staffList.push(doc.data().cashierName);
+        });
+        
         staffList.sort().forEach(name => {
             html += `<option value="${name}">${name}</option>`;
         });
@@ -9924,7 +9927,6 @@ window.openManualOvertimeModal = async function() {
     let select = document.getElementById('manOtStaff');
     select.innerHTML = '<option value="">Loading Staff...</option>';
     
-    // Auto-set date to today
     let now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('manOtDate').value = now.toISOString().split('T')[0];
@@ -9936,9 +9938,12 @@ window.openManualOvertimeModal = async function() {
         const snap = await getDocs(collection(db, "cashiers"));
         let html = '<option value="">-- Select Staff --</option>';
         let staffList = [];
-        snap.forEach(doc => staffList.push(doc.data().cashierName));
+        
         snap.forEach(doc => {
-            if (doc.data().status === 'Resigned') return; // 🛑 HIDE ARCHIVED STAFF
+            if (doc.data().status === 'Resigned') return; // 🛑 ARCHIVE FIX
+            staffList.push(doc.data().cashierName);
+        });
+        
         staffList.sort().forEach(name => {
             html += `<option value="${name}">${name}</option>`;
         });
@@ -13177,7 +13182,7 @@ window.openItemLedger = async function(branch, itemName) {
         }
         document.getElementById('ledgerCurrentStock').innerText = `${currentStock.toFixed(2)} ${uom}`;
 
-        // 🔥 NEW: Fetch the Last Delivery Data!
+        // 🔥 THE FIX: Last Delivery UI Injector
         let lastDelHtml = '<span style="color:#94a3b8; font-style:italic;">No deliveries recorded.</span>';
         if (branch !== "Main Office") {
             const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("item", "==", itemName), where("status", "==", "Received"), orderBy("timestamp", "desc"), limit(1));
@@ -13191,8 +13196,6 @@ window.openItemLedger = async function(branch, itemName) {
             lastDelHtml = '<span style="color:#64748b; font-size:11px;">(HQ Source)</span>';
         }
         
-        let headerRow = tbody.previousElementSibling.querySelector('tr');
-        // Inject the Last Delivery UI directly above the table
         if (!document.getElementById('ledgerLastDeliveryUi')) {
             let uiDiv = document.createElement('div');
             uiDiv.id = 'ledgerLastDeliveryUi';
@@ -13200,7 +13203,7 @@ window.openItemLedger = async function(branch, itemName) {
             document.getElementById('ledgerCurrentStock').parentNode.appendChild(uiDiv);
         }
         document.getElementById('ledgerLastDeliveryUi').innerHTML = `Last Branch Delivery: ${lastDelHtml}`;
-      
+
         let headerRow = tbody.previousElementSibling.querySelector('tr');
         if (headerRow) {
             headerRow.innerHTML = `
@@ -13220,21 +13223,16 @@ window.openItemLedger = async function(branch, itemName) {
         let logsArray = [];
         logSnap.forEach(doc => logsArray.push(doc.data()));
 
-        // 🔥 DYNAMIC REVERSE CALCULATOR (Fixes the "0 Old Qty" Bug!)
         let runningNewQty = currentStock;
         let lifetimeBought = 0;
 
         logsArray.forEach(d => {
             let variance = parseFloat(d.variance) || 0;
             let type = d.type || "Unknown";
-            
-            // Calculate what the Old Qty MUST have been based on the variance
             let calculatedOldQty = runningNewQty - variance;
 
             d._renderNew = runningNewQty;
             d._renderOld = calculatedOldQty;
-
-            // Shift the pointer backwards in time for the next row
             runningNewQty = calculatedOldQty;
 
             if (variance > 0 && (type.includes("Restock") || type.includes("Delivery") || type.includes("Received") || type.includes("Purchase"))) {
