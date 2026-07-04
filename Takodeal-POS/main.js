@@ -2088,7 +2088,7 @@ window.submitAttendance = async function(type) {
     }
 
     // ==========================================
-    // 🛡️ ANTI-DOUBLE PUNCH & 14-HOUR VIOLATION LOCK
+    // 🛡️ ANTI-DOUBLE PUNCH, PENALTIES & HR LOCKS
     // ==========================================
     try {
         const q = query(collection(db, "attendance_logs"), 
@@ -2105,10 +2105,57 @@ window.submitAttendance = async function(type) {
             let now = new Date();
             let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
 
+            // 🔥 THE NEW PENALTY ENGINE: Forgot to Time Out!
             if (type === "TIME IN" && lastType === "TIME IN") {
-                alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
-                document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
+                // If it's been more than 12 hours since their last Time In, they definitely went home!
+                if (hoursSinceLastLog > 12) {
+                    const penaltyConfirm = await Swal.fire({
+                        title: '⚠️ Missing Time-Out Detected',
+                        html: `You forgot to TIME OUT during your previous shift.<br><br><span style="color:#dc2626; font-weight:bold; font-size:16px;">PENALTY APPLIED:</span><br><span style="color:#475569; font-size:14px;">Your pay for the missing clock-out shift will be delayed and paid on the <b>NEXT CUT-OFF</b>.</span><br><br>Do you accept this penalty and wish to Time In for today?`,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d97706',
+                        cancelButtonColor: '#64748b',
+                        confirmButtonText: 'Accept Penalty & Time In',
+                        customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+                    });
+
+                    if (!penaltyConfirm.isConfirmed) {
+                        document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
+                    }
+
+                    // Auto-resolve yesterday's shift so the payroll database doesn't break
+                    // We cap it at 9 hours so their payroll doesn't accidentally show 24+ hours
+                    let autoOutTime = new Date(lastTime.getTime() + (9 * 60 * 60 * 1000));
+                    
+                    await addDoc(collection(db, "attendance_logs"), {
+                        staffName: staffName, 
+                        branch: lastLog.branch, 
+                        type: "AUTO TIME OUT (Penalty)", 
+                        timestamp: autoOutTime, 
+                        locationLat: lastLog.locationLat || 0, 
+                        locationLng: lastLog.locationLng || 0, 
+                        distanceMeters: lastLog.distanceMeters || 0, 
+                        photoBase64: lastLog.photoBase64 || "",
+                        penaltyApplied: true,
+                        notes: "Forced Auto-Out. Paid next cut-off."
+                    });
+
+                    // Fire an alert to the Manager Security Feed
+                    await addDoc(collection(db, "manager_alerts"), {
+                        type: "ATTENDANCE_PENALTY", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
+                        message: `HR PENALTY: ${staffName} forgot to Time Out yesterday. System auto-closed their shift at 9 hours and applied the 'Paid Next Cut-Off' penalty.`,
+                        timestamp: new Date(), isRead: false
+                    });
+                    
+                    // WE DO NOT RETURN HERE! 
+                    // We allow the code to continue running so it successfully logs their NEW "Time In" for today!
+                } else {
+                    alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
+                    document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
+                }
             }
+
             if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
                 alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
                 document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
@@ -2128,7 +2175,7 @@ window.submitAttendance = async function(type) {
             }
         }
     } catch(e) {
-        console.warn("Fast query failed. Using fallback lock method...");
+        console.warn("Fast query failed. Using fallback lock method...", e);
     }
 
     // ==========================================
