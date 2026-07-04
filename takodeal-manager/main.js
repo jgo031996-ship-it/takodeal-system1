@@ -582,6 +582,24 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+// 🔥 THE ARCHIVE FIX: Memory switch for viewing resigned staff
+window.showArchivedStaff = window.showArchivedStaff || false;
+let archiveBtnHtml = `
+    <button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
+        ${window.showArchivedStaff ? '📂 Hide Archived Staff' : '📁 View Archived / Resigned Staff'}
+    </button>
+`;
+    
+// Inject the button right above the table if it's not there!
+if (!document.getElementById('archiveToggleBtn')) {
+    let btnWrapper = document.createElement('div');
+    btnWrapper.id = 'archiveToggleBtn';
+    btnWrapper.innerHTML = archiveBtnHtml;
+    tbody.closest('table').parentNode.insertBefore(btnWrapper, tbody.closest('table'));
+} else {
+    document.getElementById('archiveToggleBtn').innerHTML = archiveBtnHtml;
+}
+
 // --- THE HR & SECURITY ENGINE (ENTERPRISE FRANCHISE UPGRADE) ---
 window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
@@ -622,6 +640,9 @@ window.loadHRModule = async function() {
 
       // 3. BUILD: Generate the HTML from the sorted list
       staffList.forEach(data => {
+        // 🛑 THE ARCHIVE FILTER
+        if (!window.showArchivedStaff && data.status === 'Resigned') return; // Hide them!
+        if (window.showArchivedStaff && data.status !== 'Resigned') return;  // Show ONLY them!
         window.globalStaffData[data.id] = data; // Cache data
 
         // 🔐 PIN LOGIC: Real PIN for Owner, Stars for Managers
@@ -1680,22 +1701,22 @@ window.submitMultiDispatch = async function () {
           });
       }
 
-      // 🔥 THE FIX: Also strip 'undefined' from skipped items before throwing them back into the feed!
+      // 🔥 THE UPGRADE: Mark backlogged items as "Delayed" with origin dates!
       if (skippedCart.length > 0) {
           let safeSkippedCart = skippedCart.map(i => ({
               ...i,
               category: i.category || "Uncategorized",
-              purchaseUom: i.purchaseUom || i.uom || "units",
-              cost: i.cost || 0,
-              reorderLevel: i.reorderLevel || 10
+              purchaseUom: i.purchaseUom || i.uom || "units"
           }));
 
+          let todayStr = new Date().toLocaleDateString('en-PH');
           await addDoc(collection(db, "purchase_orders"), {
               branch: toBranch,
               items: safeSkippedCart,
-              status: "Pending",
-              type: "Internal Request",
-              requestedBy: "System (Backlogged - Awaiting Stock)",
+              status: "Delayed", // 🚨 Switched from Pending to Delayed
+              type: "Delayed Delivery", // 🚨 New Type
+              originalRequestDate: todayStr,
+              requestedBy: "System (Postponed - HQ Out of Stock)",
               timestamp: serverTimestamp()
           });
       }
@@ -1753,13 +1774,14 @@ window.loadDispatchLogs = async function() {
             poCount++;
             let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
             
-            let statusBadge = po.status === "Drafting" 
-                ? `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>` 
-                : `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`;
-
-            let actionBtn = isFranchisee 
-                ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
-                : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
+            let statusBadge = '';
+            if (po.status === "Delayed") {
+                statusBadge = `<span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Delayed (OOS)</span>`;
+            } else if (po.status === "Drafting") {
+                statusBadge = `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>`;
+            } else {
+                statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`;
+            }
             
             let titleTxt = po.type === 'Internal Request' ? '📢 Stock Issue Report' : '📝 Purchase Order';
 
@@ -2825,7 +2847,8 @@ window.loadInventoryData = async function() {
                     <td style="padding: 12px;">${stockHtml}</td>
                     <td style="padding: 12px;">${statusHtml}</td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
-                    <td style="padding: 12px; display:flex; gap:5px;">
+                    <td style="padding: 12px; display:flex; gap:5px; align-items: center; flex-wrap: wrap;">
+                        ${d.branch === 'Main Office' ? `<button onclick="window.sellMainOfficeStock('${d.id}', '${d.name.replace(/'/g, "\\'")}', ${stock}, '${bUom}', ${baseCost})" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">💸 Sell</button>` : ''}
                         <button onclick="window.openItemLedger('${d.branch}', '${d.name.replace(/'/g, "\\'")}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Trace</button>
                         <button onclick="window.openEditInvModal('${d.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
                     </td>
@@ -8000,12 +8023,22 @@ window.finalizePayslip = async function() {
         });
 
         // 3. Deduct exactly what you typed for the LOAN in the ledger
-        if (actualLoanDeducted > 0 && data.ledgerId) {
-            const ledgerRef = doc(db, "staff_ledger", data.ledgerId);
-            const ledgerSnap = await getDoc(ledgerRef);
-            if (ledgerSnap.exists()) {
-                let currentPaid = ledgerSnap.data().totalPaid || 0;
-                await updateDoc(ledgerRef, { totalPaid: currentPaid + actualLoanDeducted });
+        if (actualLoanDeducted > 0) {
+            let lId = data.ledgerId;
+            // 🛡️ THE FIX: If the memory dropped the ledger ID, force Firebase to find it by name!
+            if (!lId) {
+                const slQ = query(collection(db, "staff_ledger"), where("staffName", "==", data.name));
+                const slSnap = await getDocs(slQ);
+                if (!slSnap.empty) lId = slSnap.docs[0].id;
+            }
+
+            if (lId) {
+                const ledgerRef = doc(db, "staff_ledger", lId);
+                const ledgerSnap = await getDoc(ledgerRef);
+                if (ledgerSnap.exists()) {
+                    let currentPaid = parseFloat(ledgerSnap.data().totalPaid) || 0;
+                    await updateDoc(ledgerRef, { totalPaid: currentPaid + actualLoanDeducted });
+                }
             }
         }
         
@@ -8105,28 +8138,44 @@ window.finalizePayslip = async function() {
 };
 
 // ==========================================
-// 📸 PAYSLIP IMAGE DOWNLOADER
+// 📸 PAYSLIP IMAGE DOWNLOADER (TABLET-FIXED)
 // ==========================================
 window.downloadPayslipImage = function() {
-    const payslipElement = document.getElementById('printablePayslip');
+    const originalPayslip = document.getElementById('printablePayslip');
     const btn = document.getElementById('btnDownloadPayslip');
     let originalText = btn ? btn.innerText : "Download";
     
-    if (btn) {
-        btn.innerText = "⏳ Generating Image...";
-        btn.disabled = true;
-    }
+    if (btn) { btn.innerText = "⏳ Generating Image..."; btn.disabled = true; }
 
-    // Scroll to the top of the modal just in case to ensure a perfect screenshot
-    let modalBody = document.querySelector('.modal-body');
-    if (modalBody) modalBody.scrollTop = 0;
+    // 1. Create a temporary, full-size clone outside the modal so tablets don't crop it!
+    const printWrapper = document.createElement('div');
+    printWrapper.style.position = 'absolute';
+    printWrapper.style.left = '-9999px'; 
+    printWrapper.style.top = '0';
+    printWrapper.style.background = '#ffffff';
+    printWrapper.style.width = '700px'; // Fixed width for perfect aspect ratio
+    printWrapper.style.padding = '20px';
+    printWrapper.style.boxSizing = 'border-box';
+    
+    const clone = originalPayslip.cloneNode(true);
+    
+    // 2. Convert all input boxes into static text so they render perfectly on mobile!
+    clone.querySelectorAll('input').forEach(inp => {
+        let span = document.createElement('span');
+        span.innerText = inp.value;
+        span.style.fontWeight = 'bold';
+        span.style.fontSize = '14px';
+        inp.parentNode.replaceChild(span, inp);
+    });
+    
+    printWrapper.appendChild(clone);
+    document.body.appendChild(printWrapper);
 
-    // Use html2canvas to take a high-quality screenshot of the div while it is still visible!
-    html2canvas(payslipElement, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+    // 3. Take the Ultra-HD screenshot of the un-cropped clone
+    html2canvas(printWrapper, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
         let imgData = canvas.toDataURL("image/png");
         let link = document.createElement('a');
         
-        // Name the file beautifully
         let staffName = document.getElementById('psName').innerText.replace(/\s+/g, '_');
         let endDate = document.getElementById('psEnd').innerText;
         link.download = `Payslip_${staffName}_${endDate}.png`;
@@ -8134,23 +8183,15 @@ window.downloadPayslipImage = function() {
         link.href = imgData;
         link.click();
 
-        if (btn) {
-            btn.innerText = originalText;
-            btn.disabled = false;
-        }
-
-        // 🔥 THE FIX: Now that the photo is safely downloaded, we can close the modal!
+        document.body.removeChild(printWrapper); // Clean up the clone
         document.getElementById('payslipModal').style.display = 'none';
 
+        if (btn) { btn.innerText = originalText; btn.disabled = false; }
     }).catch(err => {
         console.error("Error generating image:", err);
-        alert("❌ Failed to generate image. Please try again.");
-        if (btn) {
-            btn.innerText = originalText;
-            btn.disabled = false;
-        }
-        // Still close it if it fails so you aren't stuck
-        document.getElementById('payslipModal').style.display = 'none';
+        alert("❌ Failed to generate image.");
+        document.body.removeChild(printWrapper);
+        if (btn) { btn.innerText = originalText; btn.disabled = false; }
     });
 };
 
@@ -9803,6 +9844,8 @@ window.openManualAttendanceModal = async function() {
         let html = '<option value="">-- Select Staff --</option>';
         let staffList = [];
         snap.forEach(doc => staffList.push(doc.data().cashierName));
+        snap.forEach(doc => {
+            if (doc.data().status === 'Resigned') return; // 🛑 HIDE ARCHIVED STAFF
         staffList.sort().forEach(name => {
             html += `<option value="${name}">${name}</option>`;
         });
@@ -9894,6 +9937,8 @@ window.openManualOvertimeModal = async function() {
         let html = '<option value="">-- Select Staff --</option>';
         let staffList = [];
         snap.forEach(doc => staffList.push(doc.data().cashierName));
+        snap.forEach(doc => {
+            if (doc.data().status === 'Resigned') return; // 🛑 HIDE ARCHIVED STAFF
         staffList.sort().forEach(name => {
             html += `<option value="${name}">${name}</option>`;
         });
@@ -13132,6 +13177,30 @@ window.openItemLedger = async function(branch, itemName) {
         }
         document.getElementById('ledgerCurrentStock').innerText = `${currentStock.toFixed(2)} ${uom}`;
 
+        // 🔥 NEW: Fetch the Last Delivery Data!
+        let lastDelHtml = '<span style="color:#94a3b8; font-style:italic;">No deliveries recorded.</span>';
+        if (branch !== "Main Office") {
+            const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("item", "==", itemName), where("status", "==", "Received"), orderBy("timestamp", "desc"), limit(1));
+            const delSnap = await getDocs(delQ);
+            if (!delSnap.empty) {
+                let lastDel = delSnap.docs[0].data();
+                let delDate = lastDel.timestamp ? lastDel.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : lastDel.date;
+                lastDelHtml = `<strong style="color: #0ea5e9;">${delDate}</strong> <span style="font-size: 11px; color: #64748b;">(Qty: ${lastDel.receivedQty} ${lastDel.uom})</span>`;
+            }
+        } else {
+            lastDelHtml = '<span style="color:#64748b; font-size:11px;">(HQ Source)</span>';
+        }
+        
+        let headerRow = tbody.previousElementSibling.querySelector('tr');
+        // Inject the Last Delivery UI directly above the table
+        if (!document.getElementById('ledgerLastDeliveryUi')) {
+            let uiDiv = document.createElement('div');
+            uiDiv.id = 'ledgerLastDeliveryUi';
+            uiDiv.style.cssText = "margin-top: 10px; font-size: 13px; color: #475569; border-top: 1px dashed #cbd5e1; padding-top: 10px;";
+            document.getElementById('ledgerCurrentStock').parentNode.appendChild(uiDiv);
+        }
+        document.getElementById('ledgerLastDeliveryUi').innerHTML = `Last Branch Delivery: ${lastDelHtml}`;
+      
         let headerRow = tbody.previousElementSibling.querySelector('tr');
         if (headerRow) {
             headerRow.innerHTML = `
@@ -14464,4 +14533,89 @@ window.deleteEquipment = async function(docId) {
         await deleteDoc(doc(db, "equipment_assets", docId));
         window.loadEquipmentDashboard();
     } catch(e) { console.error(e); alert("Failed to delete."); }
+};
+
+// ==========================================
+// 💸 MAIN OFFICE DIRECT SELL ENGINE
+// ==========================================
+window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, baseCost) {
+    if (!window.liveAccounts || window.liveAccounts.length === 0) {
+        if(typeof window.loadAccountsAndBudget === 'function') await window.loadAccountsAndBudget();
+    }
+    
+    let accOptions = '<option value="">-- Select Account to Deposit To --</option>';
+    window.liveAccounts.forEach(a => {
+        if (a.branch === "Main Office") accOptions += `<option value="${a.id}|${a.name}">${a.name} (Bal: ₱${a.balance.toLocaleString()})</option>`;
+    });
+
+    const { value: formVals, isConfirmed } = await Swal.fire({
+        title: '💸 Direct Sale (HQ)',
+        html: `
+            <div style="text-align:left; font-size:13px; color:#475569; margin-bottom:15px;">Selling: <strong style="color:#0f172a;">${itemName}</strong> (In Stock: ${currentStock} ${uom})</div>
+            <label style="font-weight:bold; font-size:12px; color:#475569;">Qty to Sell (${uom}):</label>
+            <input type="number" id="sellMoQty" class="input-box" placeholder="e.g. 5" style="margin-bottom:10px;">
+            
+            <label style="font-weight:bold; font-size:12px; color:#475569;">Total Selling Price (₱):</label>
+            <input type="number" id="sellMoPrice" class="input-box" placeholder="e.g. 1500" style="margin-bottom:10px;">
+            
+            <label style="font-weight:bold; font-size:12px; color:#475569;">Deposit Funds To:</label>
+            <select id="sellMoAcc" class="input-box" style="cursor:pointer;">${accOptions}</select>
+        `,
+        showCancelButton: true, confirmButtonText: 'Confirm Sale', confirmButtonColor: '#10b981',
+        preConfirm: () => {
+            return {
+                qty: parseFloat(document.getElementById('sellMoQty').value),
+                price: parseFloat(document.getElementById('sellMoPrice').value),
+                acc: document.getElementById('sellMoAcc').value
+            }
+        }
+    });
+
+    if (!isConfirmed || !formVals) return;
+    if (isNaN(formVals.qty) || formVals.qty <= 0 || isNaN(formVals.price) || formVals.price <= 0 || !formVals.acc) {
+        return Swal.fire('Error', 'Please fill all fields with valid numbers.', 'error');
+    }
+    if (formVals.qty > currentStock) {
+        return Swal.fire('Error', 'Not enough stock to sell that amount.', 'error');
+    }
+
+    Swal.fire({ title: 'Processing Sale...', didOpen: () => Swal.showLoading() });
+    try {
+        let [accId, accName] = formVals.acc.split('|');
+        
+        // 1. Deduct Stock
+        await updateDoc(doc(db, "inventory", docId), { currentStock: currentStock - formVals.qty });
+        
+        // 2. Deposit Cash
+        let accRef = doc(db, "cash_accounts", accId);
+        let accSnap = await getDoc(accRef);
+        let newBal = (accSnap.data().balance || 0) + formVals.price;
+        await updateDoc(accRef, { balance: newBal });
+
+        // 3. Log the income and trace it!
+        await addDoc(collection(db, "account_logs"), {
+            accountId: accId, accountName: accName, branch: "Main Office", action: "HQ Direct Sale",
+            amount: formVals.price, newBalance: newBal, user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
+            timestamp: serverTimestamp(), note: `Sold ${formVals.qty} ${uom} of ${itemName}`
+        });
+
+        await addDoc(collection(db, "stock_logs"), {
+            branch: "Main Office", item: itemName, uom: uom, oldQty: currentStock, newQty: currentStock - formVals.qty,
+            variance: -formVals.qty, type: "Direct Sale (HQ)", note: `Sold for ₱${formVals.price}`,
+            user: window.sessionUser ? window.sessionUser.cashierName : "Owner", timestamp: serverTimestamp()
+        });
+
+        // Optional: Add to transactions so it shows in global revenue!
+        await addDoc(collection(db, "transactions"), {
+            branch: "Main Office", cashier: window.sessionUser ? window.sessionUser.cashierName : "Owner",
+            receiptId: "HQ-SALE-" + Date.now().toString().slice(-5),
+            netTotal: formVals.price, paymentMethod: accName, status: "Paid", orderType: "Wholesale/Direct",
+            cart: [{ name: itemName, qty: formVals.qty, lineTotalFinal: formVals.price, category: "HQ Wholesale" }],
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire('✅ Sale Complete', `Successfully sold ${formVals.qty} ${uom} of ${itemName} for ₱${formVals.price}.`, 'success');
+        window.loadInventoryData();
+        if(typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
+    } catch(e) { console.error(e); Swal.fire('Error', 'Sale failed.', 'error'); }
 };
