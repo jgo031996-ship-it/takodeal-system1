@@ -1696,12 +1696,12 @@ window.submitMultiDispatch = async function () {
               purchaseUom: i.purchaseUom || i.uom || "units"
           }));
 
-          let todayStr = new Date().toLocaleDateString('en-PH');
+          let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
           await addDoc(collection(db, "purchase_orders"), {
               branch: toBranch,
               items: safeSkippedCart,
-              status: "Delayed", // 🚨 Switched from Pending to Delayed
-              type: "Delayed Delivery", // 🚨 New Type
+              status: "Delayed",
+              type: "Delayed Delivery",
               originalRequestDate: todayStr,
               requestedBy: "System (Postponed - HQ Out of Stock)",
               timestamp: serverTimestamp()
@@ -1761,17 +1761,31 @@ window.loadDispatchLogs = async function() {
             poCount++;
             let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
             
-            // 🔥 THE FIX: The Delayed Badges & Titles
+            // 🔥 SMART DELAY DETECTOR: Catches both old and new backlogged orders!
+            let isDelayed = po.status === "Delayed" || (po.requestedBy && po.requestedBy.includes("Backlogged"));
+            
             let statusBadge = '';
-            if (po.status === "Delayed") {
-                statusBadge = `<span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Delayed (OOS)</span>`;
+            let titleTxt = '';
+            let delayMeta = '';
+
+            if (isDelayed) {
+                statusBadge = `<span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">⏳ Delayed (HQ Out of Stock)</span>`;
+                titleTxt = `⏳ Postponed Delivery to ${po.branch}`;
+                
+                // Track both the original request date and the exact moment the system pushed it aside
+                let origDate = po.originalRequestDate || dateStr.split(',')[0];
+                delayMeta = `
+                    <div style="margin-top: 8px; padding: 6px; background: #fff; border: 1px dashed #fca5a5; border-radius: 4px; display: inline-block;">
+                        <span style="font-size:11px; color:#ef4444; font-weight:bold;">Originally Requested: ${origDate}</span><br>
+                        <span style="font-size:10px; color:#64748b;">Set aside by system on: ${dateStr}</span>
+                    </div>`;
             } else if (po.status === "Drafting") {
                 statusBadge = `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>`;
+                titleTxt = po.type === 'Internal Request' ? `📢 Stock Issue Report from ${po.branch}` : `📝 Purchase Order from ${po.branch}`;
             } else {
                 statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`;
+                titleTxt = po.type === 'Internal Request' ? `📢 Stock Issue Report from ${po.branch}` : `📝 Purchase Order from ${po.branch}`;
             }
-            
-            let titleTxt = po.type === 'Internal Request' ? '📢 Stock Issue Report' : (po.type === 'Delayed Delivery' ? '⏳ Postponed Delivery' : '📝 Purchase Order');
 
             let actionBtn = isFranchisee 
                 ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
@@ -1779,9 +1793,10 @@ window.loadDispatchLogs = async function() {
             
             poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
                 <td style="padding:15px;">
-                    <div style="font-weight:900; color:#d97706; font-size:15px;">${titleTxt} from ${po.branch}</div>
+                    <div style="font-weight:900; color:#d97706; font-size:15px;">${titleTxt}</div>
                     <div style="font-size:12px; color:#b45309; margin-top: 4px; font-weight:bold;">Requested by: ${po.requestedBy}</div>
                     <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
+                    ${delayMeta}
                 </td>
                 <td style="padding:15px; text-align:center;">${statusBadge}</td>
                 <td style="padding:15px; text-align:right;">${actionBtn}</td>
@@ -8001,9 +8016,14 @@ window.finalizePayslip = async function() {
         await updateDoc(doc(db, "cash_accounts", selAcc.id), { balance: selAcc.balance - finalNetPay });
 
         // 2. Log it as an official Expense in your dashboard feed
+        // 🔥 THE FIX: Route the expense directly to the Main Office, but note the Branch!
         await addDoc(collection(db, "expenses"), {
-            branch: data.branch, amount: finalNetPay, category: "Payroll",
-            account: selAcc.name, note: `Payslip for ${data.name} (${data.start} to ${data.end})`, timestamp: serverTimestamp()
+            branch: "Main Office", 
+            amount: finalNetPay, 
+            category: "Payroll",
+            account: selAcc.name, 
+            note: `Payslip for ${data.name} (${data.start} to ${data.end}) - Branch: ${data.branch}`, 
+            timestamp: serverTimestamp()
         });
 
         // 3. Deduct exactly what you typed for the LOAN in the ledger
@@ -8185,7 +8205,7 @@ window.downloadPayslipImage = function() {
 window.loadLedger = async function() {
     const tbody = document.getElementById('ledgerTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center">⏳ Calculating running balances...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating running balances...</td></tr>';
 
     try {
         const staffSnap = await getDocs(collection(db, "cashiers"));
@@ -8205,14 +8225,27 @@ window.loadLedger = async function() {
             ledgerData[data.staffName] = { id: doc.id, ...data };
         });
 
-        let html = '';
-
+        // 🔥 THE ALPHABETICAL & ARCHIVE FIX: Put them in a Javascript Array first!
+        let staffList = [];
         staffSnap.forEach(docSnap => {
             let staff = docSnap.data();
+            
+            // 🛑 Hide Resigned or Revoked Staff from the Ledger completely
+            if (staff.status === 'Resigned' || staff.pin === 'REVOKED') return; 
+            
+            staffList.push({ id: docSnap.id, ...staff });
+        });
+
+        // Sort the array alphabetically by their first name
+        staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
+
+        let html = '';
+
+        staffList.forEach(staff => {
             let name = staff.cashierName;
             
             let record = ledgerData[name] || { totalLoaned: 0, totalPaid: 0, cutoffDeduction: 0 };
-            let balance = record.totalLoaned - record.totalPaid;
+            let balance = (record.totalLoaned || 0) - (record.totalPaid || 0);
             let cutoffDed = record.cutoffDeduction || 0;
             let unpaidVales = valesData[name] || 0;
 
@@ -8220,32 +8253,32 @@ window.loadLedger = async function() {
             let balWeight = balance > 0 ? 'bold' : 'normal';
             let valeColor = unpaidVales > 0 ? '#ea580c' : 'var(--text-muted)';
 
-            // 🔥 THE FIX: Passed docSnap.id into adjustStaffLoan so Firebase knows exactly which profile to update!
+            // 🔥 THE FIX: We pass `record.id` (the Ledger ID) to adjustStaffLoan instead of the Cashier ID!
             html += `
-                <tr>
-                    <td><strong style="color: var(--primary);">👤 ${name}</strong></td>
-                    <td><span class="badge badge-closed">${staff.branch}</span></td>
-                    <td style="font-weight: bold; color: #0284c7;">₱${record.totalLoaned.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="font-weight: bold; color: #16a34a;">₱${record.totalPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="font-weight: ${balWeight}; color: ${balColor}; font-size: 15px;">₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="font-weight: bold; color: ${valeColor};">₱${unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="font-weight: bold; color: #8b5cf6;">₱${cutoffDed.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td>
-                        <button class="btn-refresh" style="background: #f3e8ff; color: #7c3aed; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.setAutoDeduct('${record.id}', '${name}', ${cutoffDed}, ${balance})">⚙️ Set Deduct</button>
-                        <button style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;" onclick="window.adjustStaffLoan('${docSnap.id}', '${name}', ${record.totalLoaned || 0}, ${record.totalPaid || 0})">✏️ Adjust</button>
-                        <button class="btn-refresh" style="background: #e0f2fe; color: #0284c7; border: 1px solid #0284c7; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.viewLedgerHistory('${name}')">📜 History</button>
-                        <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; margin-right: 5px; font-weight: bold;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned})">➕ Loan</button>
-                        <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid}, ${balance}, ${unpaidVales})">💸 Pay</button>
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 12px;"><strong style="color: var(--primary);">👤 ${name}</strong></td>
+                    <td style="padding: 12px;"><span class="badge badge-closed">${staff.branch}</span></td>
+                    <td style="padding: 12px; font-weight: bold; color: #0284c7;">₱${(record.totalLoaned || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #16a34a;">₱${(record.totalPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px; font-weight: ${balWeight}; color: ${balColor}; font-size: 15px;">₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px; font-weight: bold; color: ${valeColor};">₱${unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #8b5cf6;">₱${cutoffDed.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 12px; display: flex; gap: 5px; flex-wrap: wrap;">
+                        <button class="btn-refresh" style="background: #f3e8ff; color: #7c3aed; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;" onclick="window.setAutoDeduct('${record.id}', '${name}', ${cutoffDed}, ${balance})">⚙️ Set Deduct</button>
+                        <button class="btn-refresh" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;" onclick="window.adjustStaffLoan('${record.id}', '${name}', ${record.totalLoaned || 0}, ${record.totalPaid || 0})">✏️ Adjust</button>
+                        <button class="btn-refresh" style="background: #e0f2fe; color: #0284c7; border: 1px solid #0284c7; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;" onclick="window.viewLedgerHistory('${name}')">📜 History</button>
+                        <button class="btn-refresh" style="background: #fef3c7; color: #d97706; border: 1px solid #d97706; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;" onclick="window.issueLoan('${record.id}', '${name}', ${record.totalLoaned || 0})">➕ Loan</button>
+                        <button class="btn-refresh" style="background: #dcfce7; color: #15803d; border: 1px solid #15803d; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;" onclick="window.logLoanPayment('${record.id}', '${name}', ${record.totalPaid || 0}, ${balance}, ${unpaidVales})">💸 Pay</button>
                     </td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center">No staff found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b;">No active staff found.</td></tr>';
 
     } catch (e) {
         console.error("Ledger Error:", e);
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color: red;">Error loading ledger.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color: red; padding: 30px;">Error loading ledger.</td></tr>';
     }
 };
 
@@ -8403,13 +8436,13 @@ window.refreshInventoryView = function() {
 // ==========================================
 // ✏️ STAFF LOAN MASTER OVERRIDE ENGINE
 // ==========================================
-window.adjustStaffLoan = async function(staffId, staffName, currentLoan, currentPaid) {
+window.adjustStaffLoan = async function(ledgerId, staffName, currentLoan, currentPaid) {
     // 1. Ask the boss for the corrected numbers
     let newLoan = prompt(`[ADJUSTMENT] Enter the corrected TOTAL LOANED for ${staffName}:`, currentLoan);
-    if (newLoan === null) return; // Cancelled
+    if (newLoan === null) return; 
 
     let newPaid = prompt(`[ADJUSTMENT] Enter the corrected TOTAL PAID for ${staffName}:`, currentPaid);
-    if (newPaid === null) return; // Cancelled
+    if (newPaid === null) return; 
 
     // Convert them to safe numbers
     newLoan = parseFloat(newLoan) || 0;
@@ -8422,31 +8455,35 @@ window.adjustStaffLoan = async function(staffId, staffName, currentLoan, current
     }
 
     try {
-        // 3. Update the exact staff document in Firebase (forces the new numbers)
-        // Note: Change "cashiers" to "employees" or "staff" if your database collection is named differently
-        await updateDoc(doc(db, "cashiers", staffId), {
-            totalLoaned: newLoan,
-            totalPaid: newPaid
-        });
+        // 3. Update the correct staff_ledger document in Firebase
+        if (ledgerId && ledgerId !== 'undefined') {
+            await updateDoc(doc(db, "staff_ledger", ledgerId), {
+                totalLoaned: newLoan,
+                totalPaid: newPaid
+            });
+        } else {
+            // If they never had a ledger profile before, generate one right now!
+            await addDoc(collection(db, "staff_ledger"), {
+                staffName: staffName,
+                totalLoaned: newLoan,
+                totalPaid: newPaid,
+                cutoffDeduction: 0
+            });
+        }
 
         // 4. Create an audit log so you remember you made this adjustment
         await addDoc(collection(db, "manager_alerts"), {
             type: "LOAN_ADJUSTMENT",
             branch: "Main Office",
             message: `Manual ledger override for ${staffName}. New Balance forced to ₱${newBalance.toFixed(2)}.`,
-            timestamp: serverTimestamp(), // 🔥 FIXED: Removed window.
+            timestamp: serverTimestamp(),
             isRead: true 
         });
 
         alert("✅ Ledger successfully adjusted!");
         
-        // 5. Instantly refresh the table! 
-        // (Change this to whatever your table refresh function is called, e.g., loadStaffLedger())
-        if (typeof window.refreshLedger === 'function') {
-             window.refreshLedger();
-        } else {
-             location.reload(); 
-        }
+        // 5. Instantly refresh the table WITHOUT reloading the whole app!
+        window.loadLedger();
 
     } catch (error) {
         console.error("Error adjusting loan:", error);
