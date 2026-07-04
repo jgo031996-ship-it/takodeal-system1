@@ -4638,7 +4638,7 @@ window.submitSanctionReply = async function() {
 };
 
 // ========================================================
-// 📋 DAILY SOP CHECKLIST ENGINE (TAB-BASED WITH AUTO-SAVE)
+// 📋 DAILY SOP CHECKLIST ENGINE (MULTI-STAFF & SCROLL FIX)
 // ========================================================
 window.cashierSopData = {}; 
 window.currentSopTasks = []; 
@@ -4674,47 +4674,49 @@ window.loadSopView = async function() {
         html += `<option value="${role}">${role}</option>`;
     });
     select.innerHTML = html;
-
-    // 🔥 RESTORE PREVIOUS PROGRESS IF IT EXISTS!
-    let savedProgress = localStorage.getItem('takodeal_sop_progress');
-    if (savedProgress) {
-        try {
-            let parsed = JSON.parse(savedProgress);
-            select.value = parsed.role;
-            window.currentSopTasks = parsed.tasks;
-            window.renderSopChecklist(); 
-        } catch(e) { localStorage.removeItem('takodeal_sop_progress'); }
-    }
+    
+    // Clear the container on load so it's fresh
+    document.getElementById('sopChecklistContainer').innerHTML = '<div style="text-align:center; padding: 60px; color:#94a3b8; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>';
 };
 
 window.handleSopRoleChange = function() {
     let role = document.getElementById('sopRoleSelect').value;
+    let container = document.getElementById('sopChecklistContainer');
+
     if (!role) {
-        document.getElementById('sopChecklistContainer').innerHTML = '<div style="text-align:center; padding: 60px; color:#94a3b8; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>';
+        container.innerHTML = '<div style="text-align:center; padding: 60px; color:#94a3b8; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>';
         window.currentSopTasks = [];
-        localStorage.removeItem('takodeal_sop_progress'); // Clear progress if they unselect
         return;
     }
 
-    // Protect them from accidentally wiping out their checks if they click the wrong dropdown
-    let savedProgress = localStorage.getItem('takodeal_sop_progress');
-    if (savedProgress) {
-        let parsed = JSON.parse(savedProgress);
-        if (parsed.role !== role) {
-            if (!confirm("⚠️ Changing your role will reset all the checkmarks you currently have. Continue?")) {
-                document.getElementById('sopRoleSelect').value = parsed.role; // Revert selection
-                return;
-            }
-        } else {
-            return; // They selected the same role they already had, do nothing!
-        }
-    }
+    // 🔥 THE SCROLL FIX: Forces the tablet to contain the list and create a scrollbar!
+    container.style.maxHeight = "55vh"; 
+    container.style.overflowY = "auto";
+    container.style.paddingRight = "10px";
+    container.style.paddingBottom = "20px";
 
-    // Initialize fresh blank tasks
-    let tasks = window.cashierSopData[role] || [];
-    window.currentSopTasks = tasks.map(t => ({ task: t, status: null, remark: "" }));
+    // 🔥 THE MULTI-STAFF MEMORY FIX: Create a unique save file for THIS role TODAY!
+    let today = new Date().toISOString().split('T')[0];
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let memoryKey = `takodeal_sop_${branch}_${today}_${role}`;
+
+    let savedProgress = localStorage.getItem(memoryKey);
+
+    if (savedProgress) {
+        try {
+            // Load their specific saved progress
+            window.currentSopTasks = JSON.parse(savedProgress);
+        } catch(e) {
+            // Failsafe
+            let tasks = window.cashierSopData[role] || [];
+            window.currentSopTasks = tasks.map(t => ({ task: t, status: null, remark: "" }));
+        }
+    } else {
+        // Initialize fresh blank tasks for this specific role
+        let tasks = window.cashierSopData[role] || [];
+        window.currentSopTasks = tasks.map(t => ({ task: t, status: null, remark: "" }));
+    }
     
-    window.saveSopProgress();
     window.renderSopChecklist();
 };
 
@@ -4755,6 +4757,13 @@ window.renderSopChecklist = function() {
         `;
     });
 
+    // 🔥 THE SUBMIT FIX: We inject the Submit button safely INSIDE the scrollable list at the very bottom!
+    html += `
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 2px dashed #cbd5e1; padding-bottom: 30px;">
+            <button id="btnSubmitSopInside" onclick="window.submitSopChecklist()" style="width: 100%; padding: 15px; background: #0f766e; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">🚀 Submit ${role} Checklist</button>
+        </div>
+    `;
+
     container.innerHTML = html;
 };
 
@@ -4782,12 +4791,16 @@ window.markSopTask = function(index, status) {
     window.saveSopProgress(); // Instantly save to hard drive!
 };
 
-// 🔥 The Auto-Saver
+// 🔥 The Auto-Saver (Now uses independent role memory)
 window.saveSopProgress = function() {
     let role = document.getElementById('sopRoleSelect').value;
     if (!role || window.currentSopTasks.length === 0) return;
-    let progress = { role: role, tasks: window.currentSopTasks };
-    localStorage.setItem('takodeal_sop_progress', JSON.stringify(progress));
+    
+    let today = new Date().toISOString().split('T')[0];
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let memoryKey = `takodeal_sop_${branch}_${today}_${role}`;
+    
+    localStorage.setItem(memoryKey, JSON.stringify(window.currentSopTasks));
 };
 
 window.submitSopChecklist = async function() {
@@ -4812,8 +4825,8 @@ window.submitSopChecklist = async function() {
         if (t.status === 'done') completedTasks++;
     }
 
-    let btn = document.getElementById('btnSubmitSop');
-    btn.innerText = "⏳ Submitting..."; btn.disabled = true;
+    let btn = document.getElementById('btnSubmitSopInside');
+    if (btn) { btn.innerText = "⏳ Submitting..."; btn.disabled = true; }
 
     try {
         let score = Math.round((completedTasks / totalTasks) * 100);
@@ -4834,8 +4847,11 @@ window.submitSopChecklist = async function() {
             customClass: { popup: 'rounded-2xl' }
         });
         
-        // Wipe the progress because it's officially submitted!
-        localStorage.removeItem('takodeal_sop_progress');
+        // 🔥 WIPE ONLY THIS ROLE'S MEMORY SO THEY CAN DO IT FRESH TOMORROW!
+        let today = new Date().toISOString().split('T')[0];
+        let memoryKey = `takodeal_sop_${branch}_${today}_${role}`;
+        localStorage.removeItem(memoryKey);
+        
         document.getElementById('sopRoleSelect').value = "";
         document.getElementById('sopChecklistContainer').innerHTML = '<div style="text-align:center; padding: 40px; color:#16a34a; font-weight: bold; font-size: 16px;">✅ Checklist Successfully Submitted. Thank you!</div>';
         window.currentSopTasks = [];
@@ -4844,10 +4860,9 @@ window.submitSopChecklist = async function() {
         console.error("SOP Submit Error:", e);
         Swal.fire('Error', 'Failed to submit checklist. Check connection.', 'error');
     } finally {
-        btn.innerText = "📤 Submit Checklist"; btn.disabled = false;
+        if (btn) { btn.innerText = `🚀 Submit ${role} Checklist`; btn.disabled = false; }
     }
 };
-
 // ========================================================
 // 💵 PHYSICAL HARDWARE CASH DRAWER KICK ENGINE
 // ========================================================
