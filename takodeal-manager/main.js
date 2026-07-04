@@ -604,9 +604,8 @@ if (!document.getElementById('archiveToggleBtn')) {
 window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
-
-  // 🔥 THE ARCHIVE FIX: Memory switch for viewing resigned staff
+  
+  // 🔥 THE ARCHIVE FIX: We must place this INSIDE the function after tbody is found!
   window.showArchivedStaff = window.showArchivedStaff || false;
   let archiveBtnHtml = `
       <button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
@@ -614,6 +613,7 @@ window.loadHRModule = async function() {
       </button>
   `;
   
+  // Inject the button right above the table if it's not there!
   if (!document.getElementById('archiveToggleBtn')) {
       let btnWrapper = document.createElement('div');
       btnWrapper.id = 'archiveToggleBtn';
@@ -622,6 +622,8 @@ window.loadHRModule = async function() {
   } else {
       document.getElementById('archiveToggleBtn').innerHTML = archiveBtnHtml;
   }
+
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
 
   try {
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
