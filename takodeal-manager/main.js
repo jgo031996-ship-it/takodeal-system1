@@ -6553,7 +6553,6 @@ window.loadAttendanceLogs = async function () {
     let dateFilter = document.getElementById('attendanceDateFilter') ? document.getElementById('attendanceDateFilter').value : "";
     let sortBy = document.getElementById('attendanceSort') ? document.getElementById('attendanceSort').value : "time";
 
-    // Auto-set the date picker to TODAY if it is blank
     if (!dateFilter) {
         let today = new Date();
         today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
@@ -6565,11 +6564,7 @@ window.loadAttendanceLogs = async function () {
     let endOfDay = new Date(dateFilter + 'T23:59:59');
 
     try {
-        // Only grab logs for the specific day selected
-        const q = query(collection(db, "attendance_logs"), 
-            where("timestamp", ">=", startOfDay), 
-            where("timestamp", "<=", endOfDay)
-        );
+        const q = query(collection(db, "attendance_logs"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const snap = await getDocs(q);
 
         let scheduleData = null;
@@ -6587,10 +6582,8 @@ window.loadAttendanceLogs = async function () {
 
         const parseTimeStr = (timeStr) => {
             let t = timeStr.toLowerCase().replace(/\s/g, '');
-            let isPM = t.includes('pm');
-            let isNN = t.includes('nn');
-            let timePart = t.replace(/(am|pm|nn)/, '');
-            let parts = timePart.split(':');
+            let isPM = t.includes('pm'); let isNN = t.includes('nn');
+            let parts = t.replace(/(am|pm|nn)/, '').split(':');
             let hour = parseInt(parts[0]) || 0;
             let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
             if ((isPM || isNN) && hour < 12) hour += 12;
@@ -6601,13 +6594,11 @@ window.loadAttendanceLogs = async function () {
         let logsArray = [];
         snap.forEach(docSnap => { logsArray.push({ id: docSnap.id, ...docSnap.data() }); });
 
-        // 🧠 SMART IN-MEMORY SORTING
         if (sortBy === 'name') {
             logsArray.sort((a, b) => {
-                let nameA = a.staffName || "";
-                let nameB = b.staffName || "";
-                if (nameA === nameB) return b.timestamp - a.timestamp; // Sort punches by time
-                return nameA.localeCompare(nameB); // Sort alphabetically
+                let nameA = a.staffName || ""; let nameB = b.staffName || "";
+                if (nameA === nameB) return b.timestamp - a.timestamp;
+                return nameA.localeCompare(nameB);
             });
         } else {
             logsArray.sort((a, b) => b.timestamp - a.timestamp);
@@ -6621,10 +6612,10 @@ window.loadAttendanceLogs = async function () {
             let logDate = data.timestamp ? data.timestamp.toDate() : new Date();
             
             let lateTag = '';
+            let lateMinutes = 0;
+
             if (data.type === "TIME IN" && scheduleData && scheduleData.currentSchedule) {
-                let logDay = logDate.getDate();
-                let logMonth = logDate.getMonth() + 1;
-                let logYear = logDate.getFullYear();
+                let logDay = logDate.getDate(); let logMonth = logDate.getMonth() + 1; let logYear = logDate.getFullYear();
 
                 if (scheduleData.currentYear === logYear && scheduleData.currentMonth === logMonth) {
                     let branchSched = scheduleData.currentSchedule[logDay] ? scheduleData.currentSchedule[logDay][data.branch] : null;
@@ -6641,9 +6632,18 @@ window.loadAttendanceLogs = async function () {
                                     if (expectedStartHour !== null) {
                                         let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
                                         let diffHours = actualHour - expectedStartHour;
-                                        let lateMinutes = Math.floor(diffHours * 60);
-                                        if (lateMinutes > 5) {
-                                            lateTag = `<br><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">⏰ LATE (${lateMinutes} mins)</span>`;
+                                        
+                                        // "ranging about 1 hr advance and 1 hr late..." 
+                                        if (diffHours > -1.5 && diffHours < 4) {
+                                            lateMinutes = Math.floor(diffHours * 60);
+                                            // STRICT PENALTY TRIGGER: 1 minute late = >0
+                                            if (lateMinutes > 0) {
+                                                if (data.lateExempted) {
+                                                    lateTag = `<br><span style="background: #f0fdf4; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(22, 163, 74, 0.5);">✅ Late Exempted</span>`;
+                                                } else {
+                                                    lateTag = `<br><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">⏰ LATE (${lateMinutes} mins)</span>`;
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -6658,21 +6658,26 @@ window.loadAttendanceLogs = async function () {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
             }
 
+            // The Action Buttons!
             let actionHtml = `
-                <div style="display: flex; gap: 5px; justify-content: center;">
+                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
                     <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="View Selfie">📷</button>
                     <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
-                </div>
             `;
             
+            // 🔥 THE FIX: Inject the EXEMPT button if they are officially late and not yet exempted!
+            if (lateMinutes > 0 && !data.lateExempted && data.type === "TIME IN") {
+                actionHtml += `<button onclick="window.exemptLatePunch('${data.id}', '${data.staffName}')" style="background: #fffbeb; border: 1px solid #fcd34d; color: #d97706; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" title="Exempt Late Penalty">⭐ Exempt Late</button>`;
+            }
+            actionHtml += `</div>`;
+
             if (data.isManual) {
                 locationText = `📍 ${data.branch} <br><span style="color:#d97706; font-size:11px; font-weight:bold;">⚠️ Manual Edit: ${data.remarks}</span>`;
                 actionHtml = `
                 <div style="display: flex; gap: 5px; justify-content: center; align-items: center;">
                     <span style="font-size: 10px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">Manual</span>
                     <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
-                </div>
-                `;
+                </div>`;
             }
 
             html += `
@@ -6683,9 +6688,7 @@ window.loadAttendanceLogs = async function () {
                     <td style="padding: 12px; vertical-align: middle;">
                         <span style="background: ${badgeColor}; color: ${textColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${data.type}</span>
                     </td>
-                    <td style="padding: 12px; text-align: center; vertical-align: middle;">
-                        ${actionHtml}
-                    </td>
+                    <td style="padding: 12px; text-align: center; vertical-align: middle;">${actionHtml}</td>
                 </tr>
             `;
         });
@@ -6694,6 +6697,18 @@ window.loadAttendanceLogs = async function () {
     } catch (error) {
         console.error("Error loading attendance:", error);
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error processing feed. Check Console.</td></tr>';
+    }
+};
+
+window.exemptLatePunch = async function(docId, staffName) {
+    if (!confirm(`Are you sure you want to EXEMPT ${staffName} from this late penalty?\n\nThe system will not deduct this from their next payslip.`)) return;
+    try {
+        await updateDoc(doc(db, "attendance_logs", docId), { lateExempted: true });
+        window.loadAttendanceLogs(); 
+        alert(`✅ ${staffName} is exempted! Generate the Payroll list again to apply the changes.`);
+    } catch (e) {
+        console.error(e);
+        alert("Failed to exempt late penalty.");
     }
 };
 window.viewSelfie = function(base64Data, detailsText) {
@@ -8631,48 +8646,45 @@ window.generateAutoPayslips = async function() {
     let tableBody = document.getElementById('payrollGeneratorBody'); 
 
     if (!tableBody) return;
-    if (!startInput || !endInput) {
-        alert("Please select both Cutoff Start and End dates."); return;
-    }
+    if (!startInput || !endInput) { alert("Please select both Cutoff Start and End dates."); return; }
 
-    tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Payroll Data & Ledgers...</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Strict HR Metrics...</td></tr>`;
 
     let sParts = startInput.split('-');
     let eParts = endInput.split('-');
-
     let trueStartDate = new Date(sParts[0], sParts[1] - 1, sParts[2], 0, 0, 0, 0);
     let trueEndDate = new Date(eParts[0], eParts[1] - 1, eParts[2], 23, 59, 59, 999);
+    let fetchEndDate = new Date(trueEndDate); fetchEndDate.setHours(fetchEndDate.getHours() + 12);
 
-    let fetchEndDate = new Date(trueEndDate);
-    fetchEndDate.setHours(fetchEndDate.getHours() + 12);
+    // 🔥 THE PARSER: Allows the math engine to read Schedule Text like "Morning (9am-6pm)"
+    const parseTimeStr = (timeStr) => {
+        let t = timeStr.toLowerCase().replace(/\s/g, '');
+        let isPM = t.includes('pm'); let isNN = t.includes('nn');
+        let parts = t.replace(/(am|pm|nn)/, '').split(':');
+        let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+        if ((isPM || isNN) && hour < 12) hour += 12;
+        if (t.includes('am') && hour === 12) hour = 0;
+        return hour + (minute / 60);
+    };
 
     try {
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-        let holidaysObj = schedSnap.exists() ? (schedSnap.data().holidays || {}) : {};
+        let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
+        let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
         const prQ = query(collection(db, "payroll_records"), where("startDate", "==", startInput), where("endDate", "==", endInput));
         const prSnap = await getDocs(prQ);
         let paidRecords = {};
-        prSnap.forEach(docSnap => { 
-            let d = docSnap.data(); 
-            paidRecords[d.staffName] = d.frozenData; 
-        });
+        prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
 
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
-        
-        let staffDict = {};
-        staffSnap.forEach(docSnap => { staffDict[docSnap.data().cashierName] = docSnap.data(); });
-        
-        let ledgerDict = {};
-        ledgerSnap.forEach(docSnap => { ledgerDict[docSnap.data().staffName] = { id: docSnap.id, ...docSnap.data() }; });
+        let staffDict = {}; staffSnap.forEach(d => { staffDict[d.data().cashierName] = d.data(); });
+        let ledgerDict = {}; ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
 
-        const attQ = query(collection(db, "attendance_logs"), 
-            where("timestamp", ">=", trueStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc")
-        );
+        const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", trueStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc"));
         const attSnap = await getDocs(attQ);
 
-        // 🔥 THE FIX: Completely ignore "staff_requests", only read the verified Unpaid Ledger!
         const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
         const deductSnap = await getDocs(deductQ);
         const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", trueStartDate), where("dateAdded", "<=", fetchEndDate));
@@ -8686,261 +8698,204 @@ window.generateAutoPayslips = async function() {
             let name = log.staffName;
             
             if (!staffData[name]) {
-                staffData[name] = { 
-                    branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0,
-                    foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] 
-                };
+                staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
 
             if (log.type === "TIME IN") {
                 if (log.timestamp.toDate() <= trueEndDate) {
-                    // 🔥 THE FIX: Did they forget to time out of their last shift or misclick?
                     if (activeShifts[name]) {
-                        let missedIn = activeShifts[name];
-                        staffData[name].logs.push({
-                            date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
-                            in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-                            out: "MISSED",
-                            hrs: "0.00",
-                            remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out (Misclick)</span>`
-                        });
+                        let missedIn = activeShifts[name].time;
+                        staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
                     }
-                    activeShifts[name] = log.timestamp.toDate();
+
+                    // 🚨 STRICT LATE MATH LOGIC 🚨
+                    let logDate = log.timestamp.toDate();
+                    let lateMinutes = 0;
+                    
+                    if (scheduleData && scheduleData.currentSchedule) {
+                        let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
+                        if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
+                            let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][log.branch] : null;
+                            if (branchSched && branchSched.scheduled) {
+                                let nickname = staffDict[name] ? (staffDict[name].scheduleNickname || name) : name;
+                                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
+                                if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
+                                    let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
+                                    if (shiftConfig) {
+                                        let match = shiftConfig.name.match(/\((.*?)-/);
+                                        if (match && match[1]) {
+                                            let expectedStartHour = parseTimeStr(match[1]); 
+                                            if (expectedStartHour !== null) {
+                                                let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                                let diffHours = actualHour - expectedStartHour;
+                                                // If they log in within standard shift buffer
+                                                if (diffHours > -1.5 && diffHours < 4) {
+                                                    lateMinutes = Math.floor(diffHours * 60);
+                                                    if (lateMinutes < 0) lateMinutes = 0;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 🚨 THE USER'S RULE: 1 MINUTE LATE = 1 HOUR PAY DEDUCTION
+                    let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
+                    let penaltyPerMinute = dailyRate / 8; // (Daily Rate / 8 hrs = 1 hr deduction per minute)
+                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateMinutes * penaltyPerMinute) : 0;
+
+                    activeShifts[name] = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false };
                 }
             } else if (log.type === "TIME OUT" && activeShifts[name]) {
-                let timeIn = activeShifts[name];
+                let timeIn = activeShifts[name].time;
+                let lMins = activeShifts[name].lateMinutes;
+                let lAmt = activeShifts[name].lateAmount;
+                let lExempt = activeShifts[name].lateExempted;
                 let timeOut = log.timestamp.toDate();
-                
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
-                // 🔥 THE FIX: 16+ Hour Invalid Shift Blocker
                 if (hoursWorked > 16) {
-                    staffData[name].logs.push({
-                        date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
-                        in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-                        out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-                        hrs: hoursWorked.toFixed(2),
-                        remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h) - Use Manual Log</span>`
-                    });
-                    delete activeShifts[name];
-                    return; // Skip adding this to payroll totals!
+                    staffData[name].logs.push({ date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), hrs: hoursWorked.toFixed(2), remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h) - Use Manual Log</span>` });
+                    delete activeShifts[name]; return; 
                 }
 
                 let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
-                let shiftMultiplier = 1;
-                let thisShiftStraightBonus = 0; // 🔥 Track the Straight Duty Incentive
+                let shiftMultiplier = 1; let thisShiftStraightBonus = 0; 
         
-                // 🔥 THE MISCLICK IGNORER: If shift is less than 1 hour, it was a misclick! Don't pay a full day's wage for it.
                 if (hoursWorked < 1) {
-                    shiftMultiplier = 0; // 0 shifts worked!
-                    remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
-                } 
-                else if (hoursWorked >= 13.5) {
-                    shiftMultiplier = 2;
-                    thisShiftStraightBonus = 50; 
+                    shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
+                } else if (hoursWorked >= 13.5) {
+                    shiftMultiplier = 2; thisShiftStraightBonus = 50; 
                     staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
-                } 
-                else if (hoursWorked < 8) {
+                } else if (hoursWorked < 8) {
                     let missingHours = (8 - hoursWorked).toFixed(1);
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
-                // 1. Calculate Night Diff FIRST
+                // Append the Late Penalty Notice!
+                if (lMins > 0) {
+                    if (lExempt) {
+                        remark += `<br><span style="color:#16a34a; font-weight:bold;">(Late Exempted)</span>`;
+                    } else {
+                        remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late ${lMins}m: -₱${lAmt.toFixed(2)})</span>`;
+                        staffData[name].lateDeduction += lAmt; // Add to permanent deduction array
+                    }
+                }
+
                 let outHour = timeOut.getHours();
                 let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
                 let thisShiftNightBonus = 0;
 
                 if (outHour >= 0 && outHour <= 4) {
                     staffData[name].nightShifts += 1;
-                    // Strict Lock: Only grant the ₱50 if their profile allows it!
-                    if (isNightEligible) {
-                        thisShiftNightBonus = 50;
-                        staffData[name].nightBonusTotal += thisShiftNightBonus; 
-                    }
+                    if (isNightEligible) { thisShiftNightBonus = 50; staffData[name].nightBonusTotal += thisShiftNightBonus; }
                 }
 
-                // 2. Calculate Holiday Pay SECOND (Including Night Diff in the base math!)
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
                 let hType = holidaysObj[logDateStr];
                 let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
+                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
                 let hBonus = 0;
 
-                // The Magic Formula: (Daily Rate * Shifts) + Night Bonus
-                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+                if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
+                else if (hType === 'Special') { hBonus = baseForHoliday * 0.10; remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Hol: +₱${hBonus.toFixed(2)})</span>`; }
 
-                if (hType === 'Regular') {
-                    hBonus = baseForHoliday * 0.50; 
-                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Holiday: +₱${hBonus.toFixed(2)})</span>`;
-                } else if (hType === 'Special') {
-                    hBonus = baseForHoliday * 0.10; 
-                    remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Holiday: +₱${hBonus.toFixed(2)})</span>`;
-                }
-
-                staffData[name].logs.push({
-                    date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
-                    in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-                    out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
-                    hrs: hoursWorked.toFixed(2),
-                    remark: remark
-                });
-
-                staffData[name].totalHours += hoursWorked;
-                staffData[name].shiftsWorked += shiftMultiplier; 
-                staffData[name].holidayPayTotal += hBonus;
-
+                staffData[name].logs.push({ date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), hrs: hoursWorked.toFixed(2), remark: remark });
+                staffData[name].totalHours += hoursWorked; staffData[name].shiftsWorked += shiftMultiplier; staffData[name].holidayPayTotal += hBonus;
                 delete activeShifts[name];
             }
         });
 
-        // 🔥 THE FIX: Inject Unpaid Ledger Values safely
         deductSnap.forEach(docSnap => {
-            let deduct = docSnap.data();
-            let name = deduct.staffName;
-
-            // Strict Filter: Ignore vales taken AFTER this cutoff date!
+            let deduct = docSnap.data(); let name = deduct.staffName;
             let dDate = deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();
             if (dDate > trueEndDate) return;
-
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
-                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] };
+                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
-
             let amt = parseFloat(deduct.amount) || 0;
             if (deduct.type === "Staff Meal") staffData[name].foodDeductions += amt;
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
         });
 
-        // 🔥 INJECT MANUAL OVERTIME BONUSES
         bonusSnap.forEach(docSnap => {
-            let b = docSnap.data();
-            let name = b.staffName;
-            
-            // If they didn't have any shifts, create an empty profile for them
+            let b = docSnap.data(); let name = b.staffName;
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
-                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, logs: [] };
+                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
-            
             let amt = parseFloat(b.amount) || 0;
-            // Pushes the money into the Overtime / Night Diff box!
             staffData[name].nightBonusTotal += amt; 
-
-            // Creates a beautiful visual log at the bottom of their Payslip so they know they got it!
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
-            staffData[name].logs.push({
-                date: bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
-                in: "---",
-                out: "---",
-                hrs: "0.00",
-                remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`
-            });
+            staffData[name].logs.push({ date: bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: "---", out: "---", hrs: "0.00", remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>` });
         });
       
         let html = '';
         let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
-        let masterPayrollTotal = 0; // Tracks the grand total for the bank
+        let masterPayrollTotal = 0; 
 
         if (allStaffNames.size === 0) {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
             for (let name of allStaffNames) {
-                let d;
-                let isPaid = false;
-
+                let d; let isPaid = false;
                 if (paidRecords[name]) {
-                    d = paidRecords[name];
-                    isPaid = true;
-                    window.globalPayrollCache[name] = d; 
+                    d = paidRecords[name]; isPaid = true; window.globalPayrollCache[name] = d; 
                 } else {
-                    d = staffData[name];
-                    let profile = staffDict[name] || {};
-                    let dailyRate = profile.hourlyRate || 0; 
-                    
+                    d = staffData[name]; let profile = staffDict[name] || {}; let dailyRate = profile.hourlyRate || 0; 
                     d.basicPay = d.shiftsWorked * dailyRate;
 
-                    let expectedHours = d.shiftsWorked * 8;
-                    let hourlyEquivalent = dailyRate / 8;
-                    let lateDeduction = 0;
-                    
-                    if (d.totalHours < expectedHours) {
-                        let missedHours = expectedHours - d.totalHours;
-                        lateDeduction = missedHours * hourlyEquivalent;
-                    }
-                    d.lateDeduction = lateDeduction;
-
-                    let loanData = ledgerDict[name];
-                    let autoLoanDeduction = 0;
+                    let loanData = ledgerDict[name]; let autoLoanDeduction = 0;
                     if (loanData) {
                         let currentBalance = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
                         if (currentBalance > 0) {
                             let setRate = loanData.cutoffDeduction || 0;
-                            autoLoanDeduction = Math.min(setRate, currentBalance); 
-                            d.ledgerId = loanData.id;
+                            autoLoanDeduction = Math.min(setRate, currentBalance); d.ledgerId = loanData.id;
                         }
                     }
                     d.loans = autoLoanDeduction;
-                    d.sss = profile.sssDeduction || 0;
-                    d.pagibig = profile.pagibigDeduction || 0;
-                    d.philhealth = profile.philhealthDeduction || 0;
-
-                    // 🔥 Extract Gov Contributions from Master Profile
-                    let profileSSS = staffDict[name] ? (parseFloat(staffDict[name].sssAmount) || 0) : 0;
-                    let profilePhil = staffDict[name] ? (parseFloat(staffDict[name].philHealthAmount) || 0) : 0;
-                    let profilePagibig = staffDict[name] ? (parseFloat(staffDict[name].pagibigAmount) || 0) : 0;
-                    let profileCustomDeducts = staffDict[name] ? (staffDict[name].customDeductions || []) : [];
-                    let customDeductSum = 0;
-                    profileCustomDeducts.forEach(d => customDeductSum += d.amount);
+                    d.sss = profile.sssAmount || 0; d.pagibig = profile.pagibigAmount || 0; d.philhealth = profile.philHealthAmount || 0;
+                    let profileCustomDeducts = profile.customDeductions || [];
+                    let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                   
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
-                        straightBonus: d.straightDutyBonusTotal || 0,
-                        advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
+                        straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0,
-                        // 🔥 THE FIX: Directly grab the dates from the HTML boxes so it never gets lost!
-                        logs: staffData[name].logs, profile: staffDict[name] || null, 
-                        start: document.getElementById('payrollStart') ? document.getElementById('payrollStart').value : '', 
-                        end: document.getElementById('payrollEnd') ? document.getElementById('payrollEnd').value : '',
-                        sss: profileSSS, philhealth: profilePhil, pagibig: profilePagibig, customDeductionsTotal: customDeductSum
+                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
+                        sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = window.globalPayrollCache[name]; 
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                // Calculate estimated Net Pay for the Bank Total
-                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightDutyBonusTotal || 0) + (d.holidayPayTotal || 0);
+                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0) masterPayrollTotal += estNet;
+                
                 let bonusLabel = d.nightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonus} Night Bonus</span>` : '';
-                let straightLabel = (d.straightDutyBonusTotal || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightDutyBonusTotal.toFixed(2)} Straight Bonus</span>` : ''; // 🔥 Show it in the list!
+                let straightLabel = (d.straightBonus || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightBonus.toFixed(2)} Straight Bonus</span>` : '';
                 let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
                 let foodLabel = d.meals > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.meals.toFixed(2)} (Meals)</span>` : '';
                 let valeLabel = d.advances > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.advances.toFixed(2)} (Vale)</span>` : '';
                 let loanLabel = d.loans > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.loans.toFixed(2)} (Ledger)</span>` : '';
                 let lateLabel = d.lateDeduction > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.lateDeduction.toFixed(2)} (Late)</span>` : '';
-                let govTotal = (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0);
-                let govLabel = govTotal > 0 ? `<br><span style="font-size:11px; color:#64748b;">-₱${govTotal.toFixed(2)} (Gov)</span>` : '';
         
                 let buttonHtml = isPaid
                     ? `<button onclick="window.openPayslipModal('${name}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
                     : `<button onclick="window.openPayslipModal('${name}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
 
-                let rowStyle = isPaid ? "background: #f8fafc; opacity: 0.85;" : "";
-
                 html += `
-                    <tr style="border-bottom: 1px dashed #e2e8f0; ${rowStyle}">
+                    <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
-                        <td style="padding: 12px; font-weight: bold;">
-                        
-                            Total: ₱${totalDeduct.toFixed(2)}
-                            ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel} ${govLabel}
-                        </td>
-                        <td style="padding: 12px;">
-                            ${buttonHtml}
-                        </td>
+                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}</td>
+                        <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
                 `;
             }
