@@ -14532,17 +14532,27 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
     const { value: formVals, isConfirmed } = await Swal.fire({
         title: '💸 Direct Sale (HQ)',
         html: `
-            <div style="text-align:left; font-size:13px; color:#475569; margin-bottom:15px;">Selling: <strong style="color:#0f172a;">${itemName}</strong> (In Stock: ${currentStock} ${uom})</div>
-            <label style="font-weight:bold; font-size:12px; color:#475569;">Qty to Sell (${uom}):</label>
-            <input type="number" id="sellMoQty" class="input-box" placeholder="e.g. 5" style="margin-bottom:10px;">
+            <div style="text-align:left; font-size:14px; color:#475569; margin-bottom:15px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                Selling: <strong style="color:#0f172a; font-size: 15px;">${itemName}</strong> <br>
+                <span style="font-size: 12px;">(In Stock: ${currentStock.toFixed(2)} ${uom})</span>
+            </div>
             
-            <label style="font-weight:bold; font-size:12px; color:#475569;">Total Selling Price (₱):</label>
-            <input type="number" id="sellMoPrice" class="input-box" placeholder="e.g. 1500" style="margin-bottom:10px;">
-            
-            <label style="font-weight:bold; font-size:12px; color:#475569;">Deposit Funds To:</label>
-            <select id="sellMoAcc" class="input-box" style="cursor:pointer;">${accOptions}</select>
+            <div style="text-align: left; font-family: inherit;">
+                <label style="font-weight:bold; font-size:12px; color:#475569; display: block; margin-bottom: 5px;">Qty to Sell (${uom}):</label>
+                <input type="number" id="sellMoQty" placeholder="e.g. 5" style="width: 100%; padding: 14px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-family: inherit; font-size: 15px; margin-bottom: 15px; font-weight: bold; color: #0f172a;">
+                
+                <label style="font-weight:bold; font-size:12px; color:#dc2626; display: block; margin-bottom: 5px;">Total Selling Price (₱):</label>
+                <input type="number" id="sellMoPrice" placeholder="e.g. 1500" style="width: 100%; padding: 14px; border-radius: 8px; border: 2px solid #fca5a5; background: #fef2f2; outline: none; box-sizing: border-box; font-family: inherit; font-weight: 900; color: #dc2626; font-size: 16px; margin-bottom: 15px;">
+                
+                <label style="font-weight:bold; font-size:12px; color:#475569; display: block; margin-bottom: 5px;">Deposit Funds To:</label>
+                <select id="sellMoAcc" style="width: 100%; padding: 14px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-family: inherit; font-size: 14px; font-weight: bold; cursor: pointer; background: white; color: #0f172a;">${accOptions}</select>
+            </div>
         `,
-        showCancelButton: true, confirmButtonText: 'Confirm Sale', confirmButtonColor: '#10b981',
+        showCancelButton: true, 
+        confirmButtonText: '💸 Confirm Sale', 
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
             return {
                 qty: parseFloat(document.getElementById('sellMoQty').value),
@@ -14560,7 +14570,7 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
         return Swal.fire('Error', 'Not enough stock to sell that amount.', 'error');
     }
 
-    Swal.fire({ title: 'Processing Sale...', didOpen: () => Swal.showLoading() });
+    Swal.fire({ title: 'Processing Sale...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     try {
         let [accId, accName] = formVals.acc.split('|');
         
@@ -14595,8 +14605,17 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
             timestamp: serverTimestamp()
         });
 
-        Swal.fire('✅ Sale Complete', `Successfully sold ${formVals.qty} ${uom} of ${itemName} for ₱${formVals.price}.`, 'success');
+        Swal.fire({
+            title: '✅ Sale Complete',
+            text: `Successfully sold ${formVals.qty} ${uom} of ${itemName} for ₱${formVals.price}.`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
         window.loadInventoryData();
         if(typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
-    } catch(e) { console.error(e); Swal.fire('Error', 'Sale failed.', 'error'); }
+    } catch(e) { 
+        console.error(e); 
+        Swal.fire('Error', 'Sale failed.', 'error'); 
+    }
 };
