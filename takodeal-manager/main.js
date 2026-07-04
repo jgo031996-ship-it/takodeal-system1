@@ -582,30 +582,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-// 🔥 THE ARCHIVE FIX: Memory switch for viewing resigned staff
-window.showArchivedStaff = window.showArchivedStaff || false;
-let archiveBtnHtml = `
-    <button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
-        ${window.showArchivedStaff ? '📂 Hide Archived Staff' : '📁 View Archived / Resigned Staff'}
-    </button>
-`;
-    
-// Inject the button right above the table if it's not there!
-if (!document.getElementById('archiveToggleBtn')) {
-    let btnWrapper = document.createElement('div');
-    btnWrapper.id = 'archiveToggleBtn';
-    btnWrapper.innerHTML = archiveBtnHtml;
-    tbody.closest('table').parentNode.insertBefore(btnWrapper, tbody.closest('table'));
-} else {
-    document.getElementById('archiveToggleBtn').innerHTML = archiveBtnHtml;
-}
-
 // --- THE HR & SECURITY ENGINE (ENTERPRISE FRANCHISE UPGRADE) ---
 window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
-  
-  // 🔥 THE ARCHIVE FIX: We must place this INSIDE the function after tbody is found!
+
+  // 🔥 THE ARCHIVE FIX: Safely tucked INSIDE the function where it belongs!
   window.showArchivedStaff = window.showArchivedStaff || false;
   let archiveBtnHtml = `
       <button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
@@ -613,7 +595,6 @@ window.loadHRModule = async function() {
       </button>
   `;
   
-  // Inject the button right above the table if it's not there!
   if (!document.getElementById('archiveToggleBtn')) {
       let btnWrapper = document.createElement('div');
       btnWrapper.id = 'archiveToggleBtn';
