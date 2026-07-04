@@ -8741,18 +8741,30 @@ window.generateAutoPayslips = async function() {
                         }
                     }
 
-                    // 🚨 THE USER'S RULE: 1 MINUTE LATE = 1 HOUR PAY DEDUCTION
+                    // 🔥 THE FIXED RULE: 1-60 mins late = 1 Hr Deduction. 61-120 mins = 2 Hr Deduction.
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
-                    let penaltyPerMinute = dailyRate / 8; // (Daily Rate / 8 hrs = 1 hr deduction per minute)
-                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateMinutes * penaltyPerMinute) : 0;
+                    let ratePerHour = dailyRate / 8; // Calculate hourly rate from daily rate
+                    
+                    // Math.ceil() forces decimals to round UP to the next whole number! (e.g. 5/60 = 0.08 -> rounds to 1)
+                    let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
+                    
+                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
 
-                    activeShifts[name] = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false };
+                    activeShifts[name] = { 
+                        time: logDate, 
+                        lateMinutes: lateMinutes, 
+                        lateAmount: lateAmount, 
+                        lateExempted: log.lateExempted || false,
+                        lateHoursToDeduct: lateHoursToDeduct 
+                    };
                 }
             } else if (log.type === "TIME OUT" && activeShifts[name]) {
                 let timeIn = activeShifts[name].time;
                 let lMins = activeShifts[name].lateMinutes;
                 let lAmt = activeShifts[name].lateAmount;
                 let lExempt = activeShifts[name].lateExempted;
+                let lHrsDeduct = activeShifts[name].lateHoursToDeduct || 0;
+                
                 let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
@@ -8775,12 +8787,12 @@ window.generateAutoPayslips = async function() {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
-                // Append the Late Penalty Notice!
+                // 🔥 Append the Accurate Late Penalty Notice!
                 if (lMins > 0) {
                     if (lExempt) {
                         remark += `<br><span style="color:#16a34a; font-weight:bold;">(Late Exempted)</span>`;
                     } else {
-                        remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late ${lMins}m: -₱${lAmt.toFixed(2)})</span>`;
+                        remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late ${lMins}m = -${lHrsDeduct}hr: -₱${lAmt.toFixed(2)})</span>`;
                         staffData[name].lateDeduction += lAmt; // Add to permanent deduction array
                     }
                 }
