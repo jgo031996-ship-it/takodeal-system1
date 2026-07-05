@@ -18,6 +18,32 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+// ========================================================
+// 🌍 GLOBAL GPS GEOFENCING CONFIGURATION
+// ========================================================
+// Define the exact Latitude and Longitude for each branch.
+window.BRANCH_ZONES = {
+    "Cabantian": { lat: 7.130415364656105, lng: 125.61730650596441 }, // <-- Replace these numbers
+    "Citygate":  { lat: 7.111076870173231, lng: 125.61288375028629 }, // <-- Replace these numbers
+    "Maa":       { lat: 7.078632967828137, lng: 125.58344165239423 }, // <-- Replace these numbers
+    "Main Office": { lat: 7.153756836823165, lng: 125.5956673848104 }    // Optional (bypassed for testing)
+};
+
+// Set how far away (in meters) a staff member can be from the store to successfully Time In.
+// 50 meters is a very generous radius that accounts for inaccurate phone GPS.
+window.ALLOWED_RADIUS_METERS = 50;
+
+// The mathematical engine that calculates the distance between the phone and the store.
+window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
+    var R = 6371e3; // Radius of the earth in meters
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; 
+};
 const storage = getStorage(app); // 🔥 Turn on the engine
 
 // 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
@@ -1896,22 +1922,8 @@ window.loadRemittanceHistory = async function() {
 // ==========================================
 // 📍 GPS & SELFIE TIME CLOCK ENGINE
 // ==========================================
-const BRANCH_ZONES = {
-    "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
-    "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  
-    "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 },        
-    "Main Office": { lat: 7.1539090939416266, lng: 125.59588373531139 }
-};
-const ALLOWED_RADIUS_METERS = 30; 
 let cameraStream = null;
 let currentBranchStaffCache = []; // DECLARED ONLY ONCE HERE!
-
-function getDistanceInMeters(lat1, lon1, lat2, lon2) {
-    const R = 6371e3; const p1 = lat1 * Math.PI/180; const p2 = lat2 * Math.PI/180;
-    const deltaP = (lat2-lat1) * Math.PI/180; const deltaLon = (lon2-lon1) * Math.PI/180;
-    const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
 
 // ==========================================
 // 🤖 FACE RECOGNITION AI ENGINE
@@ -2262,18 +2274,33 @@ window.submitAttendance = async function(type) {
         let finalBranch = deviceBranch;
         let finalDistance = 0;
 
-        const targetZone = window.BRANCH_ZONES ? window.BRANCH_ZONES[deviceBranch] : null;
-        if (!targetZone) { 
-            alert(`❌ GPS Configuration Missing for ${deviceBranch}.`); 
-            unlockUI(); return; 
-        }
-        
-        if (typeof window.getDistanceInMeters === 'function') {
-            finalDistance = window.getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+        // 🔥 THE FIX: Smart GPS Bypass for the Main Office!
+        if (deviceBranch !== "Main Office") {
+            const targetZone = window.BRANCH_ZONES ? window.BRANCH_ZONES[deviceBranch] : null;
+            if (!targetZone) { 
+                Swal.fire({
+                    title: 'GPS Error',
+                    text: `❌ GPS Configuration Missing for ${deviceBranch}.`,
+                    icon: 'error',
+                    confirmButtonText: 'Understood',
+                    confirmButtonColor: '#ef4444'
+                });
+                unlockUI(); return; 
+            }
+            
+            if (typeof window.getDistanceInMeters === 'function') {
+                finalDistance = window.getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
 
-            if (finalDistance > window.ALLOWED_RADIUS_METERS) {
-                alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(finalDistance)}m away from ${deviceBranch}.\nMust be within ${window.ALLOWED_RADIUS_METERS}m!`);
-                unlockUI(); return;
+                if (finalDistance > (window.ALLOWED_RADIUS_METERS || 50)) {
+                    Swal.fire({
+                        title: '🚨 SECURITY LOCKOUT!',
+                        html: `You are <b>${Math.round(finalDistance)}m</b> away from ${deviceBranch}.<br>You must be within ${window.ALLOWED_RADIUS_METERS || 50}m to clock in!`,
+                        icon: 'error',
+                        confirmButtonText: 'Understood',
+                        confirmButtonColor: '#ef4444'
+                    });
+                    unlockUI(); return;
+                }
             }
         }
         
@@ -2291,14 +2318,22 @@ window.submitAttendance = async function(type) {
             
             localStorage.setItem(punchCooldownKey, Date.now());
             
-            alert(`✅ ${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`);
+            Swal.fire({
+                title: '✅ Success!',
+                text: `${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`,
+                icon: 'success',
+                timer: 2500,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
+
             if (typeof window.closeTimeClock === 'function') window.closeTimeClock();
         } catch (error) { 
             console.error(error); alert("❌ Failed to log attendance."); 
         } 
         finally { unlockUI(); }
     }, (error) => { 
-        alert("❌ GPS access required."); 
+        alert("❌ GPS access required to Time In."); 
         unlockUI(); 
     }, { enableHighAccuracy: true }); 
 };
