@@ -1422,12 +1422,12 @@ window.addToDispatchCart = function () {
     let invItem = dispatchInventoryList.find(i => i.name === itemName);
     if (!invItem) return;
 
-    let finalBaseQty = rawQty; let convRate = 1; let friendlyUom = invItem.uom; 
-    let uomSelect = document.getElementById('dispUomSelect'); let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
+    let uomSelect = document.getElementById('dispUomSelect'); 
+    let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
 
-    if (selectedUomType === 'purch') {
-        convRate = parseFloat(invItem.conversionRate) || 1; finalBaseQty = rawQty * convRate; friendlyUom = invItem.purchaseUom || "Bulk";
-    }
+    let convRate = (selectedUomType === 'purch') ? (parseFloat(invItem.conversionRate) || 1) : 1;
+    let friendlyUom = (selectedUomType === 'purch') ? (invItem.purchaseUom || "Bulk") : invItem.uom;
+    let finalBaseQty = rawQty * convRate;
 
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     if (!isFranchisee && finalBaseQty > invItem.currentStock) { 
@@ -1436,16 +1436,18 @@ window.addToDispatchCart = function () {
         Swal.fire({ title: '❌ Not enough stock!', html: msg, icon: 'error', confirmButtonColor: '#0ea5e9' }); return; 
     }
 
-    let existing = dispatchCart.find(i => i.itemName === itemName);
+    let existing = dispatchCart.find(i => (i.itemName || i.name) === itemName);
     if (existing) { 
-        existing.qty += finalBaseQty; 
         existing.rawQty += rawQty;
+        existing.qty += finalBaseQty; 
         existing.friendlyUom = friendlyUom; 
         existing.convRate = convRate;
+        existing.selectedUom = selectedUomType;
     } else {
         dispatchCart.push({ 
-            itemName: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, rawQty: rawQty,            
-            friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", purchaseUom: invItem.purchaseUom || invItem.uom,
+            itemName: itemName, name: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, rawQty: rawQty,            
+            friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", 
+            purchaseUom: invItem.purchaseUom || invItem.uom, selectedUom: selectedUomType,
             cost: invItem.cost || 0, reorderLevel: invItem.reorderLevel || 10
         });
     }
@@ -1454,124 +1456,104 @@ window.addToDispatchCart = function () {
     window.renderDispatchCart();
 };
 
-window.updateCartItemQty = function(index, value) {
-    let val = parseFloat(value) || 0;
-    if (dispatchCart[index]) {
-        dispatchCart[index].rawQty = val;
-        let conv = dispatchCart[index].convRate || 1;
-        dispatchCart[index].qty = val * conv;
-        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
-        window.renderDispatchCart();
-    }
-};
-
-window.updateCartItemUom = function(index, type) {
-    if (dispatchCart[index]) {
-        let item = dispatchCart[index];
-        if (type === 'purch') {
-            item.convRate = item.masterConvRate || 1;
-            item.friendlyUom = item.purchaseUom || item.uom;
-        } else {
-            item.convRate = 1;
-            item.friendlyUom = item.uom;
-        }
-        item.qty = item.rawQty * item.convRate;
-        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
-        window.renderDispatchCart();
-    }
-};
-
 window.removeFromDispatchCart = function (index) { 
     dispatchCart.splice(index, 1); 
     Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
     window.renderDispatchCart(); 
 };
 
+// ==========================================
+// 🚚 DISPATCH CART ENGINE (SMART FOCUS & MATH FIX)
+// ==========================================
 window.renderDispatchCart = function() {
-  const tbody = document.getElementById('dispatchCartBody');
-  let table = tbody.closest('table');
-  if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
-      let wrapper = document.createElement('div'); wrapper.className = 'table-scroll-wrapper';
-      wrapper.style.maxHeight = '350px'; wrapper.style.overflowY = 'auto'; wrapper.style.borderBottom = '1px solid #e2e8f0'; wrapper.style.marginBottom = '10px';
-      table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);
-  }
+    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
+    if (!container) return;
 
-  localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
-  let dest = document.getElementById('dispTo'); if(dest && dest.value) localStorage.setItem('takodeal_dispatch_to', dest.value);
+    if (!dispatchCart || dispatchCart.length === 0) {
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
+        return;
+    }
 
-  if (dispatchCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding:15px; color:var(--text-muted);">Cart is empty.</td></tr>'; return; }
+    let html = '';
+    dispatchCart.forEach((item, index) => {
+        let pUom = item.purchaseUom || item.uom || 'units';
+        let bUom = item.baseUom || item.uom || 'units';
+        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+        
+        if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom !== bUom) ? 'purch' : 'base';
+        
+        let rawQty = parseFloat(item.rawQty) || 0;
+        let baseQty = parseFloat(item.qty) || 0;
 
-  let html = '';
-  dispatchCart.forEach((item, idx) => {
-      let varianceHtml = '';
-      if (item.requestType) {
-          let color = item.requestType === 'Out of Stock' ? '#dc2626' : '#d97706';
-          varianceHtml += `<div style="font-size: 11px; color: ${color}; font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px dashed ${color};">${item.requestType} (Physical: ${item.physicalStock} | System: ${item.systemStock})</div>`;
-      } 
-      
-      // 🔥 THE MAGIC FIX: Retrieve the EXACT HQ Data to fill in missing Purchase Order details!
-      let itemNameToFind = item.itemName || item.name;
-      let hqItem = dispatchInventoryList.find(i => i.name === itemNameToFind);
-      
-      let bUom = hqItem ? (hqItem.baseUom || hqItem.uom || item.uom) : (item.uom || 'units');
-      let pUom = hqItem ? (hqItem.purchaseUom || hqItem.purchUom || bUom) : (item.purchaseUom || bUom);
-      let masterConv = hqItem ? (parseFloat(hqItem.conversionRate) || parseFloat(hqItem.conversion) || 1) : (item.masterConvRate || 1);
+        let uomOptions = '';
+        if (pUom !== bUom && masterConv > 1) {
+            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
+        }
+        uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
 
-      // Lock it back into the item data so it doesn't crash when sent!
-      item.masterConvRate = masterConv;
-      item.purchaseUom = pUom;
-      item.uom = bUom;
+        let sysStock = item.systemStock || item.currentStock || 0;
+        let physStock = item.physicalStock || 0;
 
-      let safeQty = item.rawQty !== undefined ? item.rawQty : (item.qty || 0);
-      let fUom = item.friendlyUom || bUom;
-      let conv = item.convRate || 1;
-      let totalBase = safeQty * conv;
+        html += `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9;">
+                <div style="flex:1;">
+                    <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
+                    ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
+                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty} ${bUom})</span>
+                </div>
+                <div style="display:flex; align-items:center; gap: 10px;">
+                    <input type="number" step="any" value="${rawQty || ''}" 
+                        oninput="window.updateDispatchQty(${index}, this.value)" 
+                        style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
+                    
+                    <select onchange="window.updateDispatchUom(${index}, this.value)" 
+                        style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
+                        ${uomOptions}
+                    </select>
+                    
+                    <button onclick="window.removeFromDispatchCart(${index})" 
+                        style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖</button>
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+};
 
-      if (conv !== 1 || fUom !== bUom) {
-          varianceHtml += `<div style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${fUom}</strong> <span style="font-size:11px; color:var(--text-muted);">(${totalBase} ${bUom})</span></div>`;
-      } else {
-          varianceHtml += `<div style="font-size: 11px; color: #0f766e; margin-top: 4px; font-weight: bold;">Sending in <strong style="color:#0f766e;">${bUom}</strong></div>`;
-      }
+// 🔥 HELPER 1: Preserves your typing focus!
+window.updateDispatchQty = function(index, val) {
+    let item = dispatchCart[index];
+    item.rawQty = parseFloat(val) || 0;
+    
+    let pUom = item.purchaseUom || item.uom || 'units';
+    let bUom = item.baseUom || item.uom || 'units';
+    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    
+    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
+    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
+    item.qty = item.rawQty * item.convRate;
+    
+    let textSpan = document.getElementById(`dispatch_send_text_${index}`);
+    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${item.qty} ${bUom})`;
+    
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+};
 
-      // 🔥 THE DROPDOWN INJECTOR
-      let uomSelectorHtml = '';
-      if (pUom !== bUom && masterConv > 1) {
-          let isPurch = fUom === pUom;
-          uomSelectorHtml = `
-              <select onchange="window.updateCartItemUom(${idx}, this.value)" style="padding: 6px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; font-weight: bold; color: #92400e; outline: none; cursor: pointer; font-size: 12px; background: #fffcf0; height: 34px; box-sizing: border-box;">
-                  <option value="base" ${!isPurch ? 'selected' : ''}>${bUom}</option>
-                  <option value="purch" ${isPurch ? 'selected' : ''}>${pUom}</option>
-              </select>
-          `;
-      } else {
-          uomSelectorHtml = `<span style="font-size: 12px; font-weight: bold; color: #64748b; padding: 6px 8px; background: #f8fafc; border: 1px solid #cbd5e1; border-left: none; border-radius: 0 6px 6px 0; height: 34px; display: inline-flex; align-items: center; box-sizing: border-box;">${bUom}</span>`;
-      }
-
-      html += `<tr>
-          <td style="padding:10px; line-height: 1.4;"><strong style="font-size: 14px; color: #1e293b;">${itemNameToFind}</strong><br>${varianceHtml}</td>
-          <td style="padding:10px; vertical-align: top;">
-              <div style="display: flex; align-items: stretch; justify-content: flex-start; max-width: 150px; margin-top: 2px;">
-                  <input type="number" id="cartQty_${idx}" value="${safeQty}" onkeyup="window.updateCartItemQty(${idx}, this.value)" onchange="window.updateCartItemQty(${idx}, this.value)" style="flex: 1; width: 60px; padding: 6px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; outline: none; color: #ea580c; font-size: 14px; height: 34px; box-sizing: border-box;" placeholder="Qty">
-                  ${uomSelectorHtml}
-              </div>
-          </td>
-          <td style="text-align:right; padding:10px; vertical-align: top;">
-              <button class="btn-refresh" style="color:var(--danger); border:1px solid #fecaca; background:#fef2f2; padding:6px 10px; border-radius: 6px; font-size:11px; font-weight:bold; cursor: pointer; margin-top: 2px;" onclick="window.removeFromDispatchCart(${idx})">✖</button>
-          </td>
-      </tr>`;
-  });
-
-  html += `
-    <tr>
-        <td colspan="3" style="padding: 15px 10px 5px 10px;">
-            <button onclick="window.clearDispatchCart()" style="width: 100%; background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#f8fafc'">
-                📥 Put Back / Set Aside Cart
-            </button>
-        </td>
-    </tr>
-  `;
-
-  tbody.innerHTML = html;
+// 🔥 HELPER 2: Applies exact math based on the Dropdown!
+window.updateDispatchUom = function(index, val) {
+    let item = dispatchCart[index];
+    item.selectedUom = val;
+    
+    let pUom = item.purchaseUom || item.uom || 'units';
+    let bUom = item.baseUom || item.uom || 'units';
+    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    
+    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
+    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
+    item.qty = item.rawQty * item.convRate;
+    
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+    window.renderDispatchCart();
 };
 
 window.clearDispatchCart = async function() {
