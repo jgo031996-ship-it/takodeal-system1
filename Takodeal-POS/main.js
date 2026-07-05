@@ -1503,12 +1503,18 @@ window.submitExpenseCart = async function() {
 
         // 2. Process each item in cart
         for (let item of window.expenseCart) {
+            // 🔥 THE FIX: Inject the Quantity directly into the description so the Manager Expense Feed can read it!
+            let finalDescription = item.description;
+            if (item.isRestock && item.displayQty > 0) {
+                finalDescription = `${item.description} (Qty: ${item.displayQty} ${item.displayUom})`;
+            }
+
             await addDoc(collection(db, "expenses"), {
                 branch: branch,
                 shiftId: activeShiftDetails.logId,
                 cashier: cashier,
                 amount: item.cost,
-                description: item.description,
+                description: finalDescription,
                 receiptPhoto: photoUrl, 
                 timestamp: serverTimestamp()
             });
