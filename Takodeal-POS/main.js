@@ -2020,10 +2020,26 @@ window.submitAttendance = async function(type) {
     }
 
     let staffProfile = window.currentBranchStaffCache ? window.currentBranchStaffCache.find(s => s.cashierName === staffName) : null;
+    
+    // 🔥 THE FIX: If the tablet's temporary memory is empty, fetch the profile directly from the Cloud!
     if (!staffProfile) {
-        alert("❌ Error: Staff profile not found in local cache.");
-        unlockUI();
-        return;
+        try {
+            const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
+            const staffSnap = await getDocs(staffQ);
+            
+            if (!staffSnap.empty) {
+                staffProfile = staffSnap.docs[0].data();
+            } else {
+                alert(`❌ Error: ${staffName}'s profile could not be found in the database. Please contact the Manager.`);
+                unlockUI();
+                return;
+            }
+        } catch (e) {
+            console.error("Staff Fetch Error:", e);
+            alert("❌ Error connecting to the cloud to verify your profile. Please check the tablet's internet connection.");
+            unlockUI();
+            return;
+        }
     }
     
     // ==========================================
