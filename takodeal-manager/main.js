@@ -13871,7 +13871,7 @@ window.submitNewSanction = async function() {
             timestamp: serverTimestamp()
         });
 
-        alert(`✅ Success! A Notice to Explain (NTE) has been issued to ${staffName}. Their POS is now locked until they reply.`);
+        alert(`✅ Success! A Notice to Explain (NTE) has been issued to ${staffName}. Their Time Clock and POS are now locked until they reply.`);
         document.getElementById('issueSanctionModal').style.display = 'none';
         window.loadSanctionsDashboard();
 
