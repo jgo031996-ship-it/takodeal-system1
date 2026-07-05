@@ -2087,6 +2087,56 @@ window.submitAttendance = async function(type) {
         }
     }
 
+  // ==========================================
+  // 🚨 HR SANCTION & NTE LOCK (TIME CLOCK BLOCKER)
+        // ==========================================
+  try {
+      const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+      const nteSnap = await getDocs(nteQ);
+            
+      if (!nteSnap.empty) {
+          let nteData = nteSnap.docs[0].data();
+          let nteId = nteSnap.docs[0].id;
+                
+          // 1. Hide the Time Clock UI immediately
+          let clockModal = document.getElementById('timeClockModal');
+          if (clockModal) clockModal.style.display = 'none';
+                
+          // 2. Check if the Cashier App has the native NTE Modal built-in
+          let nteModal = document.getElementById('sanctionModal') || document.getElementById('nteModal');
+                
+          if (nteModal) {
+              // Trigger the native signature modal directly over the Time Clock!
+              nteModal.style.display = 'flex';
+              if (document.getElementById('sancDocId')) document.getElementById('sancDocId').value = nteId;
+              if (document.getElementById('sancTitle')) document.getElementById('sancTitle').innerText = nteData.type;
+              if (document.getElementById('sancDetails')) document.getElementById('sancDetails').innerText = nteData.details;
+              if (typeof window.clearSignature === 'function') window.clearSignature();
+          } else {
+              // Failsafe: Pop a strict SweetAlert blocking them
+              Swal.fire({
+                  title: '🚨 TIME CLOCK LOCKED',
+                  html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
+                          <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${nteData.type}"</span><br><br>
+                          <span style="color:#475569; font-size:14px;">You <b>cannot Time In</b> until you acknowledge and reply to this notice.</span><br><br>
+                          <i>Please log out the current POS user and log in with your PIN to read and sign your notice.</i>`,
+                  icon: 'error',
+                  confirmButtonText: 'Understood',
+                  confirmButtonColor: '#dc2626',
+                  allowOutsideClick: false,
+                  customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+              });
+          }
+                
+          // Wipe their PIN from the box and stop the Time In process!
+          document.getElementById('clockStaffPin').value = ''; 
+          if (typeof unlockUI === 'function') unlockUI(); 
+          return; // 🛑 BLOCKS THE TIME IN COMPLETELY!
+      }
+  } catch(e) {
+      console.error("NTE Check Failed:", e);
+  }
+  
     // ==========================================
     // 🛡️ ANTI-DOUBLE PUNCH, PENALTIES & HR LOCKS
     // ==========================================
