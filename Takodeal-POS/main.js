@@ -5263,7 +5263,7 @@ window.loadStockRequestHistory = async function() {
 };
 
 // ========================================================
-// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE
+// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE (PATCHED)
 // ========================================================
 window.processStoreUse = async function() {
     if (typeof cart === 'undefined' || cart.length === 0) {
@@ -5273,9 +5273,10 @@ window.processStoreUse = async function() {
 
     if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
 
-    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
-    let origText = btn.innerText;
-    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+    // 🔥 THE BUG FIX: Safely grab the button using a flexible selector so it never crashes!
+    let btn = document.querySelector('button[onclick*="processStoreUse"]');
+    let origText = btn ? btn.innerText : "Log as Store Use";
+    if (btn) { btn.innerText = "⏳ Processing..."; btn.disabled = true; }
 
     try {
         let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
@@ -5294,9 +5295,10 @@ window.processStoreUse = async function() {
             shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
             orderType: "Store Use", paymentMethod: "Store Use",
             subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
-            netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use" 
+            netTotal: 0, amountReceived: 0, cart: cart, status: "Store Use" 
         };
 
+        // This triggers your main POS logic!
         let receiptId = await window.processCheckout(payload);
 
         // 2. Log to the dedicated Store Use Feed for the Manager App
@@ -5306,13 +5308,25 @@ window.processStoreUse = async function() {
             });
         }
 
-        cart = []; renderCart(); closeModal('checkoutModal');
-        Swal.fire('✅ Logged!', 'Items marked for store use and inventory safely deducted.', 'success');
+        // 3. Clean up the UI
+        cart = []; 
+        if (typeof renderCart === 'function') renderCart(); 
+        if (typeof closeModal === 'function') closeModal('checkoutModal');
+        let paymentModal = document.getElementById('paymentModal');
+        if (paymentModal) paymentModal.style.display = 'none';
+
+        Swal.fire({
+            title: '✅ Logged!',
+            text: 'Items marked for store use and inventory safely deducted.',
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
         
     } catch(e) { 
-        console.error(e); Swal.fire('Error', 'Failed to log store use.', 'error'); 
+        console.error("Store Use Error:", e); 
+        Swal.fire('Error', 'Failed to log store use. ' + e.message, 'error'); 
     } finally { 
-        btn.innerText = origText; btn.disabled = false; 
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
 
