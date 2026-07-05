@@ -2010,17 +2010,21 @@ window.submitAttendance = async function(type) {
         return; 
     }
 
-    // 2. OFFLINE COOLDOWN LOCK (Prevents them from refreshing the app and trying again)
+    // 2. OFFLINE COOLDOWN LOCK
     let punchCooldownKey = `takodeal_punch_${staffName}`;
     let lastPunchTime = localStorage.getItem(punchCooldownKey);
     if (lastPunchTime && (Date.now() - parseInt(lastPunchTime) < 60000)) { 
-        // 60,000 milliseconds = 1 full minute lockout
         alert("⏳ Sync in progress!\n\nYour previous punch is still processing due to slow internet. Please wait 1 minute before trying again to prevent duplicate logs.");
         unlockUI();
         return;
     }
 
-    let staffProfile = currentBranchStaffCache.find(s => s.cashierName === staffName);
+    let staffProfile = window.currentBranchStaffCache ? window.currentBranchStaffCache.find(s => s.cashierName === staffName) : null;
+    if (!staffProfile) {
+        alert("❌ Error: Staff profile not found in local cache.");
+        unlockUI();
+        return;
+    }
     
     // ==========================================
     // 🤖 FACE AI VERIFICATION & REGISTRATION
@@ -2087,56 +2091,51 @@ window.submitAttendance = async function(type) {
         }
     }
 
-  // ==========================================
-  // 🚨 HR SANCTION & NTE LOCK (TIME CLOCK BLOCKER)
-        // ==========================================
-  try {
-      const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
-      const nteSnap = await getDocs(nteQ);
+    // ==========================================
+    // 🚨 HR SANCTION & NTE LOCK (TIME CLOCK BLOCKER)
+    // ==========================================
+    try {
+        const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const nteSnap = await getDocs(nteQ);
+        
+        if (!nteSnap.empty) {
+            let nteData = nteSnap.docs[0].data();
+            let nteId = nteSnap.docs[0].id;
             
-      if (!nteSnap.empty) {
-          let nteData = nteSnap.docs[0].data();
-          let nteId = nteSnap.docs[0].id;
-                
-          // 1. Hide the Time Clock UI immediately
-          let clockModal = document.getElementById('timeClockModal');
-          if (clockModal) clockModal.style.display = 'none';
-                
-          // 2. Check if the Cashier App has the native NTE Modal built-in
-          let nteModal = document.getElementById('sanctionModal') || document.getElementById('nteModal');
-                
-          if (nteModal) {
-              // Trigger the native signature modal directly over the Time Clock!
-              nteModal.style.display = 'flex';
-              if (document.getElementById('sancDocId')) document.getElementById('sancDocId').value = nteId;
-              if (document.getElementById('sancTitle')) document.getElementById('sancTitle').innerText = nteData.type;
-              if (document.getElementById('sancDetails')) document.getElementById('sancDetails').innerText = nteData.details;
-              if (typeof window.clearSignature === 'function') window.clearSignature();
-          } else {
-              // Failsafe: Pop a strict SweetAlert blocking them
-              Swal.fire({
-                  title: '🚨 TIME CLOCK LOCKED',
-                  html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
-                          <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${nteData.type}"</span><br><br>
-                          <span style="color:#475569; font-size:14px;">You <b>cannot Time In</b> until you acknowledge and reply to this notice.</span><br><br>
-                          <i>Please log out the current POS user and log in with your PIN to read and sign your notice.</i>`,
-                  icon: 'error',
-                  confirmButtonText: 'Understood',
-                  confirmButtonColor: '#dc2626',
-                  allowOutsideClick: false,
-                  customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
-              });
-          }
-                
-          // Wipe their PIN from the box and stop the Time In process!
-          document.getElementById('clockStaffPin').value = ''; 
-          if (typeof unlockUI === 'function') unlockUI(); 
-          return; // 🛑 BLOCKS THE TIME IN COMPLETELY!
-      }
-  } catch(e) {
-      console.error("NTE Check Failed:", e);
-  }
-  
+            let clockModal = document.getElementById('timeClockModal');
+            if (clockModal) clockModal.style.display = 'none';
+            
+            let nteModal = document.getElementById('sanctionModal') || document.getElementById('nteModal');
+            
+            if (nteModal) {
+                nteModal.style.display = 'flex';
+                if (document.getElementById('sancDocId')) document.getElementById('sancDocId').value = nteId;
+                if (document.getElementById('sancTitle')) document.getElementById('sancTitle').innerText = nteData.type;
+                if (document.getElementById('sancDetails')) document.getElementById('sancDetails').innerText = nteData.details;
+                if (typeof window.clearSignature === 'function') window.clearSignature();
+            } else {
+                Swal.fire({
+                    title: '🚨 TIME CLOCK LOCKED',
+                    html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
+                           <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${nteData.type}"</span><br><br>
+                           <span style="color:#475569; font-size:14px;">You <b>cannot Time In</b> until you acknowledge and reply to this notice.</span><br><br>
+                           <i>Please log out the current POS user and log in with your PIN to read and sign your notice.</i>`,
+                    icon: 'error',
+                    confirmButtonText: 'Understood',
+                    confirmButtonColor: '#dc2626',
+                    allowOutsideClick: false,
+                    customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+                });
+            }
+            
+            document.getElementById('clockStaffPin').value = ''; 
+            unlockUI(); 
+            return; 
+        }
+    } catch(e) {
+        console.error("NTE Check Failed:", e);
+    }
+
     // ==========================================
     // 🛡️ ANTI-DOUBLE PUNCH, PENALTIES & HR LOCKS
     // ==========================================
@@ -2155,9 +2154,7 @@ window.submitAttendance = async function(type) {
             let now = new Date();
             let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
 
-            // 🔥 THE NEW PENALTY ENGINE: Forgot to Time Out!
             if (type === "TIME IN" && lastType === "TIME IN") {
-                // If it's been more than 12 hours since their last Time In, they definitely went home!
                 if (hoursSinceLastLog > 12) {
                     const penaltyConfirm = await Swal.fire({
                         title: '⚠️ Missing Time-Out Detected',
@@ -2174,8 +2171,6 @@ window.submitAttendance = async function(type) {
                         document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
                     }
 
-                    // Auto-resolve yesterday's shift so the payroll database doesn't break
-                    // We cap it at 9 hours so their payroll doesn't accidentally show 24+ hours
                     let autoOutTime = new Date(lastTime.getTime() + (9 * 60 * 60 * 1000));
                     
                     await addDoc(collection(db, "attendance_logs"), {
@@ -2191,15 +2186,12 @@ window.submitAttendance = async function(type) {
                         notes: "Forced Auto-Out. Paid next cut-off."
                     });
 
-                    // Fire an alert to the Manager Security Feed
                     await addDoc(collection(db, "manager_alerts"), {
                         type: "ATTENDANCE_PENALTY", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
                         message: `HR PENALTY: ${staffName} forgot to Time Out yesterday. System auto-closed their shift at 9 hours and applied the 'Paid Next Cut-Off' penalty.`,
                         timestamp: new Date(), isRead: false
                     });
                     
-                    // WE DO NOT RETURN HERE! 
-                    // We allow the code to continue running so it successfully logs their NEW "Time In" for today!
                 } else {
                     alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
                     document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
@@ -2233,9 +2225,13 @@ window.submitAttendance = async function(type) {
     // ==========================================
     const video = document.getElementById('clockVideo');
     const canvas = document.getElementById('clockCanvas');
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    const photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+    let photoBase64 = "";
+    
+    if (video && canvas && video.videoWidth > 0) {
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+    }
 
     if (!navigator.geolocation) { 
         alert("❌ Geolocation is not supported."); 
@@ -2250,17 +2246,19 @@ window.submitAttendance = async function(type) {
         let finalBranch = deviceBranch;
         let finalDistance = 0;
 
-        const targetZone = BRANCH_ZONES[deviceBranch];
+        const targetZone = window.BRANCH_ZONES ? window.BRANCH_ZONES[deviceBranch] : null;
         if (!targetZone) { 
             alert(`❌ GPS Configuration Missing for ${deviceBranch}.`); 
             unlockUI(); return; 
         }
         
-        finalDistance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+        if (typeof window.getDistanceInMeters === 'function') {
+            finalDistance = window.getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
 
-        if (finalDistance > ALLOWED_RADIUS_METERS) {
-            alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(finalDistance)}m away from ${deviceBranch}.\nMust be within ${ALLOWED_RADIUS_METERS}m!`);
-            unlockUI(); return;
+            if (finalDistance > window.ALLOWED_RADIUS_METERS) {
+                alert(`🚨 SECURITY LOCKOUT!\nYou are ${Math.round(finalDistance)}m away from ${deviceBranch}.\nMust be within ${window.ALLOWED_RADIUS_METERS}m!`);
+                unlockUI(); return;
+            }
         }
         
         try {
@@ -2275,11 +2273,10 @@ window.submitAttendance = async function(type) {
                 photoBase64: photoBase64
             });
             
-            // 3. APPLY THE 60-SECOND HARD LOCKOUT
             localStorage.setItem(punchCooldownKey, Date.now());
             
             alert(`✅ ${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`);
-            window.closeTimeClock();
+            if (typeof window.closeTimeClock === 'function') window.closeTimeClock();
         } catch (error) { 
             console.error(error); alert("❌ Failed to log attendance."); 
         } 
