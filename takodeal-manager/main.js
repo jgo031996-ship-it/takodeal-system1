@@ -1425,7 +1425,8 @@ window.addToDispatchCart = function () {
     let uomSelect = document.getElementById('dispUomSelect'); 
     let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
 
-    let convRate = (selectedUomType === 'purch') ? (parseFloat(invItem.conversionRate) || 1) : 1;
+    let masterConv = parseFloat(invItem.conversionRate) || parseFloat(invItem.conversion) || 1;
+    let convRate = (selectedUomType === 'purch') ? masterConv : 1;
     let friendlyUom = (selectedUomType === 'purch') ? (invItem.purchaseUom || "Bulk") : invItem.uom;
     let finalBaseQty = rawQty * convRate;
 
@@ -1438,8 +1439,8 @@ window.addToDispatchCart = function () {
 
     let existing = dispatchCart.find(i => (i.itemName || i.name) === itemName);
     if (existing) { 
-        existing.rawQty += rawQty;
-        existing.qty += finalBaseQty; 
+        existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawQty;
+        existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty; 
         existing.friendlyUom = friendlyUom; 
         existing.convRate = convRate;
         existing.selectedUom = selectedUomType;
@@ -1453,11 +1454,13 @@ window.addToDispatchCart = function () {
     }
 
     document.getElementById('dispQty').value = ''; document.getElementById('dispItem').value = ''; 
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
     window.renderDispatchCart();
 };
 
 window.removeFromDispatchCart = function (index) { 
     dispatchCart.splice(index, 1); 
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
     Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
     window.renderDispatchCart(); 
 };
@@ -1469,6 +1472,7 @@ window.renderDispatchCart = function() {
     let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
     if (!container) return;
 
+    // 🔥 THE FIX: Use 'dispatchCart' locally, perfectly matching the array!
     if (!dispatchCart || dispatchCart.length === 0) {
         container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
         return;
@@ -1499,7 +1503,7 @@ window.renderDispatchCart = function() {
                 <div style="flex:1;">
                     <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
                     ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
-                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty} ${bUom})</span>
+                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
                 </div>
                 <div style="display:flex; align-items:center; gap: 10px;">
                     <input type="number" step="any" value="${rawQty || ''}" 
@@ -1534,7 +1538,7 @@ window.updateDispatchQty = function(index, val) {
     item.qty = item.rawQty * item.convRate;
     
     let textSpan = document.getElementById(`dispatch_send_text_${index}`);
-    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${item.qty} ${bUom})`;
+    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${item.qty.toFixed(2)} ${bUom})`;
     
     localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
 };
