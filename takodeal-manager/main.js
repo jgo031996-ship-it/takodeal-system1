@@ -8985,7 +8985,8 @@ window.generateAutoPayslips = async function() {
                 let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
-                if (hoursWorked > 16) {
+                // 🔥 THE FIX: Increased to 18 hours so 16.6h shifts process perfectly as Straight Duties!
+                if (hoursWorked > 18) {
                     staffData[name].logs.push({ date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), hrs: hoursWorked.toFixed(2), remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h) - Use Manual Log</span>` });
                     delete activeShifts[name]; return; 
                 }
