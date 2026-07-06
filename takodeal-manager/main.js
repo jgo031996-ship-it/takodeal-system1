@@ -1472,7 +1472,7 @@ window.renderDispatchCart = function() {
     let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
     if (!container) return;
 
-    // 🔥 THE FIX: Look at the actual 'dispatchCart', not the empty 'window' object!
+    // 🔥 THE FIX: Look at the actual 'dispatchCart' variable, not the empty 'window' object!
     if (typeof dispatchCart === 'undefined' || dispatchCart.length === 0) {
         container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
         return;
@@ -1482,20 +1482,18 @@ window.renderDispatchCart = function() {
     dispatchCart.forEach((item, index) => {
         let pUom = item.purchaseUom || item.uom || 'units';
         let bUom = item.baseUom || item.uom || 'units';
-        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
         
-        // Default to Base UOM if they haven't selected one yet
-        if (!item.selectedUom) item.selectedUom = bUom;
-        let qty = parseFloat(item.qty) || 0;
+        if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom !== bUom) ? 'purch' : 'base';
         
-        // 🔥 THE MATH FIX: Only multiply if they selected the Bulk Purchase UOM!
-        let sendingQty = (item.selectedUom === pUom && pUom !== bUom) ? (qty * conv) : qty;
+        let rawQty = parseFloat(item.rawQty) || 0;
+        let baseQty = parseFloat(item.qty) || 0;
 
         let uomOptions = '';
-        if (pUom !== bUom && conv > 1) {
-            uomOptions += `<option value="${pUom}" ${item.selectedUom === pUom ? 'selected' : ''}>${pUom}</option>`;
+        if (pUom !== bUom && masterConv > 1) {
+            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
         }
-        uomOptions += `<option value="${bUom}" ${item.selectedUom === bUom ? 'selected' : ''}>${bUom}</option>`;
+        uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
 
         let sysStock = item.systemStock || item.currentStock || 0;
         let physStock = item.physicalStock || 0;
@@ -1505,11 +1503,10 @@ window.renderDispatchCart = function() {
                 <div style="flex:1;">
                     <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
                     ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
-                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${sendingQty} ${bUom})</span>
+                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
                 </div>
                 <div style="display:flex; align-items:center; gap: 10px;">
-                    <!-- 🔥 THE FOCUS FIX: oninput now only updates the array and text, without redrawing the box! -->
-                    <input type="number" step="any" value="${qty || ''}" 
+                    <input type="number" step="any" value="${rawQty || ''}" 
                         oninput="window.updateDispatchQty(${index}, this.value)" 
                         style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
                     
@@ -1524,29 +1521,51 @@ window.renderDispatchCart = function() {
             </div>
         `;
     });
+
+    // 🔥 THE NEW CLEAR CART BUTTON: Injecting this safely into the UI so you can easily discard bad batches!
+    html += `
+        <div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
+            <button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                🧹 Set Aside / Clear Cart
+            </button>
+        </div>
+    `;
+
     container.innerHTML = html;
 };
 
 // Helper 1: Silently updates the number without breaking typing focus!
 window.updateDispatchQty = function(index, val) {
     let item = dispatchCart[index];
-    item.qty = parseFloat(val) || 0;
+    item.rawQty = parseFloat(val) || 0;
     
     let pUom = item.purchaseUom || item.uom || 'units';
     let bUom = item.baseUom || item.uom || 'units';
-    let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
     
-    let sendingQty = (item.selectedUom === pUom && pUom !== bUom) ? (item.qty * conv) : item.qty;
+    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
+    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
+    item.qty = item.rawQty * item.convRate;
     
     let textSpan = document.getElementById(`dispatch_send_text_${index}`);
-    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${sendingQty} ${bUom})`;
+    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${item.qty.toFixed(2)} ${bUom})`;
 
     localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
 };
 
 // Helper 2: Safely handles Dropdown changes
 window.updateDispatchUom = function(index, val) {
-    dispatchCart[index].selectedUom = val;
+    let item = dispatchCart[index];
+    item.selectedUom = val;
+    
+    let pUom = item.purchaseUom || item.uom || 'units';
+    let bUom = item.baseUom || item.uom || 'units';
+    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    
+    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
+    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
+    item.qty = item.rawQty * item.convRate;
+    
     localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
     window.renderDispatchCart();
 };
@@ -1569,11 +1588,15 @@ window.clearDispatchCart = async function() {
     localStorage.removeItem('takodeal_active_po');
     Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
     
-    document.getElementById('dispFrom').value = "Main Office";
-    document.getElementById('dispTo').value = "";
+    let dispFrom = document.getElementById('dispFrom');
+    let dispTo = document.getElementById('dispTo');
+    
+    if (dispFrom) dispFrom.value = "Main Office";
+    if (dispTo) dispTo.value = "";
     
     window.renderDispatchCart();
-    window.loadDispatchLogs();
+    
+    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
 };
 
   // ==========================================
