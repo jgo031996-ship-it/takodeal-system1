@@ -1482,20 +1482,20 @@ window.renderDispatchCart = function() {
 
     let html = '';
     dispatchCart.forEach((item, index) => {
-        let pUom = item.purchaseUom || item.purchUom || item.uom || 'Bulk';
+        // 🔥 THE FIX: Fallback mapping to guarantee we read the exact UOM strings
+        let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
         let bUom = item.baseUom || item.uom || 'units';
-        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || parseFloat(item.masterConvRate) || 1;
+        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
         
-        if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom !== bUom) ? 'purch' : 'base';
+        if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base';
         
         let rawQty = parseFloat(item.rawQty) || 0;
         let baseQty = parseFloat(item.qty) || 0;
 
-        // 🔥 THE DROPDOWN FIX: If conversion > 1, ALWAYS show it, and display the multiplier so it's obvious!
         let uomOptions = '';
-        if (masterConv > 1) {
-            let displayPurch = pUom.toLowerCase() === bUom.toLowerCase() ? `Bulk ${pUom}` : pUom;
-            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${displayPurch} (x${masterConv})</option>`;
+        // Only add the bulk option if the words are actually different!
+        if (pUom.toLowerCase() !== bUom.toLowerCase()) {
+            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
         }
         uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
 
@@ -1526,7 +1526,6 @@ window.renderDispatchCart = function() {
         `;
     });
 
-    // 🔥 THE NEW CLEAR CART BUTTON: Injecting this safely into the UI so you can easily discard bad batches!
     html += `
         <div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
             <button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
@@ -1542,9 +1541,9 @@ window.updateDispatchQty = function(index, val) {
     let item = dispatchCart[index];
     item.rawQty = parseFloat(val) || 0;
     
-    let pUom = item.purchaseUom || item.purchUom || item.uom || 'Bulk';
+    let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
     let bUom = item.baseUom || item.uom || 'units';
-    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
     
     item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
     item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
@@ -1560,9 +1559,9 @@ window.updateDispatchUom = function(index, val) {
     let item = dispatchCart[index];
     item.selectedUom = val;
     
-    let pUom = item.purchaseUom || item.purchUom || item.uom || 'Bulk';
+    let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
     let bUom = item.baseUom || item.uom || 'units';
-    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
     
     item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
     item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
@@ -1911,7 +1910,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL 
+// 🔍 THE REVIEW REQUEST MODAL (WITH AUTO-CLEAR)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -1924,11 +1923,10 @@ window.reviewPurchaseOrder = async function(poId) {
         
         const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
         let hqStock = {};
-        let hqMasterDb = {}; // 🔥 NEW: Memory vault for correct UOMs
+        let hqDetails = {}; // 🔥 NEW: Grab ALL HQ details to steal the exact UOMs!
         hqSnap.forEach(d => {
-            let data = d.data();
-            hqStock[data.name] = parseFloat(data.currentStock || 0);
-            hqMasterDb[data.name] = data; // Save full raw data to override the branch's corrupted data!
+            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
+            hqDetails[d.data().name] = d.data(); 
         });
 
         let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
@@ -1983,25 +1981,24 @@ window.reviewPurchaseOrder = async function(poId) {
                 }
 
                 po.items.forEach(newItem => {
-                    let nameToFind = newItem.itemName || newItem.name;
-                    let hqItem = hqMasterDb[nameToFind] || {}; // 🔥 Fetch live UOMs from HQ!
-                    
+                    let itemName = newItem.itemName || newItem.name;
+                    let hqData = hqDetails[itemName] || {}; // Pull real UOMs from HQ
+
+                    // 🔥 THE UOM FIX: MAP UOM AND CONVERSION RATES PERFECTLY FROM THE MAIN OFFICE DATABASE!
                     let mappedItem = {
                         ...newItem, 
                         rawQty: newItem.qty || 0,
-                        // 🔥 FORCE INJECTION OF LIVE DATA OVERRIDING BROKEN PO DATA
-                        purchaseUom: hqItem.purchaseUom || hqItem.purchUom || newItem.purchaseUom || newItem.uom || 'Bulk',
-                        baseUom: hqItem.baseUom || hqItem.uom || newItem.baseUom || newItem.uom || 'units',
-                        uom: hqItem.uom || newItem.uom || 'units',
-                        conversionRate: parseFloat(hqItem.conversionRate) || parseFloat(hqItem.conversion) || parseFloat(newItem.convRate) || 1
+                        purchaseUom: hqData.purchaseUom || hqData.purchUom || newItem.purchaseUom || newItem.uom || 'units',
+                        baseUom: hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units',
+                        conversionRate: hqData.conversionRate || hqData.conversion || newItem.convRate || newItem.conversionRate || 1
                     };
 
-                    let existing = dispatchCart.find(i => (i.itemName || i.name) === nameToFind);
+                    let existing = dispatchCart.find(i => (i.itemName || i.name) === itemName);
                     
                     if (existing) {
-                        existing.requestType = mappedItem.requestType;
-                        existing.physicalStock = mappedItem.physicalStock;
-                        existing.systemStock = mappedItem.systemStock;
+                        existing.requestType = newItem.requestType;
+                        existing.physicalStock = newItem.physicalStock;
+                        existing.systemStock = newItem.systemStock;
                     } else {
                         dispatchCart.push(mappedItem);
                     }
