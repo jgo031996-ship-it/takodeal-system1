@@ -1469,20 +1469,52 @@ window.removeFromDispatchCart = function (index) {
 };
 
 // ==========================================
-// 🚚 DISPATCH CART ENGINE (UOM DROPDOWN FIX)
+// 🚚 DISPATCH CART ENGINE (BULLETPROOF CONTAINER FIX)
 // ==========================================
 window.renderDispatchCart = function() {
-    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
-    if (!container) return;
+    // 1. Try to find the container normally
+    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer') || document.getElementById('dispatchCartBody');
+    
+    // 2. ULTIMATE DOM FINDER: If HTML ID is missing, scan the screen for the text "Cart is empty."
+    if (!container) {
+        let allTags = document.querySelectorAll('div, td, span, p');
+        for(let i=0; i<allTags.length; i++) {
+            if(allTags[i].innerText && allTags[i].innerText.trim() === 'Cart is empty.') {
+                container = allTags[i];
+                container.id = 'dispatchItemsList'; // Assign it an ID permanently
+                break;
+            }
+        }
+    }
 
-    if (typeof dispatchCart === 'undefined' || dispatchCart.length === 0) {
-        container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
+    // 3. IF STILL NOT FOUND: Inject it right above the bright orange Send button!
+    if (!container) {
+        let btn = document.getElementById('btnSubmitDispatch') || document.querySelector('button[onclick*="submitMultiDispatch"]');
+        if (btn) {
+            container = btn.previousElementSibling;
+            container.id = 'dispatchItemsList';
+        }
+    }
+
+    if (!container) {
+        console.error("CRITICAL: Dispatch container missing from HTML.");
         return;
     }
 
+    // Validate the Cart
+    if (typeof dispatchCart === 'undefined') window.dispatchCart = [];
+    if (dispatchCart.length === 0) {
+        let emptyHtml = container.tagName.toLowerCase() === 'tbody' 
+            ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' 
+            : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
+        container.innerHTML = emptyHtml;
+        return;
+    }
+    
+    let isTable = container.tagName.toLowerCase() === 'tbody';
     let html = '';
+
     dispatchCart.forEach((item, index) => {
-        // 🔥 THE FIX: Fallback mapping to guarantee we read the exact UOM strings
         let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
         let bUom = item.baseUom || item.uom || 'units';
         let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
@@ -1493,7 +1525,6 @@ window.renderDispatchCart = function() {
         let baseQty = parseFloat(item.qty) || 0;
 
         let uomOptions = '';
-        // Only add the bulk option if the words are actually different!
         if (pUom.toLowerCase() !== bUom.toLowerCase()) {
             uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
         }
@@ -1502,37 +1533,64 @@ window.renderDispatchCart = function() {
         let sysStock = item.systemStock || item.currentStock || 0;
         let physStock = item.physicalStock || 0;
 
-        html += `
-            <div style="display:flex; align-items:center; justify-content:space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9;">
-                <div style="flex:1;">
-                    <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                    ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
-                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+        if (isTable) {
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 10px;">
+                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
+                        ${item.requestType ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Phys: ${physStock} | Sys: ${sysStock})</span><br>` : ''}
+                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+                    </td>
+                    <td style="padding: 15px 10px; text-align: center;">
+                        <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
+                            <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
+                                oninput="window.updateDispatchQty(${index}, this.value)" 
+                                style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
+                            
+                            <select onchange="window.updateDispatchUom(${index}, this.value)" 
+                                style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
+                                ${uomOptions}
+                            </select>
+                        </div>
+                    </td>
+                    <td style="padding: 15px 10px; text-align: center;">
+                        <button onclick="window.removeFromDispatchCart(${index})" 
+                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
+                    </td>
+                </tr>
+            `;
+        } else {
+            html += `
+                <div style="display:flex; align-items:center; justify-content:space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9;">
+                    <div style="flex:1;">
+                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
+                        ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
+                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap: 10px;">
+                        <input type="number" step="any" value="${rawQty || ''}" 
+                            oninput="window.updateDispatchQty(${index}, this.value)" 
+                            style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
+                        
+                        <select onchange="window.updateDispatchUom(${index}, this.value)" 
+                            style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
+                            ${uomOptions}
+                        </select>
+                        
+                        <button onclick="window.removeFromDispatchCart(${index})" 
+                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖</button>
+                    </div>
                 </div>
-                <div style="display:flex; align-items:center; gap: 10px;">
-                    <input type="number" step="any" value="${rawQty || ''}" 
-                        oninput="window.updateDispatchQty(${index}, this.value)" 
-                        style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
-                    
-                    <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                        style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
-                        ${uomOptions}
-                    </select>
-                    
-                    <button onclick="window.removeFromDispatchCart(${index})" 
-                        style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖</button>
-                </div>
-            </div>
-        `;
+            `;
+        }
     });
 
-    html += `
-        <div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
-            <button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
-                🧹 Set Aside / Clear Cart
-            </button>
-        </div>
-    `;
+    // The Clear Cart Button Row
+    if (isTable) {
+        html += `<tr><td colspan="3" style="padding: 15px; text-align: right; border-top: 2px dashed #e2e8f0;"><button onclick="window.clearDispatchCart()" style="background: #f8fafc; color: #475569; border: 1px dashed #cbd5e1; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">🧹 Set Aside / Clear Cart</button></td></tr>`;
+    } else {
+        html += `<div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;"><button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">🧹 Set Aside / Clear Cart</button></div>`;
+    }
 
     container.innerHTML = html;
 };
@@ -1910,7 +1968,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (WITH AUTO-CLEAR)
+// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR UPGRADE)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -1964,10 +2022,10 @@ window.reviewPurchaseOrder = async function(poId) {
             customClass: { popup: 'rounded-2xl shadow-xl' }
         }).then(async (result) => {
             if (result.isConfirmed) {
-                let currentDest = document.getElementById('dispTo').value;
                 
-                // 🔥 THE AUTO-CLEAR FIX: Automatically set aside old items to make room for the new branch!
-                if (dispatchCart.length > 0 && currentDest && currentDest !== po.branch) {
+                // 🔥 THE AUTO-CLEAR FIX: We check the deep local memory variable, NOT the HTML dropdown!
+                let storedDest = localStorage.getItem('takodeal_dispatch_to');
+                if (dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
                     await window.clearDispatchCart(); 
                     Swal.fire({
                         toast: true, position: 'top-end', icon: 'info',
@@ -1984,7 +2042,7 @@ window.reviewPurchaseOrder = async function(poId) {
                     let itemName = newItem.itemName || newItem.name;
                     let hqData = hqDetails[itemName] || {}; // Pull real UOMs from HQ
 
-                    // 🔥 THE UOM FIX: MAP UOM AND CONVERSION RATES PERFECTLY FROM THE MAIN OFFICE DATABASE!
+                    // 🔥 THE UOM FIX: MAPPING EXACT PURCHASE UOMS FROM HQ
                     let mappedItem = {
                         ...newItem, 
                         rawQty: newItem.qty || 0,
@@ -1994,7 +2052,6 @@ window.reviewPurchaseOrder = async function(poId) {
                     };
 
                     let existing = dispatchCart.find(i => (i.itemName || i.name) === itemName);
-                    
                     if (existing) {
                         existing.requestType = newItem.requestType;
                         existing.physicalStock = newItem.physicalStock;
