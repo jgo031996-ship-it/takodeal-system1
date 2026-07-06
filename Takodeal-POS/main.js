@@ -780,7 +780,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
             let newStock = (invData.currentStock || 0) + totalAmountToReturn;
             await updateDoc(invDocRef, { currentStock: newStock });
 
-            // 🔥 THE FIX: Log the replenishment correctly so the Manager App can read it!
+            // 🔥 THE FIX: Changed 'safeFirstName' to 'cashierName' so it doesn't crash!
             await addDoc(collection(db, "stock_logs"), {
                 branch: branch,
                 item: ingredientName,
@@ -789,7 +789,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                 newQty: newStock,
                 variance: totalAmountToReturn, 
                 type: "Transaction Voided",
-                note: `Receipt ${receiptId} voided by ${safeFirstName}`,
+                note: `Receipt ${receiptId} voided by ${cashierName}`,
                 user: cashierName,
                 timestamp: serverTimestamp()
             });
@@ -815,7 +815,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                         let newStock = (invData.currentStock || 0) + totalAddonReturn;
                         await updateDoc(invDocRef, { currentStock: newStock });
 
-                      // 🔥 THE FIX: Log the addon replenishment correctly!
+                      // 🔥 THE FIX: Changed 'safeFirstName' to 'cashierName' here as well!
                       await addDoc(collection(db, "stock_logs"), {
                           branch: branch,
                           item: addon.linkedIngredient,
@@ -824,7 +824,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                           newQty: newStock,
                           variance: totalAddonReturn, 
                           type: "Transaction Voided (Addon)",
-                          note: `Receipt ${receiptId} voided by ${safeFirstName}`,
+                          note: `Receipt ${receiptId} voided by ${cashierName}`,
                           user: cashierName,
                           timestamp: serverTimestamp()
                       });
@@ -840,7 +840,6 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
     let totalBallsToReturn = 0;
     for (let cartItem of txData.cart) {
         let itemName = cartItem.name || cartItem.itemName;
-        // Smart AI: Looks for "8 Pcs", "15 Pcs" etc. just like the checkout engine
         let match = itemName.match(/(\d+)\s*Pcs/i);
         if (match) {
             let ballsInBox = parseInt(match[1]);
@@ -848,10 +847,8 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
         }
     }
 
-    // If they voided Takoyaki, deduct it from the Global Vault!
     if (totalBallsToReturn > 0) {
         const statsRef = doc(db, "settings", "global_stats");
-        // We use a negative increment to subtract the balls!
         await setDoc(statsRef, { 
             totalTakoyakiBalls: increment(-totalBallsToReturn) 
         }, { merge: true });
@@ -863,7 +860,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
       branch: branch,
       cashier: cashierName,
       receiptId: receiptId,
-      message: `WARNING: Cashier ${safeFirstName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
+      message: `WARNING: Cashier ${cashierName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
       timestamp: serverTimestamp(),
       isRead: false
     });
