@@ -1963,10 +1963,17 @@ window.reviewPurchaseOrder = async function(poId) {
             if (result.isConfirmed) {
                 let currentDest = document.getElementById('dispTo').value;
                 
-                // 🔥 1. THE SECURITY FIX: Prevent mixing branches in the cart!
+                // 🔥 1. THE AUTO-CLEAR FIX: Automatically set aside old items to make room for the new branch!
                 if (dispatchCart.length > 0 && currentDest && currentDest !== po.branch) {
-                    Swal.fire('Branch Mismatch', `Your cart has items for ${currentDest}. Please dispatch or clear the cart first before loading requests for ${po.branch}.`, 'warning');
-                    return;
+                    // This instantly pushes the ghost items back to the "Pending" feed and empties the cart!
+                    await window.clearDispatchCart(); 
+                    
+                    // Show a quick, non-intrusive toast notification so you know it handled it for you
+                    Swal.fire({
+                        toast: true, position: 'top-end', icon: 'info',
+                        title: `Previous cart set aside. Loading ${po.branch}...`,
+                        showConfirmButton: false, timer: 3000
+                    });
                 }
 
                 // Only wipe draft inputs if we are starting a completely fresh cart
