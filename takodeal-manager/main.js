@@ -1469,57 +1469,150 @@ window.removeFromDispatchCart = function (index) {
 };
 
 // ==========================================
-// 🚚 DISPATCH CART ENGINE (BULLETPROOF CONTAINER FIX)
+// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR UPGRADE)
+// ==========================================
+window.reviewPurchaseOrder = async function(poId) {
+    try {
+        Swal.fire({ title: 'Cross-checking inventory...', didOpen: () => Swal.showLoading() });
+        const poRef = doc(db, "purchase_orders", poId);
+        const poSnap = await getDoc(poRef);
+        if (!poSnap.exists()) return Swal.fire('Error', 'Request not found.', 'error');
+        
+        let po = poSnap.data();
+        
+        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+        let hqStock = {};
+        let hqDetails = {}; // 🔥 THE FIX: We pull the exact HQ item details to grab their Conversion Rates!
+        hqSnap.forEach(d => {
+            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
+            hqDetails[d.data().name] = d.data(); 
+        });
+
+        let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <tr>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Item Requested</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Branch Report</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: right; color: #16a34a;">HQ Stock</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+        
+        po.items.forEach(item => {
+            let hqAvail = hqStock[item.itemName] || 0;
+            let reportTxt = item.requestType ? 
+                `<span style="color: #dc2626; font-weight: bold;">${item.requestType}</span><br><span style="font-size:10px; color:#64748b; font-weight:bold;">Actual: ${item.physicalStock} | Sys: ${item.systemStock}</span>` : 
+                `<span style="color: #0f766e; font-weight: bold;">Requested: ${item.qty} ${item.uom}</span>`;
+            
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
+                <td style="padding: 10px;">${reportTxt}</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold; color: #16a34a; font-size: 14px;">${hqAvail} <span style="font-size:10px; color:#94a3b8; font-weight:normal;">${item.uom}</span></td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        
+        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
+        
+        Swal.fire({
+            title: titleTxt, html: html, width: '700px',
+            showCancelButton: true, showDenyButton: true,
+            confirmButtonColor: '#0ea5e9', cancelButtonColor: '#94a3b8', denyButtonColor: '#dc2626',
+            confirmButtonText: '📥 Load into Dispatch Cart', cancelButtonText: 'Set Aside (Close)', denyButtonText: '✖ Delete Request',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                
+                // 🔥 THE AUTO-CLEAR FIX: We read deep memory instead of the UI to guarantee it detects mismatches!
+                let storedDest = localStorage.getItem('takodeal_dispatch_to');
+                if (dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
+                    await window.clearDispatchCart(); 
+                    Swal.fire({
+                        toast: true, position: 'top-end', icon: 'info',
+                        title: `Previous cart set aside. Loading ${po.branch}...`,
+                        showConfirmButton: false, timer: 3000
+                    });
+                }
+
+                if (dispatchCart.length === 0) {
+                    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+                }
+
+                po.items.forEach(newItem => {
+                    let itemName = newItem.itemName || newItem.name;
+                    let hqData = hqDetails[itemName] || {}; // Pull real UOMs from HQ
+
+                    // 🔥 THE UOM MATH FIX: Forcibly map the strict conversion rates from HQ!
+                    let mappedItem = {
+                        ...newItem, 
+                        rawQty: newItem.qty || 0,
+                        purchaseUom: hqData.purchaseUom || hqData.purchUom || newItem.purchaseUom || newItem.uom || 'units',
+                        baseUom: hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units',
+                        conversionRate: hqData.conversionRate || hqData.conversion || newItem.convRate || newItem.conversionRate || 1
+                    };
+
+                    let existing = dispatchCart.find(i => (i.itemName || i.name) === itemName);
+                    
+                    if (existing) {
+                        existing.requestType = newItem.requestType;
+                        existing.physicalStock = newItem.physicalStock;
+                        existing.systemStock = newItem.systemStock;
+                        // Guarantee the math is updated even if the item was already in the cart
+                        existing.conversionRate = mappedItem.conversionRate;
+                        existing.purchaseUom = mappedItem.purchaseUom;
+                        existing.baseUom = mappedItem.baseUom;
+                    } else {
+                        dispatchCart.push(mappedItem);
+                    }
+                });
+
+                document.getElementById('dispFrom').value = "Main Office"; document.getElementById('dispTo').value = po.branch;
+                
+                let activePos = localStorage.getItem('takodeal_active_po') || "";
+                let poArray = activePos ? activePos.split(',') : [];
+                if (!poArray.includes(poId)) poArray.push(poId);
+                
+                localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+                localStorage.setItem('takodeal_dispatch_to', po.branch);
+                localStorage.setItem('takodeal_active_po', poArray.join(','));
+                
+                await updateDoc(poRef, { status: "Drafting" });
+                
+                window.renderDispatchCart(); window.loadDispatchLogs();
+                Swal.fire({title: 'Loaded!', text: 'Items are securely added to the cart.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+            } else if (result.isDenied) {
+                if (confirm("Permanently delete this request from the queue?")) {
+                    await deleteDoc(poRef); window.loadDispatchLogs();
+                }
+            }
+        });
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
+};
+
+// ==========================================
+// 🚚 DISPATCH CART ENGINE (UOM DROPDOWN FIX)
 // ==========================================
 window.renderDispatchCart = function() {
-    // 1. Try to find the container normally
-    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer') || document.getElementById('dispatchCartBody');
-    
-    // 2. ULTIMATE DOM FINDER: If HTML ID is missing, scan the screen for the text "Cart is empty."
-    if (!container) {
-        let allTags = document.querySelectorAll('div, td, span, p');
-        for(let i=0; i<allTags.length; i++) {
-            if(allTags[i].innerText && allTags[i].innerText.trim() === 'Cart is empty.') {
-                container = allTags[i];
-                container.id = 'dispatchItemsList'; // Assign it an ID permanently
-                break;
-            }
-        }
-    }
+    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
+    if (!container) return;
 
-    // 3. IF STILL NOT FOUND: Inject it right above the bright orange Send button!
-    if (!container) {
-        let btn = document.getElementById('btnSubmitDispatch') || document.querySelector('button[onclick*="submitMultiDispatch"]');
-        if (btn) {
-            container = btn.previousElementSibling;
-            container.id = 'dispatchItemsList';
-        }
-    }
-
-    if (!container) {
-        console.error("CRITICAL: Dispatch container missing from HTML.");
+    if (typeof dispatchCart === 'undefined' || dispatchCart.length === 0) {
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
         return;
     }
 
-    // Validate the Cart
-    if (typeof dispatchCart === 'undefined') window.dispatchCart = [];
-    if (dispatchCart.length === 0) {
-        let emptyHtml = container.tagName.toLowerCase() === 'tbody' 
-            ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' 
-            : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
-        container.innerHTML = emptyHtml;
-        return;
-    }
-    
-    let isTable = container.tagName.toLowerCase() === 'tbody';
     let html = '';
-
     dispatchCart.forEach((item, index) => {
         let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
         let bUom = item.baseUom || item.uom || 'units';
         let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
         
         if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base';
+        
+        // 🔥 Force the strict math to run instantly on render!
+        item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
+        item.qty = (parseFloat(item.rawQty) || 0) * item.convRate;
         
         let rawQty = parseFloat(item.rawQty) || 0;
         let baseQty = parseFloat(item.qty) || 0;
@@ -1533,64 +1626,37 @@ window.renderDispatchCart = function() {
         let sysStock = item.systemStock || item.currentStock || 0;
         let physStock = item.physicalStock || 0;
 
-        if (isTable) {
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px;">
-                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                        ${item.requestType ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Phys: ${physStock} | Sys: ${sysStock})</span><br>` : ''}
-                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                    </td>
-                    <td style="padding: 15px 10px; text-align: center;">
-                        <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
-                            <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
-                                oninput="window.updateDispatchQty(${index}, this.value)" 
-                                style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
-                            
-                            <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                                style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
-                                ${uomOptions}
-                            </select>
-                        </div>
-                    </td>
-                    <td style="padding: 15px 10px; text-align: center;">
-                        <button onclick="window.removeFromDispatchCart(${index})" 
-                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
-                    </td>
-                </tr>
-            `;
-        } else {
-            html += `
-                <div style="display:flex; align-items:center; justify-content:space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9;">
-                    <div style="flex:1;">
-                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                        ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
-                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                    </div>
-                    <div style="display:flex; align-items:center; gap: 10px;">
-                        <input type="number" step="any" value="${rawQty || ''}" 
-                            oninput="window.updateDispatchQty(${index}, this.value)" 
-                            style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
-                        
-                        <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                            style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
-                            ${uomOptions}
-                        </select>
-                        
-                        <button onclick="window.removeFromDispatchCart(${index})" 
-                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖</button>
-                    </div>
+        html += `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9;">
+                <div style="flex:1;">
+                    <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
+                    ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
+                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
                 </div>
-            `;
-        }
+                <div style="display:flex; align-items:center; gap: 10px;">
+                    <input type="number" step="any" value="${rawQty || ''}" 
+                        oninput="window.updateDispatchQty(${index}, this.value)" 
+                        style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
+                    
+                    <select onchange="window.updateDispatchUom(${index}, this.value)" 
+                        style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
+                        ${uomOptions}
+                    </select>
+                    
+                    <button onclick="window.removeFromDispatchCart(${index})" 
+                        style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖</button>
+                </div>
+            </div>
+        `;
     });
 
-    // The Clear Cart Button Row
-    if (isTable) {
-        html += `<tr><td colspan="3" style="padding: 15px; text-align: right; border-top: 2px dashed #e2e8f0;"><button onclick="window.clearDispatchCart()" style="background: #f8fafc; color: #475569; border: 1px dashed #cbd5e1; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">🧹 Set Aside / Clear Cart</button></td></tr>`;
-    } else {
-        html += `<div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;"><button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">🧹 Set Aside / Clear Cart</button></div>`;
-    }
+    html += `
+        <div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
+            <button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                🧹 Set Aside / Clear Cart
+            </button>
+        </div>
+    `;
 
     container.innerHTML = html;
 };
@@ -1965,123 +2031,6 @@ window.renderLogisticsFeed = function() {
         btnReq.style.color = '#64748b'; btnReq.style.borderBottomColor = 'transparent'; btnReq.style.background = '#f8fafc';
         tbody.innerHTML = window.globalDeliveryHtml || '<tr><td colspan="3" class="text-center" style="padding:50px; color:#94a3b8; font-weight:bold;">No recent deliveries on record.</td></tr>';
     }
-};
-
-// ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR UPGRADE)
-// ==========================================
-window.reviewPurchaseOrder = async function(poId) {
-    try {
-        Swal.fire({ title: 'Cross-checking inventory...', didOpen: () => Swal.showLoading() });
-        const poRef = doc(db, "purchase_orders", poId);
-        const poSnap = await getDoc(poRef);
-        if (!poSnap.exists()) return Swal.fire('Error', 'Request not found.', 'error');
-        
-        let po = poSnap.data();
-        
-        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
-        let hqStock = {};
-        let hqDetails = {}; // 🔥 NEW: Grab ALL HQ details to steal the exact UOMs!
-        hqSnap.forEach(d => {
-            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
-            hqDetails[d.data().name] = d.data(); 
-        });
-
-        let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                    <tr>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Item Requested</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Branch Report</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: right; color: #16a34a;">HQ Stock</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-        
-        po.items.forEach(item => {
-            let hqAvail = hqStock[item.itemName] || 0;
-            let reportTxt = item.requestType ? 
-                `<span style="color: #dc2626; font-weight: bold;">${item.requestType}</span><br><span style="font-size:10px; color:#64748b; font-weight:bold;">Actual: ${item.physicalStock} | Sys: ${item.systemStock}</span>` : 
-                `<span style="color: #0f766e; font-weight: bold;">Requested: ${item.qty} ${item.uom}</span>`;
-            
-            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
-                <td style="padding: 10px;">${reportTxt}</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold; color: #16a34a; font-size: 14px;">${hqAvail} <span style="font-size:10px; color:#94a3b8; font-weight:normal;">${item.uom}</span></td>
-            </tr>`;
-        });
-        html += `</tbody></table></div>`;
-        
-        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
-        
-        Swal.fire({
-            title: titleTxt, html: html, width: '700px',
-            showCancelButton: true, showDenyButton: true,
-            confirmButtonColor: '#0ea5e9', cancelButtonColor: '#94a3b8', denyButtonColor: '#dc2626',
-            confirmButtonText: '📥 Load into Dispatch Cart', cancelButtonText: 'Set Aside (Close)', denyButtonText: '✖ Delete Request',
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        }).then(async (result) => {
-            if (result.isConfirmed) {
-                
-                // 🔥 THE AUTO-CLEAR FIX: We check the deep local memory variable, NOT the HTML dropdown!
-                let storedDest = localStorage.getItem('takodeal_dispatch_to');
-                if (dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
-                    await window.clearDispatchCart(); 
-                    Swal.fire({
-                        toast: true, position: 'top-end', icon: 'info',
-                        title: `Previous cart set aside. Loading ${po.branch}...`,
-                        showConfirmButton: false, timer: 3000
-                    });
-                }
-
-                if (dispatchCart.length === 0) {
-                    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-                }
-
-                po.items.forEach(newItem => {
-                    let itemName = newItem.itemName || newItem.name;
-                    let hqData = hqDetails[itemName] || {}; // Pull real UOMs from HQ
-
-                    // 🔥 THE UOM FIX: MAPPING EXACT PURCHASE UOMS FROM HQ
-                    let mappedItem = {
-                        ...newItem, 
-                        rawQty: newItem.qty || 0,
-                        purchaseUom: hqData.purchaseUom || hqData.purchUom || newItem.purchaseUom || newItem.uom || 'units',
-                        baseUom: hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units',
-                        conversionRate: hqData.conversionRate || hqData.conversion || newItem.convRate || newItem.conversionRate || 1
-                    };
-
-                    let existing = dispatchCart.find(i => (i.itemName || i.name) === itemName);
-                    if (existing) {
-                        existing.requestType = newItem.requestType;
-                        existing.physicalStock = newItem.physicalStock;
-                        existing.systemStock = newItem.systemStock;
-                    } else {
-                        dispatchCart.push(mappedItem);
-                    }
-                });
-
-                document.getElementById('dispFrom').value = "Main Office"; document.getElementById('dispTo').value = po.branch;
-                
-                let activePos = localStorage.getItem('takodeal_active_po') || "";
-                let poArray = activePos ? activePos.split(',') : [];
-                if (!poArray.includes(poId)) poArray.push(poId);
-                
-                localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
-                localStorage.setItem('takodeal_dispatch_to', po.branch);
-                localStorage.setItem('takodeal_active_po', poArray.join(','));
-                
-                await updateDoc(poRef, { status: "Drafting" });
-                
-                window.renderDispatchCart(); window.loadDispatchLogs();
-                Swal.fire({title: 'Loaded!', text: 'Items are securely added to the cart.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
-            } else if (result.isDenied) {
-                if (confirm("Permanently delete this request from the queue?")) {
-                    await deleteDoc(poRef); window.loadDispatchLogs();
-                }
-            }
-        });
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
 };
 
 window.approvePurchaseOrder = async function(poId) {
