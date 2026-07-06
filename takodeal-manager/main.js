@@ -1306,8 +1306,8 @@ window.confirmMultiRestock = async function () {
 // ========================================================
 // 🚚 THE DISPATCH & LOGISTICS ENGINE (SMART COMMAND CENTER)
 // ========================================================
-let dispatchCart = [];
-let dispatchInventoryList = [];
+window.dispatchCart = [];
+window.dispatchInventoryList = [];
 
 window.loadDispatchDashboard = async function() {
   let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
@@ -1338,16 +1338,16 @@ window.loadDispatchDashboard = async function() {
   // 💾 VAULT RECOVERY: Restore Cart if they accidentally refreshed!
   let savedCart = localStorage.getItem('takodeal_dispatch_cart');
   if (savedCart && !isFranchisee) {
-      try { dispatchCart = JSON.parse(savedCart); } catch(e) { dispatchCart = []; }
+      try { window.dispatchCart = JSON.parse(savedCart); } catch(e) { window.dispatchCart = []; }
       let savedTo = localStorage.getItem('takodeal_dispatch_to');
       if (savedTo) setTimeout(() => { document.getElementById('dispTo').value = savedTo; }, 100);
   } else {
-      dispatchCart = [];
+      window.dispatchCart = [];
   }
   
   if (isFranchisee) document.getElementById('dispTo').value = myBranch;
 
-  if (typeof renderDispatchCart === 'function') renderDispatchCart(); else window.renderDispatchCart();
+  window.renderDispatchCart();
   await window.loadDispatchInventory();
   await window.loadDispatchLogs();
 };
@@ -1368,7 +1368,7 @@ window.loadDispatchInventory = async function () {
     if (!fromBranch) { itemInput.placeholder = 'Select source branch first...'; itemInput.disabled = true; itemInput.value = ''; return; }
     
     itemInput.disabled = false; itemInput.placeholder = 'Scanning warehouse...'; itemInput.value = '';
-    dispatchInventoryList = [];
+    window.dispatchInventoryList = [];
 
     try {
         const q = query(collection(db, "inventory"), where("branch", "==", fromBranch));
@@ -1376,13 +1376,15 @@ window.loadDispatchInventory = async function () {
         
         let datalistHtml = '<datalist id="dispatchDatalist">';
         let sortedStock = [];
-        snap.forEach(docSnap => { let data = docSnap.data(); if (data.currentStock > 0) sortedStock.push({ id: docSnap.id, ...data }); });
+        
+        // 🔥 THE CRASH FIX: We NO LONGER hide items with 0 stock! This prevents the "Item Not Found" crash!
+        snap.forEach(docSnap => { let data = docSnap.data(); sortedStock.push({ id: docSnap.id, ...data }); });
         
         sortedStock.sort((a, b) => a.name.localeCompare(b.name));
         let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
 
         sortedStock.forEach(data => {
-            dispatchInventoryList.push(data);
+            window.dispatchInventoryList.push(data);
             let safeStock = parseFloat(data.currentStock).toFixed(1);
             if (isFranchisee) datalistHtml += `<option value="${data.name}">${data.name} (Request in ${data.uom})</option>`;
             else datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
@@ -1395,9 +1397,7 @@ window.loadDispatchInventory = async function () {
 
         itemInput.placeholder = 'Type to search item...'; window.updateDispatchUomLabel();
         
-        // 🔥 THE FIX: If there are items in the cart from a Purchase Order, re-render the cart 
-        // NOW so that it can successfully read the conversion rates we just downloaded from HQ!
-        if (dispatchCart.length > 0) window.renderDispatchCart();
+        if (window.dispatchCart.length > 0) window.renderDispatchCart();
         
     } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
 };
@@ -1407,7 +1407,7 @@ window.updateDispatchUomLabel = function() {
     let uomDrop = document.getElementById('dispUomSelect');
     if (!itemName) { uomDrop.innerHTML = '<option value="base">Units</option>'; return; }
 
-    let invItem = dispatchInventoryList.find(i => i.name === itemName);
+    let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
     if (invItem) {
         let baseUom = invItem.uom || 'units'; let purchUom = invItem.purchaseUom || 'Bulk';
         uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
@@ -1419,7 +1419,7 @@ window.addToDispatchCart = function () {
     let rawQty = parseFloat(document.getElementById('dispQty').value);
     if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
 
-    let invItem = dispatchInventoryList.find(i => i.name === itemName);
+    let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
     if (!invItem) return;
 
     let uomSelect = document.getElementById('dispUomSelect'); 
@@ -1437,7 +1437,7 @@ window.addToDispatchCart = function () {
         Swal.fire({ title: '❌ Not enough stock!', html: msg, icon: 'error', confirmButtonColor: '#0ea5e9' }); return; 
     }
 
-    let existing = dispatchCart.find(i => (i.itemName || i.name) === itemName);
+    let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
     if (existing) { 
         existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawQty;
         existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty; 
@@ -1446,162 +1446,26 @@ window.addToDispatchCart = function () {
         existing.selectedUom = selectedUomType;
         existing.conversionRate = masterConv; // 🔥 FORCE MASTER CONV UPDATE
     } else {
-        dispatchCart.push({ 
+        window.dispatchCart.push({ 
             itemName: itemName, name: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, rawQty: rawQty,            
             friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", 
             purchaseUom: invItem.purchaseUom || invItem.uom, selectedUom: selectedUomType,
-            conversionRate: masterConv, // 🔥 FORCE IT INTO MEMORY
+            conversionRate: masterConv,
             baseUom: invItem.baseUom || invItem.uom,
             cost: invItem.cost || 0, reorderLevel: invItem.reorderLevel || 10
         });
     }
 
     document.getElementById('dispQty').value = ''; document.getElementById('dispItem').value = ''; 
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
     window.renderDispatchCart();
 };
 
 window.removeFromDispatchCart = function (index) { 
-    dispatchCart.splice(index, 1); 
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
+    window.dispatchCart.splice(index, 1); 
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
     Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
     window.renderDispatchCart(); 
-};
-
-// ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR & UOM FIX)
-// ==========================================
-window.reviewPurchaseOrder = async function(poId) {
-    try {
-        Swal.fire({ title: 'Cross-checking inventory...', didOpen: () => Swal.showLoading() });
-        const poRef = doc(db, "purchase_orders", poId);
-        const poSnap = await getDoc(poRef);
-        if (!poSnap.exists()) return Swal.fire('Error', 'Request not found.', 'error');
-        
-        let po = poSnap.data();
-        
-        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
-        let hqStock = {};
-        let hqDetails = {}; // 🔥 THE SAFETY NET: Grabs ALL HQ details to force the correct UOMs!
-        hqSnap.forEach(d => {
-            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
-            hqDetails[d.data().name] = d.data(); 
-        });
-
-        let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                    <tr>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Item Requested</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Branch Report</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: right; color: #16a34a;">HQ Stock</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-        
-        po.items.forEach(item => {
-            let hqAvail = hqStock[item.itemName] || 0;
-            let reportTxt = item.requestType ? 
-                `<span style="color: #dc2626; font-weight: bold;">${item.requestType}</span><br><span style="font-size:10px; color:#64748b; font-weight:bold;">Actual: ${item.physicalStock} | Sys: ${item.systemStock}</span>` : 
-                `<span style="color: #0f766e; font-weight: bold;">Requested: ${item.qty} ${item.uom}</span>`;
-            
-            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
-                <td style="padding: 10px;">${reportTxt}</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold; color: #16a34a; font-size: 14px;">${hqAvail} <span style="font-size:10px; color:#94a3b8; font-weight:normal;">${item.uom}</span></td>
-            </tr>`;
-        });
-        html += `</tbody></table></div>`;
-        
-        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
-        
-        Swal.fire({
-            title: titleTxt, html: html, width: '700px',
-            showCancelButton: true, showDenyButton: true,
-            confirmButtonColor: '#0ea5e9', cancelButtonColor: '#94a3b8', denyButtonColor: '#dc2626',
-            confirmButtonText: '📥 Load into Dispatch Cart', cancelButtonText: 'Set Aside (Close)', denyButtonText: '✖ Delete Request',
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        }).then(async (result) => {
-            if (result.isConfirmed) {
-                
-                if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-
-                // 🔥 AUTO-CLEAR ENGINE: Sets aside old branch items securely without crashing!
-                let storedDest = localStorage.getItem('takodeal_dispatch_to');
-                if (window.dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
-                    await window.clearDispatchCart(); 
-                    Swal.fire({
-                        toast: true, position: 'top-end', icon: 'info',
-                        title: `Previous cart set aside. Loading ${po.branch}...`,
-                        showConfirmButton: false, timer: 3000
-                    });
-                }
-
-                if (window.dispatchCart.length === 0) {
-                    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-                }
-
-                po.items.forEach(newItem => {
-                    let itemName = newItem.itemName || newItem.name;
-                    let hqData = hqDetails[itemName] || {}; // Consult the Main Office HQ Vault
-
-                    // 🔥 THE UOM MATH FIX: Forcibly map the strict conversion rates and "Packs" from HQ!
-                    let pUom = hqData.purchaseUom || hqData.purchUom || newItem.purchaseUom || newItem.uom || 'units';
-                    let bUom = hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units';
-                    let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
-
-                    let mappedItem = {
-                        ...newItem, 
-                        rawQty: parseFloat(newItem.qty) || 0,
-                        purchaseUom: pUom,
-                        baseUom: bUom,
-                        conversionRate: cRate,
-                        selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base'
-                    };
-
-                    mappedItem.convRate = (mappedItem.selectedUom === 'purch') ? cRate : 1;
-                    mappedItem.friendlyUom = (mappedItem.selectedUom === 'purch') ? pUom : bUom;
-                    mappedItem.qty = mappedItem.rawQty * mappedItem.convRate;
-
-                    let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
-                    
-                    if (existing) {
-                        existing.requestType = newItem.requestType;
-                        existing.physicalStock = newItem.physicalStock;
-                        existing.systemStock = newItem.systemStock;
-                        // Force math sync on existing item just in case
-                        existing.purchaseUom = mappedItem.purchaseUom;
-                        existing.baseUom = mappedItem.baseUom;
-                        existing.conversionRate = mappedItem.conversionRate;
-                    } else {
-                        window.dispatchCart.push(mappedItem);
-                    }
-                });
-
-                document.getElementById('dispFrom').value = "Main Office"; 
-                document.getElementById('dispTo').value = po.branch;
-                
-                let activePos = localStorage.getItem('takodeal_active_po') || "";
-                let poArray = activePos ? activePos.split(',') : [];
-                if (!poArray.includes(poId)) poArray.push(poId);
-                
-                localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-                localStorage.setItem('takodeal_dispatch_to', po.branch);
-                localStorage.setItem('takodeal_active_po', poArray.join(','));
-                
-                await updateDoc(poRef, { status: "Drafting" });
-                
-                window.renderDispatchCart(); 
-                window.loadDispatchLogs();
-                
-                Swal.fire({title: 'Loaded!', text: 'Items are securely added to the cart.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
-            } else if (result.isDenied) {
-                if (confirm("Permanently delete this request from the queue?")) {
-                    await deleteDoc(poRef); window.loadDispatchLogs();
-                }
-            }
-        });
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
 };
 
 // ==========================================
@@ -1760,7 +1624,27 @@ window.updateDispatchUom = function(index, val) {
 
 window.clearDispatchCart = async function() {
     let activePoStr = localStorage.getItem('takodeal_active_po');
-    if (activePoStr) {
+    
+    // 🔥 AUTO-SAVE DRAFTS FIX: This saves the inputs you typed back into the request so you don't lose them!
+    if (activePoStr && window.dispatchCart && window.dispatchCart.length > 0) {
+        let poIds = activePoStr.split(',');
+        let primaryPoId = poIds[0];
+        if (primaryPoId) {
+            try { 
+                await updateDoc(doc(db, "purchase_orders", primaryPoId), { 
+                    status: "Pending",
+                    items: window.dispatchCart 
+                }); 
+            } catch(e){ console.error("Draft save error", e); }
+        }
+        // Release any other attached requests
+        for (let i = 1; i < poIds.length; i++) {
+            if (poIds[i]) {
+                try { await updateDoc(doc(db, "purchase_orders", poIds[i]), { status: "Pending" }); } catch(e){}
+            }
+        }
+    } else if (activePoStr) {
+        // Just release them normally if cart was empty
         let poIds = activePoStr.split(',');
         for (let id of poIds) {
             if (id) {
@@ -1785,9 +1669,9 @@ window.clearDispatchCart = async function() {
     if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
 };
 
-  // ==========================================
-  // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
-  // ==========================================
+// ==========================================
+// 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
+// ==========================================
 window.submitMultiDispatch = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
   let toBranch = document.getElementById('dispTo').value;
@@ -1798,41 +1682,37 @@ window.submitMultiDispatch = async function () {
   let btn = document.getElementById('btnSubmitDispatch');
   let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
 
-  // ==========================================
-  // 📝 FRANCHISEE WORKFLOW: SUBMIT PURCHASE ORDER
-  // ==========================================
   if (isFranchisee) {
-      if (dispatchCart.length === 0) { alert("Cart is empty."); return; }
+      if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
       btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
       try {
           await addDoc(collection(db, "purchase_orders"), {
-              branch: toBranch, items: dispatchCart, status: "Pending",
+              branch: toBranch, items: window.dispatchCart, status: "Pending",
               requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
           });
           Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
-          dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
+          window.dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
       } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
       finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
       return; 
   }
 
-  // ==========================================
-  // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
-  // ==========================================
-  for (let i = 0; i < dispatchCart.length; i++) {
+  // Force a sync of the math before we submit
+  for (let i = 0; i < window.dispatchCart.length; i++) {
       let inp = document.getElementById(`cartQty_${i}`);
       if (inp) {
           let val = parseFloat(inp.value) || 0;
-          let conv = dispatchCart[i].convRate || 1;
-          dispatchCart[i].rawQty = val; dispatchCart[i].qty = val * conv;
+          let conv = window.dispatchCart[i].convRate || 1;
+          window.dispatchCart[i].rawQty = val; window.dispatchCart[i].qty = val * conv;
       }
   }
 
-  let validCart = dispatchCart.filter(i => i.qty > 0);
-  let skippedCart = dispatchCart.filter(i => i.qty <= 0 && i.requestType); 
+  // Filter the lists!
+  let validCart = window.dispatchCart.filter(i => i.qty > 0);
+  let skippedCart = window.dispatchCart.filter(i => i.qty <= 0); 
 
   if (validCart.length === 0) { 
-      return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send. If you want to return the whole list to the feed, click "Put Back / Set Aside Cart" below.', 'warning'); 
+      return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send. If you want to return the whole list to the feed, click "🧹 Set Aside / Clear Cart" below.', 'warning'); 
   }
 
   btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
@@ -1843,17 +1723,27 @@ window.submitMultiDispatch = async function () {
 
       for (let item of validCart) {
           let itemNameToFind = item.itemName || item.name;
-          let invItem = dispatchInventoryList.find(i => i.name === itemNameToFind);
+          let invItem = window.dispatchInventoryList.find(i => i.name === itemNameToFind);
 
+          // 🔥 CRASH FIX: If the item completely doesn't exist in HQ's database, Auto-Create it with 0 stock to prevent errors!
+          let sourceRef;
+          let currentHqStock = 0;
+          
           if (!invItem) {
-              alert(`❌ CRITICAL ERROR: The item "${itemNameToFind}" does not exist in the ${fromBranch} inventory database. Dispatch aborted.`);
-              throw new Error("Item ID Mapping Error");
+              const newInvRef = await addDoc(collection(db, "inventory"), {
+                  branch: fromBranch, name: itemNameToFind, uom: item.baseUom || 'units',
+                  category: item.category || 'Ingredients', currentStock: 0, 
+                  conversionRate: item.convRate || 1, purchaseUom: item.purchaseUom || 'units'
+              });
+              sourceRef = newInvRef;
+              invItem = { id: newInvRef.id, uom: item.baseUom || 'units', category: item.category || "Ingredients", purchaseUom: item.purchaseUom || 'units', cost: item.cost || 0, reorderLevel: 10 };
+          } else {
+              sourceRef = doc(db, "inventory", invItem.id);
+              currentHqStock = parseFloat(invItem.currentStock) || 0;
           }
 
-          let sourceRef = doc(db, "inventory", invItem.id);
-          await updateDoc(sourceRef, { currentStock: invItem.currentStock - item.qty });
+          await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
 
-          // 🔥 THE FIX: Added strict fallbacks (||) so Firebase NEVER sees an 'undefined' value!
           await addDoc(collection(db, "dispatch_logs"), {
               date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
               time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
@@ -1864,7 +1754,7 @@ window.submitMultiDispatch = async function () {
               toBranch: toBranch, 
               driver: driverName, 
               status: "In Transit", 
-              displayQty: item.rawQty || item.qty || 0,      
+              displayQty: item.rawQty || item.qty || 0,     
               displayUom: item.friendlyUom || item.uom || invItem.uom || 'units', 
               convRate: item.convRate || 1, 
               category: item.category || invItem.category || "Uncategorized", 
@@ -1874,7 +1764,7 @@ window.submitMultiDispatch = async function () {
           });
       }
 
-      // 🔥 THE UPGRADE: Mark backlogged items as "Delayed" with origin dates!
+      // 🔥 THE UPGRADE: Auto-Set Aside items with 0 qty into a pending request so they aren't deleted permanently!
       if (skippedCart.length > 0) {
           let safeSkippedCart = skippedCart.map(i => ({
               ...i,
@@ -1889,12 +1779,13 @@ window.submitMultiDispatch = async function () {
               status: "Delayed",
               type: "Delayed Delivery",
               originalRequestDate: todayStr,
-              requestedBy: "System (Postponed - HQ Out of Stock)",
+              requestedBy: "System (Postponed / Set Aside)",
               timestamp: serverTimestamp()
           });
       }
 
       // 🧹 PURGE THE GHOST MEMORY!
+      window.dispatchCart = [];
       localStorage.removeItem('takodeal_dispatch_cart');
       localStorage.removeItem('takodeal_dispatch_to');
       Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
@@ -1910,10 +1801,12 @@ window.submitMultiDispatch = async function () {
           localStorage.removeItem('takodeal_active_po');
       }
 
-      let extraMessage = skippedCart.length > 0 ? `\n\n(${skippedCart.length} out of stock items were securely returned to the Logistics Feed).` : '';
+      let extraMessage = skippedCart.length > 0 ? `\n\n(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
       alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${extraMessage}`);
       
-      dispatchCart = []; window.renderDispatchCart(); window.loadDispatchInventory(); window.loadDispatchLogs();
+      window.renderDispatchCart(); 
+      if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
+      window.loadDispatchLogs();
   } catch (e) { 
       console.error("Dispatch Execution Error:", e); 
       Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error');
@@ -1934,7 +1827,6 @@ window.loadDispatchLogs = async function() {
     let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
 
     try {
-        // 🔥 THE FIX: Added "Delayed" to both queries perfectly!
         let poQuery = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting", "Delayed"]), orderBy("timestamp", "desc"));
         if (isFranchisee) poQuery = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Drafting", "Delayed"]), orderBy("timestamp", "desc"));
         const poSnap = await getDocs(poQuery);
@@ -1947,7 +1839,6 @@ window.loadDispatchLogs = async function() {
             poCount++;
             let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
             
-            // 🔥 SMART DELAY DETECTOR: Catches both old and new backlogged orders!
             let isDelayed = po.status === "Delayed" || (po.requestedBy && po.requestedBy.includes("Backlogged"));
             
             let statusBadge = '';
@@ -1958,7 +1849,6 @@ window.loadDispatchLogs = async function() {
                 statusBadge = `<span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">⏳ Delayed (HQ Out of Stock)</span>`;
                 titleTxt = `⏳ Postponed Delivery to ${po.branch}`;
                 
-                // Track both the original request date and the exact moment the system pushed it aside
                 let origDate = po.originalRequestDate || dateStr.split(',')[0];
                 delayMeta = `
                     <div style="margin-top: 8px; padding: 6px; background: #fff; border: 1px dashed #fca5a5; border-radius: 4px; display: inline-block;">
@@ -2094,6 +1984,142 @@ window.renderLogisticsFeed = function() {
         btnReq.style.color = '#64748b'; btnReq.style.borderBottomColor = 'transparent'; btnReq.style.background = '#f8fafc';
         tbody.innerHTML = window.globalDeliveryHtml || '<tr><td colspan="3" class="text-center" style="padding:50px; color:#94a3b8; font-weight:bold;">No recent deliveries on record.</td></tr>';
     }
+};
+
+// ==========================================
+// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR & UOM FIX)
+// ==========================================
+window.reviewPurchaseOrder = async function(poId) {
+    try {
+        Swal.fire({ title: 'Cross-checking inventory...', didOpen: () => Swal.showLoading() });
+        const poRef = doc(db, "purchase_orders", poId);
+        const poSnap = await getDoc(poRef);
+        if (!poSnap.exists()) return Swal.fire('Error', 'Request not found.', 'error');
+        
+        let po = poSnap.data();
+        
+        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+        let hqStock = {};
+        let hqDetails = {}; // 🔥 THE SAFETY NET: Grabs ALL HQ details to force the correct UOMs!
+        hqSnap.forEach(d => {
+            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
+            hqDetails[d.data().name] = d.data(); 
+        });
+
+        let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <tr>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Item Requested</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Branch Report</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: right; color: #16a34a;">HQ Stock</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+        
+        po.items.forEach(item => {
+            let hqAvail = hqStock[item.itemName] || 0;
+            let reportTxt = item.requestType ? 
+                `<span style="color: #dc2626; font-weight: bold;">${item.requestType}</span><br><span style="font-size:10px; color:#64748b; font-weight:bold;">Actual: ${item.physicalStock} | Sys: ${item.systemStock}</span>` : 
+                `<span style="color: #0f766e; font-weight: bold;">Requested: ${item.qty} ${item.uom}</span>`;
+            
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
+                <td style="padding: 10px;">${reportTxt}</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold; color: #16a34a; font-size: 14px;">${hqAvail} <span style="font-size:10px; color:#94a3b8; font-weight:normal;">${item.uom}</span></td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        
+        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
+        
+        Swal.fire({
+            title: titleTxt, html: html, width: '700px',
+            showCancelButton: true, showDenyButton: true,
+            confirmButtonColor: '#0ea5e9', cancelButtonColor: '#94a3b8', denyButtonColor: '#dc2626',
+            confirmButtonText: '📥 Load into Dispatch Cart', cancelButtonText: 'Set Aside (Close)', denyButtonText: '✖ Delete Request',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                
+                if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+
+                // 🔥 AUTO-CLEAR ENGINE: Sets aside old branch items securely without crashing!
+                let storedDest = localStorage.getItem('takodeal_dispatch_to');
+                if (window.dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
+                    await window.clearDispatchCart(); 
+                    Swal.fire({
+                        toast: true, position: 'top-end', icon: 'info',
+                        title: `Previous cart set aside. Loading ${po.branch}...`,
+                        showConfirmButton: false, timer: 3000
+                    });
+                }
+
+                if (window.dispatchCart.length === 0) {
+                    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+                }
+
+                po.items.forEach(newItem => {
+                    let itemName = newItem.itemName || newItem.name;
+                    let hqData = hqDetails[itemName] || {}; // Consult the Main Office HQ Vault
+
+                    // 🔥 THE UOM MATH FIX: Forcibly map the strict conversion rates and "Packs" from HQ!
+                    let pUom = hqData.purchaseUom || hqData.purchUom || newItem.purchaseUom || newItem.uom || 'units';
+                    let bUom = hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units';
+                    let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
+
+                    let mappedItem = {
+                        ...newItem, 
+                        rawQty: parseFloat(newItem.qty) || 0,
+                        purchaseUom: pUom,
+                        baseUom: bUom,
+                        conversionRate: cRate,
+                        selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base'
+                    };
+
+                    mappedItem.convRate = (mappedItem.selectedUom === 'purch') ? cRate : 1;
+                    mappedItem.friendlyUom = (mappedItem.selectedUom === 'purch') ? pUom : bUom;
+                    mappedItem.qty = mappedItem.rawQty * mappedItem.convRate;
+
+                    let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
+                    
+                    if (existing) {
+                        existing.requestType = newItem.requestType;
+                        existing.physicalStock = newItem.physicalStock;
+                        existing.systemStock = newItem.systemStock;
+                        // Force math sync on existing item just in case
+                        existing.purchaseUom = mappedItem.purchaseUom;
+                        existing.baseUom = mappedItem.baseUom;
+                        existing.conversionRate = mappedItem.conversionRate;
+                    } else {
+                        window.dispatchCart.push(mappedItem);
+                    }
+                });
+
+                document.getElementById('dispFrom').value = "Main Office"; 
+                document.getElementById('dispTo').value = po.branch;
+                
+                let activePos = localStorage.getItem('takodeal_active_po') || "";
+                let poArray = activePos ? activePos.split(',') : [];
+                if (!poArray.includes(poId)) poArray.push(poId);
+                
+                localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+                localStorage.setItem('takodeal_dispatch_to', po.branch);
+                localStorage.setItem('takodeal_active_po', poArray.join(','));
+                
+                await updateDoc(poRef, { status: "Drafting" });
+                
+                window.renderDispatchCart(); 
+                window.loadDispatchLogs();
+                
+                Swal.fire({title: 'Loaded!', text: 'Items are securely added to the cart.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+            } else if (result.isDenied) {
+                if (confirm("Permanently delete this request from the queue?")) {
+                    await deleteDoc(poRef); window.loadDispatchLogs();
+                }
+            }
+        });
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
 };
 
 window.approvePurchaseOrder = async function(poId) {
