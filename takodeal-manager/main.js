@@ -1444,11 +1444,14 @@ window.addToDispatchCart = function () {
         existing.friendlyUom = friendlyUom; 
         existing.convRate = convRate;
         existing.selectedUom = selectedUomType;
+        existing.conversionRate = masterConv; // 🔥 FORCE MASTER CONV UPDATE
     } else {
         dispatchCart.push({ 
             itemName: itemName, name: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, rawQty: rawQty,            
             friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", 
             purchaseUom: invItem.purchaseUom || invItem.uom, selectedUom: selectedUomType,
+            conversionRate: masterConv, // 🔥 FORCE IT INTO MEMORY
+            baseUom: invItem.baseUom || invItem.uom,
             cost: invItem.cost || 0, reorderLevel: invItem.reorderLevel || 10
         });
     }
@@ -1466,49 +1469,33 @@ window.removeFromDispatchCart = function (index) {
 };
 
 // ==========================================
-// 🚚 DISPATCH CART ENGINE (INVINCIBLE TABLE RENDERER)
+// 🚚 DISPATCH CART ENGINE (UOM DROPDOWN FIX)
 // ==========================================
 window.renderDispatchCart = function() {
-    // 1. Try common IDs first
-    let tbody = document.getElementById('dispatchCartBody') || document.getElementById('dispatchItemsList');
-    
-    // 2. ULTIMATE FALLBACK: Find the exact table dynamically if the ID changed
-    if (!tbody) {
-        let ths = document.querySelectorAll('th');
-        for (let th of ths) {
-            if (th.innerText.includes('QTY TO SEND')) {
-                tbody = th.closest('table').querySelector('tbody');
-                if (tbody) tbody.id = 'dispatchCartBody'; // Tag it for next time
-                break;
-            }
-        }
-    }
+    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
+    if (!container) return;
 
-    if (!tbody) {
-        console.error("CRITICAL: Cannot find the Dispatch Cart Table in HTML!");
-        return; 
-    }
-
-    // 🔥 Look at the actual 'dispatchCart' variable!
     if (typeof dispatchCart === 'undefined' || dispatchCart.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>';
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
         return;
     }
 
     let html = '';
     dispatchCart.forEach((item, index) => {
-        let pUom = item.purchaseUom || item.uom || 'units';
+        let pUom = item.purchaseUom || item.purchUom || item.uom || 'Bulk';
         let bUom = item.baseUom || item.uom || 'units';
-        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || parseFloat(item.masterConvRate) || 1;
         
         if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom !== bUom) ? 'purch' : 'base';
         
         let rawQty = parseFloat(item.rawQty) || 0;
         let baseQty = parseFloat(item.qty) || 0;
 
+        // 🔥 THE DROPDOWN FIX: If conversion > 1, ALWAYS show it, and display the multiplier so it's obvious!
         let uomOptions = '';
-        if (pUom !== bUom && masterConv > 1) {
-            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
+        if (masterConv > 1) {
+            let displayPurch = pUom.toLowerCase() === bUom.toLowerCase() ? `Bulk ${pUom}` : pUom;
+            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${displayPurch} (x${masterConv})</option>`;
         }
         uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
 
@@ -1516,51 +1503,46 @@ window.renderDispatchCart = function() {
         let physStock = item.physicalStock || 0;
 
         html += `
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 15px 10px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9;">
+                <div style="flex:1;">
                     <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                    ${item.requestType ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Phys: ${physStock} | Sys: ${sysStock})</span><br>` : ''}
+                    ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
                     <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                </td>
-                <td style="padding: 15px 10px; text-align: center;">
-                    <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
-                        <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
-                            oninput="window.updateDispatchQty(${index}, this.value)" 
-                            style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
-                        
-                        <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                            style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
-                            ${uomOptions}
-                        </select>
-                    </div>
-                </td>
-                <td style="padding: 15px 10px; text-align: center;">
+                </div>
+                <div style="display:flex; align-items:center; gap: 10px;">
+                    <input type="number" step="any" value="${rawQty || ''}" 
+                        oninput="window.updateDispatchQty(${index}, this.value)" 
+                        style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
+                    
+                    <select onchange="window.updateDispatchUom(${index}, this.value)" 
+                        style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
+                        ${uomOptions}
+                    </select>
+                    
                     <button onclick="window.removeFromDispatchCart(${index})" 
-                        style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
-                </td>
-            </tr>
+                        style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖</button>
+                </div>
+            </div>
         `;
     });
 
-    // The Clear Cart Button Row
+    // 🔥 THE NEW CLEAR CART BUTTON: Injecting this safely into the UI so you can easily discard bad batches!
     html += `
-        <tr>
-            <td colspan="3" style="padding: 15px; text-align: right; border-top: 2px dashed #e2e8f0;">
-                <button onclick="window.clearDispatchCart()" style="background: #f8fafc; color: #475569; border: 1px dashed #cbd5e1; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">
-                    🧹 Set Aside / Clear Cart
-                </button>
-            </td>
-        </tr>
+        <div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
+            <button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                🧹 Set Aside / Clear Cart
+            </button>
+        </div>
     `;
 
-    tbody.innerHTML = html;
+    container.innerHTML = html;
 };
 
 window.updateDispatchQty = function(index, val) {
     let item = dispatchCart[index];
     item.rawQty = parseFloat(val) || 0;
     
-    let pUom = item.purchaseUom || item.uom || 'units';
+    let pUom = item.purchaseUom || item.purchUom || item.uom || 'Bulk';
     let bUom = item.baseUom || item.uom || 'units';
     let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
     
@@ -1578,7 +1560,7 @@ window.updateDispatchUom = function(index, val) {
     let item = dispatchCart[index];
     item.selectedUom = val;
     
-    let pUom = item.purchaseUom || item.uom || 'units';
+    let pUom = item.purchaseUom || item.purchUom || item.uom || 'Bulk';
     let bUom = item.baseUom || item.uom || 'units';
     let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
     
@@ -1942,7 +1924,12 @@ window.reviewPurchaseOrder = async function(poId) {
         
         const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
         let hqStock = {};
-        hqSnap.forEach(d => hqStock[d.data().name] = parseFloat(d.data().currentStock || 0));
+        let hqMasterDb = {}; // 🔥 NEW: Memory vault for correct UOMs
+        hqSnap.forEach(d => {
+            let data = d.data();
+            hqStock[data.name] = parseFloat(data.currentStock || 0);
+            hqMasterDb[data.name] = data; // Save full raw data to override the branch's corrupted data!
+        });
 
         let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
@@ -1996,13 +1983,25 @@ window.reviewPurchaseOrder = async function(poId) {
                 }
 
                 po.items.forEach(newItem => {
-                    let mappedItem = {...newItem, rawQty: newItem.qty || 0};
-                    let existing = dispatchCart.find(i => (i.itemName || i.name) === (newItem.itemName || newItem.name));
+                    let nameToFind = newItem.itemName || newItem.name;
+                    let hqItem = hqMasterDb[nameToFind] || {}; // 🔥 Fetch live UOMs from HQ!
+                    
+                    let mappedItem = {
+                        ...newItem, 
+                        rawQty: newItem.qty || 0,
+                        // 🔥 FORCE INJECTION OF LIVE DATA OVERRIDING BROKEN PO DATA
+                        purchaseUom: hqItem.purchaseUom || hqItem.purchUom || newItem.purchaseUom || newItem.uom || 'Bulk',
+                        baseUom: hqItem.baseUom || hqItem.uom || newItem.baseUom || newItem.uom || 'units',
+                        uom: hqItem.uom || newItem.uom || 'units',
+                        conversionRate: parseFloat(hqItem.conversionRate) || parseFloat(hqItem.conversion) || parseFloat(newItem.convRate) || 1
+                    };
+
+                    let existing = dispatchCart.find(i => (i.itemName || i.name) === nameToFind);
                     
                     if (existing) {
-                        existing.requestType = newItem.requestType;
-                        existing.physicalStock = newItem.physicalStock;
-                        existing.systemStock = newItem.systemStock;
+                        existing.requestType = mappedItem.requestType;
+                        existing.physicalStock = mappedItem.physicalStock;
+                        existing.systemStock = mappedItem.systemStock;
                     } else {
                         dispatchCart.push(mappedItem);
                     }
