@@ -1466,15 +1466,32 @@ window.removeFromDispatchCart = function (index) {
 };
 
 // ==========================================
-// 🚚 DISPATCH CART ENGINE (GHOST CART FIX)
+// 🚚 DISPATCH CART ENGINE (INVINCIBLE TABLE RENDERER)
 // ==========================================
 window.renderDispatchCart = function() {
-    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
-    if (!container) return;
+    // 1. Try common IDs first
+    let tbody = document.getElementById('dispatchCartBody') || document.getElementById('dispatchItemsList');
+    
+    // 2. ULTIMATE FALLBACK: Find the exact table dynamically if the ID changed
+    if (!tbody) {
+        let ths = document.querySelectorAll('th');
+        for (let th of ths) {
+            if (th.innerText.includes('QTY TO SEND')) {
+                tbody = th.closest('table').querySelector('tbody');
+                if (tbody) tbody.id = 'dispatchCartBody'; // Tag it for next time
+                break;
+            }
+        }
+    }
 
-    // 🔥 THE FIX: Look at the actual 'dispatchCart' variable, not the empty 'window' object!
+    if (!tbody) {
+        console.error("CRITICAL: Cannot find the Dispatch Cart Table in HTML!");
+        return; 
+    }
+
+    // 🔥 Look at the actual 'dispatchCart' variable!
     if (typeof dispatchCart === 'undefined' || dispatchCart.length === 0) {
-        container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
+        tbody.innerHTML = '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>';
         return;
     }
 
@@ -1499,42 +1516,46 @@ window.renderDispatchCart = function() {
         let physStock = item.physicalStock || 0;
 
         html += `
-            <div style="display:flex; align-items:center; justify-content:space-between; padding: 15px 0; border-bottom: 1px solid #f1f5f9;">
-                <div style="flex:1;">
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 15px 10px;">
                     <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                    ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
+                    ${item.requestType ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Phys: ${physStock} | Sys: ${sysStock})</span><br>` : ''}
                     <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                </div>
-                <div style="display:flex; align-items:center; gap: 10px;">
-                    <input type="number" step="any" value="${rawQty || ''}" 
-                        oninput="window.updateDispatchQty(${index}, this.value)" 
-                        style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
-                    
-                    <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                        style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
-                        ${uomOptions}
-                    </select>
-                    
+                </td>
+                <td style="padding: 15px 10px; text-align: center;">
+                    <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
+                        <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
+                            oninput="window.updateDispatchQty(${index}, this.value)" 
+                            style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
+                        
+                        <select onchange="window.updateDispatchUom(${index}, this.value)" 
+                            style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
+                            ${uomOptions}
+                        </select>
+                    </div>
+                </td>
+                <td style="padding: 15px 10px; text-align: center;">
                     <button onclick="window.removeFromDispatchCart(${index})" 
-                        style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖</button>
-                </div>
-            </div>
+                        style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
+                </td>
+            </tr>
         `;
     });
 
-    // 🔥 THE NEW CLEAR CART BUTTON: Injecting this safely into the UI so you can easily discard bad batches!
+    // The Clear Cart Button Row
     html += `
-        <div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
-            <button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
-                🧹 Set Aside / Clear Cart
-            </button>
-        </div>
+        <tr>
+            <td colspan="3" style="padding: 15px; text-align: right; border-top: 2px dashed #e2e8f0;">
+                <button onclick="window.clearDispatchCart()" style="background: #f8fafc; color: #475569; border: 1px dashed #cbd5e1; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">
+                    🧹 Set Aside / Clear Cart
+                </button>
+            </td>
+        </tr>
     `;
 
-    container.innerHTML = html;
+    tbody.innerHTML = html;
 };
 
-// Helper 1: Silently updates the number without breaking typing focus!
 window.updateDispatchQty = function(index, val) {
     let item = dispatchCart[index];
     item.rawQty = parseFloat(val) || 0;
@@ -1553,7 +1574,6 @@ window.updateDispatchQty = function(index, val) {
     localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
 };
 
-// Helper 2: Safely handles Dropdown changes
 window.updateDispatchUom = function(index, val) {
     let item = dispatchCart[index];
     item.selectedUom = val;
@@ -1573,7 +1593,6 @@ window.updateDispatchUom = function(index, val) {
 window.clearDispatchCart = async function() {
     let activePoStr = localStorage.getItem('takodeal_active_po');
     if (activePoStr) {
-        // Revert ALL active POs back to Pending
         let poIds = activePoStr.split(',');
         for (let id of poIds) {
             if (id) {
@@ -1595,7 +1614,6 @@ window.clearDispatchCart = async function() {
     if (dispTo) dispTo.value = "";
     
     window.renderDispatchCart();
-    
     if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
 };
 
@@ -1963,12 +1981,9 @@ window.reviewPurchaseOrder = async function(poId) {
             if (result.isConfirmed) {
                 let currentDest = document.getElementById('dispTo').value;
                 
-                // 🔥 1. THE AUTO-CLEAR FIX: Automatically set aside old items to make room for the new branch!
+                // 🔥 THE AUTO-CLEAR FIX: Automatically set aside old items to make room for the new branch!
                 if (dispatchCart.length > 0 && currentDest && currentDest !== po.branch) {
-                    // This instantly pushes the ghost items back to the "Pending" feed and empties the cart!
                     await window.clearDispatchCart(); 
-                    
-                    // Show a quick, non-intrusive toast notification so you know it handled it for you
                     Swal.fire({
                         toast: true, position: 'top-end', icon: 'info',
                         title: `Previous cart set aside. Loading ${po.branch}...`,
@@ -1976,12 +1991,10 @@ window.reviewPurchaseOrder = async function(poId) {
                     });
                 }
 
-                // Only wipe draft inputs if we are starting a completely fresh cart
                 if (dispatchCart.length === 0) {
                     Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
                 }
 
-                // 🔥 2. THE MULTI-MERGE FIX: Append to cart without overwriting existing items!
                 po.items.forEach(newItem => {
                     let mappedItem = {...newItem, rawQty: newItem.qty || 0};
                     let existing = dispatchCart.find(i => (i.itemName || i.name) === (newItem.itemName || newItem.name));
@@ -1997,7 +2010,6 @@ window.reviewPurchaseOrder = async function(poId) {
 
                 document.getElementById('dispFrom').value = "Main Office"; document.getElementById('dispTo').value = po.branch;
                 
-                // 🔥 3. THE MULTI-ID VAULT: Store a comma-separated list of all loaded POs!
                 let activePos = localStorage.getItem('takodeal_active_po') || "";
                 let poArray = activePos ? activePos.split(',') : [];
                 if (!poArray.includes(poId)) poArray.push(poId);
