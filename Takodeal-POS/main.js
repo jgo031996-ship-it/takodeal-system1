@@ -1484,10 +1484,10 @@ window.submitExpenseCart = async function() {
     let grandTotal = window.expenseCart.reduce((sum, item) => sum + item.cost, 0);
 
     try {
-        // 1. 🛡️ UPLOAD PHOTO SAFELY (Wont crash if rules are broken!)
+        // 1. 🛡️ UPLOAD PHOTO SAFELY
         let photoUrl = null;
         let fileInput = document.getElementById('expenseReceiptPhoto');
-        if (fileInput.files.length > 0) {
+        if (fileInput && fileInput.files.length > 0) {
             btn.innerText = "⏳ Uploading Photo...";
             try {
                 const file = fileInput.files[0];
@@ -1503,6 +1503,7 @@ window.submitExpenseCart = async function() {
 
         // 2. Process each item in cart
         for (let item of window.expenseCart) {
+            
             // 🔥 THE FIX: Inject the Quantity directly into the description so the Manager Expense Feed can read it!
             let finalDescription = item.description;
             if (item.isRestock && item.displayQty > 0) {
@@ -1561,7 +1562,7 @@ window.submitExpenseCart = async function() {
         console.error("Expense Cart Error:", e);
         alert("❌ Failed to process expenses. Check connection.");
     } finally {
-        btn.innerText = "Submit All Expenses"; btn.disabled = false;
+        if (btn) { btn.innerText = "Submit All Expenses"; btn.disabled = false; }
     }
 };
 
