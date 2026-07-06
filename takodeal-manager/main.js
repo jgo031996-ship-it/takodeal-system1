@@ -5026,7 +5026,7 @@ window.calcEditVariance = function() {
 };
 
 // ==========================================
-// ✏️ UPGRADED INVENTORY EDIT ENGINE (CRASH-PROOF)
+// ✏️ UPGRADED INVENTORY EDIT ENGINE (GLOBAL SYNC & RENAME)
 // ==========================================
 window.saveInventoryEdit = async function() {
     let docId = document.getElementById('editInvId').value;
@@ -5077,6 +5077,11 @@ window.saveInventoryEdit = async function() {
         let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
         let allowReqVal = document.getElementById('editInvAllowRequest') ? document.getElementById('editInvAllowRequest').checked : true;
 
+        // 🔥 THE SYNC FIX: Fetch the OLD name before we change it so we can find the siblings!
+        const itemRef = doc(db, "inventory", docId);
+        const itemSnap = await getDoc(itemRef);
+        let oldName = itemSnap.exists() ? itemSnap.data().name : name;
+
         // 1. Prepare Main Payload
         let updatePayload = {
             branch: branch, category: category, name: name,
@@ -5091,22 +5096,23 @@ window.saveInventoryEdit = async function() {
             allowRequest: allowReqVal,
         };
 
-        // SAFELY inject the image only if it was uploaded!
         if (photoUrl !== undefined) {
             updatePayload.image = photoUrl;
         }
 
-        // Update the Main Item
-        await updateDoc(doc(db, "inventory", docId), updatePayload);
+        // Update the Main Item you clicked on
+        await updateDoc(itemRef, updatePayload);
 
-        // 🔥 2. GLOBAL UOM & PREP SYNC 🔥
-        const syncQ = query(collection(db, "inventory"), where("name", "==", name));
+        // 🔥 2. GLOBAL RENAME & UOM SYNC 🔥
+        // Use the old name to search the other branches!
+        const syncQ = query(collection(db, "inventory"), where("name", "==", oldName));
         const syncSnap = await getDocs(syncQ);
         let syncPromises = [];
         
         syncSnap.forEach(d => {
             if (d.id !== docId) {
                 let syncPayload = {
+                    name: name, // 🔥 INJECT THE NEW NAME!
                     category: category, 
                     purchaseUom: purchUom, purchUom: purchUom,
                     baseUom: baseUom, uom: baseUom, 
@@ -5123,9 +5129,27 @@ window.saveInventoryEdit = async function() {
                 syncPromises.push(updateDoc(doc(db, "inventory", d.id), syncPayload));
             }
         });
+
+        // 🔥 3. CASCADE RECIPE & ADD-ON RENAME PROTECTOR 🔥
+        // If the name changed, we MUST update recipes or the POS costing will crash!
+        if (oldName !== name) {
+            const bomQ = query(collection(db, "bom"), where("ingredientName", "==", oldName));
+            const bomSnap = await getDocs(bomQ);
+            bomSnap.forEach(b => {
+                syncPromises.push(updateDoc(doc(db, "bom", b.id), { ingredientName: name }));
+            });
+
+            const addonQ = query(collection(db, "global_addons"), where("linkedIngredient", "==", oldName));
+            const addonSnap = await getDocs(addonQ);
+            addonSnap.forEach(a => {
+                syncPromises.push(updateDoc(doc(db, "global_addons", a.id), { linkedIngredient: name }));
+            });
+        }
+
+        // Wait for all branch and recipe updates to finish
         await Promise.all(syncPromises);
 
-        // 3. Log Physical Adjustments
+        // 4. Log Physical Adjustments
         if (isAdjusting && finalQty !== oldQty) {
             let variance = finalQty - oldQty;
             let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
@@ -5139,13 +5163,13 @@ window.saveInventoryEdit = async function() {
 
         Swal.fire({
             title: '✅ Success!',
-            text: 'Item updated and synced across all branches successfully!',
+            text: 'Item updated, renamed, and synced across all branches & recipes successfully!',
             icon: 'success',
-            confirmButtonColor: '#ea580c', // Matches the orange theme of your Edit Modal!
+            confirmButtonColor: '#ea580c',
             customClass: { popup: 'rounded-2xl shadow-2xl' }
         });
-        document.getElementById('editInvModal').style.display = 'none';
         
+        document.getElementById('editInvModal').style.display = 'none';
         window.loadInventoryData();
         if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
 
