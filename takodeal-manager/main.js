@@ -1690,7 +1690,7 @@ window.clearDispatchCart = async function() {
 };
 
 // ==========================================
-// 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY
+// 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY & ACCOUNTABILITY ENGINE
 // ==========================================
 window.submitMultiDispatch = async function () {
   let fromBranch = document.getElementById('dispFrom').value;
@@ -1735,17 +1735,19 @@ window.submitMultiDispatch = async function () {
       return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send. If you want to return the whole list to the feed, click "🧹 Set Aside / Clear Cart" below.', 'warning'); 
   }
 
-  btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
+  btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
 
   try {
       let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
       if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
 
+      let totalPenaltiesIssued = 0;
+
       for (let item of validCart) {
           let itemNameToFind = item.itemName || item.name;
           let invItem = window.dispatchInventoryList.find(i => i.name === itemNameToFind);
 
-          // 🔥 CRASH FIX: If the item completely doesn't exist in HQ's database, Auto-Create it with 0 stock to prevent errors!
+          // 1. DEDUCT FROM HQ
           let sourceRef;
           let currentHqStock = 0;
           
@@ -1764,6 +1766,72 @@ window.submitMultiDispatch = async function () {
 
           await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
 
+          // 🔥 2. THE NEW ACCOUNTABILITY ENGINE: Pre-Restock Branch Audit & Penalty 🔥
+          if (item.requestType === "Low Stock" || item.requestType === "Out of Stock") {
+              const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
+              const branchInvSnap = await getDocs(branchInvQ);
+              
+              if (!branchInvSnap.empty) {
+                  let bDoc = branchInvSnap.docs[0];
+                  let bData = bDoc.data();
+                  let sysStock = parseFloat(bData.currentStock) || 0;
+                  let physStock = parseFloat(item.physicalStock) || 0;
+
+                  // A. The Penalty Logic (If System is Positive and they are short)
+                  if (sysStock > 0 && physStock < sysStock) {
+                      let missingQty = sysStock - physStock;
+                      let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(item.cost) || 0;
+                      
+                      // We charge them EXACTLY the raw cost of the missing items to be perfectly fair to accounting.
+                      let penaltyValue = missingQty * costPerUnit;
+
+                      // 1. Reset Baseline to what they actually have
+                      await updateDoc(bDoc.ref, { currentStock: physStock });
+
+                      // 2. Log Stock History for the branch
+                      await addDoc(collection(db, "stock_logs"), {
+                          branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
+                          oldQty: sysStock, newQty: physStock, variance: -missingQty,
+                          type: "Audit Adjustment (Penalty)",
+                          note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`,
+                          user: "System (HQ)", timestamp: serverTimestamp()
+                      });
+
+                      // 3. Log the Penalty to the Ledger (Assigned to the Branch Team)
+                      if (penaltyValue > 0) {
+                          await addDoc(collection(db, "staff_deductions"), {
+                              staffName: `Team ${toBranch}`, // Assigned to the team to be split
+                              type: "Missing Stock Penalty",
+                              amount: penaltyValue,
+                              dateAdded: new Date(),
+                              status: "Unpaid",
+                              remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.`
+                          });
+
+                          // 4. Alert the Manager
+                          await addDoc(collection(db, "manager_alerts"), {
+                              type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team",
+                              message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch} for missing ${missingQty.toFixed(2)} units.`,
+                              timestamp: serverTimestamp(), isRead: false
+                          });
+                          totalPenaltiesIssued++;
+                      }
+                  } 
+                  // B. The "Ghost Debt" Logic (If System is Negative)
+                  else if (sysStock <= 0) {
+                      // Clean slate reset before the delivery arrives. NO PENALTY.
+                      await updateDoc(bDoc.ref, { currentStock: physStock });
+                      await addDoc(collection(db, "stock_logs"), {
+                          branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
+                          oldQty: sysStock, newQty: physStock, variance: physStock - sysStock,
+                          type: "Negative Stock Wipe", note: `Clean slate reset before restock.`,
+                          user: "System (HQ)", timestamp: serverTimestamp()
+                      });
+                  }
+              }
+          }
+
+          // 3. LOG THE DISPATCH (In Transit)
           await addDoc(collection(db, "dispatch_logs"), {
               date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
               time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
@@ -1784,7 +1852,7 @@ window.submitMultiDispatch = async function () {
           });
       }
 
-      // 🔥 THE UPGRADE: Auto-Set Aside items with 0 qty into a pending request so they aren't deleted permanently!
+      // 🔥 Auto-Set Aside items with 0 qty into a pending request
       if (skippedCart.length > 0) {
           let safeSkippedCart = skippedCart.map(i => ({
               ...i,
@@ -1804,7 +1872,7 @@ window.submitMultiDispatch = async function () {
           });
       }
 
-      // 🧹 PURGE THE GHOST MEMORY!
+      // 🧹 PURGE THE MEMORY!
       window.dispatchCart = [];
       localStorage.removeItem('takodeal_dispatch_cart');
       localStorage.removeItem('takodeal_dispatch_to');
@@ -1821,8 +1889,15 @@ window.submitMultiDispatch = async function () {
           localStorage.removeItem('takodeal_active_po');
       }
 
-      let extraMessage = skippedCart.length > 0 ? `\n\n(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
-      alert(`🚚 Success! ${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${extraMessage}`);
+      let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
+      let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
+      
+      Swal.fire({
+          title: '🚚 Dispatch Successful!',
+          html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`,
+          icon: 'success',
+          customClass: { popup: 'rounded-2xl shadow-xl' }
+      });
       
       window.renderDispatchCart(); 
       if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
