@@ -1466,14 +1466,14 @@ window.removeFromDispatchCart = function (index) {
 };
 
 // ==========================================
-// 🚚 DISPATCH CART ENGINE (SMART FOCUS & MATH FIX)
+// 🚚 DISPATCH CART ENGINE (GHOST CART FIX)
 // ==========================================
 window.renderDispatchCart = function() {
     let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer');
     if (!container) return;
 
-    // 🔥 THE FIX: Use 'dispatchCart' locally, perfectly matching the array!
-    if (!dispatchCart || dispatchCart.length === 0) {
+    // 🔥 THE FIX: Look at the actual 'dispatchCart', not the empty 'window' object!
+    if (typeof dispatchCart === 'undefined' || dispatchCart.length === 0) {
         container.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">No items added to dispatch yet.</div>';
         return;
     }
@@ -1482,18 +1482,20 @@ window.renderDispatchCart = function() {
     dispatchCart.forEach((item, index) => {
         let pUom = item.purchaseUom || item.uom || 'units';
         let bUom = item.baseUom || item.uom || 'units';
-        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
         
-        if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom !== bUom) ? 'purch' : 'base';
+        // Default to Base UOM if they haven't selected one yet
+        if (!item.selectedUom) item.selectedUom = bUom;
+        let qty = parseFloat(item.qty) || 0;
         
-        let rawQty = parseFloat(item.rawQty) || 0;
-        let baseQty = parseFloat(item.qty) || 0;
+        // 🔥 THE MATH FIX: Only multiply if they selected the Bulk Purchase UOM!
+        let sendingQty = (item.selectedUom === pUom && pUom !== bUom) ? (qty * conv) : qty;
 
         let uomOptions = '';
-        if (pUom !== bUom && masterConv > 1) {
-            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
+        if (pUom !== bUom && conv > 1) {
+            uomOptions += `<option value="${pUom}" ${item.selectedUom === pUom ? 'selected' : ''}>${pUom}</option>`;
         }
-        uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
+        uomOptions += `<option value="${bUom}" ${item.selectedUom === bUom ? 'selected' : ''}>${bUom}</option>`;
 
         let sysStock = item.systemStock || item.currentStock || 0;
         let physStock = item.physicalStock || 0;
@@ -1503,10 +1505,11 @@ window.renderDispatchCart = function() {
                 <div style="flex:1;">
                     <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
                     ${item.requestType ? `<span style="font-size: 11px; color: #d97706; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Low Stock (Physical: ${physStock} | System: ${sysStock})</span><br>` : ''}
-                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${sendingQty} ${bUom})</span>
                 </div>
                 <div style="display:flex; align-items:center; gap: 10px;">
-                    <input type="number" step="any" value="${rawQty || ''}" 
+                    <!-- 🔥 THE FOCUS FIX: oninput now only updates the array and text, without redrawing the box! -->
+                    <input type="number" step="any" value="${qty || ''}" 
                         oninput="window.updateDispatchQty(${index}, this.value)" 
                         style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
                     
@@ -1524,38 +1527,26 @@ window.renderDispatchCart = function() {
     container.innerHTML = html;
 };
 
-// 🔥 HELPER 1: Preserves your typing focus!
+// Helper 1: Silently updates the number without breaking typing focus!
 window.updateDispatchQty = function(index, val) {
     let item = dispatchCart[index];
-    item.rawQty = parseFloat(val) || 0;
+    item.qty = parseFloat(val) || 0;
     
     let pUom = item.purchaseUom || item.uom || 'units';
     let bUom = item.baseUom || item.uom || 'units';
-    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
     
-    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
-    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
-    item.qty = item.rawQty * item.convRate;
+    let sendingQty = (item.selectedUom === pUom && pUom !== bUom) ? (item.qty * conv) : item.qty;
     
     let textSpan = document.getElementById(`dispatch_send_text_${index}`);
-    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${item.qty.toFixed(2)} ${bUom})`;
-    
+    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${sendingQty} ${bUom})`;
+
     localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
 };
 
-// 🔥 HELPER 2: Applies exact math based on the Dropdown!
+// Helper 2: Safely handles Dropdown changes
 window.updateDispatchUom = function(index, val) {
-    let item = dispatchCart[index];
-    item.selectedUom = val;
-    
-    let pUom = item.purchaseUom || item.uom || 'units';
-    let bUom = item.baseUom || item.uom || 'units';
-    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-    
-    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
-    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
-    item.qty = item.rawQty * item.convRate;
-    
+    dispatchCart[index].selectedUom = val;
     localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(dispatchCart));
     window.renderDispatchCart();
 };
