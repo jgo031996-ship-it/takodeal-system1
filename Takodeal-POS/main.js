@@ -2245,6 +2245,37 @@ window.submitAttendance = async function(type) {
                     message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
                     timestamp: new Date(), isRead: false
                 });
+              // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours!
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25) {
+                const { value: reason, isConfirmed } = await Swal.fire({
+                    title: '⚠️ Undertime Detected',
+                    html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
+                    input: 'text',
+                    inputPlaceholder: 'Reason for leaving early...',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Submit & Time Out',
+                    confirmButtonColor: '#dc2626',
+                    customClass: { popup: 'rounded-2xl shadow-xl' }
+                });
+
+                if (!isConfirmed || !reason) {
+                    unlockUI(); return; 
+                }
+
+                // Auto-submit Reason Letter to the Manager App
+                await addDoc(collection(db, "staff_requests"), {
+                    type: "Reason Letter",
+                    staffName: staffName,
+                    branch: finalBranch,
+                    status: "Pending",
+                    explanationCause: "Undertime",
+                    explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
+                    timestamp: new Date() // Use JS Date for cross-app compatibility
+                });
+                
+                Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Undertime Letter Sent!', showConfirmButton: false, timer: 3000});
+            }
                 alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
             }
 
@@ -2675,6 +2706,7 @@ window.logPrepBatch = async function(invId, itemName, branch, purchUom, baseUom)
         let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
         await addDoc(collection(db, "stock_logs"), {
             branch: branch, item: itemName, variance: baseQtyToAdd, uom: baseUom,
+            purchUom: purchUom, purchQty: qty, // 🔥 SAVES THE PACK SIZE TO THE DB!
             type: "End-of-Shift Kitchen Prep", note: `Prepared ${qty} ${purchUom}(s) by ${safeCashierName}`, timestamp: new Date()
         });
 
@@ -4275,8 +4307,11 @@ window.openShiftModal = function() {
                 let declared = parseFloat(lastShift.declaredCash) || parseFloat(lastShift.actualCash) || 0;
                 let diff = declared - expected;
 
-                // Save to memory for the interceptor, but keep it hidden from UI!
+                // Save to memory for the interceptor
                 window.lastEndingCash = declared; 
+                
+                // 🔥 THE FIX: Auto-fill the box with the exact cash left in the drawer!
+                inputStart.value = declared > 0 ? declared : "";
 
                 // We allow a tiny 5 centavo tolerance for floating point math
                 if (Math.abs(diff) <= 0.05) {
@@ -5292,21 +5327,27 @@ window.loadStockRequestHistory = async function() {
             let d = doc.data();
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
             
-            // Map the colors dynamically based on what the manager is doing with it!
+            // 🔥 THE FIX: Map the colors and statuses to match HQ!
             let statusBg = '#f1f5f9'; let statusColor = '#475569';
             if (d.status === 'Pending') { statusBg = '#fef3c7'; statusColor = '#d97706'; }
             else if (d.status === 'Drafting') { statusBg = '#bae6fd'; statusColor = '#0284c7'; d.status = 'Preparing (HQ)'; }
             else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; d.status = 'Dispatch on the way 🚚'; }
             else if (d.status === 'Completed') { statusBg = '#f1f5f9'; statusColor = '#64748b'; }
+            else if (d.status === 'Partially Dispatched') { statusBg = '#e0e7ff'; statusColor = '#0284c7'; }
+            else if (d.status === 'Delayed') { statusBg = '#fef2f2'; statusColor = '#dc2626'; d.status = 'Delayed (Out of Stock)'; }
 
             let itemsList = d.items.map(i => `<div style="font-size: 11px; margin-bottom: 2px;">• <strong style="color:#0f172a;">${i.itemName}</strong> <span style="color:#ef4444;">(${i.requestType})</span></div>`).join('');
+            
+            // Show the manager's message if they pushed items back!
+            let msgHtml = d.managerMessage ? `<div style="margin-top: 5px; padding: 5px; background: white; border: 1px dashed #cbd5e1; font-size: 10px; color: #b91c1c; border-radius: 4px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
 
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
                     <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${d.requestedBy || 'Staff'}</td>
                     <td style="padding: 12px;">
-                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.status}</span>
+                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;">${d.status}</span>
+                        ${msgHtml}
                     </td>
                     <td style="padding: 12px;">${itemsList}</td>
                 </tr>
@@ -5433,11 +5474,19 @@ window.loadKitchenPrepHistory = async function() {
         let html = '';
         logs.forEach(log => {
             let timeStr = log.timestamp ? log.timestamp.toDate().toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            // 🔥 THE UOM FIX: Shows Both Base and Purchase UOM beautifully
+            let pUom = log.purchUom || 'Bulk';
+            let pQty = log.purchQty ? log.purchQty : '-';
+            let purchDisplay = log.purchQty ? `(${pQty} ${pUom}s)` : '';
+
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px; color: #64748b; font-size: 12px;">${timeStr}</td>
                     <td style="padding: 12px; font-weight: bold; color: #1e293b;">${log.item}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #10b981;">+${log.variance} ${log.uom}</td>
+                    <td style="padding: 12px;">
+                        <strong style="color: #10b981; font-size: 14px;">+${log.variance} ${log.uom}</strong><br>
+                        <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
+                    </td>
                     <td style="padding: 12px;">
                         <button onclick="window.undoKitchenPrep('${log.id}', '${log.item}', ${log.variance})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">✖ Undo</button>
                     </td>
