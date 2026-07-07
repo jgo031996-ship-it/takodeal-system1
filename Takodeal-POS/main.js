@@ -2247,6 +2247,38 @@ window.submitAttendance = async function(type) {
                 });
                 alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
             }
+
+            // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours!
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25) {
+                const { value: reason, isConfirmed } = await Swal.fire({
+                    title: '⚠️ Undertime Detected',
+                    html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
+                    input: 'text',
+                    inputPlaceholder: 'Reason for leaving early...',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Submit & Time Out',
+                    confirmButtonColor: '#dc2626',
+                    customClass: { popup: 'rounded-2xl shadow-xl' }
+                });
+
+                if (!isConfirmed || !reason) {
+                    unlockUI(); return; 
+                }
+
+                // Auto-submit Reason Letter to the Manager App
+                await addDoc(collection(db, "staff_requests"), {
+                    type: "Reason Letter",
+                    staffName: staffName,
+                    branch: finalBranch,
+                    status: "Pending",
+                    explanationCause: "Undertime",
+                    explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
+                    timestamp: new Date() // Use JS Date for cross-app compatibility
+                });
+                
+                Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Undertime Letter Sent!', showConfirmButton: false, timer: 3000});
+            }
         }
     } catch(e) {
         console.warn("Fast query failed. Using fallback lock method...", e);
@@ -5072,7 +5104,17 @@ window.renderStockReqList = function(branchStockDict) {
         let localStock = branchStockDict[item.name] !== undefined ? branchStockDict[item.name] : 0;
         let hqStatus = hqStock > 0 ? `<span style="color: #16a34a;">HQ Has Stock</span>` : `<span style="color: #dc2626;">HQ Out of Stock</span>`;
 
-        // 🔥 THE FIX: The local system stock is safely locked into the data-sys attribute so the button never loses it!
+        // 🔥 THE UOM FIX: Build the Dropdown for Pack vs Pieces!
+        let pUom = item.purchaseUom || item.uom || 'units';
+        let bUom = item.uom || 'units';
+        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+        let uomOptions = '';
+        if (pUom.toLowerCase() !== bUom.toLowerCase() && conv > 1) {
+            uomOptions += `<option value="purch" data-conv="${conv}">${pUom}</option>`;
+        }
+        uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
+
         html += `
             <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                 <div>
@@ -5093,7 +5135,9 @@ window.renderStockReqList = function(branchStockDict) {
                 <div style="text-align: center;">
                     <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
                         <input type="number" id="actualCount_${item.id}" placeholder="0" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; width: 100%; box-sizing: border-box; outline: none;">
-                        <span style="font-size: 12px; font-weight: bold; color: #64748b; white-space: nowrap;">${item.uom || 'units'}</span>
+                        <select id="actualUom_${item.id}" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; outline: none; cursor: pointer;">
+                            ${uomOptions}
+                        </select>
                     </div>
                 </div>
             </div>
@@ -5138,24 +5182,33 @@ window.submitStockRequest = async function() {
     selects.forEach(select => {
         if (select.value !== "None") {
             let id = select.getAttribute('data-id');
-            // 🔥 THE FIX: Search the global cache directly so it never gets lost!
             let itemData = window.globalHqStockCache.find(i => i.id === id);
-            if (!itemData) return; // Crash prevention skip
+            if (!itemData) return; 
 
             let actualCountEl = document.getElementById(`actualCount_${id}`);
-            let actualCount = actualCountEl && actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
+            let uomSelectEl = document.getElementById(`actualUom_${id}`);
             
-            // 🔥 THE FIX: Extract the LOCAL branch stock securely from the HTML data-sys attribute!
+            let rawCount = actualCountEl && actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
+            let convRate = 1;
+            let displayUom = itemData.uom;
+
+            // 🔥 Convert Pack input to Pieces logic!
+            if (uomSelectEl && uomSelectEl.tagName === 'SELECT') {
+                let selOpt = uomSelectEl.options[uomSelectEl.selectedIndex];
+                convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+                displayUom = selOpt.text;
+            }
+
+            let actualCount = rawCount * convRate; 
             let sysStock = parseFloat(select.getAttribute('data-sys')) || 0;
 
-            // 🚨 FRAUD DETECTION
             if (select.value === "Low Stock" || select.value === "Out of Stock") {
                 if (actualCount < (sysStock - 1)) {
                     fraudAlerts.push({
                         name: itemData.name,
-                        declared: actualCount,
+                        declared: rawCount, 
                         expected: sysStock,
-                        uom: itemData.uom
+                        uom: displayUom
                     });
                 }
             }
@@ -5166,8 +5219,10 @@ window.submitStockRequest = async function() {
                 requestType: select.value, 
                 uom: itemData.uom,
                 sourceId: itemData.id,
-                systemStock: sysStock, // Accurately sends the Branch stock to HQ!
-                physicalStock: actualCount,
+                systemStock: sysStock, 
+                physicalStock: actualCount, // The true converted base quantity
+                displayQty: rawCount,       // The exact number they typed
+                displayUom: displayUom,     // E.g. "Pack"
                 category: itemData.category || "Ingredients",
                 purchaseUom: itemData.purchaseUom || itemData.uom,
                 convRate: itemData.conversionRate || 1
@@ -5193,21 +5248,20 @@ window.submitStockRequest = async function() {
             timestamp: serverTimestamp()
         });
 
-        // 🔥 FIRE THE SILENT ALARMS TO THE MANAGER APP
         for (let alert of fraudAlerts) {
             await addDoc(collection(db, "manager_alerts"), {
                 type: "STOCK_REQUEST_FRAUD",
                 branch: branch,
                 cashier: cashier,
-                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${alert.uom}. Possible missing stock!`,
+                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${itemData.uom}. Possible missing stock!`,
                 timestamp: serverTimestamp(),
                 isRead: false
             });
         }
 
         Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted. Check the History tab to track it.', 'success');
-        window.loadStockRequestUI(); // Resets the form
-        window.switchStockReqTab('History'); // Auto-switch to history
+        window.loadStockRequestUI(); 
+        window.switchStockReqTab('History'); 
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to send request.', 'error');
