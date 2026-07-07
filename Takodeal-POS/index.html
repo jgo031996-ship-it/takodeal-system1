@@ -3014,7 +3014,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 imgContainer.innerHTML = '';
             }
 
-            // 2. BUILD NEW ADDON UI
+            // 2. BUILD DYNAMIC ADDON UI (AUTOMATIC BASE FLAVORS VS EXTRAS)
             let addonContainer = document.getElementById('addonSelectDropdown').parentElement;
             let newUiHtml = '';
 
@@ -3026,32 +3026,38 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 });
 
                 let addonsList = Object.values(groupedAddons);
-                let hasSauce = addonsList.some(a => a.name === "Regular Sauce" || a.name === "Spicy Sauce");
+                
+                // 🔥 THE INSANELY SMART SYNC: 
+                // Price = 0? Automatically groups as a mandatory "Base Flavor" radio button option!
+                // Price > 0? Automatically groups as an optional "Extra" checkbox option!
+                let baseFlavors = addonsList.filter(a => a.price === 0);
+                let extras = addonsList.filter(a => a.price > 0);
 
-                if (hasSauce) {
-                    let regAddon = addonsList.find(a => a.name === "Regular Sauce") || { linkedIngredient: "Regular Sauce", deductQty: 1 };
-                    let spicyAddon = addonsList.find(a => a.name === "Spicy Sauce") || { linkedIngredient: "Spicy Sauce", deductQty: 1 };
-
-                    let regChecked = (!existingItem || (existingItem && existingItem.addons["Regular Sauce"])) ? 'checked' : '';
-                    let spicyChecked = (existingItem && existingItem.addons["Spicy Sauce"]) ? 'checked' : '';
-                    if(!regChecked && !spicyChecked) regChecked = 'checked'; // Default
-
+                if (baseFlavors.length > 0) {
                     newUiHtml += `
                         <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">BASE FLAVOR (Required)</label>
                         <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                    `;
+                    
+                    baseFlavors.forEach((bf, bfIdx) => {
+                        // Retain their selected choice if editing an order, or default check the very first option if it's a fresh order
+                        let isChecked = '';
+                        if (existingItem) {
+                            if (existingItem.addons[bf.name]) isChecked = 'checked';
+                        } else {
+                            if (bfIdx === 0) isChecked = 'checked';
+                        }
+
+                        newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #b45309;">
-                                <span><input type="radio" name="baseSauce" class="addon-radio" value="Regular Sauce|0|${regAddon.linkedIngredient}|${regAddon.deductQty}" ${regChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="updateModalTotals()"> Regular Sauce</span>
+                                <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="updateModalTotals()"> ${bf.name}</span>
                                 <span style="color: #d97706; font-size: 11px;">Free</span>
                             </label>
-                            <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #dc2626;">
-                                <span><input type="radio" name="baseSauce" class="addon-radio" value="Spicy Sauce|0|${spicyAddon.linkedIngredient}|${spicyAddon.deductQty}" ${spicyChecked} style="accent-color: #dc2626; transform: scale(1.2); margin-right: 8px;" onchange="updateModalTotals()"> Spicy Sauce</span>
-                                <span style="color: #ef4444; font-size: 11px;">Free</span>
-                            </label>
-                        </div>
-                    `;
+                        `;
+                    });
+                    newUiHtml += `</div>`;
                 }
 
-                let extras = addonsList.filter(a => a.name !== "Regular Sauce" && a.name !== "Spicy Sauce");
                 if (extras.length > 0) {
                     newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
                     extras.forEach(a => {
