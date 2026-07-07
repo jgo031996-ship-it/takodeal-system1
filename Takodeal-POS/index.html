@@ -2680,8 +2680,28 @@
 
     function updateShiftUI(status) {
       let btn = document.getElementById('btnTopShift'); let lock = document.getElementById('shiftLockout'); let placeBtn = document.getElementById('btnMainPlaceOrder');
-      if (status && status.active) { currentShift = status; btn.innerText = "🟢 Active Shift"; lock.style.display = "none"; placeBtn.disabled = false; }
-      else { currentShift = null; btn.innerText = "🔴 Shift Closed"; lock.style.display = "flex"; placeBtn.disabled = true; }
+      if (status && status.active) { 
+          currentShift = status; btn.innerText = "🟢 Active Shift"; lock.style.display = "none"; placeBtn.disabled = false; 
+      }
+      else { 
+          currentShift = null; btn.innerText = "🔴 Shift Closed"; lock.style.display = "flex"; placeBtn.disabled = true; 
+          
+          // 🔥 HAPPY END SHIFT QUOTES ENGINE
+          const quotes = [
+              "Great job today! Rest up and see you tomorrow. 🌟",
+              "Hard work pays off. Thank you for your dedication! 🙌",
+              "You crushed it today! Enjoy your well-deserved rest. 🍕",
+              "Another day, another peso! Thanks for being awesome. 🐙",
+              "Time to clock out and chill out. You earned it! 🛋️",
+              "Take a deep breath, you did amazing today! ☕"
+          ];
+          let randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+          
+          let lockoutTitle = lock.querySelector('h2');
+          let lockoutDesc = lock.querySelector('p');
+          if (lockoutTitle) lockoutTitle.innerText = "Register is Closed";
+          if (lockoutDesc) lockoutDesc.innerHTML = `<span style="font-size: 16px; font-weight: bold; color: #0f766e;">${randomQuote}</span><br><br>Open a shift to begin taking orders.`;
+      }
     }
 
     function openShiftModal() {
