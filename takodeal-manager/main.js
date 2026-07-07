@@ -1883,7 +1883,14 @@ window.submitMultiDispatch = async function () {
           let poIds = activePoStr.split(',');
           for (let id of poIds) {
               if (id) {
-                  try { await updateDoc(doc(db, "purchase_orders", id), { status: "Completed" }); } catch(e){}
+                  try { 
+                      // 🔥 THE FIX: Tell the Cashier exactly what happened!
+                      let finalStatus = skippedCart.length > 0 ? "Partially Dispatched" : "Completed";
+                      await updateDoc(doc(db, "purchase_orders", id), { 
+                          status: finalStatus,
+                          managerMessage: skippedCart.length > 0 ? "Some items were out of stock and pushed to a delayed request." : "All items shipped."
+                      }); 
+                  } catch(e){}
               }
           }
           localStorage.removeItem('takodeal_active_po');
@@ -9307,7 +9314,7 @@ window.autoFill7DaySupply = function() {
 };
 
 // ========================================================
-// 🏦 PHASE 6: EOD CASH FLOW & FLOATING CASH ENGINE (TRUE LEDGER MATH)
+// 🏦 EOD CASH FLOW HUB (LIVE DRAWER CASH DASHBOARD)
 // ========================================================
 window.loadCashFlowHub = async function() {
     try {
@@ -9315,114 +9322,80 @@ window.loadCashFlowHub = async function() {
         const accSnap = await getDocs(collection(db, "cash_accounts"));
         accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
 
-        let branchFloating = {};
-        let lifetimeRemitted = {};
-        
-        if (window.globalActiveBranches) {
-            window.globalActiveBranches.forEach(b => { 
-                if (b !== "Main Office") {
-                    branchFloating[b] = 0; 
-                    lifetimeRemitted[b] = 0;
-                }
-            });
-        }
-        let pendingVerifications = 0;
-        let totalFloating = 0;
-
-        // 1. Add ALL Historical Cash Sales & Subtract ALL Historical Cash Expenses (Closed Shifts)
-        const shiftSnap = await getDocs(query(collection(db, "shifts"), where("status", "==", "Closed")));
-        shiftSnap.forEach(doc => {
-            let data = doc.data();
-            let branch = data.branch;
-            if (branchFloating[branch] !== undefined) {
-                branchFloating[branch] += (parseFloat(data.totalCashSales) || 0);
-                branchFloating[branch] -= (parseFloat(data.cashOut) || parseFloat(data.expenses) || 0);
-            }
-        });
-
-        // 2. Add LIVE Cash Sales & Subtract LIVE Cash Expenses (Active Shifts)
-        const activeShiftSnap = await getDocs(query(collection(db, "shifts"), where("active", "==", true)));
-        for (let docSnap of activeShiftSnap.docs) {
-            let data = docSnap.data();
-            let branch = data.branch;
-            if (branchFloating[branch] !== undefined) {
-                let validStartTime = data.startTime && data.startTime.toDate ? data.startTime.toDate() : new Date(data.startTime);
-                
-                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", validStartTime));
-                const txSnap = await getDocs(txQ);
-                txSnap.forEach(tDoc => {
-                    let tx = tDoc.data();
-                    if (tx.status !== 'Voided') {
-                        if (tx.splitDetails) {
-                            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                            if (cashSplit) branchFloating[branch] += cashSplit.amount;
-                        } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                            branchFloating[branch] += (tx.netTotal || 0);
-                        }
-                    }
-                });
-
-                const expQ = query(collection(db, "expenses"), where("shiftId", "==", docSnap.id));
-                const expSnap = await getDocs(expQ);
-                expSnap.forEach(eDoc => {
-                    branchFloating[branch] -= (parseFloat(eDoc.data().amount) || 0);
-                });
-            }
-        }
-
-        // 3. Subtract ALL Remittances from the Running Balance
-        const remitSnap = await getDocs(collection(db, "remittances"));
-        remitSnap.forEach(doc => {
-            let data = doc.data();
-            let branch = data.branch;
-            let amt = parseFloat(data.amount) || 0;
-            
-            if (data.status === "Pending") pendingVerifications += amt;
-
-            if (branchFloating[branch] !== undefined) {
-                // If it isn't rejected, it means the money left the branch! Subtract it!
-                if (data.status !== "Rejected") {
-                    branchFloating[branch] -= amt;
-                    lifetimeRemitted[branch] += amt; 
-                }
-            }
-        });
-
-        // 4. Render the UI
         let branchHtml = '';
-        for (let branch in branchFloating) {
-            // Cap at 0 to clean up decimal micro-math errors
-            let owed = branchFloating[branch] < 0.1 ? 0 : branchFloating[branch];
-            totalFloating += owed;
-            
-            let alertColor = owed > 5000 ? "#dc2626" : "#475569"; 
-            let alertBg = owed > 5000 ? "#fef2f2" : "#f8fafc";
-            let alertBorder = owed > 5000 ? "#fecaca" : "#e2e8f0";
-            
+        let totalDrawerCash = 0;
+
+        // Loop through every branch except Main Office
+        for (let branch of window.globalActiveBranches) {
+            if (branch === "Main Office") continue;
+
+            let drawerAmount = 0;
+            let drawerStatus = "";
+            let alertColor = "#0f766e";
+            let alertBg = "#f0fdfa";
+            let alertBorder = "#bbf7d0";
+
+            // 1. Check if they have an active shift
+            const activeQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
+            const activeSnap = await getDocs(activeQ);
+
+            if (!activeSnap.empty) {
+                // Branch is OPEN! Calculate live drawer cash!
+                let sData = activeSnap.docs[0].data();
+                let sTime = sData.startTime.toDate();
+                drawerAmount = parseFloat(sData.startingCash) || 0;
+
+                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime));
+                const txSnap = await getDocs(txQ);
+                txSnap.forEach(t => {
+                    let tx = t.data();
+                    if (tx.status !== 'Voided' && tx.paymentMethod === 'Cash') drawerAmount += (parseFloat(tx.netTotal) || 0);
+                });
+
+                const expQ = query(collection(db, "expenses"), where("shiftId", "==", activeSnap.docs[0].id));
+                const expSnap = await getDocs(expQ);
+                expSnap.forEach(e => { drawerAmount -= (parseFloat(e.data().amount) || 0); });
+
+                drawerStatus = '<span style="color:#16a34a; font-weight:bold; font-size:11px;">🟢 Register Open</span>';
+            } else {
+                // Branch is CLOSED! Fetch their last declared cash.
+                const closedQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+                const closedSnap = await getDocs(closedQ);
+                if (!closedSnap.empty) {
+                    drawerAmount = parseFloat(closedSnap.docs[0].data().declaredCash) || 0;
+                    drawerStatus = '<span style="color:#64748b; font-weight:bold; font-size:11px;">⚪ Register Closed</span>';
+                } else {
+                    drawerStatus = '<span style="color:#94a3b8; font-weight:bold; font-size:11px;">No Data</span>';
+                }
+            }
+
+            if (drawerAmount > 5000) {
+                alertColor = "#dc2626"; alertBg = "#fef2f2"; alertBorder = "#fecaca";
+            }
+
+            totalDrawerCash += drawerAmount;
+
             branchHtml += `
                 <div style="background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center;">
                     <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
-                    <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${owed.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Unremitted Cash</div>
+                    <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${drawerAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="margin-top: 4px;">${drawerStatus}</div>
                 </div>
             `;
         }
 
-        // 5. Inject Lifetime Tabs into the UI
-        let lifetimeHtml = '';
-        for (let b in lifetimeRemitted) {
-            lifetimeHtml += `
-            <div style="flex: 1; text-align: center; padding: 15px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); min-width: 150px;">
-                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px;">📍 ${b}</div>
-                <div style="font-size: 20px; font-weight: 900; color: #0f766e;">₱${lifetimeRemitted[b].toLocaleString(undefined, {minimumFractionDigits:2})}</div>
-            </div>`;
-        }
-        let lifetimeContainer = document.getElementById('lifetimeRemittanceTabs');
-        if (lifetimeContainer) lifetimeContainer.innerHTML = lifetimeHtml;
-
         document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('hubFloatingCash').innerText = `₱${totalFloating.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('hubPendingCash').innerText = `₱${pendingVerifications.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        
+        // Hide the pending/lifetime tabs since we simplified this screen!
+        if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'none';
+        
+        // Change the labels to reflect the new logic
+        document.querySelectorAll('div, span, h3').forEach(el => {
+            if (el.innerText === "FLOATING CASH (AT BRANCHES)") el.innerText = "LIVE CASH IN DRAWERS";
+            if (el.innerText === "Expected Z-Reading Cash not yet remitted") el.innerText = "Total physical cash sitting in branches right now";
+        });
+
         document.getElementById('branchFloatingContainer').innerHTML = branchHtml;
 
     } catch (e) {
@@ -11136,6 +11109,7 @@ window.loadGlobalAddons = async function() {
                     <td style="padding: 12px;"><span class="badge badge-open">${d.category || 'All'}</span></td>
                     <td style="padding: 12px; display:flex; gap: 5px;">
                         <button onclick="window.openGlobalAddonModal('${doc.id}', '${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}', '${safeCat}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
+                        <button onclick="window.duplicateGlobalAddon('${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📋 Clone</button>
                         <button onclick="window.deleteGlobalAddon('${doc.id}', '${safeName}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>
                     </td>
                 </tr>
@@ -11143,6 +11117,12 @@ window.loadGlobalAddons = async function() {
         });
         tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No Global Add-Ons setup yet.</td></tr>';
     } catch(e) { console.error(e); }
+};
+
+// 🔥 NEW: 1-CLICK ADD-ON CLONER
+window.duplicateGlobalAddon = function(name, price, qty, linkedIng) {
+    // Opens the modal with the exact same details, but a blank ID so it saves as a NEW item!
+    window.openGlobalAddonModal('', name + ' (Copy)', price, qty, linkedIng, 'All');
 };
 
 window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qty = '0', linkedIng = '', cat = 'All') {
@@ -11164,7 +11144,9 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qt
 
     try {
         // 1. Fetch Live Inventory for the "Linked Raw Material" Dropdown
-        const invSnap = await getDocs(collection(db, "inventory"));
+        // 🔥 THE FIX: ONLY scan the Main Office so you don't get 4 branches worth of duplicates!
+        const invQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const invSnap = await getDocs(invQ);
         let html = '<option value="">-- No Linked Ingredient --</option>';
         
         let invItems = [];
