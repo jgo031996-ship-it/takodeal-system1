@@ -7995,6 +7995,10 @@ window.loadPayrollGenerator = async function() {
 
         // Build Table & Apply Auto-Deductions!
         let html = '';
+      
+        // 🔥 THE FIX: Sort the staff names alphabetically!
+        let sortedNames = Object.keys(payrollData).sort((a,b) => a.localeCompare(b));
+      
         for (let name in payrollData) {
             let data = payrollData[name];
             let rate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
@@ -8259,7 +8263,6 @@ window.finalizePayslip = async function() {
         // 3. Deduct exactly what you typed for the LOAN in the ledger
         if (actualLoanDeducted > 0) {
             let lId = data.ledgerId;
-            // 🛡️ THE FIX: If the memory dropped the ledger ID, force Firebase to find it by name!
             if (!lId) {
                 const slQ = query(collection(db, "staff_ledger"), where("staffName", "==", data.name));
                 const slSnap = await getDocs(slQ);
@@ -8272,6 +8275,17 @@ window.finalizePayslip = async function() {
                 if (ledgerSnap.exists()) {
                     let currentPaid = parseFloat(ledgerSnap.data().totalPaid) || 0;
                     await updateDoc(ledgerRef, { totalPaid: currentPaid + actualLoanDeducted });
+                    
+                    // 🔥 THE FIX: Log Loan Payment to the History Tab!
+                    await addDoc(collection(db, "staff_deductions"), {
+                        staffName: data.name,
+                        type: "Company Loan Payment",
+                        amount: actualLoanDeducted,
+                        dateAdded: serverTimestamp(),
+                        status: "Paid",
+                        paidAt: serverTimestamp(),
+                        remarks: `Auto-deducted from Payslip`
+                    });
                 }
             }
         }
@@ -8616,6 +8630,17 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
         if (currentBalance > 0 && remainingPayment > 0) {
             if (docId && docId !== 'undefined') {
                 await updateDoc(doc(db, "staff_ledger", docId), { totalPaid: currentPaid + remainingPayment });
+                
+                // 🔥 THE FIX: Log Manual Loan Payment to the History Tab!
+                await addDoc(collection(db, "staff_deductions"), {
+                    staffName: staffName,
+                    type: "Company Loan Payment",
+                    amount: remainingPayment,
+                    dateAdded: serverTimestamp(),
+                    status: "Paid",
+                    paidAt: serverTimestamp(),
+                    remarks: `Manual Cash Payment`
+                });
             }
         }
 
