@@ -13440,7 +13440,7 @@ window.loadSmartAIInsights = async function() {
 };
 
 // ==========================================
-// 🔍 FORENSIC ITEM TRACE LEDGER ENGINE
+// 🔍 FORENSIC ITEM TRACE LEDGER ENGINE (INDEX-FREE CRASH FIX)
 // ==========================================
 window.openItemLedger = async function(branch, itemName) {
     document.getElementById('itemLedgerModal').style.display = 'flex';
@@ -13456,15 +13456,32 @@ window.openItemLedger = async function(branch, itemName) {
             currentStock = parseFloat(invSnap.docs[0].data().currentStock) || 0;
             uom = invSnap.docs[0].data().baseUom || invSnap.docs[0].data().uom || '';
         }
-        document.getElementById('ledgerCurrentStock').innerText = `${currentStock.toFixed(2)} ${uom}`;
+        
+        let curStockEl = document.getElementById('ledgerCurrentStock');
+        if (curStockEl) curStockEl.innerText = `${currentStock.toFixed(2)} ${uom}`;
 
-        // 🔥 THE FIX: Last Delivery UI Injector
+        // 🔥 THE INDEX-FREE FIX: Local Sorting for Dispatch Logs
         let lastDelHtml = '<span style="color:#94a3b8; font-style:italic;">No deliveries recorded.</span>';
         if (branch !== "Main Office") {
-            const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("item", "==", itemName), where("status", "==", "Received"), orderBy("timestamp", "desc"), limit(1));
+            // We removed the orderBy() here to prevent Firebase from crashing!
+            const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("item", "==", itemName));
             const delSnap = await getDocs(delQ);
-            if (!delSnap.empty) {
-                let lastDel = delSnap.docs[0].data();
+            
+            let delLogs = [];
+            delSnap.forEach(d => {
+                let data = d.data();
+                if (data.status === "Received") delLogs.push(data);
+            });
+            
+            // 🧠 Javascript does the heavy sorting safely in the background
+            delLogs.sort((a, b) => {
+                let timeA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+                let timeB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+                return timeB - timeA;
+            });
+            
+            if (delLogs.length > 0) {
+                let lastDel = delLogs[0];
                 let delDate = lastDel.timestamp ? lastDel.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : lastDel.date;
                 lastDelHtml = `<strong style="color: #0ea5e9;">${delDate}</strong> <span style="font-size: 11px; color: #64748b;">(Qty: ${lastDel.receivedQty} ${lastDel.uom})</span>`;
             }
@@ -13472,13 +13489,15 @@ window.openItemLedger = async function(branch, itemName) {
             lastDelHtml = '<span style="color:#64748b; font-size:11px;">(HQ Source)</span>';
         }
         
-        if (!document.getElementById('ledgerLastDeliveryUi')) {
-            let uiDiv = document.createElement('div');
-            uiDiv.id = 'ledgerLastDeliveryUi';
-            uiDiv.style.cssText = "margin-top: 10px; font-size: 13px; color: #475569; border-top: 1px dashed #cbd5e1; padding-top: 10px;";
-            document.getElementById('ledgerCurrentStock').parentNode.appendChild(uiDiv);
+        if (curStockEl && curStockEl.parentNode) {
+            if (!document.getElementById('ledgerLastDeliveryUi')) {
+                let uiDiv = document.createElement('div');
+                uiDiv.id = 'ledgerLastDeliveryUi';
+                uiDiv.style.cssText = "margin-top: 10px; font-size: 13px; color: #475569; border-top: 1px dashed #cbd5e1; padding-top: 10px;";
+                curStockEl.parentNode.appendChild(uiDiv);
+            }
+            document.getElementById('ledgerLastDeliveryUi').innerHTML = `Last Branch Delivery: ${lastDelHtml}`;
         }
-        document.getElementById('ledgerLastDeliveryUi').innerHTML = `Last Branch Delivery: ${lastDelHtml}`;
 
         let headerRow = tbody.previousElementSibling.querySelector('tr');
         if (headerRow) {
@@ -13493,11 +13512,20 @@ window.openItemLedger = async function(branch, itemName) {
             `;
         }
 
-        const logQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("item", "==", itemName), orderBy("timestamp", "desc"));
+        // 🔥 THE INDEX-FREE FIX: Local Sorting for Stock Logs
+        // We removed orderBy("timestamp", "desc") to prevent the Firebase crash!
+        const logQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("item", "==", itemName));
         const logSnap = await getDocs(logQ);
 
         let logsArray = [];
         logSnap.forEach(doc => logsArray.push(doc.data()));
+
+        // 🧠 Javascript takes over the sorting mathematically!
+        logsArray.sort((a, b) => {
+            let timeA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+            let timeB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+            return timeB - timeA;
+        });
 
         let runningNewQty = currentStock;
         let lifetimeBought = 0;
@@ -13538,7 +13566,9 @@ window.openItemLedger = async function(branch, itemName) {
             `;
         });
 
-        document.getElementById('ledgerLifetimeBought').innerText = `${lifetimeBought.toFixed(2)} ${uom}`;
+        let ltBoughtEl = document.getElementById('ledgerLifetimeBought');
+        if (ltBoughtEl) ltBoughtEl.innerText = `${lifetimeBought.toFixed(2)} ${uom}`;
+        
         tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #94a3b8;">No historical data found.</td></tr>';
 
     } catch (e) {
