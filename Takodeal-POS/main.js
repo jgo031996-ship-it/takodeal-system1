@@ -219,12 +219,17 @@ window.verifyPin = async function (pin) {
 // --- THE SMART FIREBASE MENU GROUPER (WITH OFFLINE BACKUP) ---
 window.fetchMenu = async function () {
   try {
-    const snapshot = await window.getDocs(window.collection(window.db, "menu"));
+    // Try to get it from the cloud/Firebase cache first
+    const snapshot = await getDocs(collection(db, "menu"));
     let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Save a backup to the tablet instantly!
     if (rawItems.length > 0) window.saveMenuToLocalHardDrive(rawItems);
+    
     return window.processRawItemsIntoMenu(rawItems);
   } catch (error) {
     console.warn("Cloud fetch failed. Loading menu from offline hard drive backup...", error);
+    // 🚨 OFFLINE FALLBACK: Load from Local Storage!
     let offlineItems = window.getMenuFromLocalHardDrive();
     return window.processRawItemsIntoMenu(offlineItems);
   }
@@ -232,8 +237,7 @@ window.fetchMenu = async function () {
 
 window.processRawItemsIntoMenu = function(rawItems) {
     let groupedMenu = [];
-    if (!window.masterPOSData) window.masterPOSData = {};
-    window.masterPOSData.phantomVariants = {}; 
+    masterPOSData.phantomVariants = {}; 
 
     rawItems.forEach(item => {
         let name = item.name;
@@ -247,16 +251,16 @@ window.processRawItemsIntoMenu = function(rawItems) {
             if (!existingBase) {
                 let baseItem = { ...item, name: baseName, isGrouped: true };
                 groupedMenu.push(baseItem);
-                window.masterPOSData.phantomVariants[baseName] = [];
+                masterPOSData.phantomVariants[baseName] = [];
             }
             
-            window.masterPOSData.phantomVariants[baseName].push({
+            masterPOSData.phantomVariants[baseName].push({
                 realName: item.name,
                 sizeLabel: sizeName,
                 price: parseFloat(item.price) || 0,
                 id: item.id
             });
-            window.masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
+            masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
         } else {
             groupedMenu.push(item);
         }
@@ -265,61 +269,63 @@ window.processRawItemsIntoMenu = function(rawItems) {
 };
 
 window.loadPOSData = async function() {
-    window.applySidebarLayout(); 
+    window.applySidebarLayout(); // 🔥 Automatically reshuffles sidebar on boot!
     let products = await window.fetchMenu();
-    window.masterPOSData.items = products;
-    window.masterPOSData.variants = {}; 
-    window.masterPOSData.addons = [];
+    masterPOSData.items = products;
+    masterPOSData.variants = {}; // Legacy variants
+    masterPOSData.addons = [];
 
+    // 🔥 PHASE 2: FETCH GLOBAL SETTINGS FROM MANAGER HUB 🔥
     try {
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
         if (configSnap.exists()) {
             let configData = configSnap.data();
-            window.masterPOSData.settings = {
+            masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
                 mixMatchFlavors: configData.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]
             };
             let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
+            masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
         } else {
             let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
-            window.masterPOSData.settings = { 
+            masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
+            masterPOSData.settings = { 
                 orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
                 payMethods: ["Cash", "GCash", "Bank"],
                 mixMatchFlavors: ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"] 
             };
         }
 
-        window.masterPOSData.addonLayoutNames = [];
+        // 🔥 FETCH THE CUSTOM ADDON LAYOUT SO THEY SORT CORRECTLY!
+        masterPOSData.addonLayoutNames = [];
         const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
         if (layoutSnap.exists() && layoutSnap.data().itemNames) {
-            window.masterPOSData.addonLayoutNames = layoutSnap.data().itemNames;
+            masterPOSData.addonLayoutNames = layoutSnap.data().itemNames;
         }
 
     } catch (e) {
         console.warn("Could not load global config, using defaults", e);
     }
 
-    window.masterPOSData.stockLevels = {};
-    const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
-    invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
+    masterPOSData.stockLevels = {};
+    const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", window.POS_BRANCH)));
+    invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
 
-    window.masterPOSData.bom = [];
-    const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-    bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
+    masterPOSData.bom = [];
+    const bomSnap = await getDocs(collection(db, "bom"));
+    bomSnap.forEach(doc => masterPOSData.bom.push(doc.data()));
 
-    if (typeof buildCategories === 'function') buildCategories();
-    else if (typeof window.buildCategories === 'function') window.buildCategories();
+    buildCategories();
 
     let otHtml = ''; 
-    window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
+    masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
     document.getElementById('mainOrderType').innerHTML = otHtml;
     
+    // 🔀 INJECT SPLIT PAYMENT BUTTON
     let pmHtml = ''; 
-    let optHtml = ''; 
-    window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
+    let optHtml = ''; // For the dropdowns
+    masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; 
         if (idx === 0) window.selectedPaymentMethod = m; 
         pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
@@ -330,6 +336,8 @@ window.loadPOSData = async function() {
     let payGrid = document.querySelector('.payment-grid');
     if (payGrid) {
         payGrid.innerHTML = pmHtml;
+        
+        // Inject the Split Inputs right below the buttons!
         if (!document.getElementById('splitPaymentContainer')) {
             payGrid.insertAdjacentHTML('afterend', `
                 <div id="splitPaymentContainer" style="display:none; margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 2px dashed #8b5cf6;">
@@ -346,200 +354,11 @@ window.loadPOSData = async function() {
                 </div>
             `);
         } else {
+            // Update dropdowns if they already exist
             document.getElementById('splitMethod1').innerHTML = optHtml;
             document.getElementById('splitMethod2').innerHTML = optHtml;
         }
     }
-};
-
-// --- UPGRADED CART & VARIANT LOGIC ---
-window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
-    if (!window.masterPOSData) window.masterPOSData = {};
-    if (!window.cart) window.cart = [];
-
-    if (existingItem) { 
-        window.pendingItem = JSON.parse(JSON.stringify(existingItem)); 
-        window.editIndex = window.cart.indexOf(existingItem); 
-    } else { 
-        window.pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
-        window.editIndex = -1; 
-    }
-
-    let phantomSizes = window.masterPOSData.phantomVariants ? window.masterPOSData.phantomVariants[name] : null;
-    let hasSizes = phantomSizes && phantomSizes.length > 0;
-    
-    if (hasSizes && !existingItem) {
-        window.pendingItem.isGrouped = true;
-        window.pendingItem.realName = phantomSizes[0].realName;
-        window.pendingItem.basePrice = phantomSizes[0].price;
-        window.pendingItem.variantPrice = phantomSizes[0].price;
-    }
-
-    document.getElementById('modalItemName').innerText = window.pendingItem.name;
-    let priceHeader = document.getElementById('modalItemPrice').parentElement;
-    
-    if (hasSizes && !existingItem) {
-        priceHeader.style.display = 'none'; 
-    } else {
-        priceHeader.style.display = 'flex';
-        document.getElementById('modalItemPrice').innerText = '₱ ' + window.pendingItem.basePrice.toFixed(2);
-    }
-
-    document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
-    document.getElementById('orderNotesInput').value = window.pendingItem.notes;
-    document.getElementById('variantModal').style.display = 'flex';
-
-    let oldDropdown = document.getElementById('addonSelectDropdown');
-    if(oldDropdown) oldDropdown.style.display = 'none';
-
-    let variantContainer = document.getElementById('variantOptions');
-    let variantSection = variantContainer ? variantContainer.parentElement : null;
-    
-    if (hasSizes) {
-        if (variantSection) variantSection.style.display = 'block';
-        if (variantContainer) {
-            variantContainer.style.width = '100%'; 
-            variantContainer.style.display = 'block';
-            
-            let sizeHtml = '<div style="display: flex; flex-wrap: wrap; gap: 12px; width: 100%; margin-bottom: 15px;">';
-            
-            phantomSizes.forEach((sizeObj, idx) => {
-                let isActive = (window.pendingItem.realName === sizeObj.realName) ? 'active' : '';
-                sizeHtml += `
-                    <div class="size-btn ${isActive}" onclick="window.selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this)" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
-                        <div class="sz-name" style="margin-bottom: 5px;">${sizeObj.sizeLabel}</div>
-                        <div class="sz-price">₱${sizeObj.price.toFixed(2)}</div>
-                    </div>
-                `;
-            });
-            sizeHtml += '</div>';
-            variantContainer.innerHTML = sizeHtml;
-        }
-    } else {
-        if (variantSection) variantSection.style.display = 'none';
-    }
-
-    try {
-        const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", window.pendingItem.realName));
-        const snap = await window.getDocs(q);
-
-        if (!snap.empty) {
-            let itemData = snap.docs[0].data();
-
-            let imgContainer = document.getElementById('modalDynamicImage');
-            if (!imgContainer) {
-                imgContainer = document.createElement('div');
-                imgContainer.id = 'modalDynamicImage';
-                document.getElementById('modalItemName').parentElement.parentElement.insertAdjacentElement('beforebegin', imgContainer);
-            }
-            if (itemData.image) {
-                imgContainer.innerHTML = `<div style="text-align: center; margin-bottom: 15px; display: flex; justify-content: center; background: #f8fafc; border-radius: 12px;"><img src="${itemData.image}" style="width: 100%; max-height: 160px; object-fit: contain; border-radius: 12px;"></div>`;
-            } else {
-                imgContainer.innerHTML = '';
-            }
-
-            let addonContainer = document.getElementById('addonSelectDropdown').parentElement;
-            let newUiHtml = '';
-
-            if (itemData.addons && itemData.addons.length > 0) {
-                let groupedAddons = {};
-                itemData.addons.forEach(a => {
-                    if (!groupedAddons[a.name]) groupedAddons[a.name] = { ...a, price: parseFloat(a.price) || 0 };
-                    else groupedAddons[a.name].price += (parseFloat(a.price) || 0);
-                });
-
-                let addonsList = Object.values(groupedAddons);
-                
-                if (window.masterPOSData && window.masterPOSData.addonLayoutNames) {
-                    addonsList.sort((a,b) => {
-                        let idxA = window.masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase());
-                        let idxB = window.masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase());
-                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                        if (idxA !== -1) return -1;
-                        if (idxB !== -1) return 1;
-                        return a.name.localeCompare(b.name);
-                    });
-                }
-                
-                let baseFlavors = addonsList.filter(a => a.price === 0);
-                let extras = addonsList.filter(a => a.price > 0);
-
-                if (baseFlavors.length > 0) {
-                    newUiHtml += `
-                        <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">BASE FLAVOR (Required)</label>
-                        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
-                    `;
-                    
-                    baseFlavors.forEach((bf, bfIdx) => {
-                        let isChecked = '';
-                        if (existingItem) {
-                            if (existingItem.addons && existingItem.addons[bf.name]) isChecked = 'checked';
-                        } else {
-                            if (bfIdx === 0) isChecked = 'checked';
-                        }
-
-                        newUiHtml += `
-                            <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #b45309;">
-                                <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="window.updateModalTotals()"> ${bf.name}</span>
-                                <span style="color: #d97706; font-size: 11px;">Free</span>
-                            </label>
-                        `;
-                    });
-                    newUiHtml += `</div>`;
-                }
-
-                if (extras.length > 0) {
-                    newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
-                    extras.forEach(a => {
-                        let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
-                        newUiHtml += `
-                            <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
-                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="window.updateModalTotals()"> ${a.name}</span>
-                                <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
-                            </label>
-                        `;
-                    });
-                    newUiHtml += `</div>`;
-                }
-            }
-
-            if (newUiHtml === '') newUiHtml = '<div style="font-size:12px; color:#94a3b8; text-align:center; padding:10px; width:100%;">No add-ons available.</div>';
-            
-            let dynamicAddonDiv = document.getElementById('dynamicAddonUI');
-            if(!dynamicAddonDiv) {
-                dynamicAddonDiv = document.createElement('div');
-                dynamicAddonDiv.id = 'dynamicAddonUI';
-                dynamicAddonDiv.style.width = '100%';
-                addonContainer.appendChild(dynamicAddonDiv);
-            }
-            dynamicAddonDiv.innerHTML = newUiHtml;
-
-            // 🔥 3. ITEM-SPECIFIC MIX & MATCH BUILDER 🔥
-            window.mixMatchState = {};
-            let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
-            let customArea = document.getElementById('takoyakiCustomizationArea');
-            
-            if (customArea) {
-                if (hasMixMatch) {
-                    itemData.mixMatchFlavors.forEach(flavor => {
-                        window.mixMatchState[flavor] = 0;
-                    });
-                    
-                    customArea.style.display = 'block';
-                    document.getElementById('mixMatchPanel').style.display = 'none';
-                    document.getElementById('mixMatchToggleIcon').innerText = '▼';
-                    
-                    let sizeMatch = window.pendingItem.realName ? window.pendingItem.realName.match(/(\d+)\s*Pcs/i) : window.pendingItem.name.match(/(\d+)\s*Pcs/i);
-                    window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
-                    window.renderMixMatchList();
-                } else {
-                    customArea.style.display = 'none';
-                }
-            }
-        }
-    } catch (error) { console.error("Error loading item details:", error); }
-    
-    if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
 };
 
 window.toggleSplitPaymentUI = function(event) {
