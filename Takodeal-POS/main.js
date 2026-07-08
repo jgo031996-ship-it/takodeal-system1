@@ -536,8 +536,11 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     customArea.style.display = 'none';
                 }
             }
+
         }
-    } catch (error) { console.error("Error loading item details:", error); }
+    } catch (error) { 
+        console.error("Error loading item details:", error); 
+    }
     
     if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
 };
