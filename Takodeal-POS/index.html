@@ -3009,7 +3009,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             phantomSizes.forEach((sizeObj, idx) => {
                 let isActive = (window.pendingItem.realName === sizeObj.realName) ? 'active' : '';
                 sizeHtml += `
-                    <div class="size-btn ${isActive}" onclick="window.selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this)" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
+                    <div class="size-btn ${isActive}" onclick="if(typeof window.selectRealVariant==='function') window.selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this); else selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this);" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
                         <div class="sz-name" style="margin-bottom: 5px;">${sizeObj.sizeLabel}</div>
                         <div class="sz-price">₱${sizeObj.price.toFixed(2)}</div>
                     </div>
@@ -3081,7 +3081,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                             if (bfIdx === 0) isChecked = 'checked';
                         }
 
-                        // Added fallback "typeof" checks to prevent ReferenceErrors
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #b45309;">
                                 <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${bf.name}</span>
@@ -3137,148 +3136,160 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
                     
                     if(typeof window.renderMixMatchList === 'function') window.renderMixMatchList();
-                    else renderMixMatchList();
+                    else if(typeof renderMixMatchList === 'function') renderMixMatchList();
                 } else {
                     customArea.style.display = 'none';
                 }
             }
-        }
+
+        } // <-- THIS CLOSES THE `if (!snap.empty)` SAFELY!
     } catch (error) { 
         console.error("Error loading item details:", error); 
-    }
+    } // <-- THIS CLOSES THE `try/catch` SAFELY!
     
     if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
     else if (typeof updateModalTotals === 'function') updateModalTotals();
+}; // <-- THIS CLOSES THE ENTIRE `openAddOrderModal` FUNCTION SAFELY!
+
+window.updateModalTotals = function() {
+  let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
+  let addonsTotal = 0; 
+  
+  // Calculate Radio Buttons
+  document.querySelectorAll('.addon-radio:checked').forEach(radio => {
+      let parts = radio.value.split('|');
+      addonsTotal += (parseFloat(parts[1]) || 0);
+  });
+
+  // Calculate Checkboxes
+  document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
+      let parts = cb.value.split('|');
+      addonsTotal += (parseFloat(parts[1]) || 0);
+  });
+
+  let lineTotal = (window.pendingItem.variantPrice + addonsTotal) * qty;
+  let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; 
+  window.pendingItem.discountVal = discInput;
+  
+  let calcDisc = 0;
+  if (window.pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
+  else if (window.pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
+  
+  let finalTotal = lineTotal - calcDisc;
+  
+  document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
+  document.getElementById('confirmAddToCartText').innerText = window.editIndex > -1 ? 'Update Order' : 'Add to Order';
 };
 
-    window.updateModalTotals = function() {
-      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
-      let addonsTotal = 0; 
-      
-      // Calculate Radio Buttons
-      document.querySelectorAll('.addon-radio:checked').forEach(radio => {
-          let parts = radio.value.split('|');
-          addonsTotal += (parseFloat(parts[1]) || 0);
-      });
-
-      // Calculate Checkboxes
-      document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
-          let parts = cb.value.split('|');
-          addonsTotal += (parseFloat(parts[1]) || 0);
-      });
-
-      let lineTotal = (pendingItem.variantPrice + addonsTotal) * qty;
-      let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; 
-      pendingItem.discountVal = discInput;
-      
-      let calcDisc = 0;
-      if (pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
-      else if (pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
-      
-      let finalTotal = lineTotal - calcDisc;
-      
-      document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
-      document.getElementById('confirmAddToCartText').innerText = editIndex > -1 ? 'Update Order' : 'Add to Order';
-    };
-
-    window.confirmAddOrUpdateToCart = function() {
+window.confirmAddOrUpdateToCart = function() {
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
-    pendingItem.notes = document.getElementById('orderNotesInput').value;
-    pendingItem.name = pendingItem.realName || pendingItem.name;
-    pendingItem.addons = {}; 
+    window.pendingItem.notes = document.getElementById('orderNotesInput').value;
+    window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
+    window.pendingItem.addons = {}; 
 
     if (typeof window.mixMatchState !== 'undefined') {
         let totalCustomPcs = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
         if (totalCustomPcs > 0) {
-            pendingItem.notes = pendingItem.notes ? pendingItem.notes + " | MIX: " : "MIX: ";
+            window.pendingItem.notes = window.pendingItem.notes ? window.pendingItem.notes + " | MIX: " : "MIX: ";
             for (let flavor in window.mixMatchState) {
                 let count = window.mixMatchState[flavor];
                 if (count > 0) {
-                    pendingItem.addons[`${flavor} Filling`] = { price: 0, qty: count, linkedIngredient: flavor, deductQty: 1 };
-                    pendingItem.notes += `${count} ${flavor}, `;
+                    window.pendingItem.addons[`${flavor} Filling`] = { price: 0, qty: count, linkedIngredient: flavor, deductQty: 1 };
+                    window.pendingItem.notes += `${count} ${flavor}, `;
                 }
             }
-            pendingItem.notes = pendingItem.notes.replace(/, $/, '');
+            window.pendingItem.notes = window.pendingItem.notes.replace(/, $/, '');
         }
     } 
 
-      // Save Radio Button Addons
-      document.querySelectorAll('.addon-radio:checked').forEach(radio => {
-          let p = radio.value.split('|');
-          pendingItem.addons[p[0]] = { price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
-      });
+    // Save Radio Button Addons
+    document.querySelectorAll('.addon-radio:checked').forEach(radio => {
+        let p = radio.value.split('|');
+        window.pendingItem.addons[p[0]] = { price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
+    });
 
-      // Save Checkbox Addons
-      document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
-          let p = cb.value.split('|');
-          pendingItem.addons[p[0]] = { price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
-      });
+    // Save Checkbox Addons
+    document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
+        let p = cb.value.split('|');
+        window.pendingItem.addons[p[0]] = { price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
+    });
 
-      let addonsTotal = 0; 
-      for (let key in pendingItem.addons) addonsTotal += (pendingItem.addons[key].price * pendingItem.addons[key].qty);
-      
-      let lineTotalBeforeDisc = (pendingItem.variantPrice + addonsTotal) * qty;
-      let rowDiscount = 0;
-      if (pendingItem.discountType === 'percentage' && pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (pendingItem.discountVal / 100);
-      else if (pendingItem.discountType === 'fixed' && pendingItem.discountVal > 0) rowDiscount = pendingItem.discountVal;
-      
-      let finalTotal = lineTotalBeforeDisc - rowDiscount;
-      pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; 
-      pendingItem.qty = qty;
-      
-      if (editIndex >= 0) { 
-          cart[editIndex] = JSON.parse(JSON.stringify(pendingItem)); 
-          editIndex = -1; 
-      } else { 
-          cart.push(JSON.parse(JSON.stringify(pendingItem))); 
-      }
-      closeModal('variantModal'); 
-      renderCart();
-    };
+    let addonsTotal = 0; 
+    for (let key in window.pendingItem.addons) addonsTotal += (window.pendingItem.addons[key].price * window.pendingItem.addons[key].qty);
+    
+    let lineTotalBeforeDisc = (window.pendingItem.variantPrice + addonsTotal) * qty;
+    let rowDiscount = 0;
+    if (window.pendingItem.discountType === 'percentage' && window.pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (window.pendingItem.discountVal / 100);
+    else if (window.pendingItem.discountType === 'fixed' && window.pendingItem.discountVal > 0) rowDiscount = window.pendingItem.discountVal;
+    
+    let finalTotal = lineTotalBeforeDisc - rowDiscount;
+    window.pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; 
+    window.pendingItem.qty = qty;
+    
+    if (window.editIndex >= 0) { 
+        window.cart[window.editIndex] = JSON.parse(JSON.stringify(window.pendingItem)); 
+        window.editIndex = -1; 
+    } else { 
+        window.cart.push(JSON.parse(JSON.stringify(window.pendingItem))); 
+    }
+    
+    // Safely call closeModal!
+    if (typeof window.closeModal === 'function') {
+        window.closeModal('variantModal'); 
+    } else if (typeof closeModal === 'function') {
+        closeModal('variantModal');
+    }
+    
+    window.renderCart();
+};
 
-    function renderCart() {
-      const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
-      if (cart.length === 0) { 
-        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
-        document.getElementById('displaySubTotal').innerText = '₱0.00'; 
-        document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
-        window.currentGrandTotal = 0; 
-      } else {
-        cart.forEach((item, index) => {
-          grandTotal += item.lineTotalFinal;
-          let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
+window.renderCart = function() {
+  const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
+  if (!window.cart || window.cart.length === 0) { 
+    list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
+    document.getElementById('displaySubTotal').innerText = '₱0.00'; 
+    document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
+    window.currentGrandTotal = 0; 
+  } else {
+    window.cart.forEach((item, index) => {
+      grandTotal += item.lineTotalFinal;
+      let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
 
-          let addonsText = '';
-          if (item.addons) {
-            for (let key in item.addons) {
-                let addon = item.addons[key];
-                if (addon.qty > 0) {
-                    // Check if it has a price, multiply by qty, and format to 2 decimal places
-                    let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
-                    
-                    // Add the Qty, the Name, and the Price to the UI!
-                    addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
-                }
+      let addonsText = '';
+      if (item.addons) {
+        for (let key in item.addons) {
+            let addon = item.addons[key];
+            if (addon.qty > 0) {
+                let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
+                addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
             }
         }
-    
-          list.innerHTML += `<li class="cart-item" onclick="openAddOrderModal('${item.name}', ${item.basePrice}, cart[${index}])">
-            <div class="cart-item-desc">
-              <span class="cart-item-name">${item.name}</span>
-              <div class="cart-item-subtext">${addonsText}${notesText}</div>
-            </div>
-            <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
-            <div class="cart-item-qty">x ${item.qty}</div>
-            <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
-            <button class="btn-remove" onclick="cart.splice(${index}, 1); renderCart(); event.stopPropagation();">✖</button>
-          </li>`;
-        });
-        window.currentGrandTotal = grandTotal; 
-        document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
-        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
       }
-    }
-    function clearCart() { if (cart.length === 0) return; if (confirm("Clear order?")) { cart = []; renderCart(); } }
+  
+      list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
+        <div class="cart-item-desc">
+          <span class="cart-item-name">${item.name}</span>
+          <div class="cart-item-subtext">${addonsText}${notesText}</div>
+        </div>
+        <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
+        <div class="cart-item-qty">x ${item.qty}</div>
+        <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
+        <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">✖</button>
+      </li>`;
+    });
+    window.currentGrandTotal = grandTotal; 
+    document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
+    document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
+  }
+};
+
+window.clearCart = function() { 
+  if (!window.cart || window.cart.length === 0) return; 
+  if (confirm("Clear order?")) { 
+    window.cart = []; 
+    window.renderCart(); 
+  } 
+};
 
     // --- 8. CHECKOUT SYSTEM ---
     function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
