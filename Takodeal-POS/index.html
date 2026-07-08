@@ -3151,34 +3151,59 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     else if (typeof updateModalTotals === 'function') updateModalTotals();
 }; // <-- THIS CLOSES THE ENTIRE `openAddOrderModal` FUNCTION SAFELY!
 
+// --- 🛒 MISSING BUTTON & CART FUNCTIONS RESTORED ---
+
+window.adjustModalMainQty = function(delta) {
+    let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1;
+    if (cur + delta > 0) {
+        window.pendingItem.qty = cur + delta;
+        document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
+        window.updateModalTotals();
+    }
+};
+
+window.setDiscountType = function(type) {
+    window.pendingItem.discountType = type;
+    document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
+    let dvi = document.getElementById('discountValueInput');
+    dvi.style.display = type === 'none' ? 'none' : 'block';
+    dvi.value = '';
+    
+    if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); window.pendingItem.discountVal = 0; }
+    else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
+    else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
+    
+    window.updateModalTotals();
+};
+
 window.updateModalTotals = function() {
-  let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
-  let addonsTotal = 0; 
-  
-  // Calculate Radio Buttons
-  document.querySelectorAll('.addon-radio:checked').forEach(radio => {
-      let parts = radio.value.split('|');
-      addonsTotal += (parseFloat(parts[1]) || 0);
-  });
+    let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
+    let addonsTotal = 0; 
 
-  // Calculate Checkboxes
-  document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
-      let parts = cb.value.split('|');
-      addonsTotal += (parseFloat(parts[1]) || 0);
-  });
+    // Calculate Radio Buttons
+    document.querySelectorAll('.addon-radio:checked').forEach(radio => {
+        let parts = radio.value.split('|');
+        addonsTotal += (parseFloat(parts[1]) || 0);
+    });
 
-  let lineTotal = (window.pendingItem.variantPrice + addonsTotal) * qty;
-  let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; 
-  window.pendingItem.discountVal = discInput;
-  
-  let calcDisc = 0;
-  if (window.pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
-  else if (window.pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
-  
-  let finalTotal = lineTotal - calcDisc;
-  
-  document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
-  document.getElementById('confirmAddToCartText').innerText = window.editIndex > -1 ? 'Update Order' : 'Add to Order';
+    // Calculate Checkboxes
+    document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
+        let parts = cb.value.split('|');
+        addonsTotal += (parseFloat(parts[1]) || 0);
+    });
+
+    let lineTotal = (window.pendingItem.variantPrice + addonsTotal) * qty;
+    let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; 
+    window.pendingItem.discountVal = discInput;
+
+    let calcDisc = 0;
+    if (window.pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
+    else if (window.pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
+
+    let finalTotal = lineTotal - calcDisc;
+
+    document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
+    document.getElementById('confirmAddToCartText').innerText = window.editIndex > -1 ? 'Update Order' : 'Add to Order';
 };
 
 window.confirmAddOrUpdateToCart = function() {
@@ -3216,80 +3241,85 @@ window.confirmAddOrUpdateToCart = function() {
 
     let addonsTotal = 0; 
     for (let key in window.pendingItem.addons) addonsTotal += (window.pendingItem.addons[key].price * window.pendingItem.addons[key].qty);
-    
+
     let lineTotalBeforeDisc = (window.pendingItem.variantPrice + addonsTotal) * qty;
     let rowDiscount = 0;
     if (window.pendingItem.discountType === 'percentage' && window.pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (window.pendingItem.discountVal / 100);
     else if (window.pendingItem.discountType === 'fixed' && window.pendingItem.discountVal > 0) rowDiscount = window.pendingItem.discountVal;
-    
+
     let finalTotal = lineTotalBeforeDisc - rowDiscount;
     window.pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; 
     window.pendingItem.qty = qty;
-    
+
     if (window.editIndex >= 0) { 
         window.cart[window.editIndex] = JSON.parse(JSON.stringify(window.pendingItem)); 
         window.editIndex = -1; 
     } else { 
         window.cart.push(JSON.parse(JSON.stringify(window.pendingItem))); 
     }
-    
-    // Safely call closeModal!
+
     if (typeof window.closeModal === 'function') {
         window.closeModal('variantModal'); 
     } else if (typeof closeModal === 'function') {
         closeModal('variantModal');
     }
-    
+
     window.renderCart();
 };
 
 window.renderCart = function() {
-  const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
-  if (!window.cart || window.cart.length === 0) { 
-    list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
-    document.getElementById('displaySubTotal').innerText = '₱0.00'; 
-    document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
-    window.currentGrandTotal = 0; 
-  } else {
-    window.cart.forEach((item, index) => {
-      grandTotal += item.lineTotalFinal;
-      let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
+    const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
+    if (!window.cart || window.cart.length === 0) { 
+        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
+        document.getElementById('displaySubTotal').innerText = '₱0.00'; 
+        document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
+        window.currentGrandTotal = 0; 
+    } else {
+        window.cart.forEach((item, index) => {
+            grandTotal += item.lineTotalFinal;
+            let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
 
-      let addonsText = '';
-      if (item.addons) {
-        for (let key in item.addons) {
-            let addon = item.addons[key];
-            if (addon.qty > 0) {
-                let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
-                addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
+            let addonsText = '';
+            if (item.addons) {
+                for (let key in item.addons) {
+                    let addon = item.addons[key];
+                    if (addon.qty > 0) {
+                        let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
+                        addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
+                    }
+                }
             }
-        }
-      }
-  
-      list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
-        <div class="cart-item-desc">
-          <span class="cart-item-name">${item.name}</span>
-          <div class="cart-item-subtext">${addonsText}${notesText}</div>
-        </div>
-        <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
-        <div class="cart-item-qty">x ${item.qty}</div>
-        <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
-        <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">✖</button>
-      </li>`;
-    });
-    window.currentGrandTotal = grandTotal; 
-    document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
-    document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
-  }
+
+            list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
+                <div class="cart-item-desc">
+                    <span class="cart-item-name">${item.name}</span>
+                    <div class="cart-item-subtext">${addonsText}${notesText}</div>
+                </div>
+                <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
+                <div class="cart-item-qty">x ${item.qty}</div>
+                <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
+                <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">✖</button>
+            </li>`;
+        });
+        window.currentGrandTotal = grandTotal; 
+        document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
+        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
+    }
 };
 
 window.clearCart = function() { 
-  if (!window.cart || window.cart.length === 0) return; 
-  if (confirm("Clear order?")) { 
-    window.cart = []; 
-    window.renderCart(); 
-  } 
+    if (!window.cart || window.cart.length === 0) return; 
+    if (confirm("Clear order?")) { 
+        window.cart = []; 
+        window.renderCart(); 
+    } 
 };
+
+// 🔥 EMERGENCY BRIDGES: This connects the HTML buttons directly to the functions!
+function adjustModalMainQty(delta) { window.adjustModalMainQty(delta); }
+function setDiscountType(type) { window.setDiscountType(type); }
+function confirmAddOrUpdateToCart() { window.confirmAddOrUpdateToCart(); }
+function clearCart() { window.clearCart(); }
 
     // --- 8. CHECKOUT SYSTEM ---
     function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
