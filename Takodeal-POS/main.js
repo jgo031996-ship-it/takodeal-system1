@@ -1,3017 +1,410 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-  <base target="_top">
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link rel="icon" type="image/jpeg" href="logo.jpg">
-  <link rel="apple-touch-icon" href="logo.jpg">
-  <link rel="manifest" href="manifest.json">
-  <style>
-    :root {
-      /* The warm, golden-tan for buttons/accents */
-      --primary: #E5A93D; 
-      --primary-light: #F2C97D;
-  
-      /* A deep, rich espresso brown for the sidebar */
-      --sidebar-bg: #2C2421; 
-      --sidebar-hover: #3F3430;
-  
-      /* A soft, warm off-white for the main app background */
-      --bg-color: #F8F6F0; 
-  
-      /* Pure white for the menu cards and login box */
-      --card-bg: #ffffff;
-  
-      /* Crisp, dark text and soft borders */
-      --text-main: #2A2422; 
-      --border: #E8E3DB;
-    }
-
-    html, body {
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        width: 100%; height: 100%;
-        overflow: hidden !important;
-        overscroll-behavior-y: none;
-    }
-    
-    /* Fix for SweetAlert Modals causing layout shifts */
-    body.swal2-shown:not(.swal2-no-backdrop):not(.swal2-toast-shown) {
-        height: 100% !important;
-        overflow-y: hidden !important;
-    }
-
-    /* 🔥 FIX: Forces SweetAlert to the absolute front */
-    .swal2-container { z-index: 30000 !important; }
-        
-    /* 🔥 FIX: Hides bottom tabs when on-screen keyboard pops up */
-    @media screen and (max-height: 600px) {
-        #dynamicBottomTabs { display: none !important; }
-    }    
-    /* 🔥 BEAUTIFUL SIZE BUTTONS */
-    .size-btn {
-        flex: 1;
-        min-width: 80px;
-        background: #f8fafc;
-        border: 2px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 15px 10px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .size-btn.active {
-        background: #fffbeb;
-        border-color: var(--primary);
-        box-shadow: 0 4px 10px rgba(229, 169, 61, 0.2);
-    }
-    .size-btn .sz-name { font-size: 15px; font-weight: 900; color: #334155; margin-bottom: 5px; }
-    .size-btn .sz-price { font-size: 13px; font-weight: bold; color: var(--primary); }
-    
-    body {
-      font-family: 'Segoe UI', Tahoma, sans-serif;
-      margin: 0;
-      padding-top: 28px; 
-      box-sizing: border-box; 
-      background-color: var(--bg-color);
-      display: flex;
-      height: 100vh; /* Fallback for old devices */
-      height: 100dvh; /* 🔥 THE FIX: Adapts automatically to mobile browser bars! */
-      overflow: hidden;
-      color: var(--text-main);
-      user-select: none;
-    }
-
-    .login-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      /* 🔥 THE NEW LOGO BACKGROUND WITH A DARK TINT SO THE BOX POPS */
-      background: linear-gradient(rgba(44, 36, 33, 0.85), rgba(44, 36, 33, 0.85)), url('logo.jpg') no-repeat center center;
-      background-size: cover;
-      z-index: 10000;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      color: white;
-    }
-
-    .login-box {
-      background: white;
-      padding: 40px;
-      border-radius: 16px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-      text-align: center;
-      color: #333;
-    }
-
-    .pin-display {
-      font-size: 32px;
-      letter-spacing: 15px;
-      margin: 20px 0;
-      height: 40px;
-      font-weight: bold;
-      color: var(--sidebar-bg);
-    }
-
-    .login-numpad {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 15px;
-    }
-
-    .log-btn {
-      padding: 20px;
-      font-size: 24px;
-      font-weight: bold;
-      background: #f8f9fa;
-      border: 1px solid #ddd;
-      border-radius: 50%;
-      cursor: pointer;
-      transition: 0.1s;
-    }
-
-    .log-btn:active {
-      background: #e9ecef;
-    }
-
-    .log-btn.action {
-      font-size: 16px;
-      background: #eee;
-    }
-
-    .sidebar {
-      width: 220px;
-      background: var(--sidebar-bg);
-      color: white;
-      display: flex;
-      flex-direction: column;
-      transition: width 0.3s ease;
-      z-index: 20;
-      flex-shrink: 0;
-    }
-
-    .sidebar.collapsed {
-      width: 75px;
-    }
-
-    .sidebar-header {
-      padding: 15px 20px;
-      font-size: 20px;
-      font-weight: bold;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      height: 60px;
-      box-sizing: border-box;
-    }
-
-    .brand-container {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      overflow: hidden;
-      white-space: nowrap;
-      transition: 0.3s;
-    }
-
-    .sidebar.collapsed .brand-container {
-      display: none;
-    }
-
-    .brand-icon {
-      display: none;
-      font-size: 26px;
-      text-align: center;
-      flex: 1;
-    }
-
-    .sidebar.collapsed .brand-icon {
-      display: block;
-    }
-
-    .sidebar-toggle {
-      cursor: pointer;
-      color: rgba(255, 255, 255, 0.6);
-      padding: 5px;
-      font-size: 14px;
-    }
-
-    .sidebar-toggle:hover {
-      color: white;
-    }
-
-    .nav-menu {
-      flex: 1;
-      padding: 15px 0;
-      overflow-y: auto;
-      overflow-x: hidden;
-    }
-
-    .nav-item {
-      padding: 15px 20px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      transition: 0.2s;
-      color: rgba(255, 255, 255, 0.8);
-      border-left: 4px solid transparent;
-      white-space: nowrap;
-    }
-
-    .nav-item span {
-      font-size: 18px;
-      min-width: 25px;
-      text-align: center;
-    }
-
-    .nav-item:hover {
-      background: var(--sidebar-hover);
-      color: white;
-    }
-
-    .nav-item.active {
-      background: rgba(255, 255, 255, 0.15);
-      color: white;
-      border-left-color: var(--primary);
-    }
-
-    .sidebar.collapsed .nav-item-text {
-      display: none;
-    }
-
-    .sidebar-footer {
-      padding: 20px;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
-      font-size: 13px;
-      color: rgba(255, 255, 255, 0.6);
-      white-space: nowrap;
-      overflow: hidden;
-    }
-
-    .sidebar.collapsed .sidebar-footer {
-      display: none;
-    }
-
-    .content-area {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-      width: 100%;
-      overflow: hidden;
-    }
-
-    .top-bar {
-      height: 60px;
-      background: var(--card-bg);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0 25px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
-      z-index: 10;
-    }
-
-    .top-title {
-      font-size: 18px;
-      font-weight: bold;
-      color: #444;
-    }
-
-    .top-bar-right {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-    }
-
-    .shift-btn {
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 20px;
-      color: #555;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 8px 18px;
-    }
-
-    .view-container {
-      display: none;
-      width: 100%;
-      height: calc(100vh - 88px); /* Fallback */
-      height: calc(100dvh - 88px); /* 🔥 THE FIX */
-      flex: 1;
-      overflow: hidden; 
-      background: var(--bg-color);
-    }
-
-    .view-container.active {
-      display: flex;
-      flex-direction: row;
-    }
-
-    .pos-layout {
-      flex: 1;
-      display: flex;
-      height: 100%;
-      overflow: hidden;
-    }
-
-    .menu-panel {
-      flex: 2;
-      display: flex;
-      flex-direction: column;
-      background: #fdfdfd;
-      border-right: 1px solid var(--border);
-      overflow: hidden;
-      flex-shrink: 0;
-      position: relative;
-    }
-
-    .category-header {
-      display: flex;
-      flex-wrap: nowrap !important; /* 🔥 Forces them to stay on ONE single line */
-      gap: 10px;
-      padding: 12px 15px;
-      border-bottom: 1px solid var(--border);
-      background: var(--card-bg);
-      overflow-x: auto !important; /* 🔥 Allows you to swipe left and right! */
-      -webkit-overflow-scrolling: touch; /* Silky smooth swiping on tablets */
-      scrollbar-width: none; /* Hides the scrollbar on Firefox */
-    }
-
-    /* 🔥 Hides the ugly scrollbar on Chrome/Safari but keeps it swipeable */
-    .category-header::-webkit-scrollbar { 
-      display: none; 
-    }
-
-    .cat-btn {
-      padding: 10px 18px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      background: white;
-      font-weight: bold;
-      color: #666;
-      cursor: pointer;
-      white-space: nowrap; /* Keeps the text inside the button from breaking */
-      font-size: 13px;
-      flex-shrink: 0; /* 🔥 Prevents the buttons from squishing together when you swipe */
-      transition: all 0.2s;
-    }
-
-    /* 👈 Hides the horizontal scrollbar for a clean look */
-    .category-header::-webkit-scrollbar {
-      display: none; 
-    }
-
-    .cat-btn {
-      padding: 12px 20px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      background: white;
-      font-weight: bold;
-      color: #666;
-      cursor: pointer;
-      white-space: nowrap;
-      font-size: 13px;
-    }
-
-    .cat-btn.active {
-      color: white;
-      border-color: var(--primary);
-      background: var(--primary);
-    }
-
-    .item-grid-container {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      min-height: 0; /* 👈 Prevents stretching */
-    }
-
-    .item-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 15px;
-      align-content: start;
-    }
-
-    .item-card {
-      background: var(--card-bg);
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      cursor: pointer;
-      position: relative;
-      padding: 0;
-      text-align: center;
-      height: 160px; /* 👈 Made slightly taller to fit the picture */
-      justify-content: space-between;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
-      overflow: hidden; /* Keeps the image inside the rounded corners */
-    }
-
-    .item-image {
-      width: 100%;
-      height: 85px;
-      object-fit: cover;
-      background: #f1f5f9;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .item-name {
-      font-weight: 600;
-      font-size: 13px;
-      margin-top: 5px;
-      padding: 0 5px;
-      color: #444;
-      line-height: 1.2;
-    }
-
-    .item-name {
-      font-weight: 600;
-      font-size: 14px;
-      margin-top: 30px;
-      padding: 0 10px;
-      color: #444;
-    }
-
-    .item-price-tag {
-      background: #fff3e6;
-      color: var(--primary);
-      border-radius: 8px;
-      padding: 8px;
-      font-size: 15px;
-      font-weight: bold;
-      width: 85%;
-      margin: 0 auto 15px auto;
-    }
-
-    .ticket-panel {
-      flex: 1;
-      background: #fff;
-      display: flex;
-      flex-direction: column;
-      min-width: 400px;
-      max-width: 450px;
-      flex-shrink: 0;
-      border-left: 1px solid var(--border);
-      height: 100%; /* Force it to take the full screen height */
-    }
-
-    .ticket-header {
-      padding: 15px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #fafafa;
-    }
-
-    .table-header {
-      display: flex;
-      padding: 10px 20px;
-      font-size: 11px;
-      font-weight: bold;
-      color: #888;
-      text-transform: uppercase;
-      border-bottom: 1px solid var(--border);
-      background: #fafafa;
-    }
-
-    .col-desc {
-      flex: 2;
-    }
-
-    .col-price {
-      flex: 1;
-      text-align: right;
-    }
-
-    .col-qty {
-      flex: 1;
-      text-align: center;
-    }
-
-    .col-sub {
-      flex: 1;
-      text-align: right;
-    }
-
-    .order-list {
-      flex: 1;
-      overflow-y: auto;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      min-height: 0; /* 👈 Forces the cart to scroll, saving your Place Order button! */
-    }
-
-    .cart-item {
-      display: flex;
-      padding: 15px 20px;
-      border-bottom: 1px solid #f1f1f1;
-      align-items: flex-start;
-      font-size: 13px;
-      background: white;
-      cursor: pointer;
-    }
-
-    .cart-item-desc {
-      flex: 2;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .cart-item-name {
-      font-weight: 700;
-      color: #333;
-      font-size: 14px;
-    }
-
-    .cart-item-price {
-      flex: 1;
-      text-align: right;
-      color: #777;
-      font-weight: 500;
-    }
-
-    .cart-item-qty {
-      flex: 1;
-      display: flex;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 14px;
-    }
-
-    .cart-item-sub {
-      flex: 1;
-      text-align: right;
-      font-weight: 700;
-      color: var(--text-main);
-      font-size: 14px;
-    }
-
-    .btn-remove {
-      margin-left: 10px;
-      color: #ccc;
-      background: none;
-      border: none;
-      font-size: 16px;
-      cursor: pointer;
-    }
-
-    .ticket-footer {
-      padding: 20px;
-      border-top: 1px solid var(--border);
-      background: #fafafa;
-      position: sticky; /* Lock it to the bottom */
-      bottom: 0;
-      z-index: 10;
-    }
-
-    .total-line {
-      display: flex;
-      justify-content: space-between;
-      font-size: 13px;
-      margin-bottom: 8px;
-      color: #666;
-      font-weight: 500;
-    }
-
-    .total-line.grand {
-      font-size: 22px;
-      font-weight: bold;
-      color: var(--text-main);
-      margin-top: 15px;
-      margin-bottom: 20px;
-      border-top: 1px dashed #ccc;
-      padding-top: 15px;
-    }
-
-    .action-row {
-      display: flex;
-      gap: 12px;
-    }
-
-    .btn-clear {
-      flex: 1;
-      padding: 16px;
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-weight: bold;
-      cursor: pointer;
-      color: #666;
-    }
-
-    .btn-place {
-      flex: 2;
-      text-align: center;
-      padding: 16px;
-      font-size: 16px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    .shift-lockout {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(255, 255, 255, 0.95);
-      z-index: 50;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(3px);
-    }
-
-    .btn-shift-open {
-      padding: 15px 40px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      flex: none;
-      box-shadow: 0 4px 12px rgba(255, 159, 67, 0.3);
-      margin-top: 15px;
-    }
-
-    .dashboard-layout {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-color);
-      width: 100%;
-    }
-
-    .sales-table-card {
-      background: white;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      margin: 20px;
-      max-width: 1200px;
-    }
-
-    .sales-tabs {
-      display: flex;
-      gap: 10px;
-      border-bottom: 2px solid var(--border);
-      margin-bottom: 15px;
-    }
-
-    .st-btn {
-      padding: 8px 15px;
-      cursor: pointer;
-      font-weight: bold;
-      font-size: 13px;
-      color: #666;
-      border-radius: 6px 6px 0 0;
-    }
-
-    .stable {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: left;
-      font-size: 14px;
-    }
-
-    .stable th {
-      background: #fafafa;
-      padding: 12px 20px;
-      color: #666;
-      font-size: 12px;
-      text-transform: uppercase;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .stable td {
-      padding: 15px 20px;
-      border-bottom: 1px solid #f1f1f1;
-      color: #444;
-    }
-
-    .dot-menu {
-      cursor: pointer;
-      color: #999;
-      font-weight: bold;
-      font-size: 18px;
-      padding: 0 10px;
-      position: relative;
-    }
-
-    .action-dropdown {
-      display: none;
-      position: absolute;
-      right: 20px;
-      top: 20px;
-      background: white;
-      border: 1px solid #ddd;
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-      border-radius: 8px;
-      z-index: 50;
-      flex-direction: column;
-      min-width: 150px;
-      overflow: hidden;
-    }
-
-    .action-dropdown.show {
-      display: flex;
-    }
-
-    .action-item {
-      padding: 12px 15px;
-      font-size: 13px;
-      cursor: pointer;
-      color: #444;
-      border-bottom: 1px solid #f1f1f1;
-      text-align: left;
-    }
-
-    .action-item.danger {
-      color: #dc3545;
-      font-weight: bold;
-    }
-
-    .status-badge {
-      padding: 5px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: bold;
-      white-space: nowrap;
-    }
-
-    .status-good {
-      background: #e6f4ea;
-      color: #198754;
-      border: 1px solid #c3e6cb;
-    }
-
-    .status-out {
-      background: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-
-    .overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 10000;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .modal {
-      background: white;
-      border-radius: 12px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      max-height: 95vh;
-      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
-      width: 100%;
-    }
-
-    .modal-head {
-      padding: 18px 25px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      font-weight: bold;
-      font-size: 17px;
-    }
-
-    .modal-body {
-      padding: 25px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-    }
-
-    .modal-foot {
-      padding: 15px 25px;
-      display: flex;
-      gap: 12px;
-      border-top: 1px solid var(--border);
-      background: #fafafa;
-    }
-
-    .close-modal {
-      cursor: pointer;
-      color: #999;
-      font-size: 20px;
-    }
-
-    .input-box {
-      width: 100%;
-      padding: 14px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-size: 14px;
-      box-sizing: border-box;
-      outline: none;
-      background: white;
-    }
-
-    .section-title {
-      font-size: 12px;
-      font-weight: bold;
-      color: #999;
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-
-    .qty-controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 5px;
-    }
-
-    .btn-qty-small {
-      width: 30px;
-      height: 30px;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      background: white;
-      cursor: pointer;
-      font-weight: bold;
-    }
-
-    .variant-grid,
-    .discount-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    .discount-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
-    .var-btn {
-      padding: 14px;
-      font-size: 13px;
-      font-weight: bold;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      cursor: pointer;
-      color: #666;
-    }
-
-    .var-btn.active {
-      background: var(--sidebar-bg);
-      color: white;
-      border-color: var(--sidebar-bg);
-    }
-
-    .qty-display-box {
-      width: 60px;
-      height: 60px;
-      font-size: 32px;
-      font-weight: bold;
-      color: #333;
-      text-align: center;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #fff;
-      border: 2px solid #ddd;
-      border-radius: 12px;
-      cursor: pointer;
-    }
-
-    .checkout-yellow-box {
-      background: #fffcf0;
-      padding: 20px;
-      border-radius: 10px;
-      border: 1px solid #ffeeba;
-    }
-
-    .checkout-grey-box {
-      background: #f8f9fa;
-      padding: 18px;
-      border-radius: 10px;
-      margin-bottom: 15px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border: 1px solid #eee;
-    }
-
-    .numpad-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-
-    .num-btn {
-      padding: 18px;
-      font-size: 20px;
-      font-weight: bold;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-
-    .payment-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 15px;
-    }
-
-    .pay-btn {
-      padding: 14px 5px;
-      font-size: 13px;
-      font-weight: bold;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      cursor: pointer;
-      color: #666;
-    }
-
-    .pay-btn.active {
-      background: var(--primary);
-      color: white;
-    }
-
-    .shift-section {
-      border-bottom: 1px solid #eee;
-      padding-bottom: 15px;
-      margin-bottom: 15px;
-    }
-
-    .shift-section-title {
-      font-size: 13px;
-      font-weight: bold;
-      color: var(--sidebar-bg);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .shift-section-title:hover {
-      color: var(--primary);
-    }
-
-    .shift-arrow {
-      display: inline-block;
-      width: 15px;
-      text-align: center;
-      color: #888;
-      font-size: 10px;
-    }
-
-    .shift-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 14px;
-      margin-bottom: 8px;
-      color: #555;
-    }
-
-    .shift-val {
-      font-weight: 600;
-      color: #333;
-    }
-
-    .modal.variant-modal {
-      width: 550px;
-      position: relative;
-    }
-
-    .modal.checkout-modal {
-      width: 450px;
-    }
-
-    .modal.shift-modal {
-      width: 500px;
-    }
-
-    .modal.receipt-modal {
-      width: 450px;
-      padding-bottom: 0;
-    }
-
-    /* NEW INVENTORY CHECK MODAL STYLES */
-    .count-row {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr;
-      gap: 10px;
-      align-items: center;
-      padding: 12px 0;
-      border-bottom: 1px solid #f1f1f1;
-    }
-
-    .count-row:last-child {
-      border-bottom: none;
-    }
-
-    .count-input {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      outline: none;
-      font-size: 14px;
-    }
-
-    .count-input:focus {
-      border-color: var(--primary);
-    }
-
-    /* 🔥 FIX: Automatically shrinks the top right buttons on smaller tablets so they don't squish! */
-    @media screen and (max-width: 1250px) {
-        .top-bar-right div { gap: 5px !important; }
-        .top-bar-right button { 
-            padding: 6px 10px !important; 
-            font-size: 12px !important; 
-            white-space: nowrap !important;
-        }
-        .top-title { font-size: 15px !important; }
-    }
-    
-    @media screen and (max-width: 1024px) {
-        .sidebar { width: 75px; } /* Automatically shrinks sidebar to save space */
-        .sidebar .brand-container, .sidebar .nav-item-text, .sidebar .sidebar-footer { display: none; }
-        .sidebar .brand-icon { display: block; }
-
-        body, button, input { font-size: 13px; }
-        .item-card, .menu-toggle-card { padding: 10px; min-height: 100px; height: 130px; }
-        .item-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
-        
-        /* 🔥 Shrink the cart slightly to give the menu more room */
-        .ticket-panel { min-width: 320px; max-width: 350px; }
-        
-        /* 🔥 Fix the bottom spacing so the Place Order button is always safe! */
-        .ticket-footer { padding: 10px 15px; }
-        .total-line.grand { margin-top: 10px; margin-bottom: 10px; padding-top: 10px; font-size: 18px; }
-        .btn-place { padding: 12px; font-size: 16px; }
-    }
-    
-    @media (max-width: 768px) {
-      body {
-        flex-direction: column;
-        overflow: auto;
-      }
-
-      .sidebar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        height: 60px;
-        flex-direction: row;
-        z-index: 100;
-      }
-
-      .sidebar-header,
-      .sidebar-footer {
-        display: none;
-      }
-
-      .nav-menu {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-around;
-        padding: 0;
-        width: 100%;
-      }
-
-      .nav-item {
-        flex: 1;
-        text-align: center;
-        border-left: none;
-        border-bottom: 4px solid transparent;
-        flex-direction: column;
-        padding: 10px 0;
-        gap: 0;
-      }
-
-      .nav-item.active {
-        background: none;
-        border-bottom-color: var(--primary);
-      }
-
-      .nav-item span {
-        font-size: 20px;
-      }
-
-      .nav-item-text {
-        display: none;
-      }
-
-      .content-area {
-        width: 100%;
-        display: block;
-        margin-bottom: 60px;
-        overflow-y: auto;
-      }
-
-      .top-bar {
-        position: sticky;
-        top: 0;
-        left: 0;
-        width: 100%;
-        z-index: 10;
-      }
-
-      .pos-layout {
-        display: block;
-        height: auto;
-      }
-
-      .menu-panel {
-        width: 100%;
-        border-right: none;
-        height: auto;
-        border-bottom: 3px solid var(--primary);
-        display: block;
-        margin-top: 10px;
-      }
-
-      .item-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-
-      .ticket-panel {
-        width: 100%;
-        display: block;
-        height: auto;
-        min-width: 100%;
-        max-width: 100%;
-        border-left: none;
-      }
-
-      .modal {
-        width: 90% !important;
-        margin: 20px;
-      }
-    }
-      /* --- NEW DEPARTMENT BOTTOM TABS --- */
-      .department-footer {
-        display: flex;
-        background: var(--card-bg);
-        border-top: 1px solid var(--border);
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-      }
-      .department-footer::-webkit-scrollbar { display: none; }
-  
-      .dept-btn {
-        flex: 1; 
-        padding: 15px 10px;
-        border: none;
-        background: transparent;
-        font-weight: 800;
-        color: #888;
-        cursor: pointer;
-        font-size: 12px;
-        text-transform: uppercase;
-        border-bottom: 3px solid transparent;
-        white-space: nowrap;
-        transition: all 0.2s;
-      }
-      .dept-btn:hover {
-        color: #444;
-      }
-      .dept-btn.active {
-        color: var(--primary);
-        border-bottom-color: var(--primary);
-      }
-  
-  </style>
-</head>
-
-<body>
-
-  <div style="background-color: #1A1513; color: #ffffff; width: 100%; height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; font-size: 12px; font-family: 'Segoe UI', Tahoma, sans-serif; z-index: 9999; position: absolute; top: 0; left: 0;">
-      <div id="liveClock" style="font-weight: 500; letter-spacing: 0.5px;">Loading time...</div>
-      <div style="display: flex; align-items: center; gap: 8px; color: #a0a0a0;">
-          <span>📶 Takodeal POS V1.0</span>
-      </div>
-  </div>
-
-  <div id="deviceSetupOverlay"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 99999; justify-content: center; align-items: center; flex-direction: column; color: white;">
-    <h1 style="color: #f59e0b; margin-bottom: 10px;">⚙️ Device Setup</h1>
-    <p style="margin-bottom: 30px; color: #94a3b8;">Which branch is this tablet physically located at?</p>
-
-    <select id="setupBranchSelect"
-      style="padding: 15px; border-radius: 8px; font-size: 18px; font-weight: bold; width: 300px; margin-bottom: 20px;">
-      <option value="Main Office">Main Office</option> <option value="Cabantian">Cabantian</option>
-    <option value="Citygate">Citygate</option>
-    <option value="Maa">Maa</option>
-    </select>
-
-    <button onclick="lockDeviceToBranch()"
-      style="padding: 15px 30px; background: #10b981; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; width: 300px;">🔒
-      Lock Device</button>
-  </div>
-
-  <div id="hrSanctionModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);">
-        <div style="background: white; width: 550px; max-width: 90%; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 2px solid #b91c1c;">
-            <div style="background: #b91c1c; padding: 25px; color: white; text-align: center;">
-                <h2 style="margin: 0; font-size: 24px;">🚨 OFFICIAL HR NOTICE 🚨</h2>
-                <p style="margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;">Your POS access has been temporarily suspended.</p>
-            </div>
-            
-            <div style="padding: 25px; text-align: left; background: #fff1f2; max-height: 60vh; overflow-y: auto;">
-                <p style="font-size: 14px; color: #475569; margin-top: 0;"><strong>Notice to Explain (NTE)</strong> issued by Management.</p>
-                
-                <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #fca5a5; margin-bottom: 20px;">
-                    <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Violation Type</div>
-                    <div id="sanctionLockType" style="font-size: 16px; font-weight: 900; color: #1e293b; margin-bottom: 10px;">Loading...</div>
-                    
-                    <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Severity</div>
-                    <div id="sanctionLockSeverity" style="font-size: 14px; font-weight: bold; color: #b91c1c; margin-bottom: 10px;">Loading...</div>
-
-                    <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Manager's Report</div>
-                    <div id="sanctionLockDetails" style="font-size: 14px; color: #334155; font-style: italic; background: #f8fafc; padding: 10px; border-radius: 4px; border-left: 3px solid #b91c1c;">Loading...</div>
-                </div>
-
-                <label style="font-size: 13px; font-weight: bold; color: #b91c1c;">Your Required Written Explanation:</label>
-                <p style="font-size: 11px; color: #64748b; margin: 2px 0 8px 0;">Please explain your side of the incident below.</p>
-                <textarea id="sanctionStaffReply" placeholder="Type your formal explanation here..." style="width: 100%; height: 100px; padding: 12px; border-radius: 6px; border: 2px solid #f87171; outline: none; resize: none; font-family: inherit; font-size: 14px; box-sizing: border-box;"></textarea>
-
-                <label style="font-size: 13px; font-weight: bold; color: #b91c1c; margin-top: 15px; display: block;">Required Signature:</label>
-                <p style="font-size: 11px; color: #64748b; margin: 2px 0 8px 0;">Sign inside the box below to officially acknowledge this notice.</p>
-                <div style="border: 2px dashed #f87171; border-radius: 6px; background: white; position: relative; margin-bottom: 10px; overflow: hidden;">
-                    <canvas id="signatureCanvas" width="500" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none; display: block;"></canvas>
-                    <button onclick="window.clearSignature()" style="position: absolute; top: 5px; right: 5px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 4px; font-size: 10px; font-weight: bold; padding: 4px 8px; cursor: pointer; color: #dc2626;">Clear</button>
-                </div>
-            </div>
-
-            <div style="padding: 15px 20px; background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-                <button onclick="window.logoutCashier()" style="padding: 10px 20px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-weight: bold; cursor: pointer; color: #475569;">Log Out</button>
-                <button id="btnSubmitSanctionReply" onclick="window.submitSanctionReply()" style="padding: 12px 25px; border-radius: 6px; border: none; background: #b91c1c; color: white; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 4px 6px rgba(185, 28, 28, 0.3);">Submit & Unlock</button>
-            </div>
-            <input type="hidden" id="activeSanctionId" value="">
-        </div>
-    </div>
-
-  <script>
-      async function submitLoginPin() {
-          let passInput = document.getElementById('loginPasswordInput');
-          let password = passInput.value.trim();
-          
-          if (!password) { alert("Please enter your password."); return; }
-
-          let btn = document.getElementById('btnSubmitPin'); 
-          btn.innerText = "Verifying..."; btn.disabled = true;
-          
-          let identity = await window.verifyPin(password);
-          
-          // If the device wall stopped them, just reset the button silently
-          if (identity === "BLOCKED") {
-              passInput.value = ""; 
-              btn.innerText = "Secure Login"; 
-              btn.disabled = false; 
-              return; 
-          }
-
-          // If it genuinely couldn't find the PIN
-          if (!identity) { 
-              alert("Invalid Password."); 
-              passInput.value = ""; 
-              btn.innerText = "Secure Login"; 
-              btn.disabled = false; 
-              return; 
-          }
-
-          sessionUser = identity;
-          
-          let lockedDeviceBranch = localStorage.getItem('takodeal_device_branch');
-          if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
-
-          localStorage.setItem('cashierName', identity.cashierName);
-          document.getElementById('displayBranch').innerText = "📍 " + sessionUser.branch;
-          document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
-          document.getElementById('loginOverlay').style.display = 'none';
-
-          // 🔥 NEW: Check for Shortages on Login!
-          if (typeof window.checkLoginShortage === 'function') {
-              window.checkLoginShortage(identity.cashierName);
-          }
-          
-          if (typeof loadPOSData === 'function') await loadPOSData();
-          if (typeof checkCurrentShift === 'function') await checkCurrentShift();
-          if (typeof updateParkedBadge === 'function') await updateParkedBadge();
-          if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
-      }
-  </script>
-  <div class="login-overlay" id="loginOverlay">
-    <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="margin: 0; color: #ffffff; font-size: 56px; font-weight: 900; letter-spacing: 3px; text-shadow: 2px 4px 15px rgba(0,0,0,0.6);">TAKODEÁL</h1>
-        <h3 id="loginBranchDisplay" style="margin: 5px 0 0 0; color: #fcd34d; font-size: 22px; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 2px 8px rgba(0,0,0,0.6);">📍 Loading Location...</h3>
-    </div>
-    <div class="login-box">
-      <h2 style="margin: 0 0 10px 0; color: #555;">Cashier Login</h2>
-      <p style="font-size: 13px; color: #888; margin-bottom: 20px;">Enter your secure password to continue.</p>
-      
-      <input type="password" id="loginPasswordInput" placeholder="Enter Password" 
-        style="width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 8px; font-size: 18px; text-align: center; letter-spacing: 2px; outline: none; box-sizing: border-box;" 
-        onkeypress="if(event.key === 'Enter') submitLoginPin()">
-      
-      <button onclick="submitLoginPin()" id="btnSubmitPin" 
-        style="width: 100%; padding: 15px; font-size: 18px; font-weight: bold; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s;">
-        Secure Login
-      </button>
-    </div>
-  </div>
-
-  <div class="sidebar" id="mainSidebar">
-    <div class="sidebar-header">
-      <style>
-        /* 🛑 KILL UNWANTED TABLET ZOOMING AND BOUNCING */
-        button, input, select, textarea, .nav-item, .item-card, .cat-btn, .size-btn {
-            touch-action: manipulation !important;
-        }
-        
-        .item-card-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center; opacity: 0.85; transition: 0.2s; }
-        .item-card:hover .item-card-bg { opacity: 1; transform: scale(1.05); }
-        .item-name-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(0, 0, 0, 0.75); color: white; padding: 8px 5px; font-size: 13px; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,0.8); z-index: 2; }
-        
-          /* This rule forces the text to hide when the sidebar shrinks! */
-          .sidebar.collapsed .brand-text { display: none !important; }
-          .sidebar.collapsed .sidebar-header { justify-content: center !important; padding: 15px 0 !important; }
-      </style>
-
-      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; overflow: hidden; white-space: nowrap; width: 100%;">
-          <div style="display: flex; align-items: center; gap: 10px;">
-              <img src="logo.jpg" alt="Logo" style="width: 32px; border-radius: 6px; flex-shrink: 0;">
-              <span class="brand-text" style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
-          </div>
-          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer; flex-shrink: 0;">◀</div>
-      </div>
-    </div>
-    <div class="nav-menu">
-      <div class="nav-item active" id="nav-pos" onclick="switchView('pos')"><span>🖥️</span>
-        <div class="nav-item-text">Point of Sale</div>
-      </div>
-      <div class="nav-item" id="nav-sales" onclick="switchView('sales')"><span>🧾</span>
-        <div class="nav-item-text">Shift Sales</div>
-      </div>
-      <div class="nav-item" id="nav-remit" onclick="openRemittanceModal()">
-          <span style="font-size: 18px;">💸</span>
-          <div class="nav-item-text">Remit Cash to HQ</div>
-      </div>  
-      <div class="nav-item" id="nav-staffreq" onclick="openStaffRequestsModal()">
-          <span style="font-size: 18px;">📝</span>
-          <div class="nav-item-text">Staff Requests</div>
-      </div>  
-      <div class="nav-item" id="nav-sop" onclick="switchView('sop'); window.loadSopView();">
-          <span style="font-size: 18px;">📋</span>
-        <div class="nav-item-text">Daily SOPs</div>
-      </div>
-      <div class="nav-item" id="nav-prep" onclick="switchView('prep'); window.loadKitchenPrep();">
-        <span style="font-size: 18px;">🔪</span>
-        <div class="nav-item-text">Kitchen Prep</div>
-      </div>
-      <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries'); window.renderDeliveriesTab();">
-        <span style="font-size: 18px;">🚚</span>
-        <div class="nav-item-text">
-            Incoming Stock <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
-        </div>
-      </div>
-      <div class="nav-item" id="nav-menumgr" onclick="switchView('menumgr'); window.loadMenuManager();">
-        <span style="font-size: 18px;">🍔</span>
-        <div class="nav-item-text">Menu Toggle</div>
-      </div>
-      <div class="nav-item" id="nav-stockreq" onclick="switchView('stockreq'); window.loadStockRequestUI();">
-        <span style="font-size: 18px;">📦</span>
-        <div class="nav-item-text">Request Stock</div>
-      </div>
-      <div class="nav-item" id="nav-waste" onclick="switchView('waste'); window.loadWasteItems(); window.loadWasteHistory();">
-        <span style="font-size: 18px;">🗑️</span>
-        <div class="nav-item-text">Log Waste</div>
-      </div>
-      <div class="nav-item" id="nav-timeclock" onclick="openTimeClockModal()">
-          <span style="font-size: 18px;">📸</span>
-          <div class="nav-item-text">Time Clock</div>
-      </div>
-      <div class="nav-item" id="nav-schedule" onclick="switchView('schedule')">
-          <span style="font-size: 18px;">📅</span>
-          <div class="nav-item-text">My Schedule</div>
-      </div>
-      <div class="nav-item" id="nav-grab" onclick="window.openGrabEarningsModal()" style="color: #00b14f;">
-          <span style="font-size: 18px;">🟢</span>
-          <div class="nav-item-text" style="font-weight: bold;">Log Grab Earnings</div>
-      </div>
-      <div class="nav-item" id="nav-printer"
-        onclick="alert('🖨️ PRINTER SETUP\n\n1. Go to your Tablet Settings and pair the Bluetooth Printer.\n2. Open your Print Service App (e.g., RawBT) and ensure it is active.\n\nThe POS will automatically route all tickets through your Print Service!')">
-        <span>🖨️</span>
-        <div class="nav-item-text">Printer Setup</div>
-      </div>
-    </div>
-    <div class="sidebar-footer">
-      <div id="displayCashier">👤 Loading...</div>
-      <div id="displayBranch" style="margin-top: 5px; margin-bottom: 15px;">📍 Loading...</div>
-      <button onclick="window.logoutCashier()" style="width: 100%; background: #dc2626; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚪 Sign Out</button>
-    </div>
-  </div>
-
-  <div class="content-area">
-    <div class="top-bar">
-      
-      <div class="top-title" id="topBarTitle">🖥️ Point of Sale</div>
-      <div class="top-bar-right">
-        <div style="display: flex; gap: 10px; align-items: center;">
-
-          <div style="position: relative;">
-              <button onclick="let d = document.getElementById('posSettingsDropdown'); d.style.display = (d.style.display === 'none' || d.style.display === '') ? 'flex' : 'none';" 
-                  style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                  ⚙️ POS Settings ▼
-              </button>
-              
-              <div id="posSettingsDropdown" style="display: none; position: absolute; top: 45px; right: 0; min-width: 240px; padding: 15px; gap: 12px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 1000; flex-direction: column;">
-                  
-                  <button onclick="window.showMobileOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #e74c3c; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                    📱 Mobile Orders
-                    <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #f1c40f; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
-                  </button>
-                  
-                  <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 App Accepting</button>
-                  
-                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #8b5cf6; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🚚 Delivery: <span id="deliveryStatusText">ON</span></button>
-
-                  <button onclick="window.showParkedOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #34495e; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                    🕒 Parked Orders
-                    <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #e74c3c; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
-                  </button>
-
-                  <button id="btnToggleBusy" onclick="window.toggleBusyMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 Normal Prep (15m)</button>
-
-                  <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
-                      <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center;">
-                          <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;">
-                          Auto-Open Drawer
-                      </label>
-                      <button onclick="window.kickCashDrawer(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; font-weight: bold;">💵 Kick Drawer</button>
-                  </div>
-              </div>
-          </div>
-          
-          <script>
-            document.addEventListener('click', function(event) {
-                let dropdown = document.getElementById('posSettingsDropdown');
-                let button = dropdown.previousElementSibling;
-                if (dropdown.style.display === 'flex' && !dropdown.contains(event.target) && !button.contains(event.target)) {
-                    dropdown.style.display = 'none';
-                }
-            });
-          </script>
-
-          <button id="btnTopShift" onclick="openShiftModal()"
-            style="background: white; color: #333; border: 1px solid #ddd; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-family: inherit; font-size: 14px; font-weight: 600;">
-            🔴 Shift Closed
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="view-container active" id="view-pos">
-      <div class="pos-layout">
-        <div class="menu-panel">
-          <div class="shift-lockout" id="shiftLockout" style="display: flex;">
-            <h2 style="color: var(--primary); margin-bottom: 8px;">Register is Closed</h2>
-            <p style="color: #777; margin-bottom: 25px;">Open a shift to begin taking orders.</p>
-            <button class="btn-shift-open" onclick="openShiftModal()">Open Shift</button>
-          </div>
-          
-          <!-- TOP CATEGORIES -->
-          <div class="category-header" id="topCategoryHeader"></div>
-          
-          <!-- ITEM GRID -->
-          <div class="item-grid-container">
-            <div class="item-grid">
-              <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Loading Menu...</div>
-            </div>
-          </div>
-          
-          <!-- SEARCH BAR -->
-          <div style="padding: 10px; background: #fff; border-top: 1px solid var(--border); box-sizing: border-box; width: 100%;">
-            <input type="text" id="posSearchInput" placeholder="🔍 Search menu items..." onkeyup="searchMenuItems()"
-              style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box;">
-          </div>
-
-          <!-- NEW BOTTOM DEPARTMENT TABS -->
-          <div class="department-footer" id="bottomDepartmentFooter"></div>
-        </div>
-        <div class="ticket-panel">
-          <div class="ticket-header">
-            <h2>Current Orders</h2><select id="mainOrderType" class="order-type-select">
-              <option>Loading...</option>
-            </select>
-          </div>
-          <div class="table-header"><span class="col-desc">Description</span><span class="col-price">Unit
-              Price</span><span class="col-qty">Qty</span><span class="col-sub">Subtotal</span></div>
-          <ul class="order-list" id="cartList">
-            <li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>
-          </ul>
-          <div class="ticket-footer">
-            <div class="total-line"><span>Total Amount:</span><span id="displaySubTotal">₱0.00</span></div>
-            <div class="total-line grand"><span>Grand Total:</span><span id="displayGrandTotal">₱0.00</span></div>
-            <div class="action-row" style="margin-bottom: 10px; display: flex; gap: 10px;">
-              <button class="btn-clear" onclick="clearCart()">Clear</button>
-              <button onclick="window.parkOrder()"
-                style="flex-grow: 1; background: #f39c12; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px;">⏸️
-                Park Order</button>
-            </div>
-            <button class="btn-place" id="btnMainPlaceOrder" onclick="openCheckoutModal()" disabled
-              style="width: 100%; padding: 18px; font-size: 20px; border-radius: 5px;">Place Order</button>
-            <button id="btnPrintReceipt" onclick="window.printReceipt('receipt')" style="display: none; background: #334155; color: white; padding: 15px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; margin-top: 10px; transition: all 0.2s;">
-                🖨️ Print Receipt
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="view-container" id="view-sales">
-      <div class="dashboard-layout">
-        <div class="sales-table-card">
-          <div class="sales-tabs" style="padding: 15px 20px 0 20px; margin-bottom: 0; background: #fafafa;">
-            <div class="st-btn active" style="background: var(--sidebar-bg); color: white;">Current Shift Transactions
-            </div>
-            <button class="btn-clear" style="margin-left: auto; padding: 5px 15px; font-size: 12px;"
-              onclick="loadSalesDashboard()">🔄 Refresh</button>
-          </div>
-          <div style="overflow-y: auto; flex: 1;">
-            <table class="stable">
-              <thead>
-                <tr>
-                  <th>OR#</th>
-                  <th>Customer</th>
-                  <th>Payment Method</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th>Time</th>
-                  <th>Sales Amount</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="tbTransBody">
-                <tr>
-                  <td colspan="7" style="text-align:center; padding:30px;">Loading transactions...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="view-container" id="view-stockreq" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 900px; margin: 0 auto; border: 1px solid var(--border);">
-
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h2 style="margin: 0; color: #1e293b; font-size: 1.5rem;">📦 Request Stock from HQ</h2>
-            <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Report your physical count. HQ will see the variance and dispatch new stock.</p>
-          </div>
-          <div style="display: flex; gap: 10px;">
-             <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">📜 View History</button>
-             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.3); transition: 0.2s;">➕ New Request</button>
-          </div>
-        </div>
-
-        <div id="stockReqTabNew" style="display: block;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-              <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="width: 100%; max-width: 400px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
-              <button onclick="window.submitStockRequest()" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);">🚀 Send Request to HQ</button>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
-              <div>Item & HQ Status</div>
-              <div style="text-align: center;">Branch Stock</div>
-              <div style="text-align: center; color: #d97706;">Report Status</div>
-              <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
-            </div>
-
-            <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
-              <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
-            </div>
-        </div>
-
-        <div id="stockReqTabHistory" style="display: none;">
-            <table class="data-table" style="width: 100%;">
-                <thead style="background: #f8fafc;">
-                    <tr>
-                        <th>Date & Time</th>
-                        <th>Requested By</th>
-                        <th>Status</th>
-                        <th>Items Requested</th>
-                    </tr>
-                </thead>
-                <tbody id="stockReqHistoryBody">
-                    <tr><td colspan="4" class="text-center" style="padding: 20px;">Loading history...</td></tr>
-                </tbody>
-            </table>
-        </div>
-
-      </div>
-    </div>
-    
-    <div class="view-container" id="view-waste" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="width: 100%; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
-        
-        <div style="background: white; border-radius: 12px; border: 1px solid #fecaca; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
-            <div style="background: #fef2f2; border-bottom: 1px solid #fecaca; padding: 20px;">
-                <h2 style="margin: 0; color: #b91c1c; font-size: 20px;">🗑️ Log Waste & Spoilage</h2>
-                <span style="font-size: 12px; color: #ef4444;">Record dropped, burnt, or expired items to keep your inventory variance accurate. Management will be notified.</span>
-            </div>
-            <div style="padding: 25px;">
-                <label style="font-weight: bold; font-size: 12px; color: #64748b; margin-bottom: 5px; display: block;">1. Search & Select Damaged Item</label>
-                <div style="position: relative; margin-bottom: 20px;">
-                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
-                    <input type="text" id="wasteSearchInput" onkeyup="window.filterWasteSearch()" placeholder="Type item name to search..." style="width: 100%; padding: 12px 12px 12px 40px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; font-weight: bold; outline: none; box-sizing: border-box; background: #f8fafc;">
-                    <div id="wasteSearchResults" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #cbd5e1; border-top: none; border-radius: 0 0 8px 8px; box-shadow: 0 10px 15px rgba(0,0,0,0.1); z-index: 100; max-height: 200px; overflow-y: auto;"></div>
-                </div>
-
-                <div style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; background: #fffcf0; padding: 20px; border-radius: 12px; border: 2px dashed #fcd34d;">
-                    <div style="flex: 1; min-width: 120px;">
-                        <label style="font-weight: 900; font-size: 12px; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">2. Qty Lost</label>
-                        <input type="number" id="wasteQty" placeholder="0" style="width: 100%; box-sizing: border-box; padding: 16px; border-radius: 8px; border: 2px solid #f87171; background: #fef2f2; outline: none; font-weight: 900; font-size: 24px; color: #b91c1c; text-align: center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">
-                    </div>
-                    <div style="flex: 2; min-width: 200px;">
-                        <label style="font-weight: 900; font-size: 12px; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">3. Reason for Loss</label>
-                        <select id="wasteReason" style="width: 100%; box-sizing: border-box; padding: 16px; border-radius: 8px; border: 2px solid #fcd34d; background: white; outline: none; font-weight: bold; font-size: 16px; color: #92400e; cursor: pointer; transition: 0.2s;">
-                            <option value="Dropped / Spilled">⬇️ Dropped / Spilled</option>
-                            <option value="Burnt / Overcooked">🔥 Burnt / Overcooked</option>
-                            <option value="Spoiled / Expired">🤢 Spoiled / Expired</option>
-                            <option value="Customer Replacement">🔄 Customer Replacement</option>
-                            <option value="Pest Damage">🐀 Pest Damage</option>
-                            <option value="Other">📝 Other</option>
-                        </select>
-                    </div>
-                </div>
-
-                <button onclick="window.addWasteToCart()" style="width: 100%; background: #475569; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">➕ Add to Waste List</button>
-
-                <div id="wasteCartContainer" style="display: none; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Items Pending Deduction:</h4>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
-                        <tbody id="wasteCartBody"></tbody>
-                    </table>
-                </div>
-
-                <button id="btnSubmitWasteCart" onclick="window.submitWasteCart()" style="width: 100%; background: #ef4444; color: white; padding: 16px; border-radius: 8px; font-weight: 900; font-size: 16px; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2); transition: 0.2s;">
-                    🗑️ Permanently Deduct All Items
-                </button>
-            </div>
-        </div>
-
-        <div style="background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
-            <div style="padding: 20px; border-bottom: 1px solid var(--border);">
-                <h2 style="margin: 0; color: #1e293b; font-size: 18px;">📜 Today's Waste Logs</h2>
-            </div>
-            <div class="table-responsive">
-                <table class="data-table" style="width: 100%; text-align: left; border-collapse: collapse;">
-                    <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-                        <tr>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Time</th>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Item</th>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Qty Lost</th>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody id="wasteHistoryBody">
-                        <tr><td colspan="4" class="text-center" style="padding: 20px;">Loading history...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        
-      </div>
-    </div>
-
-    <div class="view-container" id="view-sop" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-        <div style="width: 100%; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
-            <div style="background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
-                
-                <div style="background: #0f766e; border-bottom: 1px solid #0d9488; padding: 20px 25px;">
-                    <h2 style="margin: 0; color: white; font-size: 22px;">📋 Daily SOP Checklist</h2>
-                    <span style="font-size: 13px; color: #ccfbf1;" id="sopViewBranchText">Branch Name</span>
-                </div>
-                
-                <div style="padding: 25px; background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-                    <label style="font-size: 13px; font-weight: bold; color: #475569;">Select Your Shift / Role:</label>
-                    <select id="sopRoleSelect" onchange="window.handleSopRoleChange()" style="width: 100%; padding: 14px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f766e; font-size: 16px; margin-top: 8px; cursor: pointer; box-sizing: border-box;">
-                        <option value="">Loading roles...</option>
-                    </select>
-                    <div style="margin-top: 10px; font-size: 12px; color: #64748b; font-style: italic; display: flex; gap: 8px; align-items: center;">
-                        <span style="font-size: 16px;">💾</span> Your progress is automatically saved to this tablet. You can leave this tab and come back later to finish your tasks.
-                    </div>
-                </div>
-
-                <div style="flex: 1; padding: 25px; min-height: 300px; max-height: 60vh; overflow-y: auto !important; -webkit-overflow-scrolling: touch;" id="sopChecklistContainer">
-                    <div style="text-align: center; color: #94a3b8; padding: 60px; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>
-                </div>
-
-                <div style="padding: 20px 25px; background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-                    <div style="font-size: 13px; color: #dc2626; font-weight: bold;">All tasks must be marked Done or Missed (with reason).</div>
-                    <button id="btnSubmitSop" onclick="window.submitSopChecklist()" style="padding: 14px 30px; border-radius: 8px; border: none; background: #0f766e; color: white; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">📤 Submit Checklist</button>
-                </div>
-
-            </div>
-        </div>
-    </div>
-    
-    <div class="view-container" id="view-prep" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
-         
-         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-            <div>
-                <h2 style="margin-top: 0; color: #1e293b; margin-bottom: 5px;">🔪 Kitchen Prep Station</h2>
-                <p style="color: #64748b; font-size: 13px; margin: 0;">Log the batches you prepare here. This will update our Live Inventory instantly.</p>
-            </div>
-            <div style="display: flex; gap: 10px;">
-               <button id="btnTabPrepHist" onclick="window.switchPrepTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">📜 View History</button>
-               <button id="btnTabPrepNew" onclick="window.switchPrepTab('New')" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3); transition: 0.2s;">➕ New Prep</button>
-            </div>
-         </div>
-
-         <div id="prepTabNew" style="display: block;">
-             <div id="kitchenPrepList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
-                 <div style="text-align: center; padding: 20px; color: #94a3b8; grid-column: 1/-1;">Loading prep items...</div>
-             </div>
-         </div>
-
-         <div id="prepTabHistory" style="display: none; max-height: 60vh; overflow-y: auto;">
-            <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
-                <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0;">
-                    <tr>
-                        <th style="padding: 12px; color: #475569;">Time</th>
-                        <th style="padding: 12px; color: #475569;">Item Prepared</th>
-                        <th style="padding: 12px; color: #475569;">Yield Added</th>
-                        <th style="padding: 12px; color: #475569;">Action</th>
-                    </tr>
-                </thead>
-                <tbody id="kitchenPrepHistoryBody">
-                    <tr><td colspan="4" class="text-center" style="padding: 20px;">Loading history...</td></tr>
-                </tbody>
-            </table>
-         </div>
-
-      </div>
-    </div>
-    <div class="view-container" id="view-deliveries" style="padding: 20px; width: 100%; overflow-y: auto; background: var(--bg-color);">
-        <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
-              <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🚚 Incoming Deliveries</h2>
-              <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Verify and receive stock dispatched from the Main Office.</p>
-              
-              <div id="deliveriesContainer"></div>
-        </div>
-    </div>
-    
-    <!-- UPDATED MENU TOGGLE VIEW -->
-    <div class="view-container" id="view-menumgr" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
-          
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                  <span style="font-size: 22px;">🍔</span>
-                  <h2 style="margin: 0; color: #1e293b; font-size: 1.5rem;">Menu Toggle</h2>
-              </div>
-              <p style="color: #64748b; font-size: 13px; margin: 0;">Turn items Sold Out here to instantly hide them from the Customer App.</p>
-          </div>
-
-          <!-- NEW: SEARCH & DROPDOWN FILTER BAR -->
-          <div id="menuToggleHeader" style="display: flex; justify-content: center; align-items: center; gap: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 20px;">
-              <div style="position: relative; width: 100%; max-width: 300px;">
-                  <span style="position: absolute; left: 12px; top: 12px; color: #94a3b8;">🔍</span>
-                  <input type="text" id="menuToggleSearch" onkeyup="filterMenuToggle()" placeholder="Search items..." style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; transition: border 0.3s; box-sizing: border-box;">
-              </div>
-              
-              <div style="display: flex; align-items: center; gap: 10px; width: 100%; max-width: 300px;">
-                  <label for="categoryFilter" style="color: #64748b; font-size: 14px; white-space: nowrap;">Filter:</label>
-                  <select id="categoryFilter" onchange="filterMenuToggle()" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: var(--text-main); background: white; cursor: pointer;">
-                      <option value="All">All Items</option>
-                  </select>
-              </div>
-          </div>
-          
-          <!-- ITEM GRID (Populated by JS) -->
-          <div id="menuManagerList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
-              <div style="text-align: center; padding: 20px; color: #94a3b8; grid-column: 1/-1;">Loading menu database...</div>
-          </div>
-      </div>
-    </div>
-
-    <div class="view-container" id="view-schedule" style="justify-content: center;">
-        <div style="width: 100%; height: 100%; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px 20px; box-sizing: border-box; background: var(--bg-color);">
-            <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 900px; border: 1px solid var(--border);">
-                <div id="cashierScheduleContainer">
-                    <div style="text-align: center; color: #64748b; padding: 40px; font-size: 16px;">⏳ Loading your schedule...</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-  </div> <div class="overlay" id="variantModal">
-    <div class="modal variant-modal">
-      <div class="modal-head"><span>Add Order</span><span class="close-modal"
-          onclick="closeModal('variantModal')">✖</span></div>
-      <div class="modal-body">
-        <div style="font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom:15px;">
-          <div style="display:flex;"><span style="width:100px; color:#666;">Description:</span> <strong
-              id="modalItemName">Cheesy Takoyaki</strong></div>
-          <div style="display:flex;"><span style="width:100px; color:#666;">Base Price:</span> <strong
-              id="modalItemPrice" style="color:var(--primary);">₱ 0.00</strong></div>
-        </div>
-        <div style="display: none;">
-          <div class="section-title">Select Variant</div>
-          <div class="variant-grid" id="variantOptions"></div>
-        </div>
-        <div style="margin-bottom:15px;">
-          <div class="section-title">Set Quantity</div>
-          <div class="qty-controls"><button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;"
-              onclick="adjustModalMainQty(-1)">-</button>
-            <div id="modalMainQty" class="qty-display-box">1</div>
-            <button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;"
-              onclick="adjustModalMainQty(1)">+</button>
-          </div>
-        </div>
-        <div id="takoyakiCustomizationArea" style="display: none; margin-bottom: 15px;">
-          <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-              <span>🐙 Customize Fillings (Mix & Match)</span>
-              <span id="mixMatchToggleIcon">▼</span>
-          </button>
-          
-          <div id="mixMatchPanel" style="display: none; background: #fffcf0; border: 1px solid #fde68a; border-top: none; padding: 15px; border-radius: 0 0 8px 8px;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                  <span style="font-size: 12px; font-weight: bold; color: #b45309;">Select Flavors:</span>
-                  <span id="mixMatchCounter" style="font-size: 12px; font-weight: bold; color: #b45309;">0 / 8 Pcs</span>
-              </div>
-              <div id="mixMatchList" style="display: flex; flex-direction: column; gap: 8px;"></div>
-          </div>
-        </div>
-        <div style="margin-bottom:15px;">
-          <div class="section-title">Apply Discount</div>
-          <div class="discount-grid">
-            <button class="var-btn active" id="btnDiscNone" onclick="setDiscountType('none')">None</button>
-            <button class="var-btn" id="btnDiscPerc" onclick="setDiscountType('percentage')">%</button>
-            <button class="var-btn" id="btnDiscFixed" onclick="setDiscountType('fixed')">Fixed (₱)</button>
-          </div>
-          <input type="number" id="discountValueInput" class="input-box" placeholder="Enter discount amount..."
-            style="display:none; margin-top:10px;" oninput="updateModalTotals()">
-        </div>
-        <div style="margin-top: 5px;">
-          <div class="section-title" style="margin-bottom: 8px;">Select Add-Ons</div>
-          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <select id="addonSelectDropdown" class="input-box" style="flex:2; margin:0; cursor:pointer;"
-              onchange="if(this.value){addAddonFromDropdown(); this.value='';}"></select>
-          </div>
-          <div id="activeAddonsContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"></div>
-        </div>
-        <div style="margin-top: 15px;">
-          <div class="section-title" style="margin-bottom: 8px;">✎ Notes</div><input type="text" id="orderNotesInput"
-            class="input-box" placeholder="e.g., Spicy, No Mayo">
-        </div>
-      </div>
-      <div class="modal-foot">
-        <button class="btn-clear" onclick="closeModal('variantModal')"
-          style="padding:15px; flex:1; order: 2;">Cancel</button>
-        <button class="btn-place" style="flex:2; order: 1;" onclick="confirmAddOrUpdateToCart()">
-          <span id="confirmAddToCartText" style="float:left">Add to Order</span>
-          <span id="modalLiveTotal" style="float:right">₱ 0.00</span>
-        </button>
-      </div>
-    </div>
-  </div>
-  
-  <div id="staffRequestsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
-      <div style="background: white; width: 600px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
-          
-          <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 18px;">📝 Staff Request Hub</h2>
-              <span onclick="document.getElementById('staffRequestsModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
-          </div>
-
-          <div style="display: flex; background: #f1f5f9; border-bottom: 2px solid #e2e8f0; overflow-x: auto;">
-              <button id="tabReqAdvance" onclick="switchRequestTab('Advance')" style="flex: 1; padding: 12px; background: white; border: none; border-bottom: 3px solid #3b82f6; font-weight: bold; cursor: pointer; color: #0f172a; white-space: nowrap;">💸 Cash Advance</button>
-              <button id="tabReqLeave" onclick="switchRequestTab('Leave')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">📅 Leave Request</button>
-              <button id="tabReqMeal" onclick="switchRequestTab('Meal')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">🍔 Staff Meal</button>
-              <button id="tabReqReason" onclick="switchRequestTab('Reason')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">✉️ Reason Letter</button>
-              <button id="tabReqInbox" onclick="switchRequestTab('Inbox')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #16a34a; cursor: pointer; white-space: nowrap;">📥 My Inbox</button>
-          </div>
-
-          <div style="padding: 20px; max-height: 60vh; overflow-y: auto; background: #f8fafc;">
-
-              <div id="formReqInbox" style="display: none;">
-                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">My Request Status</h3>
-                  <div id="staffPersonalInboxList">Loading your requests...</div>
-              </div>
-            
-              <div id="formReqAdvance">
-                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Request a Cash Advance (Vale)</h3>
-                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">This will be routed to the Owner for approval and deducted from your next payroll.</p>
-                  
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount Requested (₱)</label>
-                  <input type="number" id="reqAdvAmount" placeholder="e.g. 500" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #3b82f6; outline: none;">
-                  
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Reason for Advance</label>
-                  <textarea id="reqAdvReason" placeholder="Why do you need this cash advance?" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; height: 80px; font-family: inherit; outline: none;"></textarea>
-                  
-                  <button onclick="submitStaffRequest('Cash Advance')" style="width: 100%; background: #3b82f6; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Submit Advance Request</button>
-              </div>
-
-              <div id="formReqLeave" style="display: none;">
-                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Request Days Off / Leave</h3>
-                  
-                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #334155;">Start Date</label>
-                          <input type="date" id="reqLeaveStart" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
-                      </div>
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #334155;">End Date</label>
-                          <input type="date" id="reqLeaveEnd" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
-                      </div>
-                  </div>
-
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Type of Leave</label>
-                  <select id="reqLeaveType" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
-                      <option value="Sick Leave">Sick Leave</option>
-                      <option value="Vacation Leave">Vacation Leave</option>
-                      <option value="Emergency Leave">Emergency Leave</option>
-                      <option value="Unpaid Day Off">Unpaid Day Off</option>
-                  </select>
-
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Reason</label>
-                  <textarea id="reqLeaveReason" placeholder="Details about your leave..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; height: 80px; font-family: inherit; outline: none;"></textarea>
-
-                  <button onclick="submitStaffRequest('Leave')" style="width: 100%; background: #0ea5e9; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Submit Leave Request</button>
-              </div>
-
-              <div id="formReqMeal" style="display: none;">
-                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Log a Staff Meal (Food Deduction)</h3>
-                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Items consumed during your shift will be recorded here for inventory and payroll deduction.</p>
-                  
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Food/Drink Item Consumed</label>
-                  <input type="text" id="reqMealItem" placeholder="e.g. 1pc Cheesy Takoyaki" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
-
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount to Deduct (₱)</label>
-                  <input type="number" id="reqMealCost" placeholder="Staff discounted price..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #f59e0b; outline: none;">
-
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt/POS Proof 📸</label>
-                  <input type="file" id="reqMealProof" accept="image/*" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; background: white;">
-
-                  <button onclick="submitStaffRequest('Staff Meal')" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Log Staff Meal</button>
-              </div>
-
-              <div id="formReqReason" style="display: none;">
-                  <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Cash Variance Reason Letter</h3>
-                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Explain any cash shortages or overages from your shift.</p>
-                  
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Select Shift / Variance</label>
-                  <select id="explainAlertId" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
-                      <option value="General Explanation">General Explanation / Report</option>
-                  </select>
-
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Suspected Cause</label>
-                  <select id="explainCause" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
-                      <option value="Wrong Change Given">Wrong Change Given to Customer</option>
-                      <option value="Dropped / Damaged Food">Dropped / Damaged Food</option>
-                      <option value="POS Input Error">POS Input Error</option>
-                      <option value="Missing / Suspected Theft">Missing / Suspected Theft</option>
-                      <option value="Unknown">Completely Unknown</option>
-                      <option value="Wrong Counting">Wrong Counting. Sorry!</option>
-                      <option value="Wrong Change Given">Wrong Change Given to Customer</option>
-                  </select>
-
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Detailed Explanation</label>
-                  <textarea id="explainMessage" placeholder="Write exactly what happened..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; height: 80px; font-family: inherit; outline: none;"></textarea>
-
-                  <button onclick="submitStaffRequest('Reason Letter')" style="width: 100%; background: #b91c1c; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Send Letter to Owner</button>
-              </div>
-
-          </div>
-      </div>
-  </div>
-
-  <div class="overlay" id="checkoutModal">
-    <div class="modal checkout-modal">
-      <div class="modal-head"><span>Secure Payment</span><span class="close-modal"
-          onclick="closeModal('checkoutModal')">✖</span></div>
-      <div class="modal-body" style="padding: 25px;">
-        <div class="checkout-yellow-box">
-          <div style="color: var(--primary); font-size: 14px; margin-bottom: 5px;">Total Payable</div>
-          <div id="checkoutTotalPayable" style="font-size: 32px; font-weight: bold; color: #333;">₱0.00</div>
-        </div>
-        <div class="checkout-grey-box">
-          <div>
-            <div style="color: var(--primary); font-size: 13px; margin-bottom: 5px;">Received</div>
-            <div id="checkoutReceived" style="font-size: 26px; font-weight: bold; color: #333;">₱0</div>
-          </div>
-          <div style="text-align: right;">
-            <div id="checkoutChangeLabel" style="color: #666; font-size: 13px;">Change</div>
-            <div id="checkoutChange" style="font-size: 22px; font-weight: bold; color: #dc3545;">₱0.00</div>
-          </div>
-        </div>
-        <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed #cbd5e1;">
-            <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; text-transform: uppercase;">🎁 Apply Order Discount</h4>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                <div>
-                    <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Type</label>
-                    <select id="checkoutDiscountType" class="input-box" style="width: 100%; box-sizing: border-box; padding: 10px;" onchange="window.updateNumpadDisplay()">
-                        <option value="none">No Discount</option>
-                        <option value="percentage">Percentage (%)</option>
-                        <option value="fixed">Fixed Amount (₱)</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="font-size: 11px; font-weight: bold; color: #64748b;">Value</label>
-                    <input type="number" id="checkoutDiscountValue" class="input-box" placeholder="0" style="width: 100%; box-sizing: border-box; padding: 10px;" onkeyup="window.updateNumpadDisplay()" onchange="window.updateNumpadDisplay()">
-                </div>
-            </div>
-            
-            <div>
-                <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Reason / ID Number</label>
-                <input type="text" id="checkoutDiscountReason" class="input-box" placeholder="e.g., Senior Citizen ID, Promo Code" style="width: 100%; box-sizing: border-box; padding: 10px;">
-            </div>
-
-            <div style="margin-top: 10px; font-size: 14px; font-weight: bold; color: #dc2626; text-align: right; display: none;" id="checkoutDiscountPreviewRow">
-                Discount Applied: - ₱<span id="checkoutDiscountAmountPreview">0.00</span>
-            </div>
-        </div>
-        <div id="standardPaymentArea">
-          <div class="numpad-grid"><button class="num-btn" onclick="appendNumpad('1')">1</button><button class="num-btn"
-              onclick="appendNumpad('2')">2</button><button class="num-btn"
-              onclick="appendNumpad('3')">3</button><button class="num-btn"
-              onclick="appendNumpad('4')">4</button><button class="num-btn"
-              onclick="appendNumpad('5')">5</button><button class="num-btn"
-              onclick="appendNumpad('6')">6</button><button class="num-btn"
-              onclick="appendNumpad('7')">7</button><button class="num-btn"
-              onclick="appendNumpad('8')">8</button><button class="num-btn"
-              onclick="appendNumpad('9')">9</button><button class="num-btn"
-              onclick="appendNumpad('.')">.</button><button class="num-btn"
-              onclick="appendNumpad('0')">0</button><button class="num-btn" onclick="clearNumpadOne()">⌫</button><button
-              class="num-btn" style="grid-column: span 2;" onclick="setExactAmount()">Exact Amount</button><button
-              class="num-btn" onclick="clearNumpadAll()">Clear</button></div>
-          <div class="section-title">Payment Method</div>
-          <div class="payment-grid"></div>
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 15px;"><input type="text" id="finalCustomerName"
-            class="input-box" placeholder="Customer Name (Optional)"></div>
-      </div>
-      <div class="modal-foot" style="display: flex; gap: 10px;">
-        <button class="btn-place" style="flex: 1; background: #f59e0b; font-size: 16px;" onclick="window.processStoreUse()">📦 Log as Store Use</button>
-        <button class="btn-place" style="flex: 2;" id="btnSubmitFinal" onclick="submitFinalOrder()">Complete checkout</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="overlay" id="receiptModal">
-    <div class="modal receipt-modal">
-      <div class="modal-head"><span>Transaction Complete</span><span class="close-modal"
-          onclick="closeModal('receiptModal')">✖</span></div>
-      <div class="modal-body" style="padding: 25px; display: flex; flex-direction: column; gap: 15px;">
-        <div style="text-align: center;">
-          <div
-            style="width: 50px; height: 50px; border-radius: 50%; border: 3px solid #198754; color: #198754; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 0 auto 10px auto;">
-            ✓</div>
-          <div style="color: #198754; font-weight: bold; font-size: 18px;">Payment Completed</div>
-        </div>
-        <div style="border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; padding: 15px 0;">
-          <div class="shift-row"><span>Rcpt #</span><span class="receipt-value" id="rcptId">: 000000</span></div>
-          <div class="shift-row"><span>Date</span><span class="receipt-value" id="rcptDate">: 2026-04-01</span></div>
-          <div class="shift-row"><span>Time</span><span class="receipt-value" id="rcptTime">: 10:18 PM</span></div>
-          <div class="shift-row"><span class="shift-val" style="font-size:16px;">Net Total</span><span
-              class="receipt-value shift-val" id="rcptTotal" style="font-size:16px;">: ₱0.00</span></div>
-        </div>
-      </div>
-      <div class="modal-foot"
-        style="background: white; flex-direction: column; gap: 10px; border-top: 1px solid #eee; padding: 20px;">
-        <button class="btn-place" onclick="window.printReceipt('receipt')"
-          style="width:100%; padding:16px; font-size:16px; border-radius:8px; box-shadow: 0 4px 6px rgba(255,159,67,0.2);">🖨️
-          Print Customer Receipt</button>
-        <div style="display: flex; gap: 10px;">
-          <button class="btn-clear" onclick="window.printReceipt('food')"
-            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🍳
-            Print Kitchen</button>
-          <button class="btn-clear" onclick="window.printReceipt('drinks')"
-            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🥤
-            Print Bar</button>
-        </div>
-        <button class="btn-clear" onclick="window.closeAndNextOrder()"
-          style="width:100%; padding:14px; border:2px solid #e74c3c; color:#e74c3c; background:transparent; font-weight:bold; border-radius:8px; margin-top: 5px;">Close
-          & Next Order</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="overlay" id="shiftModal">
-    <div class="modal shift-modal">
-      <div class="modal-head"><span id="shiftModalTitle">Shift Management</span><span class="close-modal"
-          onclick="closeModal('shiftModal')">✖</span></div>
-
-      <div class="modal-body" id="shiftViewOpen" style="display: none;">
-        <div
-          style="background: #fff3e6; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #ffeacc;">
-          <h3 style="margin: 0; color: var(--primary);">Start New Shift</h3>
-          <p style="margin: 5px 0 0; font-size: 13px; color: #666;">Enter your starting cash float.</p>
-        </div>
-        <div style="display: none;"><label style="font-size: 12px; font-weight: bold; color: #666;">Cashier
-            Name</label><input type="text" id="inputShiftCashier" class="input-box" placeholder="e.g. Bern, Jen"
-            style="margin-bottom: 10px;"></div>
-        <div><label style="font-size: 12px; font-weight: bold; color: #666;">Starting Cash Amount (₱)</label><input
-            type="number" id="inputStartingCash" class="input-box" placeholder="e.g. 1500" value="0"></div>
-        <button class="btn-place" style="width: 100%; margin-top: 10px; box-shadow: none;" id="btnOpenShiftSubmit"
-          onclick="submitOpenShift()">Open Shift</button>
-      </div>
-
-      <div class="modal-body" id="shiftViewClose" style="display: none; padding-top:10px;">
-        <div
-          style="font-size: 13px; color: #666; padding-bottom: 15px; margin-bottom: 15px; border-bottom: 1px solid #eee;"
-          id="shiftActiveDetails"></div>
-        <div class="shift-section" style="border-bottom: none;">
-          <div class="shift-section-title" onclick="toggleShiftSection('scDrawer', 'arrDrawer')"><span id="arrDrawer"
-              class="shift-arrow">▼</span> Cash Drawer</div>
-          <div id="scDrawer">
-            <div class="shift-row"><span>Starting Cash</span><span class="shift-val" id="scStartingCash">₱0.00</span>
-            </div>
-            <div class="shift-row"><span>Cash Out (Expenses)</span><span class="shift-val" id="scCashOut"
-                style="color: #e74c3c;">-₱0.00</span></div>
-          </div>
-        </div>
-        <div style="display:flex; gap:10px; margin-top:20px;">
-          <button class="btn-clear" onclick="closeModal('shiftModal')" style="flex:1;">Cancel</button>
-
-          <button class="btn-place" id="btnCloseShiftSubmit" onclick="openEndShiftClearance()"
-            style="flex: 2; background: #f97316; color: white; border: none; border-radius: 6px; font-weight: bold; padding: 10px;">📝
-            Begin Z-Reading</button>
-
-          <button class="btn-clear"
-            style="border: 1px solid #dc3545; color: #dc3545; font-weight: bold; padding: 10px 15px;"
-            onclick="openExpenseModal()">💸 Pay Expense</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="overlay" id="endShiftModal" style="display: none;">
-    <div class="modal" style="width: 800px; max-width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
-      
-      <div class="modal-head">
-        <span id="endShiftTitle">End of Shift Clearance</span>
-        <span class="close-modal" onclick="closeModal('endShiftModal')">✖</span>
-      </div>
-
-      <div class="modal-body" style="display: flex; flex-direction: row; gap: 20px; align-items: flex-start; padding: 20px; overflow-y: auto; flex: 1;">
-        
-        <div style="flex: 1; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; min-width: 250px;">
-          <h3 style="margin-top: 0; color: var(--primary); border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; font-size: 16px;">💵 Cash Drawer Count</h3>
-          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
-            <thead><tr style="border-bottom: 1px solid #ccc;"><th style="padding: 5px 0;">Bill/Coin</th><th style="padding: 5px 0; width: 80px;">Pieces</th><th style="padding: 5px 0; text-align: right;">Total</th></tr></thead>
-            <tbody id="denominationTable"></tbody>
-            <tfoot>
-              <tr style="font-weight: bold; font-size: 16px; background: #e2e8f0;"><td colspan="2" style="padding: 10px;">GRAND TOTAL:</td><td id="grandTotalCash" style="text-align: right; padding: 10px; color: var(--primary);">₱0.00</td></tr>
-            </tfoot>
-          </table>
-        </div>
-
-        <div style="flex: 1; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; min-width: 250px; max-height: 60vh; overflow-y: auto;">
-          <h3 style="margin-top: 0; color: #d97706; border-bottom: 2px solid #fcd34d; padding-bottom: 5px; font-size: 16px;">🔪 Kitchen Prep Logs</h3>
-          <p style="font-size: 12px; color: #92400e; margin-bottom: 15px;">Batches prepared during this specific shift.</p>
-          <div id="dynamicShiftPrepLogs" style="display: flex; flex-direction: column; gap: 10px;">
-              <div style="text-align:center; font-size: 13px; color: #888;">Loading prep logs...</div>
-          </div>
-        </div>
-      </div>
-
-      <div style="padding: 15px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #eee; background: #fff;">
-        <button class="btn-clear" onclick="closeModal('endShiftModal')" style="padding: 12px 25px;">Cancel</button>
-        <button onclick="window.MASTER_CloseShift()" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; flex: 1;">🔴 Confirm & End Shift</button>
-      </div>
-
-    </div>
-  </div>
-  </div>
-
-  <div class="overlay" id="expenseModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
-    <div class="modal" style="background: white; width: 600px; max-width: 95%; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden; display: flex; flex-direction: column; max-height: 90vh;">
-      <div style="background: #dc2626; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-weight: bold; font-size: 16px;">💸 Multi-Item Branch Expense</span>
-        <span onclick="document.getElementById('expenseModal').style.display='none'" style="cursor: pointer; font-size: 20px;">✖</span>
-      </div>
-      
-      <div style="padding: 20px; overflow-y: auto; flex: 1; background: #f8fafc;">
-        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px;">
-            <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 5px; display: block;">🔍 Search Item to Restock (or type custom General Expense)</label>
-            <div style="position: relative;">
-                <input type="text" id="expSearchInput" class="input-box" placeholder="Type here..." onkeyup="window.filterExpenseSearch()" style="width: 100%; font-weight: bold; border: 2px solid #cbd5e1;">
-                <div id="expSearchResults" style="display: none; position: absolute; width: 100%; max-height: 150px; overflow-y: auto; background: white; border: 1px solid #cbd5e1; border-top: none; z-index: 100; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 0 0 8px 8px;"></div>
-            </div>
-
-            <div style="display: flex; gap: 10px; margin-top: 10px; align-items: flex-end;">
-                <div style="flex: 1;">
-                    <label style="font-size: 11px; font-weight: bold; color: #64748b;">Qty</label>
-                    <input type="number" id="expQtyInput" class="input-box" placeholder="0">
-                </div>
-                <div id="expUomContainer" style="flex: 1.5; display: none;">
-                    <label style="font-size: 11px; font-weight: bold; color: #64748b;">Unit / Size</label>
-                    <select id="expUomSelect" class="input-box" style="padding: 14px; font-weight: bold; cursor: pointer;"></select>
-                </div>
-                <div style="flex: 1;">
-                    <label style="font-size: 11px; font-weight: bold; color: #dc2626;">Cost (₱)</label>
-                    <input type="number" id="expAmtInput" class="input-box" placeholder="0.00" style="color: #dc2626; font-weight: bold;">
-                </div>
-                <div>
-                    <button onclick="window.addExpenseToCart()" style="background: #0ea5e9; color: white; border: none; border-radius: 6px; padding: 14px 20px; font-weight: bold; cursor: pointer; height: 46px;">+ Add</button>
-                </div>
-            </div>
-        </div>
-
-        <div style="background: white; border-radius: 8px; border: 1px solid #cbd5e1; overflow: hidden; margin-bottom: 15px;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                <thead style="background: #1e293b; color: white;">
-                    <tr><th style="padding: 10px; text-align: left;">Item / Description</th><th style="padding: 10px;">Cost (₱)</th><th style="padding: 10px;"></th></tr>
-                </thead>
-                <tbody id="expenseCartBody">
-                    <tr><td colspan="3" style="text-align: center; padding: 15px; color: #94a3b8;">Cart is empty.</td></tr>
-                </tbody>
-                <tfoot>
-                    <tr style="background: #fef2f2; font-weight: bold; font-size: 16px;">
-                        <td style="padding: 10px; text-align: right; color: #dc2626;">TOTAL:</td>
-                        <td colspan="2" id="expenseCartTotal" style="padding: 10px; color: #dc2626;">₱0.00</td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-
-        <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt Photo 📸 (Optional)</label>
-        <input type="file" id="expenseReceiptPhoto" accept="image/*" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white;">
-      </div>
-
-      <div style="padding: 15px 20px; background: white; border-top: 1px solid #cbd5e1; display: flex; gap: 10px;">
-        <button onclick="document.getElementById('expenseModal').style.display='none'" style="flex: 1; padding: 14px; background: #e2e8f0; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
-        <button id="btnSubmitExpenseCart" onclick="window.submitExpenseCart()" style="flex: 2; padding: 14px; background: #dc2626; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px;">Submit All Expenses</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="overlay" id="inventoryCheckModal" style="display: none;">
-    <div class="modal" style="width: 650px; max-height: 85vh;">
-      <div class="modal-head"><span>📋 End of Shift Stock Count</span><span class="close-modal" onclick="closeModal('inventoryCheckModal')">✖</span></div>
-      <div class="modal-body" style="padding: 0; display: flex; flex-direction: column;">
-        <div style="background: #fffcf0; padding: 15px 25px; border-bottom: 1px solid #ffeeba; font-size: 13px; color: #856404; flex-shrink: 0;">
-          <strong>Instructions:</strong> Enter the physical quantity you currently see. Leave blank if not counting.
-          <input type="text" id="cashierStockSearch" onkeyup="window.filterCashierStock()" placeholder="🔍 Quick search item..." style="width: 100%; padding: 10px; margin-top: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
-        </div>
-        <div style="padding: 20px 25px; flex: 1; overflow-y: auto;" id="invCheckListContainer">
-          <div style="text-align:center; padding:20px; color:#888;">Fetching inventory list...</div>
-        </div>
-      </div>
-      <div class="modal-foot" style="flex-shrink: 0;">
-        <button class="btn-clear" onclick="closeModal('inventoryCheckModal')">Cancel</button>
-        <button class="btn-place" id="btnSubmitInvCheck" onclick="submitInventoryCheck()">Submit Count</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="overlay" id="parkedModal">
-    <div class="modal" style="width: 500px; max-height: 85vh;">
-      <div class="modal-head"><span>🕒 Parked Orders (Pay Later)</span><span class="close-modal"
-          onclick="closeModal('parkedModal')">✖</span></div>
-      <div class="modal-body" id="parkedListContainer" style="padding: 15px; background: #f9f9f9;">Loading...</div>
-    </div>
-  </div>
-
-  <div class="overlay" id="mobileOrdersModal">
-    <div class="modal" style="width: 500px; max-height: 85vh;">
-      <div class="modal-head"><span>📱 Incoming Mobile Orders</span><span class="close-modal"
-          onclick="closeModal('mobileOrdersModal')">✖</span></div>
-      <div class="modal-body" id="mobileListContainer" style="padding: 15px; background: #f9f9f9;">Waiting for orders...</div>
-    </div>
-  </div>
-
-  <div class="overlay" id="txDetailModal">
-    <div class="modal product-modal" style="width: 500px;">
-      <div class="modal-head"><span id="txDetailTitle">Receipt Details</span><span class="close-modal"
-          onclick="closeModal('txDetailModal')">✖</span></div>
-      <div class="modal-body" id="txDetailBody" style="padding: 20px;"></div>
-    </div>
-  </div>
-
-  <div id="timeClockModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
-      <div style="background: white; width: 400px; border-radius: 12px; overflow: hidden; text-align: center;">
-          <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between;">
-              <h2 style="margin: 0; font-size: 18px;">📸 AI Time Clock</h2>
-              <span onclick="closeTimeClock()" style="cursor: pointer; font-size: 24px;">&times;</span>
-          </div>
-          <div style="padding: 20px;">
-              <div id="faceAiStatus" style="font-size: 13px; font-weight: bold; color: #3b82f6; margin-bottom: 8px; background: #eff6ff; padding: 6px; border-radius: 6px; border: 1px dashed #bfdbfe;">
-                  🤖 Initializing AI Engine...
-              </div>
-              
-              <div style="width: 100%; height: 250px; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 15px; position: relative;">
-                  <video id="clockVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
-              </div>
-              
-              <canvas id="clockCanvas" style="display: none;"></canvas>
-  
-              <select id="clockStaffName" style="width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
-                  <option value="">-- Loading Staff --</option>
-              </select>
-              
-              <input type="password" id="clockStaffPin" placeholder="Enter PIN (Leave blank if Face ID is registered)" maxlength="4" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; text-align: center; letter-spacing: 2px; font-size: 14px; outline: none;">
-  
-              <div style="display: flex; gap: 10px;">
-                  <button onclick="submitAttendance('TIME IN')" style="flex: 1; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;">TIME IN</button>
-                  <button onclick="submitAttendance('TIME OUT')" style="flex: 1; background: #b91c1c; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;">TIME OUT</button>
-              </div>
-          </div>
-      </div>
-  </div>
-
-  <div id="remittanceModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center;">
-      <div style="background: var(--bg-color); width: 600px; max-width: 90%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
-          
-          <div style="background: #047857; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 20px;">💸 Cash Remittance</h2>
-              <span onclick="document.getElementById('remittanceModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
-          </div>
-  
-          <div style="display: flex; background: #e2e8f0; border-bottom: 1px solid #cbd5e1;">
-              <div id="tabRemitForm" onclick="switchRemittanceTab('form')" style="flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; background: white; color: black; border-bottom: 3px solid #047857;">New Remittance</div>
-              <div id="tabRemitHistory" onclick="switchRemittanceTab('history')" style="flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; color: #64748b; border-bottom: 3px solid transparent;">Transfer History</div>
-          </div>
-  
-          <div style="padding: 20px;">
-              
-              <div id="remitFormSection">
-                  <div id="remitCountdownAlert" style="background: #eff6ff; border: 1px dashed #3b82f6; color: #1d4ed8; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 13px; font-weight: bold; text-align: center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                      ⏳ Calculating next remittance schedule...
-                  </div>
-                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Sales Period Start</label>
-                          <input type="date" id="remitStartDate" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                      </div>
-                      <div>
-                          <label style="font-size: 12px; font-weight: bold; color: #64748b;">Sales Period End</label>
-                          <input type="date" id="remitEndDate" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                      </div>
-                  </div>
-  
-                  <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                    <div style="flex: 1;">
-                      <label style="font-size: 12px; font-weight: bold; color: #666;">Remitting Cashier</label>
-                      <input type="text" id="remitCashier" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px; background: #f8fafc; font-weight: bold; color: #475569;" readonly>
-                    </div>
-                    <div style="flex: 1;">
-                      <label style="font-size: 12px; font-weight: bold; color: #666;">Total Amount Remitted (₱)</label>
-                      <input type="number" id="remitAmount" class="input-box"
-                        style="width: 100%; font-size: 18px; font-weight: bold; color: #16a34a; padding: 8px; margin-top: 5px;"
-                        placeholder="0.00">
-                    </div>
-                  </div>
-        
-                  <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                    <div style="flex: 1;">
-                      <label style="font-size: 12px; font-weight: bold; color: #666;">Send Via (Bank/E-Wallet)</label>
-                      <select id="remitChannel" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; background: white;">
-                          <option value="">Loading HQ Accounts...</option>
-                      </select>
-                    </div>
-                    <div style="flex: 1;">
-                      <label style="font-size: 12px; font-weight: bold; color: #666;">Sent To (Recipient Name)</label>
-                      <input type="text" id="remitRecipient" class="input-box"
-                        style="width: 100%; padding: 8px; margin-top: 5px;" placeholder="e.g. Boss Jostuart">
-                    </div>
-                  </div>
-  
-                  <div style="margin-bottom: 20px;">
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Bank/GCash Reference Number (Optional)</label>
-                      <input type="text" id="remitRefNum" placeholder="Enter Ref. No." style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-                      <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px; margin-top: 15px;">Security PIN *</label>
-                      <input type="password" id="remitPinCode" placeholder="****" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; text-align: center; font-weight: bold; letter-spacing: 5px; font-size: 18px;">
-                  </div>
-  
-                  <button onclick="submitRemittance()" style="width: 100%; background: #047857; color: white; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer;">
-                      Submit Remittance to HQ
-                  </button>
-              </div>
-  
-              <div id="remitHistorySection" style="display: none; max-height: 400px; overflow-y: auto;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                      <tbody id="remitHistoryTableBody">
-                          </tbody>
-                  </table>
-              </div>
-  
-          </div>
-      </div>
-  </div>
-
-  <div id="grabEarningsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
-      <div style="background: white; width: 400px; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-          <h2 style="margin-top: 0; color: #00b14f;">🟢 Log Grab Payout</h2>
-          <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Check the Grab Merchant App and enter the Daily Net Earnings.</p>
-          
-          <label style="font-size: 12px; font-weight: bold; color: #334155;">Select Date</label>
-          <input type="date" id="grabEarnDate" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
-          
-          <label style="font-size: 12px; font-weight: bold; color: #334155;">Net Earnings (₱)</label>
-          <input type="number" id="grabEarnAmount" placeholder="e.g. 2500.50" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #00b14f; outline: none;">
-          
-          <div style="display: flex; gap: 10px; justify-content: flex-end;">
-              <button onclick="document.getElementById('grabEarningsModal').style.display='none'" style="padding: 10px 15px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
-              <button id="btnSaveGrabEarn" onclick="window.submitGrabEarnings()" style="padding: 10px 15px; background: #00b14f; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save Earnings</button>
-          </div>
-      </div>
-  </div>
-
-  <script>
-    window.sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
-    window.cart = []; 
-    window.masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
-    window.pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
-    window.amountReceivedStr = "0"; 
-    window.selectedPaymentMethod = "Cash"; 
-    window.isSplitMode = false; 
-    window.splitRows = []; 
-    window.lastTransactionData = {};
-    window.editIndex = -1; 
-    window.currentShift = null; 
-    window.activeShiftDetails = null; 
-    window.systemReady = false;
-
-    document.addEventListener("DOMContentLoaded", function () {
-      let loginBox = document.getElementById('loginOverlay');
-      if (loginBox) { loginBox.style.display = 'flex'; }
-    });
-
-    // --- 1. UI HELPERS ---
-    function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); document.getElementById('sidebarIcon').innerText = sidebar.classList.contains('collapsed') ? '▶' : '◀'; }
-    function switchView(viewName) {
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
-      let navEl = document.getElementById('nav-' + viewName); if (navEl) navEl.classList.add('active');
-      let viewEl = document.getElementById('view-' + viewName); if (viewEl) viewEl.classList.add('active');
-      let topBar = document.getElementById('topBarTitle');
-      if (viewName === 'pos') topBar.innerText = "🖥️ Point of Sale";
-      else if (viewName === 'sales') { topBar.innerText = "🧾 Shift Sales"; loadSalesDashboard(); }
-      else if (viewName === 'prep') { topBar.innerText = "🔪 Kitchen Prep"; } 
-      else if (viewName === 'deliveries') { topBar.innerText = "🚚 Incoming Stock"; }
-      else if (viewName === 'menumgr') { topBar.innerText = "🍔 Menu Toggle"; }
-      else if (viewName === 'stockreq') { topBar.innerText = "📦 Request Stock"; }
-      else if (viewName === 'waste') { topBar.innerText = "🗑️ Log Waste & Spoilage"; }
-      else if (viewName === 'sop') { topBar.innerText = "📋 Daily SOPs"; }
-      else if (viewName === 'schedule') { 
-          topBar.innerText = "📅 My Schedule"; 
-          if (typeof window.loadPersonalSchedule === 'function') window.loadPersonalSchedule(); 
-      }
-    }
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-    function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
-
-    // --- 3. MENU BUILDER ---
-    async function loadPOSData() {
-      let products = await window.fetchMenu();
-      masterPOSData.items = products;
-      masterPOSData.variants = {};
-      masterPOSData.addons = [];
-      let cats = [...new Set(products.map(p => p.category))].filter(Boolean);
-      masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
-      masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "GoTyme", "Bank", "Grab"] };
-
-      // 🔥 NEW: SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
-      masterPOSData.stockLevels = {};
-      const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
-      invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
-
-      masterPOSData.bom = [];
-      const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-      bomSnap.forEach(doc => masterPOSData.bom.push(doc.data()));
-
-      buildCategories();
-
-      let otHtml = ''; masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
-      let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
-    }
-
-    // --- DEPARTMENT & CATEGORY ENGINE ---
-    window.currentDepartment = "MAIN MENU";
-    
-    // 1. Items allowed in the 2nd tab (Things you actually sell to customers)
-    const premixCategories = ["Consumables", "Premix"];
-    
-    // 2. 🛡️ THE VAULT: Categories completely HIDDEN from the POS screen!
-    const hiddenCategories = ["Prepared Batch", "Prep Batch", "Raw Materials", "Packaging"];
-    
-    function buildCategories() {
-        // 1. Render Bottom Department Tabs
-        const deptContainer = document.getElementById('bottomDepartmentFooter');
-        if (deptContainer) {
-            deptContainer.innerHTML = `
-                <button class="dept-btn ${window.currentDepartment === 'All Items' ? 'active' : ''}" onclick="window.selectDepartment('All Items')">ALL ITEMS</button>
-                <button class="dept-btn ${window.currentDepartment === 'MAIN MENU' ? 'active' : ''}" onclick="window.selectDepartment('MAIN MENU')">MAIN MENU</button>
-                <button class="dept-btn ${window.currentDepartment === 'CONSUMABLES' ? 'active' : ''}" onclick="window.selectDepartment('CONSUMABLES')">CONSUMABLES</button>
-            `;
-        }
-    
-        // 2. Render Top Categories based on selected Department
-        window.renderTopCategories();
-    }
-    
-    window.selectDepartment = function(dept) {
-        window.currentDepartment = dept;
-        buildCategories(); // Re-render tabs to show active state
-    };
-    
-    window.renderTopCategories = async function() {
-        const catContainer = document.querySelector('.category-header');
-        if (!catContainer) return;
-    
-        catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
-    
-        let layoutOrder = [];
-        try {
-            const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
-            if (layoutSnap.exists()) {
-                layoutOrder = layoutSnap.data().categories || [];
-            }
-            // 🔥 NEW: Fetch Custom Item Order!
-            const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
-            if (itemLayoutSnap.exists()) {
-                window.globalItemLayout = itemLayoutSnap.data().items || [];
-            } else {
-                window.globalItemLayout = [];
-            }
-        } catch(e) { console.error("Error fetching POS layout:", e); }
-    
-        let safeCategories = masterPOSData.categories.filter(c => !hiddenCategories.includes(c));
-        let catsToRender = safeCategories;
-    
-        if (window.currentDepartment === "CONSUMABLES") {
-            catsToRender = safeCategories.filter(c => premixCategories.includes(c));
-        } else if (window.currentDepartment === "MAIN MENU") {
-            catsToRender = safeCategories.filter(c => !premixCategories.includes(c));
-        }
-    
-        catsToRender.sort((a, b) => {
-            let idxA = layoutOrder.indexOf(a);
-            let idxB = layoutOrder.indexOf(b);
-            if (idxA === -1) idxA = 999;
-            if (idxB === -1) idxB = 999;
-            return idxA - idxB;
-        });
-    
-        catsToRender.forEach(cat => {
-            catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`;
-        });
-    
-        filterMenu('All', catContainer.firstElementChild);
-    };
-    
-    function filterMenu(category, clickedBtn) {
-        if (clickedBtn) { 
-            document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); 
-            clickedBtn.classList.add('active'); 
-        }
-        
-        const grid = document.querySelector('.item-grid'); 
-        if(!grid) return;
-        grid.innerHTML = '';
-        
-        // 🛡️ Remove backend items from the main center grid
-        let safeItems = masterPOSData.items.filter(item => !hiddenCategories.includes(item.category));
-        let filteredItems = safeItems;
-    
-        // Filter by bottom tab if 'All' is selected on top
-        if (category === 'All') {
-            if (window.currentDepartment === "CONSUMABLES") {
-                filteredItems = safeItems.filter(item => premixCategories.includes(item.category));
-            } else if (window.currentDepartment === "MAIN MENU") {
-                filteredItems = safeItems.filter(item => !premixCategories.includes(item.category));
-            }
-        } else {
-            // Otherwise, filter strictly by the top category clicked
-            filteredItems = safeItems.filter(item => item.category === category);
-            // 🔥 THE CUSTOM SORTER FIX: Follows the Manager's Layout first, falls back to A-Z
-            filteredItems.sort((a, b) => {
-                let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
-                let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
-                
-                if (idxA !== -1 && idxB !== -1) return idxA - idxB; // Both in layout = sort by layout
-                if (idxA !== -1) return -1; // Only A in layout = push A up
-                if (idxB !== -1) return 1;  // Only B in layout = push B up
-                
-                // Fallback to alphabetical A-Z
-                return (a.name || '').localeCompare(b.name || '');
-            });
-        }
-    
-        filteredItems.forEach((item, index) => {
-            let safePrice = parseFloat(item.price) || 0;
-            
-            // 🔥 CALCULATE LOW STOCK BADGE
-            let possibleOrders = Infinity;
-            
-            if (masterPOSData.bom && masterPOSData.stockLevels) {
-                let recipe = masterPOSData.bom.filter(b => b.menuItem === item.name);
-                
-                if (recipe.length > 0) {
-                    recipe.forEach(r => {
-                        let stock = masterPOSData.stockLevels[r.ingredientName] || 0;
-                        let orders = stock / (r.qty || 1);
-                        if (orders < possibleOrders) possibleOrders = orders;
-                    });
-                } else {
-                    possibleOrders = Infinity; // No recipe attached, so it can't run out
-                }
-            }
-
-            let badgeHtml = '';
-            if (possibleOrders <= 0) {
-                badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #dc2626; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10;">SOLD OUT</div>`;
-            } else if (possibleOrders <= 5) {
-                badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
-            }
-            
-            // 🔥 THE FIX: bgStyle is safely locked INSIDE the loop!
-            let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
-            
-            // 🔥 THE NEW PRICE LABEL LOGIC
-            let priceLabel = item.isGrouped ? `<span style="color: #10b981; font-weight: bold;">Select Size ➡</span>` : `₱${safePrice.toFixed(2)}`;
-    
-            grid.innerHTML += `
-                <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})" style="height: 140px; border: none;">
-                    ${badgeHtml}
-                    <div class="item-card-bg" style="${bgStyle}"></div>
-                    <div class="item-name-overlay">${item.name}<br><span style="color:#fcd34d; font-size: 11px;">${priceLabel}</span></div>
-                </div>
-            `;
-        });
-    }
-
-    function searchMenuItems() {
-      let input = document.getElementById('posSearchInput').value.toLowerCase();
-      let cards = document.querySelector('.item-grid').children;
-      for (let i = 0; i < cards.length; i++) {
-        cards[i].style.display = cards[i].innerText.toLowerCase().includes(input) ? "" : "none";
-      }
-    }
-
-    // --- 4. SHIFT & EXPENSE SYSTEM ---
-    async function checkCurrentShift() {
-      let status = await window.checkShiftStatus(sessionUser.branch);
-      updateShiftUI(status);
-      systemReady = true;
-    }
-
-    function updateShiftUI(status) {
-      let btn = document.getElementById('btnTopShift'); let lock = document.getElementById('shiftLockout'); let placeBtn = document.getElementById('btnMainPlaceOrder');
-      if (status && status.active) { 
-          currentShift = status; btn.innerText = "🟢 Active Shift"; lock.style.display = "none"; placeBtn.disabled = false; 
-      }
-      else { 
-          currentShift = null; btn.innerText = "🔴 Shift Closed"; lock.style.display = "flex"; placeBtn.disabled = true; 
-          
-          const quotes = [
-              "Great job today! Rest up and see you tomorrow. 🌟",
-              "Hard work pays off. Thank you for your dedication! 🙌",
-              "You crushed it today! Enjoy your well-deserved rest. 🍕",
-              "Another day, another peso! Thanks for being awesome. 🐙",
-              "Time to clock out and chill out. You earned it! 🛋️",
-              "Take a deep breath, you did amazing today! ☕"
-          ];
-          let randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
-          
-          let lockoutTitle = lock.querySelector('h2');
-          let lockoutDesc = lock.querySelector('p');
-          if (lockoutTitle) lockoutTitle.innerText = "Register is Closed";
-          
-          // 🔥 THE ALIGNMENT FIX: Perfectly centers the text and spacing!
-          if (lockoutDesc) {
-              lockoutDesc.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; margin-top: 10px; margin-bottom: 20px; width: 100%;">
-                    <span style="font-size: 16px; font-weight: bold; color: #0f766e;">${randomQuote}</span>
-                    <span style="font-size: 14px; color: #777;">Open a shift to begin taking orders.</span>
-                </div>`;
-          }
-      }
-    }
-
-    function openShiftModal() {
-      if (!systemReady) return;
-      if (!currentShift) {
-        document.getElementById('shiftViewOpen').style.display = "block"; document.getElementById('shiftViewClose').style.display = "none";
-        let nameEl = document.getElementById('inputShiftCashier'); if (nameEl) nameEl.value = ""; document.getElementById('inputStartingCash').value = "";
-        document.getElementById('shiftModal').style.display = "flex";
-      } else {
-        let btn = document.getElementById('btnTopShift'); let oldText = btn.innerText; btn.innerText = "⏳ Data..."; btn.disabled = true;
-        window.getLiveShiftDetails(sessionUser.branch).then(details => {
-          if (!details) return; activeShiftDetails = details;
-          document.getElementById('shiftViewOpen').style.display = "none"; document.getElementById('shiftViewClose').style.display = "block";
-          document.getElementById('shiftActiveDetails').innerText = `Started By: ${details.startedBy}  |  Start Time: ${new Date(details.startTime).toLocaleString()}`;
-
-          document.getElementById('scStartingCash').innerText = '₱' + details.startingCash.toFixed(2);
-          document.getElementById('scCashOut').innerText = '- ₱' + details.cashOut.toFixed(2);
-
-          document.getElementById('shiftModal').style.display = "flex"; btn.innerText = oldText; btn.disabled = false;
-        });
-      }
-    }
-
-    async function submitOpenShift() {
-      try {
-        let shiftName = sessionUser.cashierName || localStorage.getItem('cashierName') || 'Unknown';
-
-        let startEl = document.getElementById('inputStartingCash');
-        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
-
-        let btn = document.getElementById('btnOpenShiftSubmit');
-        if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
-
-        let shiftId = await window.openNewShift(sessionUser.branch, shiftName, startCash);
-
-        if (shiftId) {
-          await checkCurrentShift();
-          closeModal('shiftModal');
-        } else {
-          alert("Failed to open shift. Check connection!");
-        }
-        if (btn) { btn.innerText = "Open Shift"; btn.disabled = false; }
-      } catch (e) { console.error(e); }
-    }
-
-    function openExpenseModal() { closeModal('shiftModal'); document.getElementById('expAmount').value = ''; document.getElementById('expDesc').value = ''; document.getElementById('expenseModal').style.display = 'flex'; }
-    async function submitBranchExpense() {
-      let amt = parseFloat(document.getElementById('expAmount').value); let desc = document.getElementById('expDesc').value.trim();
-      if (!amt || amt <= 0 || !desc) { alert("Please enter a valid amount and description."); return; }
-      let btn = document.getElementById('btnSubmitExpense'); btn.innerText = "Processing..."; btn.disabled = true;
-      let payload = { branch: sessionUser.branch, cashier: sessionUser.cashierName, amount: amt, description: desc };
-      try { let res = await window.processPettyCashExpense(payload); alert(res); closeModal('expenseModal'); btn.innerText = "Submit Expense"; btn.disabled = false; }
-      catch (e) { alert("Error: " + e); btn.innerText = "Submit Expense"; btn.disabled = false; }
-    }
-
-    async function safeOpenEndShiftClearance() {
-      let btn = document.getElementById('btnCloseShiftSubmit');
-      let originalText = btn.innerText;
-      btn.innerText = "Checking..."; 
-      btn.disabled = true;
-
-      try {
-        let parked = await window.getParkedOrders(sessionUser.branch);
-        if (parked && parked.length > 0) {
-          alert("⚠️ CANNOT CLOSE SHIFT!\n\nThere are still " + parked.length + " unpaid parked orders.\nPlease go to Parked Orders and resume/pay them, or cancel them first.");
-          btn.innerText = originalText;
-          btn.disabled = false;
-          return; 
-        }
-
-        btn.innerText = originalText;
-        btn.disabled = false;
-        
-        if (typeof window.openEndShiftClearance === 'function') {
-            window.openEndShiftClearance();
-        } else if (typeof openEndShiftClearance === 'function') {
-            openEndShiftClearance();
-        }
-      } catch (e) {
-        console.error("Error checking parked orders:", e);
-        btn.innerText = originalText;
-        btn.disabled = false;
-      }
-    }
-
-    async function safeSubmitComprehensiveCloseShift() {
-      let parked = await window.getParkedOrders(sessionUser.branch);
-      
-      if (parked && parked.length > 0) {
-        alert("⚠️ STRICT SYSTEM LOCK!\n\nYou have " + parked.length + " parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.");
-        closeModal('endShiftModal'); 
-        return; 
-      }
-
-      if (typeof window.submitComprehensiveCloseShift === 'function') {
-        window.submitComprehensiveCloseShift();
-      } else if (typeof submitComprehensiveCloseShift === 'function') {
-        submitComprehensiveCloseShift();
-      }
-    }
-
-    // --- 5. INVENTORY SYSTEM ---
-    async function openInventoryCheckModal() {
-      document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory list from Firebase...</div>'; document.getElementById('inventoryCheckModal').style.display = 'flex';
-      let items = await window.getInventoryForCount(sessionUser.branch);
-      let html = '';
-      if (items.length === 0) { 
-          html = '<div style="text-align:center; padding:20px; color:#888;">No inventory items setup yet.</div>'; 
-      } else { 
-          // 🔥 Hide secret recipes and prep batches from the cashiers!
-          let filteredItems = items.filter(i => {
-              let cat = (i.category || "").toLowerCase();
-              return !cat.includes("prepared batch") && !cat.includes("prep batch") && !cat.includes("raw material");
-          });
-
-          filteredItems.forEach(i => { 
-              html += `<div class="count-row"><div style="font-weight:600; color:#444; font-size:14px;">${i.name}</div><div style="color:#888; font-size:12px;">${i.uom || 'units'}</div><div><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty"></div></div>`; 
-          }); 
-      }
-      document.getElementById('invCheckListContainer').innerHTML = html;
-    }
-
-    async function submitInventoryCheck() {
-      let inputs = document.querySelectorAll('.count-target-input'); let counts = [];
-      inputs.forEach(inp => { let val = parseFloat(inp.value); if (!isNaN(val)) { counts.push({ name: inp.getAttribute('data-item'), physicalQty: val }); } });
-      if (counts.length === 0) { alert("Please enter at least one quantity before submitting."); return; }
-      let btn = document.getElementById('btnSubmitInvCheck'); btn.innerText = "Submitting..."; btn.disabled = true;
-      try { await window.submitInventoryCheck(sessionUser.branch, sessionUser.cashierName, counts); alert("End-of-day stock count submitted securely!"); closeModal('inventoryCheckModal'); }
-      catch (e) { alert("Error submitting stock count. Check connection."); } btn.innerText = "Submit Count"; btn.disabled = false;
-    }
-
-// --- THE DASHBOARD ENGINE ---
-window.loadSalesDashboard = async function () {
-  document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
-  
-  if (!currentShift || !currentShift.active) { 
-      document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; 
-      return; 
-  }
-  
-  let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
-  let tBody = '';
-  
-  // 🔥 ONLY TRACK DIGITAL FUNDS FOR THE CASHIER
-  let totalGrab = 0; let totalGCash = 0;
-
-  if (!transactions || transactions.length === 0) { 
-      tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
-  } else {
-    transactions.forEach((tx, idx) => {
-      let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
-      let txDate = "Today"; let txTime = "--:--";
-      if (tx.timestamp && tx.timestamp.toDate) { 
-          let d = tx.timestamp.toDate(); 
-          txDate = d.toLocaleDateString(); 
-          txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
-      }
-
-      // 🔥 TALLY ONLY DIGITAL TOTALS FOR VERIFICATION
-      if (tx.status !== 'Voided') {
-          if (tx.paymentMethod === 'Grab') totalGrab += (tx.netTotal || 0);
-          else if (tx.paymentMethod === 'GCash') totalGCash += (tx.netTotal || 0);
-      }
-
-      // 🚨 THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
-      let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
-      let displayAmount = isCashTx ? `<span style="color:#94a3b8; font-family: monospace; letter-spacing: 2px;">₱***</span>` : `₱${(tx.netTotal || 0).toFixed(2)}`;
-
-      tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
-        <td style="font-weight:bold;">${tx.receiptId || 'N/A'}</td>
-        <td>${tx.customerName || '-'}</td>
-        <td>${tx.paymentMethod || 'Unknown'}</td>
-        <td>${statusBadge}</td>
-        <td>${txDate}</td>
-        <td>${txTime}</td>
-        <td style="font-weight:bold; color: var(--primary);">${displayAmount}</td>
-        <td style="text-align:right;">
-          <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
-            <div class="action-dropdown" id="txMenu-${idx}">
-              <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')">View Details</div>
-              <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">🖨️ Print Receipt</div>
-              <div class="action-item danger" onclick="voidTx('${tx.receiptId}')">Void Transaction</div>
-            </div>
-          </div>
-        </td>
-      </tr>`;
-    });
-  }
-  
-  // 🔥 🚨 ANTI-THEFT: "BLIND COUNT" UI. Hides total cash so cashiers cannot skim overages!
-  let auditHeader = `
-      <tr style="background: #f8fafc; font-size: 16px;">
-        <td colspan="8" style="padding: 15px; text-align: center; border-bottom: 3px solid #cbd5e1;">
-            <span style="color: #64748b; font-size: 15px; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 6px;">🔒 Cash Drawer: Blind Count</span> &nbsp;&nbsp; | &nbsp;&nbsp;
-            <strong style="color: #00b14f; font-size: 18px;">🟢 Grab: ₱${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
-            <strong style="color: #3b82f6; font-size: 18px;">🔵 GCash: ₱${totalGCash.toFixed(2)}</strong>
-        </td>
-      </tr>
-  `;
-
-  document.getElementById('tbTransBody').innerHTML = auditHeader + tBody;
+// ========================================================
+// 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
+// ========================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+// 🔥 NEW: Import Firebase Storage
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+
+window.onSnapshot = onSnapshot;
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
+  authDomain: "takodeal-pos.firebaseapp.com",
+  projectId: "takodeal-pos",
+  storageBucket: "takodeal-pos.firebasestorage.app",
+  messagingSenderId: "248826111383",
+  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
 };
 
-    function toggleTxMenu(id) { document.querySelectorAll('.action-dropdown').forEach(el => { if (el.id !== id) el.classList.remove('show'); }); let el = document.getElementById(id); if (el) el.classList.toggle('show'); }
-    document.addEventListener('click', function (e) { if (!e.target.classList.contains('dot-menu')) { document.querySelectorAll('.action-dropdown').forEach(el => el.classList.remove('show')); } });
+const app = initializeApp(firebaseConfig);
+// ========================================================
+// 🌍 GLOBAL GPS GEOFENCING CONFIGURATION
+// ========================================================
+// Define the exact Latitude and Longitude for each branch.
+window.BRANCH_ZONES = {
+    "Cabantian": { lat: 7.130415364656105, lng: 125.61730650596441 }, // <-- Replace these numbers
+    "Citygate":  { lat: 7.111076870173231, lng: 125.61288375028629 }, // <-- Replace these numbers
+    "Maa":       { lat: 7.078632967828137, lng: 125.58344165239423 }, // <-- Replace these numbers
+    "Main Office": { lat: 7.153756836823165, lng: 125.5956673848104 }    // Optional (bypassed for testing)
+};
 
-    async function voidTx(receiptId) {
-      if (confirm(`Are you sure you want to VOID transaction ${receiptId}?\n\n⚠️ WARNING: This action will be reported immediately to the Manager.`)) {
-        try { await window.voidTransaction(receiptId, sessionUser.cashierName, sessionUser.branch); alert(`Transaction voided. The Manager has been notified.`); loadSalesDashboard(); }
-        catch (e) { alert("Error voiding transaction: " + e.message); }
-      }
+// Set how far away (in meters) a staff member can be from the store to successfully Time In.
+// 50 meters is a very generous radius that accounts for inaccurate phone GPS.
+window.ALLOWED_RADIUS_METERS = 50;
+
+// The mathematical engine that calculates the distance between the phone and the store.
+window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
+    var R = 6371e3; // Radius of the earth in meters
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; 
+};
+const storage = getStorage(app); // 🔥 Turn on the engine
+
+// 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+});
+
+window.storage = storage; // Export it for the staff meal function!
+window.db = db;
+window.query = query;
+window.where = where;
+window.collection = collection;
+window.getDocs = getDocs;
+window.deleteDoc = deleteDoc;
+window.doc = doc;
+window.updateDoc = updateDoc;
+window.getDoc = getDoc;
+window.setDoc = setDoc;
+
+console.log("🚀 TAKODEÁL Cashier Offline Mode is ACTIVE!");
+
+// ==========================================
+// 🏷️ SMART TAB TITLE ENGINE
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+    let savedBranch = localStorage.getItem('takodeal_device_branch');
+    if (savedBranch) {
+        document.title = "TAKODEÁL (" + savedBranch + ")";
+    } else {
+        document.title = "TAKODEÁL - Device Setup";
+    }
+});
+
+// ==========================================
+// 📡 100% OFFLINE NETWORK STATUS ENGINE
+// ==========================================
+window.isAppOnline = navigator.onLine;
+
+window.updateNetworkStatusUI = function() {
+    let statusBadge = document.getElementById('liveClock').nextElementSibling;
+    if (statusBadge) {
+        if (window.isAppOnline) {
+            statusBadge.innerHTML = `<span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(22,163,74,0.5);">🟢 ONLINE & SYNCING</span>`;
+        } else {
+            statusBadge.innerHTML = `<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(220,38,38,0.5);">🔴 OFFLINE (SAVING LOCALLY)</span>`;
+        }
+    }
+};
+
+window.addEventListener('online', () => { window.isAppOnline = true; window.updateNetworkStatusUI(); });
+window.addEventListener('offline', () => { window.isAppOnline = false; window.updateNetworkStatusUI(); });
+
+// Run once on boot
+setTimeout(window.updateNetworkStatusUI, 1000);
+
+// 🔥 THE LOCAL HARD-DRIVE BACKUP ENGINE
+// If the internet completely dies on refresh, it will load the last known menu from the tablet!
+window.saveMenuToLocalHardDrive = function(menuData) {
+    localStorage.setItem('takodeal_offline_menu', JSON.stringify(menuData));
+};
+
+window.getMenuFromLocalHardDrive = function() {
+    let cached = localStorage.getItem('takodeal_offline_menu');
+    return cached ? JSON.parse(cached) : [];
+};
+
+// ========================================================
+// 📱 2. DEVICE LOCK & SETUP ENGINE
+// ========================================================
+document.addEventListener("DOMContentLoaded", () => {
+  let deviceBranch = localStorage.getItem('takodeal_device_branch');
+
+  if (!deviceBranch) {
+    document.getElementById('deviceSetupOverlay').style.display = 'flex';
+  } else {
+    let locDisplay = document.getElementById('displayDeviceLocation');
+    if (locDisplay) locDisplay.innerText = deviceBranch;
+    window.POS_BRANCH = deviceBranch;
+  }
+});
+
+window.lockDeviceToBranch = async function () {
+  let selectedBranch = document.getElementById('setupBranchSelect').value;
+  let deviceName = prompt("Give this device a name (e.g., 'Counter Tablet 1' or 'Dianne Phone'):", "New Device");
+  if (!deviceName) return; 
+
+  try {
+    let deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    localStorage.setItem('takodeal_device_branch', selectedBranch);
+    localStorage.setItem('takodeal_device_id', deviceId);
+    localStorage.setItem('takodeal_device_name', deviceName);
+
+    await addDoc(collection(db, "pos_devices"), {
+      deviceId: deviceId,
+      deviceName: deviceName,
+      branch: selectedBranch,
+      status: 'Pending', // 🔥 DEFAULTS TO PENDING NOW!
+      registeredAt: serverTimestamp(),
+      lastSeen: serverTimestamp()
+    });
+
+    alert(`⏳ Device Registered!\n\nPlease tell the Manager to approve "${deviceName}" in the HQ Control Center before you can log in.`);
+    location.reload();
+  } catch (e) {
+    console.error("Registration Error:", e);
+    alert("❌ Failed to register device. Check internet connection.");
+  }
+};
+
+// --- THE SMART FIREBASE PIN SEARCHER ---
+window.verifyPin = async function (pin) {
+  try {
+    // 🚨 1. NEW DEVICE SECURITY CHECK 🚨
+    let deviceId = localStorage.getItem('takodeal_device_id');
+    if (deviceId) {
+        const devQ = query(collection(db, "pos_devices"), where("deviceId", "==", deviceId));
+        const devSnap = await getDocs(devQ);
+        
+        if (!devSnap.empty) {
+            let devStatus = devSnap.docs[0].data().status;
+            if (devStatus === 'Pending') {
+                alert("⏳ DEVICE PENDING APPROVAL\n\nThe Manager has not approved this device yet. Please ask them to approve it in the Device Fleet tab.");
+                return "BLOCKED"; // Stops double-alerting
+            }
+            if (devStatus === 'Blocked') {
+                alert("🚫 DEVICE BLOCKED\n\nThis device has been blocked by the Manager.");
+                return "BLOCKED"; // Stops double-alerting
+            }
+        } else {
+            alert("❌ UNREGISTERED DEVICE\n\nThis device was removed from the HQ. Please clear your browser data and re-register.");
+            return "BLOCKED";
+        }
     }
 
-    async function reprintDashboardReceipt(receiptId) {
-      let tx = await window.getReceiptDetails(receiptId);
-      if (!tx) { alert("Receipt not found!"); return; }
-      lastTransactionData = tx;
-      window.printReceipt('receipt');
+    // 2. PROCEED WITH SMART PIN CHECK (String vs Number Fix!)
+    let staffData = null;
+    
+    // First, try searching for the exact String they typed
+    const qStr = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pin));
+    const snapStr = await window.getDocs(qStr);
+
+    if (!snapStr.empty) {
+        staffData = snapStr.docs[0].data();
+    } else {
+        // FALLBACK: If string fails, convert it to a Number and search again!
+        let pinNum = parseInt(pin);
+        if (!isNaN(pinNum)) {
+            const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
+            const snapNum = await window.getDocs(qNum);
+            if (!snapNum.empty) {
+                staffData = snapNum.docs[0].data();
+            }
+        }
     }
 
-    // --- UPGRADED CART & VARIANT LOGIC ---
+    if (!staffData) return null; // PIN is genuinely wrong
+
+    // 🛑 INJECT THE SANCTION CHECKER HERE BEFORE ALLOWING LOGIN!
+    // We don't 'await' it here so it doesn't slow down the login, but it will pop up instantly on the dashboard!
+    if (typeof window.checkActiveSanctions === 'function') {
+        window.checkActiveSanctions(staffData.cashierName);
+    }
+
+    // 🔥 SECURITY WALL REMOVED! Floating staff are now authorized to log in anywhere.
+    return staffData; // Allows the login!
+
+  } catch (error) {
+    console.error("Database error:", error);
+    return null;
+  }
+};
+
+// --- THE SMART FIREBASE MENU GROUPER (WITH OFFLINE BACKUP) ---
+window.fetchMenu = async function () {
+  try {
+    const snapshot = await window.getDocs(window.collection(window.db, "menu"));
+    let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (rawItems.length > 0) window.saveMenuToLocalHardDrive(rawItems);
+    return window.processRawItemsIntoMenu(rawItems);
+  } catch (error) {
+    console.warn("Cloud fetch failed. Loading menu from offline hard drive backup...", error);
+    let offlineItems = window.getMenuFromLocalHardDrive();
+    return window.processRawItemsIntoMenu(offlineItems);
+  }
+};
+
+window.processRawItemsIntoMenu = function(rawItems) {
+    let groupedMenu = [];
+    if (!window.masterPOSData) window.masterPOSData = {};
+    window.masterPOSData.phantomVariants = {}; 
+
+    rawItems.forEach(item => {
+        let name = item.name;
+        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad)$/i);
+        
+        if (match) {
+            let baseName = match[1].trim(); 
+            let sizeName = match[2].trim(); 
+            
+            let existingBase = groupedMenu.find(i => i.name === baseName && i.category === item.category);
+            if (!existingBase) {
+                let baseItem = { ...item, name: baseName, isGrouped: true };
+                groupedMenu.push(baseItem);
+                window.masterPOSData.phantomVariants[baseName] = [];
+            }
+            
+            window.masterPOSData.phantomVariants[baseName].push({
+                realName: item.name,
+                sizeLabel: sizeName,
+                price: parseFloat(item.price) || 0,
+                id: item.id
+            });
+            window.masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
+        } else {
+            groupedMenu.push(item);
+        }
+    });
+    return groupedMenu;
+};
+
+window.loadPOSData = async function() {
+    window.applySidebarLayout(); 
+    let products = await window.fetchMenu();
+    window.masterPOSData.items = products;
+    window.masterPOSData.variants = {}; 
+    window.masterPOSData.addons = [];
+
+    try {
+        const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+        if (configSnap.exists()) {
+            let configData = configSnap.data();
+            window.masterPOSData.settings = {
+                orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
+                payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
+                mixMatchFlavors: configData.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]
+            };
+            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
+        } else {
+            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
+            window.masterPOSData.settings = { 
+                orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
+                payMethods: ["Cash", "GCash", "Bank"],
+                mixMatchFlavors: ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"] 
+            };
+        }
+
+        window.masterPOSData.addonLayoutNames = [];
+        const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
+        if (layoutSnap.exists() && layoutSnap.data().itemNames) {
+            window.masterPOSData.addonLayoutNames = layoutSnap.data().itemNames;
+        }
+
+    } catch (e) {
+        console.warn("Could not load global config, using defaults", e);
+    }
+
+    window.masterPOSData.stockLevels = {};
+    const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
+    invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
+
+    window.masterPOSData.bom = [];
+    const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+    bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
+
+    if (typeof buildCategories === 'function') buildCategories();
+    else if (typeof window.buildCategories === 'function') window.buildCategories();
+
+    let otHtml = ''; 
+    window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
+    document.getElementById('mainOrderType').innerHTML = otHtml;
+    
+    let pmHtml = ''; 
+    let optHtml = ''; 
+    window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
+        let act = idx === 0 ? 'active' : ''; 
+        if (idx === 0) window.selectedPaymentMethod = m; 
+        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
+        optHtml += `<option value="${m}">${m}</option>`;
+    }); 
+    pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
+    
+    let payGrid = document.querySelector('.payment-grid');
+    if (payGrid) {
+        payGrid.innerHTML = pmHtml;
+        if (!document.getElementById('splitPaymentContainer')) {
+            payGrid.insertAdjacentHTML('afterend', `
+                <div id="splitPaymentContainer" style="display:none; margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 2px dashed #8b5cf6;">
+                    <div style="font-size:12px; font-weight:bold; color:#8b5cf6; margin-bottom:10px;">SPLIT PAYMENT DETAILS</div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
+                        <select id="splitMethod1" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
+                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
+                        <select id="splitMethod2" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
+                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                    </div>
+                    <div style="text-align: right; font-size: 14px; font-weight: 900; color: #ef4444;" id="splitRemainingAlert">Total Split Entered: ₱0.00</div>
+                </div>
+            `);
+        } else {
+            document.getElementById('splitMethod1').innerHTML = optHtml;
+            document.getElementById('splitMethod2').innerHTML = optHtml;
+        }
+    }
+};
+
+// --- UPGRADED CART & VARIANT LOGIC ---
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
+    if (!window.masterPOSData) window.masterPOSData = {};
+    if (!window.cart) window.cart = [];
+
     if (existingItem) { 
-        pendingItem = JSON.parse(JSON.stringify(existingItem)); 
-        editIndex = cart.indexOf(existingItem); 
+        window.pendingItem = JSON.parse(JSON.stringify(existingItem)); 
+        window.editIndex = window.cart.indexOf(existingItem); 
     } else { 
-        pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
-        editIndex = -1; 
+        window.pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
+        window.editIndex = -1; 
     }
 
-    // Check if this item has grouped sizes
-    let phantomSizes = masterPOSData.phantomVariants ? masterPOSData.phantomVariants[name] : null;
+    let phantomSizes = window.masterPOSData.phantomVariants ? window.masterPOSData.phantomVariants[name] : null;
     let hasSizes = phantomSizes && phantomSizes.length > 0;
     
     if (hasSizes && !existingItem) {
-        // Default to the smallest size initially
-        pendingItem.isGrouped = true;
-        pendingItem.realName = phantomSizes[0].realName;
-        pendingItem.basePrice = phantomSizes[0].price;
-        pendingItem.variantPrice = phantomSizes[0].price;
+        window.pendingItem.isGrouped = true;
+        window.pendingItem.realName = phantomSizes[0].realName;
+        window.pendingItem.basePrice = phantomSizes[0].price;
+        window.pendingItem.variantPrice = phantomSizes[0].price;
     }
 
-    // Hide the top price if we are showing sizes to prevent confusion!
-    document.getElementById('modalItemName').innerText = pendingItem.name;
+    document.getElementById('modalItemName').innerText = window.pendingItem.name;
     let priceHeader = document.getElementById('modalItemPrice').parentElement;
     
     if (hasSizes && !existingItem) {
         priceHeader.style.display = 'none'; 
     } else {
         priceHeader.style.display = 'flex';
-        document.getElementById('modalItemPrice').innerText = '₱ ' + pendingItem.basePrice.toFixed(2);
+        document.getElementById('modalItemPrice').innerText = '₱ ' + window.pendingItem.basePrice.toFixed(2);
     }
 
-    document.getElementById('modalMainQty').innerText = pendingItem.qty;
-    document.getElementById('orderNotesInput').value = pendingItem.notes;
+    document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
+    document.getElementById('orderNotesInput').value = window.pendingItem.notes;
     document.getElementById('variantModal').style.display = 'flex';
 
-    // Hide the old Add-on dropdown
     let oldDropdown = document.getElementById('addonSelectDropdown');
     if(oldDropdown) oldDropdown.style.display = 'none';
 
-    // 🔥 THE NEW BEAUTIFUL SIZES UI 🔥
     let variantContainer = document.getElementById('variantOptions');
     let variantSection = variantContainer ? variantContainer.parentElement : null;
     
     if (hasSizes) {
         if (variantSection) variantSection.style.display = 'block';
         if (variantContainer) {
-            // Force the parent container to be block and full width
             variantContainer.style.width = '100%'; 
             variantContainer.style.display = 'block';
             
-            // Flexbox wrapper that stretches its children
             let sizeHtml = '<div style="display: flex; flex-wrap: wrap; gap: 12px; width: 100%; margin-bottom: 15px;">';
             
             phantomSizes.forEach((sizeObj, idx) => {
-                let isActive = (pendingItem.realName === sizeObj.realName) ? 'active' : '';
+                let isActive = (window.pendingItem.realName === sizeObj.realName) ? 'active' : '';
                 sizeHtml += `
                     <div class="size-btn ${isActive}" onclick="window.selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this)" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
                         <div class="sz-name" style="margin-bottom: 5px;">${sizeObj.sizeLabel}</div>
@@ -3026,15 +419,13 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
         if (variantSection) variantSection.style.display = 'none';
     }
 
-    // 🔥 FETCH IMAGE AND ADDONS (Using the Real Name!)
     try {
-        const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", pendingItem.realName));
+        const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", window.pendingItem.realName));
         const snap = await window.getDocs(q);
 
         if (!snap.empty) {
             let itemData = snap.docs[0].data();
 
-            // 1. INJECT FOOD IMAGE (Only one image needed!)
             let imgContainer = document.getElementById('modalDynamicImage');
             if (!imgContainer) {
                 imgContainer = document.createElement('div');
@@ -3047,7 +438,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 imgContainer.innerHTML = '';
             }
 
-            // 2. BUILD DYNAMIC ADDON UI (AUTOMATIC BASE FLAVORS VS EXTRAS)
             let addonContainer = document.getElementById('addonSelectDropdown').parentElement;
             let newUiHtml = '';
 
@@ -3060,18 +450,17 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
                 let addonsList = Object.values(groupedAddons);
                 
-                // 🔥 APPLY MANAGER APP CUSTOM SORTING TO ADD-ONS!
-                addonsList.sort((a,b) => {
-                    let idxA = masterPOSData.addonLayoutNames ? masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase()) : -1;
-                    let idxB = masterPOSData.addonLayoutNames ? masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase()) : -1;
-                    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                    if (idxA !== -1) return -1;
-                    if (idxB !== -1) return 1;
-                    return a.name.localeCompare(b.name);
-                });
+                if (window.masterPOSData && window.masterPOSData.addonLayoutNames) {
+                    addonsList.sort((a,b) => {
+                        let idxA = window.masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase());
+                        let idxB = window.masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase());
+                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                        if (idxA !== -1) return -1;
+                        if (idxB !== -1) return 1;
+                        return a.name.localeCompare(b.name);
+                    });
+                }
                 
-                // Price = 0? Automatically groups as a mandatory "Base Flavor"
-                // Price > 0? Automatically groups as an optional "Extra"
                 let baseFlavors = addonsList.filter(a => a.price === 0);
                 let extras = addonsList.filter(a => a.price > 0);
 
@@ -3084,14 +473,14 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     baseFlavors.forEach((bf, bfIdx) => {
                         let isChecked = '';
                         if (existingItem) {
-                            if (existingItem.addons[bf.name]) isChecked = 'checked';
+                            if (existingItem.addons && existingItem.addons[bf.name]) isChecked = 'checked';
                         } else {
                             if (bfIdx === 0) isChecked = 'checked';
                         }
 
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #b45309;">
-                                <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="updateModalTotals()"> ${bf.name}</span>
+                                <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="window.updateModalTotals()"> ${bf.name}</span>
                                 <span style="color: #d97706; font-size: 11px;">Free</span>
                             </label>
                         `;
@@ -3102,10 +491,10 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 if (extras.length > 0) {
                     newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
                     extras.forEach(a => {
-                        let isChecked = (existingItem && existingItem.addons[a.name]) ? 'checked' : '';
+                        let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
-                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient}|${a.deductQty}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="updateModalTotals()"> ${a.name}</span>
+                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="window.updateModalTotals()"> ${a.name}</span>
                                 <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
                             </label>
                         `;
@@ -3140,933 +529,5471 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     document.getElementById('mixMatchPanel').style.display = 'none';
                     document.getElementById('mixMatchToggleIcon').innerText = '▼';
                     
-                    let sizeMatch = pendingItem.realName ? pendingItem.realName.match(/(\d+)\s*Pcs/i) : pendingItem.name.match(/(\d+)\s*Pcs/i);
+                    let sizeMatch = window.pendingItem.realName ? window.pendingItem.realName.match(/(\d+)\s*Pcs/i) : window.pendingItem.name.match(/(\d+)\s*Pcs/i);
                     window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
                     window.renderMixMatchList();
                 } else {
                     customArea.style.display = 'none';
                 }
             }
+        }
     } catch (error) { console.error("Error loading item details:", error); }
-            // 🔥 DYNAMIC MIX & MATCH STATE BUILDER
-            window.mixMatchState = {};
-
-            if (typeof window.mixMatchState !== 'undefined') {
-                let isTakoyaki = pendingItem.name.toLowerCase().includes('takoyaki') || pendingItem.name.toLowerCase().includes('grilled');
-                let customArea = document.getElementById('takoyakiCustomizationArea');
-                if (customArea) {
-                    if (isTakoyaki) {
-                        customArea.style.display = 'block';
-                        document.getElementById('mixMatchPanel').style.display = 'none';
-                        document.getElementById('mixMatchToggleIcon').innerText = '▼';
-                        let sizeMatch = pendingItem.realName ? pendingItem.realName.match(/(\d+)\s*Pcs/i) : pendingItem.name.match(/(\d+)\s*Pcs/i);
-                        window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
-                        window.renderMixMatchList();
-                    } else { customArea.style.display = 'none'; }
-                }
-            }
-    updateModalTotals(); 
+    
+    if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
 };
 
-// Handle clicking the new beautiful Size Buttons without flickering the screen
-window.selectRealVariant = function(realName, vPrice, clickedBtn) {
-    document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
-    clickedBtn.classList.add('active');
-    pendingItem.realName = realName;
-    pendingItem.variantPrice = vPrice;
-    pendingItem.basePrice = vPrice;
-    let priceHeader = document.getElementById('modalItemPrice').parentElement;
-    priceHeader.style.display = 'flex';
-    document.getElementById('modalItemPrice').innerText = '₱ ' + vPrice.toFixed(2);
-    
-    let sizeMatch = realName.match(/(\d+)\s*Pcs/i);
-    window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8;
-    for (let f in window.mixMatchState) window.mixMatchState[f] = 0; 
-    if (typeof window.renderMixMatchList === 'function') window.renderMixMatchList();
-    
-    updateModalTotals();
-};
-    
-    // Handle Phantom Size Changes
-    window.updatePhantomSize = function(radioBtn) {
-        let parts = radioBtn.value.split('|');
-        let realName = parts[0];
-        let newPrice = parseFloat(parts[1]);
-        
-        pendingItem.realName = realName;
-        pendingItem.basePrice = newPrice;
-        pendingItem.variantPrice = newPrice;
-        
-        document.getElementById('modalItemPrice').innerText = '₱ ' + newPrice.toFixed(2);
-        
-        // We must rapidly re-trigger the open modal function to reload the correct addons and stock warnings for this specific size!
-        window.openAddOrderModal(pendingItem.name, newPrice, pendingItem);
-    };
-    
-    function selectVariant(btn, vName, vPrice) {
-      document.querySelectorAll('#variantOptions .var-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active'); pendingItem.variantName = vName; pendingItem.variantPrice = vPrice; updateModalTotals();
+window.toggleSplitPaymentUI = function(event) {
+    let container = document.getElementById('splitPaymentContainer');
+    if (container.style.display === 'none') {
+        container.style.display = 'block';
+        window.selectedPaymentMethod = 'Split';
+        document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active'));
+        event.target.classList.add('active');
+        window.calcSplitRemaining();
+    } else {
+        container.style.display = 'none';
+        document.getElementById('splitAmount1').value = '';
+        document.getElementById('splitAmount2').value = '';
     }
+};
+
+window.calcSplitRemaining = function() {
+    let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
+    let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
+    let totalInput = a1 + a2;
+    document.getElementById('splitRemainingAlert').innerText = `Total Split Entered: ₱${totalInput.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    document.getElementById('splitRemainingAlert').style.color = "#8b5cf6";
+};
+
+// --- THE SHIFT ENGINE ---
+window.checkShiftStatus = async function (branch) {
+  try {
+    const q = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      let data = snap.docs[0].data();
+      // 🔥 THE CRITICAL FIX: We MUST grab the actual Document ID (shiftId) so orders can attach to it!
+      return { active: true, startedBy: data.cashier, startTime: data.startTime, shiftId: snap.docs[0].id };
+    }
+    return { active: false };
+  } catch (error) { console.error(error); return { active: false }; }
+};
+
+window.openNewShift = async function (branch, cashier, startCash) {
+  try {
+    const docRef = await addDoc(collection(db, "shifts"), {
+      branch: branch,
+      // 🔥 THE AUTOMATIC MEMORY GRABBER
+      cashier: localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || cashier || 'Unknown',
+      startingCash: startCash,
+      startTime: serverTimestamp(),
+      active: true,
+      grossSales: 0,
+      netSales: 0
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+};
+
+// --- THE 100% OFFLINE CHECKOUT ENGINE (INSTANT & NON-BLOCKING) ---
+window.processCheckout = async function (payload) {
+  try {
+    // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
+    let splitContainer = document.getElementById('splitPaymentContainer');
+    if (splitContainer && splitContainer.style.display !== 'none') {
+        let m1 = document.getElementById('splitMethod1').value;
+        let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
+        let m2 = document.getElementById('splitMethod2').value;
+        let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
+        
+        if (Math.abs((a1 + a2) - payload.netTotal) > 0.01) {
+            alert(`❌ ERROR: The Split Amounts (₱${a1+a2}) do not match the Order Total (₱${payload.netTotal})!\n\nPlease adjust the split amounts.`);
+            return null; 
+        }
+        
+        payload.paymentMethod = `Split (${m1} & ${m2})`;
+        payload.splitDetails = [ { method: m1, amount: a1 }, { method: m2, amount: a2 } ];
+    }
+
+    let d = new Date();
+    let dateStr = d.getFullYear().toString() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+
+    // 🔥 100% OFFLINE RECEIPT GENERATOR!
+    // Instead of asking the cloud to count receipts (which hangs when offline), we generate a localized, guaranteed-unique ID instantly.
+    let localCounter = parseInt(localStorage.getItem('takodeal_offline_rcpt_count')) || 1;
+    localStorage.setItem('takodeal_offline_rcpt_count', localCounter + 1);
     
-    // 🔥 SAFELY ATTACHED GLOBAL HELPER FUNCTIONS 🔥
-    window.adjustModalMainQty = function(delta) { 
-      let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
-      if (cur + delta > 0) { 
-        window.pendingItem.qty = cur + delta; 
-        document.getElementById('modalMainQty').innerText = window.pendingItem.qty; 
-        window.updateModalTotals(); 
-      } 
-    };
+    // Format: 20260521-0012-A8F (Date - Local Count - Random Hash to prevent collisions across tablets)
+    let randomHash = Math.random().toString(36).substring(2, 5).toUpperCase();
+    const receiptId = `${dateStr}-${localCounter.toString().padStart(4, '0')}-${randomHash}`;
 
-    window.setDiscountType = function(type) {
-      window.pendingItem.discountType = type; 
-      document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
-      let dvi = document.getElementById('discountValueInput'); 
-      dvi.style.display = type === 'none' ? 'none' : 'block'; 
-      dvi.value = '';
-      if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); window.pendingItem.discountVal = 0; }
-      else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
-      else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
-      window.updateModalTotals();
-    };
+    // 🚀 BACKGROUND FIREBASE WRITE (We DO NOT 'await' this. We let it queue silently!)
+    addDoc(collection(db, "transactions"), {
+      ...payload, receiptId: receiptId, timestamp: serverTimestamp()
+    }).catch(e => console.warn("Transaction queued locally for background sync.", e));
 
-    window.updateModalTotals = function() {
-      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
-      let addonsTotal = 0; 
-      
-      document.querySelectorAll('.addon-radio:checked').forEach(radio => {
-          let parts = radio.value.split('|');
-          addonsTotal += (parseFloat(parts[1]) || 0);
-      });
+    // ==========================================
+    // 🏦 AUTO-ROUTE & INVENTORY (SILENT BACKGROUND WORKERS)
+    // We wrap all of this in an async timeout so it NEVER blocks the receipt from printing!
+    // ==========================================
+    setTimeout(async () => {
+        // 1. Auto-Route Sales
+        try {
+            let paymentsToRoute = payload.splitDetails ? payload.splitDetails : [{ method: payload.paymentMethod || 'Cash', amount: payload.netTotal || 0 }];
+            for (let p of paymentsToRoute) {
+                if (p.amount <= 0) continue; 
+                const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", payload.branch), where("name", "==", p.method));
+                const accSnap = await getDocs(accQuery);
 
-      document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
-          let parts = cb.value.split('|');
-          addonsTotal += (parseFloat(parts[1]) || 0);
-      });
-
-      let lineTotal = (window.pendingItem.variantPrice + addonsTotal) * qty;
-      let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; 
-      window.pendingItem.discountVal = discInput;
-      
-      let calcDisc = 0;
-      if (window.pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
-      else if (window.pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
-      
-      let finalTotal = lineTotal - calcDisc;
-      
-      document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
-      document.getElementById('confirmAddToCartText').innerText = window.editIndex > -1 ? 'Update Order' : 'Add to Order';
-    };
-
-    window.confirmAddOrUpdateToCart = function() {
-      let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
-      window.pendingItem.notes = document.getElementById('orderNotesInput').value;
-      window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
-      window.pendingItem.addons = {}; 
-
-      if (typeof window.mixMatchState !== 'undefined') {
-          let totalCustomPcs = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
-          if (totalCustomPcs > 0) {
-              window.pendingItem.notes = window.pendingItem.notes ? window.pendingItem.notes + " | MIX: " : "MIX: ";
-              for (let flavor in window.mixMatchState) {
-                  let count = window.mixMatchState[flavor];
-                  if (count > 0) {
-                      window.pendingItem.addons[`${flavor} Filling`] = { price: 0, qty: count, linkedIngredient: flavor, deductQty: 1 };
-                      window.pendingItem.notes += `${count} ${flavor}, `;
-                  }
-              }
-              window.pendingItem.notes = window.pendingItem.notes.replace(/, $/, '');
-          }
-      } 
-
-      document.querySelectorAll('.addon-radio:checked').forEach(radio => {
-          let p = radio.value.split('|');
-          window.pendingItem.addons[p[0]] = { price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
-      });
-
-      document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
-          let p = cb.value.split('|');
-          window.pendingItem.addons[p[0]] = { price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
-      });
-
-      let addonsTotal = 0; 
-      for (let key in window.pendingItem.addons) addonsTotal += (window.pendingItem.addons[key].price * window.pendingItem.addons[key].qty);
-      
-      let lineTotalBeforeDisc = (window.pendingItem.variantPrice + addonsTotal) * qty;
-      let rowDiscount = 0;
-      if (window.pendingItem.discountType === 'percentage' && window.pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (window.pendingItem.discountVal / 100);
-      else if (window.pendingItem.discountType === 'fixed' && window.pendingItem.discountVal > 0) rowDiscount = window.pendingItem.discountVal;
-      
-      let finalTotal = lineTotalBeforeDisc - rowDiscount;
-      window.pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; 
-      window.pendingItem.qty = qty;
-      
-      if (window.editIndex >= 0) { 
-          window.cart[window.editIndex] = JSON.parse(JSON.stringify(window.pendingItem)); 
-          window.editIndex = -1; 
-      } else { 
-          window.cart.push(JSON.parse(JSON.stringify(window.pendingItem))); 
-      }
-      closeModal('variantModal'); 
-      window.renderCart();
-    };
-
-    window.renderCart = function() {
-      const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
-      if (window.cart.length === 0) { 
-        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
-        document.getElementById('displaySubTotal').innerText = '₱0.00'; 
-        document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
-        window.currentGrandTotal = 0; 
-      } else {
-        window.cart.forEach((item, index) => {
-          grandTotal += item.lineTotalFinal;
-          let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
-
-          let addonsText = '';
-          if (item.addons) {
-            for (let key in item.addons) {
-                let addon = item.addons[key];
-                if (addon.qty > 0) {
-                    let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
-                    addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
+                if (!accSnap.empty) {
+                    let accDoc = accSnap.docs[0];
+                    await updateDoc(doc(db, "cash_accounts", accDoc.id), { balance: (parseFloat(accDoc.data().balance) || 0) + p.amount });
+                } else {
+                    await addDoc(collection(db, "cash_accounts"), { branch: payload.branch, name: p.method, balance: p.amount });
                 }
             }
-          }
-      
-          list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
-            <div class="cart-item-desc">
-              <span class="cart-item-name">${item.name}</span>
-              <div class="cart-item-subtext">${addonsText}${notesText}</div>
-            </div>
-            <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
-            <div class="cart-item-qty">x ${item.qty}</div>
-            <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
-            <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">✖</button>
-          </li>`;
-        });
-        window.currentGrandTotal = grandTotal; 
-        document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
-        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
+        } catch (err) { console.warn("Ledger auto-route queued locally.", err); }
+
+        // 2. Inventory Updates (SILENT MODE - NO SPAM LOGS!)
+        try {
+            let lowStockTriggered = false;
+            for (let cartItem of payload.cart) {
+                let itemName = cartItem.name || cartItem.itemName;
+                let qtySold = cartItem.qty || 1;
+
+                const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+                const bomSnap = await getDocs(bomQ);
+                for (let bomDoc of bomSnap.docs) {
+                    let recipeData = bomDoc.data();
+                    let totalAmountToDeduct = (recipeData.qty || 0) * qtySold;
+                    const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", recipeData.ingredientName));
+                    const invSnap = await getDocs(invQ);
+                    if (!invSnap.empty) {
+                        let invData = invSnap.docs[0].data();
+                        let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
+                        
+                        // Just update the live stock silently
+                        await updateDoc(invSnap.docs[0].ref, { currentStock: newStock });
+                        if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
+                    }
+                }
+
+                if (cartItem.addons) {
+                    for (let addonKey in cartItem.addons) {
+                        let addon = cartItem.addons[addonKey];
+                        if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                            let totalAddonDeduct = addon.deductQty * addon.qty * qtySold;
+                            const addonInvQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", addon.linkedIngredient));
+                            const addonInvSnap = await getDocs(addonInvQ);
+                            if (!addonInvSnap.empty) {
+                                let invData = addonInvSnap.docs[0].data();
+                                let newStock = (invData.currentStock || 0) - totalAddonDeduct;
+                                
+                                // Just update the live stock silently
+                                await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
+                                if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (lowStockTriggered) window.pendingLowStockAlarm = true;
+
+            // 3. Takoyaki Global Vault Counter
+            let totalBallsInOrder = 0;
+            for (let cartItem of payload.cart) {
+                let match = (cartItem.name || cartItem.itemName).match(/(\d+)\s*Pcs/i);
+                if (match) totalBallsInOrder += (parseInt(match[1]) * (cartItem.qty || 1));
+            }
+            if (totalBallsInOrder > 0) {
+                await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: increment(totalBallsInOrder) }, { merge: true });
+            }
+        } catch(err) { console.warn("Inventory deduction queued locally.", err); }
+
+    }, 10); 
+    // ^ The timeout is set to 10ms so it immediately gets out of the way of the main UI thread!
+
+    // Auto-close split container
+    if (splitContainer) splitContainer.style.display = 'none';
+
+    // 🔥 INSTANT RETURN: The cashier sees the success screen immediately, regardless of network speed!
+    return receiptId;
+  } catch (error) { 
+      console.error(error); 
+      // Ultimate fallback so the cashier isn't stuck
+      return "OFFLINE-" + Date.now().toString().slice(-6); 
+  }
+};
+
+// --- THE DASHBOARD ENGINE ---
+window.getSalesDashboardData = async function (branch, shiftStartTime) {
+  try {
+    if (!shiftStartTime) return [];
+
+    // 🔥 FIX 1: Force the time into a proper object so Firebase can read it!
+    let validStartTime = shiftStartTime instanceof Date ? shiftStartTime : (shiftStartTime && shiftStartTime.toDate ? shiftStartTime.toDate() : new Date(shiftStartTime));
+
+    const q = query(collection(db, "transactions"),
+      where("branch", "==", branch),
+      where("timestamp", ">=", validStartTime)
+    );
+    const snapshot = await getDocs(q);
+
+    let transactions = [];
+    snapshot.forEach(doc => { transactions.push({ id: doc.id, ...doc.data() }); });
+    transactions.sort((a, b) => b.timestamp - a.timestamp);
+
+    return transactions;
+  } catch (error) { console.error("Dashboard Error:", error); return []; }
+};
+
+// --- LIVE SHIFT & CLOSE ENGINE ---
+window.getLiveShiftDetails = async function (branch) {
+  try {
+    const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true), limit(1));
+    const shiftSnap = await getDocs(shiftQ);
+    if (shiftSnap.empty) return null;
+
+    const shiftDoc = shiftSnap.docs[0];
+    const shiftData = shiftDoc.data();
+
+    // 🔥 FIX 1: Force the time into a proper object so Firebase can read it!
+    let validStartTime = shiftData.startTime && shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
+
+    // 1. Get Transactions
+    const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", validStartTime));
+    const txSnap = await getDocs(txQ);
+
+    // 2. Get Expenses (Cash Out)
+    // 🔥 FIX 2: ONLY look for expenses that were explicitly linked to THIS exact drawer shift!
+    const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftDoc.id));
+    const expSnap = await getDocs(expQ);
+    
+    let totalExpenses = 0;
+    expSnap.forEach(e => { totalExpenses += (e.data().amount || 0); });
+
+    let cashIn = 0;
+    txSnap.forEach(d => {
+      let tx = d.data();
+      if (tx.status !== "Voided") {
+        // 🔥 NEW: Calculate Cash perfectly, even if it's split!
+        if (tx.splitDetails) {
+            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+            if (cashSplit) cashIn += cashSplit.amount;
+        } else if (tx.paymentMethod === "Cash" || !tx.paymentMethod) {
+            cashIn += tx.netTotal || 0;
+        }
       }
+    });
+
+    return {
+      logId: shiftDoc.id, 
+      startedBy: shiftData.cashier,
+      startTime: validStartTime, 
+      startingCash: shiftData.startingCash || 0,
+      cashIn: cashIn,
+      cashOut: totalExpenses, // Now strictly isolated to this drawer!
+      expectedCash: (shiftData.startingCash || 0) + cashIn - totalExpenses
     };
+  } catch (e) { console.error(e); return null; }
+};
 
-    window.clearCart = function() { 
-      if (window.cart.length === 0) return; 
-      if (confirm("Clear order?")) { 
-        window.cart = []; 
-        window.renderCart(); 
-      } 
-    };
+window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
+  try {
+    const shiftRef = doc(db, "shifts", shiftId);
+    await updateDoc(shiftRef, { active: false, endTime: serverTimestamp(), actualCash: actualCash, expectedCash: expectedCash, difference: diff });
+    return true;
+  } catch (e) { console.error(e); throw e; }
+};
 
-    function clearCart() { if (cart.length === 0) return; if (confirm("Clear order?")) { cart = []; renderCart(); } }
+// --- EXPENSE ENGINE ---
+window.getBranchInventoryForExpense = async function (branch) { return []; }; // Placeholder until Inventory Phase
 
-    // --- 8. CHECKOUT SYSTEM ---
-    function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
-  if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
-  if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';}
-    function appendNumpad(num) { if (amountReceivedStr === "0" && num !== ".") amountReceivedStr = num; else if (num === "." && amountReceivedStr.includes(".")) return; else amountReceivedStr += num; updateNumpadDisplay(); }
-    function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
-    function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
-    function setExactAmount() { 
-        amountReceivedStr = window.currentGrandTotal.toString(); 
-        updateNumpadDisplay(); 
-    }
+window.processPettyCashExpense = async function (payload) {
+  try {
+    await addDoc(collection(db, "expenses"), { ...payload, timestamp: serverTimestamp() });
+    return "Expense recorded successfully!";
+  } catch (e) { console.error(e); throw e; }
+};
 
-    window.updateNumpadDisplay = function() { 
-        let originalTotal = window.currentGrandTotal || 0;
-        
-        // 1. Calculate Checkout Discount
-        let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
-        let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
-        
-        let discountAmount = 0;
-        if (dType === 'percentage' && dVal > 0) discountAmount = originalTotal * (dVal / 100);
-        else if (dType === 'fixed' && dVal > 0) discountAmount = dVal;
-        
-        if (discountAmount > originalTotal) discountAmount = originalTotal; // Cap at total
+// --- INVENTORY & STOCK COUNT ENGINE ---
+window.getInventoryForCount = async function (branch) {
+  try {
+    const q = query(collection(db, "inventory"), where("branch", "==", branch));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (e) {
+    console.error("Inventory Fetch Error:", e);
+    return [];
+  }
+};
 
-        // 2. Apply New Final Total & Show Preview
-        window.finalCheckoutAmount = originalTotal - discountAmount;
-        window.finalCheckoutDiscount = discountAmount;
-        
-        let totalDisplay = document.getElementById('checkoutTotalPayable');
-        if (totalDisplay) totalDisplay.innerText = '₱' + window.finalCheckoutAmount.toFixed(2);
-        
-        let previewRow = document.getElementById('checkoutDiscountPreviewRow');
-        if (previewRow) {
-            if (discountAmount > 0) {
-                previewRow.style.display = 'block';
-                document.getElementById('checkoutDiscountAmountPreview').innerText = discountAmount.toFixed(2);
-            } else {
-                previewRow.style.display = 'none';
-            }
-        }
-
-        // 3. Calculate Change based on the NEW total!
-        let received = parseFloat(amountReceivedStr) || 0; 
-        document.getElementById('checkoutReceived').innerText = '₱' + amountReceivedStr; 
-        
-        let change = received - window.finalCheckoutAmount; 
-        let changeDisplay = document.getElementById('checkoutChange');
-        if (changeDisplay) changeDisplay.innerText = '₱' + (change > 0 ? change.toFixed(2) : '0.00'); 
-
-        // 🔥 THE NEW SECURITY LOCK
-        let btn = document.getElementById('btnSubmitFinal');
-        if (btn) {
-            if (received >= window.finalCheckoutAmount) {
-                btn.disabled = false;
-                btn.style.background = "var(--primary)"; // Yellow/Gold color
-                btn.style.cursor = "pointer";
-                btn.style.opacity = "1";
-                btn.innerText = "Complete checkout";
-            } else {
-                btn.disabled = true;
-                btn.style.background = "#cbd5e1"; // Grayed out
-                btn.style.cursor = "not-allowed";
-                btn.style.opacity = "0.7";
-                btn.innerText = "Enter Amount Received...";
-            }
-        }
-    }
-
-    function setPaymentMethod(btn, method) { 
-        document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); 
-        btn.classList.add('active'); 
-        selectedPaymentMethod = method; 
-
-        // 🔥 SMART FEATURE: If they select a digital payment, auto-fill the exact amount!
-        if (method !== "Cash") {
-            setExactAmount();
-        }
-    }
-
-    async function submitFinalOrder() {
-      const btn = document.getElementById('btnSubmitFinal'); 
-      btn.innerText = "Processing Payment..."; 
-      btn.disabled = true;
-
-      // 🚨 ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
-      let custName = document.getElementById('finalCustomerName').value.trim();
-      if ((selectedPaymentMethod === 'Grab' || selectedPaymentMethod === 'GCash') && custName === "") {
-          alert(`🚨 SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact Grab Order ID or GCash Ref Number in the Customer Name box to prevent phantom orders.`);
-          btn.innerText = "Complete checkout"; 
-          btn.disabled = false;
-          return;
-      }
-
-      // 🔥 THE FIX: Securely pull the Shift ID from the active memory
-      let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) 
-                         ? currentShift.shiftId 
-                         : "UNKNOWN";
-
-      // 🚨 GRAB DISCOUNT DATA (THIS IS WHAT WAS MISSING!)
-      let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
-      let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
-      let dReason = document.getElementById('checkoutDiscountReason') ? document.getElementById('checkoutDiscountReason').value.trim() : '';
-      let dAmount = window.finalCheckoutDiscount || 0;
-
-      if (dAmount > 0 && dReason === "") {
-          alert("⚠️ A Discount Reason or ID Number is REQUIRED when applying a total order discount!");
-          btn.innerText = "Complete checkout"; 
-          btn.disabled = false;
-          return;
-      }
-
-      const payload = {
-        branch: sessionUser.branch,
-        cashier: sessionUser.cashierName,
-        shiftId: exactShiftId, 
-        orderType: document.getElementById('mainOrderType').value,
-        paymentMethod: selectedPaymentMethod,
-        
-        // 🔥 SAVING THE DISCOUNT DETAILS
-        subTotalBeforeDiscount: window.currentGrandTotal,
-        globalDiscountType: dType,
-        globalDiscountValue: dVal,
-        globalDiscountAmount: dAmount,
-        globalDiscountReason: dReason,
-        
-        netTotal: window.finalCheckoutAmount || window.currentGrandTotal, // Uses discounted amount!
-        customerName: document.getElementById('finalCustomerName').value,
-        amountReceived: amountReceivedStr,
-        cart: cart
-      };
-
-      let receiptId = await window.processCheckout(payload);
-      if (receiptId) {
-        if (window.activeMobileOrderId) {
-            await window.deleteDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId));
-            window.activeMobileOrderId = null; 
-        }
-        lastTransactionData = { ...payload, receiptId: receiptId };
-        document.getElementById('rcptId').innerText = `: ${receiptId}`;
-        let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
-        cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete checkout"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
-      } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete checkout"; btn.disabled = false; }
-    }
-
-// ==========================================
-// 🖨️ ULTIMATE RAWBT PRINTER ENGINE (MASTER VERSION)
-// ==========================================
-window.printReceipt = async function(type) {
-    let d = lastTransactionData; if (!d || !d.cart) return;
-    let hasFood = false; let hasDrinks = false;
-    d.cart.forEach(item => { let cat = (item.category || "").toLowerCase(); if (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee')) hasDrinks = true; else hasFood = true; });
+// 🔥 UPGRADED SEARCHABLE STOCK COUNT
+window.openInventoryCheckModal = async function() {
+    document.getElementById('invCheckListContainer').innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching inventory...</div>'; 
+    document.getElementById('inventoryCheckModal').style.display = 'flex';
     
-    let rSettings = null;
-    if (typeof window.getReceiptSettings === 'function') {
-        rSettings = await window.getReceiptSettings();
+    // Clear out the permanent search bar at the top!
+    let searchBox = document.getElementById('cashierStockSearch');
+    if (searchBox) searchBox.value = '';
+
+    let items = await window.getInventoryForCount(sessionUser.branch);
+    window.tempStockList = items.filter(i => {
+        let cat = (i.category || "").toLowerCase();
+        return !cat.includes("prepared batch") && !cat.includes("prep batch") && !cat.includes("raw material");
+    }).sort((a, b) => a.name.localeCompare(b.name)); 
+
+    window.renderStockCountUI('');
+};
+
+window.renderStockCountUI = function(searchTerm = '') {
+    let container = document.getElementById('invCheckListContainer');
+    let html = '';
+
+    let filtered = window.tempStockList.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    if (filtered.length === 0) {
+        html += '<div style="text-align:center; padding:20px; color:#888;">No items found.</div>';
+    } else {
+        filtered.forEach(i => { 
+            let existingVal = window.tempCountData ? (window.tempCountData[i.name] || '') : '';
+            html += `<div class="count-row" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f1f1;">
+                <div style="flex: 2; font-weight:600; color:#444; font-size:14px;">${i.name}</div>
+                <div style="flex: 1; color:#888; font-size:12px; text-align: center;">${i.uom || 'units'}</div>
+                <div style="flex: 1;"><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty" value="${existingVal}" onchange="window.saveTempCount(this)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: center;"></div>
+            </div>`; 
+        }); 
     }
     
-    let storeName = rSettings?.storeName || "TAKODEAL";
-    
-    let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
-    let storeAddress = "";
-    if (currentBranch === "Cabantian") storeAddress = "B14L6 Deca Homes Cabantian";
-    else if (currentBranch === "Citygate") storeAddress = "Citygate Foodpark";
-    else if (currentBranch === "Maa") storeAddress = "Maa Road, Davao City";
-    else storeAddress = "Takodeal Headquarters";
-    
-    let storeContact = "09629721305";
-    let footerMsg = "Acknowledgement Receipt\nThank you!";
+    container.innerHTML = html;
+};
 
-    function centerTxt(text) {
-        let cleanText = text.trim();
-        if (cleanText.length >= 32) return cleanText;
-        let leftPad = Math.floor((32 - cleanText.length) / 2);
-        return " ".repeat(leftPad) + cleanText;
-    }
+window.saveTempCount = function(input) {
+    if(!window.tempCountData) window.tempCountData = {};
+    window.tempCountData[input.getAttribute('data-item')] = input.value;
+};
 
-    // 🔥 FORCE GRAB ORDER TYPE
-    let orderType = d.orderType || (document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : "DINE-IN");
-    orderType = orderType.toUpperCase();
-
-    // ------------------------------------------
-    // 🔪 KITCHEN & BAR TICKETS 
-    // ------------------------------------------
-    if (type === 'food' || type === 'drinks') {
-        let cartHtml = '';
-        d.cart.forEach(item => {
-          let cat = (item.category || "").toLowerCase(); let isDrink = (cat.includes('drink') || cat.includes('tea') || cat.includes('coffee'));
-          if (type === 'food' && isDrink) return; if (type === 'drinks' && !isDrink) return;
-          cartHtml += `<div style="display:flex; justify-content:space-between; margin-bottom: 3px; font-size: 13px;"><span style="font-weight:bold;">${item.qty}x ${item.name}</span></div>`;
-          if (item.addons) {
-            for (let key in item.addons) {
-              if (item.addons[key].qty > 0) {
-                cartHtml += `<div style="font-size: 12px; color: #333; padding-left: 15px; margin-bottom: 2px;">+ ${item.addons[key].qty}x ${key}</div>`;
-              }
-            }
-          }
-          if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">↘ ${item.notes}</div>`; 
+window.submitInventoryCheck = async function () {
+    let counts = [];
+    if(window.tempCountData) {
+        Object.keys(window.tempCountData).forEach(name => {
+            let val = parseFloat(window.tempCountData[name]);
+            if(!isNaN(val)) counts.push({ name: name, physicalQty: val });
         });
+    }
+    if (counts.length === 0) { alert("Please enter at least one quantity before submitting."); return; }
+    
+    let btn = document.getElementById('btnSubmitInvCheck'); btn.innerText = "Submitting..."; btn.disabled = true;
+    try { 
+        await addDoc(collection(db, "stock_counts"), {
+            branch: sessionUser.branch,
+            cashier: sessionUser.cashierName,
+            counts: counts,
+            timestamp: serverTimestamp()
+        });
+        alert("End-of-day stock count submitted securely!"); 
+        window.tempCountData = {}; // Clear temp memory
+        closeModal('inventoryCheckModal'); 
+    }
+    catch (e) { alert("Error submitting stock count. Check connection."); } 
+    btn.innerText = "Submit Count"; btn.disabled = false;
+};
 
-        let headerTxt = type === 'food' ? 'KITCHEN TICKET' : 'BAR TICKET'; 
-        let crossRefNote = '';
-        if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`;
-        if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`;
+// --- PARKED ORDERS ENGINE ---
+window.parkOrderToDB = async function (payload) {
+  try {
+    const docRef = await addDoc(collection(db, "parked_orders"), { ...payload, timestamp: serverTimestamp() });
+    return docRef.id;
+  } catch (e) { console.error(e); return null; }
+};
 
-        let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 5px;">${headerTxt}</div><div class="center bold" style="font-size: 20px; margin-bottom: 10px;">>> ${orderType} <<</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div></div>`;
-        
-        let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
-        
-        // \x1B\x40 RESETS THE PRINTER
-        let plainTextReceipt = "\x1B\x40\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
-        let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
-        window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-        return;
+window.getParkedOrders = async function (branch) {
+  try {
+    const q = query(collection(db, "parked_orders"), where("branch", "==", branch));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp);
+  } catch (e) { console.error(e); return []; }
+};
+
+window.deleteParkedOrder = async function (docId) {
+  try {
+    await deleteDoc(doc(db, "parked_orders", docId));
+    return true;
+  } catch (e) { console.error(e); return false; }
+};
+
+// --- VOID & DETAILS ENGINE (WITH INVENTORY REPLENISHMENT) ---
+window.voidTransaction = async function (receiptId, cashierName, branch) {
+  try {
+    const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
+    const snap = await getDocs(q);
+    if (snap.empty) throw new Error("Transaction not found");
+    
+    const txDoc = snap.docs[0];
+    const docId = txDoc.id;
+    const txData = txDoc.data();
+
+    // Prevent double-voiding glitches
+    if (txData.status === "Voided") {
+        alert("⚠️ This transaction is already voided.");
+        return false;
     }
 
-    // ------------------------------------------
-    // 🧾 CUSTOMER RECEIPT
-    // ------------------------------------------
-    let proReceipt = "\x1B\x40\n"; 
-    // Only fire the electrical pulse if the Auto-Drawer switch is ON!
-    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') {
-        proReceipt = "\x1B\x40\x1B\x70\x00\x19\x96\n"; 
-    }
-    proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
-    if (storeAddress) proReceipt += centerTxt(storeAddress) + "\n";
-    if (storeContact) proReceipt += centerTxt(storeContact) + "\n";
-    proReceipt += "================================\n";
+    // 1. Void the transaction record
+    await updateDoc(doc(db, "transactions", docId), { status: "Voided", voidedBy: cashierName, voidTime: serverTimestamp() });
 
-    const now = new Date();
-    let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
-    const timeStr = hours + ':' + minutes + ' ' + ampm;
+    // 2. 🔥 INVENTORY REPLENISHMENT ENGINE 🔥
+    if (txData.cart && Array.isArray(txData.cart)) {
+      for (let cartItem of txData.cart) {
+        let itemName = cartItem.name || cartItem.itemName;
+        let qtyVoided = cartItem.qty || 1;
 
-    let cashier = d.cashierName || localStorage.getItem('cashierName') || "Staff";
-    let customer = d.customerName || "Guest";
+        // --- A. REPLENISH MAIN RECIPE (BOM) ---
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
 
-    proReceipt += "Date: " + now.toLocaleDateString() + "\n";
-    proReceipt += "Time: " + timeStr + "\n";
-    proReceipt += "================================\n";
-    proReceipt += centerTxt(">> " + orderType + " <<") + "\n"; 
-    proReceipt += "================================\n";
-    proReceipt += "Customer: " + customer + "\n";
-    proReceipt += "Cashier: " + cashier + "\n";
-    proReceipt += "--------------------------------\n";
-    proReceipt += "ITEM/S PURCHASED\n";
-    proReceipt += "--------------------------------\n";
+        for (let bomDoc of bomSnap.docs) {
+          let recipeData = bomDoc.data();
+          let ingredientName = recipeData.ingredientName;
+          
+          // Calculate exactly how much to return (+ instead of -)
+          let totalAmountToReturn = (recipeData.qty || 0) * qtyVoided;
 
-    let grandTotal = 0;
-    let totalDiscount = 0;
+          // Find the ingredient in this specific branch's inventory
+          const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ingredientName));
+          const invSnap = await getDocs(invQ);
 
-    d.cart.forEach(item => {
-        let name = item.name || "Item";
-        let qty = parseFloat(item.qty || 1);
-        let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-        let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-        let baseLineTotal = qty * basePrice;
-        let itemGrossTotal = baseLineTotal;
+          if (!invSnap.empty) {
+            let invDocRef = invSnap.docs[0].ref;
+            let invData = invSnap.docs[0].data();
+            
+            // Add it back to the current stock!
+            let newStock = (invData.currentStock || 0) + totalAmountToReturn;
+            await updateDoc(invDocRef, { currentStock: newStock });
 
-        proReceipt += name + variantName + "\n";
-        let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-        let totalStr = baseLineTotal.toFixed(2);
-        proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
+            // 🔥 THE FIX: Changed 'safeFirstName' to 'cashierName' so it doesn't crash!
+            await addDoc(collection(db, "stock_logs"), {
+                branch: branch,
+                item: ingredientName,
+                uom: invData.uom || 'units',
+                oldQty: invData.currentStock || 0,
+                newQty: newStock,
+                variance: totalAmountToReturn, 
+                type: "Transaction Voided",
+                note: `Receipt ${receiptId} voided by ${cashierName}`,
+                user: cashierName,
+                timestamp: serverTimestamp()
+            });
+          }
+        }
 
-        if (item.addons) {
-            for (let key in item.addons) {
-                let addon = item.addons[key];
-                if (addon.qty > 0) {
-                    let addonPrice = parseFloat(addon.price || 0);
-                    let addonTotalQty = qty * addon.qty; 
-                    let addonLineTotal = addonTotalQty * addonPrice;
-                    itemGrossTotal += addonLineTotal;
-                    
-                    let aName = `  + ${addon.qty}x ${key}`;
-                    if (addonPrice > 0) {
-                        let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                        let aTotalStr = addonLineTotal.toFixed(2);
-                        proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                    } else {
-                        proReceipt += aName + "\n";
+        // --- B. REPLENISH ADD-ONS ---
+        if (cartItem.addons) {
+            for (let addonKey in cartItem.addons) {
+                let addon = cartItem.addons[addonKey];
+                
+                // If the addon has a linked ingredient, return it!
+                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                    let totalAddonReturn = addon.deductQty * addon.qty * qtyVoided;
+
+                    const addonInvQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", addon.linkedIngredient));
+                    const addonInvSnap = await getDocs(addonInvQ);
+
+                    if (!addonInvSnap.empty) {
+                        let invDocRef = addonInvSnap.docs[0].ref;
+                        let invData = addonInvSnap.docs[0].data();
+                        
+                        let newStock = (invData.currentStock || 0) + totalAddonReturn;
+                        await updateDoc(invDocRef, { currentStock: newStock });
+
+                      // 🔥 THE FIX: Changed 'safeFirstName' to 'cashierName' here as well!
+                      await addDoc(collection(db, "stock_logs"), {
+                          branch: branch,
+                          item: addon.linkedIngredient,
+                          uom: invData.uom || 'units',
+                          oldQty: invData.currentStock || 0,
+                          newQty: newStock,
+                          variance: totalAddonReturn, 
+                          type: "Transaction Voided (Addon)",
+                          note: `Receipt ${receiptId} voided by ${cashierName}`,
+                          user: cashierName,
+                          timestamp: serverTimestamp()
+                      });
                     }
                 }
             }
         }
-
-        if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
-
-        let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
-        let diff = itemGrossTotal - actualFinal;
-        if (diff > 0.01) totalDiscount += diff;
         
-        grandTotal += itemGrossTotal; 
+      }
+    }
+
+    // 🔥 NEW: REVERSE THE 1 MILLION BALLS TRACKER 🔥
+    let totalBallsToReturn = 0;
+    for (let cartItem of txData.cart) {
+        let itemName = cartItem.name || cartItem.itemName;
+        let match = itemName.match(/(\d+)\s*Pcs/i);
+        if (match) {
+            let ballsInBox = parseInt(match[1]);
+            totalBallsToReturn += (ballsInBox * (cartItem.qty || 1));
+        }
+    }
+
+    if (totalBallsToReturn > 0) {
+        const statsRef = doc(db, "settings", "global_stats");
+        await setDoc(statsRef, { 
+            totalTakoyakiBalls: increment(-totalBallsToReturn) 
+        }, { merge: true });
+    }
+
+    // 3. 🚨 THE MANAGER ALARM
+    await addDoc(collection(db, "manager_alerts"), {
+      type: "VOID_ALERT",
+      branch: branch,
+      cashier: cashierName,
+      receiptId: receiptId,
+      message: `WARNING: Cashier ${cashierName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
+      timestamp: serverTimestamp(),
+      isRead: false
     });
 
-    let amountRec = parseFloat(d.amountReceived) || 0;
-    let paymentMethod = d.paymentMethod || "Cash";
-    
-    // 🔥 GRAB THE GLOBAL DISCOUNT & REASON
-    let globalDiscount = parseFloat(d.globalDiscountAmount) || 0;
-    let globalReason = d.globalDiscountReason || "Order Discount";
-    
-    let subtotalVal = grandTotal.toFixed(2);
-    
-    // 🔥 EXACT MATH RE-CALCULATION
-    let finalTotalDue = parseFloat(d.netTotal) || (grandTotal - totalDiscount - globalDiscount);
-    let totalVal = finalTotalDue.toFixed(2);
-    
-    let changeVal = 0;
-    if (amountRec > 0) {
-        changeVal = amountRec - finalTotalDue;
-        if (changeVal < 0) changeVal = 0;
-    }
-
-    proReceipt += "--------------------------------\n";
-    function formatLine(label, value) {
-        let valStr = value.toFixed(2); let padding = 32 - label.length - valStr.length;
-        return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-    }
-    
-    proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-    
-    // Item-level discounts
-    if (totalDiscount > 0.01) {
-        proReceipt += formatLine("Item Discounts:", -parseFloat(totalDiscount));
-    }
-    
-    // Global Order Discount
-    if (globalDiscount > 0.01) {
-        proReceipt += formatLine("Order Discount:", -parseFloat(globalDiscount));
-        proReceipt += `  Note: ${globalReason}\n`;
-    }
-    
-    proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-    proReceipt += "--------------------------------\n";
-    
-    if (amountRec > 0) {
-        proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
-        proReceipt += "Payment Method: " + paymentMethod + "\n";
-        proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
-    } else {
-        proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n";
-    }
-    proReceipt += "\n";
-    
-    let footerLines = footerMsg.split('\n');
-    footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
-    proReceipt += "\n\n\n\n";
-    
-    let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-    window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+    return true;
+  } catch (e) { 
+    console.error(e); 
+    throw e; 
+  }
 };
 
-// ==========================================
-// 🕒 ULTIMATE PARKED ORDERS & PRINTER ENGINE
-// ==========================================
-window.currentParkedOrdersList = []; 
+// --- RECEIPT DETAILS ENGINE ---
+window.getReceiptDetails = async function (receiptId) {
+  try {
+    const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    return snap.docs[0].data();
+  } catch (e) { console.error(e); return null; }
+};
 
-window.parkOrder = async function() {
-    if (typeof cart === 'undefined' || cart.length === 0) return;
-    let customerName = prompt("Enter Customer Name or Table Number:"); if (!customerName) return;
+window.viewReceiptDetails = async function (receiptId) {
+    let tx = await window.getReceiptDetails(receiptId);
+    if (!tx) { alert("Receipt not found!"); return; }
+
+    // 🚨 SECURITY: Mask the totals if physical cash was involved
+    let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
+    let displayTotal = isCashTx ? `<span style="color:#94a3b8; font-family: monospace;">*** (Hidden)</span>` : (tx.netTotal || 0).toFixed(2);
+
+    let modalHtml = `
+        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #ccc;">
+            <div style="font-weight: bold; font-size: 16px;">OR# ${tx.receiptId}</div>
+            <div style="font-size: 12px; color: #666;">Date: ${tx.timestamp ? tx.timestamp.toDate().toLocaleString() : 'Unknown'}</div>
+            <div style="font-size: 12px; color: #666;">Cashier: ${tx.cashier || 'Unknown'}</div>
+            <div style="font-size: 12px; color: #666;">Order Type: <strong style="color:var(--primary);">${tx.orderType || 'N/A'}</strong></div>
+            <div style="font-size: 12px; color: #666;">Method: ${tx.paymentMethod || 'Cash'}</div>
+            <div style="font-size: 12px; color: #666; margin-top:5px; font-weight:bold;">Status: <span style="color:${tx.status==='Voided' ? 'red' : 'green'};">${tx.status || 'Paid'}</span></div>
+        </div>
+        <div style="max-height: 250px; overflow-y: auto; margin-bottom: 15px;">
+    `;
+
+    if (tx.cart && tx.cart.length > 0) {
+        tx.cart.forEach(item => {
+            let addonsText = '';
+            if (item.addons) {
+                for(let key in item.addons) {
+                    if(item.addons[key].qty > 0) addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${item.addons[key].qty}x ${key}</span>`;
+                }
+            }
+            
+            // Mask individual line items too, otherwise they will just add them up!
+            let lineTotalDisplay = isCashTx ? '***' : (item.lineTotalFinal || 0).toFixed(2);
+
+            modalHtml += `
+                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
+                    <div><strong>${item.qty}x ${item.name}</strong><br><span style="font-size:11px; color:#888;">${item.variantName !== 'Standard' ? item.variantName : ''}</span>${addonsText}</div>
+                    <div style="font-weight: bold; color: ${isCashTx ? '#94a3b8' : '#333'}">₱${lineTotalDisplay}</div>
+                </div>
+            `;
+        });
+    }
+
+    modalHtml += `
+        </div>
+        <div style="border-top: 1px solid #eee; padding-top: 15px; font-size: 18px; font-weight: bold; text-align: right; color: var(--primary);">
+            TOTAL: ₱${displayTotal}
+        </div>
+    `;
+
+    document.getElementById('txDetailBody').innerHTML = modalHtml;
+    document.getElementById('txDetailModal').style.display = 'flex';
+};
+
+// ========================================================
+// 💵 CASH DENOMINATION CALCULATOR
+// ========================================================
+const denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
+
+// This builds the table when the modal opens
+window.buildDenominationTable = function () {
+  const tbody = document.getElementById('denominationTable');
+  if (!tbody) return;
+
+  let html = '';
+  denominations.forEach(d => {
+    html += `
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold;">₱${d}</td>
+        <td style="padding: 4px 0;">
+          <input type="number" id="qty${d}" min="0" onkeyup="calculateDenominations()" onchange="calculateDenominations()" style="width: 60px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; text-align: center;">
+        </td>
+        <td id="tot${d}" style="padding: 4px 0; text-align: right; color: #555;">₱0.00</td>
+      </tr>
+    `;
+  });
+  tbody.innerHTML = html;
+};
+
+// This instantly calculates the math when they type a number
+window.calculateDenominations = function() {
+    let breakdown = {};
+    // Grab all the dynamic inputs we created in the End Shift Modal
+    document.querySelectorAll('.denom-input').forEach(input => {
+        let val = input.getAttribute('data-val');
+        let pcs = parseInt(input.value) || 0;
+        if (pcs > 0) {
+            breakdown["₱" + val] = pcs;
+        }
+    });
+    return breakdown;
+};
+
+// Call this when clicking your "End Shift" button to open the new UI
+window.openEndShiftClearance = async function() {
+    if (typeof closeModal === 'function') closeModal('shiftModal');
+    let endModal = document.getElementById('endShiftModal');
+    if (endModal) endModal.style.display = 'flex';
+
+    // 1. Render denominations table (Sorted 1000 down to 1)
+    let denomHtml = '';
+    let denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
+    denominations.forEach(val => {
+        denomHtml += `
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px 5px; font-weight: bold; color: #555;">₱${val}</td>
+            <td style="padding: 8px 5px;"><input type="number" class="denom-input input-box" data-val="${val}" placeholder="0" style="width: 100%; text-align: center; padding: 6px;" onkeyup="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()" onchange="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()"></td>
+            <td style="padding: 8px 5px; text-align: right; font-weight: bold; color: var(--primary);" class="denom-row-total">₱0.00</td>
+        </tr>`;
+    });
     
+    // 🛡️ CRASH-PROOF WRAPPER: Only set innerHTML if the table actually exists!
+    let denomTable = document.getElementById('denominationTable');
+    if (denomTable) {
+        denomTable.innerHTML = denomHtml;
+    } else {
+        console.warn("HTML ID 'denominationTable' is missing. Skipping.");
+    }
+    
+    if (typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash(); 
+
+    // 2. FETCH KITCHEN PREP LOGS FOR THIS SHIFT
+    let prepContainer = document.getElementById('dynamicShiftPrepLogs');
+    
+    // 🛡️ CRASH-PROOF WRAPPER: Only fetch logs if the prep container exists!
+    if (prepContainer) {
+        prepContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #888; padding: 20px;">Fetching prep logs...</div>';
+        
+        try {
+            if (typeof currentShift === 'undefined' || !currentShift || !currentShift.startTime) {
+                prepContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">No active shift found.</div>';
+                return;
+            }
+            
+            // Remove "window." prefix for Firebase functions!
+            const q = query(collection(db, "stock_logs"), 
+                where("branch", "==", sessionUser.branch), 
+                where("timestamp", ">=", currentShift.startTime)
+            );
+            const snap = await getDocs(q);
+            
+            let logs = [];
+            snap.forEach(doc => {
+                let d = doc.data();
+                if (d.type && (d.type.toLowerCase().includes("prep") || d.type.toLowerCase().includes("batch"))) {
+                    logs.push(d);
+                }
+            });
+
+            logs.sort((a,b) => b.timestamp - a.timestamp); 
+            
+            let html = '';
+            if (logs.length > 0) {
+                logs.forEach(log => {
+                    let t = log.timestamp.toDate().toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'});
+                    html += `
+                        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #fcd34d; padding: 8px 0;">
+                            <div>
+                                <strong style="color: #92400e; font-size: 13px;">${log.item}</strong><br>
+                                <span style="font-size: 10px; color: #b45309;">${t}</span>
+                            </div>
+                            <strong style="color: #16a34a; font-size: 14px;">+${log.variance} ${log.uom}</strong>
+                        </div>
+                    `;
+                });
+            } else {
+                html = '<div style="text-align:center; font-size: 13px; color: #b45309; padding: 20px; font-style: italic;">No kitchen prep logged during this shift.</div>';
+            }
+            prepContainer.innerHTML = html;
+        } catch(e) {
+            console.error("Prep Fetch Error:", e);
+            prepContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">Error fetching logs. Check console.</div>';
+        }
+    } else {
+        console.warn("HTML ID 'dynamicShiftPrepLogs' is missing. Skipping prep fetch.");
+    }
+};
+
+// Also apply a crash-proof wrapper to the total calculator just in case!
+window.calculateGrandTotalCash = function() {
+    let total = 0;
+    document.querySelectorAll('.denom-input').forEach(input => {
+        let val = parseInt(input.getAttribute('data-val'));
+        let pcs = parseInt(input.value) || 0;
+        let rowTotal = val * pcs;
+        total += rowTotal;
+        
+        let rowTotalEl = input.parentElement.nextElementSibling;
+        if (rowTotalEl) {
+            rowTotalEl.innerText = '₱' + rowTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
+        }
+    });
+    
+    let grandTotalEl = document.getElementById('grandTotalCash');
+    if (grandTotalEl) {
+        grandTotalEl.innerText = '₱' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
+    }
+};
+
+// ========================================================
+// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (CRASH-PROOF EDITION)
+// ========================================================
+window.submitComprehensiveCloseShift = async function () {
+    // 1. Grab the button safely to prevent double-clicks
+    let confirmBtn = document.querySelector('#endShiftModal .btn-place:last-child') || document.querySelector('button[onclick*="submitComprehensiveCloseShift"]');
+    if (confirmBtn && confirmBtn.disabled) return; 
+
+    let origText = confirmBtn ? confirmBtn.innerText : '🛑 Confirm & End Shift';
+    if (confirmBtn) { 
+        confirmBtn.innerText = "⏳ Verifying Count..."; 
+        confirmBtn.disabled = true; 
+    }
+
+    try {
+        // 2. Crash-Proof Cash Breakdown Reader
+        let declaredCash = 0;
+        let cashBreakdown = {};
+        
+        document.querySelectorAll('.denom-input').forEach(input => {
+            let val = parseInt(input.getAttribute('data-val'));
+            let pcs = parseInt(input.value) || 0;
+            if (pcs > 0) {
+                cashBreakdown["₱" + val] = pcs;
+                declaredCash += (val * pcs);
+            }
+        });
+
+        // Bypass Physical Stock (Since we replaced it with Kitchen Prep Logs)
+        let physicalStock = {};
+
+        // 3. Identify Shift Safely
+        let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
+        if (!shiftId) throw new Error("No active shift found to close.");
+        
+        let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashierName = localStorage.getItem('cashierName') || 'Unknown';
+        
+        // Ensure we have a valid Date object for queries
+        let startTime = new Date();
+        if (typeof activeShiftDetails !== 'undefined' && activeShiftDetails && activeShiftDetails.startTime) {
+            startTime = activeShiftDetails.startTime;
+            if (startTime.toDate) startTime = startTime.toDate(); // Convert Firestore Timestamp to JS Date
+        } else {
+            startTime.setHours(0,0,0,0);
+        }
+
+        // 4. Crunch Transactions
+        let totalCashSales = 0; let totalDigitalSales = 0;
+        let digitalBreakdown = {}; let shiftIngredientBurn = {}; 
+
+        // We removed 'window.' from the Firebase commands so they work correctly!
+        const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const txSnap = await getDocs(txQ);
+
+        txSnap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status !== 'Voided') {
+                if (tx.cart) {
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let qty = item.qty || 1;
+                        let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                        recipe.forEach(r => {
+                            if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
+                            shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
+                        });
+                        if (item.addons) {
+                            for (let key in item.addons) {
+                                let addon = item.addons[key];
+                                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                    if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
+                                    shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
+                                }
+                            }
+                        }
+                    });
+                }
+                if (tx.splitDetails) {
+                    tx.splitDetails.forEach(split => {
+                        if (split.method === 'Cash') totalCashSales += split.amount;
+                        else {
+                            totalDigitalSales += split.amount;
+                            digitalBreakdown[split.method] = (digitalBreakdown[split.method] || 0) + split.amount;
+                        }
+                    });
+                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    totalCashSales += tx.netTotal;
+                } else {
+                    totalDigitalSales += tx.netTotal;
+                    digitalBreakdown[tx.paymentMethod] = (digitalBreakdown[tx.paymentMethod] || 0) + tx.netTotal;
+                }
+            }
+        });
+
+        // 5. Crunch Expenses
+        const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const expSnap = await getDocs(expQ);
+        let cashOut = 0;
+        expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
+
+        let startingCash = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? (activeShiftDetails.startingCash || 0) : 0;
+        let expectedCash = startingCash + totalCashSales - cashOut;
+
+        // 🚨 ZERO CASH LOCKOUT
+        if (expectedCash > 0 && declaredCash === 0) {
+            Swal.fire('⛔ SECURITY LOCKOUT', `The system has logged cash sales for this shift.<br><br>You cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`, 'error');
+            if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
+            return;
+        }
+
+        // 6. THE VARIANCE SWEETALERT (Interactive check!)
+        let variance = declaredCash - expectedCash;
+        // Allow a generous 2 peso floating point margin
+        if (Math.abs(variance) > 2) {
+            let isOver = variance > 0;
+            let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
+            let alertHtml = isOver 
+                ? `Your declared cash is <b>MORE</b> than the system expects.<br><br>Do not remove any overage. Submit the full physical amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
+                : `Your declared cash is <b>SHORT</b> of the system expectation.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
+
+            const result = await Swal.fire({
+                title: alertTitle,
+                html: alertHtml,
+                icon: isOver ? 'info' : 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, End Shift',
+                cancelButtonText: 'No, Re-count Cash',
+                confirmButtonColor: isOver ? '#d97706' : '#dc2626',
+                cancelButtonColor: '#64748b',
+                customClass: { popup: 'rounded-2xl shadow-2xl' }
+            });
+
+            if (!result.isConfirmed) {
+                if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
+                return; // User aborted to recount!
+            }
+            
+            // Log the Variance Alert to HQ
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
+                expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
+                message: `CASH ${isOver ? "OVER" : "SHORT"}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
+                explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
+                timestamp: serverTimestamp(), isRead: false
+            });
+        }
+
+        confirmBtn.innerText = "⏳ Saving to Cloud...";
+        
+        // 7. FIREBASE: CLOSE SHIFT
+        await updateDoc(doc(db, "shifts", shiftId), {
+            active: false,
+            endTime: serverTimestamp(),
+            declaredCash: declaredCash,
+            expectedCash: expectedCash,
+            totalCashSales: totalCashSales, 
+            totalDigitalSales: totalDigitalSales,
+            digitalBreakdown: digitalBreakdown,
+            cashBreakdown: cashBreakdown, 
+            physicalStockCount: {}, // Purged
+            status: "Closed"
+        });
+
+        // 8. FIREBASE: AUTO-SWEEP
+        for (let method in digitalBreakdown) {
+            if (method.toLowerCase() === "gcash") continue; 
+            let amountToDeposit = digitalBreakdown[method];
+            if (amountToDeposit > 0) {
+                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
+                const accSnap = await getDocs(accQ);
+                if (!accSnap.empty) {
+                    let accDoc = accSnap.docs[0];
+                    let currentBal = accDoc.data().balance || 0;
+                    await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
+                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: serverTimestamp(), note: `From ${branchName}`
+                    });
+                } else {
+                    const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: serverTimestamp() });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account Generated)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
+                    });
+                }
+            }
+        }
+
+        // 9. FIREBASE: BATCH LOGS
+        for (let ingName in shiftIngredientBurn) {
+            let totalBurn = shiftIngredientBurn[ingName];
+            if (totalBurn > 0) {
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
+                    variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
+                    user: cashierName, timestamp: serverTimestamp()
+                });
+            }
+        }
+
+        // 10. CLEANUP & UI RESET
+        localStorage.removeItem('currentShiftId');
+        localStorage.removeItem('takodeal_sop_progress');
+        if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
+        if (typeof currentShift !== 'undefined') currentShift = null;
+
+        let endModal = document.getElementById('endShiftModal');
+        if (endModal) endModal.style.display = 'none';
+
+        let topBtn = document.getElementById('btnTopShift');
+        let lock = document.getElementById('shiftLockout');
+        let placeBtn = document.getElementById('btnMainPlaceOrder');
+        if (topBtn) topBtn.innerText = "🔴 Shift Closed";
+        if (lock) lock.style.display = "flex";
+        if (placeBtn) placeBtn.disabled = true;
+
+        Swal.fire({
+            title: '✅ Shift Closed!',
+            text: `Bookkeeping Complete.\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        if (typeof checkCurrentShift === 'function') await checkCurrentShift();
+        if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
+
+    } catch (error) {
+        console.error("Error closing shift:", error);
+        Swal.fire('❌ Error', 'Failed to close shift: ' + error.message, 'error');
+    } finally {
+        if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
+    }
+};
+
+// Ensure HTML correctly points to this new master function!
+window.safeSubmitComprehensiveCloseShift = window.submitComprehensiveCloseShift;
+
+// ========================================================
+// 💸 UPGRADED MULTI-ITEM EXPENSE & RESTOCK CART ENGINE
+// ========================================================
+window.expenseCart = [];
+window.expenseInventoryCache = [];
+window.selectedExpenseItem = null; // Holds the DB item if they select one
+
+window.openExpenseModal = async function () {
+    document.getElementById('expenseModal').style.display = 'flex';
+    document.getElementById('expSearchInput').value = '';
+    document.getElementById('expQtyInput').value = '';
+    document.getElementById('expAmtInput').value = '';
+    window.expenseCart = [];
+    window.renderExpenseCart();
+
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    window.expenseInventoryCache = [];
+    
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            item.id = docSnap.id;
+            window.expenseInventoryCache.push(item);
+        });
+    } catch (e) { console.error("Error loading inventory for expenses:", e); }
+};
+
+// Mobile-friendly custom search dropdown
+window.filterExpenseSearch = function() {
+    let input = document.getElementById('expSearchInput').value.toLowerCase();
+    let resultsDiv = document.getElementById('expSearchResults');
+    window.selectedExpenseItem = null; // Reset selection on typing
+
+    if (input.length < 1) { resultsDiv.style.display = 'none'; return; }
+
+    let filtered = window.expenseInventoryCache.filter(i => (i.name || '').toLowerCase().includes(input));
+    let html = '';
+    
+    filtered.forEach(item => {
+        let safeItemStr = encodeURIComponent(JSON.stringify(item));
+        html += `<div onclick="window.selectExpenseItem('${safeItemStr}')" style="padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 14px; font-weight: bold; color: #334155;">📦 Restock: ${item.name} <span style="font-size:11px; color:#94a3b8;">(${item.uom || ''})</span></div>`;
+    });
+
+    if (html === '') {
+        html = `<div style="padding: 12px 15px; font-size: 13px; color: #64748b; font-style: italic;">No inventory found. This will be saved as a General Expense.</div>`;
+    }
+
+    resultsDiv.innerHTML = html;
+    resultsDiv.style.display = 'block';
+};
+
+window.selectExpenseItem = function(encodedItem) {
+    let item = JSON.parse(decodeURIComponent(encodedItem));
+    window.selectedExpenseItem = item;
+    document.getElementById('expSearchInput').value = `Restock: ${item.name}`;
+    document.getElementById('expSearchResults').style.display = 'none';
+
+    // 🔥 SHOW UOM DROPDOWN
+    let uomContainer = document.getElementById('expUomContainer');
+    let uomSelect = document.getElementById('expUomSelect');
+    if (uomContainer && uomSelect) {
+        uomContainer.style.display = 'block';
+        let html = `<option value="base">${item.uom || 'units'}</option>`;
+        if (item.purchaseUom) {
+            html = `<option value="purch">${item.purchaseUom} (x${item.conversionRate || 1})</option>` + html;
+        }
+        uomSelect.innerHTML = html;
+    }
+
+    document.getElementById('expQtyInput').focus();
+};
+
+window.addExpenseToCart = function() {
+    let desc = document.getElementById('expSearchInput').value.trim();
+    let rawQty = parseFloat(document.getElementById('expQtyInput').value) || 0;
+    let cost = parseFloat(document.getElementById('expAmtInput').value) || 0;
+
+    if (!desc || cost <= 0) { alert("Enter a description and a valid cost."); return; }
+
+    // 🔥 SMART UOM MATH
+    let baseQty = rawQty;
+    let displayUom = '';
+    let convRate = 1;
+
+    if (window.selectedExpenseItem) {
+        let uomSelect = document.getElementById('expUomSelect');
+        displayUom = window.selectedExpenseItem.uom;
+        if (uomSelect && uomSelect.value === 'purch') {
+            convRate = parseFloat(window.selectedExpenseItem.conversionRate) || 1;
+            baseQty = rawQty * convRate; // Multiply by bulk size!
+            displayUom = window.selectedExpenseItem.purchaseUom;
+        }
+    }
+
+    let cartItem = {
+        description: desc,
+        cost: cost,
+        displayQty: rawQty,
+        baseQty: baseQty,
+        displayUom: displayUom,
+        isRestock: window.selectedExpenseItem !== null,
+        dbId: window.selectedExpenseItem ? window.selectedExpenseItem.id : null,
+        dbName: window.selectedExpenseItem ? window.selectedExpenseItem.name : null,
+        uom: window.selectedExpenseItem ? window.selectedExpenseItem.uom : null
+    };
+
+    window.expenseCart.push(cartItem);
+    
+    // Clear inputs for next item
+    document.getElementById('expSearchInput').value = '';
+    document.getElementById('expQtyInput').value = '';
+    document.getElementById('expAmtInput').value = '';
+    if(document.getElementById('expUomContainer')) document.getElementById('expUomContainer').style.display = 'none';
+    window.selectedExpenseItem = null;
+    
+    window.renderExpenseCart();
+};
+
+window.removeExpenseItem = function(index) {
+    window.expenseCart.splice(index, 1);
+    window.renderExpenseCart();
+};
+
+window.renderExpenseCart = function() {
+    let tbody = document.getElementById('expenseCartBody');
+    let totalEl = document.getElementById('expenseCartTotal');
+    let total = 0;
+
+    if (window.expenseCart.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 15px; color: #94a3b8;">Cart is empty.</td></tr>';
+        totalEl.innerText = '₱0.00';
+        return;
+    }
+
+    let html = '';
+    window.expenseCart.forEach((item, index) => {
+        total += item.cost;
+        let qtyText = item.isRestock && item.displayQty > 0 ? `<br><span style="color:#16a34a; font-size:11px;">+${item.displayQty} ${item.displayUom} (${item.baseQty} ${item.uom} to inventory)</span>` : '';
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.description} ${qtyText}</td>
+                <td style="padding: 10px; font-weight: bold; color: #dc2626;">₱${item.cost.toFixed(2)}</td>
+                <td style="padding: 10px; text-align: right;"><button onclick="window.removeExpenseItem(${index})" style="background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">✖</button></td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+    totalEl.innerText = `₱${total.toFixed(2)}`;
+};
+
+window.submitExpenseCart = async function() {
+    if (window.expenseCart.length === 0) { alert("Cart is empty!"); return; }
+    if (!activeShiftDetails || !activeShiftDetails.logId) { alert("No active shift found to attach these expenses to!"); return; }
+
+    let btn = document.getElementById('btnSubmitExpenseCart');
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+
     let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     let cashier = localStorage.getItem('cashierName') || 'Unknown';
-    let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
+    let grandTotal = window.expenseCart.reduce((sum, item) => sum + item.cost, 0);
 
-    let payload = { branch: branch, cashier: cashier, name: customerName, items: cart, total: grandTotal };
-    let parkedId = await window.parkOrderToDB(payload);
-    
-    if (parkedId) { 
-        let newOrder = { id: parkedId, ...payload };
-        window.currentParkedOrdersList.push(newOrder);
+    try {
+        // 1. 🛡️ UPLOAD PHOTO SAFELY
+        let photoUrl = null;
+        let fileInput = document.getElementById('expenseReceiptPhoto');
+        if (fileInput && fileInput.files.length > 0) {
+            btn.innerText = "⏳ Uploading Photo...";
+            try {
+                const file = fileInput.files[0];
+                const fileExt = file.name.split('.').pop();
+                const storageRef = ref(window.storage, `expenses/${branch}_${Date.now()}.${fileExt}`);
+                const snapshot = await uploadBytes(storageRef, file);
+                photoUrl = await getDownloadURL(snapshot.ref);
+            } catch (err) {
+                console.error("Storage upload failed:", err);
+                alert("⚠️ Photo upload failed (Check Firebase Storage Permissions). The expense will still be saved, but without the photo attached.");
+            }
+        }
+
+        // 2. Process each item in cart
+        for (let item of window.expenseCart) {
+            
+            // 🔥 THE FIX: Inject the Quantity directly into the description so the Manager Expense Feed can read it!
+            let finalDescription = item.description;
+            if (item.isRestock && item.displayQty > 0) {
+                finalDescription = `${item.description} (Qty: ${item.displayQty} ${item.displayUom})`;
+            }
+
+            await addDoc(collection(db, "expenses"), {
+                branch: branch,
+                shiftId: activeShiftDetails.logId,
+                cashier: cashier,
+                amount: item.cost,
+                description: finalDescription,
+                receiptPhoto: photoUrl, 
+                timestamp: serverTimestamp()
+            });
+
+            // 3. 🧠 THE AUTO-AVERAGE COSTING & INVENTORY INJECTOR
+            if (item.isRestock && item.dbId && item.baseQty > 0) {
+                const invRef = doc(db, "inventory", item.dbId);
+                const invSnap = await getDoc(invRef);
+                if (invSnap.exists()) {
+                    let d = invSnap.data();
+                    let currentStock = parseFloat(d.currentStock) || 0;
+                    let currentAvgCost = parseFloat(d.cost) || 0;
+                    
+                    let unitCostOfThisPurchase = item.cost / item.baseQty;
+                    let newTotalValue = (currentStock * currentAvgCost) + item.cost;
+                    let newTotalStock = currentStock + item.baseQty;
+                    let newAverageCost = newTotalStock > 0 ? (newTotalValue / newTotalStock) : unitCostOfThisPurchase;
+
+                    await updateDoc(invRef, {
+                        currentStock: newTotalStock,
+                        cost: newAverageCost 
+                    });
+
+                    // Log the stock addition
+                    await addDoc(collection(db, "stock_logs"), {
+                        branch: branch, item: item.dbName, uom: item.uom, oldQty: currentStock, newQty: newTotalStock, variance: item.baseQty,
+                        type: "Store Restock (Expense)", note: `Purchased ${item.displayQty} ${item.displayUom} for ₱${item.cost}`, user: cashier, timestamp: serverTimestamp()
+                    });
+                }
+            }
+        }
+
+        const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
+        const shiftSnap = await getDoc(shiftRef);
+        let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
+        await updateDoc(shiftRef, { expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal });
+
+        alert(`✅ Success! ₱${grandTotal.toFixed(2)} deducted from drawer for ${window.expenseCart.length} item(s).`);
+        document.getElementById('expenseModal').style.display = 'none';
         
+        if (typeof checkCurrentShift === 'function') checkCurrentShift();
+
+    } catch (e) {
+        console.error("Expense Cart Error:", e);
+        alert("❌ Failed to process expenses. Check connection.");
+    } finally {
+        if (btn) { btn.innerText = "Submit All Expenses"; btn.disabled = false; }
+    }
+};
+
+// --- LIVE CLOCK ENGINE ---
+function startLiveClock() {
+  const clockEl = document.getElementById('liveClock');
+  if (!clockEl) return;
+
+  setInterval(() => {
+    const now = new Date();
+    // Creates format: "10:17 PM"
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    // Creates format: "Thu, Apr 16"
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    
+    clockEl.innerHTML = `${timeStr} &nbsp;&nbsp; ${dateStr}`;
+  }, 1000);
+}
+startLiveClock();
+
+// ==========================================
+// ✉️ REASON LETTER ENGINE
+// ==========================================
+window.openExplanationModal = async function() {
+    let cashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier');
+    let selectList = document.getElementById('explainAlertId');
+    selectList.innerHTML = '<option>Loading your records...</option>';
+    document.getElementById('explanationModal').style.display = 'flex';
+
+    try {
+        const q = query(collection(db, "manager_alerts"), 
+            where("type", "==", "VARIANCE_ALERT"), 
+            where("cashier", "==", cashier),
+            where("explanationStatus", "==", "Pending")
+        );
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            selectList.innerHTML = '<option value="">No pending variances found! Excellent job.</option>';
+            return;
+        }
+
+        let html = '';
+        snap.forEach(doc => {
+            let data = doc.data();
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleDateString() : 'Recent';
+            html += `<option value="${doc.id}">${dateStr} - ₱${Math.abs(data.varianceAmount).toFixed(2)} ${data.varianceAmount < 0 ? 'SHORT' : 'OVER'}</option>`;
+        });
+        selectList.innerHTML = html;
+
+    } catch (e) {
+        console.error(e);
+        selectList.innerHTML = '<option value="">Error connecting.</option>';
+    }
+};
+
+window.submitReasonLetter = async function() {
+    let alertId = document.getElementById('explainAlertId').value;
+    let cause = document.getElementById('explainCause').value;
+    let message = document.getElementById('explainMessage').value;
+
+    if (!alertId) { alert("No variance selected."); return; }
+    if (!message) { alert("You must type a detailed explanation."); return; }
+
+    try {
+        await updateDoc(doc(db, "manager_alerts", alertId), {
+            explanationCause: cause,
+            explanationMessage: message,
+            explanationStatus: "Submitted - Awaiting Owner Approval"
+        });
+
+        alert("✅ Reason Letter successfully sent to the Owner's Security Feed.");
+        document.getElementById('explanationModal').style.display = 'none';
+        document.getElementById('explainMessage').value = '';
+    } catch (e) { console.error(e); alert("Failed to send letter."); }
+};
+
+// ==========================================
+// 🛡️ PHASE 4: INVENTORY VALIDATION HUB
+// ==========================================
+window.validateStockLevels = async function(cartPayload) {
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let requiredIngredients = {}; 
+
+    // 1. Calculate the TOTAL amount of every ingredient needed for this specific order
+    for (let item of cartPayload) {
+        let itemName = item.name || item.itemName;
+        let qtySold = item.qty || 1;
+
+        // A. Sum up the Main Recipe (BOM)
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
+        bomSnap.forEach(docSnap => {
+            let ing = docSnap.data().ingredientName;
+            let amountNeeded = (docSnap.data().qty || 0) * qtySold;
+            if (!requiredIngredients[ing]) requiredIngredients[ing] = 0;
+            requiredIngredients[ing] += amountNeeded;
+        });
+
+        // B. Sum up the Add-Ons
+        if (item.addons) {
+            for (let key in item.addons) {
+                let addon = item.addons[key];
+                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                    let amountNeeded = addon.deductQty * addon.qty * qtySold;
+                    let ing = addon.linkedIngredient;
+                    if (!requiredIngredients[ing]) requiredIngredients[ing] = 0;
+                    requiredIngredients[ing] += amountNeeded;
+                }
+            }
+        }
+    }
+
+    // 2. Check the requirements against the Live Branch Inventory
+    let warnings = [];
+    for (let ing in requiredIngredients) {
+        let needed = requiredIngredients[ing];
+        
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ing));
+        const invSnap = await getDocs(invQ);
+
+        if (!invSnap.empty) {
+            let currentStock = invSnap.docs[0].data().currentStock || 0;
+            let uom = invSnap.docs[0].data().uom || 'units';
+            
+            // 🚨 THE TRIGGER: If they need more than they have!
+            if (currentStock < needed) {
+                warnings.push(`- ${ing}: Need ${needed.toFixed(2)} ${uom}, but only ${currentStock.toFixed(2)} ${uom} left!`);
+            }
+        } else {
+            warnings.push(`- ${ing}: Missing entirely from ${branch} inventory!`);
+        }
+    }
+
+    return warnings; // Returns an array of warning messages
+};
+
+// ==========================================
+// 🚪 SIGN OUT ENGINE (WITH CACHE BUSTING)
+// ==========================================
+window.logoutCashier = function() {
+    if (confirm("Are you sure you want to sign out of this account?")) {
+        localStorage.removeItem('cashierName'); 
+        window.sessionUser = null;
+        // 🔥 THE FIX: Forces the browser to completely dump the cache and reload fresh!
+        window.location.href = window.location.pathname + "?t=" + new Date().getTime(); 
+    }
+};
+
+// ==========================================
+// 💸 REMIT CASH TO HQ ENGINE
+// ==========================================
+window.openRemittanceModal = async function() {
+    let safeCashierName = localStorage.getItem('cashierName');
+    if (!safeCashierName && typeof window.sessionUser !== 'undefined' && window.sessionUser) {
+        safeCashierName = window.sessionUser.cashierName;
+    }
+    if (!safeCashierName) safeCashierName = "Unknown Staff"; 
+    
+    document.getElementById('remittanceModal').style.display = 'flex';
+    document.getElementById('remitCashier').value = safeCashierName;
+    
+    let todayObj = new Date();
+    let todayStr = todayObj.toISOString().split('T')[0];
+    document.getElementById('remitEndDate').value = todayStr;
+    document.getElementById('remitStartDate').value = "Loading..."; 
+
+    // 🔥 MONDAY COUNTDOWN ENGINE
+    let dayOfWeek = todayObj.getDay(); // 0 is Sunday, 1 is Monday...
+    let daysUntilMonday = (1 + 7 - dayOfWeek) % 7;
+    if (daysUntilMonday === 0) daysUntilMonday = 7; // If today is Monday, next is 7 days
+
+    let alertBox = document.getElementById('remitCountdownAlert');
+    if (daysUntilMonday === 7) {
+        alertBox.innerText = "🚨 TODAY IS MANDATORY REMITTANCE DAY! (MONDAY)";
+        alertBox.style.background = "#fef2f2"; alertBox.style.color = "#dc2626"; alertBox.style.borderColor = "#fca5a5";
+    } else {
+        alertBox.innerText = `⏳ Next Mandatory Remittance: Monday (${daysUntilMonday} days left)`;
+        alertBox.style.background = "#eff6ff"; alertBox.style.color = "#1d4ed8"; alertBox.style.borderColor = "#3b82f6";
+    }
+
+    try {
+        let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        // Pull the exact end date of their LAST remittance
+        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(1));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            let lastData = snap.docs[0].data();
+            let lastEndDateStr = lastData.salesPeriodEnd || lastData.timestamp.toDate().toISOString().split('T')[0];
+            
+            // Set Start Date to the day AFTER they last remitted
+            let nextStartDate = new Date(lastEndDateStr);
+            nextStartDate.setDate(nextStartDate.getDate() + 1);
+            document.getElementById('remitStartDate').value = nextStartDate.toISOString().split('T')[0];
+        } else {
+            document.getElementById('remitStartDate').value = todayStr; 
+        }
+    } catch (e) {
+        console.error("Error fetching last remittance:", e);
+        document.getElementById('remitStartDate').value = todayStr;
+    }
+    
+    window.switchRemittanceTab('form');
+    window.loadHqAccountsForRemittance();
+};
+
+window.switchRemittanceTab = function(tab) {
+    if (tab === 'form') {
+        document.getElementById('remitFormSection').style.display = 'block';
+        document.getElementById('remitHistorySection').style.display = 'none';
+        document.getElementById('tabRemitForm').style.borderBottom = '3px solid #047857';
+        document.getElementById('tabRemitHistory').style.borderBottom = '3px solid transparent';
+    } else {
+        document.getElementById('remitFormSection').style.display = 'none';
+        document.getElementById('remitHistorySection').style.display = 'block';
+        document.getElementById('tabRemitForm').style.borderBottom = '3px solid transparent';
+        document.getElementById('tabRemitHistory').style.borderBottom = '3px solid #047857';
+        window.loadRemittanceHistory();
+    }
+};
+
+window.loadHqAccountsForRemittance = async function() {
+    let select = document.getElementById('remitChannel');
+    select.innerHTML = '<option value="">Loading HQ Accounts...</option>';
+    try {
+        // 🔥 ONLY pull accounts assigned to the Main Office
+        const q = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"));
+        const snap = await getDocs(q);
+        
+        // 🛡️ Use a "Set" to automatically prevent any accidental duplicate names
+        let uniqueAccounts = new Set();
+        snap.forEach(docSnap => { 
+            if (docSnap.data().name) uniqueAccounts.add(docSnap.data().name); 
+        });
+        
+        let html = '<option value="">-- Select Transfer Method --</option>';
+        uniqueAccounts.forEach(accountName => { 
+            html += `<option value="${accountName}">${accountName}</option>`; 
+        });
+        html += '<option value="Physical Handover">Physical Handover (Cash)</option>';
+        
+        select.innerHTML = html;
+    } catch (e) { 
+        console.error("Error loading accounts:", e); 
+    }
+};
+
+window.submitRemittance = async function() {
+    let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let safeCashier = localStorage.getItem('cashierName') || 'Unknown';
+    let remitAmount = parseFloat(document.getElementById('remitAmount').value);
+    let channel = document.getElementById('remitChannel').value;
+    let recipient = document.getElementById('remitRecipient').value.trim();
+    let refNum = document.getElementById('remitRefNum').value.trim();
+    let startDate = document.getElementById('remitStartDate').value;
+    let endDate = document.getElementById('remitEndDate').value;
+    
+    if (isNaN(remitAmount) || remitAmount <= 0 || !channel || !recipient) { alert("❌ Fill out Amount, Channel, and Recipient."); return; }
+
+    let btn = document.querySelector("button[onclick='submitRemittance()']");
+    if(btn) { btn.innerText = "⏳ Auditing Drawer..."; btn.disabled = true; }
+
+    try {
+        let userPin = document.getElementById('remitPinCode').value;
+        let identity = await window.verifyPin(userPin);
+        if (!identity) { alert("❌ Incorrect PIN."); if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; } return; }
+
+        // 💸 NEW MATH: Look ONLY at the latest drawer balances!
+        let drawerCash = 0;
+        let shiftIdToLog = "Accumulated_Floating";
+        
+        const activeQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
+        const activeSnap = await getDocs(activeQ);
+        
+        if (!activeSnap.empty) {
+            let shiftData = activeSnap.docs[0].data();
+            shiftIdToLog = activeSnap.docs[0].id;
+            let start = parseFloat(shiftData.startingCash) || 0;
+            let cashOut = parseFloat(shiftData.cashOut) || 0;
+            
+            let cashSales = 0;
+            let validStartTime = shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
+            const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch), where("timestamp", ">=", validStartTime));
+            const txSnap = await getDocs(txQ);
+            txSnap.forEach(d => {
+                let tx = d.data();
+                if (tx.status !== 'Voided') {
+                    if (tx.splitDetails) {
+                        let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                        if (cashSplit) cashSales += cashSplit.amount;
+                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                        cashSales += (tx.netTotal || 0);
+                    }
+                }
+            });
+            drawerCash = (start + cashSales) - cashOut;
+        } else {
+            const lastShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+            const lastShiftSnap = await getDocs(lastShiftQ);
+            if (!lastShiftSnap.empty) {
+                drawerCash = parseFloat(lastShiftSnap.docs[0].data().declaredCash) || 0;
+            }
+        }
+
+        if (remitAmount > drawerCash + 500) { 
+            alert(`⛔ REMITTANCE BLOCKED\n\nActual Cash in ${safeBranch} Drawer: ₱${drawerCash.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what is currently in the drawer!`);
+            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
+            return;
+        }
+
+        await addDoc(collection(db, "remittances"), {
+            branch: safeBranch, cashier: identity.cashierName, amount: remitAmount,
+            channel: channel, recipient: recipient, referenceNumber: refNum,
+            salesPeriodStart: startDate, salesPeriodEnd: endDate,
+            status: "Pending", timestamp: serverTimestamp()
+        });
+
+        // Log the expense so it removes the physical cash from the building correctly
+        await addDoc(collection(db, "expenses"), {
+            branch: safeBranch, shiftId: shiftIdToLog, cashier: identity.cashierName, amount: remitAmount,
+            description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`, timestamp: serverTimestamp()
+        });
+
+        alert("✅ Remittance sent to HQ!");
+        document.getElementById('remitAmount').value = ''; document.getElementById('remitRefNum').value = '';
+        window.switchRemittanceTab('history');
+    } catch (e) { console.error(e); alert("❌ Failed to remit."); } 
+    finally { if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; } }
+};
+
+window.loadRemittanceHistory = async function() {
+    const tbody = document.getElementById('remitHistoryTableBody');
+    tbody.innerHTML = '<tr><td style="padding:20px; text-align:center;">Fetching history...</td></tr>';
+    
+    try {
+        // 🛡️ Bulletproof branch grabber for the database query
+        let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        
+        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(20));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Just now';
+            let statusColor = d.status === "Received" ? "#16a34a" : "#d97706";
+            html += `
+                <tr style="border-bottom: 1px solid #cbd5e1;">
+                    <td style="padding: 10px; font-weight: bold; color: #334155;">₱${d.amount.toLocaleString()}</td>
+                    <td style="padding: 10px; font-size: 12px; color: #64748b;">To: ${d.channel}</td>
+                    <td style="padding: 10px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 10px; font-weight: bold; color: ${statusColor}; text-align: right;">${d.status}</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html || '<tr><td style="padding:20px; text-align:center;">No previous transfers.</td></tr>';
+    } catch (e) { 
+        console.error(e); 
+        tbody.innerHTML = '<tr><td style="padding:20px; text-align:center; color:red;">Error loading history.</td></tr>'; 
+    }
+};
+
+// ==========================================
+// 📍 GPS & SELFIE TIME CLOCK ENGINE
+// ==========================================
+let cameraStream = null;
+let currentBranchStaffCache = []; // DECLARED ONLY ONCE HERE!
+
+// ==========================================
+// 🤖 FACE RECOGNITION AI ENGINE
+// ==========================================
+window.isFaceAiReady = false;
+
+window.initFaceAI = async function() {
+    let statusEl = document.getElementById('faceAiStatus');
+    if (window.isFaceAiReady) {
+        if(statusEl) statusEl.innerHTML = "🤖 Face AI Ready. Look at the camera.";
+        return;
+    }
+    try {
+        if(statusEl) statusEl.innerHTML = "🤖 Downloading AI Models... Please wait.";
+        // We pull the raw models from the developer's public CDN
+        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        
+        window.isFaceAiReady = true;
+        if(statusEl) statusEl.innerHTML = "🤖 Face AI Ready. Select your name.";
+    } catch(e) {
+        console.error("Face AI Error:", e);
+        if(statusEl) statusEl.innerHTML = "⚠️ Face AI failed to load. Use PIN.";
+    }
+};
+
+window.openTimeClockModal = async function() {
+    document.getElementById('timeClockModal').style.display = 'flex';
+    document.getElementById('clockStaffPin').value = ''; 
+    let select = document.getElementById('clockStaffName');
+    select.innerHTML = '<option value="">Loading Staff...</option>';
+    
+    try {
+        // 🔥 ALL STAFF FETCH: No branch limits. Anyone can log in here!
+        const q = query(collection(db, "cashiers"));
+        const snap = await getDocs(q);
+        
+        currentBranchStaffCache = [];
+        let html = '<option value="">-- Select Your Name --</option>';
+        
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            currentBranchStaffCache.push(data); 
+            html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
+        });
+        select.innerHTML = html;
+        
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        document.getElementById('clockVideo').srcObject = cameraStream;
+        
+        // 🤖 Start downloading the AI Brain in the background
+        window.initFaceAI();
+        
+    } catch (e) { 
+        console.error(e); 
+        alert("⚠️ Error loading Time Clock. Check Camera permissions."); 
+    }
+};
+
+window.closeTimeClock = function() {
+    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    document.getElementById('timeClockModal').style.display = 'none';
+};
+
+window.isProcessingAttendance = false;
+
+window.submitAttendance = async function(type) {
+    // 1. INSTANT LOCAL LOCK (Stops double-tapping instantly)
+    if (window.isProcessingAttendance) return;
+    window.isProcessingAttendance = true;
+
+    let buttons = document.querySelectorAll('#timeClockModal button');
+    buttons.forEach(b => {
+        b.disabled = true;
+        if (b.innerText === type) b.innerText = "⏳ Syncing..."; 
+    });
+
+    const staffName = document.getElementById('clockStaffName').value;
+    const inputPin = document.getElementById('clockStaffPin').value.trim();
+
+    // Helper function to safely unlock the UI if something fails
+    const unlockUI = () => {
+        window.isProcessingAttendance = false;
+        buttons.forEach(b => b.disabled = false);
+        let btnIn = document.querySelector('button[onclick*="TIME IN"]');
+        if(btnIn) btnIn.innerText = "TIME IN";
+        let btnOut = document.querySelector('button[onclick*="TIME OUT"]');
+        if(btnOut) btnOut.innerText = "TIME OUT";
+    };
+
+    if (!staffName) { 
+        alert("❌ Please select your name."); 
+        unlockUI();
+        return; 
+    }
+
+    // 2. OFFLINE COOLDOWN LOCK
+    let punchCooldownKey = `takodeal_punch_${staffName}`;
+    let lastPunchTime = localStorage.getItem(punchCooldownKey);
+    if (lastPunchTime && (Date.now() - parseInt(lastPunchTime) < 60000)) { 
+        alert("⏳ Sync in progress!\n\nYour previous punch is still processing due to slow internet. Please wait 1 minute before trying again to prevent duplicate logs.");
+        unlockUI();
+        return;
+    }
+
+    let staffProfile = window.currentBranchStaffCache ? window.currentBranchStaffCache.find(s => s.cashierName === staffName) : null;
+    
+    // 🔥 THE FIX: If the tablet's temporary memory is empty, fetch the profile directly from the Cloud!
+    if (!staffProfile) {
+        try {
+            const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
+            const staffSnap = await getDocs(staffQ);
+            
+            if (!staffSnap.empty) {
+                staffProfile = staffSnap.docs[0].data();
+            } else {
+                alert(`❌ Error: ${staffName}'s profile could not be found in the database. Please contact the Manager.`);
+                unlockUI();
+                return;
+            }
+        } catch (e) {
+            console.error("Staff Fetch Error:", e);
+            alert("❌ Error connecting to the cloud to verify your profile. Please check the tablet's internet connection.");
+            unlockUI();
+            return;
+        }
+    }
+    
+    // ==========================================
+    // 🤖 FACE AI VERIFICATION & REGISTRATION
+    // ==========================================
+    let faceVerified = false;
+
+    if (window.isFaceAiReady) {
+        let statusEl = document.getElementById('faceAiStatus');
+        statusEl.innerHTML = "🤖 Scanning facial geometry... Hold still.";
+        const videoEl = document.getElementById('clockVideo');
+        
+        try {
+            const detection = await faceapi.detectSingleFace(videoEl).withFaceLandmarks().withFaceDescriptor();
+
+            if (detection) {
+                if (staffProfile.faceDescriptor && staffProfile.faceDescriptor.length > 0) {
+                    const savedDescriptor = new Float32Array(staffProfile.faceDescriptor);
+                    const distance = faceapi.euclideanDistance(detection.descriptor, savedDescriptor);
+                    
+                    if (distance < 0.55) {
+                        faceVerified = true;
+                        statusEl.innerHTML = "✅ Identity Verified!";
+                    } else {
+                        alert(`❌ AI Face Mismatch! (Security Distance: ${distance.toFixed(2)})\n\nYou do not match the registered face for ${staffName}.\nIf you are ${staffName}, please enter your PIN to bypass.`);
+                        statusEl.innerHTML = "🤖 Face AI Ready.";
+                    }
+                } else {
+                    if (inputPin && staffProfile.pin === inputPin) {
+                        const cashierQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
+                        const cashierSnap = await getDocs(cashierQ);
+                        if (!cashierSnap.empty) {
+                            await updateDoc(cashierSnap.docs[0].ref, {
+                                faceDescriptor: Array.from(detection.descriptor)
+                            });
+                            alert("✅ Face ID Successfully Registered!\n\nFor your next shift, you can leave the PIN blank and just look at the camera.");
+                            faceVerified = true;
+                        }
+                    } else {
+                        alert("🤖 Face Registration Required!\n\nYou do not have a Face ID saved yet. Please enter your 4-Digit PIN to register your face securely.");
+                        statusEl.innerHTML = "🤖 Enter PIN to register face.";
+                        unlockUI();
+                        return;
+                    }
+                }
+            } else {
+                if (!confirm("❌ AI could not detect a face clearly. Please ensure you are in a well-lit area and looking at the camera.\n\nClick OK to bypass the AI and use your manual PIN.")) {
+                    statusEl.innerHTML = "🤖 Ready. Look at camera.";
+                    unlockUI();
+                    return;
+                }
+            }
+        } catch(e) { console.error("AI processing error:", e); }
+    }
+
+    // ==========================================
+    // 🔒 FALLBACK: MANUAL PIN VERIFICATION
+    // ==========================================
+    if (!faceVerified) {
+        if (!inputPin || staffProfile.pin !== inputPin) {
+            alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
+            document.getElementById('clockStaffPin').value = ''; 
+            unlockUI();
+            return;
+        }
+    }
+
+    // ==========================================
+    // 🚨 HR SANCTION & NTE LOCK (TIME CLOCK BLOCKER)
+    // ==========================================
+    try {
+        const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const nteSnap = await getDocs(nteQ);
+        
+        if (!nteSnap.empty) {
+            let nteData = nteSnap.docs[0].data();
+            let nteId = nteSnap.docs[0].id;
+            
+            let clockModal = document.getElementById('timeClockModal');
+            if (clockModal) clockModal.style.display = 'none';
+            
+            let nteModal = document.getElementById('sanctionModal') || document.getElementById('nteModal');
+            
+            if (nteModal) {
+                nteModal.style.display = 'flex';
+                if (document.getElementById('sancDocId')) document.getElementById('sancDocId').value = nteId;
+                if (document.getElementById('sancTitle')) document.getElementById('sancTitle').innerText = nteData.type;
+                if (document.getElementById('sancDetails')) document.getElementById('sancDetails').innerText = nteData.details;
+                if (typeof window.clearSignature === 'function') window.clearSignature();
+            } else {
+                Swal.fire({
+                    title: '🚨 TIME CLOCK LOCKED',
+                    html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
+                           <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${nteData.type}"</span><br><br>
+                           <span style="color:#475569; font-size:14px;">You <b>cannot Time In</b> until you acknowledge and reply to this notice.</span><br><br>
+                           <i>Please log out the current POS user and log in with your PIN to read and sign your notice.</i>`,
+                    icon: 'error',
+                    confirmButtonText: 'Understood',
+                    confirmButtonColor: '#dc2626',
+                    allowOutsideClick: false,
+                    customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+                });
+            }
+            
+            document.getElementById('clockStaffPin').value = ''; 
+            unlockUI(); 
+            return; 
+        }
+    } catch(e) {
+        console.error("NTE Check Failed:", e);
+    }
+
+    // ==========================================
+    // 🛡️ ANTI-DOUBLE PUNCH, PENALTIES & HR LOCKS
+    // ==========================================
+    try {
+        const q = query(collection(db, "attendance_logs"), 
+            where("staffName", "==", staffName), 
+            orderBy("timestamp", "desc"), 
+            limit(1)
+        );
+        const lastLogSnap = await getDocs(q);
+        
+        if (!lastLogSnap.empty) {
+            let lastLog = lastLogSnap.docs[0].data();
+            let lastType = lastLog.type; 
+            let lastTime = lastLog.timestamp.toDate();
+            let now = new Date();
+            let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
+
+            if (type === "TIME IN" && lastType === "TIME IN") {
+                if (hoursSinceLastLog > 12) {
+                    const penaltyConfirm = await Swal.fire({
+                        title: '⚠️ Missing Time-Out Detected',
+                        html: `You forgot to TIME OUT during your previous shift.<br><br><span style="color:#dc2626; font-weight:bold; font-size:16px;">PENALTY APPLIED:</span><br><span style="color:#475569; font-size:14px;">Your pay for the missing clock-out shift will be delayed and paid on the <b>NEXT CUT-OFF</b>.</span><br><br>Do you accept this penalty and wish to Time In for today?`,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d97706',
+                        cancelButtonColor: '#64748b',
+                        confirmButtonText: 'Accept Penalty & Time In',
+                        customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+                    });
+
+                    if (!penaltyConfirm.isConfirmed) {
+                        document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
+                    }
+
+                    let autoOutTime = new Date(lastTime.getTime() + (9 * 60 * 60 * 1000));
+                    
+                    await addDoc(collection(db, "attendance_logs"), {
+                        staffName: staffName, 
+                        branch: lastLog.branch, 
+                        type: "AUTO TIME OUT (Penalty)", 
+                        timestamp: autoOutTime, 
+                        locationLat: lastLog.locationLat || 0, 
+                        locationLng: lastLog.locationLng || 0, 
+                        distanceMeters: lastLog.distanceMeters || 0, 
+                        photoBase64: lastLog.photoBase64 || "",
+                        penaltyApplied: true,
+                        notes: "Forced Auto-Out. Paid next cut-off."
+                    });
+
+                    await addDoc(collection(db, "manager_alerts"), {
+                        type: "ATTENDANCE_PENALTY", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
+                        message: `HR PENALTY: ${staffName} forgot to Time Out yesterday. System auto-closed their shift at 9 hours and applied the 'Paid Next Cut-Off' penalty.`,
+                        timestamp: new Date(), isRead: false
+                    });
+                    
+                } else {
+                    alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
+                    document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
+                }
+            }
+
+            if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
+                alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
+                document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
+            }
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.25) {
+                alert(`❌ You just Timed In a few minutes ago!\n\nTo prevent double-shifts and payroll errors, you must wait at least 15 minutes before Timing Out.`);
+                document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
+            }
+
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog > 14) {
+                await addDoc(collection(db, "manager_alerts"), {
+                    type: "ATTENDANCE_ALERT", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
+                    message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
+                    timestamp: new Date(), isRead: false
+                });
+              // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours!
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25) {
+                const { value: reason, isConfirmed } = await Swal.fire({
+                    title: '⚠️ Undertime Detected',
+                    html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
+                    input: 'text',
+                    inputPlaceholder: 'Reason for leaving early...',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Submit & Time Out',
+                    confirmButtonColor: '#dc2626',
+                    customClass: { popup: 'rounded-2xl shadow-xl' }
+                });
+
+                if (!isConfirmed || !reason) {
+                    unlockUI(); return; 
+                }
+
+                // Auto-submit Reason Letter to the Manager App
+                await addDoc(collection(db, "staff_requests"), {
+                    type: "Reason Letter",
+                    staffName: staffName,
+                    branch: finalBranch,
+                    status: "Pending",
+                    explanationCause: "Undertime",
+                    explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
+                    timestamp: new Date() // Use JS Date for cross-app compatibility
+                });
+                
+                Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Undertime Letter Sent!', showConfirmButton: false, timer: 3000});
+            }
+                alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
+            }
+
+            // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours!
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25) {
+                const { value: reason, isConfirmed } = await Swal.fire({
+                    title: '⚠️ Undertime Detected',
+                    html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
+                    input: 'text',
+                    inputPlaceholder: 'Reason for leaving early...',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Submit & Time Out',
+                    confirmButtonColor: '#dc2626',
+                    customClass: { popup: 'rounded-2xl shadow-xl' }
+                });
+
+                if (!isConfirmed || !reason) {
+                    unlockUI(); return; 
+                }
+
+                // Auto-submit Reason Letter to the Manager App
+                await addDoc(collection(db, "staff_requests"), {
+                    type: "Reason Letter",
+                    staffName: staffName,
+                    branch: finalBranch,
+                    status: "Pending",
+                    explanationCause: "Undertime",
+                    explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
+                    timestamp: new Date() // Use JS Date for cross-app compatibility
+                });
+                
+                Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Undertime Letter Sent!', showConfirmButton: false, timer: 3000});
+            }
+        }
+    } catch(e) {
+        console.warn("Fast query failed. Using fallback lock method...", e);
+    }
+
+    // ==========================================
+    // 🌍 GPS GEOFENCING & AUTO-ROUTING
+    // ==========================================
+    const video = document.getElementById('clockVideo');
+    const canvas = document.getElementById('clockCanvas');
+    let photoBase64 = "";
+    
+    if (video && canvas && video.videoWidth > 0) {
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+    }
+
+    if (!navigator.geolocation) { 
+        alert("❌ Geolocation is not supported."); 
+        unlockUI(); return; 
+    }
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const userLat = position.coords.latitude; 
+        const userLng = position.coords.longitude;
+        
+        let deviceBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let finalBranch = deviceBranch;
+        let finalDistance = 0;
+
+        // 🔥 THE FIX: Smart GPS Bypass for the Main Office!
+        if (deviceBranch !== "Main Office") {
+            const targetZone = window.BRANCH_ZONES ? window.BRANCH_ZONES[deviceBranch] : null;
+            if (!targetZone) { 
+                Swal.fire({
+                    title: 'GPS Error',
+                    text: `❌ GPS Configuration Missing for ${deviceBranch}.`,
+                    icon: 'error',
+                    confirmButtonText: 'Understood',
+                    confirmButtonColor: '#ef4444'
+                });
+                unlockUI(); return; 
+            }
+            
+            if (typeof window.getDistanceInMeters === 'function') {
+                finalDistance = window.getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
+
+                if (finalDistance > (window.ALLOWED_RADIUS_METERS || 50)) {
+                    Swal.fire({
+                        title: '🚨 SECURITY LOCKOUT!',
+                        html: `You are <b>${Math.round(finalDistance)}m</b> away from ${deviceBranch}.<br>You must be within ${window.ALLOWED_RADIUS_METERS || 50}m to clock in!`,
+                        icon: 'error',
+                        confirmButtonText: 'Understood',
+                        confirmButtonColor: '#ef4444'
+                    });
+                    unlockUI(); return;
+                }
+            }
+        }
+        
+        try {
+            await addDoc(collection(db, "attendance_logs"), {
+                staffName: staffName, 
+                branch: finalBranch, 
+                type: type, 
+                timestamp: new Date(),
+                locationLat: userLat, 
+                locationLng: userLng, 
+                distanceMeters: Math.round(finalDistance), 
+                photoBase64: photoBase64
+            });
+            
+            localStorage.setItem(punchCooldownKey, Date.now());
+            
+            Swal.fire({
+                title: '✅ Success!',
+                text: `${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`,
+                icon: 'success',
+                timer: 2500,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
+
+            if (typeof window.closeTimeClock === 'function') window.closeTimeClock();
+        } catch (error) { 
+            console.error(error); alert("❌ Failed to log attendance."); 
+        } 
+        finally { unlockUI(); }
+    }, (error) => { 
+        alert("❌ GPS access required to Time In."); 
+        unlockUI(); 
+    }, { enableHighAccuracy: true }); 
+};
+
+// ==========================================
+// 📥 STAFF REQUEST HUB (WITH INBOX)
+// ==========================================
+window.openStaffRequestsModal = function() {
+    document.getElementById('staffRequestsModal').style.display = 'flex';
+    window.switchRequestTab('Advance'); 
+};
+
+window.switchRequestTab = function(tabName) {
+    const tabs = ['Advance', 'Leave', 'Meal', 'Reason', 'Inbox'];
+    tabs.forEach(t => {
+        let btn = document.getElementById('tabReq' + t); let form = document.getElementById('formReq' + t);
+        if (!btn || !form) return;
+        if (t === tabName) {
+            btn.style.borderBottom = "3px solid #3b82f6"; btn.style.color = "#0f172a"; btn.style.background = "white"; form.style.display = "block";
+            if (tabName === 'Inbox') window.loadStaffPersonalInbox();
+        } else {
+            btn.style.borderBottom = "3px solid transparent"; btn.style.color = "#64748b"; btn.style.background = "transparent"; form.style.display = "none";
+        }
+    });
+};
+window.loadStaffPersonalInbox = async function() {
+    // 🛡️ Bulletproof name grabber
+    let safeCashierName = localStorage.getItem('cashierName') || 'Unknown Staff';
+
+    let container = document.getElementById("staffPersonalInboxList");
+    container.innerHTML = "<div style='padding:20px; text-align:center; color:#666;'>Loading your records...</div>";
+    
+    try {
+        const q = query(collection(db, "staff_requests"), where("staffName", "==", safeCashierName), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data(); 
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
+            
+            let statusBadge = `<span style="background: #fef9c3; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending Review</span>`;
+            if (d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Approved</span>`;
+            if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Rejected</span>`;
+            
+            // 🔥 NEW: MANAGER REPLY UI
+            let replyHtml = '';
+            if (d.managerReply) {
+                replyHtml = `
+                <div style="margin-top: 12px; padding: 10px; background: #f8fafc; border-left: 4px solid #3b82f6; border-radius: 4px; font-size: 12px; color: #334155;">
+                    <strong style="color: #0f172a;">Owner Reply:</strong><br>
+                    <span style="font-style: italic;">"${d.managerReply}"</span>
+                </div>`;
+            }
+
+            // 🔥 NEW: PROOF OF PAYMENT UI
+            let proofHtml = '';
+            if (d.proofImageUrl) {
+                proofHtml = `
+                <div style="margin-top: 10px;">
+                    <a href="${d.proofImageUrl}" target="_blank" style="display: inline-block; background: #e0e7ff; color: #4f46e5; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; text-decoration: none;">
+                        📄 View Payment Screenshot
+                    </a>
+                </div>`;
+            }
+
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;"><strong style="color: #334155;">${d.type}</strong>${statusBadge}</div>
+                    <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">Submitted: ${dateStr}</div>
+                    <div style="font-size: 14px; font-weight: bold; color: var(--primary);">${d.amount ? '₱' + d.amount : ''} ${d.item || d.leaveType || ''}</div>
+                    ${replyHtml}
+                    ${proofHtml}
+                </div>`;
+        });
+        
+        container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
+    } catch (e) { 
+        console.error(e); 
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>'; 
+    }
+};
+
+window.submitStaffRequest = async function(requestType) {
+    // 🛡️ Bulletproof name and branch grabbers!
+    let safeCashierName = localStorage.getItem('cashierName') || 'Unknown Staff';
+    let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
+    
+    let payload = { type: requestType, staffName: safeCashierName, branch: safeBranch, status: "Pending", timestamp: new Date() };
+    
+    if (requestType === "Cash Advance") {
+        payload.amount = parseFloat(document.getElementById('reqAdvAmount').value); 
+        payload.reason = document.getElementById('reqAdvReason').value.trim();
+        if (isNaN(payload.amount) || payload.amount <= 0 || !payload.reason) { alert("❌ Valid amount and reason required."); return; }
+    } else if (requestType === "Leave") {
+        payload.startDate = document.getElementById('reqLeaveStart').value; 
+        payload.endDate = document.getElementById('reqLeaveEnd').value;
+        payload.leaveType = document.getElementById('reqLeaveType').value; 
+        payload.reason = document.getElementById('reqLeaveReason').value.trim();
+        if (!payload.startDate || !payload.endDate || !payload.reason) { alert("❌ Dates and reason required."); return; }
+    } else if (requestType === "Staff Meal") {
+        payload.item = document.getElementById('reqMealItem').value.trim(); 
+        payload.amount = parseFloat(document.getElementById('reqMealCost').value);
+        if (!payload.item || isNaN(payload.amount) || payload.amount < 0) { alert("❌ Item and cost required."); return; }
+        
+        // 🔥 UPLOAD THE PROOF IMAGE
+        let imageFile = document.getElementById('reqMealProof').files[0];
+        if (imageFile) {
+            try {
+                let btns = document.querySelectorAll('#formReqMeal button');
+                if(btns.length > 0) btns[0].innerText = "Uploading proof...";
+                
+                const fileExt = imageFile.name.split('.').pop();
+                const fileName = `staff_requests/meal_${Date.now()}.${fileExt}`;
+                const storageRef = ref(window.storage, fileName); 
+                const snapshot = await uploadBytes(storageRef, imageFile);
+                payload.proofImageUrl = await getDownloadURL(snapshot.ref);
+            } catch (e) { console.error("Upload failed", e); }
+        }
+    } else if (type === 'Reason Letter') {
+        let cause = document.getElementById('explainCause').value;
+        let msg = document.getElementById('explainMessage').value.trim(); 
+        if (!msg) return Swal.fire('Error', 'Please provide a detailed explanation.', 'error');
+        payload.details = `Cause: ${cause}\n"${msg}"`; // This perfectly passes the text to the Manager App!
+    }
+    
+    try {
+        await addDoc(collection(db, "staff_requests"), payload);
+        alert(`✅ Success! ${requestType} submitted.`);
+        
+        // Clean up the forms
+        document.getElementById('reqAdvAmount').value = ''; document.getElementById('reqAdvReason').value = '';
+        document.getElementById('reqLeaveStart').value = ''; document.getElementById('reqLeaveEnd').value = '';
+        document.getElementById('reqLeaveReason').value = ''; document.getElementById('reqMealItem').value = '';
+        document.getElementById('reqMealCost').value = ''; 
+        
+        // Reset the button text if it was changed
+        let btns = document.querySelectorAll('#formReqMeal button');
+        if(btns.length > 0) btns[0].innerText = "Log Staff Meal";
+
+        document.getElementById('staffRequestsModal').style.display = 'none';
+    } catch (error) { 
+        console.error(error); 
+        alert("❌ Failed to submit."); 
+        let btns = document.querySelectorAll('#formReqMeal button');
+        if(btns.length > 0) btns[0].innerText = "Log Staff Meal";
+    }
+};
+
+// ==========================================
+// 🔪 KITCHEN PREP ENGINE
+// ==========================================
+window.loadKitchenPrep = async function() {
+    let container = document.getElementById('kitchenPrepList');
+    if (!container) return;
+    
+    let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : null);
+    if (!branch) {
+        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Error: Cannot detect your branch.</div>`;
+        return;
+    }
+
+    container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
+
+    try {
+        // 1. Read the POS Config Hub to see which CATEGORIES are allowed
+        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+        let allowedCats = ["Prepared Batch"]; // Default fallback
+        if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
+            // Normalize to lowercase so it matches safely even if capitalized differently
+            allowedCats = configSnap.data().kitchenPrepCats.map(c => c.trim().toLowerCase());
+        }
+
+        // 2. Fetch inventory for this branch
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        let hasItems = false;
+        
+        let items = [];
+        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+        items.forEach(d => {
+            let itemCat = (d.category || "").trim().toLowerCase();
+            
+            // 🔥 STRICT FILTER: Only show items if their category is in the POS Config Hub!
+            if (!allowedCats.includes(itemCat)) return;
+            if (d.showInPrep === false) return;
+            
+            hasItems = true;
+         
+            let baseUom = d.uom || d.baseUom || 'units';
+            let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
+
+            // 🔥 SAFELY SET UP IMAGES OUTSIDE THE HTML BLOCK
+            let imgSrc = d.image || d.imageUrl;
+            let iconHtml = imgSrc 
+                ? `<img src="${imgSrc}" style="width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 2px solid #e2e8f0; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">` 
+                : `<div style="width: 55px; height: 55px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 10px; border: 2px solid #e2e8f0;">🔪</div>`;
+
+            // INJECT INTO HTML STRING
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; transition: transform 0.2s;">
+                    ${iconHtml}
+                    <h3 style="margin: 0 0 5px 0; color: #1e293b; font-size: 16px; font-weight: 900;">${d.name}</h3>
+                    <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(parseFloat(d.currentStock)||0).toFixed(1)} ${baseUom}</span>
+                    
+                    <button onclick="window.logPrepBatch('${d.id}', '${d.name.replace(/'/g, "\\'")}', '${branch}', '${purchUom}', '${baseUom}')" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">
+                        + Log Prep (${purchUom})
+                    </button>
+                </div>
+            `;
+        });
+        
+        if (!hasItems) {
+            html = `<div style="text-align:center; padding:40px; color:#94a3b8; grid-column:1/-1;">
+                <span style="font-size: 40px; display: block; margin-bottom: 15px;">🕵️‍♂️</span>
+                No Kitchen Prep items found.<br>In your Manager App > POS Config Hub, ensure "Kitchen Prep Categories" matches the categories of your prep items (e.g. Prepared Batch).
+            </div>`;
+        }
+        
+        container.innerHTML = html;
+    } catch (e) {
+        console.error("Prep Load Error:", e);
+        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1; padding: 20px;">Failed to load items. Check connection.</div>`;
+    }
+};
+
+window.logPrepBatch = async function(invId, itemName, branch, purchUom, baseUom) {
+    if (!purchUom || purchUom === 'undefined') purchUom = 'Batch';
+    if (!baseUom || baseUom === 'undefined') baseUom = 'units';
+
+    // 🌟 BEAUTIFUL INPUT POPUP
+    const { value: qtyRaw } = await Swal.fire({
+        title: '🔪 Kitchen Prep',
+        html: `<div style="margin-bottom: 10px; color: #475569; font-size: 15px;">How many <strong>${purchUom}s</strong> of <strong style="color: #0f172a;">${itemName}</strong> did you prepare today?</div>`,
+        input: 'number',
+        inputPlaceholder: `Enter number of ${purchUom}s...`,
+        inputAttributes: { min: 0.1, step: 'any' },
+        showCancelButton: true,
+        confirmButtonText: 'Next ➡',
+        confirmButtonColor: '#f59e0b',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
+    });
+
+    if (!qtyRaw) return; // User cancelled
+    let qty = parseFloat(qtyRaw);
+
+    // 🌟 BEAUTIFUL CONFIRMATION POPUP
+    const confirmResult = await Swal.fire({
+        title: 'Confirm Logging',
+        html: `<div style="color: #475569;">You are about to log:<br><strong style="font-size: 22px; color: #16a34a; display: block; margin: 10px 0;">${qty} ${purchUom}(s)</strong> of <strong style="font-size: 18px;">${itemName}</strong>.<br><br><span style="font-size: 12px; color: #64748b;">This will automatically convert to ${baseUom} and deduct the raw ingredients used.</span></div>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: '✅ Yes, Log it!',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#ef4444',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    // Show loading spinner
+    Swal.fire({ title: 'Processing...', text: 'Updating inventory & recipes...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+
+    try {
+        const invRef = doc(db, "inventory", invId);
+        const invSnap = await getDoc(invRef);
+        let invData = invSnap.data();
+        let currentStock = invData.currentStock || 0;
+        
+        let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
+        let baseQtyToAdd = qty * convRate;
+
+        await updateDoc(invRef, { currentStock: currentStock + baseQtyToAdd });
+
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
+        let missingItems = [];
+
+        if (!bomSnap.empty) {
+            for (let bomDoc of bomSnap.docs) {
+                let recipe = bomDoc.data();
+                let rawIngredient = recipe.ingredientName;
+                let totalAmountToDeduct = (recipe.qty || 0) * qty; 
+
+                const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
+                const rawSnap = await getDocs(rawQ);
+
+                if (!rawSnap.empty) {
+                    let rawRef = rawSnap.docs[0].ref;
+                    let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
+                    await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
+                } else {
+                    missingItems.push(rawIngredient);
+                }
+            }
+        }
+
+        let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
+        await addDoc(collection(db, "stock_logs"), {
+            branch: branch, item: itemName, variance: baseQtyToAdd, uom: baseUom,
+            purchUom: purchUom, purchQty: qty, // 🔥 SAVES THE PACK SIZE TO THE DB!
+            type: "End-of-Shift Kitchen Prep", note: `Prepared ${qty} ${purchUom}(s) by ${safeCashierName}`, timestamp: new Date()
+        });
+
+        // 🌟 BEAUTIFUL SUCCESS POPUP
+        let msg = `<div style="text-align: left; font-size: 14px;">✅ Added <strong>+${baseQtyToAdd.toLocaleString()} ${baseUom}</strong> to the vault.`;
+        if (missingItems.length > 0) {
+            msg += `<br><br><span style="color: #dc2626;">⚠️ <strong>Warning:</strong> The following raw ingredients are missing from the ${branch} warehouse and were not deducted: <strong>${missingItems.join(", ")}</strong></span>`;
+        }
+        msg += `</div>`;
+        
+        Swal.fire({ title: 'Success!', html: msg, icon: 'success', confirmButtonColor: '#16a34a', customClass: { popup: 'rounded-2xl' } });
+        
+        window.loadKitchenPrep(); 
+    } catch (e) {
+        console.error("Prep Batch Error:", e);
+        Swal.fire('Error', '❌ Failed to log prep batch. Check connection.', 'error');
+    }
+};
+
+// ==========================================
+// 📱 MOBILE ORDERS ENGINE & LISTENER
+// ==========================================
+window.mobileOrdersList = [];
+window.mobileOrdersUnsubscribe = null;
+window.hasLoadedMobileOrdersOnce = false; // Memory to track logins
+// ==========================================
+// 🚨 MOBILE EMERGENCY KILL SWITCH ENGINE
+// ==========================================
+window.isMobileOrderingActive = true; // Defaults to accepting
+
+// Listens silently to see if another tablet already turned it off
+setTimeout(() => {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
+        let btn = document.getElementById('btnMobileKillSwitch');
+        if (docSnap.exists()) {
+            let data = docSnap.data();
+            window.isMobileOrderingActive = data.mobileOrdersActive !== false; // Defaults to true if undefined
+        } else {
+            window.isMobileOrderingActive = true;
+        }
+
+        if (btn) {
+            if (window.isMobileOrderingActive) {
+                btn.style.background = "#16a34a"; // Green
+                btn.innerHTML = "🟢 Accepting";
+            } else {
+                btn.style.background = "#b91c1c"; // Dark Red
+                btn.innerHTML = "🔴 PAUSED";
+            }
+        }
+    });
+}, 3000);
+
+window.toggleMobileOrderingStatus = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) { alert("Branch not set!"); return; }
+
+    let newState = !window.isMobileOrderingActive;
+    
+    if (!newState) {
+        if (!confirm("🚨 WARNING: This will immediately PAUSE the Customer App for your branch. Customers will see a 'Currently Unavailable' message and cannot place orders.\n\nAre you sure you want to pause mobile ordering?")) return;
+    }
+
+    let btn = document.getElementById('btnMobileKillSwitch');
+    btn.innerText = "⏳..."; btn.disabled = true;
+
+    try {
+        await setDoc(doc(db, "settings", "status_" + branch), { 
+            mobileOrdersActive: newState,
+            lastUpdatedBy: localStorage.getItem('cashierName') || 'System',
+            lastUpdated: serverTimestamp()
+        }, { merge: true });
+        
+    } catch(e) {
+        console.error("Kill Switch Error:", e);
+        alert("Failed to toggle Mobile Ordering. Check internet connection.");
+    } finally {
+        btn.disabled = false;
+    }
+};
+
+window.startMobileOrdersListener = function(branch) {
+    if (window.mobileOrdersUnsubscribe) {
+        window.mobileOrdersUnsubscribe(); 
+    }
+
+    const q = window.query(
+        window.collection(window.db, "incoming_orders"),
+        window.where("branch", "==", branch),
+        window.where("status", "==", "mobile_queue")
+    );
+
+    window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
+        window.mobileOrdersList = [];
+        let newOrdersFound = false;
+
+        snapshot.forEach((doc) => {
+            window.mobileOrdersList.push({ id: doc.id, ...doc.data() });
+        });
+
+        // Check if a brand new order arrived while they were staring at the screen
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added" && window.hasLoadedMobileOrdersOnce) {
+                newOrdersFound = true;
+            }
+        });
+
+        // Update the Red Notification Badge
+        let badge = document.getElementById('mobileBadge');
+        if (badge) {
+            if (window.mobileOrdersList.length > 0) {
+                badge.innerText = window.mobileOrdersList.length;
+                badge.style.display = 'block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // Refresh UI if the cashier is currently looking at the modal
+        if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
+            window.showMobileOrders();
+        }
+
+        // 🔥 THE NEW RING LOGIC: 
+        // Ring if a new order arrives OR if they just logged in and an order is waiting!
+        if (newOrdersFound || (!window.hasLoadedMobileOrdersOnce && window.mobileOrdersList.length > 0)) {
+            window.startMobileOrderAlarm();
+        }
+
+        window.hasLoadedMobileOrdersOnce = true; // Mark that they have officially logged in
+        
+    // 🔥 PART 3 FIX: ADD THE ERROR CATCHER HERE!
+    }, (error) => {
+        console.error("Firebase Mobile Orders Error:", error);
+        alert("Firebase Error: " + error.message + "\n\n(If you see this, turn off Tracking Prevention in your browser shield icon!)");
+    });
+};
+
+// Generates a simple, loud browser "ding" without needing an audio file
+// --- THE LOUD NOTIFICATION PING FIX ---
+// --- THE LOUD 10-SECOND REPEATING ALARM ENGINE ---
+window.audioCtx = null;
+window.orderAlarmInterval = null;
+window.orderAlarmTimeout = null;
+
+window.playNotificationPing = function() {
+    try {
+        if (!window.audioCtx) window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (window.audioCtx.state === 'suspended') window.audioCtx.resume();
+
+        const osc1 = window.audioCtx.createOscillator();
+        const gain1 = window.audioCtx.createGain();
+        osc1.connect(gain1); gain1.connect(window.audioCtx.destination);
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(987.77, window.audioCtx.currentTime); 
+        gain1.gain.setValueAtTime(1, window.audioCtx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.01, window.audioCtx.currentTime + 0.4);
+        osc1.start(window.audioCtx.currentTime); osc1.stop(window.audioCtx.currentTime + 0.4);
+
+        setTimeout(() => {
+            try {
+                const osc2 = window.audioCtx.createOscillator();
+                const gain2 = window.audioCtx.createGain();
+                osc2.connect(gain2); gain2.connect(window.audioCtx.destination);
+                osc2.type = 'sine';
+                osc2.frequency.setValueAtTime(1318.51, window.audioCtx.currentTime); 
+                gain2.gain.setValueAtTime(1, window.audioCtx.currentTime);
+                gain2.gain.exponentialRampToValueAtTime(0.01, window.audioCtx.currentTime + 0.6);
+                osc2.start(window.audioCtx.currentTime); osc2.stop(window.audioCtx.currentTime + 0.6);
+            } catch(e){}
+        }, 150);
+    } catch (e) { console.error("Audio ping error:", e); }
+};
+
+window.startMobileOrderAlarm = function() {
+    window.stopMobileOrderAlarm(); // Clear any existing alarm
+    window.playNotificationPing(); // Play the first ring immediately
+    
+    // Repeat the ring every 2 seconds FOREVER until they check the order!
+    window.orderAlarmInterval = setInterval(() => {
+        // Auto-stop if the cashier opens the menu!
+        if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
+            window.stopMobileOrderAlarm();
+            return;
+        }
+        window.playNotificationPing();
+    }, 2000);
+};
+
+window.stopMobileOrderAlarm = function() {
+    if (window.orderAlarmInterval) clearInterval(window.orderAlarmInterval);
+    if (window.orderAlarmTimeout) clearTimeout(window.orderAlarmTimeout);
+};
+
+window.showMobileOrders = function() {
+    window.stopMobileOrderAlarm();
+    document.getElementById('mobileOrdersModal').style.display = 'flex';
+    let container = document.getElementById('mobileListContainer');
+
+    if (window.mobileOrdersList.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Queue is empty. No incoming orders.</div>';
+        return;
+    }
+
+    let html = '';
+    window.mobileOrdersList.forEach(o => {
+        let itemsHtml = o.items.map(i => {
+            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;">
+                      <div><strong>${i.quantity}x ${i.name}</strong></div>
+                      <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
+                    </div>`;
+        }).join('');
+
+        let paymentColor = o.paymentMode === 'gcash' ? '#3b82f6' : '#f59e0b';
+        let paymentLabel = o.paymentMode === 'gcash' ? 'GCash (Verify Ref: ' + (o.gcashRef || 'No Ref') + ')' : 'Cash (Pay at Counter)';
+
+        // 🔥 THE NEW DELIVERY DETAILS (Fixed Variable Names!)
+        let locText = o.deliveryAddress ? `<div style="font-size:12px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0;">📍 <strong>Delivery Address:</strong><br>${o.deliveryAddress}</div>` : '';
+        let photoBtn = o.locationImage ? `<div style="margin-top:8px;"><a href="${o.locationImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; border:1px solid #c7d2fe;">📸 View Landmark Photo</a></div>` : '';
+
+        html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
+                        <strong style="font-size:16px;">👤 ${o.customerName}</strong>
+                        <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
+                    </div>
+                    <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; text-align: center;">
+                        ${paymentLabel}
+                    </div>
+                    ${locText}
+                    ${photoBtn}
+                    <div style="margin-bottom:15px; margin-top:15px;">${itemsHtml}</div>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
+                        <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
+                    </div>
+                 </div>`;
+    });
+    container.innerHTML = html;
+};
+
+// ==========================================
+// 🍔 UPGRADED MENU TOGGLE ENGINE (SEARCH + DROPDOWN)
+// ==========================================
+
+window.globalMenuToggleList = []; // Stores items in memory for instant searching
+
+window.loadMenuManager = async function() {
+    let container = document.getElementById('menuManagerList');
+    let filterDropdown = document.getElementById('categoryFilter');
+    
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Menu...</div>';
+
+    try {
+        const snap = await window.getDocs(window.collection(window.db, "menu"));
+        const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
+        let uniqueCategories = new Set();
+        
+        window.globalMenuToggleList = []; // Clear memory
+
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            item.id = docSnap.id;
+            let catName = item.category || "Uncategorized";
+            
+            // Only push visible items to the manager list
+            if (!hiddenCategories.includes(catName.toLowerCase())) {
+                window.globalMenuToggleList.push(item);
+                uniqueCategories.add(catName);
+            }
+        });
+
+        // 1. Populate the Category Dropdown dynamically!
+        let dropdownHtml = '<option value="All">All Items</option>';
+        Array.from(uniqueCategories).sort().forEach(cat => {
+            dropdownHtml += `<option value="${cat}">${cat}</option>`;
+        });
+        if (filterDropdown) filterDropdown.innerHTML = dropdownHtml;
+
+        // 2. Render the grid
+        window.renderMenuToggleList(window.globalMenuToggleList);
+
+        let topTitle = document.getElementById('topBarTitle');
+        if (topTitle) topTitle.innerText = "🍔 Menu Toggle";
+
+    } catch (e) {
+        console.error("Menu Toggle Error:", e);
+        container.innerHTML = '<div style="color:red; grid-column:1/-1; text-align:center;">Error loading menu.</div>';
+    }
+};
+
+window.renderMenuToggleList = function(itemsToRender) {
+    let container = document.getElementById('menuManagerList');
+    let html = '';
+
+    if (itemsToRender.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">No items match your search.</div>';
+        return;
+    }
+
+    itemsToRender.forEach(item => {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let isAvail = !(item.unavailableAt && item.unavailableAt.includes(branch));
+        let statusColor = isAvail ? '#16a34a' : '#ef4444';
+        let statusText = isAvail ? 'Available' : 'Sold Out';
+        let bgClass = isAvail ? 'white' : '#f8fafc';
+
+        let imgSrc = item.image || item.imageUrl;
+        let imgHtml = imgSrc 
+            ? `<img src="${imgSrc}" style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">` 
+            : `<div style="width: 50px; height: 50px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 24px; border: 1px solid #cbd5e1;">🍲</div>`;
+
+        html += `
+            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; background: white; display: flex; flex-direction: column; justify-content: space-between; gap: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    ${imgHtml}
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; color: #1e293b; font-size: 15px; line-height: 1.2;">${item.name}</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">${item.category || 'Uncategorized'}</div>
+                    </div>
+                </div>
+                <button onclick="window.toggleItemStatus('${item.id}', ${!isAvail})" style="width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 14px; border: 2px solid ${statusColor}; color: ${statusColor}; background: ${isAvail ? '#f0fdf4' : '#fef2f2'}; cursor: pointer; transition: all 0.2s;">
+                    ${statusText}
+                </button>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+};
+
+// --- THE SMART SEARCH & FILTER FUNCTION ---
+window.filterMenuToggle = function() {
+    let searchText = document.getElementById('menuToggleSearch').value.toLowerCase();
+    let selectedCategory = document.getElementById('categoryFilter').value;
+
+    let filteredItems = window.globalMenuToggleList.filter(item => {
+        let matchesSearch = item.name.toLowerCase().includes(searchText);
+        let matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
+        return matchesSearch && matchesCategory;
+    });
+
+    // Instantly redraw the grid!
+    window.renderMenuToggleList(filteredItems);
+};
+
+// --- THE SMART BRANCH-SPECIFIC TOGGLE ---
+window.toggleItemStatus = async function(docId, makeAvailable) {
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        
+        // 🔥 FIX: Removed "window." prefixes so it correctly uses the imported Firebase functions!
+        const itemRef = doc(db, "menu", docId);
+        const itemSnap = await getDoc(itemRef);
+        let unavailableBranches = itemSnap.data().unavailableAt || [];
+
+        // Add or remove this specific branch from the "Sold Out" list
+        if (makeAvailable) {
+            unavailableBranches = unavailableBranches.filter(b => b !== branch);
+        } else {
+            if (!unavailableBranches.includes(branch)) unavailableBranches.push(branch);
+        }
+
+        // 1. Update Cloud
+        await updateDoc(itemRef, { unavailableAt: unavailableBranches });
+        
+        // 2. Update local memory immediately!
+        let item = window.globalMenuToggleList.find(i => i.id === docId);
+        if (item) item.unavailableAt = unavailableBranches;
+        
+        // 3. Re-apply the search filter instantly
+        window.filterMenuToggle(); 
+        
+    } catch (e) {
+        console.error("Error updating status:", e);
+        alert("Failed to update status.");
+    }
+};
+
+// --- UPDATED MOBILE ORDER ACTIONS (FOR LIVE TRACKING) ---
+window.acceptMobileOrder = async function(docId) {
+    let order = window.mobileOrdersList.find(o => o.id === docId);
+    if (!order) return;
+
+    if (typeof cart !== 'undefined' && cart.length > 0) {
+        if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
+    }
+
+    cart = order.items.map(i => ({
+        name: i.name,
+        basePrice: i.price,
+        variantName: 'Standard',
+        variantPrice: i.price,
+        qty: i.quantity,
+        lineTotalFinal: i.price * i.quantity,
+        discountType: 'none',
+        discountVal: 0,
+        addons: i.addons || {},
+        notes: i.notes || '📱 Mobile App Order'
+    }));
+
+    document.getElementById('finalCustomerName').value = order.customerName;
+
+    // UPDATE STATUS TO "PREPARING" INSTEAD OF DELETING!
+    // (Because the listener only looks for "mobile_queue", it will still disappear from this screen)
+    await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
+        status: "preparing"
+    });
+
+    // 🔥 THE FIX: Cashier App must remember this ID! 🔥
+    window.activeMobileOrderId = docId;
+
+    if (typeof renderCart === 'function') renderCart();
+    // 🔥 Lock in the customer details from the mobile order!
+    let customerInput = document.getElementById('customerName') || document.getElementById('checkoutCustomerName');
+    let orderTypeDrop = document.getElementById('orderType') || document.getElementById('checkoutOrderType');
+        
+    // (orderData is usually the variable name for the selected order. If yours is named 'order' or 'mobileOrder', change it below!)
+    if (customerInput) {
+         customerInput.value = order.customerName || order.name || "Mobile Customer";
+    }
+    if (orderTypeDrop) {
+         orderTypeDrop.value = order.orderType || "Take-Out";
+    }
+    closeModal('mobileOrdersModal');
+};
+
+window.rejectMobileOrder = async function(docId) {
+    if (!confirm("Are you sure you want to reject this order? The customer will be notified.")) return;
+    
+    // UPDATE STATUS TO "REJECTED" INSTEAD OF DELETING!
+    await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
+        status: "rejected"
+    });
+};
+
+// ==========================================
+// 🚚 GLOBAL DELIVERY TOGGLE ENGINE
+// ==========================================
+window.deliveryEnabled = true;
+
+// Listens to the cloud to see if delivery is currently on or off
+onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
+    if (docSnap.exists()) {
+        window.deliveryEnabled = docSnap.data().enabled;
+    } else {
+        window.deliveryEnabled = true; // Default to ON
+    }
+    
+    let textEl = document.getElementById('deliveryStatusText');
+    let btnEl = document.getElementById('btnToggleDelivery');
+    
+    if (textEl && btnEl) {
+        textEl.innerText = window.deliveryEnabled ? "ON" : "OFF";
+        btnEl.style.background = window.deliveryEnabled ? "#10b981" : "#ef4444"; // Green for ON, Red for OFF
+    }
+});
+
+window.toggleGlobalDelivery = async function() {
+    let newState = !window.deliveryEnabled;
+    if (!confirm(`Are you sure you want to turn Delivery ${newState ? 'ON' : 'OFF'} for all customers across all branches?`)) return;
+    
+    try {
+        await setDoc(doc(db, "settings", "global_delivery"), { 
+            enabled: newState,
+            lastChangedBy: localStorage.getItem('cashierName') || 'Cashier',
+            timestamp: serverTimestamp()
+        }, { merge: true });
+    } catch(e) {
+        console.error("Delivery Toggle Error", e);
+        alert("❌ Failed to toggle delivery. Check connection.");
+    }
+};
+
+window.closeAndNextOrder = function() {
+    // 1. Close the modal
+    document.getElementById('receiptModal').style.display = 'none';
+    
+    // 2. Check if the alarm was tripped during checkout
+    if (window.pendingLowStockAlarm) {
+        alert("⚠️ LOW STOCK ALERT\n\nSome ingredients used in the last order are running low. Please notify the Manager to check the Live Inventory dashboard.");
+        window.pendingLowStockAlarm = false; // Reset the alarm
+    }
+};
+
+window.openGrabEarningsModal = function() {
+    document.getElementById('grabEarningsModal').style.display = 'flex';
+    // Auto-set date to today based on their local time zone!
+    let now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('grabEarnDate').value = now.toISOString().split('T')[0];
+    document.getElementById('grabEarnAmount').value = '';
+};
+
+window.submitGrabEarnings = async function() {
+    let dateVal = document.getElementById('grabEarnDate').value;
+    let amount = parseFloat(document.getElementById('grabEarnAmount').value);
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let cashier = localStorage.getItem('cashierName') || 'Unknown';
+
+    if (!dateVal || isNaN(amount)) { alert("Please fill out the date and amount."); return; }
+
+    let btn = document.getElementById('btnSaveGrabEarn');
+    btn.innerText = "Saving..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "grab_payouts"), {
+            dateStr: dateVal, amount: amount, branch: branch, cashier: cashier, timestamp: serverTimestamp()
+        });
+        alert(`✅ Grab Net Earnings of ₱${amount.toFixed(2)} logged for ${dateVal}!`);
+        document.getElementById('grabEarningsModal').style.display = 'none';
+    } catch (e) {
+        console.error(e); alert("Failed to log earnings.");
+    } finally {
+        btn.innerText = "💾 Save Earnings"; btn.disabled = false;
+    }
+};
+
+// ==========================================
+// 🚦 BUSY MODE / PREP TIME ENGINE
+// ==========================================
+window.isBusyMode = false;
+
+window.toggleBusyMode = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) { alert("Branch not set!"); return; }
+
+    window.isBusyMode = !window.isBusyMode;
+    let btn = document.getElementById('btnToggleBusy');
+    
+    // Update UI
+    if (window.isBusyMode) {
+        btn.innerHTML = "🔴 BUSY MODE (+30m)";
+        btn.style.background = "#ef4444";
+    } else {
+        btn.innerHTML = "🟢 Normal Prep (15m)";
+        btn.style.background = "#10b981";
+    }
+
+    // Save to Firebase so the Customer App can see it!
+    try {
+        await window.setDoc(window.doc(window.db, "settings", "status_" + branch), { 
+            busyMode: window.isBusyMode,
+            lastUpdated: window.serverTimestamp()
+        }, { merge: true });
+    } catch(e) {
+        console.error("Error setting busy mode:", e);
+    }
+};
+
+// Check current status on load
+setTimeout(async () => {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (branch) {
+        window.onSnapshot(window.doc(window.db, "settings", "status_" + branch), (docSnap) => {
+            if (docSnap.exists()) {
+                window.isBusyMode = docSnap.data().busyMode || false;
+                let btn = document.getElementById('btnToggleBusy');
+                if (btn) {
+                    if (window.isBusyMode) {
+                        btn.innerHTML = "🔴 BUSY MODE (+30m)";
+                        btn.style.background = "#ef4444";
+                    } else {
+                        btn.innerHTML = "🟢 Normal Prep (15m)";
+                        btn.style.background = "#10b981";
+                    }
+                }
+            }
+        });
+    }
+}, 3000);
+
+// ==========================================
+// 🐙 TAKOYAKI MIX & MATCH ENGINE
+// ==========================================
+window.mixMatchState = {
+    'Pork': 0,
+    'Shrimp': 0,
+    'Octopus': 0,
+    'Ham & Cheese': 0,
+    'Bacon & Cheese': 0
+};
+window.maxMixMatch = 8;
+
+window.toggleMixMatchUI = function() {
+    let panel = document.getElementById('mixMatchPanel');
+    let icon = document.getElementById('mixMatchToggleIcon');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        icon.innerText = '▲';
+    } else {
+        panel.style.display = 'none';
+        icon.innerText = '▼';
+    }
+};
+
+window.adjustMixMatch = function(flavor, delta) {
+    let currentTotal = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+    if (delta > 0 && currentTotal >= window.maxMixMatch) {
+        alert(`You can only select up to ${window.maxMixMatch} pieces for this size!`);
+        return;
+    }
+    if (window.mixMatchState[flavor] + delta >= 0) {
+        window.mixMatchState[flavor] += delta;
+        window.renderMixMatchList();
+    }
+};
+
+window.renderMixMatchList = function() {
+    let list = document.getElementById('mixMatchList');
+    let currentTotal = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+    document.getElementById('mixMatchCounter').innerText = `${currentTotal} / ${window.maxMixMatch} Pcs`;
+
+    let html = '';
+    for (let flavor in window.mixMatchState) {
+        let count = window.mixMatchState[flavor];
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px 12px; border-radius: 6px; border: 1px solid #fde68a;">
+                <span style="font-size: 13px; font-weight: bold; color: #92400e;">${flavor}</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706;" onclick="window.adjustMixMatch('${flavor}', -1)">-</button>
+                    <span style="font-weight: bold; width: 20px; text-align: center; color: #92400e;">${count}</span>
+                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706;" onclick="window.adjustMixMatch('${flavor}', 1)">+</button>
+                </div>
+            </div>
+        `;
+    }
+    list.innerHTML = html;
+};
+
+// ========================================================
+// 🚚 INCOMING DISPATCH RECEIVER (SMART TAB ENGINE)
+// ========================================================
+window.incomingDeliveriesList = [];
+
+setTimeout(() => {
+    let safeBranch = localStorage.getItem('takodeal_device_branch');
+    if (!safeBranch) return;
+
+    // Listens silently in the background
+    onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "==", "In Transit")), (snap) => {
+        window.incomingDeliveriesList = [];
+        snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
+
+        // Light up the Notification Badge
+        let badge = document.getElementById('deliveryBadge');
+        if (badge) {
+            if (window.incomingDeliveriesList.length > 0) {
+                badge.innerText = window.incomingDeliveriesList.length;
+                badge.style.display = 'inline-block';
+                badge.style.animation = 'pulse 2s infinite';
+            } else {
+                badge.style.display = 'none';
+                badge.style.animation = 'none';
+            }
+        }
+
+        // If they are currently looking at the tab, refresh it instantly
+        if (document.getElementById('view-deliveries') && document.getElementById('view-deliveries').classList.contains('active')) {
+             window.renderDeliveriesTab();
+        }
+    });
+}, 3000);
+
+window.renderDeliveriesTab = function() {
+    let container = document.getElementById('deliveriesContainer');
+    if (!container) return;
+
+    if (window.incomingDeliveriesList.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #94a3b8; font-size: 16px; background: #f8fafc; border-radius: 8px;">No incoming deliveries at this time.</div>';
+        return;
+    }
+
+    // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH / SHIPMENT SHEET
+    let dispatchGroups = {};
+    window.incomingDeliveriesList.forEach(del => {
+        let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
+        if (!dispatchGroups[groupKey]) {
+            dispatchGroups[groupKey] = {
+                dispatchId: groupKey,
+                date: del.date || 'Recent Date',
+                time: del.time || '--:--',
+                driver: del.driver || 'Assigned Driver',
+                items: []
+            };
+        }
+        dispatchGroups[groupKey].items.push(del);
+    });
+
+    // 📦 STEP 2: BUILD A SINGLE INVOICE SHEET CARD FOR EACH DISPATCH
+    let html = '';
+    for (let key in dispatchGroups) {
+        let dispatch = dispatchGroups[key];
+        
+        let itemsTableRows = '';
+        dispatch.items.forEach(item => {
+            let friendlyQty = item.displayQty || item.qty;
+            let friendlyUom = item.displayUom || item.uom;
+            
+            itemsTableRows += `
+                <tr style="border-bottom: 1px solid #f1f5f9;" id="row_${item.id}">
+                    <td style="padding: 12px 8px; font-weight: bold; color: #334155;">📦 ${item.item}</td>
+                    <td style="padding: 12px 8px; font-weight: bold; color: #0284c7; text-align: center;">${friendlyQty} ${friendlyUom}</td>
+                    <td style="padding: 12px 8px; text-align: center;">
+                        <input type="number" id="recv_val_${item.id}" data-expected="${friendlyQty}" placeholder="${friendlyQty}" style="width: 85px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-weight: bold; outline: none;">
+                    </td>
+                    <td style="padding: 12px 8px; text-align: center; vertical-align: top;">
+                        <label style="display: flex; align-items: center; justify-content: center; gap: 4px; background: #fff5f5; border: 1px dashed #fca5a5; padding: 6px 10px; border-radius: 6px; color: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; margin-bottom: 6px; width: 100%; box-sizing: border-box;">
+                            <input type="checkbox" id="missing_check_${item.id}" onchange="window.toggleMissingItemRow('${item.id}')" style="accent-color: #dc2626; cursor: pointer;"> Not Delivered
+                        </label>
+                        <input type="text" id="remark_val_${item.id}" placeholder="Remarks / Reason..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box; outline: none; text-align: center;">
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += `
+            <div style="background: white; border: 2px solid #cbd5e1; padding: 20px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);">
+                <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; align-items: center;">
+                    <div>
+                        <h3 style="margin: 0; color: #0f172a; font-size: 16px; letter-spacing: 0.3px;">📋 SHIPMENT DISPATCH TRACK SHEET</h3>
+                        <span style="font-size: 12px; color: #64748b; font-weight: 500;">Dispatched: <strong>${dispatch.date} @ ${dispatch.time}</strong></span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">🚚 Driver: ${dispatch.driver}</span>
+                    </div>
+                </div>
+                <div style="background: #fff1f2; color: #be123c; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 15px; border: 1px dashed #fecaca;">
+                    ⚠️ IMPORTANT: Enter the physical quantity using the UNIT SHOWN below (e.g. Jars, Bottles, Sacks). DO NOT type grams or mL. The system will convert it automatically!
+                </div>
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; text-align: left; font-size: 13px;">
+                    <thead>
+                        <tr style="background: #f8fafc; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                            <th style="padding: 10px 8px;">Item Description</th>
+                            <th style="padding: 10px 8px; text-align: center;">Expected</th>
+                            <th style="padding: 10px 8px; text-align: center;">Actual Received</th>
+                            <th style="padding: 10px 8px; text-align: center;">Security Exception</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsTableRows}
+                    </tbody>
+                </table>
+
+                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}')" style="width: 100%; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.2); transition: 0.2s;">
+                    📥 Confirm and Receive Complete Shipment
+                </button>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+};
+
+// Quick UI Toggle visual treatment for missing items
+window.toggleMissingItemRow = function(itemId) {
+    let isChecked = document.getElementById(`missing_check_${itemId}`).checked;
+    let inputField = document.getElementById(`recv_val_${itemId}`);
+    let row = document.getElementById(`row_${itemId}`);
+    
+    if (isChecked) {
+        inputField.value = 0;
+        inputField.disabled = true;
+        row.style.background = '#fff5f5';
+    } else {
+        inputField.value = '';
+        inputField.disabled = false;
+        row.style.background = 'transparent';
+    }
+};
+
+window.submitGroupedDispatch = async function(groupKey, encodedItems) {
+    let items = JSON.parse(decodeURIComponent(encodedItems));
+    let masterBtn = document.getElementById(`btn_submit_dispatch_${groupKey}`);
+    
+    let itemsToProcess = [];
+    for (let item of items) {
+        let isMissing = document.getElementById(`missing_check_${item.id}`).checked;
+        let inputVal = document.getElementById(`recv_val_${item.id}`).value;
+        let remarkVal = document.getElementById(`remark_val_${item.id}`).value.trim();
+        let actualDisplayQty = parseFloat(inputVal);
+
+        if (isMissing) {
+            actualDisplayQty = 0;
+        } else if (isNaN(actualDisplayQty) || actualDisplayQty < 0) {
+            actualDisplayQty = parseFloat(document.getElementById(`recv_val_${item.id}`).placeholder);
+        }
+
+        itemsToProcess.push({
+            ...item,
+            actualDisplayQty: actualDisplayQty,
+            isMissing: isMissing,
+            remarks: remarkVal
+        });
+    }
+
+    if (!confirm(`Are you sure you want to verify receipt for this entire shipment sheet?`)) return;
+
+    if (masterBtn) { masterBtn.innerText = "⏳ Processing Bulk Safe-Deposit..."; masterBtn.disabled = true; }
+    let safeBranch = localStorage.getItem('takodeal_device_branch');
+
+    try {
+        await Promise.all(itemsToProcess.map(async (item) => {
+            let convRate = item.convRate || 1;
+            let baseUom = item.uom;
+            let actualBaseQty = item.actualDisplayQty * convRate;
+            let expectedDisplayQty = item.displayQty || item.qty;
+            let expectedBaseQty = expectedDisplayQty * convRate;
+            let varianceBase = actualBaseQty - expectedBaseQty;
+
+            let exceptionStatus = "Received";
+            if (item.isMissing) {
+                exceptionStatus = "Lost in Transit";
+            } else if (varianceBase !== 0) {
+                exceptionStatus = "Discrepancy";
+            }
+
+            if (!item.isMissing && actualBaseQty > 0) {
+                const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", item.item));
+                const targetSnap = await getDocs(targetQ);
+
+                let oldStockForLog = 0;
+
+                if (targetSnap.empty) {
+                    await addDoc(collection(db, "inventory"), { 
+                        branch: safeBranch, name: item.item, uom: baseUom, currentStock: actualBaseQty, 
+                        category: item.category || "Ingredients", purchaseUom: item.purchaseUom || baseUom,
+                        conversionOriginal: convRate, conversionRate: convRate, cost: item.cost || 0, reorderLevel: item.reorderLevel || 10, showInPrep: true
+                    });
+                } else {
+                    let tRef = targetSnap.docs[0].ref;
+                    let originalStock = targetSnap.docs[0].data().currentStock || 0;
+                    oldStockForLog = originalStock;
+
+                    // 🔥 THE WIPE-THE-SLATE FIX
+                    // If current stock is negative (ghost debt), we force it to 0 before adding the delivery!
+                    let baseStockMath = originalStock < 0 ? 0 : originalStock;
+                    let newStock = baseStockMath + actualBaseQty;
+
+                    await updateDoc(tRef, { currentStock: newStock });
+                }
+
+                // Add a note in the Manager's Trace Ledger so they know the ghost debt was wiped!
+                let resetNote = oldStockForLog < 0 ? ` (Wiped ${oldStockForLog.toFixed(2)} negative ghost debt)` : '';
+
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: safeBranch, item: item.item, uom: baseUom, oldQty: oldStockForLog,
+                    newQty: (oldStockForLog < 0 ? 0 : oldStockForLog) + actualBaseQty, variance: actualBaseQty, 
+                    type: "Delivery Received", note: `Group Batch Shipment Confirmed${resetNote}`, user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
+                });
+            }
+
+            await updateDoc(doc(db, "dispatch_logs", item.id), {
+                status: exceptionStatus,
+                receivedQty: actualBaseQty, 
+                variance: varianceBase,     
+                receivedDisplayQty: item.actualDisplayQty, 
+                receivedAt: serverTimestamp(),
+                receivedBy: localStorage.getItem('cashierName') || 'Cashier',
+                receivingRemarks: item.remarks
+            });
+
+            if (item.isMissing || varianceBase !== 0) {
+                await addDoc(collection(db, "manager_alerts"), {
+                    type: "DELIVERY_DISCREPANCY",
+                    branch: safeBranch,
+                    cashier: localStorage.getItem('cashierName') || 'Cashier',
+                    message: `SH_ALERT: ${item.item} delivery discrepancy flagged at ${safeBranch}. Status: ${exceptionStatus}. Expected: ${expectedDisplayQty}, Got: ${item.actualDisplayQty}. Note: "${item.remarks || 'No remarks'}"`,
+                    timestamp: serverTimestamp(),
+                    isRead: false
+                });
+            }
+        }));
+
+        alert("🎉 Complete shipment sheet successfully verified and deposited to database registers!");
+
+    } catch (error) {
+        console.error("Bulk Process Error: ", error);
+        alert("❌ Bulk write execution failure. Please check your data connection settings.");
+    } finally {
+        if (masterBtn) { masterBtn.innerText = "Confirm and Receive Complete Shipment"; masterBtn.disabled = false; }
+    }
+};
+
+// ========================================================
+// 🗑️ UPGRADED WASTE & SPOILAGE ENGINE (MULTI-CART & ALERTS)
+// ========================================================
+window.wasteCart = [];
+window.wasteInventoryCache = [];
+window.selectedWasteItem = null;
+
+window.loadWasteItems = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    window.wasteInventoryCache = [];
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        
+        let items = [];
+        snap.forEach(doc => {
+            let data = doc.data();
+            data.id = doc.id;
+            items.push(data);
+        });
+        
+        // Sort alphabetically so the search works smoothly
+        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        window.wasteInventoryCache = items;
+        
+        window.loadWasteHistory(); // Load the table below it
+    } catch (e) {
+        console.error("Waste Items Error:", e);
+    }
+};
+
+window.filterWasteSearch = function() {
+    let input = document.getElementById('wasteSearchInput').value.toLowerCase();
+    let resultsDiv = document.getElementById('wasteSearchResults');
+    window.selectedWasteItem = null; // Reset selection
+
+    if (input.length < 1) { 
+        resultsDiv.style.display = 'none'; 
+        return; 
+    }
+
+    let filtered = window.wasteInventoryCache.filter(i => (i.name || '').toLowerCase().includes(input));
+    let html = '';
+    
+    filtered.forEach(item => {
+        let safeItemStr = encodeURIComponent(JSON.stringify(item));
+        html += `<div onclick="window.selectWasteItem('${safeItemStr}')" style="padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 14px; font-weight: bold; color: #334155; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">🗑️ ${item.name} <span style="font-size:11px; color:#94a3b8; font-weight: normal; margin-left: 5px;">(Live Stock: ${parseFloat(item.currentStock||0).toFixed(1)} ${item.uom || ''})</span></div>`;
+    });
+
+    if (html === '') html = `<div style="padding: 12px 15px; font-size: 13px; color: #64748b; font-style: italic;">No items match your search.</div>`;
+
+    resultsDiv.innerHTML = html;
+    resultsDiv.style.display = 'block';
+};
+
+window.selectWasteItem = function(encodedItem) {
+    let item = JSON.parse(decodeURIComponent(encodedItem));
+    window.selectedWasteItem = item;
+    
+    document.getElementById('wasteSearchInput').value = item.name;
+    document.getElementById('wasteSearchResults').style.display = 'none';
+    document.getElementById('wasteQty').focus(); // Automatically move cursor to the Qty box!
+};
+
+window.addWasteToCart = function() {
+    if (!window.selectedWasteItem) { 
+        Swal.fire('Select Item', 'Please search and select an item from the dropdown list first.', 'warning'); 
+        return; 
+    }
+    
+    let qty = parseFloat(document.getElementById('wasteQty').value);
+    let reason = document.getElementById('wasteReason').value;
+
+    if (isNaN(qty) || qty <= 0) { 
+        Swal.fire('Invalid Qty', 'Please enter a valid quantity greater than 0.', 'warning'); 
+        return; 
+    }
+
+    let itemData = window.selectedWasteItem;
+
+    // Safety Warning: Prevent negative stock visually
+    if (qty > itemData.currentStock) {
+        if (!confirm(`⚠️ WARNING: The system says you only have ${itemData.currentStock} ${itemData.uom || ''} left.\nWasting ${qty} will push your inventory into the negatives. Continue?`)) {
+            return;
+        }
+    }
+
+    // Add to the temporary cart array
+    window.wasteCart.push({
+        id: itemData.id,
+        name: itemData.name,
+        qty: qty,
+        uom: itemData.uom || 'units',
+        reason: reason,
+        cost: parseFloat(itemData.baseCost) || parseFloat(itemData.cost) || 0
+    });
+
+    // Clear inputs for the next item
+    document.getElementById('wasteSearchInput').value = '';
+    document.getElementById('wasteQty').value = '';
+    window.selectedWasteItem = null;
+    
+    window.renderWasteCart();
+};
+
+window.removeWasteItem = function(index) {
+    window.wasteCart.splice(index, 1);
+    window.renderWasteCart();
+};
+
+window.renderWasteCart = function() {
+    let tbody = document.getElementById('wasteCartBody');
+    let container = document.getElementById('wasteCartContainer');
+    
+    if (window.wasteCart.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    let html = '';
+    window.wasteCart.forEach((item, index) => {
+        html += `
+            <tr style="border-bottom: 1px dashed #cbd5e1;">
+                <td style="padding: 10px; font-weight: bold; color: #b91c1c;">${item.name}</td>
+                <td style="padding: 10px; font-weight: 900; font-size: 15px;">${item.qty} <span style="font-size:11px; font-weight:normal; color:#64748b;">${item.uom}</span></td>
+                <td style="padding: 10px; color: #475569; font-style: italic;">${item.reason}</td>
+                <td style="padding: 10px; text-align: right;">
+                    <button onclick="window.removeWasteItem(${index})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-weight: bold; font-size: 11px;">✖ Remove</button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+};
+
+window.submitWasteCart = async function() {
+    if (window.wasteCart.length === 0) {
+        Swal.fire('Empty List', 'Please add items to the waste list before submitting.', 'info');
+        return;
+    }
+
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashierName = localStorage.getItem('cashierName') || "Cashier";
+    
+    if (!confirm(`Are you sure you want to permanently deduct these ${window.wasteCart.length} items from your inventory?`)) return;
+
+    let btn = document.getElementById('btnSubmitWasteCart');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Processing Waste...";
+    btn.disabled = true;
+
+    try {
+        let totalValueLost = 0;
+        let wasteDetailsString = [];
+
+        // Loop through everything in the cart and deduct it
+        for (let item of window.wasteCart) {
+            let invRef = doc(db, "inventory", item.id);
+            let invSnap = await getDoc(invRef);
+            
+            if (invSnap.exists()) {
+                let currentStock = parseFloat(invSnap.data().currentStock) || 0;
+                let newStock = currentStock - item.qty;
+
+                // 1. Deduct from Live Inventory
+                await updateDoc(invRef, { currentStock: newStock });
+
+                // 2. Log to Global Stock History
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: branch,
+                    item: item.name,
+                    uom: item.uom,
+                    oldQty: currentStock,
+                    newQty: newStock,
+                    variance: -Math.abs(item.qty),
+                    type: "Waste / Spoilage",
+                    note: `Reason: ${item.reason}`,
+                    user: cashierName,
+                    timestamp: serverTimestamp()
+                });
+
+                // Calculate the financial loss
+                let itemLoss = item.qty * item.cost;
+                totalValueLost += itemLoss;
+                wasteDetailsString.push(`${item.qty}x ${item.name}`);
+            }
+        }
+
+        // 🚨 3. FIRE THE MANAGER SECURITY ALERT!
+        await addDoc(collection(db, "manager_alerts"), {
+            type: "WASTE_ALERT",
+            branch: branch,
+            cashier: cashierName,
+            message: `WASTE REPORT: ${cashierName} logged ${window.wasteCart.length} item(s) as waste (${wasteDetailsString.join(', ')}). Est Value Lost: ₱${totalValueLost.toFixed(2)}.`,
+            timestamp: serverTimestamp(),
+            isRead: false
+        });
+
+        Swal.fire({
+            title: '✅ Waste Logged',
+            text: `Successfully deducted ${window.wasteCart.length} items from inventory. Management has been notified.`,
+            icon: 'success',
+            confirmButtonColor: '#16a34a',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        // Clean up the screen
+        window.wasteCart = [];
+        window.renderWasteCart();
+        window.loadWasteHistory();
+
+    } catch (e) {
+        console.error("Waste Cart Error:", e);
+        Swal.fire('Error', 'Failed to log waste. Check internet connection.', 'error');
+    } finally {
+        btn.innerText = origText;
+        btn.disabled = false;
+    }
+};
+
+window.loadWasteHistory = async function() {
+    let tbody = document.getElementById('wasteHistoryBody');
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!tbody || !branch) return;
+
+    try {
+        // We only want to show Waste logs from today, for this specific branch
+        let startOfDay = new Date();
+        startOfDay.setHours(0,0,0,0);
+
+        const q = query(collection(db, "stock_logs"), 
+            where("branch", "==", branch), 
+            where("type", "==", "Waste / Spoilage"), 
+            where("timestamp", ">=", startOfDay),
+            orderBy("timestamp", "desc")
+        );
+        const snap = await getDocs(q);
+
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #334155; font-size: 14px;">${d.item}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #ef4444; font-size: 16px;">-${Math.abs(d.variance)} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${d.uom}</span></td>
+                    <td style="padding: 15px; color: #475569; font-style: italic;">${d.note}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 30px; color: #64748b;">No waste logged today! 🎉</td></tr>';
+    } catch (e) {
+        console.error("Waste History Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error fetching logs.</td></tr>';
+    }
+};
+
+// ========================================================
+// 📅 PERSONAL CASHIER SCHEDULE ENGINE
+// ========================================================
+window.loadPersonalSchedule = async function() {
+    const container = document.getElementById('cashierScheduleContainer');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b; font-size: 16px;">⏳ Fetching your schedule from HQ...</div>';
+
+    // 1. Get the name of whoever is currently using the tablet
+    let safeCashierName = localStorage.getItem('cashierName');
+    if (!safeCashierName) {
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color:#dc2626; font-weight:bold;">❌ Please log in via the Time Clock / Lock Screen to view your schedule.</div>';
+        return;
+    }
+
+    try {
+        // 🔥 THE FIX: Removed 'window.' from all Firebase commands!
+        const cashiersQ = query(collection(db, "cashiers"), where("cashierName", "==", safeCashierName));
+        const cashiersSnap = await getDocs(cashiersQ);
+        
+        let schedName = safeCashierName; // Default to full name if no nickname is found
+        if (!cashiersSnap.empty) {
+            let cData = cashiersSnap.docs[0].data();
+            if (cData.scheduleName && cData.scheduleName.trim() !== '') {
+                schedName = cData.scheduleName; 
+            }
+        }
+
+        // 3. Download the giant Global Schedule
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        if (!schedSnap.exists()) {
+            container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;">No schedule has been published by HQ yet.</div>';
+            return;
+        }
+
+        const schedData = schedSnap.data();
+        const branchConfig = schedData.branchConfig || {};
+        const schedule = schedData.currentSchedule || {};
+        const year = schedData.currentYear;
+        const month = schedData.currentMonth;
+        const holidays = schedData.holidays || {};
+
+        if (!year || !month || Object.keys(schedule).length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;">The schedule for this month is currently empty.</div>';
+            return;
+        }
+
+        // Format the Header
+        const monthName = new Date(year, month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+        let html = `
+            <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; text-align: center; display: flex; justify-content: space-between; align-items: center;">
+                <div style="text-align: left;">
+                    <h3 style="margin: 0; color: #0f766e; font-size: 20px;">🗓️ ${monthName}</h3>
+                    <div style="font-size: 13px; color: #64748b; margin-top: 5px;">Filtering shifts for: <strong>${schedName}</strong></div>
+                </div>
+                <div style="text-align: right;">
+                    <button class="btn-refresh" onclick="window.loadPersonalSchedule()" style="background: white; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; font-weight: bold; color: #334155; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔄 Refresh Schedule</button>
+                </div>
+            </div>
+            
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <thead style="background: #0f172a; color: white;">
+                    <tr>
+                        <th style="padding: 15px;">Date</th>
+                        <th style="padding: 15px;">Location</th>
+                        <th style="padding: 15px;">Shift / Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        let shiftCount = 0;
+
+        // 4. Extract ONLY their shifts!
+        for (let day = 1; day <= 31; day++) {
+            if (!schedule[day]) continue;
+            
+            let dateObj = new Date(year, month - 1, day);
+            let dateStr = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            
+            // Check if this date is a holiday!
+            let fullDateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            let holidayType = holidays[fullDateKey];
+            let holBadge = holidayType ? `<br><span style="background: ${holidayType === 'Regular' ? '#fee2e2' : '#fef3c7'}; color: ${holidayType === 'Regular' ? '#dc2626' : '#ea580c'}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px;">⭐ ${holidayType} Holiday</span>` : '';
+
+            let dailyShifts = [];
+
+            // Search through every branch to see where they are assigned today
+            for (let branch in schedule[day]) {
+                let bData = schedule[day][branch];
+                
+                // A. Check if Scheduled for a specific Shift
+                for (let sId in bData.scheduled) {
+                    if (bData.scheduled[sId] === schedName) {
+                        let shiftInfo = branchConfig[branch].find(s => s.id === sId);
+                        let shiftName = shiftInfo ? shiftInfo.name : "Unknown Shift";
+                        dailyShifts.push({ branch, status: `<span style="color: #0284c7; font-weight: 900; font-size: 15px;">${shiftName}</span>` });
+                    }
+                }
+
+                // B. Check if on Standby
+                if (bData.rest && bData.rest.includes(schedName)) {
+                    dailyShifts.push({ branch, status: `<span style="color: #16a34a; font-weight: bold; font-style: italic;">Standby / Reliever</span>` });
+                }
+
+                // C. Check if Unavailable/Leave/Off
+                let unavailMatch = bData.unavailable ? bData.unavailable.find(u => u.name === schedName) : null;
+                if (unavailMatch) {
+                    dailyShifts.push({ branch, status: `<span style="color: #ef4444; font-weight: bold; text-decoration: line-through;">${unavailMatch.status}</span>` });
+                }
+            }
+
+            // Print the rows
+            if (dailyShifts.length > 0) {
+                dailyShifts.forEach(ds => {
+                    html += `
+                        <tr style="border-bottom: 1px solid #e2e8f0; background: white; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                            <td style="padding: 15px; font-weight: bold; color: #334155;">${dateStr} ${holBadge}</td>
+                            <td style="padding: 15px;"><span class="badge badge-open">${ds.branch}</span></td>
+                            <td style="padding: 15px;">${ds.status}</td>
+                        </tr>
+                    `;
+                    shiftCount++;
+                });
+            }
+        }
+
+        html += `</tbody></table>`;
+
+        if (shiftCount === 0) {
+            container.innerHTML = `
+                <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;">
+                    <h3 style="margin: 0; color: #0f766e; font-size: 18px;">${monthName}</h3>
+                    <div style="font-size: 13px; color: #64748b; margin-top: 5px;">Filtering shifts for: <strong>${schedName}</strong></div>
+                    <div style="margin-top: 30px; font-weight: bold; color: #ef4444;">You have no shifts assigned for this month.</div>
+                </div>
+            `;
+        } else {
+            container.innerHTML = html;
+        }
+
+    } catch (e) {
+        console.error("Error loading personal schedule:", e);
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color:red; font-weight: bold;">❌ Failed to load schedule. Please check your internet connection.</div>';
+    }
+};
+
+window.filterCashierStock = function() {
+    let input = document.getElementById('cashierStockSearch').value;
+    window.renderStockCountUI(input);
+};
+
+// ==========================================
+// 🚨 MOBILE EMERGENCY KILL SWITCH ENGINE
+// ==========================================
+window.isMobileOrderingActive = true; 
+
+setTimeout(() => {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
+        let btn = document.getElementById('btnMobileKillSwitch');
+        if (docSnap.exists()) {
+            let data = docSnap.data();
+            window.isMobileOrderingActive = data.mobileOrdersActive !== false; 
+        } else {
+            window.isMobileOrderingActive = true;
+        }
+
+        if (btn) {
+            if (window.isMobileOrderingActive) {
+                btn.style.background = "#16a34a";
+                btn.innerHTML = "🟢 Accepting";
+            } else {
+                btn.style.background = "#b91c1c";
+                btn.innerHTML = "🔴 PAUSED";
+            }
+        }
+    });
+}, 3000);
+
+window.toggleMobileOrderingStatus = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) { alert("Branch not set!"); return; }
+
+    let newState = !window.isMobileOrderingActive;
+    
+    if (!newState) {
+        if (!confirm("🚨 WARNING: This will immediately PAUSE the Customer App for your branch. Customers will see a 'Currently Unavailable' message and cannot place orders.\n\nAre you sure you want to pause mobile ordering?")) return;
+    }
+
+    let btn = document.getElementById('btnMobileKillSwitch');
+    btn.innerText = "⏳..."; btn.disabled = true;
+
+    try {
+        await setDoc(doc(db, "settings", "status_" + branch), { 
+            mobileOrdersActive: newState,
+            lastUpdatedBy: localStorage.getItem('cashierName') || 'System',
+            lastUpdated: serverTimestamp()
+        }, { merge: true });
+        
+    } catch(e) {
+        console.error("Kill Switch Error:", e);
+        alert("Failed to toggle Mobile Ordering. Check internet connection.");
+    } finally {
+        btn.disabled = false;
+    }
+};
+
+// ==========================================
+// 📍 UI INITIALIZATION: LOGIN SCREEN BRANCH DISPLAY
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+    // 🔥 THE FIX: Tell it to look for the exact memory key your Setup Engine uses!
+    let savedBranch = localStorage.getItem("takodeal_device_branch");
+    
+    let branchDisplay = document.getElementById("loginBranchDisplay");
+    
+    if (branchDisplay) {
+        if (savedBranch) {
+            // It found the branch! Display it and remove the red warning color.
+            branchDisplay.innerText = `📍 ${savedBranch}`;
+            branchDisplay.style.color = "#fca5a5"; // A nice soft red/orange to match your UI
+        } else {
+            // If the tablet hasn't been registered to a branch yet
+            branchDisplay.innerText = `📍 Unassigned Device`;
+            branchDisplay.style.color = "#ef4444"; // Turns bright red to alert you!
+        }
+    }
+});
+
+// ========================================================
+// 📦 INTERNAL STORE USE ENGINE (EXPENSE & P&L TRACKER)
+// ========================================================
+window.processStoreUse = async function() {
+    if (!window.cart || window.cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+        return;
+    }
+
+    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
+    if (btn) { btn.innerText = "⏳ Logging..."; btn.disabled = true; }
+
+    try {
+        let totalCost = 0;
+        let itemsLogged = [];
+
+        for (let item of window.cart) {
+            // 1. Find the item in the Live Inventory to get its TRUE COST and CURRENT STOCK
+            const invQ = query(collection(db, "inventory"), where("branch", "==", window.currentBranch), where("name", "==", item.name));
+            const invSnap = await getDocs(invQ);
+
+            if (!invSnap.empty) {
+                let invDoc = invSnap.docs[0];
+                let invData = invDoc.data();
+                let currentStock = invData.currentStock || 0;
+                
+                // 🔥 Calculate the actual cost to the business, not the "Selling Price"
+                let trueCostPerUnit = parseFloat(invData.baseCost) || parseFloat(invData.cost) || 0;
+                totalCost += (trueCostPerUnit * item.qty);
+
+                // 2. Deduct from Live Stock
+                await updateDoc(invDoc.ref, { currentStock: currentStock - item.qty });
+
+                // 3. Log to the Trace Ledger
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: window.currentBranch, item: item.name,
+                    oldQty: currentStock, newQty: currentStock - item.qty, variance: -item.qty,
+                    type: "Store Use", note: `Internal Consumables used by staff`,
+                    user: window.cashierName || "Staff", timestamp: serverTimestamp()
+                });
+            }
+            itemsLogged.push(`${item.qty}x ${item.name}`);
+        }
+
+        // 4. Hit the P&L! Send the cost directly to the Expenses Database
+        if (totalCost > 0) {
+            await addDoc(collection(db, "expenses"), {
+                branch: window.currentBranch, amount: totalCost, 
+                category: "Store Consumables", description: `Internal Use: ${itemsLogged.join(', ')}`,
+                loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
+            });
+        }
+
+        // 5. Send to the Manager's Dedicated History Log
+        await addDoc(collection(db, "store_use_logs"), {
+            branch: window.currentBranch, items: window.cart, totalCost: totalCost,
+            loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '📦 Logged for Store Use!',
+            text: 'Items deducted from stock and recorded as an operating expense.',
+            icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }
+        });
+
+        // Close the modal and clear the cart!
+        let modal = document.getElementById('paymentModal') || document.getElementById('checkoutModal');
+        if (modal) modal.style.display = 'none';
+        
+        window.cart = [];
+        if (typeof renderCart === 'function') renderCart();
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to log consumables.', 'error');
+    } finally {
+        if (btn) { btn.innerText = "📦 Consumables"; btn.disabled = false; }
+    }
+};
+
+// ========================================================
+// 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES)
+// ========================================================
+window.stockReqItemsFlat = [];
+
+window.loadStockRequestUI = async function() {
+    let container = document.getElementById('stockReqList');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching live inventory & HQ status...</div>';
+
+    try {
+        // 1. Fetch Branch Inventory
+        const qBranch = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch));
+        const snapBranch = await getDocs(qBranch);
+
+        // 2. Fetch Main Office Inventory (To see if HQ has stock!)
+        const qHQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const snapHQ = await getDocs(qHQ);
+        let hqStockMap = {};
+        snapHQ.forEach(doc => { hqStockMap[doc.data().name] = parseFloat(doc.data().currentStock || 0); });
+
+        // 3. Process & Group by Category
+        let itemsByCategory = {};
+        snapBranch.forEach(docSnap => {
+            let data = docSnap.data();
+            let cat = data.category || "Uncategorized";
+            if (!cat.toLowerCase().includes("prepared batch") && !cat.toLowerCase().includes("prep batch")) {
+                if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
+                itemsByCategory[cat].push({ id: docSnap.id, ...data });
+            }
+        });
+
+        window.stockReqItemsFlat = [];
+        let html = '';
+
+        Object.keys(itemsByCategory).sort().forEach(category => {
+            // Category Header
+            html += `<div class="stock-req-category" style="background: #e2e8f0; padding: 10px 15px; font-weight: bold; color: #334155; margin-top: 10px; font-size: 14px; text-transform: uppercase; border-radius: 6px;">📁 ${category}</div>`;
+
+            let items = itemsByCategory[category];
+            items.sort((a, b) => a.name.localeCompare(b.name));
+
+            items.forEach((item) => {
+                window.stockReqItemsFlat.push(item);
+                let safeStock = parseFloat(item.currentStock || 0).toFixed(2);
+                
+                // HQ Availability Badge
+                let hqStock = hqStockMap[item.name] || 0;
+                let hqStatus = hqStock > 0
+                    ? `<span style="color: #16a34a; font-weight: bold; font-size: 10px; background: #dcfce7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🟢 HQ HAS STOCK</span>`
+                    : `<span style="color: #dc2626; font-weight: bold; font-size: 10px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🔴 HQ OUT OF STOCK</span>`;
+
+                html += `
+                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
+                    <div style="font-weight: bold; color: #334155; font-size: 14px;">
+                        ${item.name} <br>
+                        ${hqStatus}
+                    </div>
+                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column;">
+                        <strong style="font-size: 14px; color: #334155;">${safeStock}</strong>
+                        <span style="font-size: 10px; color: #94a3b8;">${item.uom || 'units'}</span>
+                    </div>
+                    <div>
+                        <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
+                            <option value="None">--- Normal ---</option>
+                            <option value="Low Stock">⚠️ Low Stock</option>
+                            <option value="Out of Stock">❌ Out of Stock</option>
+                        </select>
+                    </div>
+                    <div>
+                        <input type="number" id="actualCount_${item.id}" placeholder="Count?" class="input-box" style="text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; display: none; width: 100%; box-sizing: border-box;">
+                    </div>
+                </div>`;
+            });
+        });
+
+        container.innerHTML = html;
+    } catch (e) {
+        console.error(e); container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load inventory.</div>';
+    }
+};
+
+window.filterStockReq = function() {
+    let input = document.getElementById('stockReqSearch').value.toLowerCase();
+    let rows = document.querySelectorAll('.stock-req-row');
+    let categories = document.querySelectorAll('.stock-req-category');
+
+    rows.forEach(row => {
+        if (row.getAttribute('data-name').includes(input)) {
+            row.style.display = 'grid';
+            row.classList.add('visible-row');
+        } else {
+            row.style.display = 'none';
+            row.classList.remove('visible-row');
+        }
+    });
+
+    categories.forEach(cat => {
+        let nextEl = cat.nextElementSibling;
+        let hasVisible = false;
+        while(nextEl && nextEl.classList.contains('stock-req-row')) {
+            if (nextEl.classList.contains('visible-row')) { hasVisible = true; break; }
+            nextEl = nextEl.nextElementSibling;
+        }
+        cat.style.display = hasVisible || input === '' ? 'block' : 'none';
+    });
+};
+
+window.openShiftModal = function() {
+    if (!systemReady) return;
+    
+    if (!currentShift) {
+        document.getElementById('shiftViewOpen').style.display = "block";
+        document.getElementById('shiftViewClose').style.display = "none";
+        
+        let nameEl = document.getElementById('inputShiftCashier'); 
+        if (nameEl) nameEl.value = ""; 
+        
+        let inputStart = document.getElementById('inputStartingCash');
+        inputStart.placeholder = "Enter physical cash count...";
+        inputStart.value = ""; // 🔥 BLIND COUNT: Never auto-fill this box!
+
+        // 🔥 THE BEHAVIORAL WARNING: Check the last shift's variance!
+        const q = query(collection(db, "shifts"), where("branch", "==", sessionUser.branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+        getDocs(q).then(snap => {
+            let noteEl = document.getElementById('lastShiftNote');
+            if(!noteEl) {
+                noteEl = document.createElement('div');
+                noteEl.id = 'lastShiftNote';
+                noteEl.style.cssText = "font-size: 13px; font-weight: bold; margin-top: 15px; padding: 12px; border-radius: 6px; text-align: center; line-height: 1.4;";
+                inputStart.parentNode.appendChild(noteEl);
+            }
+
+            if(!snap.empty) {
+                let lastShift = snap.docs[0].data();
+                
+                // Grab the math from the previous shift to see if it was short/over
+                let expected = parseFloat(lastShift.expectedCash) || 0;
+                let declared = parseFloat(lastShift.declaredCash) || parseFloat(lastShift.actualCash) || 0;
+                let diff = declared - expected;
+
+                // Save to memory for the interceptor, but keep it hidden from UI!
+                window.lastEndingCash = declared; 
+
+                // 🔥 THE FIX: Keep it BLIND! Never auto-fill the amount!
+                inputStart.value = ""; 
+
+                // We allow a tiny 5 centavo tolerance for floating point math
+                if (Math.abs(diff) <= 0.05) {
+                    noteEl.innerHTML = `✅ The previous shift closed with a <b>Perfect Count</b>.`;
+                    noteEl.style.background = "#dcfce7"; noteEl.style.color = "#16a34a"; noteEl.style.border = "1px solid #bbf7d0";
+                } else if (diff > 0.05) {
+                    noteEl.innerHTML = `⚠️ The previous shift closed with a <b>CASH OVERAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b45309;">Please double-count the drawer carefully.</span>`;
+                    noteEl.style.background = "#fffbeb"; noteEl.style.color = "#d97706"; noteEl.style.border = "1px solid #fde68a";
+                } else {
+                    noteEl.innerHTML = `🚨 The previous shift closed with a <b>CASH SHORTAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b91c1c;">Please double-count the drawer carefully.</span>`;
+                    noteEl.style.background = "#fef2f2"; noteEl.style.color = "#dc2626"; noteEl.style.border = "1px solid #fecaca";
+                }
+                noteEl.style.display = "block";
+            } else {
+                window.lastEndingCash = 0;
+                inputStart.value = "";
+                noteEl.style.display = "none";
+            }
+        });
+
+        document.getElementById('shiftModal').style.display = "flex";
+    } else {
+        let btn = document.getElementById('btnTopShift'); let oldText = btn.innerText; btn.innerText = "⏳ Data..."; btn.disabled = true;
+        window.getLiveShiftDetails(sessionUser.branch).then(details => {
+            if (!details) return; activeShiftDetails = details;
+            document.getElementById('shiftViewOpen').style.display = "none"; document.getElementById('shiftViewClose').style.display = "block";
+            document.getElementById('shiftActiveDetails').innerText = `Started By: ${details.startedBy}  |  Start Time: ${new Date(details.startTime).toLocaleString()}`;
+            document.getElementById('scStartingCash').innerText = '₱' + details.startingCash.toFixed(2);
+            document.getElementById('scCashOut').innerText = '- ₱' + details.cashOut.toFixed(2);
+            document.getElementById('shiftModal').style.display = "flex"; btn.innerText = oldText; btn.disabled = false;
+        });
+    }
+};
+
+window.submitOpenShift = async function() {
+    try {
+        let shiftName = sessionUser.cashierName || localStorage.getItem('cashierName') || 'Unknown';
+        let startEl = document.getElementById('inputStartingCash');
+        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
+        let lastEndingCash = window.lastEndingCash || 0;
+
+        // 🔥 THE INTERCEPTOR: If they type less cash than the previous shift left!
+        if (startCash !== lastEndingCash && lastEndingCash > 0) {
+            let diff = lastEndingCash - startCash;
+            if (diff > 0) {
+                let result = await Swal.fire({
+                    title: '⚠️ Missing Cash Detected!',
+                    html: `The previous shift left <b>₱${lastEndingCash.toFixed(2)}</b> in the drawer.<br>You are trying to start with only <b>₱${startCash.toFixed(2)}</b>.<br><br><span style="color:#ef4444; font-weight:bold; font-size: 16px;">Where did the ₱${diff.toFixed(2)} go?</span>`,
+                    icon: 'warning',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: 'Owner/Manager Took It',
+                    denyButtonText: 'I Don\'t Know (Shortage)',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#10b981',
+                    denyButtonColor: '#ef4444',
+                    customClass: { popup: 'rounded-2xl' }
+                });
+
+                if (result.isConfirmed) {
+                    // Auto-log it as a Remittance so it fixes the accounting!
+                    await addDoc(collection(db, "remittances"), {
+                        branch: sessionUser.branch,
+                        cashierName: "Auto-Logged (Shift Start)",
+                        amount: diff,
+                        type: "Cash Collection",
+                        channel: "Owner Collection",
+                        timestamp: serverTimestamp(),
+                        dateStr: new Date().toLocaleDateString('en-CA')
+                    });
+                    Swal.fire('Logged!', `₱${diff} was auto-logged as an Owner Collection.`, 'success');
+                } else if (result.isDenied) {
+                    // Log it as an unexplained missing expense
+                    await addDoc(collection(db, "expenses"), {
+                        branch: sessionUser.branch,
+                        amount: diff,
+                        category: "Unexplained Shortage",
+                        description: `Missing cash between shifts (Expected: ₱${lastEndingCash}, Started With: ₱${startCash})`,
+                        loggedBy: shiftName,
+                        timestamp: serverTimestamp()
+                    });
+                    Swal.fire('Logged', `₱${diff} was recorded as an unexplained shortage.`, 'info');
+                } else {
+                    return; // User clicked Cancel
+                }
+            }
+        }
+
+        let btn = document.getElementById('btnOpenShiftSubmit');
+        if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
+
+        let shiftId = await window.openNewShift(sessionUser.branch, shiftName, startCash);
+        if (shiftId) {
+            await window.checkCurrentShift();
+            closeModal('shiftModal');
+        } else {
+            alert("Failed to open shift. Check connection!");
+        }
+        if (btn) { btn.innerText = "Open Shift"; btn.disabled = false; }
+    } catch (e) { console.error(e); }
+};
+
+// ========================================================
+// 📊 Z-READING PRE-FLIGHT CHECK ENGINE (BLIND COUNT SECURED)
+// ========================================================
+
+window.safeSubmitComprehensiveCloseShift = async function() {
+    let parked = await window.getParkedOrders(sessionUser.branch);
+    let confirmBtn = document.querySelector('#endShiftModal .btn-place');
+    if (confirmBtn) { confirmBtn.innerText = "⏳ Verifying Count..."; confirmBtn.disabled = true; }
+    if (parked && parked.length > 0) {
+        Swal.fire('⚠️ Strict System Lock', `You have ${parked.length} parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.`, 'warning');
+        closeModal('endShiftModal');
+        return;
+    }
+
+    let btn = document.querySelector('button[onclick="safeSubmitComprehensiveCloseShift()"]');
+    let origText = btn ? btn.innerText : '🛑 Confirm & End Shift';
+    if(btn) { btn.innerText = "Verifying Count..."; btn.disabled = true; }
+
+    try {
+        // 1. PULL DECLARED CASH DIRECTLY FROM THE GRAND TOTAL DISPLAY!
+        let totalDeclaredStr = document.getElementById('grandTotalCash').innerText.replace(/[₱,]/g, '').trim();
+        let totalDeclared = parseFloat(totalDeclaredStr) || 0;
+
+        // 2. PULL EXPECTED CASH FROM THE OFFICIAL SHIFT MEMORY ENGINE!
+        let expectedCash = 0;
+        let details = await window.getLiveShiftDetails(sessionUser.branch);
+        
+        if (details) {
+            // 🔥 THE FIX: We bypass manual math entirely and just grab the exact expectedCash calculated by the Master Shift Engine!
+            expectedCash = parseFloat(details.expectedCash) || 0;
+        }
+
+        let variance = totalDeclared - expectedCash;
+
+        // 3. 🚨 THE STRICT BLIND COUNT UI (No amounts revealed!)
+        let title = "";
+        let messageHtml = "";
+        let icon = "warning";
+        let confirmButtonColor = "";
+
+        // We allow a tiny 5 centavo tolerance for JavaScript decimal math
+        if (Math.abs(variance) <= 0.05) {
+            title = 'Perfect Shift! 🎯';
+            confirmButtonColor = '#10b981';
+            icon = 'success';
+            messageHtml = `<div style="color: #10b981; font-size: 16px; font-weight: bold; margin-bottom: 5px;">Your cash count matches the system perfectly!</div>`;
+        } else if (variance > 0.05) {
+            title = 'Cash Overage Detected 📈';
+            confirmButtonColor = '#f59e0b'; // Warning Orange
+            icon = 'warning';
+            messageHtml = `
+                <div style="color: #d97706; font-size: 16px; font-weight: bold; margin-bottom: 8px;">Your declared cash is MORE than expected.</div>
+                <div style="font-size: 13px; color: #475569;">Do not remove any overage. Submit the full amount for HQ review.</div>
+            `;
+        } else {
+            title = 'Cash Shortage Detected 📉';
+            confirmButtonColor = '#ef4444'; // Danger Red
+            icon = 'error';
+            messageHtml = `
+                <div style="color: #dc2626; font-size: 16px; font-weight: bold; margin-bottom: 8px;">Your declared cash is LESS than expected.</div>
+                <div style="font-size: 13px; color: #475569;">Please double-check your drawer for dropped bills or missing receipts.</div>
+            `;
+        }
+
+        let confirm = await Swal.fire({
+            title: title,
+            html: `
+                <div style="text-align: center; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    ${messageHtml}
+                </div>
+                <br><p style="font-size: 13px; color: #64748b; font-weight: bold; margin:0;">Do you want to permanently submit this Z-Reading?</p>
+            `,
+            icon: icon,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, End Shift',
+            cancelButtonText: 'No, Re-count Cash',
+            confirmButtonColor: confirmButtonColor,
+            cancelButtonColor: '#64748b',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+
+        if (!confirm.isConfirmed) {
+            if(btn) { btn.innerText = origText; btn.disabled = false; }
+            return;
+        }
+
+        // 4. They confirmed! Proceed to the actual submit function!
+        if (typeof window.submitComprehensiveCloseShift === 'function') {
+            window.submitComprehensiveCloseShift(); 
+        } else if (typeof submitComprehensiveCloseShift === 'function') {
+            submitComprehensiveCloseShift();
+        }
+
+    } catch(e) {
+        console.error("Z-Reading Error:", e);
+        Swal.fire("Error", "Error calculating variance. Proceeding to force close.", "warning");
+        if (typeof window.submitComprehensiveCloseShift === 'function') window.submitComprehensiveCloseShift();
+    } finally {
+        if(btn) { btn.innerText = origText; btn.disabled = false; }
+        if(confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
+    }
+};
+
+// ========================================================
+// 🛑 HR SANCTION LOCK SCREEN ENGINE (WITH SIGNATURE)
+// ========================================================
+window.hasSignedNTE = false;
+
+window.initSignaturePad = function() {
+    const canvas = document.getElementById('signatureCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+
+    // Reset variables on load
+    window.hasSignedNTE = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Style the pen
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#0f172a';
+
+    const startPosition = (e) => {
+        isDrawing = true;
+        window.hasSignedNTE = true; // Flips to true the moment they touch the pad!
+        draw(e);
+    };
+
+    const stopPosition = () => {
+        isDrawing = false;
+        ctx.beginPath(); // Prevents lines from connecting weirdly
+    };
+
+    const draw = (e) => {
+        if (!isDrawing) return;
+        e.preventDefault(); // CRITICAL: Stops the tablet screen from scrolling while drawing!
+
+        let x, y;
+        const rect = canvas.getBoundingClientRect();
+        
+        // Handle both Touch (Tablets) and Mouse (PC)
+        if (e.type.includes('touch')) {
+            x = e.touches[0].clientX - rect.left;
+            y = e.touches[0].clientY - rect.top;
+        } else {
+            x = e.clientX - rect.left;
+            y = e.clientY - rect.top;
+        }
+
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+    };
+
+    // Remove old listeners to prevent duplicates
+    canvas.replaceWith(canvas.cloneNode(true));
+    const newCanvas = document.getElementById('signatureCanvas');
+
+    // Mouse listeners
+    newCanvas.addEventListener('mousedown', startPosition);
+    newCanvas.addEventListener('mousemove', draw);
+    newCanvas.addEventListener('mouseup', stopPosition);
+    newCanvas.addEventListener('mouseout', stopPosition);
+
+    // Touch listeners (for tablets/phones)
+    newCanvas.addEventListener('touchstart', startPosition, { passive: false });
+    newCanvas.addEventListener('touchmove', draw, { passive: false });
+    newCanvas.addEventListener('touchend', stopPosition);
+};
+
+window.clearSignature = function() {
+    const canvas = document.getElementById('signatureCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        window.hasSignedNTE = false;
+    }
+};
+
+window.checkActiveSanctions = async function(staffName) {
+    if (!staffName) return;
+    
+    try {
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            let sanction = snap.docs[0].data();
+            let sanctionId = snap.docs[0].id;
+
+            document.getElementById('activeSanctionId').value = sanctionId;
+            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
+            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
+            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
+            document.getElementById('sanctionStaffReply').value = ""; 
+
+            document.getElementById('hrSanctionModal').style.display = 'flex';
+            
+            // 🔥 WAKE UP THE SIGNATURE PAD!
+            setTimeout(() => { window.initSignaturePad(); }, 300);
+        }
+    } catch (e) { console.error("Error checking sanctions:", e); }
+};
+
+window.submitSanctionReply = async function() {
+    let sanctionId = document.getElementById('activeSanctionId').value;
+    let replyText = document.getElementById('sanctionStaffReply').value.trim();
+
+    if (!replyText || replyText.length < 15) {
+        Swal.fire('Too Short', 'You must provide a detailed written explanation (at least 15 characters).', 'warning');
+        return;
+    }
+
+    if (!window.hasSignedNTE) {
+        Swal.fire('Signature Required', 'Please sign inside the signature box to legally acknowledge this notice.', 'error');
+        return;
+    }
+
+    let btn = document.getElementById('btnSubmitSanctionReply');
+    btn.innerText = "⏳ Submitting..."; btn.disabled = true;
+
+    try {
+        // 🔥 CAPTURE THE SIGNATURE AS AN IMAGE!
+        const canvas = document.getElementById('signatureCanvas');
+        const signatureDataUrl = canvas.toDataURL('image/png');
+
+        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
+            staffReply: replyText,
+            signatureBase64: signatureDataUrl, // Saves the drawing to the cloud!
+            status: "Replied",
+            repliedAt: serverTimestamp()
+        });
+
+        Swal.fire('✅ Submitted', 'Your explanation and signature have been securely logged. The POS is now unlocked.', 'success');
+        document.getElementById('hrSanctionModal').style.display = 'none';
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to submit. Check internet connection.', 'error');
+    } finally {
+        btn.innerText = "Submit & Unlock"; btn.disabled = false;
+    }
+};
+
+window.logoutCashier = function() {
+    localStorage.removeItem('cashierName');
+    localStorage.removeItem('cashierBranch');
+    localStorage.removeItem('cashierPermissions');
+    location.reload(); // Hard refresh to kick them out
+};
+
+// ========================================================
+// 🛑 HR SANCTION LOCK SCREEN ENGINE (WITH SIGNATURE)
+// ========================================================
+window.hasSignedNTE = false;
+
+window.initSignaturePad = function() {
+    const canvas = document.getElementById('signatureCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+
+    // Reset variables on load
+    window.hasSignedNTE = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Style the pen
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#0f172a';
+
+    const startPosition = (e) => {
+        isDrawing = true;
+        window.hasSignedNTE = true; // Flips to true the moment they touch the pad!
+        draw(e);
+    };
+
+    const stopPosition = () => {
+        isDrawing = false;
+        ctx.beginPath(); // Prevents lines from connecting weirdly
+    };
+
+    const draw = (e) => {
+        if (!isDrawing) return;
+        e.preventDefault(); // CRITICAL: Stops the tablet screen from scrolling while drawing!
+
+        let x, y;
+        const rect = canvas.getBoundingClientRect();
+        
+        // Handle both Touch (Tablets) and Mouse (PC)
+        if (e.type.includes('touch')) {
+            x = e.touches[0].clientX - rect.left;
+            y = e.touches[0].clientY - rect.top;
+        } else {
+            x = e.clientX - rect.left;
+            y = e.clientY - rect.top;
+        }
+
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+    };
+
+    // Mouse listeners
+    canvas.addEventListener('mousedown', startPosition);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopPosition);
+    canvas.addEventListener('mouseout', stopPosition);
+
+    // Touch listeners (for tablets/phones)
+    canvas.addEventListener('touchstart', startPosition, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopPosition);
+};
+
+window.clearSignature = function() {
+    const canvas = document.getElementById('signatureCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        window.hasSignedNTE = false;
+    }
+};
+
+window.checkActiveSanctions = async function(staffName) {
+    if (!staffName) return;
+    
+    try {
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            let sanction = snap.docs[0].data();
+            let sanctionId = snap.docs[0].id;
+
+            document.getElementById('activeSanctionId').value = sanctionId;
+            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
+            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
+            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
+            document.getElementById('sanctionStaffReply').value = ""; 
+
+            document.getElementById('hrSanctionModal').style.display = 'flex';
+            
+            // 🔥 WAKE UP THE SIGNATURE PAD!
+            setTimeout(() => { window.initSignaturePad(); }, 300);
+        }
+    } catch (e) { console.error("Error checking sanctions:", e); }
+};
+
+window.submitSanctionReply = async function() {
+    let sanctionId = document.getElementById('activeSanctionId').value;
+    let replyText = document.getElementById('sanctionStaffReply').value.trim();
+
+    if (!replyText || replyText.length < 15) {
+        Swal.fire('Too Short', 'You must provide a detailed written explanation (at least 15 characters).', 'warning');
+        return;
+    }
+
+    if (!window.hasSignedNTE) {
+        Swal.fire('Signature Required', 'Please sign inside the signature box to legally acknowledge this notice.', 'error');
+        return;
+    }
+
+    let btn = document.getElementById('btnSubmitSanctionReply');
+    btn.innerText = "⏳ Submitting..."; btn.disabled = true;
+
+    try {
+        // 🔥 CAPTURE THE SIGNATURE AS AN IMAGE!
+        const canvas = document.getElementById('signatureCanvas');
+        const signatureDataUrl = canvas.toDataURL('image/png');
+
+        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
+            staffReply: replyText,
+            signatureBase64: signatureDataUrl, // Saves the drawing to the cloud!
+            status: "Replied",
+            repliedAt: serverTimestamp()
+        });
+
+        Swal.fire('✅ Submitted', 'Your explanation and signature have been securely logged. The POS is now unlocked.', 'success');
+        document.getElementById('hrSanctionModal').style.display = 'none';
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to submit. Check internet connection.', 'error');
+    } finally {
+        btn.innerText = "Submit Explanation & Unlock"; btn.disabled = false;
+    }
+};
+
+// ========================================================
+// 📋 DAILY SOP CHECKLIST ENGINE (MULTI-STAFF & SCROLL FIX)
+// ========================================================
+window.cashierSopData = {}; 
+window.currentSopTasks = []; 
+
+window.loadSopView = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) { alert("Device branch not set!"); return; }
+
+    document.getElementById('sopViewBranchText').innerText = `📍 ${branch}`;
+    let select = document.getElementById('sopRoleSelect');
+    
+    // Don't re-download if we already have it in memory to keep it lightning fast
+    if (Object.keys(window.cashierSopData).length === 0) {
+        select.innerHTML = '<option value="">⏳ Downloading checklists...</option>';
+        try {
+            const docSnap = await getDoc(doc(db, "settings", "sop_" + branch));
+            if (docSnap.exists() && docSnap.data().roles) {
+                window.cashierSopData = docSnap.data().roles;
+            } else {
+                select.innerHTML = '<option value="">No checklists setup by Manager yet.</option>';
+                return;
+            }
+        } catch (e) {
+            console.error("SOP Fetch Error:", e);
+            select.innerHTML = '<option value="">❌ Connection Error</option>';
+            return;
+        }
+    }
+
+    // Build the dropdown
+    let html = '<option value="">-- Choose Your Shift / Role --</option>';
+    Object.keys(window.cashierSopData).forEach(role => {
+        html += `<option value="${role}">${role}</option>`;
+    });
+    select.innerHTML = html;
+    
+    // Clear the container on load so it's fresh
+    document.getElementById('sopChecklistContainer').innerHTML = '<div style="text-align:center; padding: 60px; color:#94a3b8; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>';
+};
+
+window.handleSopRoleChange = function() {
+    let role = document.getElementById('sopRoleSelect').value;
+    let container = document.getElementById('sopChecklistContainer');
+
+    if (!role) {
+        container.innerHTML = '<div style="text-align:center; padding: 60px; color:#94a3b8; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>';
+        window.currentSopTasks = [];
+        return;
+    }
+
+    // 🔥 THE SCROLL FIX: Forces the tablet to contain the list and create a scrollbar!
+    container.style.maxHeight = "55vh"; 
+    container.style.overflowY = "auto";
+    container.style.paddingRight = "10px";
+    container.style.paddingBottom = "20px";
+
+    // 🔥 THE MULTI-STAFF MEMORY FIX: Create a unique save file for THIS role TODAY!
+    let today = new Date().toISOString().split('T')[0];
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let memoryKey = `takodeal_sop_${branch}_${today}_${role}`;
+
+    let savedProgress = localStorage.getItem(memoryKey);
+
+    if (savedProgress) {
+        try {
+            // Load their specific saved progress
+            window.currentSopTasks = JSON.parse(savedProgress);
+        } catch(e) {
+            // Failsafe
+            let tasks = window.cashierSopData[role] || [];
+            window.currentSopTasks = tasks.map(t => ({ task: t, status: null, remark: "" }));
+        }
+    } else {
+        // Initialize fresh blank tasks for this specific role
+        let tasks = window.cashierSopData[role] || [];
+        window.currentSopTasks = tasks.map(t => ({ task: t, status: null, remark: "" }));
+    }
+    
+    window.renderSopChecklist();
+};
+
+window.renderSopChecklist = function() {
+    let role = document.getElementById('sopRoleSelect').value;
+    let container = document.getElementById('sopChecklistContainer');
+    
+    if (!role || window.currentSopTasks.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding: 60px; color:#94a3b8; font-weight: bold; font-size: 16px;">Select your role above to view your tasks.</div>';
+        return;
+    }
+
+    let html = '';
+    window.currentSopTasks.forEach((item, index) => {
+        let isDone = item.status === 'done';
+        let isFail = item.status === 'fail';
+        
+        let btnDoneStyle = isDone ? "background: #dcfce7; border-color: #16a34a; color: #15803d;" : "background: white; border-color: #cbd5e1; color: #64748b;";
+        let btnFailStyle = isFail ? "background: #fee2e2; border-color: #dc2626; color: #b91c1c;" : "background: white; border-color: #cbd5e1; color: #64748b;";
+        let remarkDisplay = isFail ? "block" : "none";
+
+        // Protect text so apostrophes don't break the input box!
+        let safeRemark = item.remark ? item.remark.replace(/"/g, '&quot;') : '';
+
+        html += `
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 18px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                <div style="font-size: 16px; font-weight: bold; color: #1e293b; margin-bottom: 12px; line-height: 1.4;">${index + 1}. ${item.task}</div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button id="btn_sop_done_${index}" onclick="window.markSopTask(${index}, 'done')" style="flex: 1; padding: 12px; border-radius: 6px; border: 2px solid #cbd5e1; font-weight: bold; cursor: pointer; transition: 0.2s; ${btnDoneStyle}">✅ Done</button>
+                    <button id="btn_sop_fail_${index}" onclick="window.markSopTask(${index}, 'fail')" style="flex: 1; padding: 12px; border-radius: 6px; border: 2px solid #cbd5e1; font-weight: bold; cursor: pointer; transition: 0.2s; ${btnFailStyle}">❌ Missed</button>
+                </div>
+
+                <div id="sop_remark_container_${index}" style="display: ${remarkDisplay}; margin-top: 12px;">
+                    <input type="text" id="sop_remark_${index}" placeholder="Why was this missed? (Required)" value="${safeRemark}" onkeyup="window.currentSopTasks[${index}].remark = this.value; window.saveSopProgress();" style="width: 100%; padding: 12px; border: 1px solid #fca5a5; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-weight: bold; font-size: 14px; outline: none; box-sizing: border-box;">
+                </div>
+            </div>
+        `;
+    });
+
+    // 🔥 THE SUBMIT FIX: We inject the Submit button safely INSIDE the scrollable list at the very bottom!
+    html += `
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 2px dashed #cbd5e1; padding-bottom: 30px;">
+            <button id="btnSubmitSopInside" onclick="window.submitSopChecklist()" style="width: 100%; padding: 15px; background: #0f766e; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">🚀 Submit ${role} Checklist</button>
+        </div>
+    `;
+
+    container.innerHTML = html;
+};
+
+// Extremely tactile feedback
+window.markSopTask = function(index, status) {
+    window.currentSopTasks[index].status = status;
+    
+    let btnDone = document.getElementById(`btn_sop_done_${index}`);
+    let btnFail = document.getElementById(`btn_sop_fail_${index}`);
+    let remarkBox = document.getElementById(`sop_remark_container_${index}`);
+
+    if (status === 'done') {
+        btnDone.style.background = '#dcfce7'; btnDone.style.borderColor = '#16a34a'; btnDone.style.color = '#15803d';
+        btnFail.style.background = 'white'; btnFail.style.borderColor = '#cbd5e1'; btnFail.style.color = '#64748b';
+        remarkBox.style.display = 'none';
+        window.currentSopTasks[index].remark = ""; 
+        let remarkInp = document.getElementById(`sop_remark_${index}`);
+        if(remarkInp) remarkInp.value = "";
+    } else {
+        btnFail.style.background = '#fee2e2'; btnFail.style.borderColor = '#dc2626'; btnFail.style.color = '#b91c1c';
+        btnDone.style.background = 'white'; btnDone.style.borderColor = '#cbd5e1'; btnDone.style.color = '#64748b';
+        remarkBox.style.display = 'block';
+    }
+    
+    window.saveSopProgress(); // Instantly save to hard drive!
+};
+
+// 🔥 The Auto-Saver (Now uses independent role memory)
+window.saveSopProgress = function() {
+    let role = document.getElementById('sopRoleSelect').value;
+    if (!role || window.currentSopTasks.length === 0) return;
+    
+    let today = new Date().toISOString().split('T')[0];
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let memoryKey = `takodeal_sop_${branch}_${today}_${role}`;
+    
+    localStorage.setItem(memoryKey, JSON.stringify(window.currentSopTasks));
+};
+
+window.submitSopChecklist = async function() {
+    let role = document.getElementById('sopRoleSelect').value;
+    if (!role || window.currentSopTasks.length === 0) return Swal.fire('Error', 'Please select a role first.', 'error');
+
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashierName = localStorage.getItem('cashierName') || "Unknown Cashier";
+
+    // 🛑 VALIDATION: Ensure every task is marked, and every 'fail' has a reason!
+    let totalTasks = window.currentSopTasks.length;
+    let completedTasks = 0;
+
+    for (let i = 0; i < totalTasks; i++) {
+        let t = window.currentSopTasks[i];
+        if (t.status === null) {
+            return Swal.fire('Incomplete', `You forgot to mark Task #${i + 1} as Done or Missed!`, 'warning');
+        }
+        if (t.status === 'fail' && t.remark.trim() === '') {
+            return Swal.fire('Reason Required', `You marked Task #${i + 1} as Missed. You must type a reason why!`, 'error');
+        }
+        if (t.status === 'done') completedTasks++;
+    }
+
+    let btn = document.getElementById('btnSubmitSopInside');
+    if (btn) { btn.innerText = "⏳ Submitting..."; btn.disabled = true; }
+
+    try {
+        let score = Math.round((completedTasks / totalTasks) * 100);
+
+        await addDoc(collection(db, "sop_logs"), {
+            branch: branch,
+            staffName: cashierName,
+            roleName: role,
+            tasks: window.currentSopTasks,
+            scorePercentage: score,
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '✅ Submitted!',
+            text: `SOP Checklist submitted securely to management. Score: ${score}%`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        // 🔥 WIPE ONLY THIS ROLE'S MEMORY SO THEY CAN DO IT FRESH TOMORROW!
+        let today = new Date().toISOString().split('T')[0];
+        let memoryKey = `takodeal_sop_${branch}_${today}_${role}`;
+        localStorage.removeItem(memoryKey);
+        
+        document.getElementById('sopRoleSelect').value = "";
+        document.getElementById('sopChecklistContainer').innerHTML = '<div style="text-align:center; padding: 40px; color:#16a34a; font-weight: bold; font-size: 16px;">✅ Checklist Successfully Submitted. Thank you!</div>';
+        window.currentSopTasks = [];
+
+    } catch (e) {
+        console.error("SOP Submit Error:", e);
+        Swal.fire('Error', 'Failed to submit checklist. Check connection.', 'error');
+    } finally {
+        if (btn) { btn.innerText = `🚀 Submit ${role} Checklist`; btn.disabled = false; }
+    }
+};
+// ========================================================
+// 💵 PHYSICAL HARDWARE CASH DRAWER KICK ENGINE
+// ========================================================
+window.kickCashDrawer = function() {
+    // Standard ESC/POS sequence to trigger cash drawer kick on pin 2
+    let drawerPulseCommand = "\x1B\x40\x1B\x70\x00\x19\x96";
+    
+    try {
+        let base64Command = btoa(unescape(encodeURIComponent(drawerPulseCommand)));
+        window.location.href = "intent:base64," + base64Command + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        console.log("⚡ Hardware electrical pulse sent to cash drawer.");
+    } catch(e) {
+        console.error("Hardware control error:", e);
+    }
+};
+
+// ========================================================
+// 📱 SIDEBAR AUTO-ARRANGEMENT ENGINE (SYNC)
+// ========================================================
+window.applySidebarLayout = async function() {
+    try {
+        const docSnap = await getDoc(doc(db, "settings", "sidebar_layout"));
+        if (docSnap.exists() && docSnap.data().tabs) {
+            let layout = docSnap.data().tabs;
+            let navMenu = document.querySelector('.nav-menu');
+            if (!navMenu) return;
+            
+            // Reorder the DOM elements! 
+            // By appending them, they automatically move to the bottom in order.
+            layout.forEach(tabData => {
+                let id = tabData.id;
+                let el = document.getElementById(id);
+                if (el) navMenu.appendChild(el); 
+            });
+        }
+    } catch (e) {
+        console.error("Failed to load sidebar layout from Cloud.", e);
+    }
+};
+
+// ========================================================
+// 📦 SMART BRANCH STOCK REQUEST ENGINE (WITH HISTORY)
+// ========================================================
+window.switchStockReqTab = function(tab) {
+    document.getElementById('stockReqTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    document.getElementById('stockReqTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+    
+    document.getElementById('btnTabReqNew').style.background = tab === 'New' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqNew').style.color = tab === 'New' ? 'white' : '#475569';
+    document.getElementById('btnTabReqNew').style.border = tab === 'New' ? 'none' : '1px solid #cbd5e1';
+
+    document.getElementById('btnTabReqHist').style.background = tab === 'History' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqHist').style.color = tab === 'History' ? 'white' : '#475569';
+    document.getElementById('btnTabReqHist').style.border = tab === 'History' ? 'none' : '1px solid #cbd5e1';
+
+    if (tab === 'History') window.loadStockRequestHistory();
+};
+
+window.globalHqStockCache = [];
+
+window.loadStockRequestUI = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    const listDiv = document.getElementById('stockReqList');
+    if (!listDiv) return;
+    listDiv.innerHTML = '<div style="text-align:center; padding: 20px; color: #94a3b8;">Loading inventory data...</div>';
+
+    try {
+        // 1. Fetch HQ Stock
+        const hqQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const hqSnap = await getDocs(hqQ);
+        window.globalHqStockCache = [];
+        hqSnap.forEach(doc => {
+            let data = doc.data();
+            // 🔥 THE FIX: Respect the allowRequest toggle set by the Manager!
+            if (data.allowRequest !== false) {
+                window.globalHqStockCache.push({ id: doc.id, ...data });
+            }
+        });
+
+        window.globalHqStockCache.sort((a,b) => a.name.localeCompare(b.name));
+
+        // 2. Fetch Local Branch Stock for comparison
+        const brQ = query(collection(db, "inventory"), where("branch", "==", branch));
+        const brSnap = await getDocs(brQ);
+        let branchStockDict = {};
+        brSnap.forEach(doc => {
+            let d = doc.data();
+            branchStockDict[d.name] = d.currentStock || 0;
+        });
+
+        window.renderStockReqList(branchStockDict);
+
+    } catch (e) {
+        console.error("Request Stock Error:", e);
+        listDiv.innerHTML = '<div style="text-align:center; padding: 20px; color: red;">Failed to load data.</div>';
+    }
+};
+
+window.renderStockReqList = function(branchStockDict) {
+    let html = '';
+    window.globalHqStockCache.forEach((item, idx) => {
+        let hqStock = parseFloat(item.currentStock) || 0;
+        let localStock = branchStockDict[item.name] !== undefined ? branchStockDict[item.name] : 0;
+        let hqStatus = hqStock > 0 ? `<span style="color: #16a34a;">HQ Has Stock</span>` : `<span style="color: #dc2626;">HQ Out of Stock</span>`;
+
+        // 🔥 THE UOM FIX: Build the Dropdown for Pack vs Pieces!
+        let pUom = item.purchaseUom || item.uom || 'units';
+        let bUom = item.uom || 'units';
+        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+        let uomOptions = '';
+        if (pUom.toLowerCase() !== bUom.toLowerCase() && conv > 1) {
+            uomOptions += `<option value="purch" data-conv="${conv}">${pUom}</option>`;
+        }
+        uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
+
+        html += `
+            <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                <div>
+                    <strong style="color: #1e293b; font-size: 14px;">${item.name}</strong><br>
+                    <span style="font-size: 11px;">${hqStatus}</span>
+                </div>
+                <div style="text-align: center; font-weight: bold; color: #64748b;">
+                    ${parseFloat(localStock).toFixed(1)} <span style="font-size:10px;">${item.uom}</span>
+                </div>
+                <div style="text-align: center;">
+                    <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" data-sys="${localStock}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
+                        <option value="None">-- No Request --</option>
+                        <option value="Low Stock">⚠️ Low Stock</option>
+                        <option value="Out of Stock">❌ Out of Stock</option>
+                        <option value="Stock Request">General Request</option>
+                    </select>
+                </div>
+                <div style="text-align: center;">
+                    <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
+                        <input type="number" id="actualCount_${item.id}" placeholder="0" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; width: 100%; box-sizing: border-box; outline: none;">
+                        <select id="actualUom_${item.id}" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; outline: none; cursor: pointer;">
+                            ${uomOptions}
+                        </select>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    document.getElementById('stockReqList').innerHTML = html;
+};
+
+window.toggleActualCount = function(id) {
+    let select = document.getElementById(`reqType_${id}`);
+    let container = document.getElementById(`actualCountContainer_${id}`);
+    let actualInput = document.getElementById(`actualCount_${id}`);
+    
+    if (select.value === "Low Stock") {
+        if (container) container.style.display = "flex";
+        actualInput.value = "";
+        actualInput.readOnly = false;
+        actualInput.style.background = "#fffbeb";
+        actualInput.style.borderColor = "#fcd34d";
+        actualInput.style.color = "#d97706";
+    } else if (select.value === "Out of Stock") {
+        if (container) container.style.display = "flex";
+        actualInput.value = "0"; 
+        actualInput.readOnly = true; 
+        actualInput.style.background = "#fee2e2";
+        actualInput.style.borderColor = "#f87171";
+        actualInput.style.color = "#dc2626";
+    } else {
+        if (container) container.style.display = "none";
+        actualInput.value = "";
+    }
+};
+
+window.submitStockRequest = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashier = localStorage.getItem('cashierName') || 'Staff';
+    let itemsToRequest = [];
+    let fraudAlerts = []; 
+
+    let selects = document.querySelectorAll('.req-type-select');
+
+    selects.forEach(select => {
+        if (select.value !== "None") {
+            let id = select.getAttribute('data-id');
+            let itemData = window.globalHqStockCache.find(i => i.id === id);
+            if (!itemData) return; 
+
+            let actualCountEl = document.getElementById(`actualCount_${id}`);
+            let uomSelectEl = document.getElementById(`actualUom_${id}`);
+            
+            let rawCount = actualCountEl && actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
+            let convRate = 1;
+            let displayUom = itemData.uom;
+
+            // 🔥 Convert Pack input to Pieces logic!
+            if (uomSelectEl && uomSelectEl.tagName === 'SELECT') {
+                let selOpt = uomSelectEl.options[uomSelectEl.selectedIndex];
+                convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+                displayUom = selOpt.text;
+            }
+
+            let actualCount = rawCount * convRate; 
+            let sysStock = parseFloat(select.getAttribute('data-sys')) || 0;
+
+            if (select.value === "Low Stock" || select.value === "Out of Stock") {
+                if (actualCount < (sysStock - 1)) {
+                    fraudAlerts.push({
+                        name: itemData.name,
+                        declared: rawCount, 
+                        expected: sysStock,
+                        uom: displayUom
+                    });
+                }
+            }
+
+            itemsToRequest.push({
+                itemName: itemData.name,
+                qty: 0, 
+                requestType: select.value, 
+                uom: itemData.uom,
+                sourceId: itemData.id,
+                systemStock: sysStock, 
+                physicalStock: actualCount, // The true converted base quantity
+                displayQty: rawCount,       // The exact number they typed
+                displayUom: displayUom,     // E.g. "Pack"
+                category: itemData.category || "Ingredients",
+                purchaseUom: itemData.purchaseUom || itemData.uom,
+                convRate: itemData.conversionRate || 1
+            });
+        }
+    });
+
+    if (itemsToRequest.length === 0) {
+        return Swal.fire('Empty Request', 'Please mark at least one item as Low Stock or Out of Stock.', 'warning');
+    }
+
+    let btn = document.querySelector('button[onclick="window.submitStockRequest()"]');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Sending..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "purchase_orders"), {
+            branch: branch,
+            type: "Internal Request",
+            items: itemsToRequest,
+            status: "Pending",
+            requestedBy: cashier,
+            timestamp: serverTimestamp()
+        });
+
+        for (let alert of fraudAlerts) {
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "STOCK_REQUEST_FRAUD",
+                branch: branch,
+                cashier: cashier,
+                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${itemData.uom}. Possible missing stock!`,
+                timestamp: serverTimestamp(),
+                isRead: false
+            });
+        }
+
+        Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted. Check the History tab to track it.', 'success');
+        window.loadStockRequestUI(); 
+        window.switchStockReqTab('History'); 
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to send request.', 'error');
+    } finally {
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
+    }
+};
+
+window.filterStockReq = function() {
+    let search = document.getElementById('stockReqSearch').value.toLowerCase();
+    document.querySelectorAll('.stock-req-row').forEach(row => {
+        if (row.getAttribute('data-name').includes(search)) row.style.display = 'grid';
+        else row.style.display = 'none';
+    });
+};
+
+window.loadStockRequestHistory = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    const tbody = document.getElementById('stockReqHistoryBody');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading history...</td></tr>';
+
+    try {
+        const q = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(20));
+        const snap = await getDocs(q);
+
+        let html = '';
+        snap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
+            
+            // 🔥 THE FIX: Map the colors and statuses to match HQ!
+            let statusBg = '#f1f5f9'; let statusColor = '#475569';
+            if (d.status === 'Pending') { statusBg = '#fef3c7'; statusColor = '#d97706'; }
+            else if (d.status === 'Drafting') { statusBg = '#bae6fd'; statusColor = '#0284c7'; d.status = 'Preparing (HQ)'; }
+            else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; d.status = 'Dispatch on the way 🚚'; }
+            else if (d.status === 'Completed') { statusBg = '#f1f5f9'; statusColor = '#64748b'; }
+            else if (d.status === 'Partially Dispatched') { statusBg = '#e0e7ff'; statusColor = '#0284c7'; }
+            else if (d.status === 'Delayed') { statusBg = '#fef2f2'; statusColor = '#dc2626'; d.status = 'Delayed (Out of Stock)'; }
+
+            let itemsList = d.items.map(i => `<div style="font-size: 11px; margin-bottom: 2px;">• <strong style="color:#0f172a;">${i.itemName}</strong> <span style="color:#ef4444;">(${i.requestType})</span></div>`).join('');
+            
+            // Show the manager's message if they pushed items back!
+            let msgHtml = d.managerMessage ? `<div style="margin-top: 5px; padding: 5px; background: white; border: 1px dashed #cbd5e1; font-size: 10px; color: #b91c1c; border-radius: 4px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${d.requestedBy || 'Staff'}</td>
+                    <td style="padding: 12px;">
+                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;">${d.status}</span>
+                        ${msgHtml}
+                    </td>
+                    <td style="padding: 12px;">${itemsList}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 20px;">No requests found.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history.</td></tr>';
+    }
+};
+
+// ========================================================
+// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE (PATCHED)
+// ========================================================
+window.processStoreUse = async function() {
+    if (typeof cart === 'undefined' || cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please add items to the cart first before logging as Store Use.', 'warning');
+        return;
+    }
+
+    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
+
+    // 🔥 THE BUG FIX: Safely grab the button using a flexible selector so it never crashes!
+    let btn = document.querySelector('button[onclick*="processStoreUse"]');
+    let origText = btn ? btn.innerText : "Log as Store Use";
+    if (btn) { btn.innerText = "⏳ Processing..."; btn.disabled = true; }
+
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashier = localStorage.getItem('cashierName') || 'Unknown';
+        let totalCostHit = 0;
+        let usedItems = [];
+        
+        cart.forEach(item => {
+            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
+            usedItems.push({ name: item.name, qty: item.qty });
+        });
+
+        // 1. Send it through the master checkout engine as 0 Revenue so Inventory still deducts the recipes!
+        let payload = {
+            branch: branch, cashier: cashier,
+            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
+            orderType: "Store Use", paymentMethod: "Store Use",
+            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
+            netTotal: 0, amountReceived: 0, cart: cart, status: "Store Use" 
+        };
+
+        // This triggers your main POS logic!
+        let receiptId = await window.processCheckout(payload);
+
+        // 2. Log to the dedicated Store Use Feed for the Manager App
+        if (receiptId) {
+            await addDoc(collection(db, "store_use_logs"), {
+                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: serverTimestamp()
+            });
+        }
+
+        // 3. Clean up the UI
         cart = []; 
         if (typeof renderCart === 'function') renderCart(); 
-        window.updateParkedBadge(); 
-        window.printParkedReceipt(parkedId); 
-        alert("✅ Order Parked Securely!"); 
-    } else { 
-        alert("❌ Failed to park order. Check connection."); 
-    }
-};
+        if (typeof closeModal === 'function') closeModal('checkoutModal');
+        let paymentModal = document.getElementById('paymentModal');
+        if (paymentModal) paymentModal.style.display = 'none';
 
-window.updateParkedBadge = async function() {
-    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    let orders = await window.getParkedOrders(branch);
-    let badge = document.getElementById('parkedBadge');
-    if (badge) { 
-        if (orders.length > 0) { badge.innerText = orders.length; badge.style.display = 'block'; } 
-        else { badge.style.display = 'none'; } 
-    }
-};
-
-window.showParkedOrders = async function() {
-      document.getElementById('parkedModal').style.display = 'flex'; 
-      document.getElementById('parkedListContainer').innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Fetching parked orders...</div>';
-      
-      let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-      let orders = await window.getParkedOrders(branch);
-      window.currentParkedOrdersList = orders; 
-
-      let html = '';
-      if (orders.length === 0) { html = '<div style="text-align:center; padding: 20px; color: #777;">No parked orders right now.</div>'; }
-      else {
-        orders.forEach(o => {
-          let itemsHtml = o.items.map(i => {
-            let addonsText = '';
-            if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
-            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
-            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${(i.lineTotalFinal || 0).toFixed(2)}</div></div>`;
-          }).join('');
-
-          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">👤 ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">₱${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;">
-          <button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="window.printParkedReceipt('${o.id}')">🖨️ Re-print</button>
-          <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.resumeOrder('${o.id}')">▶️ Resume & Pay</button>
-          <button style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;" onclick="window.deleteParkedOrderManually('${o.id}')">🗑️</button>
-          </div></div>`;
+        Swal.fire({
+            title: '✅ Logged!',
+            text: 'Items marked for store use and inventory safely deducted.',
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
         });
-      }
-      document.getElementById('parkedListContainer').innerHTML = html;
-};
-
-window.resumeOrder = async function(docId) {
-      if (typeof cart !== 'undefined' && cart.length > 0) { if (!confirm("You have active items in the cart. Overwrite them?")) return; }
-      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-      if (!order) return;
-      
-      cart = order.items; 
-      if (typeof renderCart === 'function') renderCart(); 
-      if (typeof closeModal === 'function') closeModal('parkedModal'); 
-      await window.deleteParkedOrder(docId); 
-      window.updateParkedBadge();
-};
-
-window.deleteParkedOrderManually = async function(docId) {
-      if(!confirm("Are you sure you want to permanently delete this parked order?")) return;
-      await window.deleteParkedOrder(docId);
-      window.showParkedOrders();
-      window.updateParkedBadge();
-};
-
-
-window.printParkedReceipt = function(docId) {
-      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-      if (!order) { alert("Order data missing! Please refresh."); return; }
-      
-      let storeName = "TAKODEAL";
-
-      function centerTxt(text) {
-          let cleanText = text.trim();
-          if (cleanText.length >= 32) return cleanText;
-          let leftPad = Math.floor((32 - cleanText.length) / 2);
-          return " ".repeat(leftPad) + cleanText;
-      }
-
-      let proReceipt = "";
-      proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
-      proReceipt += centerTxt("** PAY LATER (PARKED) **") + "\n";
-      proReceipt += "================================\n";
-      
-      let cashierName = localStorage.getItem('cashierName') || "Staff";
-      proReceipt += "Cashier: " + cashierName + "\n";
-      proReceipt += "Cust/Table: " + order.name + "\n";
-      proReceipt += "================================\n";
-      
-      let grandTotal = 0;
-      let totalDiscount = 0;
-
-      order.items.forEach(item => {
-          let name = item.name || "Item";
-          let qty = parseFloat(item.qty || 1);
-          let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-          let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-          let baseLineTotal = qty * basePrice;
-          let itemGrossTotal = baseLineTotal;
-  
-          proReceipt += name + variantName + "\n";
-          let qtyStr = qty.toFixed(1) + "      x " + basePrice.toFixed(2);
-          let totalStr = baseLineTotal.toFixed(2);
-          proReceipt += qtyStr + " ".repeat(Math.max(1, 32 - qtyStr.length - totalStr.length)) + totalStr + "\n";
-  
-          if (item.addons) {
-              for (let key in item.addons) {
-                  let addon = item.addons[key];
-                  if (addon.qty > 0) {
-                      let addonPrice = parseFloat(addon.price || 0);
-                      let addonTotalQty = qty * addon.qty; 
-                      let addonLineTotal = addonTotalQty * addonPrice;
-                      itemGrossTotal += addonLineTotal;
-                      
-                      let aName = `  + ${addon.qty}x ${key}`;
-                      if (addonPrice > 0) {
-                          let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
-                          let aTotalStr = addonLineTotal.toFixed(2);
-                          proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, 32 - aQtyStr.length - aTotalStr.length)) + aTotalStr + "\n";
-                      } else {
-                          proReceipt += aName + "\n";
-                      }
-                  }
-              }
-          }
-          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
-  
-          let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
-          let diff = itemGrossTotal - actualFinal;
-          if (diff > 0.01) totalDiscount += diff;
-          
-          grandTotal += itemGrossTotal; 
-      });
-  
-      let subtotalVal = grandTotal.toFixed(2);
-      let totalVal = (grandTotal - totalDiscount).toFixed(2);
-  
-      proReceipt += "--------------------------------\n";
-      function formatLine(label, value) {
-          let valStr = value.toFixed(2); let padding = 32 - label.length - valStr.length;
-          return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
-      }
-      proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-      if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
-      proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
-      proReceipt += "--------------------------------\n";
-      proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n\n\n\n";
-      
-      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-
-      // ==========================================
-      // 📱 MOBILE ORDERS ENGINE & LISTENER
-      // ==========================================
-      window.mobileOrdersList = [];
-      window.mobileOrdersUnsubscribe = null;
-      
-      window.startMobileOrdersListener = function(branch) {
-          if (window.mobileOrdersUnsubscribe) {
-              window.mobileOrdersUnsubscribe(); // Clear old listener
-          }
-      
-          // Listen ONLY for orders meant for this specific branch
-          const q = window.query(
-              window.collection(window.db, "incoming_orders"),
-              window.where("branch", "==", branch),
-              window.where("status", "==", "mobile_queue")
-          );
-      
-          window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
-              let initialLoad = window.mobileOrdersList.length === 0;
-              window.mobileOrdersList = [];
-              let newOrdersFound = false;
-      
-              snapshot.forEach((doc) => {
-                  window.mobileOrdersList.push({ id: doc.id, ...doc.data() });
-              });
-      
-              // Check if a brand new order arrived while the app was already running
-              snapshot.docChanges().forEach((change) => {
-                  if (change.type === "added" && !initialLoad) newOrdersFound = true;
-              });
-      
-              // Update the Red Notification Badge
-              let badge = document.getElementById('mobileBadge');
-              if (badge) {
-                  if (window.mobileOrdersList.length > 0) {
-                      badge.innerText = window.mobileOrdersList.length;
-                      badge.style.display = 'block';
-                  } else {
-                      badge.style.display = 'none';
-                  }
-              }
-      
-              // Refresh UI if the cashier is currently looking at the modal
-              if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
-                  window.showMobileOrders();
-              }
-      
-              // PLAY SOUND PING!
-              if (newOrdersFound) window.playNotificationPing();
-          });
-      };
-      
-      // Generates a simple, loud browser "ding" without needing an audio file
-      window.playNotificationPing = function() {
-          try {
-              const ctx = new (window.AudioContext || window.webkitAudioContext)();
-              const osc = ctx.createOscillator();
-              const gain = ctx.createGain();
-              osc.connect(gain);
-              gain.connect(ctx.destination);
-              osc.type = 'bell';
-              osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch notification
-              gain.gain.setValueAtTime(1, ctx.currentTime);
-              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-              osc.start();
-              osc.stop(ctx.currentTime + 0.5);
-          } catch (e) { console.log("Audio ping blocked by browser auto-play policy"); }
-      };
-      
-      window.showMobileOrders = function() {
-          document.getElementById('mobileOrdersModal').style.display = 'flex';
-          let container = document.getElementById('mobileListContainer');
-      
-          if (window.mobileOrdersList.length === 0) {
-              container.innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Queue is empty. No incoming orders.</div>';
-              return;
-          }
-      
-          let html = '';
-          window.mobileOrdersList.forEach(o => {
-              let itemsHtml = o.items.map(i => {
-                  return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;">
-                            <div><strong>${i.quantity}x ${i.name}</strong></div>
-                            <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
-                          </div>`;
-              }).join('');
-      
-              let paymentColor = o.paymentMode === 'gcash' ? '#3b82f6' : '#f59e0b';
-              let paymentLabel = o.paymentMode === 'gcash' ? 'GCash (Verify Ref: ' + (o.gcashRef || 'No Ref') + ')' : 'Cash (Pay at Counter)';
-      
-              html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                          <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
-                              <strong style="font-size:16px;">👤 ${o.customerName}</strong>
-                              <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
-                          </div>
-                          <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; margin-bottom: 10px; text-align: center;">
-                              ${paymentLabel}
-                          </div>
-                          <div style="margin-bottom:15px;">${itemsHtml}</div>
-                          <div style="display:flex; gap:10px;">
-                              <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
-                              <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
-                          </div>
-                       </div>`;
-          });
-          container.innerHTML = html;
-      };
-      
-      // When Cashier accepts, it pulls the mobile order straight into their POS Cart!
-      window.acceptMobileOrder = async function(docId) {
-          let order = window.mobileOrdersList.find(o => o.id === docId);
-          if (!order) return;
-      
-          if (typeof cart !== 'undefined' && cart.length > 0) {
-              if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
-          }
-      
-          // Map the mobile cart to the POS cart
-          cart = order.items.map(i => ({
-              name: i.name,
-              basePrice: i.price,
-              variantName: 'Standard',
-              variantPrice: i.price,
-              qty: i.quantity,
-              lineTotalFinal: i.price * i.quantity,
-              discountType: 'none',
-              discountVal: 0,
-              addons: {},
-              notes: '📱 Mobile App Order'
-          }));
-      
-          // Auto-fill customer name for the receipt
-          document.getElementById('finalCustomerName').value = order.customerName;
-      
-          // Delete it from the incoming queue in Firebase
-          await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
-      
-          if (typeof renderCart === 'function') renderCart();
-          closeModal('mobileOrdersModal');
-      };
-      
-      window.rejectMobileOrder = async function(docId) {
-          if (!confirm("Are you sure you want to delete this order from the queue?")) return;
-          await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
-      };
-};
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <script>
-        window.nativeAlert = window.alert;
-        window.alert = function(message) {
-            let isError = String(message).includes('❌') || String(message).includes('⛔') || String(message).includes('WARNING') || String(message).includes('🚨');
-            Swal.fire({
-                html: `<div style="font-size: 15px; font-weight: 600; color: #334155; line-height: 1.5;">${String(message).replace(/\n/g, '<br>')}</div>`,
-                icon: isError ? 'error' : (String(message).includes('✅') ? 'success' : 'info'),
-                confirmButtonColor: isError ? '#ef4444' : '#10b981',
-                confirmButtonText: 'Understood',
-                background: '#ffffff',
-                backdrop: `rgba(0,0,0,0.5)`,
-                scrollbarPadding: false, // 🔥 THE FIX: Stops the background from jumping!
-                customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
-            });
-        };
-    </script>
-    <script type="module" src="main.js"></script>
-    <script>
-    // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(registration => {
-            console.log('✅ App securely installed to tablet hard drive.', registration.scope);
-          })
-          .catch(err => {
-            console.error('❌ Hard drive installation failed: ', err);
-          });
-      });
+        
+    } catch(e) { 
+        console.error("Store Use Error:", e); 
+        Swal.fire('Error', 'Failed to log store use. ' + e.message, 'error'); 
+    } finally { 
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
-  </script>
-</body>
-</html>
+};
+
+// ========================================================
+// 🔪 KITCHEN PREP TAB & HISTORY ENGINE
+// ========================================================
+window.switchPrepTab = function(tab) {
+    document.getElementById('prepTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    document.getElementById('prepTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+    
+    document.getElementById('btnTabPrepNew').style.background = tab === 'New' ? '#8b5cf6' : 'white';
+    document.getElementById('btnTabPrepNew').style.color = tab === 'New' ? 'white' : '#475569';
+    document.getElementById('btnTabPrepNew').style.border = tab === 'New' ? 'none' : '1px solid #cbd5e1';
+
+    document.getElementById('btnTabPrepHist').style.background = tab === 'History' ? '#8b5cf6' : 'white';
+    document.getElementById('btnTabPrepHist').style.color = tab === 'History' ? 'white' : '#475569';
+    document.getElementById('btnTabPrepHist').style.border = tab === 'History' ? 'none' : '1px solid #cbd5e1';
+
+    if (tab === 'History') window.loadKitchenPrepHistory();
+};
+
+window.loadKitchenPrepHistory = async function() {
+    const tbody = document.getElementById('kitchenPrepHistoryBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">Loading prep history...</td></tr>';
+    
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let today = new Date();
+    today.setHours(0,0,0,0);
+
+    try {
+        const q = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", today));
+        const snap = await getDocs(q);
+        
+        let logs = [];
+        snap.forEach(doc => {
+            let d = doc.data();
+            // Look for any log marked as Prep or Batch!
+            if (d.type && (d.type.toLowerCase().includes("prep") || d.type.toLowerCase().includes("batch"))) {
+                logs.push({ id: doc.id, ...d });
+            }
+        });
+
+        logs.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+
+        let html = '';
+        logs.forEach(log => {
+            let timeStr = log.timestamp ? log.timestamp.toDate().toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            // 🔥 THE UOM FIX: Shows Both Base and Purchase UOM beautifully
+            let pUom = log.purchUom || 'Bulk';
+            let pQty = log.purchQty ? log.purchQty : '-';
+            let purchDisplay = log.purchQty ? `(${pQty} ${pUom}s)` : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${timeStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #1e293b;">${log.item}</td>
+                    <td style="padding: 12px;">
+                        <strong style="color: #10b981; font-size: 14px;">+${log.variance} ${log.uom}</strong><br>
+                        <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
+                    </td>
+                    <td style="padding: 12px;">
+                        <button onclick="window.undoKitchenPrep('${log.id}', '${log.item}', ${log.variance})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">✖ Undo</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" style="text-align:center; padding: 20px; color: #94a3b8;">No prep batches logged today.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: red;">Error loading history.</td></tr>';
+    }
+};
+
+window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
+    if(!confirm(`⚠️ Are you sure you want to UNDO the prep batch for ${itemName}?\n\nThis will instantly subtract ${varianceAmount} from the inventory.`)) return;
+    
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch');
+        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
+        const snap = await getDocs(q);
+        
+        if(!snap.empty) {
+            let itemRef = snap.docs[0].ref;
+            let currentStock = parseFloat(snap.docs[0].data().currentStock) || 0;
+            await updateDoc(itemRef, { currentStock: currentStock - varianceAmount });
+        }
+
+        await deleteDoc(doc(db, "stock_logs", logId)); // Delete the log
+        alert("✅ Prep batch successfully undone!");
+        window.loadKitchenPrepHistory(); // Refresh table
+    } catch(e) {
+        console.error(e);
+        alert("Failed to undo prep batch.");
+    }
+};
+
+// ========================================================
+// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE
+// ========================================================
+window.processStoreUse = async function() {
+    if (typeof cart === 'undefined' || cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+        return;
+    }
+
+    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
+
+    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashier = localStorage.getItem('cashierName') || 'Unknown';
+        let totalCostHit = 0;
+        let usedItems = [];
+        
+        cart.forEach(item => {
+            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
+            usedItems.push({ name: item.name, qty: item.qty });
+        });
+
+        let payload = {
+            branch: branch, cashier: cashier,
+            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
+            orderType: "Store Use", paymentMethod: "Store Use",
+            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
+            netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use" 
+        };
+
+        let receiptId = await window.processCheckout(payload);
+
+        if (receiptId) {
+            await window.addDoc(window.collection(window.db, "store_use_logs"), {
+                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: window.serverTimestamp()
+            });
+        }
+
+        cart = []; if (typeof renderCart === 'function') renderCart(); 
+        if (typeof closeModal === 'function') closeModal('checkoutModal');
+        Swal.fire('✅ Logged!', 'Items marked for store use and inventory safely deducted.', 'success');
+        
+    } catch(e) { 
+        console.error(e); Swal.fire('Error', 'Failed to log store use.', 'error'); 
+    } finally { 
+        btn.innerText = origText; btn.disabled = false; 
+    }
+};
+
+// ========================================================
+// 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF & BLIND)
+// ========================================================
+window.MASTER_CloseShift = async function () {
+    let confirmBtn = document.querySelector('button[onclick*="MASTER_CloseShift"]');
+    let origText = confirmBtn ? confirmBtn.innerText : 'Confirm & End Shift';
+
+    if (confirmBtn) {
+        confirmBtn.innerHTML = "⏳ Processing Shift...";
+        confirmBtn.disabled = true;
+    }
+
+    try {
+        // 1. Read Cash Drawer Securely
+        let declaredCash = 0;
+        let cashBreakdown = {};
+        document.querySelectorAll('.denom-input').forEach(input => {
+            let val = parseInt(input.getAttribute('data-val'));
+            let pcs = parseInt(input.value) || 0;
+            if (pcs > 0) {
+                cashBreakdown["₱" + val] = pcs;
+                declaredCash += (val * pcs);
+            }
+        });
+
+        // 2. Identify Shift Data
+        let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
+        if (!shiftId) throw new Error("No active shift found to close.");
+
+        let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashierName = localStorage.getItem('cashierName') || 'Unknown';
+
+        let startTime = new Date();
+        if (typeof activeShiftDetails !== 'undefined' && activeShiftDetails && activeShiftDetails.startTime) {
+            startTime = activeShiftDetails.startTime;
+            if (startTime.toDate) startTime = startTime.toDate();
+        } else {
+            startTime.setHours(0,0,0,0);
+        }
+
+        // 3. Crunch Sales & Split Payments
+        let totalCashSales = 0; let totalDigitalSales = 0;
+        let digitalBreakdown = {}; let shiftIngredientBurn = {};
+
+        const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const txSnap = await getDocs(txQ);
+
+        txSnap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status !== 'Voided') {
+                if (tx.cart) {
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let qty = item.qty || 1;
+                        let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                        recipe.forEach(r => {
+                            if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
+                            shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
+                        });
+                        if (item.addons) {
+                            for (let key in item.addons) {
+                                let addon = item.addons[key];
+                                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                    if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
+                                    shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
+                                }
+                            }
+                        }
+                    });
+                }
+
+                if (tx.splitDetails) {
+                    tx.splitDetails.forEach(split => {
+                        if (split.method === 'Cash') totalCashSales += split.amount;
+                        else {
+                            totalDigitalSales += split.amount;
+                            digitalBreakdown[split.method] = (digitalBreakdown[split.method] || 0) + split.amount;
+                        }
+                    });
+                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                    totalCashSales += tx.netTotal;
+                } else {
+                    totalDigitalSales += tx.netTotal;
+                    digitalBreakdown[tx.paymentMethod] = (digitalBreakdown[tx.paymentMethod] || 0) + tx.netTotal;
+                }
+            }
+        });
+
+        const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const expSnap = await getDocs(expQ);
+        let cashOut = 0;
+        expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
+
+        let startingCash = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? (activeShiftDetails.startingCash || 0) : 0;
+        let expectedCash = startingCash + totalCashSales - cashOut;
+
+        // 4. Zero Cash Lockout Security
+        if (expectedCash > 0 && declaredCash === 0) {
+            Swal.fire('⛔ SECURITY LOCKOUT', `The system has logged cash sales for this shift.<br><br>You cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`, 'error');
+            if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+            return;
+        }
+
+        // 5. The Variance SweetAlert (🔥 100% BLIND COUNT FIX)
+        let variance = declaredCash - expectedCash;
+        if (Math.abs(variance) > 2) {
+            let isOver = variance > 0;
+            let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
+            
+            // 🔥 REMOVED THE EXACT AMOUNTS FROM THE UI!
+            let alertHtml = isOver 
+                ? `Your declared cash is <b>MORE</b> than the system expects.<br><br>Do not remove any overage. Submit the full amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
+                : `Your declared cash is <b>SHORT</b> of the system expectation.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
+
+            const result = await Swal.fire({
+                title: alertTitle,
+                html: alertHtml,
+                icon: isOver ? 'info' : 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, End Shift',
+                cancelButtonText: 'No, Re-count Cash',
+                confirmButtonColor: isOver ? '#d97706' : '#dc2626',
+                cancelButtonColor: '#64748b',
+                customClass: { popup: 'rounded-2xl shadow-2xl' }
+            });
+
+            if (!result.isConfirmed) {
+                if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+                return; 
+            }
+
+            // We still silently log the exact variance to the Manager HQ Feed!
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
+                expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
+                message: `CASH ${isOver ? "OVER" : "SHORT"}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
+                explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
+                timestamp: serverTimestamp(), isRead: false
+            });
+        }
+
+        if (confirmBtn) confirmBtn.innerHTML = "⏳ Saving to Cloud...";
+        
+        // 6. FIREBASE: CLOSE SHIFT
+        await updateDoc(doc(db, "shifts", shiftId), {
+            active: false,
+            endTime: serverTimestamp(),
+            declaredCash: declaredCash,
+            expectedCash: expectedCash,
+            totalCashSales: totalCashSales, 
+            totalDigitalSales: totalDigitalSales,
+            digitalBreakdown: digitalBreakdown,
+            cashBreakdown: cashBreakdown, 
+            physicalStockCount: {}, 
+            status: "Closed"
+        });
+
+        // 7. FIREBASE: AUTO-SWEEP
+        for (let method in digitalBreakdown) {
+            if (method.toLowerCase() === "gcash") continue; 
+            let amountToDeposit = digitalBreakdown[method];
+            if (amountToDeposit > 0) {
+                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
+                const accSnap = await getDocs(accQ);
+                if (!accSnap.empty) {
+                    let accDoc = accSnap.docs[0];
+                    let currentBal = accDoc.data().balance || 0;
+                    await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
+                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: serverTimestamp(), note: `From ${branchName}`
+                    });
+                } else {
+                    const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: serverTimestamp() });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
+                    });
+                }
+            }
+        }
+
+        // 8. Deduct Ingredient Burn
+        for (let ingName in shiftIngredientBurn) {
+            let totalBurn = shiftIngredientBurn[ingName];
+            if (totalBurn > 0) {
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
+                    variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
+                    user: cashierName, timestamp: serverTimestamp()
+                });
+            }
+        }
+
+        // 9. Memory Wipe & Force UI Lockout
+        localStorage.removeItem('currentShiftId');
+        localStorage.removeItem('takodeal_sop_progress');
+        if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
+        if (typeof currentShift !== 'undefined') currentShift = null;
+
+        let endModal = document.getElementById('endShiftModal');
+        if (endModal) endModal.style.display = 'none';
+
+        let topBtn = document.getElementById('btnTopShift');
+        let lock = document.getElementById('shiftLockout');
+        let placeBtn = document.getElementById('btnMainPlaceOrder');
+        if (topBtn) topBtn.innerText = "🔴 Shift Closed";
+        if (lock) lock.style.display = "flex";
+        if (placeBtn) placeBtn.disabled = true;
+
+        // 🔥 THE SUCCESS FIX: Do not show exact Sales Totals!
+        Swal.fire({
+            title: '✅ SHIFT CLOSED!',
+            text: 'Your shift has been successfully ended and securely logged to HQ.',
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        if (typeof checkCurrentShift === 'function') await checkCurrentShift();
+        if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
+
+    } catch (error) {
+        console.error("Error closing shift:", error);
+        Swal.fire('❌ Error', 'Failed to close shift: ' + error.message, 'error');
+        if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+    }
+};
