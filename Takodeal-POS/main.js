@@ -277,20 +277,33 @@ window.loadPOSData = async function() {
 
     // 🔥 PHASE 2: FETCH GLOBAL SETTINGS FROM MANAGER HUB 🔥
     try {
-        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+        const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
         if (configSnap.exists()) {
             let configData = configSnap.data();
             masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
-                payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
+                payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
+                mixMatchFlavors: configData.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]
             };
             let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
             masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
         } else {
             let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
             masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
-            masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "Bank"] };
+            masterPOSData.settings = { 
+                orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
+                payMethods: ["Cash", "GCash", "Bank"],
+                mixMatchFlavors: ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"] 
+            };
         }
+
+        // 🔥 FETCH THE CUSTOM ADDON LAYOUT SO THEY SORT CORRECTLY!
+        masterPOSData.addonLayoutNames = [];
+        const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
+        if (layoutSnap.exists() && layoutSnap.data().itemNames) {
+            masterPOSData.addonLayoutNames = layoutSnap.data().itemNames;
+        }
+
     } catch (e) {
         console.warn("Could not load global config, using defaults", e);
     }
@@ -4307,11 +4320,11 @@ window.openShiftModal = function() {
                 let declared = parseFloat(lastShift.declaredCash) || parseFloat(lastShift.actualCash) || 0;
                 let diff = declared - expected;
 
-                // Save to memory for the interceptor
+                // Save to memory for the interceptor, but keep it hidden from UI!
                 window.lastEndingCash = declared; 
-                
-                // 🔥 THE FIX: Left completely blank per your request for blind counting!
-                inputStart.value = "";
+
+                // 🔥 THE FIX: Keep it BLIND! Never auto-fill the amount!
+                inputStart.value = ""; 
 
                 // We allow a tiny 5 centavo tolerance for floating point math
                 if (Math.abs(diff) <= 0.05) {
