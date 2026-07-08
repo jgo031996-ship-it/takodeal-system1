@@ -3116,15 +3116,32 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 addonContainer.appendChild(dynamicAddonDiv);
             }
             dynamicAddonDiv.innerHTML = newUiHtml;
-        }
+
+            // 🔥 3. ITEM-SPECIFIC MIX & MATCH BUILDER 🔥
+            window.mixMatchState = {};
+            let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
+            let customArea = document.getElementById('takoyakiCustomizationArea');
+            
+            if (customArea) {
+                if (hasMixMatch) {
+                    itemData.mixMatchFlavors.forEach(flavor => {
+                        window.mixMatchState[flavor] = 0;
+                    });
+                    
+                    customArea.style.display = 'block';
+                    document.getElementById('mixMatchPanel').style.display = 'none';
+                    document.getElementById('mixMatchToggleIcon').innerText = '▼';
+                    
+                    let sizeMatch = pendingItem.realName ? pendingItem.realName.match(/(\d+)\s*Pcs/i) : pendingItem.name.match(/(\d+)\s*Pcs/i);
+                    window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
+                    window.renderMixMatchList();
+                } else {
+                    customArea.style.display = 'none';
+                }
+            }
     } catch (error) { console.error("Error loading item details:", error); }
             // 🔥 DYNAMIC MIX & MATCH STATE BUILDER
             window.mixMatchState = {};
-            if (masterPOSData.settings && masterPOSData.settings.mixMatchFlavors) {
-                masterPOSData.settings.mixMatchFlavors.forEach(flavor => {
-                    window.mixMatchState[flavor] = 0;
-                });
-            }
 
             if (typeof window.mixMatchState !== 'undefined') {
                 let isTakoyaki = pendingItem.name.toLowerCase().includes('takoyaki') || pendingItem.name.toLowerCase().includes('grilled');
