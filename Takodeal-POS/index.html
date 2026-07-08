@@ -2566,7 +2566,13 @@
             const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
             if (layoutSnap.exists()) {
                 layoutOrder = layoutSnap.data().categories || [];
-                window.globalItemLayout = layoutSnap.data().items || []; // 🔥 PULLS CUSTOM MANAGER LAYOUT!
+            }
+            // 🔥 NEW: Fetch Custom Item Order!
+            const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
+            if (itemLayoutSnap.exists()) {
+                window.globalItemLayout = itemLayoutSnap.data().items || [];
+            } else {
+                window.globalItemLayout = [];
             }
         } catch(e) { console.error("Error fetching POS layout:", e); }
     
@@ -2618,14 +2624,17 @@
         } else {
             // Otherwise, filter strictly by the top category clicked
             filteredItems = safeItems.filter(item => item.category === category);
-            // 🔥 THE FIX: Sort alphabetically by default, OR apply the Manager's Custom Layout!
+            // 🔥 THE CUSTOM SORTER FIX: Follows the Manager's Layout first, falls back to A-Z
             filteredItems.sort((a, b) => {
                 let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
                 let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
-                if (idxA !== -1 && idxB !== -1) return idxA - idxB; // Manager custom order
-                if (idxA !== -1) return -1;
-                if (idxB !== -1) return 1;
-                return a.name.localeCompare(b.name); // Default A-Z Alphabetical
+                
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB; // Both in layout = sort by layout
+                if (idxA !== -1) return -1; // Only A in layout = push A up
+                if (idxB !== -1) return 1;  // Only B in layout = push B up
+                
+                // Fallback to alphabetical A-Z
+                return (a.name || '').localeCompare(b.name || '');
             });
         }
     
