@@ -2700,7 +2700,7 @@
           let lockoutTitle = lock.querySelector('h2');
           let lockoutDesc = lock.querySelector('p');
           if (lockoutTitle) lockoutTitle.innerText = "Register is Closed";
-          if (lockoutDesc) lockoutDesc.innerHTML = `<span style="font-size: 16px; font-weight: bold; color: #0f766e;">${randomQuote}</span><br><br>Open a shift to begin taking orders.`;
+          if (lockoutDesc) lockoutDesc.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; margin-top: 10px;"><span style="font-size: 16px; font-weight: bold; color: #0f766e;">${randomQuote}</span><span style="font-size: 14px; color: #777;">Open a shift to begin taking orders.</span></div>`;
       }
     }
 
