@@ -3321,6 +3321,102 @@ function setDiscountType(type) { window.setDiscountType(type); }
 function confirmAddOrUpdateToCart() { window.confirmAddOrUpdateToCart(); }
 function clearCart() { window.clearCart(); }
 
+
+    // --- 🔘 SIZE VARIANT SELECTOR RESTORED ---
+window.selectRealVariant = function(realName, price, clickedBtn) {
+    // 1. Update the Data
+    window.pendingItem.realName = realName;
+    window.pendingItem.variantPrice = price;
+    let sizeLabel = clickedBtn.querySelector('.sz-name');
+    window.pendingItem.variantName = sizeLabel ? sizeLabel.innerText : 'Standard';
+
+    // 2. Visually highlight the clicked button
+    const variantGrid = document.getElementById('variantOptions');
+    if (variantGrid) {
+        variantGrid.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
+    }
+    clickedBtn.classList.add('active');
+
+    // 3. Smart Mix & Match Update (If Takoyaki)
+    let customArea = document.getElementById('takoyakiCustomizationArea');
+    if (customArea && customArea.style.display === 'block') {
+        // Find how many pieces this new size has (e.g., "15 Pcs" -> 15)
+        let sizeMatch = realName.match(/(\d+)\s*Pcs/i);
+        window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
+
+        // Reset flavors to 0 so they don't accidentally carry over 15 pieces into a 6 piece box!
+        for (let flavor in window.mixMatchState) {
+            window.mixMatchState[flavor] = 0;
+        }
+        
+        // Re-draw the Mix & Match panel
+        window.renderMixMatchList();
+    }
+
+    // 4. Update the totals at the bottom
+    window.updateModalTotals();
+};
+
+// --- 🐙 MIX & MATCH ENGINE RESTORED ---
+window.toggleMixMatchUI = function() {
+    let panel = document.getElementById('mixMatchPanel');
+    let icon = document.getElementById('mixMatchToggleIcon');
+    if (panel.style.display === 'none' || panel.style.display === '') {
+        panel.style.display = 'block';
+        icon.innerText = '▲';
+    } else {
+        panel.style.display = 'none';
+        icon.innerText = '▼';
+    }
+};
+
+window.renderMixMatchList = function() {
+    let listContainer = document.getElementById('mixMatchList');
+    let counterDisplay = document.getElementById('mixMatchCounter');
+    if (!listContainer || !counterDisplay) return;
+
+    let totalSelected = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+    counterDisplay.innerText = `${totalSelected} / ${window.maxMixMatch} Pcs`;
+    
+    // Turn the counter green if they filled the box perfectly!
+    counterDisplay.style.color = totalSelected === window.maxMixMatch ? "#16a34a" : "#b45309";
+
+    let html = '';
+    for (let flavor in window.mixMatchState) {
+        let count = window.mixMatchState[flavor];
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px 12px; border: 1px solid #fde68a; border-radius: 6px;">
+                <span style="font-size: 13px; font-weight: bold; color: #b45309;">${flavor}</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button onclick="window.adjustMixMatchQty('${flavor}', -1)" style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid #fcd34d; background: #fffbeb; color: #d97706; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center;">-</button>
+                    <span style="font-weight: 900; font-size: 15px; color: #0f172a; width: 20px; text-align: center;">${count}</span>
+                    <button onclick="window.adjustMixMatchQty('${flavor}', 1)" style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid #fcd34d; background: #fffbeb; color: #d97706; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center;">+</button>
+                </div>
+            </div>
+        `;
+    }
+    listContainer.innerHTML = html;
+};
+
+window.adjustMixMatchQty = function(flavor, delta) {
+    let totalSelected = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+    let currentCount = window.mixMatchState[flavor];
+
+    if (delta > 0 && totalSelected >= window.maxMixMatch) {
+        // Shakes the screen gently to let them know the box is full
+        document.getElementById('mixMatchCounter').style.animation = "shake 0.5s";
+        setTimeout(() => document.getElementById('mixMatchCounter').style.animation = "", 500);
+        return; 
+    }
+    if (delta < 0 && currentCount <= 0) return; // Reached min
+
+    window.mixMatchState[flavor] = currentCount + delta;
+    window.renderMixMatchList();
+};
+
+// Emergency Bridge for the Size Buttons
+function selectRealVariant(realName, price, btn) { window.selectRealVariant(realName, price, btn); }
+
     // --- 8. CHECKOUT SYSTEM ---
     function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
   if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
