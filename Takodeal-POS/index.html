@@ -2466,11 +2466,19 @@
   </div>
 
   <script>
-    sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
-    let cart = []; let masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
-    let pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
-    let amountReceivedStr = "0"; let selectedPaymentMethod = "Cash"; let isSplitMode = false; let splitRows = []; let lastTransactionData = {};
-    let editIndex = -1; let currentShift = null; let activeShiftDetails = null; let systemReady = false;
+    window.sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
+    window.cart = []; 
+    window.masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
+    window.pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
+    window.amountReceivedStr = "0"; 
+    window.selectedPaymentMethod = "Cash"; 
+    window.isSplitMode = false; 
+    window.splitRows = []; 
+    window.lastTransactionData = {};
+    window.editIndex = -1; 
+    window.currentShift = null; 
+    window.activeShiftDetails = null; 
+    window.systemReady = false;
 
     document.addEventListener("DOMContentLoaded", function () {
       let loginBox = document.getElementById('loginOverlay');
@@ -2947,63 +2955,59 @@ window.loadSalesDashboard = async function () {
       window.printReceipt('receipt');
     }
 
-    // --- UPGRADED CART & VARIANT LOGIC ---
+// --- UPGRADED CART & VARIANT LOGIC ---
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
+    if (!window.masterPOSData) window.masterPOSData = {};
+    if (!window.cart) window.cart = [];
+
     if (existingItem) { 
-        pendingItem = JSON.parse(JSON.stringify(existingItem)); 
-        editIndex = cart.indexOf(existingItem); 
+        window.pendingItem = JSON.parse(JSON.stringify(existingItem)); 
+        window.editIndex = window.cart.indexOf(existingItem); 
     } else { 
-        pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
-        editIndex = -1; 
+        window.pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
+        window.editIndex = -1; 
     }
 
-    // Check if this item has grouped sizes
-    let phantomSizes = masterPOSData.phantomVariants ? masterPOSData.phantomVariants[name] : null;
+    let phantomSizes = window.masterPOSData.phantomVariants ? window.masterPOSData.phantomVariants[name] : null;
     let hasSizes = phantomSizes && phantomSizes.length > 0;
     
     if (hasSizes && !existingItem) {
-        // Default to the smallest size initially
-        pendingItem.isGrouped = true;
-        pendingItem.realName = phantomSizes[0].realName;
-        pendingItem.basePrice = phantomSizes[0].price;
-        pendingItem.variantPrice = phantomSizes[0].price;
+        window.pendingItem.isGrouped = true;
+        window.pendingItem.realName = phantomSizes[0].realName;
+        window.pendingItem.basePrice = phantomSizes[0].price;
+        window.pendingItem.variantPrice = phantomSizes[0].price;
     }
 
-    // Hide the top price if we are showing sizes to prevent confusion!
-    document.getElementById('modalItemName').innerText = pendingItem.name;
+    document.getElementById('modalItemName').innerText = window.pendingItem.name;
     let priceHeader = document.getElementById('modalItemPrice').parentElement;
     
     if (hasSizes && !existingItem) {
         priceHeader.style.display = 'none'; 
     } else {
         priceHeader.style.display = 'flex';
-        document.getElementById('modalItemPrice').innerText = '₱ ' + pendingItem.basePrice.toFixed(2);
+        document.getElementById('modalItemPrice').innerText = '₱ ' + window.pendingItem.basePrice.toFixed(2);
     }
 
-    document.getElementById('modalMainQty').innerText = pendingItem.qty;
-    document.getElementById('orderNotesInput').value = pendingItem.notes;
+    document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
+    document.getElementById('orderNotesInput').value = window.pendingItem.notes;
     document.getElementById('variantModal').style.display = 'flex';
 
-    // Hide the old Add-on dropdown
     let oldDropdown = document.getElementById('addonSelectDropdown');
     if(oldDropdown) oldDropdown.style.display = 'none';
 
-    // 🔥 THE NEW BEAUTIFUL SIZES UI 🔥
     let variantContainer = document.getElementById('variantOptions');
     let variantSection = variantContainer ? variantContainer.parentElement : null;
     
     if (hasSizes) {
         if (variantSection) variantSection.style.display = 'block';
         if (variantContainer) {
-            // Force the parent container to be block and full width
             variantContainer.style.width = '100%'; 
             variantContainer.style.display = 'block';
             
-            // Flexbox wrapper that stretches its children
             let sizeHtml = '<div style="display: flex; flex-wrap: wrap; gap: 12px; width: 100%; margin-bottom: 15px;">';
             
             phantomSizes.forEach((sizeObj, idx) => {
-                let isActive = (pendingItem.realName === sizeObj.realName) ? 'active' : '';
+                let isActive = (window.pendingItem.realName === sizeObj.realName) ? 'active' : '';
                 sizeHtml += `
                     <div class="size-btn ${isActive}" onclick="window.selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this)" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
                         <div class="sz-name" style="margin-bottom: 5px;">${sizeObj.sizeLabel}</div>
@@ -3018,15 +3022,13 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
         if (variantSection) variantSection.style.display = 'none';
     }
 
-    // 🔥 FETCH IMAGE AND ADDONS (Using the Real Name!)
     try {
-        const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", pendingItem.realName));
+        const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", window.pendingItem.realName));
         const snap = await window.getDocs(q);
 
         if (!snap.empty) {
             let itemData = snap.docs[0].data();
 
-            // 1. INJECT FOOD IMAGE (Only one image needed!)
             let imgContainer = document.getElementById('modalDynamicImage');
             if (!imgContainer) {
                 imgContainer = document.createElement('div');
@@ -3039,7 +3041,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 imgContainer.innerHTML = '';
             }
 
-            // 2. BUILD DYNAMIC ADDON UI (AUTOMATIC BASE FLAVORS VS EXTRAS)
             let addonContainer = document.getElementById('addonSelectDropdown').parentElement;
             let newUiHtml = '';
 
@@ -3052,18 +3053,17 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
                 let addonsList = Object.values(groupedAddons);
                 
-                // 🔥 APPLY MANAGER APP CUSTOM SORTING TO ADD-ONS!
-                addonsList.sort((a,b) => {
-                    let idxA = masterPOSData.addonLayoutNames ? masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase()) : -1;
-                    let idxB = masterPOSData.addonLayoutNames ? masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase()) : -1;
-                    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                    if (idxA !== -1) return -1;
-                    if (idxB !== -1) return 1;
-                    return a.name.localeCompare(b.name);
-                });
+                if (window.masterPOSData && window.masterPOSData.addonLayoutNames) {
+                    addonsList.sort((a,b) => {
+                        let idxA = window.masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase());
+                        let idxB = window.masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase());
+                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                        if (idxA !== -1) return -1;
+                        if (idxB !== -1) return 1;
+                        return a.name.localeCompare(b.name);
+                    });
+                }
                 
-                // Price = 0? Automatically groups as a mandatory "Base Flavor"
-                // Price > 0? Automatically groups as an optional "Extra"
                 let baseFlavors = addonsList.filter(a => a.price === 0);
                 let extras = addonsList.filter(a => a.price > 0);
 
@@ -3076,14 +3076,15 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     baseFlavors.forEach((bf, bfIdx) => {
                         let isChecked = '';
                         if (existingItem) {
-                            if (existingItem.addons[bf.name]) isChecked = 'checked';
+                            if (existingItem.addons && existingItem.addons[bf.name]) isChecked = 'checked';
                         } else {
                             if (bfIdx === 0) isChecked = 'checked';
                         }
 
+                        // Added fallback "typeof" checks to prevent ReferenceErrors
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #b45309;">
-                                <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="updateModalTotals()"> ${bf.name}</span>
+                                <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${bf.name}</span>
                                 <span style="color: #d97706; font-size: 11px;">Free</span>
                             </label>
                         `;
@@ -3094,10 +3095,10 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 if (extras.length > 0) {
                     newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
                     extras.forEach(a => {
-                        let isChecked = (existingItem && existingItem.addons[a.name]) ? 'checked' : '';
+                        let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
-                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient}|${a.deductQty}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="updateModalTotals()"> ${a.name}</span>
+                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
                                 <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
                             </label>
                         `;
@@ -3116,111 +3117,39 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 addonContainer.appendChild(dynamicAddonDiv);
             }
             dynamicAddonDiv.innerHTML = newUiHtml;
-        }
-    } catch (error) { console.error("Error loading item details:", error); }
-            // 🔥 DYNAMIC MIX & MATCH STATE BUILDER
-            window.mixMatchState = {};
-            if (masterPOSData.settings && masterPOSData.settings.mixMatchFlavors) {
-                masterPOSData.settings.mixMatchFlavors.forEach(flavor => {
-                    window.mixMatchState[flavor] = 0;
-                });
-            }
 
-            if (typeof window.mixMatchState !== 'undefined') {
-                let isTakoyaki = pendingItem.name.toLowerCase().includes('takoyaki') || pendingItem.name.toLowerCase().includes('grilled');
-                let customArea = document.getElementById('takoyakiCustomizationArea');
-                if (customArea) {
-                    if (isTakoyaki) {
-                        customArea.style.display = 'block';
-                        document.getElementById('mixMatchPanel').style.display = 'none';
-                        document.getElementById('mixMatchToggleIcon').innerText = '▼';
-                        let sizeMatch = pendingItem.realName ? pendingItem.realName.match(/(\d+)\s*Pcs/i) : pendingItem.name.match(/(\d+)\s*Pcs/i);
-                        window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
-                        window.renderMixMatchList();
-                    } else { customArea.style.display = 'none'; }
+            // 🔥 3. ITEM-SPECIFIC MIX & MATCH BUILDER 🔥
+            window.mixMatchState = {};
+            let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
+            let customArea = document.getElementById('takoyakiCustomizationArea');
+            
+            if (customArea) {
+                if (hasMixMatch) {
+                    itemData.mixMatchFlavors.forEach(flavor => {
+                        window.mixMatchState[flavor] = 0;
+                    });
+                    
+                    customArea.style.display = 'block';
+                    document.getElementById('mixMatchPanel').style.display = 'none';
+                    document.getElementById('mixMatchToggleIcon').innerText = '▼';
+                    
+                    let sizeMatch = window.pendingItem.realName ? window.pendingItem.realName.match(/(\d+)\s*Pcs/i) : window.pendingItem.name.match(/(\d+)\s*Pcs/i);
+                    window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
+                    
+                    if(typeof window.renderMixMatchList === 'function') window.renderMixMatchList();
+                    else renderMixMatchList();
+                } else {
+                    customArea.style.display = 'none';
                 }
             }
-    updateModalTotals(); 
-};
-
-// Handle clicking the new beautiful Size Buttons without flickering the screen
-window.selectRealVariant = function(realName, vPrice, clickedBtn) {
-    document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
-    clickedBtn.classList.add('active');
-    pendingItem.realName = realName;
-    pendingItem.variantPrice = vPrice;
-    pendingItem.basePrice = vPrice;
-    let priceHeader = document.getElementById('modalItemPrice').parentElement;
-    priceHeader.style.display = 'flex';
-    document.getElementById('modalItemPrice').innerText = '₱ ' + vPrice.toFixed(2);
-    
-    let sizeMatch = realName.match(/(\d+)\s*Pcs/i);
-    window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8;
-    for (let f in window.mixMatchState) window.mixMatchState[f] = 0; 
-    if (typeof window.renderMixMatchList === 'function') window.renderMixMatchList();
-    
-    updateModalTotals();
-};
-    
-    // Handle Phantom Size Changes
-    window.updatePhantomSize = function(radioBtn) {
-        let parts = radioBtn.value.split('|');
-        let realName = parts[0];
-        let newPrice = parseFloat(parts[1]);
-        
-        pendingItem.realName = realName;
-        pendingItem.basePrice = newPrice;
-        pendingItem.variantPrice = newPrice;
-        
-        document.getElementById('modalItemPrice').innerText = '₱ ' + newPrice.toFixed(2);
-        
-        // We must rapidly re-trigger the open modal function to reload the correct addons and stock warnings for this specific size!
-        window.openAddOrderModal(pendingItem.name, newPrice, pendingItem);
-    };
-    
-    function selectVariant(btn, vName, vPrice) {
-      document.querySelectorAll('#variantOptions .var-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active'); pendingItem.variantName = vName; pendingItem.variantPrice = vPrice; updateModalTotals();
-    }
-    
-    function adjustModalMainQty(delta) { let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1; if (cur + delta > 0) { pendingItem.qty = cur + delta; document.getElementById('modalMainQty').innerText = pendingItem.qty; updateModalTotals(); } }
-    
-    function setDiscountType(type) {
-      pendingItem.discountType = type; document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
-      let dvi = document.getElementById('discountValueInput'); dvi.style.display = type === 'none' ? 'none' : 'block'; dvi.value = '';
-      if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); pendingItem.discountVal = 0; }
-      else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
-      else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
-      updateModalTotals();
-    }
-
-    function addAddonFromDropdown() { 
-      let val = document.getElementById('addonSelectDropdown').value; 
-      if (!val) return; 
-      let parts = val.split('|'); 
-      // Parts: 0=Name, 1=Price, 2=LinkedIngredient, 3=DeductQty
-      adjustAddon(parts[0], parseFloat(parts[1]), 1, parts[2] || '', parseFloat(parts[3]) || 0); 
-      document.getElementById('addonSelectDropdown').value = '';
-    }
-    
-    function adjustAddon(name, price, delta, linkedIngredient = '', deductQty = 0) { 
-      if (!pendingItem.addons[name]) pendingItem.addons[name] = { price: price, qty: 0, linkedIngredient: linkedIngredient, deductQty: deductQty }; 
-      if (pendingItem.addons[name].qty + delta >= 0) { 
-        pendingItem.addons[name].qty += delta; 
-        renderActiveAddons(); 
-        updateModalTotals(); 
-      } 
-    }
-    
-    function renderActiveAddons() {
-      let container = document.getElementById('activeAddonsContainer'); container.innerHTML = '';
-      for (let key in pendingItem.addons) {
-        let addon = pendingItem.addons[key];
-        if (addon.qty > 0) {
-          container.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; background:#f8f9fa; padding:10px 15px; border-radius:6px; border:1px solid #eee; margin-top:5px;"><span style="font-size:14px; font-weight:600; color:#333;">${key} <span style="color:var(--primary);">(+₱${addon.price.toFixed(2)})</span></span><div style="display:flex; align-items:center; gap:8px;"><button class="btn-qty-small" onclick="adjustAddon('${key}', ${addon.price}, -1, '${addon.linkedIngredient}', ${addon.deductQty})">-</button><span style="font-size:15px; font-weight:bold; width:20px; text-align:center;">${addon.qty}</span><button class="btn-qty-small" onclick="adjustAddon('${key}', ${addon.price}, 1, '${addon.linkedIngredient}', ${addon.deductQty})">+</button></div></div>`;
         }
-      }
+    } catch (error) { 
+        console.error("Error loading item details:", error); 
     }
+    
+    if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
+    else if (typeof updateModalTotals === 'function') updateModalTotals();
+};
 
     window.updateModalTotals = function() {
       let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
