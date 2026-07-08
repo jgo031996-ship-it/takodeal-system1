@@ -3052,9 +3052,18 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
                 let addonsList = Object.values(groupedAddons);
                 
-                // 🔥 THE INSANELY SMART SYNC: 
-                // Price = 0? Automatically groups as a mandatory "Base Flavor" radio button option!
-                // Price > 0? Automatically groups as an optional "Extra" checkbox option!
+                // 🔥 APPLY MANAGER APP CUSTOM SORTING TO ADD-ONS!
+                addonsList.sort((a,b) => {
+                    let idxA = masterPOSData.addonLayoutNames ? masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase()) : -1;
+                    let idxB = masterPOSData.addonLayoutNames ? masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase()) : -1;
+                    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                    if (idxA !== -1) return -1;
+                    if (idxB !== -1) return 1;
+                    return a.name.localeCompare(b.name);
+                });
+                
+                // Price = 0? Automatically groups as a mandatory "Base Flavor"
+                // Price > 0? Automatically groups as an optional "Extra"
                 let baseFlavors = addonsList.filter(a => a.price === 0);
                 let extras = addonsList.filter(a => a.price > 0);
 
@@ -3065,7 +3074,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     `;
                     
                     baseFlavors.forEach((bf, bfIdx) => {
-                        // Retain their selected choice if editing an order, or default check the very first option if it's a fresh order
                         let isChecked = '';
                         if (existingItem) {
                             if (existingItem.addons[bf.name]) isChecked = 'checked';
@@ -3110,8 +3118,15 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             dynamicAddonDiv.innerHTML = newUiHtml;
         }
     } catch (error) { console.error("Error loading item details:", error); }
+            // 🔥 DYNAMIC MIX & MATCH STATE BUILDER
+            window.mixMatchState = {};
+            if (masterPOSData.settings && masterPOSData.settings.mixMatchFlavors) {
+                masterPOSData.settings.mixMatchFlavors.forEach(flavor => {
+                    window.mixMatchState[flavor] = 0;
+                });
+            }
+
             if (typeof window.mixMatchState !== 'undefined') {
-                for (let f in window.mixMatchState) window.mixMatchState[f] = 0; 
                 let isTakoyaki = pendingItem.name.toLowerCase().includes('takoyaki') || pendingItem.name.toLowerCase().includes('grilled');
                 let customArea = document.getElementById('takoyakiCustomizationArea');
                 if (customArea) {
