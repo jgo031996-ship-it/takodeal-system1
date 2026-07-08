@@ -2534,7 +2534,9 @@ window.removeFromDispatchCart = function (index) {
   renderDispatchCart();
 };
 
-// --- THE MENU EDITOR ENGINE ---
+// --- THE MENU EDITOR ENGINE (WITH CUSTOM ARRANGER) ---
+window.globalMenuItemsCache = []; // Stores the menu in memory for arranging
+
 window.loadMenuEditor = async function() {
   const tbody = document.getElementById('menuTableBody');
   if(!tbody) return;
@@ -2543,23 +2545,36 @@ window.loadMenuEditor = async function() {
   let catFilterEl = document.getElementById('menuEditorCatFilter');
   let selectedCat = catFilterEl ? catFilterEl.value : 'All';
 
+  // 🔥 INJECT THE SAVE LAYOUT BUTTON DYNAMICALLY
+  let headerDiv = catFilterEl ? catFilterEl.closest('div') : null;
+  if (headerDiv && !document.getElementById('btnSaveMenuOrder')) {
+      let btnHtml = `<button id="btnSaveMenuOrder" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; margin-left: 10px; box-shadow: 0 2px 4px rgba(139,92,246,0.3);" onclick="window.saveMenuItemLayout()">💾 Save Display Order</button>`;
+      headerDiv.insertAdjacentHTML('beforeend', btnHtml);
+  }
+
   try {
     const snap = await getDocs(collection(db, "menu"));
-    let html = '';
-
-    if (snap.empty) {
-      tbody.innerHTML = '<tr><td colspan="4" class="text-center">Menu is empty. Click "Add Menu Item" to start.</td></tr>';
-      return;
-    } 
     
+    // Fetch Custom Layout
+    let layoutOrder = [];
+    try {
+        const layoutSnap = await getDoc(doc(db, "settings", "pos_item_layout"));
+        if (layoutSnap.exists()) layoutOrder = layoutSnap.data().items || [];
+    } catch(e) {}
+
     let items = [];
     let uniqueCategories = new Set();
 
     snap.forEach(doc => {
-        let data = doc.data();
-        items.push({ id: doc.id, ...data });
-        if (data.category) uniqueCategories.add(data.category.trim());
+      let d = doc.data();
+      items.push({ id: doc.id, ...d });
+      if (d.category) uniqueCategories.add(d.category.trim());
     });
+
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center">Menu is empty. Click "Add Menu Item" to start.</td></tr>';
+      return;
+    }
 
     if (catFilterEl) {
         let optionsHtml = '<option value="All">All Categories</option>';
@@ -2570,38 +2585,68 @@ window.loadMenuEditor = async function() {
         catFilterEl.innerHTML = optionsHtml;
     }
 
-    items.sort((a, b) => a.name.localeCompare(b.name));
+    // 🔥 SORT BY CUSTOM LAYOUT FIRST, THEN ALPHABETICAL
+    items.sort((a, b) => {
+        let idxA = layoutOrder.indexOf(a.id);
+        let idxB = layoutOrder.indexOf(b.id);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+    });
 
+    window.globalMenuItemsCache = items;
+    window.renderMenuEditorUI();
+
+  } catch (error) {
+    console.error("Menu Engine Error:", error);
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error loading menu.</td></tr>';
+  }
+};
+
+window.renderMenuEditorUI = function() {
+    const tbody = document.getElementById('menuTableBody');
+    let catFilterEl = document.getElementById('menuEditorCatFilter');
+    let selectedCat = catFilterEl ? catFilterEl.value : 'All';
+    let html = '';
     let count = 0;
-    items.forEach(data => {
-      let cat = data.category || 'Uncategorized';
-      if (selectedCat !== 'All' && cat !== selectedCat) return;
-      
+
+    // Filter the view
+    let visibleItems = window.globalMenuItemsCache.filter(item => {
+        let cat = item.category || 'Uncategorized';
+        return selectedCat === 'All' || cat === selectedCat;
+    });
+
+    visibleItems.forEach(data => {
       count++;
       let safePrice = parseFloat(data.price) || 0;
-      
-      // 🔥 Escape apostrophes so names like "Chef's Special" don't break the code!
       let safeName = data.name ? data.name.replace(/'/g, "\\'") : 'Unnamed';
-      let safeCat = cat.replace(/'/g, "\\'");
+      let safeCat = (data.category || 'Uncategorized').replace(/'/g, "\\'");
       
       let imgHtml = data.image 
           ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">` 
           : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">🍲</div>`;
 
+      // 🔥 THE MOVEMENT ARROWS 🔥
+      let moveBtns = `
+        <div style="display:inline-flex; flex-direction:column; gap:2px; margin-right:10px; vertical-align:middle;">
+            <button onclick="window.moveMenuEditorItem('${data.id}', -1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:8px; cursor:pointer; padding:2px 5px; color:#475569;" title="Move Up">▲</button>
+            <button onclick="window.moveMenuEditorItem('${data.id}', 1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:8px; cursor:pointer; padding:2px 5px; color:#475569;" title="Move Down">▼</button>
+        </div>
+      `;
+
       html += `
         <tr>
-          <td>${imgHtml}<strong> ${data.name}</strong></td>
-          <td><span class="badge badge-closed">${cat}</span></td>
+          <td>${moveBtns}${imgHtml}<strong> ${data.name}</strong></td>
+          <td><span class="badge badge-closed">${data.category || 'Uncategorized'}</span></td>
           <td style="font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
           <td style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            
+            <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 6px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;" onclick="openBomEditor('${safeName}')">🍟 Recipe/Addons</button>
             <button class="btn-refresh" onclick="window.editMenuItem('${data.id}', '${safeName}', '${safeCat}', ${safePrice})">✏️ Edit Details</button>
-            
             <label style="cursor: pointer; background: #f0fdf4; border: 1px solid #16a34a; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin: 0; display: inline-flex; align-items: center;">
                 📷 Upload Pic
                 <input type="file" accept="image/jpeg, image/png, image/webp" style="display:none;" onchange="window.uploadMenuImage(event, '${data.id}')">
             </label>
-
             <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${safeName}')">🗑️ Delete</button>
           </td>
         </tr>
@@ -2609,10 +2654,60 @@ window.loadMenuEditor = async function() {
     });
     
     tbody.innerHTML = count > 0 ? html : `<tr><td colspan="4" class="text-center">No items found in category: ${selectedCat}.</td></tr>`;
-  } catch (error) {
-    console.error("Menu Engine Error:", error);
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error loading menu.</td></tr>';
-  }
+};
+
+window.moveMenuEditorItem = function(id, direction) {
+    let catFilterEl = document.getElementById('menuEditorCatFilter');
+    let selectedCat = catFilterEl ? catFilterEl.value : 'All';
+
+    // 1. Find the item inside the current VISIBLE filtered list
+    let visibleItems = window.globalMenuItemsCache.filter(item => {
+        let cat = item.category || 'Uncategorized';
+        return selectedCat === 'All' || cat === selectedCat;
+    });
+
+    let vIdx = visibleItems.findIndex(i => i.id === id);
+    if (vIdx < 0) return; // Not found
+
+    let targetVIdx = vIdx + direction;
+    if (targetVIdx < 0 || targetVIdx >= visibleItems.length) return; // Out of bounds
+
+    let targetId = visibleItems[targetVIdx].id;
+
+    // 2. Find their true indices in the massive Global Array
+    let trueIdx1 = window.globalMenuItemsCache.findIndex(i => i.id === id);
+    let trueIdx2 = window.globalMenuItemsCache.findIndex(i => i.id === targetId);
+
+    // 3. Swap them in the global array!
+    let temp = window.globalMenuItemsCache[trueIdx1];
+    window.globalMenuItemsCache[trueIdx1] = window.globalMenuItemsCache[trueIdx2];
+    window.globalMenuItemsCache[trueIdx2] = temp;
+
+    // 4. Redraw the table
+    window.renderMenuEditorUI();
+};
+
+window.saveMenuItemLayout = async function() {
+    // Extracts the IDs in their exact new order
+    let layoutIds = window.globalMenuItemsCache.map(i => i.id);
+    
+    let btn = document.getElementById('btnSaveMenuOrder');
+    if (btn) btn.innerText = "⏳ Saving...";
+
+    try {
+        await setDoc(doc(db, "settings", "pos_item_layout"), { items: layoutIds }, { merge: true });
+        Swal.fire({
+            title: '✅ Layout Saved!',
+            text: 'Menu item arrangement saved. Cashier apps will update instantly.',
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to save layout to cloud.', 'error');
+    } finally {
+        if (btn) btn.innerText = "💾 Save Display Order";
+    }
 };
 
 window.addMenuItem = async function () {
@@ -2638,7 +2733,6 @@ window.addMenuItem = async function () {
 };
 
 window.editMenuItem = async function (docId, currentName, currentCat, currentPrice) {
-    // 🔥 THE FIX: A beautiful, all-in-one edit form instead of an ugly prompt!
     const { value: formValues, isConfirmed } = await Swal.fire({
         title: '✏️ Edit Menu Item',
         html: `
@@ -2690,10 +2784,6 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
     } catch (error) {
         console.error(error); Swal.fire('Error', 'Failed to update price.', 'error');
     }
-
-    // Wake up the cloning dropdown!
-    if (typeof window.loadCloneDropdown === "function") window.loadCloneDropdown();
-    setTimeout(() => { if (typeof window.loadCloneDropdown === "function") window.loadCloneDropdown(); }, 200);
 };
 
 // --- 🖼️ IMAGE UPLOAD ENGINE ---
