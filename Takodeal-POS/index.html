@@ -2466,11 +2466,19 @@
   </div>
 
   <script>
-    sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
-    let cart = []; let masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
-    let pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
-    let amountReceivedStr = "0"; let selectedPaymentMethod = "Cash"; let isSplitMode = false; let splitRows = []; let lastTransactionData = {};
-    let editIndex = -1; let currentShift = null; let activeShiftDetails = null; let systemReady = false;
+    window.sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
+    window.cart = []; 
+    window.masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
+    window.pendingItem = { name: '', basePrice: 0, variantName: '', variantPrice: 0, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0 };
+    window.amountReceivedStr = "0"; 
+    window.selectedPaymentMethod = "Cash"; 
+    window.isSplitMode = false; 
+    window.splitRows = []; 
+    window.lastTransactionData = {};
+    window.editIndex = -1; 
+    window.currentShift = null; 
+    window.activeShiftDetails = null; 
+    window.systemReady = false;
 
     document.addEventListener("DOMContentLoaded", function () {
       let loginBox = document.getElementById('loginOverlay');
@@ -3116,15 +3124,32 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 addonContainer.appendChild(dynamicAddonDiv);
             }
             dynamicAddonDiv.innerHTML = newUiHtml;
-        }
+
+            // 🔥 3. ITEM-SPECIFIC MIX & MATCH BUILDER 🔥
+            window.mixMatchState = {};
+            let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
+            let customArea = document.getElementById('takoyakiCustomizationArea');
+            
+            if (customArea) {
+                if (hasMixMatch) {
+                    itemData.mixMatchFlavors.forEach(flavor => {
+                        window.mixMatchState[flavor] = 0;
+                    });
+                    
+                    customArea.style.display = 'block';
+                    document.getElementById('mixMatchPanel').style.display = 'none';
+                    document.getElementById('mixMatchToggleIcon').innerText = '▼';
+                    
+                    let sizeMatch = pendingItem.realName ? pendingItem.realName.match(/(\d+)\s*Pcs/i) : pendingItem.name.match(/(\d+)\s*Pcs/i);
+                    window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
+                    window.renderMixMatchList();
+                } else {
+                    customArea.style.display = 'none';
+                }
+            }
     } catch (error) { console.error("Error loading item details:", error); }
             // 🔥 DYNAMIC MIX & MATCH STATE BUILDER
             window.mixMatchState = {};
-            if (masterPOSData.settings && masterPOSData.settings.mixMatchFlavors) {
-                masterPOSData.settings.mixMatchFlavors.forEach(flavor => {
-                    window.mixMatchState[flavor] = 0;
-                });
-            }
 
             if (typeof window.mixMatchState !== 'undefined') {
                 let isTakoyaki = pendingItem.name.toLowerCase().includes('takoyaki') || pendingItem.name.toLowerCase().includes('grilled');
