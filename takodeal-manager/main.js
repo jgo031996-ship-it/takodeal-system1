@@ -11152,61 +11152,121 @@ window.viewShiftReportModal = function(shiftId) {
 };
 
 // ========================================================
-// 🍟 GLOBAL ADD-ONS CRUD ENGINE (WITH MASS SYNC & EDITING)
+// 🍟 GLOBAL ADD-ONS CRUD ENGINE (WITH CUSTOM SORTING)
 // ========================================================
+window.globalAddonsCache = [];
+
 window.loadGlobalAddons = async function() {
     const tbody = document.getElementById('globalAddonsBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching Add-Ons...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Fetching Add-Ons...</td></tr>';
     
-    // INJECT THE MASS SYNC BUTTON DYNAMICALLY ABOVE THE TABLE
+    // INJECT THE MASS SYNC & SAVE ORDER BUTTONS
     let tableContainer = tbody.closest('table').parentElement;
     if (!document.getElementById('btnMassSyncAddons')) {
         let syncBtnHtml = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; flex-wrap: wrap; gap: 15px;">
                 <div style="flex: 1; min-width: 300px;">
-                    <h3 style="margin: 0; color: #d97706; font-size: 15px;">🚀 Mass Sync Engine</h3>
-                    <p style="margin: 4px 0 0 0; font-size: 12px; color: #92400e;">Click <b>Extract</b> to pull add-ons you already made. Click <b>Mass Sync</b> to push updates to the menu.</p>
+                    <h3 style="margin: 0; color: #d97706; font-size: 15px;">🚀 Mass Sync & Arrangement Engine</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 12px; color: #92400e;">Use the Up/Down arrows to arrange your add-ons, then click <b>Save Display Order</b>. Click <b>Mass Sync</b> to push updates to the menu.</p>
                 </div>
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="window.extractAddonsToGlobal()" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.1);">
-                        📥 Extract Existing Add-ons
-                    </button>
-                    <button id="btnMassSyncAddons" onclick="window.syncGlobalAddonsToMenu()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3);">
-                        🔄 Mass Sync to Entire Menu
-                    </button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="window.saveGlobalAddonLayout()" id="btnSaveAddonOrder" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save Display Order</button>
+                    <button onclick="window.extractAddonsToGlobal()" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">📥 Extract</button>
+                    <button id="btnMassSyncAddons" onclick="window.syncGlobalAddonsToMenu()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">🔄 Mass Sync</button>
                 </div>
             </div>
         `;
         tableContainer.insertAdjacentHTML('beforebegin', syncBtnHtml);
+        
+        // Add a new column header for the Arrows
+        let theadTr = tbody.previousElementSibling.querySelector('tr');
+        if (theadTr && theadTr.children[0].innerText !== "Sort") {
+            let th = document.createElement('th');
+            th.innerText = "Sort";
+            th.style.width = "50px";
+            theadTr.insertBefore(th, theadTr.children[0]);
+        }
     }
 
     try {
         const snap = await getDocs(collection(db, "global_addons"));
-        let html = '';
-        snap.forEach(doc => {
-            let d = doc.data();
-            // Escape strings so apostrophes don't break the Edit button!
-            let safeName = d.name ? d.name.replace(/'/g, "\\'") : '';
-            let safeIng = d.linkedIngredient ? d.linkedIngredient.replace(/'/g, "\\'") : '';
-            let safeCat = d.category ? d.category.replace(/'/g, "\\'") : 'All';
+        
+        // Fetch the custom saved layout
+        const layoutSnap = await getDoc(doc(db, "settings", "pos_addon_layout"));
+        let layoutOrder = layoutSnap.exists() ? layoutSnap.data().items || [] : [];
 
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="font-weight: bold; color: #1e293b; padding: 12px;">${d.name}</td>
-                    <td style="font-weight: bold; color: #16a34a; padding: 12px;">₱${d.price}</td>
-                    <td style="color: #64748b; padding: 12px;">${d.linkedIngredient || 'None'} <span style="font-size:11px;">(Deducts: ${d.deductQty || 0})</span></td>
-                    <td style="padding: 12px;"><span class="badge badge-open">${d.category || 'All'}</span></td>
-                    <td style="padding: 12px; display:flex; gap: 5px;">
-                        <button onclick="window.openGlobalAddonModal('${doc.id}', '${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}', '${safeCat}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
-                        <button onclick="window.duplicateGlobalAddon('${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📋 Clone</button>
-                        <button onclick="window.deleteGlobalAddon('${doc.id}', '${safeName}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>
-                    </td>
-                </tr>
-            `;
+        let addons = [];
+        snap.forEach(doc => addons.push({id: doc.id, ...doc.data()}));
+        
+        // Sort by Custom Layout first, fallback to Alphabetical
+        addons.sort((a,b) => {
+            let idxA = layoutOrder.indexOf(a.id);
+            let idxB = layoutOrder.indexOf(b.id);
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return (a.name || '').localeCompare(b.name || '');
         });
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No Global Add-Ons setup yet.</td></tr>';
+        
+        window.globalAddonsCache = addons;
+        window.renderGlobalAddons();
     } catch(e) { console.error(e); }
+};
+
+window.renderGlobalAddons = function() {
+    const tbody = document.getElementById('globalAddonsBody');
+    let html = '';
+    window.globalAddonsCache.forEach((d, index) => {
+        let safeName = d.name ? d.name.replace(/'/g, "\\'") : '';
+        let safeIng = d.linkedIngredient ? d.linkedIngredient.replace(/'/g, "\\'") : '';
+        let safeCat = d.category ? d.category.replace(/'/g, "\\'") : 'All';
+
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px; width: 60px;">
+                    <div style="display:inline-flex; flex-direction:column; gap:2px; vertical-align:middle;">
+                        <button onclick="window.moveGlobalAddon(${index}, -1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:10px; cursor:pointer; padding:2px 5px; color:#475569;">▲</button>
+                        <button onclick="window.moveGlobalAddon(${index}, 1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:10px; cursor:pointer; padding:2px 5px; color:#475569;">▼</button>
+                    </div>
+                </td>
+                <td style="font-weight: bold; color: #1e293b; padding: 12px;">${d.name}</td>
+                <td style="font-weight: bold; color: #16a34a; padding: 12px;">₱${d.price}</td>
+                <td style="color: #64748b; padding: 12px;">${d.linkedIngredient || 'None'} <span style="font-size:11px;">(Deducts: ${d.deductQty || 0})</span></td>
+                <td style="padding: 12px;"><span class="badge badge-open">${d.category || 'All'}</span></td>
+                <td style="padding: 12px; display:flex; gap: 5px;">
+                    <button onclick="window.openGlobalAddonModal('${d.id}', '${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}', '${safeCat}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
+                    <button onclick="window.duplicateGlobalAddon('${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📋 Clone</button>
+                    <button onclick="window.deleteGlobalAddon('${d.id}', '${safeName}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html || '<tr><td colspan="6" class="text-center">No Global Add-Ons setup yet.</td></tr>';
+};
+
+window.moveGlobalAddon = function(index, direction) {
+    let newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= window.globalAddonsCache.length) return;
+    let temp = window.globalAddonsCache[index];
+    window.globalAddonsCache[index] = window.globalAddonsCache[newIndex];
+    window.globalAddonsCache[newIndex] = temp;
+    window.renderGlobalAddons();
+};
+
+window.saveGlobalAddonLayout = async function() {
+    let btn = document.getElementById('btnSaveAddonOrder');
+    if(btn) btn.innerText = "⏳ Saving...";
+    let layoutIds = window.globalAddonsCache.map(a => a.id);
+    let layoutNames = window.globalAddonsCache.map(a => (a.name || "").toLowerCase()); // Required for Cashier App Sync!
+    try {
+        await setDoc(doc(db, "settings", "pos_addon_layout"), { items: layoutIds, itemNames: layoutNames }, { merge: true });
+        Swal.fire({title: '💾 Saved!', text: 'Add-On arrangement saved. Cashier POS will update instantly.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to save arrangement.', 'error');
+    } finally {
+        if(btn) btn.innerText = "💾 Save Display Order";
+    }
 };
 
 // 🔥 NEW: 1-CLICK ADD-ON CLONER
@@ -11377,11 +11437,12 @@ window.syncGlobalAddonsToMenu = async function() {
             let modified = false;
 
             // 🔥 THE SMART MATCHING UPGRADE
-            // "Takoyaki" will now successfully match "Bonito Takoyaki" or "Cheesy Takoyaki"!
+            // "saucy" will now accurately match "Bonito Takoyaki" (the item) OR "Takoyaki" (the category)!
             let matchingGlobals = globalAddons.filter(ga => {
                 if (ga.category === "All") return true;
                 let globalCatLower = (ga.category || "").toLowerCase();
-                return menuCat.includes(globalCatLower); 
+                let itemNameLower = (menuItem.name || "").toLowerCase();
+                return menuCat.includes(globalCatLower) || itemNameLower.includes(globalCatLower); 
             });
 
             matchingGlobals.forEach(ga => {
@@ -11728,26 +11789,39 @@ window.loadPosConfigHub = async function() {
     let originalText = btn ? btn.innerText : "💾 Save Changes to Cloud";
     if (btn) btn.innerText = "⏳ Loading Data...";
 
+    // 🔥 DYNAMICALLY INJECT MIX & MATCH BOX
+    if (!document.getElementById('configMixMatch')) {
+        let container = document.getElementById('configPosTabs').parentElement.parentElement;
+        container.insertAdjacentHTML('beforeend', `
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+                <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">🐙 Mix & Match Flavors</h3>
+                <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of flavors for the Takoyaki Mix & Match.</p>
+                <textarea id="configMixMatch" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Pork, Shrimp, Octopus, Ham & Cheese, Bacon & Cheese</div>
+            </div>
+        `);
+    }
+
     try {
         const docRef = doc(db, "settings", "global_pos_config");
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
             let data = docSnap.data();
-            
-            // Join the cloud arrays into comma-separated strings for the text boxes
             document.getElementById('configPayMethods').value = (data.paymentMethods || []).join(', ');
             document.getElementById('configOrderTypes').value = (data.orderTypes || []).join(', ');
             document.getElementById('configPosTabs').value = (data.posTabs || []).join(', ');
             document.getElementById('configKitchenPrep').value = (data.kitchenPrepCats || ["Prepared Batch"]).join(', ');
             document.getElementById('configAuditList').value = (data.auditItems || []).join(', ');
+            document.getElementById('configMixMatch').value = (data.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]).join(', ');
         } else {
-            // Default Takodeal Values if empty
+            // Defaults
             document.getElementById('configPayMethods').value = "Cash, GCash, Bank, Grab";
             document.getElementById('configOrderTypes').value = "Dine-In, Take-Out, Delivery, Grab";
             document.getElementById('configPosTabs').value = "Takoyaki, Milk Tea, Coffee, Add-ons";
             document.getElementById('configKitchenPrep').value = "Prepared Batch";
             document.getElementById('configAuditList').value = "320cc Paper Bowl, 520cc Paper Bowl, LB1 Box, Burger Box";
+            document.getElementById('configMixMatch').value = "Pork, Shrimp, Octopus, Ham & Cheese, Bacon & Cheese";
         }
     } catch (error) {
         console.error("Error loading config:", error);
@@ -11763,38 +11837,29 @@ window.saveGlobalPosConfig = async function() {
     btn.disabled = true;
 
     try {
-        // Grab the text, split by commas, and trim any accidental extra spaces
         let payMethods = document.getElementById('configPayMethods').value.split(',').map(s => s.trim()).filter(Boolean);
         let orderTypes = document.getElementById('configOrderTypes').value.split(',').map(s => s.trim()).filter(Boolean);
         let posTabs = document.getElementById('configPosTabs').value.split(',').map(s => s.trim()).filter(Boolean);
         let prepCats = document.getElementById('configKitchenPrep').value.split(',').map(s => s.trim()).filter(Boolean);
         let auditList = document.getElementById('configAuditList').value.split(',').map(s => s.trim()).filter(Boolean);
+        let mixFlavors = document.getElementById('configMixMatch').value.split(',').map(s => s.trim()).filter(Boolean);
 
-        // Blast it to the Cloud Vault!
         await setDoc(doc(db, "settings", "global_pos_config"), {
             paymentMethods: payMethods,
             orderTypes: orderTypes,
             posTabs: posTabs,
             kitchenPrepCats: prepCats,
             auditItems: auditList,
+            mixMatchFlavors: mixFlavors,
             lastUpdatedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
         }, { merge: true });
 
-        Swal.fire({
-            title: '✅ Success!',
-            text: 'Invoice logged and inventory added to Main Office.',
-            icon: 'success',
-            confirmButtonColor: '#0f766e', // Matches your teal modal theme!
-            customClass: { popup: 'rounded-2xl shadow-2xl' }
-        });
-        
+        Swal.fire({ title: '✅ Success!', text: 'POS Settings saved to Cloud.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
     } catch (error) {
-        console.error("Error saving config:", error);
-        alert("❌ Failed to save. Check your connection.");
+        console.error("Error saving config:", error); alert("❌ Failed to save.");
     } finally {
-        btn.innerText = "💾 Save Changes to Cloud";
-        btn.disabled = false;
+        btn.innerText = "💾 Save Changes to Cloud"; btn.disabled = false;
     }
 };
 
