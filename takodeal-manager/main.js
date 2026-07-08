@@ -2604,6 +2604,65 @@ window.loadMenuEditor = async function() {
   }
 };
 
+// ==========================================
+// 🖱️ DRAG & DROP MENU ARRANGER ENGINE
+// ==========================================
+window.draggedMenuItemId = null;
+
+window.handleMenuDragStart = function(e, id) {
+    window.draggedMenuItemId = id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.target.style.opacity = '0.5'; // Makes the dragged item slightly transparent
+};
+
+window.handleMenuDragOver = function(e) {
+    e.preventDefault(); // Necessary to allow dropping
+    e.dataTransfer.dropEffect = 'move';
+};
+
+window.handleMenuDragEnter = function(e) {
+    e.preventDefault();
+    let tr = e.target.closest('tr');
+    if (tr) tr.style.borderTop = "3px solid #8b5cf6"; // Show a purple drop-zone line!
+};
+
+window.handleMenuDragLeave = function(e) {
+    let tr = e.target.closest('tr');
+    if (tr) tr.style.borderTop = ""; // Remove the line when dragging away
+};
+
+window.handleMenuDrop = function(e, targetId) {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    let tr = e.target.closest('tr');
+    if (tr) tr.style.borderTop = "";
+    
+    // Stop if dropped on itself or outside
+    if (!window.draggedMenuItemId || window.draggedMenuItemId === targetId) return;
+
+    // Find the items in global memory
+    let fromIdx = window.globalMenuItemsCache.findIndex(i => i.id === window.draggedMenuItemId);
+    let toIdx = window.globalMenuItemsCache.findIndex(i => i.id === targetId);
+
+    if (fromIdx >= 0 && toIdx >= 0) {
+        // Cut the dragged item out of the array
+        let item = window.globalMenuItemsCache.splice(fromIdx, 1)[0];
+        // Paste it exactly at the new targeted location
+        window.globalMenuItemsCache.splice(toIdx, 0, item);
+        
+        // Redraw the screen instantly!
+        window.renderMenuEditorUI(); 
+    }
+};
+
+window.handleMenuDragEnd = function(e) {
+    e.target.style.opacity = '1';
+    // Clean up any stuck purple lines just in case
+    document.querySelectorAll('#menuTableBody tr').forEach(t => t.style.borderTop = "");
+    window.draggedMenuItemId = null;
+};
+
 window.renderMenuEditorUI = function() {
     const tbody = document.getElementById('menuTableBody');
     let catFilterEl = document.getElementById('menuEditorCatFilter');
@@ -2611,7 +2670,6 @@ window.renderMenuEditorUI = function() {
     let html = '';
     let count = 0;
 
-    // Filter the view
     let visibleItems = window.globalMenuItemsCache.filter(item => {
         let cat = item.category || 'Uncategorized';
         return selectedCat === 'All' || cat === selectedCat;
@@ -2624,67 +2682,40 @@ window.renderMenuEditorUI = function() {
       let safeCat = (data.category || 'Uncategorized').replace(/'/g, "\\'");
       
       let imgHtml = data.image 
-          ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">` 
-          : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; margin-right:10px; border:1px solid #e2e8f0;">🍲</div>`;
+          ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; border:1px solid #e2e8f0;">` 
+          : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; border:1px solid #e2e8f0;">🍲</div>`;
 
-      // 🔥 THE MOVEMENT ARROWS 🔥
-      let moveBtns = `
-        <div style="display:inline-flex; flex-direction:column; gap:2px; margin-right:10px; vertical-align:middle;">
-            <button onclick="window.moveMenuEditorItem('${data.id}', -1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:8px; cursor:pointer; padding:2px 5px; color:#475569;" title="Move Up">▲</button>
-            <button onclick="window.moveMenuEditorItem('${data.id}', 1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:8px; cursor:pointer; padding:2px 5px; color:#475569;" title="Move Down">▼</button>
-        </div>
-      `;
+      // 🔥 THE BEAUTIFUL DRAG HANDLE
+      let dragHandle = `<span style="color: #94a3b8; font-size: 18px; margin-right: 10px; cursor: grab;" title="Hold and drag to reorder">↕️</span>`;
 
       html += `
-        <tr>
-          <td>${moveBtns}${imgHtml}<strong> ${data.name}</strong></td>
-          <td><span class="badge badge-closed">${data.category || 'Uncategorized'}</span></td>
-          <td style="font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
-          <td style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <tr draggable="true"
+            ondragstart="window.handleMenuDragStart(event, '${data.id}')"
+            ondragover="window.handleMenuDragOver(event)"
+            ondragenter="window.handleMenuDragEnter(event)"
+            ondragleave="window.handleMenuDragLeave(event)"
+            ondrop="window.handleMenuDrop(event, '${data.id}')"
+            ondragend="window.handleMenuDragEnd(event)"
+            style="border-bottom: 1px solid #f1f5f9; background: white; transition: background 0.2s;"
+            onmouseover="this.style.background='#f8fafc'"
+            onmouseout="this.style.background='white'">
+          <td style="padding: 12px; display: flex; align-items: center;">${dragHandle}${imgHtml}<strong style="margin-left: 8px;"> ${data.name}</strong></td>
+          <td style="padding: 12px;"><span class="badge badge-closed">${data.category || 'Uncategorized'}</span></td>
+          <td style="padding: 12px; font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
+          <td style="padding: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 6px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;" onclick="openBomEditor('${safeName}')">🍟 Recipe/Addons</button>
-            <button class="btn-refresh" onclick="window.editMenuItem('${data.id}', '${safeName}', '${safeCat}', ${safePrice})">✏️ Edit Details</button>
+            <button class="btn-refresh" onclick="window.editMenuItem('${data.id}', '${safeName}', '${safeCat}', ${safePrice})">✏️ Edit</button>
             <label style="cursor: pointer; background: #f0fdf4; border: 1px solid #16a34a; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin: 0; display: inline-flex; align-items: center;">
-                📷 Upload Pic
+                📷 Pic
                 <input type="file" accept="image/jpeg, image/png, image/webp" style="display:none;" onchange="window.uploadMenuImage(event, '${data.id}')">
             </label>
-            <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${safeName}')">🗑️ Delete</button>
+            <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${safeName}')">🗑️</button>
           </td>
         </tr>
       `;
     });
     
     tbody.innerHTML = count > 0 ? html : `<tr><td colspan="4" class="text-center">No items found in category: ${selectedCat}.</td></tr>`;
-};
-
-window.moveMenuEditorItem = function(id, direction) {
-    let catFilterEl = document.getElementById('menuEditorCatFilter');
-    let selectedCat = catFilterEl ? catFilterEl.value : 'All';
-
-    // 1. Find the item inside the current VISIBLE filtered list
-    let visibleItems = window.globalMenuItemsCache.filter(item => {
-        let cat = item.category || 'Uncategorized';
-        return selectedCat === 'All' || cat === selectedCat;
-    });
-
-    let vIdx = visibleItems.findIndex(i => i.id === id);
-    if (vIdx < 0) return; // Not found
-
-    let targetVIdx = vIdx + direction;
-    if (targetVIdx < 0 || targetVIdx >= visibleItems.length) return; // Out of bounds
-
-    let targetId = visibleItems[targetVIdx].id;
-
-    // 2. Find their true indices in the massive Global Array
-    let trueIdx1 = window.globalMenuItemsCache.findIndex(i => i.id === id);
-    let trueIdx2 = window.globalMenuItemsCache.findIndex(i => i.id === targetId);
-
-    // 3. Swap them in the global array!
-    let temp = window.globalMenuItemsCache[trueIdx1];
-    window.globalMenuItemsCache[trueIdx1] = window.globalMenuItemsCache[trueIdx2];
-    window.globalMenuItemsCache[trueIdx2] = temp;
-
-    // 4. Redraw the table
-    window.renderMenuEditorUI();
 };
 
 window.saveMenuItemLayout = async function() {
