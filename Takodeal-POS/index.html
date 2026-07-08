@@ -3081,7 +3081,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                             if (bfIdx === 0) isChecked = 'checked';
                         }
 
-                        // Added fallback "typeof" checks to prevent ReferenceErrors
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #b45309;">
                                 <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${bf.name}</span>
@@ -3142,6 +3141,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     customArea.style.display = 'none';
                 }
             }
+
         }
     } catch (error) { 
         console.error("Error loading item details:", error); 
