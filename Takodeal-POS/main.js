@@ -4310,8 +4310,8 @@ window.openShiftModal = function() {
                 // Save to memory for the interceptor
                 window.lastEndingCash = declared; 
                 
-                // 🔥 THE FIX: Auto-fill the box with the exact cash left in the drawer!
-                inputStart.value = declared > 0 ? declared : "";
+                // 🔥 THE FIX: Left completely blank per your request for blind counting!
+                inputStart.value = "";
 
                 // We allow a tiny 5 centavo tolerance for floating point math
                 if (Math.abs(diff) <= 0.05) {
