@@ -4495,6 +4495,9 @@ window.openNewProductModal = async function () {
   document.getElementById('advProdName').readOnly = false; 
   document.getElementById('advProdCat').value = window.activeCostingTab !== 'All' ? window.activeCostingTab : 'Main Menu';
   document.getElementById('advProdPrice').value = 0;
+  // Clear the box for new items!
+  let mixInput = document.getElementById('advProdMixMatch');
+  if (mixInput) mixInput.value = '';
   
   // 🛠️ FIX 2: Load Addon inventory
   await window.preloadInventoryForAddons();
@@ -4612,6 +4615,9 @@ window.openBomEditor = async function (menuItemName) {
       document.getElementById('advProdId').value = menuSnap.docs[0].id;
       document.getElementById('advProdCat').value = mData.category || '';
       document.getElementById('advProdPrice').value = mData.price || 0;
+      // Load the Mix & Match flavors into the box!
+      let mixInput = document.getElementById('advProdMixMatch');
+      if (mixInput) mixInput.value = mData.mixMatchFlavors ? mData.mixMatchFlavors.join(', ') : "";
     }
 
     const bomQ = query(collection(db, "bom"), where("menuItem", "==", menuItemName));
@@ -4805,6 +4811,9 @@ window.saveAdvancedProduct = async function () {
   let prodName = document.getElementById('advProdName').value.trim();
   let category = document.getElementById('advProdCat').value.trim();
   let price = parseFloat(document.getElementById('advProdPrice').value) || 0;
+  // Grab the Mix and Match flavors!
+  let mixMatchRaw = document.getElementById('advProdMixMatch') ? document.getElementById('advProdMixMatch').value : "";
+  let mixMatchArr = mixMatchRaw.split(',').map(s => s.trim()).filter(Boolean);
 
   // Anti-Blank Name Shield
   if (!prodName) {
@@ -4836,16 +4845,18 @@ window.saveAdvancedProduct = async function () {
           name: prodName, 
           category: category, 
           price: price,
-          basePrice: price, // 🔥 LOCKS IT IN
-          addons: addonsArray 
+          basePrice: price, 
+          addons: addonsArray,
+          mixMatchFlavors: mixMatchArr // 🔥 NEW!
       });
     } else {
       let newMenuRef = await addDoc(collection(db, "menu"), { 
           name: prodName, 
           category: category, 
           price: price,
-          basePrice: price, // 🔥 LOCKS IT IN
-          addons: addonsArray 
+          basePrice: price, 
+          addons: addonsArray,
+          mixMatchFlavors: mixMatchArr // 🔥 NEW!
       });
       document.getElementById('advProdId').value = newMenuRef.id;
     }
