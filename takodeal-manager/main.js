@@ -7049,24 +7049,32 @@ window.loadAttendanceLogs = async function () {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
             }
 
+            // 🔥 PENALTY BUTTON LOGIC
+            let currentPenalty = parseFloat(data.penaltyAmount) || 0;
+            let penaltyText = currentPenalty > 0 ? `-₱${currentPenalty}` : `💸 Penalty`;
+            let penaltyStyle = currentPenalty > 0 ? `background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;` : `background: #fffbeb; color: #d97706; border: 1px solid #fcd34d;`;
+
             // The Action Buttons!
             let actionHtml = `
                 <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
                     <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="View Selfie">📷</button>
+                    <button onclick="window.applyAttendancePenalty('${data.id}', '${data.staffName}', '${timeStr}', ${currentPenalty})" style="${penaltyStyle} padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;" title="Apply Late/Undertime Penalty">${penaltyText}</button>
                     <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
             `;
             
             // 🔥 THE FIX: Inject the EXEMPT button if they are officially late and not yet exempted!
             if (lateMinutes > 0 && !data.lateExempted && data.type === "TIME IN") {
-                actionHtml += `<button onclick="window.exemptLatePunch('${data.id}', '${data.staffName}')" style="background: #fffbeb; border: 1px solid #fcd34d; color: #d97706; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" title="Exempt Late Penalty">⭐ Exempt Late</button>`;
+                // Made the exempt button blue so it doesn't clash with the yellow/red penalty button
+                actionHtml += `<button onclick="window.exemptLatePunch('${data.id}', '${data.staffName}')" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" title="Exempt Late Penalty">⭐ Exempt Late</button>`;
             }
             actionHtml += `</div>`;
 
             if (data.isManual) {
                 locationText = `📍 ${data.branch} <br><span style="color:#d97706; font-size:11px; font-weight:bold;">⚠️ Manual Edit: ${data.remarks}</span>`;
                 actionHtml = `
-                <div style="display: flex; gap: 5px; justify-content: center; align-items: center;">
+                <div style="display: flex; gap: 5px; justify-content: center; align-items: center; flex-wrap: wrap;">
                     <span style="font-size: 10px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">Manual</span>
+                    <button onclick="window.applyAttendancePenalty('${data.id}', '${data.staffName}', '${timeStr}', ${currentPenalty})" style="${penaltyStyle} padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;" title="Apply Late/Undertime Penalty">${penaltyText}</button>
                     <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
                 </div>`;
             }
@@ -11285,12 +11293,17 @@ window.renderGlobalAddons = function() {
         let safeCat = d.category ? d.category.replace(/'/g, "\\'") : 'All';
 
         html += `
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 12px; width: 60px;">
-                    <div style="display:inline-flex; flex-direction:column; gap:2px; vertical-align:middle;">
-                        <button onclick="window.moveGlobalAddon(${index}, -1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:10px; cursor:pointer; padding:2px 5px; color:#475569;">▲</button>
-                        <button onclick="window.moveGlobalAddon(${index}, 1)" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:10px; cursor:pointer; padding:2px 5px; color:#475569;">▼</button>
-                    </div>
+            <tr draggable="true"
+                ondragstart="window.handleAddonDragStart(event)"
+                ondragover="window.handleAddonDragOver(event)"
+                ondragenter="window.handleAddonDragEnter(event)"
+                ondragleave="window.handleAddonDragLeave(event)"
+                ondrop="window.handleAddonDrop(event)"
+                ondragend="window.handleAddonDragEnd(event)"
+                style="border-bottom: 1px solid #f1f5f9; background: white; transition: background 0.2s;">
+                <td style="padding: 12px; display: flex; align-items: center; gap: 15px;">
+                    <input type="checkbox" class="addon-select-cb" onchange="window.toggleAddonSelection(this)" style="transform: scale(1.4); cursor: pointer; accent-color: #8b5cf6;">
+                    <span style="color: #94a3b8; font-size: 18px; cursor: grab;" title="Hold and drag to reorder">↕️</span>
                 </td>
                 <td style="font-weight: bold; color: #1e293b; padding: 12px;">${d.name}</td>
                 <td style="font-weight: bold; color: #16a34a; padding: 12px;">₱${d.price}</td>
@@ -15189,5 +15202,116 @@ window.handleCustomDropdown = function(selectElement) {
             // If they cancel, revert back to the top option
             selectElement.selectedIndex = 0;
         }
+    }
+};
+
+// ==========================================
+// 🖱️ MULTI-SELECT DRAG & DROP ENGINE
+// ==========================================
+window.draggedAddonRows = [];
+
+window.toggleAddonSelection = function(checkbox) {
+    let tr = checkbox.closest('tr');
+    if (checkbox.checked) {
+        tr.style.background = '#eff6ff'; // Highlights row in light blue
+    } else {
+        tr.style.background = 'white';
+    }
+};
+
+window.handleAddonDragStart = function(e) {
+    let tr = e.target.closest('tr');
+    let tbody = tr.parentNode;
+    
+    // Find all checkboxes that are currently ticked
+    let checkedRows = Array.from(tbody.querySelectorAll('.addon-select-cb:checked')).map(cb => cb.closest('tr'));
+    
+    // If they drag a row that IS NOT checked, only drag that single row
+    if (!checkedRows.includes(tr)) {
+        window.draggedAddonRows = [tr];
+    } else {
+        // If they drag a checked row, group ALL checked rows together!
+        window.draggedAddonRows = checkedRows;
+    }
+
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // Make dragged rows slightly transparent so you can see where they are going
+    window.draggedAddonRows.forEach(row => row.style.opacity = '0.4');
+};
+
+window.handleAddonDragOver = function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+};
+
+window.handleAddonDragEnter = function(e) {
+    e.preventDefault();
+    let tr = e.target.closest('tr');
+    // Draw a purple line above the row they are hovering over
+    if (tr && !window.draggedAddonRows.includes(tr)) {
+        tr.style.borderTop = "3px solid #8b5cf6"; 
+    }
+};
+
+window.handleAddonDragLeave = function(e) {
+    let tr = e.target.closest('tr');
+    if (tr) tr.style.borderTop = "";
+};
+
+window.handleAddonDrop = function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    let targetTr = e.target.closest('tr');
+    if (targetTr) targetTr.style.borderTop = "";
+    
+    if (!targetTr || window.draggedAddonRows.includes(targetTr)) return;
+
+    let tbody = targetTr.parentNode;
+    
+    // Insert all dragged rows precisely above the target row
+    window.draggedAddonRows.forEach(row => {
+        tbody.insertBefore(row, targetTr);
+        row.style.opacity = '1';
+    });
+    
+    window.draggedAddonRows = [];
+};
+
+window.handleAddonDragEnd = function(e) {
+    if (window.draggedAddonRows) {
+        window.draggedAddonRows.forEach(row => row.style.opacity = '1');
+    }
+    // Clean up any stuck purple lines
+    document.querySelectorAll('tr').forEach(t => t.style.borderTop = "");
+    window.draggedAddonRows = [];
+};
+
+// ==========================================
+// 💸 ATTENDANCE PENALTY ENGINE
+// ==========================================
+window.applyAttendancePenalty = async function(docId, staffName, dateStr, currentPenalty) {
+    let penaltyInput = prompt(`Apply Late/Undertime Deduction for ${staffName} on ${dateStr}?\n\nEnter deduction amount (₱):\n(Enter 0 to remove penalty)`, currentPenalty);
+    
+    if (penaltyInput === null) return; 
+    
+    let penaltyAmt = parseFloat(penaltyInput);
+    if (isNaN(penaltyAmt) || penaltyAmt < 0) {
+        alert("❌ Invalid amount entered.");
+        return;
+    }
+
+    try {
+        // 🔥 targets "attendance_logs" instead of "time_logs"
+        await window.updateDoc(window.doc(window.db, "attendance_logs", docId), {
+            penaltyAmount: penaltyAmt
+        });
+        alert(`✅ Penalty of ₱${penaltyAmt.toFixed(2)} applied successfully to ${staffName}.`);
+        
+        if (typeof window.loadAttendanceLogs === 'function') window.loadAttendanceLogs(); 
+    } catch (e) {
+        console.error("Error applying penalty:", e);
+        alert("❌ Failed to apply penalty. Check console.");
     }
 };
