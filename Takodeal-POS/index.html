@@ -3219,7 +3219,21 @@ window.confirmAddOrUpdateToCart = function() {
             for (let flavor in window.mixMatchState) {
                 let count = window.mixMatchState[flavor];
                 if (count > 0) {
-                    window.pendingItem.addons[`${flavor} Filling`] = { price: 0, qty: count, linkedIngredient: flavor, deductQty: 1 };
+                    
+                    // 🔥 SMART RECIPE LINKER: Check Global Add-Ons for this flavor's specific recipe!
+                    let linkedIng = flavor;
+                    let deductQty = 1; // Default fallback
+                    
+                    if (window.masterPOSData && window.masterPOSData.addons) {
+                        // Looks for an Add-On named EXACTLY like the flavor (e.g. "Pork" or "Chicken")
+                        let matchingAddon = window.masterPOSData.addons.find(a => (a.name || "").toLowerCase() === flavor.toLowerCase());
+                        if (matchingAddon) {
+                            linkedIng = matchingAddon.linkedIngredient || flavor;
+                            deductQty = parseFloat(matchingAddon.deductQty) || 1;
+                        }
+                    }
+
+                    window.pendingItem.addons[`${flavor} Filling`] = { price: 0, qty: count, linkedIngredient: linkedIng, deductQty: deductQty };
                     window.pendingItem.notes += `${count} ${flavor}, `;
                 }
             }
@@ -3241,29 +3255,29 @@ window.confirmAddOrUpdateToCart = function() {
 
     let addonsTotal = 0; 
     for (let key in window.pendingItem.addons) addonsTotal += (window.pendingItem.addons[key].price * window.pendingItem.addons[key].qty);
-
+    
     let lineTotalBeforeDisc = (window.pendingItem.variantPrice + addonsTotal) * qty;
     let rowDiscount = 0;
     if (window.pendingItem.discountType === 'percentage' && window.pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (window.pendingItem.discountVal / 100);
     else if (window.pendingItem.discountType === 'fixed' && window.pendingItem.discountVal > 0) rowDiscount = window.pendingItem.discountVal;
-
+    
     let finalTotal = lineTotalBeforeDisc - rowDiscount;
     window.pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; 
     window.pendingItem.qty = qty;
-
+    
     if (window.editIndex >= 0) { 
         window.cart[window.editIndex] = JSON.parse(JSON.stringify(window.pendingItem)); 
         window.editIndex = -1; 
     } else { 
         window.cart.push(JSON.parse(JSON.stringify(window.pendingItem))); 
     }
-
+    
     if (typeof window.closeModal === 'function') {
         window.closeModal('variantModal'); 
     } else if (typeof closeModal === 'function') {
         closeModal('variantModal');
     }
-
+    
     window.renderCart();
 };
 
