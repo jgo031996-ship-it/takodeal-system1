@@ -8074,7 +8074,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ==========================================
-// 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT & PENALTY LOGIC)
+// 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH NIGHT SHIFT PENALTY SYNC)
 // ==========================================
 
 window.loadPayrollGenerator = async function() {
@@ -8091,7 +8091,6 @@ window.loadPayrollGenerator = async function() {
     const endTimestamp = new Date(endDateRaw + 'T23:59:59');
 
     try {
-        // 1. Fetch Core Data
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         const shiftSnap = await getDocs(query(collection(db, "shifts"), where("startTime", ">=", startTimestamp), where("startTime", "<=", endTimestamp)));
@@ -8108,7 +8107,7 @@ window.loadPayrollGenerator = async function() {
 
         let payrollData = {};
 
-        // 2. Aggregate Hours & Build Shift Logs (Night-Shift Safe!)
+        // 1. Base Shifts (Night Shift Safe!)
         shiftSnap.forEach(docSnap => {
             let shift = docSnap.data();
             if (!shift.endTime) return; 
@@ -8122,11 +8121,11 @@ window.loadPayrollGenerator = async function() {
             let hrs = diffMs / (1000 * 60 * 60);
             payrollData[name].hours += hrs;
 
-            // Push strictly for the Payslip Attendance Table
             let sDate = shift.startTime.toDate();
             let eDate = shift.endTime.toDate();
             payrollData[name].logs.push({
-                dateObj: sDate, // Used for sorting later
+                dateObj: sDate,
+                endDateObj: eDate, // Needed for Night Shift matching
                 date: sDate.toLocaleDateString('en-US', {month:'short', day:'numeric'}),
                 in: sDate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
                 out: eDate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
@@ -8135,7 +8134,7 @@ window.loadPayrollGenerator = async function() {
             });
         });
 
-        // 3. 🔥 AGGREGATE PENALTIES & ATTACH TO SHIFTS
+        // 2. 🔥 AGGREGATE PENALTIES & ATTACH TO SHIFTS
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
             let name = log.staffName;
@@ -8143,23 +8142,29 @@ window.loadPayrollGenerator = async function() {
             
             let penalty = parseFloat(log.penaltyAmount) || 0;
             if (penalty > 0) {
-                // Add to the money totals
+                // Add to the main money totals
                 payrollData[name].latePenalty += penalty;
                 payrollData[name].deductions += penalty; 
                 
-                // Add a visual tag to the shift log table
                 if (log.timestamp) {
-                    let logDateStr = log.timestamp.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric'});
-                    // Find the shift that occurred on this day
-                    let targetShift = payrollData[name].logs.find(s => s.date === logDateStr);
+                    let logTimeMs = log.timestamp.toDate().getTime();
+                    
+                    // SMART MATCHER: Check if the penalty punch falls within 4 hours of the shift boundaries
+                    // This perfectly links 12 AM punches back to the 6 PM shift!
+                    let targetShift = payrollData[name].logs.find(s => {
+                        let sMs = s.dateObj.getTime();
+                        let eMs = s.endDateObj.getTime();
+                        return logTimeMs >= (sMs - 14400000) && logTimeMs <= (eMs + 14400000);
+                    });
+
                     if (targetShift) {
-                        targetShift.remark += `<br><span style="color:#b91c1c; font-size:9px; font-weight:bold;">-₱${penalty.toFixed(2)} Penalty</span>`;
+                        targetShift.remark += `<br><span style="color:#b91c1c; font-size:10px; font-weight:900;">-₱${penalty.toFixed(2)} Penalty</span>`;
                     }
                 }
             }
         });
 
-        // 4. Aggregate Vales & Meals
+        // 3. Vales & Meals
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data();
             let name = deduct.staffName;
@@ -8175,7 +8180,7 @@ window.loadPayrollGenerator = async function() {
             payrollData[name].deductions += amt;
         });
 
-        // 5. Finalize UI & Apply Loan Deductions
+        // 4. Finalize UI
         window.globalPayrollCache = payrollData;
         let html = '';
         let sortedNames = Object.keys(payrollData).sort((a,b) => a.localeCompare(b));
@@ -8183,8 +8188,6 @@ window.loadPayrollGenerator = async function() {
         for (let name of sortedNames) {
             let data = payrollData[name];
             data.name = name; 
-            
-            // Sort logs chronologically
             data.logs.sort((a,b) => a.dateObj - b.dateObj);
 
             let loanData = ledgerDict[name];
