@@ -1,53 +1,43 @@
-const CACHE_NAME = "takodeal-pos-core-v1";
-const ASSETS_TO_CACHE = [
-  "./",
-  "./index.html",
-  "./main.js",
-  "./logo.jpg",
-  "./manifest.json"
-];
+const CACHE_NAME = 'takodeal-pos-core-v1';
+const IMAGE_CACHE = 'takodeal-image-storage-v1';
 
-// 1. INSTALLATION: Save files to the tablet's hard drive
-self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      console.log("📦 Caching Core App Files for Offline Use...");
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
-  );
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
+    self.skipWaiting(); // Forces the tablet to install the new engine immediately
 });
 
-// 2. ACTIVATION: Clean up old caches to save space
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            console.log("🧹 Clearing old cache...");
-            return caches.delete(cache);
-          }
-        })
-      );
-    })
-  );
-  self.clients.claim();
+self.addEventListener('activate', (event) => {
+    event.waitUntil(clients.claim()); // Takes control of the app instantly
 });
 
-// 3. INTERCEPTOR: The "No Internet" Shield
-self.addEventListener("fetch", event => {
-  // Ignore Firebase database requests (Firebase handles its own offline cache)
-  if (event.request.url.includes("firestore.googleapis.com") || event.request.url.includes("firebasestorage")) {
-    return;
-  }
+// 🔥 THE OFFLINE INTERCEPTOR
+self.addEventListener('fetch', (event) => {
+    const url = new URL(event.request.url);
 
-  event.respondWith(
-    // Always try the network first (so you get updates if you change code)
-    fetch(event.request).catch(() => {
-      // If the internet drops or gives ERR_NETWORK_CHANGED, grab it from the hard drive!
-      console.log("📶 Network failed. Serving from Tablet Hard Drive.");
-      return caches.match(event.request);
-    })
-  );
+    // 📸 AGGRESSIVE IMAGE CACHING (Saves Firebase Images to Tablet Hard Drive)
+    if (event.request.destination === 'image' || url.hostname.includes('firebasestorage.googleapis.com')) {
+        event.respondWith(
+            caches.match(event.request).then((cachedResponse) => {
+                // 1. If the tablet already has the image saved, LOAD IT INSTANTLY!
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+                
+                // 2. If it's a new image, download it from Firebase...
+                return fetch(event.request).then((networkResponse) => {
+                    // ...and permanently save it to the tablet!
+                    return caches.open(IMAGE_CACHE).then((cache) => {
+                        cache.put(event.request, networkResponse.clone());
+                        return networkResponse;
+                    });
+                }).catch(() => {
+                    // 3. Fallback: If offline and image isn't saved, show a blank gray box instead of crashing.
+                    return new Response('<svg width="150" height="150" xmlns="http://www.w3.org/2000/svg"><rect width="150" height="150" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="20" fill="#94a3b8">No Image</text></svg>', { headers: { 'Content-Type': 'image/svg+xml' } });
+                });
+            })
+        );
+        return;
+    }
+
+    // Standard Network-First for other files
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
