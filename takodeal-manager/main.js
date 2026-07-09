@@ -9152,7 +9152,7 @@ window.globalPayrollCache = {};
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
 
-// 2. The Master Pairing Engine (UPGRADED WITH STRICT LEDGER MATH)
+// 2. The Master Pairing Engine (UPGRADED WITH STRICT LEDGER MATH & PENALTIES)
 window.generateAutoPayslips = async function() {
     let startInput = document.getElementById('payrollStart').value;
     let endInput = document.getElementById('payrollEnd').value;
@@ -9169,7 +9169,6 @@ window.generateAutoPayslips = async function() {
     let trueEndDate = new Date(eParts[0], eParts[1] - 1, eParts[2], 23, 59, 59, 999);
     let fetchEndDate = new Date(trueEndDate); fetchEndDate.setHours(fetchEndDate.getHours() + 12);
 
-    // 🔥 THE PARSER: Allows the math engine to read Schedule Text like "Morning (9am-6pm)"
     const parseTimeStr = (timeStr) => {
         let t = timeStr.toLowerCase().replace(/\s/g, '');
         let isPM = t.includes('pm'); let isNN = t.includes('nn');
@@ -9214,6 +9213,9 @@ window.generateAutoPayslips = async function() {
                 staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
 
+            // 🔥 GRAB THE MANUAL PENALTY FROM THE DATABASE!
+            let manualPenalty = parseFloat(log.penaltyAmount) || 0;
+
             if (log.type === "TIME IN") {
                 if (log.timestamp.toDate() <= trueEndDate) {
                     if (activeShifts[name]) {
@@ -9221,7 +9223,6 @@ window.generateAutoPayslips = async function() {
                         staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
                     }
 
-                    // 🚨 STRICT LATE MATH LOGIC 🚨
                     let logDate = log.timestamp.toDate();
                     let lateMinutes = 0;
                     
@@ -9241,7 +9242,6 @@ window.generateAutoPayslips = async function() {
                                             if (expectedStartHour !== null) {
                                                 let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
                                                 let diffHours = actualHour - expectedStartHour;
-                                                // If they log in within standard shift buffer
                                                 if (diffHours > -1.5 && diffHours < 4) {
                                                     lateMinutes = Math.floor(diffHours * 60);
                                                     if (lateMinutes < 0) lateMinutes = 0;
@@ -9254,13 +9254,9 @@ window.generateAutoPayslips = async function() {
                         }
                     }
 
-                    // 🔥 THE FIXED RULE: 1-60 mins late = 1 Hr Deduction. 61-120 mins = 2 Hr Deduction.
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
-                    let ratePerHour = dailyRate / 8; // Calculate hourly rate from daily rate
-                    
-                    // Math.ceil() forces decimals to round UP to the next whole number! (e.g. 5/60 = 0.08 -> rounds to 1)
+                    let ratePerHour = dailyRate / 8; 
                     let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
-                    
                     let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
 
                     activeShifts[name] = { 
@@ -9268,7 +9264,8 @@ window.generateAutoPayslips = async function() {
                         lateMinutes: lateMinutes, 
                         lateAmount: lateAmount, 
                         lateExempted: log.lateExempted || false,
-                        lateHoursToDeduct: lateHoursToDeduct 
+                        lateHoursToDeduct: lateHoursToDeduct,
+                        manualPenalty: manualPenalty // Save the manual penalty to apply at Time Out
                     };
                 }
             } else if (log.type === "TIME OUT" && activeShifts[name]) {
@@ -9278,10 +9275,12 @@ window.generateAutoPayslips = async function() {
                 let lExempt = activeShifts[name].lateExempted;
                 let lHrsDeduct = activeShifts[name].lateHoursToDeduct || 0;
                 
+                // Combine penalties if the user clicked the button on both Time In and Time Out!
+                let totalManualPenaltyForShift = (activeShifts[name].manualPenalty || 0) + manualPenalty;
+                
                 let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
-                // 🔥 THE FIX: Increased to 18 hours so 16.6h shifts process perfectly as Straight Duties!
                 if (hoursWorked > 18) {
                     staffData[name].logs.push({ date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), hrs: hoursWorked.toFixed(2), remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h) - Use Manual Log</span>` });
                     delete activeShifts[name]; return; 
@@ -9301,14 +9300,19 @@ window.generateAutoPayslips = async function() {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
 
-                // 🔥 Append the Accurate Late Penalty Notice!
                 if (lMins > 0) {
                     if (lExempt) {
                         remark += `<br><span style="color:#16a34a; font-weight:bold;">(Late Exempted)</span>`;
                     } else {
                         remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late ${lMins}m = -${lHrsDeduct}hr: -₱${lAmt.toFixed(2)})</span>`;
-                        staffData[name].lateDeduction += lAmt; // Add to permanent deduction array
+                        staffData[name].lateDeduction += lAmt; 
                     }
+                }
+
+                // 🔥 INJECT THE MANUAL PENALTY INTO THE MATH AND PAYSLIP REMARKS
+                if (totalManualPenaltyForShift > 0) {
+                    remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`;
+                    staffData[name].lateDeduction += totalManualPenaltyForShift;
                 }
 
                 let outHour = timeOut.getHours();
@@ -9332,6 +9336,17 @@ window.generateAutoPayslips = async function() {
                 staffData[name].logs.push({ date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), hrs: hoursWorked.toFixed(2), remark: remark });
                 staffData[name].totalHours += hoursWorked; staffData[name].shiftsWorked += shiftMultiplier; staffData[name].holidayPayTotal += hBonus;
                 delete activeShifts[name];
+            } else if (manualPenalty > 0) {
+                // 🔥 IF THE LOG IS STANDALONE (Like a Manual Override), EXTRACT THE PENALTY DIRECTLY!
+                staffData[name].lateDeduction += manualPenalty;
+                let logTime = log.timestamp ? log.timestamp.toDate() : new Date();
+                staffData[name].logs.push({ 
+                    date: logTime.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), 
+                    in: logTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
+                    out: "---", 
+                    hrs: "0.00", 
+                    remark: `<span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${manualPenalty.toFixed(2)} Manual Penalty</span>` 
+                });
             }
         });
 
@@ -9359,7 +9374,7 @@ window.generateAutoPayslips = async function() {
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             staffData[name].logs.push({ date: bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: "---", out: "---", hrs: "0.00", remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>` });
         });
-      
+       
         let html = '';
         let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
         let masterPayrollTotal = 0; 
@@ -9387,7 +9402,7 @@ window.generateAutoPayslips = async function() {
                     d.sss = profile.sssAmount || 0; d.pagibig = profile.pagibigAmount || 0; d.philhealth = profile.philHealthAmount || 0;
                     let profileCustomDeducts = profile.customDeductions || [];
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
-                  
+                   
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
