@@ -5424,7 +5424,6 @@ window.submitStockRequest = async function() {
             let convRate = 1;
             let displayUom = itemData.uom;
 
-            // 🔥 Convert Pack input to Pieces logic!
             if (uomSelectEl && uomSelectEl.tagName === 'SELECT') {
                 let selOpt = uomSelectEl.options[uomSelectEl.selectedIndex];
                 convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
@@ -5452,9 +5451,9 @@ window.submitStockRequest = async function() {
                 uom: itemData.uom,
                 sourceId: itemData.id,
                 systemStock: sysStock, 
-                physicalStock: actualCount, // The true converted base quantity
-                displayQty: rawCount,       // The exact number they typed
-                displayUom: displayUom,     // E.g. "Pack"
+                physicalStock: actualCount,
+                displayQty: rawCount,       
+                displayUom: displayUom,     
                 category: itemData.category || "Ingredients",
                 purchaseUom: itemData.purchaseUom || itemData.uom,
                 convRate: itemData.conversionRate || 1
@@ -5467,26 +5466,27 @@ window.submitStockRequest = async function() {
     }
 
     let btn = document.querySelector('button[onclick="window.submitStockRequest()"]');
-    let origText = btn.innerText;
-    btn.innerText = "⏳ Sending..."; btn.disabled = true;
+    let origText = btn ? btn.innerText : "🚀 Send Request to HQ";
+    if (btn) { btn.innerText = "⏳ Sending..."; btn.disabled = true; }
 
     try {
-        await addDoc(collection(db, "purchase_orders"), {
+        await window.addDoc(window.collection(window.db, "purchase_orders"), {
             branch: branch,
             type: "Internal Request",
             items: itemsToRequest,
             status: "Pending",
             requestedBy: cashier,
-            timestamp: serverTimestamp()
+            timestamp: window.serverTimestamp()
         });
 
+        // 🔥 THE BUG FIX: The variables inside this alert are now safely mapped!
         for (let alert of fraudAlerts) {
-            await addDoc(collection(db, "manager_alerts"), {
+            await window.addDoc(window.collection(window.db, "manager_alerts"), {
                 type: "STOCK_REQUEST_FRAUD",
                 branch: branch,
                 cashier: cashier,
-                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${itemData.uom}. Possible missing stock!`,
-                timestamp: serverTimestamp(),
+                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${alert.uom}. Possible missing stock!`,
+                timestamp: window.serverTimestamp(),
                 isRead: false
             });
         }
