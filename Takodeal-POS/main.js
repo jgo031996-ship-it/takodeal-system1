@@ -216,18 +216,47 @@ window.verifyPin = async function (pin) {
   }
 };
 
-// --- THE SMART FIREBASE MENU GROUPER (WITH OFFLINE BACKUP) ---
+// --- 🔥 INSTANT-BOOT MENU ENGINE ---
 window.fetchMenu = async function () {
-  try {
-    const snapshot = await window.getDocs(window.collection(window.db, "menu"));
-    let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    if (rawItems.length > 0) window.saveMenuToLocalHardDrive(rawItems);
-    return window.processRawItemsIntoMenu(rawItems);
-  } catch (error) {
-    console.warn("Cloud fetch failed. Loading menu from offline hard drive backup...", error);
-    let offlineItems = window.getMenuFromLocalHardDrive();
-    return window.processRawItemsIntoMenu(offlineItems);
-  }
+    let localData = [];
+    
+    // 1. Try to load instantly from the Tablet's Hard Drive
+    try {
+        let saved = localStorage.getItem('takodeal_offline_menu');
+        if (saved) localData = JSON.parse(saved);
+    } catch(e) { console.warn("Local storage read error"); }
+
+    // 2. Background Cloud Sync (Runs silently without freezing the screen!)
+    setTimeout(async () => {
+        try {
+            const snapshot = await window.getDocs(window.collection(window.db, "menu"));
+            let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            if (rawItems.length > 0) {
+                // Secretly save the freshest menu to the tablet for tomorrow
+                localStorage.setItem('takodeal_offline_menu', JSON.stringify(rawItems));
+                
+                // Silently refresh the POS screen if prices/names changed
+                let processed = window.processRawItemsIntoMenu(rawItems);
+                window.masterPOSData.items = processed;
+                if (typeof window.buildCategories === 'function') window.buildCategories();
+            }
+        } catch(error) { 
+            console.warn("Silent cloud sync failed. Relying on offline tablet memory.", error); 
+        }
+    }, 500); // Waits half a second so the UI can load first!
+
+    // 3. Return data! (Instant local load, or wait for Firebase if it's the very first time opening the app)
+    if (localData && localData.length > 0) {
+        console.log("⚡ Instant Boot: Loaded menu from tablet memory!");
+        return window.processRawItemsIntoMenu(localData);
+    } else {
+        console.log("☁️ First Boot: Downloading menu from Firebase...");
+        const snapshot = await window.getDocs(window.collection(window.db, "menu"));
+        let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem('takodeal_offline_menu', JSON.stringify(rawItems));
+        return window.processRawItemsIntoMenu(rawItems);
+    }
 };
 
 window.processRawItemsIntoMenu = function(rawItems) {
