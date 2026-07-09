@@ -8242,8 +8242,23 @@ window.openPayslipModal = async function(staffName) {
     safeSetVal('psLoans', data.loans || 0);
     safeSetVal('psFoods', data.meals || 0);
     
-    let wifiBox = document.getElementById('psWifi');
-    if(wifiBox) wifiBox.value = data.customDeductionsTotal || 0;
+    // 🔥 DYNAMIC CUSTOM DEDUCTIONS INJECTOR
+    let dynamicArea = document.getElementById('psDynamicDeductionsArea');
+    if (dynamicArea) {
+        let customHtml = '';
+        if (data.profile && data.profile.customDeductions && data.profile.customDeductions.length > 0) {
+            data.profile.customDeductions.forEach((cd, idx) => {
+                let amt = parseFloat(cd.amount) || 0;
+                customHtml += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 8px; font-size: 13px;">
+                        <span>${cd.name}</span> 
+                        <input type="number" id="psCustomDed_${idx}" class="ps-input ps-dynamic-deduction" value="${amt.toFixed(2)}" oninput="window.recalcPayslip()">
+                    </div>
+                `;
+            });
+        }
+        dynamicArea.innerHTML = customHtml;
+    }
 
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
@@ -8289,10 +8304,15 @@ window.recalcPayslip = function() {
     let advance = getVal('psAdvance');
     let loans = getVal('psLoans');
     let foods = getVal('psFoods');
-    let wifi = getVal('psWifi');
+    // 🔥 DYNAMIC CUSTOM DEDUCTIONS MATH
+    let customDeductionsSum = 0;
+    document.querySelectorAll('.ps-dynamic-deduction').forEach(inp => {
+        customDeductionsSum += (parseFloat(inp.value) || 0);
+    });
 
-    let gross = basic + overtime + straightBonus + holiday; // 🔥 Adds it perfectly to Gross!
-    let deductions = late + sss + phil + pagibig + advance + loans + foods + wifi;
+    let gross = basic + overtime + straightBonus + holiday; 
+    // Replace 'wifi' with the new custom sum
+    let deductions = late + sss + phil + pagibig + advance + loans + foods + customDeductionsSum;
     let net = gross - deductions;
 
     // 🔥 FIX: Targets 'psGross' specifically to match your native HTML
@@ -14151,6 +14171,10 @@ window.loadSanctionsDashboard = async function() {
             } else {
                 actionBtn = `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">🗑️ Cancel Notice</button>`;
             }
+            // View Evidence Button
+            let evidenceBtn = d.evidencePhoto 
+                ? `<button onclick="window.viewSelfie('${d.evidencePhoto}', 'Evidence: ${d.type}')" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%; margin-top: 5px;">📸 View Evidence</button>` 
+                : '';
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -14169,6 +14193,7 @@ window.loadSanctionsDashboard = async function() {
                         <div style="display: flex; flex-direction: column; gap: 5px;">
                             ${actionBtn}
                             ${printBtn}
+                            ${evidenceBtn}
                         </div>
                     </td>
                 </tr>
@@ -14322,22 +14347,40 @@ window.submitNewSanction = async function() {
     if (!details) return alert("Please provide details of the incident.");
 
     let btn = document.getElementById('btnSaveSanction');
-    btn.innerText = "⏳ Issuing Notice..."; btn.disabled = true;
+    btn.innerText = "⏳ Uploading & Issuing..."; btn.disabled = true;
 
     try {
+        let evidenceUrl = "";
+        let fileInput = document.getElementById('sanctionEvidencePhoto');
+        
+        // 🔥 UPLOAD EVIDENCE PHOTO TO STORAGE IF ATTACHED
+        if (fileInput && fileInput.files.length > 0) {
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `hr_evidence/incident_${Date.now()}.${fileExt}`;
+            const storageReference = ref(window.storage, fileName);
+            const snapshot = await uploadBytes(storageReference, file);
+            evidenceUrl = await getDownloadURL(snapshot.ref);
+        }
+
         await addDoc(collection(db, "hr_sanctions"), {
             staffName: staffName,
             branch: branch,
             type: type,
             severity: severity,
             details: details,
-            status: "Pending Reply", // Automatically locks their POS!
+            evidencePhoto: evidenceUrl, // Save the photo link!
+            status: "Pending Reply", 
             issuedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
         });
 
         alert(`✅ Success! A Notice to Explain (NTE) has been issued to ${staffName}. Their Time Clock and POS are now locked until they reply.`);
         document.getElementById('issueSanctionModal').style.display = 'none';
+        
+        // Reset the file input
+        if (fileInput) fileInput.value = '';
+        
         window.loadSanctionsDashboard();
 
     } catch (e) {
@@ -15119,5 +15162,32 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
     } catch(e) { 
         console.error(e); 
         Swal.fire('Error', 'Sale failed.', 'error'); 
+    }
+};
+
+// ==========================================
+// ➕ UNIVERSAL CUSTOM DROPDOWN ENGINE
+// ==========================================
+window.handleCustomDropdown = function(selectElement) {
+    if (selectElement.value === "ADD_NEW") {
+        let newOptionText = prompt("Enter your new custom option:");
+        
+        if (newOptionText && newOptionText.trim() !== "") {
+            newOptionText = newOptionText.trim();
+            
+            // Create the new option
+            let newOption = document.createElement("option");
+            newOption.value = newOptionText;
+            newOption.innerText = newOptionText;
+            
+            // Insert it right before the "➕ Add Custom..." button
+            selectElement.insertBefore(newOption, selectElement.lastElementChild);
+            
+            // Auto-select the newly created option!
+            selectElement.value = newOptionText;
+        } else {
+            // If they cancel, revert back to the top option
+            selectElement.selectedIndex = 0;
+        }
     }
 };
