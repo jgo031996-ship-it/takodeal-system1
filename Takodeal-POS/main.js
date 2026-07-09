@@ -270,6 +270,12 @@ window.loadPOSData = async function() {
     window.masterPOSData.items = products;
     window.masterPOSData.variants = {}; 
     window.masterPOSData.addons = [];
+    
+    // 🔥 SMART RECIPE LINKER: Downloads Global Add-ons so Mix & Match knows the recipes!
+    try {
+        const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
+        addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
+    } catch(e) { console.log("Failed to load addons", e); }
 
     try {
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
