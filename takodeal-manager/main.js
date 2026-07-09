@@ -8229,6 +8229,9 @@ window.loadPayrollGenerator = async function() {
     }
 };
 
+// ========================================================
+// 🛡️ ABSOLUTE OVERRIDE: CRASH-PROOF PAYSLIP ENGINE
+// ========================================================
 window.openPayslipModal = async function(staffName) {
     let data = window.globalPayrollCache ? window.globalPayrollCache[staffName] : null;
     if (!data) return;
@@ -8271,8 +8274,8 @@ window.openPayslipModal = async function(staffName) {
     safeSetVal('psStraightBonus', data.straightBonus || 0); 
     safeSetVal('psHoliday', data.holidayPayTotal || 0);
     
-    // 🔥 THE FIX: MAP THE LATE PENALTY DIRECTLY TO THE UI
-    safeSetVal('psLate', data.latePenalty || 0); 
+    // 🔥 THE FIX: We are now correctly targeting 'lateDeduction' so the ₱260 maps perfectly!
+    safeSetVal('psLate', data.lateDeduction || 0); 
     
     safeSetVal('psSSS', data.sss || 0);
     safeSetVal('psPhil', data.philhealth || 0);
