@@ -15303,10 +15303,11 @@ window.applyAttendancePenalty = async function(docId, staffName, dateStr, curren
     }
 
     try {
-        // 🔥 targets "attendance_logs" instead of "time_logs"
-        await window.updateDoc(window.doc(window.db, "attendance_logs", docId), {
+        // 🔥 THE FIX: Removed "window." from updateDoc, doc, and db!
+        await updateDoc(doc(db, "attendance_logs", docId), {
             penaltyAmount: penaltyAmt
         });
+        
         alert(`✅ Penalty of ₱${penaltyAmt.toFixed(2)} applied successfully to ${staffName}.`);
         
         if (typeof window.loadAttendanceLogs === 'function') window.loadAttendanceLogs(); 
