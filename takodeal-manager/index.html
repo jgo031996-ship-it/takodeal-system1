@@ -3772,8 +3772,8 @@
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 8px; font-size: 13px;">
                                   <span>Foods</span> <input type="number" id="psFoods" class="ps-input" value="0.00" oninput="recalcPayslip()">
                               </div>
-                              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 8px; font-size: 13px; border-bottom: 1px solid black;">
-                                  <span>Wi-Fi</span> <input type="number" id="psWifi" class="ps-input" value="0.00" oninput="recalcPayslip()">
+                              <div id="psDynamicDeductionsArea">
+                                  <!-- Custom deductions will automatically generate here -->
                               </div>
                               <div style="display: flex; justify-content: space-between; padding: 8px; font-weight: bold; background: #f1f5f9;">
                                   <span>TOTAL DEDUCTIONS</span> <span id="psTotalDeduct">0.00</span>
@@ -4250,27 +4250,33 @@
               <select id="sanctionStaffSelect" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;"></select>
   
               <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Type:</label>
-              <select id="sanctionType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;">
-                  <option value="Cash Shortage">Cash Shortage / Mishandling</option>
-                  <option value="Tardiness / Absenteeism">Tardiness / Unexcused Absence</option>
-                  <option value="Insubordination">Insubordination / Attitude</option>
-                  <option value="SOP Violation">SOP Violation (Food Prep/Cleaning)</option>
+              <select id="sanctionType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
+                  <option value="Cash Shortage / Mishandling">Cash Shortage / Mishandling</option>
+                  <option value="Tardiness / Unexcused Absence">Tardiness / Unexcused Absence</option>
+                  <option value="Insubordination / Attitude">Insubordination / Attitude</option>
+                  <option value="SOP Violation (Food Prep/Cleaning)">SOP Violation (Food Prep/Cleaning)</option>
                   <option value="Customer Complaint">Customer Complaint</option>
-                  <option value="Other">Other / Miscellaneous</option>
+                  <option value="Other / Miscellaneous">Other / Miscellaneous</option>
+                  <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Incident Type...</option>
               </select>
   
               <label style="font-size: 12px; font-weight: bold; color: #475569;">Severity Level:</label>
-              <select id="sanctionSeverity" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;">
-                  <option value="Verbal Warning">Verbal Warning (Recorded)</option>
-                  <option value="1st Written Warning">1st Written Warning</option>
-                  <option value="2nd Written Warning">2nd Written Warning</option>
-                  <option value="Final Warning">Final Warning</option>
-                  <option value="Suspension">Suspension</option>
-                  <option value="Termination Notice">Termination Notice</option>
+              <select id="sanctionSeverity" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
+                  <option value="1st Offense - Verbal Warning">1st Offense - Verbal Warning</option>
+                  <option value="2nd Offense - Verbal Warning">2nd Offense - Verbal Warning</option>
+                  <option value="3rd Offense - Written Warning">3rd Offense - Written Warning</option>
+                  <option value="4th Offense - 1 Day Suspension">4th Offense - 1 Day Suspension</option>
+                  <option value="5th Offense - 3 Days Suspension">5th Offense - 3 Days Suspension</option>
+                  <option value="6th Offense - 1 Week Suspension">6th Offense - 1 Week Suspension</option>
+                  <option value="7th Offense - Termination Notice">7th Offense - Termination Notice</option>
+                  <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Severity Rule...</option>
               </select>
   
               <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Details (Be Specific):</label>
-              <textarea id="sanctionDetails" placeholder="Describe what happened, when it happened, and why it is a violation..." style="width: 100%; height: 100px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 5px; outline: none; resize: none; font-family: inherit; box-sizing: border-box;"></textarea>
+              <textarea id="sanctionDetails" placeholder="Describe what happened, when it happened, and why it is a violation..." style="width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; resize: none; font-family: inherit; box-sizing: border-box;"></textarea>
+
+              <label style="font-size: 12px; font-weight: bold; color: #475569;">Upload Evidence / Proof 📸 (Optional):</label>
+              <input type="file" id="sanctionEvidencePhoto" accept="image/*" class="input-box" style="width: 100%; padding: 7px; margin-bottom: 10px; border: 1px dashed #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 12px;">
           </div>
   
           <div style="padding: 15px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px;">
