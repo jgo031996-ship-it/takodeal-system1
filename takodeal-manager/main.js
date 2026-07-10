@@ -15142,7 +15142,7 @@ window.deleteEquipment = async function(docId) {
 };
 
 // ==========================================
-// 💸 MAIN OFFICE DIRECT SELL ENGINE
+// 💸 MAIN OFFICE DIRECT SELL ENGINE (WITH UOM CONVERSION)
 // ==========================================
 window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, baseCost) {
     if (!window.liveAccounts || window.liveAccounts.length === 0) {
@@ -15154,6 +15154,36 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
         if (a.branch === "Main Office") accOptions += `<option value="${a.id}|${a.name}">${a.name} (Bal: ₱${a.balance.toLocaleString()})</option>`;
     });
 
+    Swal.fire({ title: 'Fetching UOMs...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    // 🔥 THE FIX: Fetch the exact item data from the cloud to grab the UOM options!
+    let purchUom = uom;
+    let convRate = 1;
+    try {
+        const docSnap = await getDoc(doc(db, "inventory", docId));
+        if (docSnap.exists()) {
+            let data = docSnap.data();
+            purchUom = data.purchaseUom || data.purchUom || uom;
+            convRate = parseFloat(data.conversionRate) || parseFloat(data.conversion) || 1;
+        }
+    } catch(e) { console.error("Error fetching UOM data", e); }
+
+    // Build the Dropdown or Static Span depending on if they have a conversion setup
+    let uomDropdownHtml = '';
+    if (purchUom.toLowerCase() !== uom.toLowerCase() && convRate !== 1) {
+        uomDropdownHtml = `
+            <select id="sellMoUom" style="padding: 14px; border: 2px solid #cbd5e1; border-left: none; border-radius: 0 8px 8px 0; background: #f8fafc; color: #0f172a; font-weight: bold; outline: none; cursor: pointer; box-sizing: border-box; height: 100%;">
+                <option value="base" data-conv="1">${uom}</option>
+                <option value="purch" data-conv="${convRate}">${purchUom}</option>
+            </select>
+        `;
+    } else {
+        uomDropdownHtml = `<span style="padding: 14px; background: #f8fafc; color: #64748b; border: 2px solid #cbd5e1; border-left: none; border-radius: 0 8px 8px 0; font-size: 14px; font-weight: bold; display: flex; align-items: center; box-sizing: border-box; height: 100%;">${uom}</span>`;
+    }
+
+    // Close the loading modal
+    Swal.close();
+
     const { value: formVals, isConfirmed } = await Swal.fire({
         title: '💸 Direct Sale (HQ)',
         html: `
@@ -15163,8 +15193,11 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
             </div>
             
             <div style="text-align: left; font-family: inherit;">
-                <label style="font-weight:bold; font-size:12px; color:#475569; display: block; margin-bottom: 5px;">Qty to Sell (${uom}):</label>
-                <input type="number" id="sellMoQty" placeholder="e.g. 5" style="width: 100%; padding: 14px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-family: inherit; font-size: 15px; margin-bottom: 15px; font-weight: bold; color: #0f172a;">
+                <label style="font-weight:bold; font-size:12px; color:#475569; display: block; margin-bottom: 5px;">Qty to Sell:</label>
+                <div style="display: flex; justify-content: center; align-items: stretch; margin-bottom: 15px; height: 50px;">
+                    <input type="number" id="sellMoQty" placeholder="e.g. 5" style="flex: 1; width: 100%; padding: 14px; border: 2px solid #cbd5e1; border-radius: 8px 0 0 8px; outline: none; box-sizing: border-box; font-family: inherit; font-size: 16px; font-weight: bold; color: #0f172a; height: 100%;">
+                    ${uomDropdownHtml}
+                </div>
                 
                 <label style="font-weight:bold; font-size:12px; color:#dc2626; display: block; margin-bottom: 5px;">Total Selling Price (₱):</label>
                 <input type="number" id="sellMoPrice" placeholder="e.g. 1500" style="width: 100%; padding: 14px; border-radius: 8px; border: 2px solid #fca5a5; background: #fef2f2; outline: none; box-sizing: border-box; font-family: inherit; font-weight: 900; color: #dc2626; font-size: 16px; margin-bottom: 15px;">
@@ -15179,8 +15212,19 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
         cancelButtonColor: '#94a3b8',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
+            let uomEl = document.getElementById('sellMoUom');
+            let cRate = 1;
+            let displayUom = uom;
+            if (uomEl && uomEl.tagName === 'SELECT') {
+                let selOpt = uomEl.options[uomEl.selectedIndex];
+                cRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+                displayUom = selOpt.text;
+            }
+
             return {
-                qty: parseFloat(document.getElementById('sellMoQty').value),
+                rawQty: parseFloat(document.getElementById('sellMoQty').value),
+                convRate: cRate,
+                displayUom: displayUom,
                 price: parseFloat(document.getElementById('sellMoPrice').value),
                 acc: document.getElementById('sellMoAcc').value
             }
@@ -15188,11 +15232,15 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
     });
 
     if (!isConfirmed || !formVals) return;
-    if (isNaN(formVals.qty) || formVals.qty <= 0 || isNaN(formVals.price) || formVals.price <= 0 || !formVals.acc) {
+    if (isNaN(formVals.rawQty) || formVals.rawQty <= 0 || isNaN(formVals.price) || formVals.price <= 0 || !formVals.acc) {
         return Swal.fire('Error', 'Please fill all fields with valid numbers.', 'error');
     }
-    if (formVals.qty > currentStock) {
-        return Swal.fire('Error', 'Not enough stock to sell that amount.', 'error');
+
+    // Determine the actual amount to deduct from Firebase!
+    let finalBaseQty = formVals.rawQty * formVals.convRate;
+
+    if (finalBaseQty > currentStock) {
+        return Swal.fire('Error', `Not enough stock to sell that amount.\n\nYou are trying to deduct ${finalBaseQty} ${uom}, but HQ only has ${currentStock} ${uom} in stock.`, 'error');
     }
 
     Swal.fire({ title: 'Processing Sale...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
@@ -15200,7 +15248,7 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
         let [accId, accName] = formVals.acc.split('|');
         
         // 1. Deduct Stock
-        await updateDoc(doc(db, "inventory", docId), { currentStock: currentStock - formVals.qty });
+        await updateDoc(doc(db, "inventory", docId), { currentStock: currentStock - finalBaseQty });
         
         // 2. Deposit Cash
         let accRef = doc(db, "cash_accounts", accId);
@@ -15212,27 +15260,27 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
         await addDoc(collection(db, "account_logs"), {
             accountId: accId, accountName: accName, branch: "Main Office", action: "HQ Direct Sale",
             amount: formVals.price, newBalance: newBal, user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
-            timestamp: serverTimestamp(), note: `Sold ${formVals.qty} ${uom} of ${itemName}`
+            timestamp: serverTimestamp(), note: `Sold ${formVals.rawQty} ${formVals.displayUom} of ${itemName}`
         });
 
         await addDoc(collection(db, "stock_logs"), {
-            branch: "Main Office", item: itemName, uom: uom, oldQty: currentStock, newQty: currentStock - formVals.qty,
-            variance: -formVals.qty, type: "Direct Sale (HQ)", note: `Sold for ₱${formVals.price}`,
+            branch: "Main Office", item: itemName, uom: uom, oldQty: currentStock, newQty: currentStock - finalBaseQty,
+            variance: -finalBaseQty, type: "Direct Sale (HQ)", note: `Sold for ₱${formVals.price} (Input: ${formVals.rawQty} ${formVals.displayUom})`,
             user: window.sessionUser ? window.sessionUser.cashierName : "Owner", timestamp: serverTimestamp()
         });
 
-        // Optional: Add to transactions so it shows in global revenue!
+        // Add to transactions so it shows in global revenue!
         await addDoc(collection(db, "transactions"), {
             branch: "Main Office", cashier: window.sessionUser ? window.sessionUser.cashierName : "Owner",
             receiptId: "HQ-SALE-" + Date.now().toString().slice(-5),
             netTotal: formVals.price, paymentMethod: accName, status: "Paid", orderType: "Wholesale/Direct",
-            cart: [{ name: itemName, qty: formVals.qty, lineTotalFinal: formVals.price, category: "HQ Wholesale" }],
+            cart: [{ name: itemName, qty: formVals.rawQty, uom: formVals.displayUom, lineTotalFinal: formVals.price, category: "HQ Wholesale" }],
             timestamp: serverTimestamp()
         });
 
         Swal.fire({
             title: '✅ Sale Complete',
-            text: `Successfully sold ${formVals.qty} ${uom} of ${itemName} for ₱${formVals.price}.`,
+            text: `Successfully sold ${formVals.rawQty} ${formVals.displayUom} of ${itemName} for ₱${formVals.price}.`,
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
@@ -15241,7 +15289,7 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
         if(typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
     } catch(e) { 
         console.error(e); 
-        Swal.fire('Error', 'Sale failed.', 'error'); 
+        Swal.fire('Error', 'Sale failed. Check console.', 'error'); 
     }
 };
 
