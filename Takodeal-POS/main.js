@@ -6038,9 +6038,9 @@ window.MASTER_CloseShift = async function () {
 };
 
 // ==========================================
-// 🗑️ UPGRADED WASTE & SPOILAGE ENGINE
+// 🗑️ UPGRADED WASTE & SPOILAGE ENGINE (CART INTEGRATION)
 // ==========================================
-// We dynamically inject the UOM box and fetch the custom reasons the moment the tab opens!
+
 const origSwitchViewWaste = window.switchView;
 window.switchView = function(viewId) {
     if (typeof origSwitchViewWaste === 'function') origSwitchViewWaste(viewId);
@@ -6052,23 +6052,32 @@ window.switchView = function(viewId) {
                 // Instantly upgrade the UI to include the UOM box!
                 let wrapper = document.createElement('div');
                 wrapper.style.display = 'flex'; wrapper.style.gap = '5px';
+                wrapper.style.width = '100%';
                 qtyInput.parentNode.insertBefore(wrapper, qtyInput);
                 wrapper.appendChild(qtyInput);
                 
                 let uomSelect = document.createElement('select');
                 uomSelect.id = 'wasteUomSelect';
-                uomSelect.style.cssText = 'padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 900; color: #d97706; outline: none; background: white; cursor: pointer; min-width: 100px;';
+                uomSelect.style.cssText = 'padding: 16px; border-radius: 8px; border: 2px solid #fca5a5; font-weight: 900; color: #b91c1c; outline: none; background: #fef2f2; cursor: pointer; min-width: 110px; font-size: 16px;';
                 uomSelect.innerHTML = '<option value="base" data-conv="1">Units</option>';
                 wrapper.appendChild(uomSelect);
 
-                // Attach the listener to the item search box
-                let itemInput = document.getElementById('wasteItemSelect') || document.getElementById('wasteItem');
-                if (itemInput) itemInput.addEventListener('change', window.updateWasteUomLabel);
+                let itemInput = document.getElementById('wasteSearchInput');
+                if (itemInput) {
+                    // 🐶 WATCHDOG SCANNER: Detects when the custom search dropdown auto-fills the box!
+                    let lastVal = itemInput.value;
+                    setInterval(() => {
+                        if (itemInput.value !== lastVal) {
+                            lastVal = itemInput.value;
+                            window.updateWasteUomLabel();
+                        }
+                    }, 500);
+                }
             }
 
-            // Fetch Dynamic Reasons from the POS Config
+            // Fetch Dynamic Reasons from the Manager's POS Config
             try {
-                const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+                const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
                 let reasons = ["Dropped / Spilled", "Burnt / Overcooked", "Spoiled / Expired", "Customer Replacement", "Pest Damage", "Other"];
                 
                 if (configSnap.exists() && configSnap.data().wasteReasons) {
@@ -6079,7 +6088,6 @@ window.switchView = function(viewId) {
                 if (reasonDrop) {
                     let currentVal = reasonDrop.value;
                     reasonDrop.innerHTML = reasons.map(r => `<option value="${r}">${r}</option>`).join('');
-                    // Preserve their selection if they already picked something
                     if (reasons.includes(currentVal)) reasonDrop.value = currentVal; 
                 }
             } catch(e) { console.log("Failed to load custom waste reasons."); }
@@ -6087,31 +6095,44 @@ window.switchView = function(viewId) {
     }
 };
 
-// Auto-Swaps Pack vs Grams based on what they click!
-window.updateWasteUomLabel = function() {
-    let itemInput = document.getElementById('wasteItemSelect') || document.getElementById('wasteItem');
+window.updateWasteUomLabel = async function() {
+    let itemInput = document.getElementById('wasteSearchInput');
     let uomDrop = document.getElementById('wasteUomSelect');
     if (!itemInput || !uomDrop || !itemInput.value) return;
 
-    let invList = window.globalInventoryCache || window.globalInventoryList || window.globalHqStockCache || (window.masterPOSData && window.masterPOSData.inventory) || [];
-    let item = invList.find(i => i.name === itemInput.value);
+    let itemName = itemInput.value.trim();
+    let branch = localStorage.getItem('takodeal_device_branch');
 
-    if (item) {
-        let bUom = item.uom || item.baseUom || 'units';
-        let pUom = item.purchaseUom || item.purchUom || 'Bulk';
-        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-        
-        if (bUom.toLowerCase() !== pUom.toLowerCase() && conv !== 1) {
-            uomDrop.innerHTML = `<option value="purch" data-conv="${conv}">${pUom}</option><option value="base" data-conv="1">${bUom}</option>`;
-        } else {
-            uomDrop.innerHTML = `<option value="base" data-conv="1">${bUom}</option>`;
+    try {
+        // Direct live lookup to guarantee we get the exact UOMs!
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", itemName));
+        const snap = await window.getDocs(q);
+
+        if (!snap.empty) {
+            let item = snap.docs[0].data();
+            let bUom = item.uom || item.baseUom || 'units';
+            let pUom = item.purchaseUom || item.purchUom || 'Bulk';
+            let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            
+            // Only show two options if they are actually different!
+            if (bUom.toLowerCase() !== pUom.toLowerCase() && conv !== 1) {
+                uomDrop.innerHTML = `<option value="purch" data-conv="${conv}">${pUom}</option><option value="base" data-conv="1">${bUom}</option>`;
+            } else {
+                uomDrop.innerHTML = `<option value="base" data-conv="1">${bUom}</option>`;
+            }
+            
+            // Store conversion in memory for the Add To Cart function
+            window.currentWasteItemConv = conv;
+            window.currentWasteItemBUom = bUom;
+            window.currentWasteItemPUom = pUom;
+            window.currentWasteItemId = snap.docs[0].id;
         }
-    }
+    } catch(e) {}
 };
 
-// Overwrites the old save function to guarantee the conversion math applies!
-window.submitWasteLog = window.logWaste = async function() {
-    let itemInput = document.getElementById('wasteItemSelect') || document.getElementById('wasteItem');
+// Override the Add To Cart function to support the UOM conversion
+window.addWasteToCart = function() {
+    let itemInput = document.getElementById('wasteSearchInput');
     let rawQty = parseFloat(document.getElementById('wasteQty').value);
     let reason = document.getElementById('wasteReason').value;
 
@@ -6119,15 +6140,12 @@ window.submitWasteLog = window.logWaste = async function() {
         return Swal.fire('Error', 'Please select a valid item and enter a quantity.', 'error');
     }
 
-    let invList = window.globalInventoryCache || window.globalInventoryList || window.globalHqStockCache || (window.masterPOSData && window.masterPOSData.inventory) || [];
-    let itemData = invList.find(i => i.name === itemInput.value);
-
-    if (!itemData) return Swal.fire('Error', 'Item not found in inventory.', 'error');
-
+    let itemName = itemInput.value.trim();
     let uomDrop = document.getElementById('wasteUomSelect');
+    
     let convRate = 1;
-    let finalUom = itemData.uom || 'units';
-    let displayUom = finalUom;
+    let displayUom = window.currentWasteItemBUom || 'units';
+    let baseUom = window.currentWasteItemBUom || 'units';
 
     if (uomDrop && uomDrop.tagName === 'SELECT') {
         let selOpt = uomDrop.options[uomDrop.selectedIndex];
@@ -6135,55 +6153,112 @@ window.submitWasteLog = window.logWaste = async function() {
         displayUom = selOpt.text;
     }
 
-    let finalQty = rawQty * convRate; // 🔥 The conversion math is applied!
+    let finalQty = rawQty * convRate; 
+
+    if (typeof window.wasteCart === 'undefined') window.wasteCart = [];
+
+    window.wasteCart.push({
+        id: window.currentWasteItemId || null,
+        name: itemName,
+        rawQty: rawQty,
+        displayUom: displayUom,
+        baseQty: finalQty,
+        baseUom: baseUom,
+        reason: reason
+    });
+
+    // Clear Inputs
+    document.getElementById('wasteQty').value = '';
+    itemInput.value = '';
+    if(uomDrop) uomDrop.innerHTML = '<option value="base" data-conv="1">Units</option>';
+    
+    // Render Cart
+    if (typeof window.renderWasteCart === 'function') window.renderWasteCart();
+};
+
+window.renderWasteCart = function() {
+    let tbody = document.getElementById('wasteCartBody');
+    let container = document.getElementById('wasteCartContainer');
+    
+    if (!tbody || !container) return;
+
+    if (window.wasteCart.length > 0) {
+        container.style.display = 'block';
+        let html = '';
+        window.wasteCart.forEach((item, idx) => {
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 0;">
+                        <strong style="color: #0f172a;">${item.name}</strong><br>
+                        <span style="font-size: 11px; color: #dc2626;">Reason: ${item.reason}</span>
+                    </td>
+                    <td style="padding: 8px 0; text-align: right;">
+                        <strong style="color: #dc2626;">-${item.rawQty} ${item.displayUom}</strong><br>
+                        <span style="font-size: 10px; color: #64748b;">(Deducts ${item.baseQty} ${item.baseUom})</span>
+                    </td>
+                    <td style="padding: 8px 0; text-align: right;">
+                        <button onclick="window.wasteCart.splice(${idx}, 1); window.renderWasteCart();" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; font-weight: bold;">✖</button>
+                    </td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+    } else {
+        container.style.display = 'none';
+        tbody.innerHTML = '';
+    }
+};
+
+window.submitWasteCart = async function() {
+    if (!window.wasteCart || window.wasteCart.length === 0) return Swal.fire('Empty', 'Your waste list is empty.', 'info');
+
+    let btn = document.getElementById('btnSubmitWasteCart');
+    let origText = btn ? btn.innerText : "Permanently Deduct All Items";
+    if(btn) { btn.innerText = "⏳ Processing..."; btn.disabled = true; }
 
     let branch = localStorage.getItem('takodeal_device_branch');
     let cashier = localStorage.getItem('cashierName') || 'Staff';
 
-    // Find the submit button to disable it
-    let btn = document.querySelector('button[onclick*="ubmitWasteLog"]') || document.querySelector('button[onclick*="ogWaste"]');
-    let origText = btn ? btn.innerText : "Save Log";
-    if(btn) { btn.innerText = "⏳ Saving..."; btn.disabled = true; }
-
     try {
-        let currentStock = parseFloat(itemData.currentStock) || 0;
-        let newStock = currentStock - finalQty;
+        for (let item of window.wasteCart) {
+            // Fetch current stock directly so we don't accidentally overwrite with stale data
+            let q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", item.name));
+            let snap = await window.getDocs(q);
+            
+            if (!snap.empty) {
+                let invDoc = snap.docs[0];
+                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
+                let newStock = currentStock - item.baseQty;
 
-        await updateDoc(doc(db, "inventory", itemData.id), {
-            currentStock: newStock
-        });
+                await window.updateDoc(invDoc.ref, { currentStock: newStock });
 
-        await addDoc(collection(db, "stock_logs"), {
-            branch: branch,
-            item: itemData.name,
-            uom: finalUom,
-            oldQty: currentStock,
-            newQty: newStock,
-            variance: -finalQty,
-            displayQty: rawQty,
-            displayUom: displayUom,
-            type: "Waste / Spoilage",
-            note: reason,
-            user: cashier,
-            timestamp: new Date()
-        });
+                await window.addDoc(window.collection(window.db, "stock_logs"), {
+                    branch: branch,
+                    item: item.name,
+                    uom: item.baseUom,
+                    oldQty: currentStock,
+                    newQty: newStock,
+                    variance: -item.baseQty,
+                    displayQty: item.rawQty,
+                    displayUom: item.displayUom,
+                    type: "Waste / Spoilage",
+                    note: item.reason,
+                    user: cashier,
+                    timestamp: new Date()
+                });
+            }
+        }
 
-        itemData.currentStock = newStock; // Update local memory instantly
-
-        Swal.fire('✅ Waste Logged', `Successfully logged ${rawQty} ${displayUom} of ${itemData.name} as Waste.`, 'success');
+        Swal.fire('✅ Waste Logged', `Successfully deducted ${window.wasteCart.length} items from inventory.`, 'success');
         
-        // Reset Inputs
-        document.getElementById('wasteQty').value = '';
-        itemInput.value = '';
-        if(uomDrop) uomDrop.innerHTML = '<option value="base" data-conv="1">Units</option>';
+        window.wasteCart = [];
+        window.renderWasteCart();
         
-        // Refresh the table UI
-        if (typeof window.loadWasteLogs === 'function') window.loadWasteLogs();
         if (typeof window.loadWasteHistory === 'function') window.loadWasteHistory();
 
     } catch (e) {
         console.error(e);
-        Swal.fire('Error', 'Failed to save waste log.', 'error');
+        Swal.fire('Error', 'Failed to process waste. Check internet connection.', 'error');
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
     }
