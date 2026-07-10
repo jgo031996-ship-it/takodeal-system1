@@ -1766,6 +1766,20 @@ window.submitMultiDispatch = async function () {
 
           await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
 
+          // 🔥 THE FIX: Explicitly log the HQ deduction into the Trace Ledger!
+          await addDoc(collection(db, "stock_logs"), {
+              branch: fromBranch, 
+              item: itemNameToFind, 
+              uom: item.baseUom || invItem.uom || 'units',
+              oldQty: currentHqStock, 
+              newQty: currentHqStock - item.qty, 
+              variance: -item.qty,
+              type: "Dispatch Delivery", 
+              note: `Sent to ${toBranch} (Driver: ${driverName})`,
+              user: window.sessionUser ? window.sessionUser.cashierName : "Manager", 
+              timestamp: serverTimestamp()
+          });
+
           // 🔥 2. THE NEW ACCOUNTABILITY ENGINE: Pre-Restock Branch Audit & Penalty 🔥
           if (item.requestType === "Low Stock" || item.requestType === "Out of Stock") {
               const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
@@ -13812,11 +13826,14 @@ window.openItemLedger = async function(branch, itemName) {
         logsArray.forEach(d => {
             let variance = parseFloat(d.variance) || 0;
             let type = d.type || "Unknown";
-            let calculatedOldQty = runningNewQty - variance;
 
-            d._renderNew = runningNewQty;
-            d._renderOld = calculatedOldQty;
-            runningNewQty = calculatedOldQty;
+            // 🔥 CRITICAL FIX: Trust the historical snapshot stored in Firebase!
+            // Do not calculate backwards, as silent deductions will corrupt the math!
+            d._renderNew = d.newQty !== undefined ? parseFloat(d.newQty) : runningNewQty;
+            d._renderOld = d.oldQty !== undefined ? parseFloat(d.oldQty) : (d._renderNew - variance);
+
+            // Update running qty just as a fallback for extremely old legacy logs
+            runningNewQty = d._renderOld; 
 
             if (variance > 0 && (type.includes("Restock") || type.includes("Delivery") || type.includes("Received") || type.includes("Purchase"))) {
                 lifetimeBought += variance;
