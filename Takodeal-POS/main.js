@@ -5505,23 +5505,24 @@ window.submitStockRequest = async function() {
     if (btn) { btn.innerText = "⏳ Sending..."; btn.disabled = true; }
 
     try {
-        await window.addDoc(window.collection(window.db, "purchase_orders"), {
+        // 🔥 THE FIX: Removed "window." from addDoc, collection, and db. 
+        // Also swapped to standard "new Date()" to completely bulletproof the timestamp!
+        await addDoc(collection(db, "purchase_orders"), {
             branch: branch,
             type: "Internal Request",
             items: itemsToRequest,
             status: "Pending",
             requestedBy: cashier,
-            timestamp: window.serverTimestamp()
+            timestamp: new Date() 
         });
 
-        // 🔥 THE BUG FIX: The variables inside this alert are now safely mapped!
         for (let alert of fraudAlerts) {
-            await window.addDoc(window.collection(window.db, "manager_alerts"), {
+            await addDoc(collection(db, "manager_alerts"), {
                 type: "STOCK_REQUEST_FRAUD",
                 branch: branch,
                 cashier: cashier,
                 message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${alert.uom}. Possible missing stock!`,
-                timestamp: window.serverTimestamp(),
+                timestamp: new Date(), 
                 isRead: false
             });
         }
