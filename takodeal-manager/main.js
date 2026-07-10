@@ -11339,8 +11339,9 @@ window.renderGlobalAddons = function() {
         let safeIng = d.linkedIngredient ? d.linkedIngredient.replace(/'/g, "\\'") : '';
         let safeCat = d.category ? d.category.replace(/'/g, "\\'") : 'All';
 
+        // 🔥 THE FIX: Added data-id="${d.id}" to the row so the computer can track it!
         html += `
-            <tr draggable="true"
+            <tr data-id="${d.id}" draggable="true"
                 ondragstart="window.handleAddonDragStart(event)"
                 ondragover="window.handleAddonDragOver(event)"
                 ondragenter="window.handleAddonDragEnter(event)"
@@ -11376,18 +11377,25 @@ window.moveGlobalAddon = function(index, direction) {
     window.renderGlobalAddons();
 };
 
-window.saveGlobalAddonLayout = async function() {
+// Added "isSilent" so the auto-save doesn't interrupt your workflow with popups!
+window.saveGlobalAddonLayout = async function(isSilent = false) {
     let btn = document.getElementById('btnSaveAddonOrder');
-    if(btn) btn.innerText = "⏳ Saving...";
+    if(btn && !isSilent) btn.innerText = "⏳ Saving...";
+
     let layoutIds = window.globalAddonsCache.map(a => a.id);
-    let layoutNames = window.globalAddonsCache.map(a => (a.name || "").toLowerCase()); // Required for Cashier App Sync!
+    let layoutNames = window.globalAddonsCache.map(a => (a.name || "").toLowerCase()); 
+    
     try {
         await setDoc(doc(db, "settings", "pos_addon_layout"), { items: layoutIds, itemNames: layoutNames }, { merge: true });
-        Swal.fire({title: '💾 Saved!', text: 'Add-On arrangement saved. Cashier POS will update instantly.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        
+        if (!isSilent) {
+            Swal.fire({title: '💾 Saved!', text: 'Add-On arrangement saved. Cashier POS will update instantly.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        }
     } catch(e) {
-        console.error(e); Swal.fire('Error', 'Failed to save arrangement.', 'error');
+        console.error(e); 
+        if (!isSilent) Swal.fire('Error', 'Failed to save arrangement.', 'error');
     } finally {
-        if(btn) btn.innerText = "💾 Save Display Order";
+        if(btn && !isSilent) btn.innerText = "💾 Save Display Order";
     }
 };
 
@@ -15321,16 +15329,34 @@ window.handleAddonDrop = function(e) {
     window.draggedAddonRows.forEach(row => {
         tbody.insertBefore(row, targetTr);
         row.style.opacity = '1';
+        
+        // Clean up visual selection state
+        row.style.background = 'white';
+        let cb = row.querySelector('.addon-select-cb');
+        if (cb) cb.checked = false;
     });
     
+    // 🔥 THE CRITICAL FIX: Synchronize the Javascript memory with the new HTML order!
+    let newCache = [];
+    tbody.querySelectorAll('tr').forEach(tr => {
+        let rowId = tr.getAttribute('data-id');
+        if (rowId) {
+            let foundItem = window.globalAddonsCache.find(a => a.id === rowId);
+            if (foundItem) newCache.push(foundItem);
+        }
+    });
+    window.globalAddonsCache = newCache; // Memory is now perfectly synced!
+    
     window.draggedAddonRows = [];
+    
+    // 🔥 SECRET AUTO-SAVE: Instantly saves to Firebase without a popup!
+    window.saveGlobalAddonLayout(true); 
 };
 
 window.handleAddonDragEnd = function(e) {
     if (window.draggedAddonRows) {
         window.draggedAddonRows.forEach(row => row.style.opacity = '1');
     }
-    // Clean up any stuck purple lines
     document.querySelectorAll('tr').forEach(t => t.style.borderTop = "");
     window.draggedAddonRows = [];
 };
