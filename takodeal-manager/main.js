@@ -6283,19 +6283,31 @@ window.viewZReadingDetails = async function (shiftId, breakdownStr, stockStr, ca
 // ========================================================
 
 // Keep a global memory of inventory items so the dropdowns load instantly
-let cachedInventoryOptions = '<option value="">-- Select Raw Ingredient --</option>';
+window.cachedInventoryOptions = '<option value="">-- Select Raw Ingredient --</option>';
 
 // Call this once when the page loads, or when the modal opens
 window.preloadInventoryForAddons = async function () {
   try {
-    const snap = await getDocs(collection(db, "inventory"));
+    // 🔥 THE FIX: Strictly search Main Office to prevent duplicate branches from cluttering the list!
+    const snap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
     let options = '<option value="">-- Select Raw Ingredient --</option>';
-    snap.forEach(docSnap => {
-      let item = docSnap.data();
+    
+    let items = [];
+    snap.forEach(docSnap => items.push(docSnap.data()));
+    items.sort((a,b) => (a.name || "").localeCompare(b.name || ""));
+
+    items.forEach(item => {
       let itemName = item.name || item.itemName || "Unknown Item";
       options += `<option value="${itemName}">${itemName} (Live Stock: ${item.currentStock || item.stock || 0})</option>`;
     });
-    cachedInventoryOptions = options;
+    
+    // 🔥 THE FIX: Save it to the global window object so Mix & Match can see it!
+    window.cachedInventoryOptions = options;
+    
+    // Force the Mix & Match box to redraw now that we have the data
+    if (typeof window.renderMixMatchConfig === 'function') {
+        window.renderMixMatchConfig();
+    }
   } catch (e) {
     console.error("Error loading inventory for addons:", e);
   }
