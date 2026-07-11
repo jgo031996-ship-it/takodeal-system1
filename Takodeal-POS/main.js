@@ -3608,8 +3608,8 @@ setTimeout(() => {
         }
 
         // If they are currently looking at the tab, refresh it instantly
-        if (document.getElementById('view-deliveries') && document.getElementById('view-deliveries').classList.contains('active')) {
-             window.renderDeliveriesTab();
+        if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
+             if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
         }
     });
 }, 3000);
@@ -4438,139 +4438,379 @@ window.saveReqDraft = function() {
 
 window.loadStockRequestUI = async function() {
     let container = document.getElementById('stockReqList');
-    if (!container) return;
-    container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching live inventory & HQ status...</div>';
+    let searchBox = document.getElementById('stockReqSearch');
+    let sendBtn = document.querySelector('button[onclick="window.submitStockRequest()"]');
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!container || !branch) return;
 
-    // CSS Injection to prevent the History Tab from overflowing the white box!
+    // 🔥 THE UI MERGE INJECTOR: Creates a dynamic section above the normal list!
+    if (!document.getElementById('mergedRequestUI')) {
+        container.insertAdjacentHTML('beforebegin', `<div id="mergedRequestUI" style="margin-bottom: 20px;"></div>`);
+    }
+    let mergedUI = document.getElementById('mergedRequestUI');
+    mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Scanning HQ status & incoming deliveries...</div>';
+    
+    // Hide standard elements while scanning
+    container.style.display = 'none'; 
+    if (searchBox) searchBox.style.display = 'none';
+    if (sendBtn) sendBtn.style.display = 'none';
+
+    // CSS Injection for History Overflow
     if (!document.getElementById('historyOverflowFix')) {
         document.head.insertAdjacentHTML('beforeend', `
             <style id="historyOverflowFix">
-                td div[style*="color"], td ul {
-                    max-height: 150px;
-                    overflow-y: auto;
-                    padding-right: 5px;
-                    display: block;
-                }
+                td div[style*="color"], td ul { max-height: 150px; overflow-y: auto; padding-right: 5px; display: block; }
+                #nav-deliveries { display: none !important; } /* Hide the old redundant sidebar tab! */
             </style>
         `);
     }
 
     try {
-        let branch = localStorage.getItem('takodeal_device_branch');
+        // 1. Check for Pending Requests (Awaiting HQ Approval)
+        const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Pending"));
+        const poSnap = await getDocs(poQ);
+        
+        // 2. Check for Incoming Deliveries (In Transit)
+        const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("status", "==", "In Transit"));
+        const delSnap = await getDocs(delQ);
+        
+        window.incomingDeliveriesList = [];
+        delSnap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
-        // 1. Fetch Branch Inventory
-        const qBranch = query(collection(db, "inventory"), where("branch", "==", branch));
-        const snapBranch = await getDocs(qBranch);
+        let pendingOrder = null;
+        if (!poSnap.empty) {
+            let docs = poSnap.docs.map(d => ({id: d.id, ...d.data()}));
+            docs.sort((a,b) => b.timestamp - a.timestamp);
+            pendingOrder = docs[0];
+        }
 
-        // 2. Fetch Main Office Inventory (To see if HQ has stock!)
-        const qHQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
-        const snapHQ = await getDocs(qHQ);
-        let hqStockMap = {};
-        snapHQ.forEach(doc => { hqStockMap[doc.data().name] = parseFloat(doc.data().currentStock || 0); });
+        let dynamicHtml = '';
 
-        // 3. Process & Group by Category
-        let itemsByCategory = {};
-        snapBranch.forEach(docSnap => {
-            let data = docSnap.data();
-            // Respect the allowRequest toggle set by the Manager!
-            if (data.allowRequest !== false) {
-                let cat = data.category || "Uncategorized";
-                if (!cat.toLowerCase().includes("prepared batch") && !cat.toLowerCase().includes("prep batch")) {
-                    if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
-                    itemsByCategory[cat].push({ id: docSnap.id, ...data });
+        // ==========================================
+        // 🚚 A. INCOMING DELIVERIES BLOCK (THE MERGE!)
+        // ==========================================
+        if (window.incomingDeliveriesList.length > 0) {
+            let dispatchGroups = {};
+            window.incomingDeliveriesList.forEach(del => {
+                let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
+                if (!dispatchGroups[groupKey]) {
+                    dispatchGroups[groupKey] = { dispatchId: groupKey, date: del.date, time: del.time, driver: del.driver, items: [] };
                 }
+                dispatchGroups[groupKey].items.push(del);
+            });
+
+            for (let key in dispatchGroups) {
+                let dispatch = dispatchGroups[key];
+                let itemsTableRows = '';
+                dispatch.items.forEach(item => {
+                    let friendlyQty = item.displayQty || item.qty;
+                    let friendlyUom = item.displayUom || item.uom;
+                    itemsTableRows += `
+                        <tr style="border-bottom: 1px solid #f1f5f9;" id="row_${item.id}">
+                            <td style="padding: 12px 8px; font-weight: bold; color: #334155;">📦 ${item.item}</td>
+                            <td style="padding: 12px 8px; font-weight: bold; color: #0284c7; text-align: center;">${friendlyQty} ${friendlyUom}</td>
+                            <td style="padding: 12px 8px; text-align: center;">
+                                <input type="number" id="recv_val_${item.id}" data-expected="${friendlyQty}" placeholder="${friendlyQty}" style="width: 85px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-weight: bold; outline: none;">
+                            </td>
+                            <td style="padding: 12px 8px; text-align: center; vertical-align: top;">
+                                <label style="display: flex; align-items: center; justify-content: center; gap: 4px; background: #fff5f5; border: 1px dashed #fca5a5; padding: 6px 10px; border-radius: 6px; color: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; margin-bottom: 6px; width: 100%; box-sizing: border-box;">
+                                    <input type="checkbox" id="missing_check_${item.id}" onchange="window.toggleMissingItemRow('${item.id}')" style="accent-color: #dc2626; cursor: pointer;"> Not Delivered
+                                </label>
+                                <input type="text" id="remark_val_${item.id}" placeholder="Remarks / Reason..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box; outline: none; text-align: center;">
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                dynamicHtml += `
+                    <div style="background: white; border: 2px solid #cbd5e1; padding: 20px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; align-items: center;">
+                            <div>
+                                <h3 style="margin: 0; color: #0f172a; font-size: 16px; letter-spacing: 0.3px;">🚚 INCOMING SHIPMENT ARRIVING!</h3>
+                                <span style="font-size: 12px; color: #64748b; font-weight: 500;">Dispatched: <strong>${dispatch.date} @ ${dispatch.time}</strong></span>
+                            </div>
+                            <div style="text-align: right;">
+                                <span style="background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">Driver: ${dispatch.driver}</span>
+                            </div>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; text-align: left; font-size: 13px;">
+                            <thead>
+                                <tr style="background: #f8fafc; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                                    <th style="padding: 10px 8px;">Item Description</th>
+                                    <th style="padding: 10px 8px; text-align: center;">Expected</th>
+                                    <th style="padding: 10px 8px; text-align: center;">Actual Received</th>
+                                    <th style="padding: 10px 8px; text-align: center;">Security Exception</th>
+                                </tr>
+                            </thead>
+                            <tbody>${itemsTableRows}</tbody>
+                        </table>
+                        <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}'); setTimeout(()=>window.loadStockRequestUI(), 2000);" style="width: 100%; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.2); transition: 0.2s;">
+                            📥 Confirm and Receive Complete Shipment
+                        </button>
+                    </div>
+                `;
             }
-        });
+        }
 
-        window.stockReqItemsFlat = [];
-        let html = '';
+        // ==========================================
+        // ⏳ B. PENDING REQUEST BLOCK (EDIT / CANCEL)
+        // ==========================================
+        if (pendingOrder) {
+            let pItemsHtml = pendingOrder.items.map(i => `
+                <div style="display:flex; justify-content:space-between; padding: 8px 0; border-bottom: 1px dashed #cbd5e1;">
+                    <span style="font-weight:bold; color:#334155;">${i.itemName} <span style="color:#ef4444; font-size:11px;">(${i.requestType})</span></span>
+                    <strong style="color:#d97706;">${i.displayQty} ${i.displayUom}</strong>
+                </div>
+            `).join('');
 
-        Object.keys(itemsByCategory).sort().forEach(category => {
-            // Category Header
-            html += `<div class="stock-req-category" style="background: #e2e8f0; padding: 10px 15px; font-weight: bold; color: #334155; margin-top: 10px; font-size: 14px; text-transform: uppercase; border-radius: 6px;">📁 ${category}</div>`;
+            let safeOrderStr = encodeURIComponent(JSON.stringify(pendingOrder));
 
-            let items = itemsByCategory[category];
-            items.sort((a, b) => a.name.localeCompare(b.name));
+            dynamicHtml += `
+                <div style="background: #fffbeb; border: 2px solid #fcd34d; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);">
+                    <h3 style="margin: 0 0 10px 0; color: #b45309; font-size: 16px; display:flex; align-items:center; justify-content:space-between;">
+                        <span>⏳ Pending Request Awaiting HQ</span>
+                        <span style="font-size: 12px; color: #92400e;">${pendingOrder.timestamp.toDate().toLocaleString()}</span>
+                    </h3>
+                    <p style="font-size: 13px; color: #92400e; margin-top: 0;">You have an active request pending review by the Manager. You can edit or cancel it below before they process it.</p>
+                    
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; margin-bottom: 15px; max-height: 250px; overflow-y: auto;">
+                        ${pItemsHtml}
+                    </div>
 
-            items.forEach((item) => {
-                window.stockReqItemsFlat.push(item);
-                
-                let safeStock = parseFloat(item.currentStock || 0).toFixed(1);
-                
-                // HQ Availability Badge
-                let hqStock = hqStockMap[item.name] || 0;
-                let hqStatus = hqStock > 0
-                    ? `<span style="color: #16a34a; font-weight: bold; font-size: 10px; background: #dcfce7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🟢 HQ HAS STOCK</span>`
-                    : `<span style="color: #dc2626; font-weight: bold; font-size: 10px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🔴 HQ OUT OF STOCK</span>`;
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="window.editPendingRequest('${safeOrderStr}')" style="flex:1; background: #0ea5e9; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 8px; cursor: pointer;">✏️ Edit Request</button>
+                        <button onclick="window.cancelPendingRequest('${pendingOrder.id}')" style="flex:1; background: #ef4444; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 8px; cursor: pointer;">✖ Cancel Request</button>
+                    </div>
+                </div>
+            `;
+            mergedUI.innerHTML = dynamicHtml;
 
-                let pUom = item.purchaseUom || item.uom || 'units';
-                let bUom = item.uom || 'units';
-                let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+        } else {
+            // ==========================================
+            // 📝 C. NEW REQUEST LIST (STANDARD VIEW)
+            // ==========================================
+            mergedUI.innerHTML = dynamicHtml; // Display any incoming deliveries above it
 
-                let uomOptions = '';
-                if (pUom.toLowerCase() !== bUom.toLowerCase() && conv > 1) {
-                    uomOptions += `<option value="purch" data-conv="${conv}">${pUom}</option>`;
+            container.style.display = 'block';
+            if (searchBox) searchBox.style.display = 'block';
+            if (sendBtn) sendBtn.style.display = 'block';
+
+            const qBranch = query(collection(db, "inventory"), where("branch", "==", branch));
+            const snapBranch = await getDocs(qBranch);
+
+            const qHQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+            const snapHQ = await getDocs(qHQ);
+            let hqStockMap = {};
+            snapHQ.forEach(doc => { hqStockMap[doc.data().name] = parseFloat(doc.data().currentStock || 0); });
+
+            let itemsByCategory = {};
+            snapBranch.forEach(docSnap => {
+                let data = docSnap.data();
+                if (data.allowRequest !== false) {
+                    let cat = data.category || "Uncategorized";
+                    if (!cat.toLowerCase().includes("prepared batch") && !cat.toLowerCase().includes("prep batch")) {
+                        if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
+                        itemsByCategory[cat].push({ id: docSnap.id, ...data });
+                    }
                 }
-                uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
+            });
 
-                // 🔥 THE FIX: Added window.saveReqDraft() to ALL inputs and dropdowns so it triggers perfectly!
-                html += `
-                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
-                    <div style="font-weight: bold; color: #334155; font-size: 14px;">
-                        ${item.name} <br>
-                        ${hqStatus}
-                    </div>
-                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column;">
-                        <strong style="font-size: 14px; color: #334155;">${safeStock}</strong>
-                        <span style="font-size: 10px; color: #94a3b8;">${item.uom || 'units'}</span>
-                    </div>
-                    <div>
-                        <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" data-sys="${safeStock}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="if(typeof window.toggleActualCount === 'function') window.toggleActualCount('${item.id}'); window.saveReqDraft();">
-                            <option value="None">-- No Request --</option>
-                            <option value="Low Stock">⚠️ Low Stock</option>
-                            <option value="Out of Stock">❌ Out of Stock</option>
-                            <option value="Stock Request">General Request</option>
-                        </select>
-                    </div>
-                    <div>
-                        <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
-                            <input type="number" id="actualCount_${item.id}" placeholder="Count?" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; width: 100%; box-sizing: border-box; outline: none;" oninput="window.saveReqDraft()">
-                            <select id="actualUom_${item.id}" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; outline: none; cursor: pointer;" onchange="window.saveReqDraft()">
-                                ${uomOptions}
+            window.stockReqItemsFlat = [];
+            let html = '';
+
+            Object.keys(itemsByCategory).sort().forEach(category => {
+                html += `<div class="stock-req-category" style="background: #e2e8f0; padding: 10px 15px; font-weight: bold; color: #334155; margin-top: 10px; font-size: 14px; text-transform: uppercase; border-radius: 6px;">📁 ${category}</div>`;
+
+                let items = itemsByCategory[category];
+                items.sort((a, b) => a.name.localeCompare(b.name));
+
+                items.forEach((item) => {
+                    window.stockReqItemsFlat.push(item);
+                    let safeStock = parseFloat(item.currentStock || 0).toFixed(1);
+                    
+                    let hqStock = hqStockMap[item.name] || 0;
+                    let hqStatus = hqStock > 0
+                        ? `<span style="color: #16a34a; font-weight: bold; font-size: 10px; background: #dcfce7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🟢 HQ HAS STOCK</span>`
+                        : `<span style="color: #dc2626; font-weight: bold; font-size: 10px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🔴 HQ OUT OF STOCK</span>`;
+
+                    let pUom = item.purchaseUom || item.uom || 'units';
+                    let bUom = item.uom || 'units';
+                    let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+                    let uomOptions = '';
+                    if (pUom.toLowerCase() !== bUom.toLowerCase() && conv > 1) {
+                        uomOptions += `<option value="purch" data-conv="${conv}">${pUom}</option>`;
+                    }
+                    uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
+
+                    html += `
+                    <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
+                        <div style="font-weight: bold; color: #334155; font-size: 14px;">
+                            ${item.name} <br>
+                            ${hqStatus}
+                        </div>
+                        <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column;">
+                            <strong style="font-size: 14px; color: #334155;">${safeStock}</strong>
+                            <span style="font-size: 10px; color: #94a3b8;">${item.uom || 'units'}</span>
+                        </div>
+                        <div>
+                            <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" data-sys="${safeStock}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="if(typeof window.toggleActualCount === 'function') window.toggleActualCount('${item.id}'); window.saveReqDraft();">
+                                <option value="None">-- No Request --</option>
+                                <option value="Low Stock">⚠️ Low Stock</option>
+                                <option value="Out of Stock">❌ Out of Stock</option>
+                                <option value="Stock Request">General Request</option>
                             </select>
                         </div>
-                    </div>
-                </div>`;
+                        <div>
+                            <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
+                                <input type="number" id="actualCount_${item.id}" placeholder="Count?" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; width: 100%; box-sizing: border-box; outline: none;" oninput="window.saveReqDraft()">
+                                <select id="actualUom_${item.id}" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; outline: none; cursor: pointer;" onchange="window.saveReqDraft()">
+                                    ${uomOptions}
+                                </select>
+                            </div>
+                        </div>
+                    </div>`;
+                });
             });
-        });
+            container.innerHTML = html;
 
-        container.innerHTML = html;
-
-        // 🔥 MEMORY RESTORE ENGINE (Includes UOM Restore!)
-        try {
-            let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
-            if (savedDraft) {
-                for (let id in savedDraft) {
-                    let select = document.getElementById(`reqType_${id}`);
-                    let countEl = document.getElementById(`actualCount_${id}`);
-                    let uomEl = document.getElementById(`actualUom_${id}`);
-                    
-                    if (select && savedDraft[id].type && savedDraft[id].type !== "None") {
-                        select.value = savedDraft[id].type;
-                        if (typeof window.toggleActualCount === 'function') window.toggleActualCount(id);
-                    }
-                    if (countEl && savedDraft[id].count !== "") {
-                        countEl.value = savedDraft[id].count;
-                    }
-                    if (uomEl && savedDraft[id].uom) {
-                        uomEl.value = savedDraft[id].uom;
+            // Restore memory if available
+            try {
+                let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
+                if (savedDraft) {
+                    for (let id in savedDraft) {
+                        let select = document.getElementById(`reqType_${id}`);
+                        let countEl = document.getElementById(`actualCount_${id}`);
+                        let uomEl = document.getElementById(`actualUom_${id}`);
+                        
+                        if (select && savedDraft[id].type && savedDraft[id].type !== "None") {
+                            select.value = savedDraft[id].type;
+                            if (typeof window.toggleActualCount === 'function') window.toggleActualCount(id);
+                        }
+                        if (countEl && savedDraft[id].count !== "") countEl.value = savedDraft[id].count;
+                        if (uomEl && savedDraft[id].uom) uomEl.value = savedDraft[id].uom;
                     }
                 }
-            }
-        } catch(e) { console.log("No drafts found."); }
+            } catch(e) { console.log("No drafts found."); }
+        }
 
     } catch (e) {
-        console.error(e); container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load inventory.</div>';
+        console.error(e); 
+        if(mergedUI) mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load request data.</div>';
+    }
+};
+
+window.cancelPendingRequest = async function(docId) {
+    if (!confirm("Are you sure you want to cancel this request?")) return;
+    try {
+        await deleteDoc(doc(db, "purchase_orders", docId));
+        Swal.fire({title: 'Cancelled', text: 'Request has been cancelled.', icon: 'success', timer: 1500, showConfirmButton: false});
+        window.loadStockRequestUI();
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to cancel.', 'error');
+    }
+};
+
+window.editPendingRequest = async function(encodedOrder) {
+    let order = JSON.parse(decodeURIComponent(encodedOrder));
+    if (!confirm("This will pull your request back into draft mode so you can edit the quantities. Continue?")) return;
+
+    try {
+        // Delete the pending PO so they can remake it
+        await deleteDoc(doc(db, "purchase_orders", order.id));
+        
+        // Rebuild the draft memory
+        let draft = {};
+        order.items.forEach(i => {
+            if (i.sourceId) {
+                draft[i.sourceId] = {
+                    type: i.requestType,
+                    count: i.displayQty,
+                    uom: i.selectedUom || (i.displayUom === i.purchaseUom ? "purch" : "base")
+                };
+            }
+        });
+        localStorage.setItem('takodeal_stock_req_draft', JSON.stringify(draft));
+        window.loadStockRequestUI();
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to edit request.', 'error');
+    }
+};
+
+window.submitStockRequest = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashier = localStorage.getItem('cashierName') || 'Staff';
+    let itemsToRequest = [];
+    let fraudAlerts = []; 
+
+    let selects = document.querySelectorAll('.req-type-select');
+
+    selects.forEach(select => {
+        if (select.value !== "None") {
+            let id = select.getAttribute('data-id');
+            let itemData = window.globalHqStockCache.find(i => i.id === id);
+            if (!itemData) return; 
+
+            let actualCountEl = document.getElementById(`actualCount_${id}`);
+            let uomSelectEl = document.getElementById(`actualUom_${id}`);
+            
+            let rawCount = actualCountEl && actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
+            let convRate = 1;
+            let displayUom = itemData.uom;
+
+            if (uomSelectEl && uomSelectEl.tagName === 'SELECT') {
+                let selOpt = uomSelectEl.options[uomSelectEl.selectedIndex];
+                convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+                displayUom = selOpt.text;
+            }
+
+            let actualCount = rawCount * convRate; 
+            let sysStock = parseFloat(select.getAttribute('data-sys')) || 0;
+
+            if (select.value === "Low Stock" || select.value === "Out of Stock") {
+                if (actualCount < (sysStock - 1)) {
+                    fraudAlerts.push({ name: itemData.name, declared: rawCount, expected: sysStock, uom: displayUom });
+                }
+            }
+
+            itemsToRequest.push({
+                itemName: itemData.name, qty: 0, requestType: select.value, uom: itemData.uom, sourceId: itemData.id,
+                systemStock: sysStock, physicalStock: actualCount, displayQty: rawCount, displayUom: displayUom,     
+                category: itemData.category || "Ingredients", purchaseUom: itemData.purchaseUom || itemData.uom, convRate: itemData.conversionRate || 1
+            });
+        }
+    });
+
+    if (itemsToRequest.length === 0) {
+        return Swal.fire('Empty Request', 'Please mark at least one item as Low Stock or Out of Stock.', 'warning');
+    }
+
+    let btn = document.querySelector('button[onclick="window.submitStockRequest()"]');
+    let origText = btn ? btn.innerText : "🚀 Send Request to HQ";
+    if (btn) { btn.innerText = "⏳ Sending..."; btn.disabled = true; }
+
+    try {
+        await addDoc(collection(db, "purchase_orders"), {
+            branch: branch, type: "Internal Request", items: itemsToRequest, status: "Pending", requestedBy: cashier, timestamp: new Date() 
+        });
+
+        for (let alert of fraudAlerts) {
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "STOCK_REQUEST_FRAUD", branch: branch, cashier: cashier,
+                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${alert.uom}. Possible missing stock!`,
+                timestamp: new Date(), isRead: false
+            });
+        }
+
+        // Wipe memory
+        localStorage.removeItem('takodeal_stock_req_draft');
+        
+        Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted securely.', 'success');
+        window.loadStockRequestUI(); 
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
+    } finally {
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
 
@@ -4581,11 +4821,9 @@ window.filterStockReq = function() {
 
     rows.forEach(row => {
         if (row.getAttribute('data-name').includes(input)) {
-            row.style.display = 'grid';
-            row.classList.add('visible-row');
+            row.style.display = 'grid'; row.classList.add('visible-row');
         } else {
-            row.style.display = 'none';
-            row.classList.remove('visible-row');
+            row.style.display = 'none'; row.classList.remove('visible-row');
         }
     });
 
@@ -4598,6 +4836,67 @@ window.filterStockReq = function() {
         }
         cat.style.display = hasVisible || input === '' ? 'block' : 'none';
     });
+};
+
+// 🔥 UPGRADED COLOR-CODED HISTORY ENGINE
+window.loadStockRequestHistory = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    const tbody = document.getElementById('stockReqHistoryBody');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading history...</td></tr>';
+
+    try {
+        const q = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(20));
+        const snap = await getDocs(q);
+
+        let html = '';
+        snap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
+            
+            let statusBg = '#f1f5f9'; let statusColor = '#475569';
+            if (d.status === 'Pending') { statusBg = '#fef3c7'; statusColor = '#d97706'; }
+            else if (d.status === 'Drafting') { statusBg = '#bae6fd'; statusColor = '#0284c7'; d.status = 'Preparing (HQ)'; }
+            else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; d.status = 'Dispatch on the way 🚚'; }
+            else if (d.status === 'Completed') { statusBg = '#f1f5f9'; statusColor = '#64748b'; }
+            else if (d.status === 'Partially Dispatched') { statusBg = '#e0e7ff'; statusColor = '#0284c7'; }
+            else if (d.status === 'Delayed') { statusBg = '#fef2f2'; statusColor = '#dc2626'; d.status = 'Delayed (Out of Stock)'; }
+
+            // 🔥 THE COLOR CODING ENGINE (Green = Delivered, Red = Missing/Delayed)
+            let itemsList = d.items.map(i => {
+                let itemColor = '#0f172a'; // Default dark
+                let itemStatusText = '';
+
+                if (d.status === 'Completed' || d.status === 'Dispatch on the way 🚚' || d.status === 'Partially Dispatched') {
+                    itemColor = '#16a34a'; // Green
+                    itemStatusText = ' (Processed)';
+                } else if (d.status === 'Delayed (Out of Stock)' || d.status === 'Delayed') {
+                    itemColor = '#dc2626'; // Red
+                    itemStatusText = ' (Delayed)';
+                }
+
+                return `<div style="font-size: 11px; margin-bottom: 2px;">• <strong style="color:${itemColor};">${i.itemName}${itemStatusText}</strong> <span style="color:#94a3b8;">(${i.requestType})</span></div>`;
+            }).join('');
+            
+            let msgHtml = d.managerMessage ? `<div style="margin-top: 5px; padding: 5px; background: white; border: 1px dashed #cbd5e1; font-size: 10px; color: #b91c1c; border-radius: 4px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${d.requestedBy || 'Staff'}</td>
+                    <td style="padding: 12px;">
+                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;">${d.status}</span>
+                        ${msgHtml}
+                    </td>
+                    <td style="padding: 12px;">${itemsList}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 20px;">No requests found.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history.</td></tr>';
+    }
 };
 
 window.openShiftModal = function() {
@@ -5418,95 +5717,6 @@ window.switchStockReqTab = function(tab) {
 
 window.globalHqStockCache = [];
 
-window.loadStockRequestUI = async function() {
-    let branch = localStorage.getItem('takodeal_device_branch');
-    if (!branch) return;
-
-    const listDiv = document.getElementById('stockReqList');
-    if (!listDiv) return;
-    listDiv.innerHTML = '<div style="text-align:center; padding: 20px; color: #94a3b8;">Loading inventory data...</div>';
-
-    try {
-        // 1. Fetch HQ Stock
-        const hqQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
-        const hqSnap = await getDocs(hqQ);
-        window.globalHqStockCache = [];
-        hqSnap.forEach(doc => {
-            let data = doc.data();
-            // 🔥 THE FIX: Respect the allowRequest toggle set by the Manager!
-            if (data.allowRequest !== false) {
-                window.globalHqStockCache.push({ id: doc.id, ...data });
-            }
-        });
-
-        window.globalHqStockCache.sort((a,b) => a.name.localeCompare(b.name));
-
-        // 2. Fetch Local Branch Stock for comparison
-        const brQ = query(collection(db, "inventory"), where("branch", "==", branch));
-        const brSnap = await getDocs(brQ);
-        let branchStockDict = {};
-        brSnap.forEach(doc => {
-            let d = doc.data();
-            branchStockDict[d.name] = d.currentStock || 0;
-        });
-
-        window.renderStockReqList(branchStockDict);
-
-    } catch (e) {
-        console.error("Request Stock Error:", e);
-        listDiv.innerHTML = '<div style="text-align:center; padding: 20px; color: red;">Failed to load data.</div>';
-    }
-};
-
-window.renderStockReqList = function(branchStockDict) {
-    let html = '';
-    window.globalHqStockCache.forEach((item, idx) => {
-        let hqStock = parseFloat(item.currentStock) || 0;
-        let localStock = branchStockDict[item.name] !== undefined ? branchStockDict[item.name] : 0;
-        let hqStatus = hqStock > 0 ? `<span style="color: #16a34a;">HQ Has Stock</span>` : `<span style="color: #dc2626;">HQ Out of Stock</span>`;
-
-        // 🔥 THE UOM FIX: Build the Dropdown for Pack vs Pieces!
-        let pUom = item.purchaseUom || item.uom || 'units';
-        let bUom = item.uom || 'units';
-        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-
-        let uomOptions = '';
-        if (pUom.toLowerCase() !== bUom.toLowerCase() && conv > 1) {
-            uomOptions += `<option value="purch" data-conv="${conv}">${pUom}</option>`;
-        }
-        uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
-
-        html += `
-            <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; align-items: center;">
-                <div>
-                    <strong style="color: #1e293b; font-size: 14px;">${item.name}</strong><br>
-                    <span style="font-size: 11px;">${hqStatus}</span>
-                </div>
-                <div style="text-align: center; font-weight: bold; color: #64748b;">
-                    ${parseFloat(localStock).toFixed(1)} <span style="font-size:10px;">${item.uom}</span>
-                </div>
-                <div style="text-align: center;">
-                    <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" data-sys="${localStock}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
-                        <option value="None">-- No Request --</option>
-                        <option value="Low Stock">⚠️ Low Stock</option>
-                        <option value="Out of Stock">❌ Out of Stock</option>
-                        <option value="Stock Request">General Request</option>
-                    </select>
-                </div>
-                <div style="text-align: center;">
-                    <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
-                        <input type="number" id="actualCount_${item.id}" placeholder="0" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; width: 100%; box-sizing: border-box; outline: none;">
-                        <select id="actualUom_${item.id}" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; outline: none; cursor: pointer;">
-                            ${uomOptions}
-                        </select>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    document.getElementById('stockReqList').innerHTML = html;
-};
-
 window.toggleActualCount = function(id) {
     let select = document.getElementById(`reqType_${id}`);
     let container = document.getElementById(`actualCountContainer_${id}`);
@@ -5529,164 +5739,6 @@ window.toggleActualCount = function(id) {
     } else {
         if (container) container.style.display = "none";
         actualInput.value = "";
-    }
-};
-
-window.submitStockRequest = async function() {
-    let branch = localStorage.getItem('takodeal_device_branch');
-    let cashier = localStorage.getItem('cashierName') || 'Staff';
-    let itemsToRequest = [];
-    let fraudAlerts = []; 
-
-    let selects = document.querySelectorAll('.req-type-select');
-
-    selects.forEach(select => {
-        if (select.value !== "None") {
-            let id = select.getAttribute('data-id');
-            let itemData = window.globalHqStockCache.find(i => i.id === id);
-            if (!itemData) return; 
-
-            let actualCountEl = document.getElementById(`actualCount_${id}`);
-            let uomSelectEl = document.getElementById(`actualUom_${id}`);
-            
-            let rawCount = actualCountEl && actualCountEl.value !== "" ? parseFloat(actualCountEl.value) : 0;
-            let convRate = 1;
-            let displayUom = itemData.uom;
-
-            if (uomSelectEl && uomSelectEl.tagName === 'SELECT') {
-                let selOpt = uomSelectEl.options[uomSelectEl.selectedIndex];
-                convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
-                displayUom = selOpt.text;
-            }
-
-            let actualCount = rawCount * convRate; 
-            let sysStock = parseFloat(select.getAttribute('data-sys')) || 0;
-
-            if (select.value === "Low Stock" || select.value === "Out of Stock") {
-                if (actualCount < (sysStock - 1)) {
-                    fraudAlerts.push({
-                        name: itemData.name,
-                        declared: rawCount, 
-                        expected: sysStock,
-                        uom: displayUom
-                    });
-                }
-            }
-
-            itemsToRequest.push({
-                itemName: itemData.name,
-                qty: 0, 
-                requestType: select.value, 
-                uom: itemData.uom,
-                sourceId: itemData.id,
-                systemStock: sysStock, 
-                physicalStock: actualCount,
-                displayQty: rawCount,       
-                displayUom: displayUom,     
-                category: itemData.category || "Ingredients",
-                purchaseUom: itemData.purchaseUom || itemData.uom,
-                convRate: itemData.conversionRate || 1
-            });
-        }
-    });
-
-    if (itemsToRequest.length === 0) {
-        return Swal.fire('Empty Request', 'Please mark at least one item as Low Stock or Out of Stock.', 'warning');
-    }
-
-    let btn = document.querySelector('button[onclick="window.submitStockRequest()"]');
-    let origText = btn ? btn.innerText : "🚀 Send Request to HQ";
-    if (btn) { btn.innerText = "⏳ Sending..."; btn.disabled = true; }
-
-    try {
-        // 🔥 THE FIX: Removed "window." from addDoc, collection, and db. 
-        // Also swapped to standard "new Date()" to completely bulletproof the timestamp!
-        await addDoc(collection(db, "purchase_orders"), {
-            branch: branch,
-            type: "Internal Request",
-            items: itemsToRequest,
-            status: "Pending",
-            requestedBy: cashier,
-            timestamp: new Date() 
-        });
-
-        for (let alert of fraudAlerts) {
-            await addDoc(collection(db, "manager_alerts"), {
-                type: "STOCK_REQUEST_FRAUD",
-                branch: branch,
-                cashier: cashier,
-                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${alert.uom}. Possible missing stock!`,
-                timestamp: new Date(), 
-                isRead: false
-            });
-        }
-        // 🔥 WIPE THE DRAFT MEMORY AFTER A SUCCESSFUL SEND!
-        localStorage.removeItem('takodeal_stock_req_draft');
-      
-        Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted. Check the History tab to track it.', 'success');
-        window.loadStockRequestUI(); 
-        window.switchStockReqTab('History'); 
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to send request.', 'error');
-    } finally {
-        if (btn) { btn.innerText = origText; btn.disabled = false; }
-    }
-};
-
-window.filterStockReq = function() {
-    let search = document.getElementById('stockReqSearch').value.toLowerCase();
-    document.querySelectorAll('.stock-req-row').forEach(row => {
-        if (row.getAttribute('data-name').includes(search)) row.style.display = 'grid';
-        else row.style.display = 'none';
-    });
-};
-
-window.loadStockRequestHistory = async function() {
-    let branch = localStorage.getItem('takodeal_device_branch');
-    const tbody = document.getElementById('stockReqHistoryBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading history...</td></tr>';
-
-    try {
-        const q = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(20));
-        const snap = await getDocs(q);
-
-        let html = '';
-        snap.forEach(doc => {
-            let d = doc.data();
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
-            
-            // 🔥 THE FIX: Map the colors and statuses to match HQ!
-            let statusBg = '#f1f5f9'; let statusColor = '#475569';
-            if (d.status === 'Pending') { statusBg = '#fef3c7'; statusColor = '#d97706'; }
-            else if (d.status === 'Drafting') { statusBg = '#bae6fd'; statusColor = '#0284c7'; d.status = 'Preparing (HQ)'; }
-            else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; d.status = 'Dispatch on the way 🚚'; }
-            else if (d.status === 'Completed') { statusBg = '#f1f5f9'; statusColor = '#64748b'; }
-            else if (d.status === 'Partially Dispatched') { statusBg = '#e0e7ff'; statusColor = '#0284c7'; }
-            else if (d.status === 'Delayed') { statusBg = '#fef2f2'; statusColor = '#dc2626'; d.status = 'Delayed (Out of Stock)'; }
-
-            let itemsList = d.items.map(i => `<div style="font-size: 11px; margin-bottom: 2px;">• <strong style="color:#0f172a;">${i.itemName}</strong> <span style="color:#ef4444;">(${i.requestType})</span></div>`).join('');
-            
-            // Show the manager's message if they pushed items back!
-            let msgHtml = d.managerMessage ? `<div style="margin-top: 5px; padding: 5px; background: white; border: 1px dashed #cbd5e1; font-size: 10px; color: #b91c1c; border-radius: 4px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
-
-            html += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${d.requestedBy || 'Staff'}</td>
-                    <td style="padding: 12px;">
-                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;">${d.status}</span>
-                        ${msgHtml}
-                    </td>
-                    <td style="padding: 12px;">${itemsList}</td>
-                </tr>
-            `;
-        });
-
-        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 20px;">No requests found.</td></tr>';
-    } catch(e) {
-        console.error(e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history.</td></tr>';
     }
 };
 
