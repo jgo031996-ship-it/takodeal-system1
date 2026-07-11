@@ -4399,23 +4399,54 @@ window.processStoreUse = async function() {
 };
 
 // ========================================================
-// 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES)
+// 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES & AUTO-SAVE)
 // ========================================================
 window.stockReqItemsFlat = [];
+
+// 🔥 NEW: The Silent Auto-Save Engine
+window.saveReqDraft = function() {
+    let draft = {};
+    document.querySelectorAll('.req-type-select').forEach(select => {
+        if (select.value !== "None") {
+            let id = select.getAttribute('data-id');
+            let countEl = document.getElementById(`actualCount_${id}`);
+            draft[id] = {
+                type: select.value,
+                count: countEl ? countEl.value : ""
+            };
+        }
+    });
+    localStorage.setItem('takodeal_stock_req_draft', JSON.stringify(draft));
+};
 
 window.loadStockRequestUI = async function() {
     let container = document.getElementById('stockReqList');
     if (!container) return;
     container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Fetching live inventory & HQ status...</div>';
 
+    // 🔥 NEW: CSS Injection to prevent the History Tab from overflowing the white box!
+    if (!document.getElementById('historyOverflowFix')) {
+        document.head.insertAdjacentHTML('beforeend', `
+            <style id="historyOverflowFix">
+                /* Forces long lists of requested items to scroll instead of breaking the UI */
+                td div[style*="color"], td ul {
+                    max-height: 150px;
+                    overflow-y: auto;
+                    padding-right: 5px;
+                    display: block;
+                }
+            </style>
+        `);
+    }
+
     try {
         // 1. Fetch Branch Inventory
-        const qBranch = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch));
-        const snapBranch = await getDocs(qBranch);
+        const qBranch = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.sessionUser.branch));
+        const snapBranch = await window.getDocs(qBranch);
 
         // 2. Fetch Main Office Inventory (To see if HQ has stock!)
-        const qHQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
-        const snapHQ = await getDocs(qHQ);
+        const qHQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office"));
+        const snapHQ = await window.getDocs(qHQ);
         let hqStockMap = {};
         snapHQ.forEach(doc => { hqStockMap[doc.data().name] = parseFloat(doc.data().currentStock || 0); });
 
@@ -4461,20 +4492,40 @@ window.loadStockRequestUI = async function() {
                         <span style="font-size: 10px; color: #94a3b8;">${item.uom || 'units'}</span>
                     </div>
                     <div>
-                        <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="window.toggleActualCount('${item.id}')">
+                        <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="if(typeof window.toggleActualCount === 'function') window.toggleActualCount('${item.id}'); window.saveReqDraft();">
                             <option value="None">--- Normal ---</option>
                             <option value="Low Stock">⚠️ Low Stock</option>
                             <option value="Out of Stock">❌ Out of Stock</option>
                         </select>
                     </div>
                     <div>
-                        <input type="number" id="actualCount_${item.id}" placeholder="Count?" class="input-box" style="text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; display: none; width: 100%; box-sizing: border-box;">
+                        <input type="number" id="actualCount_${item.id}" placeholder="Count?" class="input-box" style="text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; display: none; width: 100%; box-sizing: border-box;" oninput="window.saveReqDraft()">
                     </div>
                 </div>`;
             });
         });
 
         container.innerHTML = html;
+
+        // 🔥 NEW: MEMORY RESTORE ENGINE
+        try {
+            let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
+            if (savedDraft) {
+                for (let id in savedDraft) {
+                    let select = document.getElementById(`reqType_${id}`);
+                    let countEl = document.getElementById(`actualCount_${id}`);
+                    
+                    if (select && savedDraft[id].type && savedDraft[id].type !== "None") {
+                        select.value = savedDraft[id].type;
+                        if (typeof window.toggleActualCount === 'function') window.toggleActualCount(id);
+                    }
+                    if (countEl && savedDraft[id].count !== "") {
+                        countEl.value = savedDraft[id].count;
+                    }
+                }
+            }
+        } catch(e) { console.log("No drafts found."); }
+
     } catch (e) {
         console.error(e); container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load inventory.</div>';
     }
@@ -5526,7 +5577,9 @@ window.submitStockRequest = async function() {
                 isRead: false
             });
         }
-
+        // 🔥 WIPE THE DRAFT MEMORY AFTER A SUCCESSFUL SEND!
+        localStorage.removeItem('takodeal_stock_req_draft');
+      
         Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted. Check the History tab to track it.', 'success');
         window.loadStockRequestUI(); 
         window.switchStockReqTab('History'); 
