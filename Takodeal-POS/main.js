@@ -392,15 +392,24 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     if (!window.masterPOSData) window.masterPOSData = {};
     if (!window.cart) window.cart = [];
 
+    // 🔥 THE BASE NAME FIX: We strip the size (e.g. "15 Pcs") off the name so Firebase can find the original product!
+    let baseName = name;
+    let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad)$/i);
+    if (match) {
+        baseName = match[1].trim();
+    }
+
     if (existingItem) { 
         window.pendingItem = JSON.parse(JSON.stringify(existingItem)); 
         window.editIndex = window.cart.indexOf(existingItem); 
+        // 🔥 THE REALNAME FIX: Guarantee the realName is set so the Add-on query doesn't crash
+        window.pendingItem.realName = window.pendingItem.realName || window.pendingItem.name;
     } else { 
         window.pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
         window.editIndex = -1; 
     }
 
-    let phantomSizes = window.masterPOSData.phantomVariants ? window.masterPOSData.phantomVariants[name] : null;
+    let phantomSizes = window.masterPOSData.phantomVariants ? window.masterPOSData.phantomVariants[baseName] : null;
     let hasSizes = phantomSizes && phantomSizes.length > 0;
     
     if (hasSizes && !existingItem) {
@@ -557,7 +566,8 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             if (customArea) {
                 if (hasMixMatch) {
                     itemData.mixMatchFlavors.forEach(flavor => {
-                        window.mixMatchState[flavor] = 0;
+                        // 🔥 THE MEMORY RESTORE FIX: Remembers your Mix & Match quantities!
+                        window.mixMatchState[flavor] = (existingItem && existingItem.mixMatchState && existingItem.mixMatchState[flavor]) ? existingItem.mixMatchState[flavor] : 0;
                     });
                     
                     customArea.style.display = 'block';
