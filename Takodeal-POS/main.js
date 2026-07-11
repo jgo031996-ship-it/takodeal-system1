@@ -4748,7 +4748,10 @@ window.submitStockRequest = async function() {
     selects.forEach(select => {
         if (select.value !== "None") {
             let id = select.getAttribute('data-id');
-            let itemData = window.globalHqStockCache.find(i => i.id === id);
+            
+            // 🔥 THE BUG FIX: Look inside the flat list we rendered on screen, NOT the old HQ cache!
+            let itemData = window.stockReqItemsFlat.find(i => i.id === id);
+            
             if (!itemData) return; 
 
             let actualCountEl = document.getElementById(`actualCount_${id}`);
@@ -4802,7 +4805,7 @@ window.submitStockRequest = async function() {
             });
         }
 
-        // Wipe memory
+        // Wipe memory so the next request is fresh
         localStorage.removeItem('takodeal_stock_req_draft');
         
         Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted securely.', 'success');
