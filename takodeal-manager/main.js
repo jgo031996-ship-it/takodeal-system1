@@ -4629,9 +4629,28 @@ window.openBomEditor = async function (menuItemName) {
       document.getElementById('advProdId').value = menuSnap.docs[0].id;
       document.getElementById('advProdCat').value = mData.category || '';
       document.getElementById('advProdPrice').value = mData.price || 0;
+      
       // Load the Mix & Match flavors into the box!
       let mixInput = document.getElementById('advProdMixMatch');
-      if (mixInput) mixInput.value = mData.mixMatchFlavors ? mData.mixMatchFlavors.join(', ') : "";
+      if (mixInput) {
+          mixInput.value = mData.mixMatchFlavors ? mData.mixMatchFlavors.join(', ') : "";
+          
+          // 🔥 INJECT THE MAPPING CONTAINER DYNAMICALLY
+          let mappingDiv = document.getElementById('mixMatchMappingContainer');
+          if (!mappingDiv) {
+              mappingDiv = document.createElement('div');
+              mappingDiv.id = 'mixMatchMappingContainer';
+              mappingDiv.style.marginTop = '15px';
+              mixInput.parentNode.appendChild(mappingDiv);
+          }
+          
+          // Attach live typing listener
+          mixInput.oninput = window.renderMixMatchConfig;
+          
+          // Load existing memory
+          window.currentMixMatchConfig = mData.mixMatchConfig || [];
+          window.renderMixMatchConfig();
+      }
     }
 
     const bomQ = query(collection(db, "bom"), where("menuItem", "==", menuItemName));
@@ -4660,6 +4679,47 @@ window.openBomEditor = async function (menuItemName) {
   } catch (e) {
     console.error(e); alert("Failed to load product details.");
   }
+};
+
+// ========================================================
+// 🐙 MIX & MATCH INVENTORY LINKER ENGINE
+// ========================================================
+window.renderMixMatchConfig = function() {
+    let container = document.getElementById('mixMatchMappingContainer');
+    let mixInput = document.getElementById('advProdMixMatch');
+    if (!container || !mixInput) return;
+    
+    let flavorsRaw = mixInput.value;
+    let flavors = flavorsRaw.split(',').map(s => s.trim()).filter(Boolean);
+    
+    if (flavors.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = `<div style="font-size: 11px; font-weight: bold; color: #b91c1c; margin-bottom: 8px; border-top: 1px dashed #fca5a5; padding-top: 10px;">🔗 LINK FLAVORS TO INVENTORY (Qty to deduct per 1 piece)</div>`;
+    
+    flavors.forEach(flavor => {
+        let existing = (window.currentMixMatchConfig || []).find(c => c.flavor === flavor) || {};
+        
+        // Re-use the pre-loaded inventory dropdown options from the Add-ons module
+        let dropdownHtml = window.cachedInventoryOptions || '<option value="">-- Loading... --</option>';
+        if (existing.linkedIngredient) {
+            dropdownHtml = dropdownHtml.replace(`value="${existing.linkedIngredient}"`, `value="${existing.linkedIngredient}" selected`);
+        }
+
+        html += `
+            <div class="mix-match-row" data-flavor="${flavor}" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px; background: #fff1f2; padding: 8px; border-radius: 6px; border: 1px solid #fecaca;">
+                <div style="flex: 1; font-weight: bold; color: #9f1239; font-size: 13px;">🐙 ${flavor}</div>
+                <select class="mm-ingredient input-box" style="flex: 2; padding: 6px; font-size: 12px; border: 1px solid #fca5a5; outline: none; border-radius: 4px; background: white; color: #1e293b;">
+                    ${dropdownHtml}
+                </select>
+                <input type="number" class="mm-qty input-box" placeholder="Qty deduct" value="${existing.deductQty || ''}" style="width: 80px; padding: 6px; font-size: 12px; border: 1px solid #fca5a5; outline: none; border-radius: 4px; text-align: center; font-weight: bold; color: #b91c1c;">
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
 };
 
 window.autoLoadCategoryAddons = async function() {
@@ -4825,9 +4885,22 @@ window.saveAdvancedProduct = async function () {
   let prodName = document.getElementById('advProdName').value.trim();
   let category = document.getElementById('advProdCat').value.trim();
   let price = parseFloat(document.getElementById('advProdPrice').value) || 0;
+  
   // Grab the Mix and Match flavors!
   let mixMatchRaw = document.getElementById('advProdMixMatch') ? document.getElementById('advProdMixMatch').value : "";
   let mixMatchArr = mixMatchRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+  // 🔥 GATHER THE MIX & MATCH INVENTORY CONFIGURATIONS
+  let mixMatchConfigArray = [];
+  document.querySelectorAll('.mix-match-row').forEach(row => {
+      let flavor = row.getAttribute('data-flavor');
+      let ingredient = row.querySelector('.mm-ingredient').value;
+      let qty = parseFloat(row.querySelector('.mm-qty').value) || 0;
+      
+      if (ingredient && qty > 0) {
+          mixMatchConfigArray.push({ flavor: flavor, linkedIngredient: ingredient, deductQty: qty });
+      }
+  });
 
   // Anti-Blank Name Shield
   if (!prodName) {
@@ -4837,7 +4910,7 @@ window.saveAdvancedProduct = async function () {
   }
 
   try {
-    // 🍟 NEW: GATHER ALL ADD-ONS BEFORE SAVING
+    // 🍟 GATHER ALL ADD-ONS BEFORE SAVING
     let addonsArray = [];
     document.querySelectorAll('#addonTableBody tr').forEach(row => {
       let nameInput = row.querySelector('.addon-name');
@@ -4853,7 +4926,7 @@ window.saveAdvancedProduct = async function () {
       }
     });
 
-    // 1. Save Menu Details AND Add-ons (Update OR Create New)
+    // 1. Save Menu Details AND Add-ons AND MixMatch configs!
     if (menuId) {
       await updateDoc(doc(db, "menu", menuId), { 
           name: prodName, 
@@ -4861,7 +4934,8 @@ window.saveAdvancedProduct = async function () {
           price: price,
           basePrice: price, 
           addons: addonsArray,
-          mixMatchFlavors: mixMatchArr // 🔥 NEW!
+          mixMatchFlavors: mixMatchArr,
+          mixMatchConfig: mixMatchConfigArray // 🔥 NEW!
       });
     } else {
       let newMenuRef = await addDoc(collection(db, "menu"), { 
@@ -4870,7 +4944,8 @@ window.saveAdvancedProduct = async function () {
           price: price,
           basePrice: price, 
           addons: addonsArray,
-          mixMatchFlavors: mixMatchArr // 🔥 NEW!
+          mixMatchFlavors: mixMatchArr,
+          mixMatchConfig: mixMatchConfigArray // 🔥 NEW!
       });
       document.getElementById('advProdId').value = newMenuRef.id;
     }
@@ -4900,8 +4975,7 @@ window.saveAdvancedProduct = async function () {
       }
     }
 
-    // 🔥 NEW: Updated Success Message!
-    alert("✅ Product, Recipe, and Add-ons saved successfully!");
+    alert("✅ Product, Recipe, Add-ons, and Flavors saved successfully!");
         
     // 1. Safely close the modal
     let modal = document.getElementById('advancedProductModal');
