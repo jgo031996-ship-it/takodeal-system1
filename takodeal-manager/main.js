@@ -15800,3 +15800,106 @@ window.renderGmmMapping = async function() {
     });
     container.innerHTML = html;
 };
+
+// ==========================================
+// 📢 CORPORATE BULLETIN & AI ENGINE
+// ==========================================
+
+// --- THE MINI GEMINI AI PROMPT BUILDER ---
+window.generateAIPrompt = function() {
+    let idea = document.getElementById('aiRoughIdea').value.trim();
+    let style = document.getElementById('aiStyle').value;
+    if (!idea) return Swal.fire('Oops', 'Type a rough idea first!', 'warning');
+
+    let finalPrompt = `Create an image with the following requirements. \n\nCONTENT: A professional announcement poster conveying this message: "${idea}". \n\nSTYLE: ${style}, extremely high resolution, 8k, aspect ratio 16:9. \n\nTEXT: Ensure any visible text is large, legible, and directly related to the content.`;
+    
+    document.getElementById('aiFinalPrompt').value = finalPrompt;
+};
+
+window.copyAIPrompt = function() {
+    let copyText = document.getElementById('aiFinalPrompt');
+    copyText.select();
+    document.execCommand("copy");
+    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Copied! Paste into Google Gemini.', showConfirmButton: false, timer: 2000});
+};
+
+// --- PUBLISH TO TABLETS ---
+window.publishAnnouncement = async function() {
+    let title = document.getElementById('announceTitle').value.trim();
+    let fileInput = document.getElementById('announceImages');
+    if (!title || fileInput.files.length === 0) return Swal.fire('Error', 'Title and at least 1 image required.', 'error');
+
+    let btn = document.getElementById('btnPublishAnnounce');
+    btn.innerText = "⏳ Uploading Images..."; btn.disabled = true;
+
+    try {
+        let imageUrls = [];
+        for (let i = 0; i < fileInput.files.length; i++) {
+            let file = fileInput.files[i];
+            let ext = file.name.split('.').pop();
+            let storageRef = ref(window.storage, `announcements/${Date.now()}_${i}.${ext}`);
+            let snapshot = await uploadBytes(storageRef, file);
+            let url = await getDownloadURL(snapshot.ref);
+            imageUrls.push(url);
+        }
+
+        btn.innerText = "⏳ Pushing to Tablets...";
+        
+        await addDoc(collection(db, "announcements"), {
+            title: title,
+            images: imageUrls,
+            active: true, 
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire('✅ Published!', 'The announcement is now live on all tablets.', 'success');
+        document.getElementById('announceTitle').value = '';
+        fileInput.value = '';
+        window.loadAnnouncementHistory();
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Upload failed.', 'error');
+    } finally {
+        btn.innerText = "🚀 Push to All Tablets"; btn.disabled = false;
+    }
+};
+
+window.loadAnnouncementHistory = async function() {
+    const tbody = document.getElementById('announcementHistoryBody');
+    if (!tbody) return;
+    
+    try {
+        const q = query(collection(db, "announcements"), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        for (let docSnap of snap.docs) {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Just now';
+            let status = d.active ? '<span style="color:#16a34a; font-weight:bold; background:#dcfce7; padding:4px 8px; border-radius:4px;">Active (Forced)</span>' : '<span style="color:#64748b; font-weight:bold; background:#f1f5f9; padding:4px 8px; border-radius:4px;">Archived</span>';
+            
+            // Count signatures!
+            const sigQ = query(collection(db, "acknowledgments"), where("announcementId", "==", docSnap.id));
+            const sigSnap = await getDocs(sigQ);
+            let sigCount = sigSnap.size;
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px; color: #475569; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight:bold; color: #1e293b; font-size: 15px;">${d.title}</td>
+                    <td style="padding: 12px;">${status}</td>
+                    <td style="padding: 12px; text-align: right;">
+                        <span style="background: #e0e7ff; color: #4338ca; padding: 6px 12px; border-radius: 6px; font-weight: bold; margin-right:10px;">📝 ${sigCount} Signed</span>
+                        <button onclick="window.toggleAnnouncementStatus('${docSnap.id}', ${d.active})" style="background:white; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">Toggle Status</button>
+                    </td>
+                </tr>
+            `;
+        }
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding:20px;">No announcements published yet.</td></tr>';
+    } catch(e) { console.error(e); }
+};
+
+window.toggleAnnouncementStatus = async function(id, currentState) {
+    await updateDoc(doc(db, "announcements", id), { active: !currentState });
+    window.loadAnnouncementHistory();
+};
