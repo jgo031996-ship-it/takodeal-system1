@@ -16126,3 +16126,153 @@ setTimeout(() => {
         }
     };
 }, 1500);
+
+// ==========================================
+// 📈 LIFETIME REMITTANCE & TREND ENGINE
+// ==========================================
+
+window.loadRemittanceAnalytics = async function() {
+    const lifetimeContainer = document.getElementById('lifetimeRemittanceTabs');
+    const ctx = document.getElementById('remittanceTrendChart');
+    if (!lifetimeContainer) return;
+
+    lifetimeContainer.innerHTML = '<div style="color:#64748b; font-weight:bold; padding: 15px;">⏳ Calculating entire network history...</div>';
+
+    try {
+        // 1. Fetch ALL transfers (Ignoring top filters entirely!)
+        const snap = await getDocs(collection(db, "cash_transfers"));
+        
+        let branchLifetime = {};
+        let branchMonthly = {}; 
+        let allMonths = new Set();
+
+        snap.forEach(doc => {
+            let d = doc.data();
+            
+            // Look for completed remittances (Ignore internal HQ transfers)
+            let isApproved = d.status === 'Approved' || d.status === 'Completed';
+            let branchName = d.branch || d.fromBranch || (d.fromAccount ? d.fromAccount.split(' - ')[0] : null);
+            
+            if (isApproved && branchName && branchName !== 'Main Office' && branchName !== 'HQ') {
+                let amt = parseFloat(d.amount) || 0;
+
+                // Tally Lifetime Total
+                if (!branchLifetime[branchName]) branchLifetime[branchName] = 0;
+                branchLifetime[branchName] += amt;
+
+                // Tally Monthly Trend Graph
+                if (d.timestamp) {
+                    let dateObj = d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp);
+                    // Format as "Jan 2026", "Feb 2026"
+                    let monthStr = dateObj.toLocaleString('en-US', { month: 'short', year: 'numeric' }); 
+                    allMonths.add(monthStr);
+
+                    if (!branchMonthly[branchName]) branchMonthly[branchName] = {};
+                    if (!branchMonthly[branchName][monthStr]) branchMonthly[branchName][monthStr] = 0;
+                    branchMonthly[branchName][monthStr] += amt;
+                }
+            }
+        });
+
+        // 2. 🏆 RENDER THE LIFETIME BOXES
+        let lifetimeHtml = '';
+        let colors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'];
+        let colorIdx = 0;
+
+        if (Object.keys(branchLifetime).length === 0) {
+            lifetimeHtml = '<div style="flex: 1; text-align: center; padding: 15px; color: #ef4444; font-weight:bold;">No approved remittances found on record.</div>';
+        } else {
+            // Sort branches alphabetically
+            let sortedBranches = Object.keys(branchLifetime).sort();
+            
+            for (const branch of sortedBranches) {
+                let total = branchLifetime[branch];
+                let color = colors[colorIdx % colors.length];
+                lifetimeHtml += `
+                    <div style="flex: 1; min-width: 200px; background: white; border: 1px solid #cbd5e1; border-left: 5px solid ${color}; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                        <div style="font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">${branch}</div>
+                        <div style="font-size: 22px; font-weight: 900; color: #0f172a; margin-top: 5px;">₱${total.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                    </div>
+                `;
+                colorIdx++;
+            }
+        }
+        lifetimeContainer.innerHTML = lifetimeHtml;
+
+        // 3. 📈 RENDER THE TREND GRAPH
+        if (!ctx) return;
+        
+        // Sort months chronologically so the graph flows left to right
+        let sortedMonths = Array.from(allMonths).sort((a, b) => new Date(a) - new Date(b));
+        
+        let datasets = [];
+        colorIdx = 0;
+        
+        for (const branch of Object.keys(branchMonthly).sort()) {
+            let dataPoints = sortedMonths.map(m => branchMonthly[branch][m] || 0);
+            datasets.push({
+                label: branch,
+                data: dataPoints,
+                borderColor: colors[colorIdx % colors.length],
+                backgroundColor: colors[colorIdx % colors.length] + '33', // 20% opacity fill
+                borderWidth: 3,
+                tension: 0.4, // Makes the line smoothly curved
+                fill: true,
+                pointBackgroundColor: 'white',
+                pointBorderColor: colors[colorIdx % colors.length],
+                pointRadius: 4
+            });
+            colorIdx++;
+        }
+
+        // Destroy old chart if it exists to prevent overlapping glitches
+        if (window.remittanceChartInstance) {
+            window.remittanceChartInstance.destroy();
+        }
+
+        window.remittanceChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: sortedMonths,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { font: { weight: 'bold', family: 'Segoe UI' } } },
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleFont: { size: 14 },
+                        bodyFont: { size: 14, weight: 'bold' },
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ₱' + context.raw.toLocaleString(undefined, {minimumFractionDigits:2});
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { weight: 'bold' } } },
+                    y: { 
+                        beginAtZero: true,
+                        grid: { borderDash: [5, 5] },
+                        ticks: { 
+                            font: { weight: 'bold' },
+                            callback: function(value) { return '₱' + value.toLocaleString(); } 
+                        }
+                    }
+                }
+            }
+        });
+
+    } catch(e) {
+        console.error("Error loading remittance analytics:", e);
+        lifetimeContainer.innerHTML = '<div style="color:#ef4444; padding:15px; font-weight:bold;">Failed to load lifetime data. Check console.</div>';
+    }
+};
+
+// Hook this engine so it runs automatically when you open the Hub!
+window.loadCashFlowHub = window.loadRemittanceAnalytics;
