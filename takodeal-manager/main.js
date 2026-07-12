@@ -12589,54 +12589,69 @@ window.downloadScheduleImage = function() {
 // ==========================================
 // 📘 LEDGER & VALES HISTORY VIEWER
 // ==========================================
-window.viewLedgerHistory = async function(staffName) {
-    document.getElementById('ledgerHistoryModal').style.display = 'flex';
+window.openLedgerHistory = async function(staffName) {
     document.getElementById('ledgerHistorySubtitle').innerText = staffName;
+    document.getElementById('ledgerHistoryModal').style.display = 'flex';
+    
     const tbody = document.getElementById('ledgerHistoryBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Fetching records...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: #64748b; font-weight: bold;">Loading complete financial ledger...</td></tr>';
 
     try {
-        const q = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), orderBy("dateAdded", "desc"));
+        // Fetch ALL records for this staff member (Loans, Vales, Payments, etc.)
+        const q = query(collection(db, "staff_deductions"), where("staffName", "==", staffName));
         const snap = await getDocs(q);
-        
+
+        if (snap.empty) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: #94a3b8; font-style: italic;">No financial history on record.</td></tr>';
+            return;
+        }
+
+        let historyData = [];
+        snap.forEach(docSnap => historyData.push({ id: docSnap.id, ...docSnap.data() }));
+
+        // Sort locally by date (Newest first) so we don't trigger a Firebase Index error!
+        historyData.sort((a, b) => (b.dateAdded?.toDate() || 0) - (a.dateAdded?.toDate() || 0));
+
         let html = '';
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
-            let dateStr = data.dateAdded ? data.dateAdded.toDate().toLocaleString('en-PH') : 'Unknown';
-            let statusBadge = data.status === "Paid" 
-                ? `<span style="background: #dcfce7; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">Paid</span>`
-                : `<span style="background: #fef2f2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">Unpaid</span>`;
+        historyData.forEach(d => {
+            let dateStr = d.dateAdded ? d.dateAdded.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown Date';
+            let remarks = d.remarks || d.notes || 'None';
+            let type = d.type || 'Deduction';
+            let amount = parseFloat(d.amount) || 0;
             
-            // 🔥 NEW: MANUAL OVERRIDE BUTTON FOR STUCK VALES
-            let overrideBtn = data.status === "Unpaid"
-                ? `<button onclick="window.forceMarkDeductionPaid('${docSnap.id}', '${staffName}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;">Mark Paid</button>`
-                : `<span style="font-size:11px; color:#94a3b8;">Cleared</span>`;
+            // Dynamic Badge Styling
+            let statusBadge = '';
+            if (d.status === 'Paid') {
+                statusBadge = '<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">Paid</span>';
+            } else if (d.status === 'Unpaid') {
+                statusBadge = '<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">Unpaid</span>';
+            } else {
+                statusBadge = `<span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${d.status || 'Active'}</span>`;
+            }
+
+            // Dynamic Money Formatting (Green for Payments, Red for Debts)
+            let amountFmt = '';
+            if (type.includes('Payment') || type.includes('Auto-Deduct')) {
+                amountFmt = `<span style="color: #16a34a; font-weight: 900; font-size: 14px;">+ ₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>`;
+            } else {
+                amountFmt = `<span style="color: #dc2626; font-weight: 900; font-size: 14px;">- ₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>`;
+            }
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.type}</td>
-                    <td style="padding: 12px; font-style: italic; color: #475569;">System Deduction</td>
-                    <td style="padding: 12px;">${statusBadge}</td>
-                    <td style="padding: 12px; text-align: right; font-weight: bold; color: #ea580c;">₱${(data.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 12px; text-align: center;">${overrideBtn}</td>
+                    <td style="padding: 12px 10px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">${type}</td>
+                    <td style="padding: 12px 10px; font-size: 12px; color: #475569;">${remarks}</td>
+                    <td style="padding: 12px 10px;">${statusBadge}</td>
+                    <td style="padding: 12px 10px; text-align: right;">${amountFmt}</td>
                 </tr>
             `;
         });
-
-        // Inject a 6th column header dynamically
-        let headerRow = tbody.previousElementSibling.querySelector('tr');
-        if (headerRow.children.length === 5) {
-            let th = document.createElement('th');
-            th.style.cssText = "padding: 12px 10px; color: #475569; text-align: center;";
-            th.innerText = "Action";
-            headerRow.appendChild(th);
-        }
-
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No vales or meals on record.</td></tr>';
+        
+        tbody.innerHTML = html;
     } catch (e) {
         console.error("Ledger History Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: #dc2626; font-weight: bold;">Error loading history.</td></tr>';
     }
 };
 
