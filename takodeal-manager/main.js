@@ -15878,19 +15878,34 @@ window.loadAnnouncementHistory = async function() {
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Just now';
             let status = d.active ? '<span style="color:#16a34a; font-weight:bold; background:#dcfce7; padding:4px 8px; border-radius:4px;">Active (Forced)</span>' : '<span style="color:#64748b; font-weight:bold; background:#f1f5f9; padding:4px 8px; border-radius:4px;">Archived</span>';
             
-            // Count signatures!
+            // Fetch signatures and extract names!
             const sigQ = query(collection(db, "acknowledgments"), where("announcementId", "==", docSnap.id));
             const sigSnap = await getDocs(sigQ);
             let sigCount = sigSnap.size;
+            
+            // 🔥 THE FIX: Gather the names of everyone who signed
+            let signedNames = [];
+            sigSnap.forEach(sDoc => {
+                let staffName = sDoc.data().staffName || 'Unknown';
+                signedNames.push(staffName);
+            });
+            
+            // Format the names into a clean, comma-separated list
+            let namesDisplay = signedNames.length > 0 
+                ? `<div style="font-size: 11px; color: #64748b; margin-top: 8px; line-height: 1.4;"><b>Signed by:</b> <span style="color: #4338ca;">${signedNames.join(', ')}</span></div>`
+                : `<div style="font-size: 11px; color: #94a3b8; margin-top: 8px; font-style: italic;">No signatures yet</div>`;
 
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px; color: #475569; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 12px; font-weight:bold; color: #1e293b; font-size: 15px;">${d.title}</td>
                     <td style="padding: 12px;">${status}</td>
-                    <td style="padding: 12px; text-align: right;">
-                        <span style="background: #e0e7ff; color: #4338ca; padding: 6px 12px; border-radius: 6px; font-weight: bold; margin-right:10px;">📝 ${sigCount} Signed</span>
-                        <button onclick="window.toggleAnnouncementStatus('${docSnap.id}', ${d.active})" style="background:white; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">Toggle Status</button>
+                    <td style="padding: 12px; text-align: right; vertical-align: top;">
+                        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+                            <span style="background: #e0e7ff; color: #4338ca; padding: 6px 12px; border-radius: 6px; font-weight: bold;">📝 ${sigCount} Signed</span>
+                            <button onclick="window.toggleAnnouncementStatus('${docSnap.id}', ${d.active})" style="background:white; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">Toggle Status</button>
+                        </div>
+                        ${namesDisplay}
                     </td>
                 </tr>
             `;
