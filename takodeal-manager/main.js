@@ -15918,3 +15918,43 @@ window.toggleAnnouncementStatus = async function(id, currentState) {
     await updateDoc(doc(db, "announcements", id), { active: !currentState });
     window.loadAnnouncementHistory();
 };
+
+// ==========================================
+// 🏢 SMART HR ROUTING ENGINE
+// ==========================================
+window.navToHr = function(tabName) {
+    // 1. Visually update ALL copies of the nav bar instantly
+    document.querySelectorAll('.hr-tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-target') === tabName) {
+            btn.style.borderBottom = "3px solid #3b82f6";
+            btn.style.color = "#0f172a";
+        } else {
+            btn.style.borderBottom = "3px solid transparent";
+            btn.style.color = "#64748b";
+        }
+    });
+
+    // 2. Route to the correct Master View securely
+    if (tabName === 'Feed' || tabName === 'Sanctions') {
+        if (typeof window.switchView === 'function') window.switchView('payroll');
+        
+        // Find the cards inside view-payroll to toggle them dynamically
+        let feedCards = document.querySelectorAll('#view-payroll > .card');
+        let sanctionsEl = document.getElementById('payrollSectionSanctions');
+        
+        if (tabName === 'Feed') {
+            feedCards.forEach(card => card.style.display = 'block');
+            if (sanctionsEl) sanctionsEl.style.display = 'none';
+        } else {
+            feedCards.forEach(card => card.style.display = 'none');
+            if (sanctionsEl) sanctionsEl.style.display = 'block';
+            if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
+        }
+    } 
+    else if (tabName === 'Schedule') {
+        if (typeof window.switchView === 'function') window.switchView('schedule');
+    } 
+    else if (tabName === 'Ledger') {
+        if (typeof window.switchView === 'function') window.switchView('ledger');
+    }
+};
