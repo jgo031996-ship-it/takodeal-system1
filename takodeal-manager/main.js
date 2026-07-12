@@ -11437,9 +11437,12 @@ window.renderGlobalAddons = function() {
     window.globalAddonsCache.forEach((d, index) => {
         let safeName = d.name ? d.name.replace(/'/g, "\\'") : '';
         let safeIng = d.linkedIngredient ? d.linkedIngredient.replace(/'/g, "\\'") : '';
-        let safeCat = d.category ? d.category.replace(/'/g, "\\'") : 'All';
+        
+        // 🔥 THE FIX: Safely check if the category is a list. If it is, join it with commas!
+        let catStr = Array.isArray(d.category) ? d.category.join(', ') : (d.category || 'All');
+        let safeCat = catStr.replace(/'/g, "\\'");
 
-        // 🔥 THE FIX: Added data-id="${d.id}" to the row so the computer can track it!
+        // Added 'white-space: normal' to the category badge so long lists wrap nicely instead of stretching the table!
         html += `
             <tr data-id="${d.id}" draggable="true"
                 ondragstart="window.handleAddonDragStart(event)"
@@ -11456,7 +11459,7 @@ window.renderGlobalAddons = function() {
                 <td style="font-weight: bold; color: #1e293b; padding: 12px;">${d.name}</td>
                 <td style="font-weight: bold; color: #16a34a; padding: 12px;">₱${d.price}</td>
                 <td style="color: #64748b; padding: 12px;">${d.linkedIngredient || 'None'} <span style="font-size:11px;">(Deducts: ${d.deductQty || 0})</span></td>
-                <td style="padding: 12px;"><span class="badge badge-open">${d.category || 'All'}</span></td>
+                <td style="padding: 12px;"><span class="badge badge-open" style="white-space: normal; text-align: center; line-height: 1.4;">${catStr}</span></td>
                 <td style="padding: 12px; display:flex; gap: 5px;">
                     <button onclick="window.openGlobalAddonModal('${d.id}', '${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}', '${safeCat}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
                     <button onclick="window.duplicateGlobalAddon('${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📋 Clone</button>
