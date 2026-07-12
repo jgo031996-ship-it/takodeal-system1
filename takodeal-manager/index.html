@@ -1011,6 +1011,19 @@
           </table>
         </div>
       </div>
+      <!-- 📈 NEW: LIFETIME REMITTANCE TREND GRAPH -->
+      <div class="card" style="margin-top: 20px; border-top: 4px solid #10b981;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0; color: #047857;">📈 Branch Remittance Trends</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Visualizing monthly remittance performance across all active branches. (Unfiltered)</span>
+          </div>
+          <button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 8px 15px;" onclick="window.loadRemittanceAnalytics()">🔄 Refresh Graph</button>
+        </div>
+        <div style="padding: 20px; position: relative; height: 350px; width: 100%;">
+          <canvas id="remittanceTrendChart"></canvas>
+        </div>
+      </div>
 
     </div>
 
