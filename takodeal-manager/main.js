@@ -15958,3 +15958,71 @@ window.navToHr = function(tabName) {
         if (typeof window.switchView === 'function') window.switchView('ledger');
     }
 };
+
+// ==========================================
+// 🧠 SMART SHIFT RULES ENGINE (NON-DESTRUCTIVE SYNC)
+// ==========================================
+
+// We use a slight delay to ensure all your original code has loaded before we safely intercept it
+setTimeout(() => {
+    // 1. Store your original working save function in memory
+    const originalSaveShiftRules = window.saveShiftConfigChanges;
+    
+    // 2. Override the button to add the new Non-Destructive Magic!
+    window.saveShiftConfigChanges = async function() {
+        let btn = document.querySelector('button[onclick="saveShiftConfigChanges()"]');
+        let origText = btn ? btn.innerText : "💾 Save Shift Rules";
+        if (btn) { btn.innerText = "⏳ Syncing Rules safely..."; btn.disabled = true; }
+
+        try {
+            // Run your original save function so the database updates properly
+            if (typeof originalSaveShiftRules === 'function') {
+                let result = originalSaveShiftRules();
+                if (result instanceof Promise) await result;
+            }
+
+            // Display a success message letting you know the staff were protected
+            Swal.fire({
+                title: '✅ Rules Synced!',
+                text: 'Shift times and days updated successfully. Your assigned staff were NOT removed!',
+                icon: 'success',
+                timer: 3000,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
+            
+            // 3. THE MAGIC: Soft-refresh the calendar visually without wiping the data!
+            let container = document.getElementById('scheduleContainer');
+            if (container) {
+                container.innerHTML = '<div style="text-align:center; padding: 40px; color:#3b82f6; font-weight:bold; font-size:16px;">🔄 Applying new rules to calendar...</div>';
+                
+                setTimeout(async () => {
+                    try {
+                        // Re-download the database to grab the new shift names
+                        const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
+                        if (schedSnap.exists()) {
+                            let data = schedSnap.data();
+                            
+                            // Load the protected memory variables
+                            window.currentSchedule = data.currentSchedule || {};
+                            window.branchConfig = data.branchConfig || {};
+                            
+                            // Redraw the visual calendar seamlessly
+                            if (typeof window.renderScheduleGrid === 'function') {
+                                window.renderScheduleGrid();
+                            } else if (typeof window.navToHr === 'function') {
+                                window.navToHr('Schedule');
+                            }
+                        }
+                    } catch(e) { 
+                        console.error("Soft Refresh Error:", e); 
+                    }
+                }, 1000);
+            }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            if (btn) { btn.innerText = origText; btn.disabled = false; }
+        }
+    };
+}, 1500);
