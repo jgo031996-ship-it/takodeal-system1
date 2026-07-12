@@ -11388,6 +11388,8 @@ window.loadGlobalAddons = async function() {
                     <p style="margin: 4px 0 0 0; font-size: 12px; color: #92400e;">Use the Up/Down arrows to arrange your add-ons, then click <b>Save Display Order</b>. Click <b>Mass Sync</b> to push updates to the menu.</p>
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <!-- 🔥 THE BUG FIX: The Global Mix & Match button is now hardcoded securely! -->
+                    <button onclick="window.openGlobalMixMatchModal()" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);">🐙 Global Mix & Match</button>
                     <button onclick="window.saveGlobalAddonLayout()" id="btnSaveAddonOrder" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save Display Order</button>
                     <button onclick="window.extractAddonsToGlobal()" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">📥 Extract</button>
                     <button id="btnMassSyncAddons" onclick="window.syncGlobalAddonsToMenu()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">🔄 Mass Sync</button>
@@ -11427,7 +11429,7 @@ window.loadGlobalAddons = async function() {
         });
         
         window.globalAddonsCache = addons;
-        window.renderGlobalAddons();
+        if(typeof window.renderGlobalAddons === 'function') window.renderGlobalAddons();
     } catch(e) { console.error(e); }
 };
 
