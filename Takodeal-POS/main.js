@@ -6532,15 +6532,20 @@ window.nextBulletinSlide = function() {
     }
 };
 
-// --- THE INDEPENDENT SIGNATURE PAD ---
+// --- THE INDEPENDENT SIGNATURE PAD (FIXED) ---
 window.initBulletinSignaturePad = function() {
-    const canvas = document.getElementById('bulletinCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    let oldCanvas = document.getElementById('bulletinCanvas');
+    if (!oldCanvas) return;
+    
+    // Safely reset the canvas so old signatures don't get stuck
+    let newCanvas = oldCanvas.cloneNode(true);
+    oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
+    
+    const ctx = newCanvas.getContext('2d');
     let isDrawing = false;
 
     window.hasSignedBulletin = false;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, newCanvas.width, newCanvas.height);
     ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#0f766e';
 
     const startPosition = (e) => { isDrawing = true; window.hasSignedBulletin = true; draw(e); };
@@ -6548,14 +6553,19 @@ window.initBulletinSignaturePad = function() {
     const draw = (e) => {
         if (!isDrawing) return;
         e.preventDefault();
-        let x, y; const rect = canvas.getBoundingClientRect();
-        if (e.type.includes('touch')) { x = e.touches[0].clientX - rect.left; y = e.touches[0].clientY - rect.top; }
-        else { x = e.clientX - rect.left; y = e.clientY - rect.top; }
+        let x, y; 
+        // 🔥 THE FIX: Tell the pen to draw on the NEW active canvas, not the old deleted one!
+        const rect = newCanvas.getBoundingClientRect(); 
+        if (e.type.includes('touch')) { 
+            x = e.touches[0].clientX - rect.left; 
+            y = e.touches[0].clientY - rect.top; 
+        } else { 
+            x = e.clientX - rect.left; 
+            y = e.clientY - rect.top; 
+        }
         ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y);
     };
 
-    canvas.replaceWith(canvas.cloneNode(true));
-    const newCanvas = document.getElementById('bulletinCanvas');
     newCanvas.addEventListener('mousedown', startPosition);
     newCanvas.addEventListener('mousemove', draw);
     newCanvas.addEventListener('mouseup', stopPosition);
@@ -6570,7 +6580,7 @@ window.clearBulletinSignature = function() {
     if (canvas) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); window.hasSignedBulletin = false; }
 };
 
-// --- SUBMITTING COMPLIANCE ---
+// --- SUBMITTING COMPLIANCE (FIXED) ---
 window.submitBulletinAcknowledgment = async function() {
     if (!window.hasSignedBulletin) {
         return Swal.fire('Signature Required', 'You must sign the pad to acknowledge reading this announcement.', 'error');
@@ -6586,11 +6596,12 @@ window.submitBulletinAcknowledgment = async function() {
         let cashier = localStorage.getItem('cashierName') || 'Staff';
 
         // 1. Save Signature to Database
-        await window.addDoc(window.collection(window.db, "acknowledgments"), {
+        await addDoc(collection(db, "acknowledgments"), {
             announcementId: announcement.id,
             staffName: cashier,
             signature: signatureBase64,
-            timestamp: window.serverTimestamp()
+            // 🔥 THE FIX: Use standard JavaScript Date so Firebase doesn't panic
+            timestamp: new Date() 
         });
 
         // 2. Move to the next unread announcement, or close if finished!
@@ -6600,6 +6611,7 @@ window.submitBulletinAcknowledgment = async function() {
             window.openBulletinModal();
             btn.innerText = "✅ Sign & Acknowledge"; btn.disabled = false;
         } else {
+            // Because we lowered the z-index, this alert will now pop up perfectly on top!
             Swal.fire({title: 'All Caught Up!', text: 'Thank you for reviewing the updates.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
             document.getElementById('bulletinModal').style.display = 'none';
         }
