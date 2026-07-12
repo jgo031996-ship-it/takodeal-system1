@@ -4780,9 +4780,7 @@ window.submitStockRequest = async function() {
         if (select.value !== "None") {
             let id = select.getAttribute('data-id');
             
-            // 🔥 THE BUG FIX: Look inside the flat list we rendered on screen, NOT the old HQ cache!
             let itemData = window.stockReqItemsFlat.find(i => i.id === id);
-            
             if (!itemData) return; 
 
             let actualCountEl = document.getElementById(`actualCount_${id}`);
@@ -4803,7 +4801,9 @@ window.submitStockRequest = async function() {
 
             if (select.value === "Low Stock" || select.value === "Out of Stock") {
                 if (actualCount < (sysStock - 1)) {
-                    fraudAlerts.push({ name: itemData.name, declared: rawCount, expected: sysStock, uom: displayUom });
+                    // 🔥 THE FIX: Convert the system's base stock (grams) into the chosen UOM (Packs) so the math makes sense!
+                    let expectedInDisplayUom = sysStock / convRate;
+                    fraudAlerts.push({ name: itemData.name, declared: rawCount, expected: expectedInDisplayUom, uom: displayUom });
                 }
             }
 
@@ -4831,7 +4831,8 @@ window.submitStockRequest = async function() {
         for (let alert of fraudAlerts) {
             await addDoc(collection(db, "manager_alerts"), {
                 type: "STOCK_REQUEST_FRAUD", branch: branch, cashier: cashier,
-                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(1)} ${alert.uom}. Possible missing stock!`,
+                // 🔥 THE FIX: Changed to toFixed(2) so it can perfectly display decimals like "2.25 Packs"
+                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(2)} ${alert.uom}. Possible missing stock!`,
                 timestamp: new Date(), isRead: false
             });
         }
