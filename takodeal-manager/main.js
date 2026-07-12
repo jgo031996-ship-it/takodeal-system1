@@ -15956,21 +15956,22 @@ window.loadAnnouncementHistory = async function() {
         for (let docSnap of snap.docs) {
             let d = docSnap.data();
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Just now';
-            let status = d.active ? '<span style="color:#16a34a; font-weight:bold; background:#dcfce7; padding:4px 8px; border-radius:4px;">Active (Forced)</span>' : '<span style="color:#64748b; font-weight:bold; background:#f1f5f9; padding:4px 8px; border-radius:4px;">Archived</span>';
             
-            // Fetch signatures and extract names!
+            // 🔥 THE FIX: Strictly define the boolean state so the button math never breaks
+            let isActive = d.active === true;
+            
+            let status = isActive ? '<span style="color:#16a34a; font-weight:bold; background:#dcfce7; padding:4px 8px; border-radius:4px;">Active (Forced)</span>' : '<span style="color:#64748b; font-weight:bold; background:#f1f5f9; padding:4px 8px; border-radius:4px;">Archived</span>';
+            
             const sigQ = query(collection(db, "acknowledgments"), where("announcementId", "==", docSnap.id));
             const sigSnap = await getDocs(sigQ);
             let sigCount = sigSnap.size;
             
-            // 🔥 THE FIX: Gather the names of everyone who signed
             let signedNames = [];
             sigSnap.forEach(sDoc => {
                 let staffName = sDoc.data().staffName || 'Unknown';
                 signedNames.push(staffName);
             });
             
-            // Format the names into a clean, comma-separated list
             let namesDisplay = signedNames.length > 0 
                 ? `<div style="font-size: 11px; color: #64748b; margin-top: 8px; line-height: 1.4;"><b>Signed by:</b> <span style="color: #4338ca;">${signedNames.join(', ')}</span></div>`
                 : `<div style="font-size: 11px; color: #94a3b8; margin-top: 8px; font-style: italic;">No signatures yet</div>`;
@@ -15983,7 +15984,7 @@ window.loadAnnouncementHistory = async function() {
                     <td style="padding: 12px; text-align: right; vertical-align: top;">
                         <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
                             <span style="background: #e0e7ff; color: #4338ca; padding: 6px 12px; border-radius: 6px; font-weight: bold;">📝 ${sigCount} Signed</span>
-                            <button onclick="window.toggleAnnouncementStatus('${docSnap.id}', ${d.active})" style="background:white; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">Toggle Status</button>
+                            <button onclick="window.toggleAnnouncementStatus('${docSnap.id}', ${isActive})" style="background:white; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; transition: 0.2s;">Toggle Status</button>
                         </div>
                         ${namesDisplay}
                     </td>
@@ -15995,8 +15996,27 @@ window.loadAnnouncementHistory = async function() {
 };
 
 window.toggleAnnouncementStatus = async function(id, currentState) {
-    await updateDoc(doc(db, "announcements", id), { active: !currentState });
-    window.loadAnnouncementHistory();
+    try {
+        // 🔥 THE FIX: Freeze the UI so the user can't spam click and crash the Firebase data stream!
+        Swal.fire({title: 'Updating Status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        // Guarantee the exact opposite state mathematically
+        let newState = (currentState === true) ? false : true;
+        
+        await updateDoc(doc(db, "announcements", id), { active: newState });
+        
+        await window.loadAnnouncementHistory();
+        
+        // Let the user know the state changed cleanly
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: newState ? 'Announcement Activated!' : 'Announcement Archived!', 
+            showConfirmButton: false, timer: 1500
+        });
+    } catch(e) {
+        console.error("Toggle Error: ", e);
+        Swal.fire('Error', 'Failed to update status. Check your internet connection.', 'error');
+    }
 };
 
 // ==========================================
