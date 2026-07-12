@@ -16128,7 +16128,7 @@ setTimeout(() => {
 }, 1500);
 
 // ==========================================
-// 📈 LIFETIME REMITTANCE & TREND ENGINE
+// 📈 LIFETIME REMITTANCE & TREND ENGINE (FIXED)
 // ==========================================
 
 window.loadRemittanceAnalytics = async function() {
@@ -16139,31 +16139,35 @@ window.loadRemittanceAnalytics = async function() {
     lifetimeContainer.innerHTML = '<div style="color:#64748b; font-weight:bold; padding: 15px;">⏳ Calculating entire network history...</div>';
 
     try {
-        // 1. Fetch ALL transfers (Ignoring top filters entirely!)
+        // 1. Fetch ALL transfers (Completely ignores the top date/branch filters!)
         const snap = await getDocs(collection(db, "cash_transfers"));
         
         let branchLifetime = {};
         let branchMonthly = {}; 
         let allMonths = new Set();
+        let hasValidData = false;
 
         snap.forEach(doc => {
             let d = doc.data();
+            let s = (d.status || '').toLowerCase();
             
-            // Look for completed remittances (Ignore internal HQ transfers)
-            let isApproved = d.status === 'Approved' || d.status === 'Completed';
-            let branchName = d.branch || d.fromBranch || (d.fromAccount ? d.fromAccount.split(' - ')[0] : null);
+            // 🔥 THE FIX: Accept ANY status as long as it isn't explicitly rejected, voided, or failed!
+            let isApproved = !['rejected', 'declined', 'cancelled', 'void', 'voided', 'failed'].includes(s);
+            
+            // 🔥 THE FIX: Aggressively search for the branch name using every possible variable
+            let branchName = d.branch || d.fromBranch || d.senderBranch || (d.fromAccount ? d.fromAccount.split(' - ')[0] : null);
             
             if (isApproved && branchName && branchName !== 'Main Office' && branchName !== 'HQ') {
-                let amt = parseFloat(d.amount) || 0;
+                // 🔥 THE FIX: Aggressively search for the amount using every possible variable
+                let amt = parseFloat(d.amount) || parseFloat(d.remittedAmount) || parseFloat(d.total) || parseFloat(d.cashAmount) || 0;
+                
+                if (amt > 0) {
+                    hasValidData = true;
+                    if (!branchLifetime[branchName]) branchLifetime[branchName] = 0;
+                    branchLifetime[branchName] += amt;
 
-                // Tally Lifetime Total
-                if (!branchLifetime[branchName]) branchLifetime[branchName] = 0;
-                branchLifetime[branchName] += amt;
-
-                // Tally Monthly Trend Graph
-                if (d.timestamp) {
-                    let dateObj = d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp);
-                    // Format as "Jan 2026", "Feb 2026"
+                    // Extract the date properly to group by Month & Year (e.g. "Jul 2026")
+                    let dateObj = d.timestamp?.toDate ? d.timestamp.toDate() : new Date(d.timestamp || d.date || d.createdAt || Date.now());
                     let monthStr = dateObj.toLocaleString('en-US', { month: 'short', year: 'numeric' }); 
                     allMonths.add(monthStr);
 
@@ -16176,15 +16180,14 @@ window.loadRemittanceAnalytics = async function() {
 
         // 2. 🏆 RENDER THE LIFETIME BOXES
         let lifetimeHtml = '';
-        let colors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'];
+        let colors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#f43f5e', '#14b8a6'];
         let colorIdx = 0;
 
-        if (Object.keys(branchLifetime).length === 0) {
-            lifetimeHtml = '<div style="flex: 1; text-align: center; padding: 15px; color: #ef4444; font-weight:bold;">No approved remittances found on record.</div>';
+        if (!hasValidData) {
+            lifetimeHtml = '<div style="flex: 1; text-align: center; padding: 15px; color: #ef4444; font-weight:bold;">No historical remittances found yet.</div>';
         } else {
             // Sort branches alphabetically
             let sortedBranches = Object.keys(branchLifetime).sort();
-            
             for (const branch of sortedBranches) {
                 let total = branchLifetime[branch];
                 let color = colors[colorIdx % colors.length];
@@ -16202,9 +16205,7 @@ window.loadRemittanceAnalytics = async function() {
         // 3. 📈 RENDER THE TREND GRAPH
         if (!ctx) return;
         
-        // Sort months chronologically so the graph flows left to right
         let sortedMonths = Array.from(allMonths).sort((a, b) => new Date(a) - new Date(b));
-        
         let datasets = [];
         colorIdx = 0;
         
@@ -16225,9 +16226,15 @@ window.loadRemittanceAnalytics = async function() {
             colorIdx++;
         }
 
-        // Destroy old chart if it exists to prevent overlapping glitches
+        // Destroy old chart if it exists to prevent glitching
         if (window.remittanceChartInstance) {
             window.remittanceChartInstance.destroy();
+        }
+
+        // If no data exists yet, push a blank placeholder so the chart doesn't crash
+        if (datasets.length === 0) {
+            datasets.push({ label: 'Awaiting Data', data: [0], borderColor: '#cbd5e1' });
+            sortedMonths.push('No Data');
         }
 
         window.remittanceChartInstance = new Chart(ctx, {
@@ -16274,5 +16281,14 @@ window.loadRemittanceAnalytics = async function() {
     }
 };
 
-// Hook this engine so it runs automatically when you open the Hub!
-window.loadCashFlowHub = window.loadRemittanceAnalytics;
+// 🔥 THE FIX: Safely hook into the explorer function so we NEVER break the top boxes again!
+setTimeout(() => {
+    const oldExplorer = window.loadCashExplorer;
+    window.loadCashExplorer = async function() {
+        if (typeof oldExplorer === 'function') {
+            try { await oldExplorer(); } catch(e) { console.error("Explorer Error:", e); }
+        }
+        // Run our new graph right after the top boxes finish safely loading!
+        window.loadRemittanceAnalytics();
+    };
+}, 1500);
