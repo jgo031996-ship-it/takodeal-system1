@@ -207,6 +207,11 @@ window.verifyPin = async function (pin) {
         window.checkActiveSanctions(staffData.cashierName);
     }
 
+    // 📢 NEW: THE COMPLIANCE INTERCEPTOR! Check if they have unread announcements!
+    if (staffData) {
+        // We trigger the modal asynchronously so the UI still loads smoothly behind it!
+        setTimeout(() => { window.checkForAnnouncements(staffData.cashierName); }, 1500);
+    }
     // 🔥 SECURITY WALL REMOVED! Floating staff are now authorized to log in anywhere.
     return staffData; // Allows the login!
 
@@ -6438,5 +6443,169 @@ window.submitWasteCart = async function() {
         Swal.fire('Error', 'Failed to process waste. Check internet connection.', 'error');
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
+    }
+};
+
+// ==========================================
+// 📢 FORCED COMPLIANCE CAROUSEL ENGINE
+// ==========================================
+window.activeAnnouncements = [];
+window.currentBulletinIndex = 0;
+window.currentSlideIndex = 0;
+window.hasSignedBulletin = false;
+
+window.checkForAnnouncements = async function(cashierName) {
+    try {
+        // 1. Get ALL active announcements
+        const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
+        const snap = await window.getDocs(q);
+        
+        let unread = [];
+        for (let docSnap of snap.docs) {
+            // 2. Did THIS specific cashier sign it?
+            const ackQ = window.query(window.collection(window.db, "acknowledgments"), 
+                window.where("announcementId", "==", docSnap.id),
+                window.where("staffName", "==", cashierName)
+            );
+            const ackSnap = await window.getDocs(ackQ);
+            
+            if (ackSnap.empty) {
+                unread.push({ id: docSnap.id, ...docSnap.data() });
+            }
+        }
+
+        if (unread.length > 0) {
+            window.activeAnnouncements = unread;
+            window.currentBulletinIndex = 0;
+            window.openBulletinModal();
+        }
+    } catch(e) { console.error("Announcement Check Error:", e); }
+};
+
+window.openBulletinModal = function() {
+    let announcement = window.activeAnnouncements[window.currentBulletinIndex];
+    if (!announcement) return;
+
+    document.getElementById('bulletinModal').style.display = 'flex';
+    document.getElementById('bulletinTitle').innerText = announcement.title;
+    window.currentSlideIndex = 0;
+    
+    // Wake up the signature pad!
+    setTimeout(() => { window.initBulletinSignaturePad(); }, 300);
+    
+    window.renderBulletinSlide();
+};
+
+window.renderBulletinSlide = function() {
+    let announcement = window.activeAnnouncements[window.currentBulletinIndex];
+    let totalSlides = announcement.images.length;
+    let currentImage = announcement.images[window.currentSlideIndex];
+
+    document.getElementById('bulletinImage').src = currentImage;
+    document.getElementById('bulletinProgress').innerText = `Slide ${window.currentSlideIndex + 1} of ${totalSlides}`;
+    
+    // Set the Download Button link directly to the current image
+    let dlBtn = document.getElementById('btnBulletinDownload');
+    dlBtn.onclick = () => window.open(currentImage, '_blank');
+
+    let btnNext = document.getElementById('btnBulletinNext');
+    let btnAck = document.getElementById('btnBulletinAcknowledge');
+    let sigArea = document.getElementById('bulletinSignatureArea');
+
+    if (window.currentSlideIndex >= totalSlides - 1) {
+        // LAST SLIDE! Hide "Next", show "Acknowledge" and Signature Pad!
+        btnNext.style.display = 'none';
+        btnAck.style.display = 'block';
+        sigArea.style.display = 'block';
+    } else {
+        btnNext.style.display = 'block';
+        btnAck.style.display = 'none';
+        sigArea.style.display = 'none';
+    }
+};
+
+window.nextBulletinSlide = function() {
+    let announcement = window.activeAnnouncements[window.currentBulletinIndex];
+    if (window.currentSlideIndex < announcement.images.length - 1) {
+        window.currentSlideIndex++;
+        window.renderBulletinSlide();
+    }
+};
+
+// --- THE INDEPENDENT SIGNATURE PAD ---
+window.initBulletinSignaturePad = function() {
+    const canvas = document.getElementById('bulletinCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+
+    window.hasSignedBulletin = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#0f766e';
+
+    const startPosition = (e) => { isDrawing = true; window.hasSignedBulletin = true; draw(e); };
+    const stopPosition = () => { isDrawing = false; ctx.beginPath(); };
+    const draw = (e) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+        let x, y; const rect = canvas.getBoundingClientRect();
+        if (e.type.includes('touch')) { x = e.touches[0].clientX - rect.left; y = e.touches[0].clientY - rect.top; }
+        else { x = e.clientX - rect.left; y = e.clientY - rect.top; }
+        ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y);
+    };
+
+    canvas.replaceWith(canvas.cloneNode(true));
+    const newCanvas = document.getElementById('bulletinCanvas');
+    newCanvas.addEventListener('mousedown', startPosition);
+    newCanvas.addEventListener('mousemove', draw);
+    newCanvas.addEventListener('mouseup', stopPosition);
+    newCanvas.addEventListener('mouseout', stopPosition);
+    newCanvas.addEventListener('touchstart', startPosition, { passive: false });
+    newCanvas.addEventListener('touchmove', draw, { passive: false });
+    newCanvas.addEventListener('touchend', stopPosition);
+};
+
+window.clearBulletinSignature = function() {
+    const canvas = document.getElementById('bulletinCanvas');
+    if (canvas) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); window.hasSignedBulletin = false; }
+};
+
+// --- SUBMITTING COMPLIANCE ---
+window.submitBulletinAcknowledgment = async function() {
+    if (!window.hasSignedBulletin) {
+        return Swal.fire('Signature Required', 'You must sign the pad to acknowledge reading this announcement.', 'error');
+    }
+
+    let btn = document.getElementById('btnBulletinAcknowledge');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        const canvas = document.getElementById('bulletinCanvas');
+        const signatureBase64 = canvas.toDataURL('image/png');
+        let announcement = window.activeAnnouncements[window.currentBulletinIndex];
+        let cashier = localStorage.getItem('cashierName') || 'Staff';
+
+        // 1. Save Signature to Database
+        await window.addDoc(window.collection(window.db, "acknowledgments"), {
+            announcementId: announcement.id,
+            staffName: cashier,
+            signature: signatureBase64,
+            timestamp: window.serverTimestamp()
+        });
+
+        // 2. Move to the next unread announcement, or close if finished!
+        window.currentBulletinIndex++;
+        if (window.currentBulletinIndex < window.activeAnnouncements.length) {
+            window.clearBulletinSignature();
+            window.openBulletinModal();
+            btn.innerText = "✅ Sign & Acknowledge"; btn.disabled = false;
+        } else {
+            Swal.fire({title: 'All Caught Up!', text: 'Thank you for reviewing the updates.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
+            document.getElementById('bulletinModal').style.display = 'none';
+        }
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to save signature. Check connection.', 'error');
+        btn.innerText = "✅ Sign & Acknowledge"; btn.disabled = false;
     }
 };
