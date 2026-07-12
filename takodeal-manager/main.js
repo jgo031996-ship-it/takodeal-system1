@@ -15552,3 +15552,213 @@ window.applyAttendancePenalty = async function(docId, staffName, dateStr, curren
         alert("❌ Failed to apply penalty. Check console.");
     }
 };
+
+// ==========================================
+// 🌍 ENTERPRISE GLOBAL ADD-ON & MIX-MATCH ENGINE
+// ==========================================
+
+// 1. Inject the new "Global Mix & Match" Button next to your Add-On button
+setTimeout(() => {
+    let massSyncBtn = document.querySelector('button[onclick*="Mass Sync"]') || document.querySelector('button[onclick*="saveGlobalAddon"]');
+    if (massSyncBtn && !document.getElementById('btnGlobalMixMatch')) {
+        let btn = document.createElement('button');
+        btn.id = "btnGlobalMixMatch";
+        btn.innerHTML = "🐙 Manage Global Mix & Match";
+        btn.style.cssText = "background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-left: 10px; box-shadow: 0 2px 4px rgba(217,119,6,0.3);";
+        btn.onclick = window.openGlobalMixMatchModal;
+        massSyncBtn.parentNode.insertBefore(btn, massSyncBtn);
+    }
+}, 2000);
+
+// 2. OVERRIDE: Upgraded Multi-Category Global Add-On Modal
+window.openGlobalAddonModal = async function(id = '', name = '', price = 0, deductQty = 0, linkedIng = '', categoryData = 'All') {
+    Swal.fire({title: 'Loading Data...', allowOutsideClick: false, didOpen: ()=>Swal.showLoading()});
+    
+    let menuCats = new Set();
+    let invOptions = '<option value="">-- No Linked Ingredient --</option>';
+    try {
+        const menuSnap = await getDocs(collection(db, "menu"));
+        menuSnap.forEach(d => { if(d.data().category) menuCats.add(d.data().category); });
+        
+        const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+        let items = [];
+        invSnap.forEach(d => items.push(d.data()));
+        items.sort((a,b) => (a.name||"").localeCompare(b.name||""));
+        items.forEach(i => {
+            let sel = (i.name === linkedIng) ? 'selected' : '';
+            invOptions += `<option value="${i.name}" ${sel}>${i.name}</option>`;
+        });
+        window.cachedInventoryOptions = invOptions.replace(/selected/g, ''); // Save clean list for later
+    } catch(e){}
+
+    let selectedArr = [];
+    if (categoryData) {
+        if (Array.isArray(categoryData)) selectedArr = categoryData;
+        else selectedArr = categoryData.split(',').map(s=>s.trim());
+    }
+
+    let catHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; max-height:120px; overflow-y:auto; padding:10px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc;">
+        <label style="width:100%; font-weight:bold; color:#0f172a;"><input type="checkbox" id="swalCatAll" ${selectedArr.includes('All')?'checked':''} onchange="document.querySelectorAll('.swal-cat-cb').forEach(c=>c.checked=this.checked)"> Apply to ALL Categories</label>
+        <hr style="width:100%; margin:0; border:0; border-top:1px solid #e2e8f0;">`;
+    Array.from(menuCats).sort().forEach(c => {
+        let isChecked = selectedArr.includes(c) || selectedArr.includes('All') ? 'checked' : '';
+        catHtml += `<label style="font-size:12px; display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" class="swal-cat-cb" value="${c}" ${isChecked}> ${c}</label>`;
+    });
+    catHtml += `</div>`;
+
+    Swal.fire({
+        title: id ? '✏️ Edit Global Add-On' : '➕ Create Global Add-On',
+        html: `
+            <div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
+                <div><label style="font-size:12px; font-weight:bold; color:#475569;">Add-On Name</label><input type="text" id="swalAoName" value="${name}" class="swal2-input" style="margin:0; width:100%; font-size:14px; box-sizing:border-box;"></div>
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:bold; color:#475569;">Extra Price (₱)</label><input type="number" id="swalAoPrice" value="${price}" class="swal2-input" style="margin:0; width:100%; font-size:14px; box-sizing:border-box;"></div>
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:bold; color:#475569;">Qty to Deduct</label><input type="number" id="swalAoQty" value="${deductQty}" class="swal2-input" style="margin:0; width:100%; font-size:14px; box-sizing:border-box;"></div>
+                </div>
+                <div><label style="font-size:12px; font-weight:bold; color:#475569;">Linked Raw Material (Live Inventory)</label><select id="swalAoIng" class="swal2-select" style="margin:0; width:100%; font-size:14px; box-sizing:border-box; outline:none;">${invOptions}</select></div>
+                <div><label style="font-size:12px; font-weight:bold; color:#475569; display:block; margin-bottom:5px;">Applies To Which Menu Categories?</label>${catHtml}</div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '💾 Save Add-On',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-2xl' },
+        preConfirm: () => {
+            let newName = document.getElementById('swalAoName').value.trim();
+            let newPrice = parseFloat(document.getElementById('swalAoPrice').value) || 0;
+            let newQty = parseFloat(document.getElementById('swalAoQty').value) || 0;
+            let newIng = document.getElementById('swalAoIng').value;
+            
+            let cats = [];
+            if (document.getElementById('swalCatAll').checked) cats = ["All"];
+            else document.querySelectorAll('.swal-cat-cb:checked').forEach(c => cats.push(c.value));
+
+            if (!newName) { Swal.showValidationMessage('Add-On Name is required'); return false; }
+            if (cats.length === 0) { Swal.showValidationMessage('Select at least one category'); return false; }
+
+            return { name: newName, price: newPrice, deductQty: newQty, linkedIngredient: newIng, category: cats };
+        }
+    }).then(async (res) => {
+        if (res.isConfirmed) {
+            Swal.fire({title:'Saving to Cloud...', allowOutsideClick: false, didOpen:()=>Swal.showLoading()});
+            try {
+                if (id) await updateDoc(doc(db, "global_addons", id), res.value);
+                else await addDoc(collection(db, "global_addons"), res.value);
+                
+                Swal.fire({title: '✅ Saved', text: 'Add-on updated successfully.', icon: 'success', timer: 1500, showConfirmButton: false});
+                setTimeout(() => location.reload(), 1500); // Instantly reloads to reflect changes
+            } catch(e) { console.error(e); Swal.fire('Error', 'Failed to save', 'error'); }
+        }
+    });
+};
+
+// 3. NEW: The Global Mix & Match Configurator
+window.openGlobalMixMatchModal = async function() {
+    Swal.fire({title: 'Loading Data...', allowOutsideClick: false, didOpen: ()=>Swal.showLoading()});
+    
+    let menuCats = new Set();
+    try {
+        const snap = await getDocs(collection(db, "menu"));
+        snap.forEach(d => { if(d.data().category) menuCats.add(d.data().category); });
+    } catch(e){}
+    
+    let existingConfig = { categories: [], flavors: [], mappings: [] };
+    try {
+        const snap = await getDoc(doc(db, "settings", "global_mixmatch"));
+        if (snap.exists()) existingConfig = snap.data();
+    } catch(e){}
+
+    let catHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; max-height:120px; overflow-y:auto; padding:10px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; margin-bottom:15px;">
+        <label style="width:100%; font-weight:bold; color:#0f172a;"><input type="checkbox" id="gmmCatAll" ${existingConfig.categories.includes('All')?'checked':''} onchange="document.querySelectorAll('.gmm-cat-cb').forEach(c=>c.checked=this.checked)"> Apply to ALL Categories</label>
+        <hr style="width:100%; margin:0; border:0; border-top:1px solid #e2e8f0;">`;
+    Array.from(menuCats).sort().forEach(c => {
+        let isChecked = existingConfig.categories.includes(c) || existingConfig.categories.includes('All') ? 'checked' : '';
+        catHtml += `<label style="font-size:12px; display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" class="gmm-cat-cb" value="${c}" ${isChecked}> ${c}</label>`;
+    });
+    catHtml += `</div>`;
+
+    let flavHtml = `<textarea id="gmmFlavors" class="swal2-textarea" style="margin:0; width:100%; height:80px; font-size:14px; box-sizing:border-box;" placeholder="Pork, Shrimp, Octopus, Bacon...">${(existingConfig.flavors || []).join(', ')}</textarea>`;
+
+    Swal.fire({
+        title: '🐙 Global Mix & Match',
+        width: 700,
+        html: `
+            <div style="text-align:left; display:flex; flex-direction:column; gap:10px;">
+                <div><label style="font-size:12px; font-weight:bold; color:#b45309; display:block; margin-bottom:5px;">1. Apply to Categories:</label>${catHtml}</div>
+                <div><label style="font-size:12px; font-weight:bold; color:#b45309; display:block; margin-bottom:5px;">2. Flavors (Comma Separated):</label>${flavHtml}</div>
+                <div><label style="font-size:12px; font-weight:bold; color:#b45309; display:block; margin-bottom:5px;">3. Link to Inventory (Qty to deduct per 1 piece):</label>
+                     <div id="gmmMappingContainer" style="margin-top:5px; border: 1px dashed #fcd34d; padding:10px; border-radius:8px; background:#fffbeb;">Type flavors above to map them...</div>
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '💾 Save Global Config',
+        confirmButtonColor: '#d97706',
+        customClass: { popup: 'rounded-2xl shadow-2xl' },
+        didOpen: () => {
+            window.gmmCurrentMappings = existingConfig.mappings || [];
+            document.getElementById('gmmFlavors').addEventListener('input', window.renderGmmMapping);
+            window.renderGmmMapping();
+        },
+        preConfirm: () => {
+            let cats = [];
+            if (document.getElementById('gmmCatAll').checked) cats = ["All"];
+            else document.querySelectorAll('.gmm-cat-cb:checked').forEach(c => cats.push(c.value));
+            
+            let flavors = document.getElementById('gmmFlavors').value.split(',').map(s=>s.trim()).filter(Boolean);
+            let mappings = [];
+            document.querySelectorAll('.gmm-row').forEach(row => {
+                let f = row.getAttribute('data-flavor');
+                let ing = row.querySelector('.gmm-ing').value;
+                let qty = parseFloat(row.querySelector('.gmm-qty').value) || 0;
+                if(ing && qty > 0) mappings.push({ flavor: f, linkedIngredient: ing, deductQty: qty });
+            });
+            
+            if (cats.length === 0) { Swal.showValidationMessage('Select at least one category'); return false; }
+            if (flavors.length === 0) { Swal.showValidationMessage('Enter at least one flavor'); return false; }
+            return { categories: cats, flavors: flavors, mappings: mappings };
+        }
+    }).then(async (res) => {
+        if (res.isConfirmed) {
+            Swal.fire({title:'Saving...', allowOutsideClick: false, didOpen:()=>Swal.showLoading()});
+            await setDoc(doc(db, "settings", "global_mixmatch"), res.value);
+            Swal.fire({title: '✅ Saved', text: 'Global Mix & Match activated!', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        }
+    });
+};
+
+window.renderGmmMapping = async function() {
+    let container = document.getElementById('gmmMappingContainer');
+    if (!container) return;
+    let flavors = document.getElementById('gmmFlavors').value.split(',').map(s=>s.trim()).filter(Boolean);
+    
+    if (flavors.length === 0) { container.innerHTML = '<span style="font-size:12px; color:#92400e;">Type flavors above to map them...</span>'; return; }
+    
+    // Ensure inventory is loaded
+    if (!window.cachedInventoryOptions) {
+        let invOptions = '<option value="">-- No Linked Ingredient --</option>';
+        try {
+            const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+            let items = []; invSnap.forEach(d => items.push(d.data()));
+            items.sort((a,b) => (a.name||"").localeCompare(b.name||""));
+            items.forEach(i => invOptions += `<option value="${i.name}">${i.name}</option>`);
+            window.cachedInventoryOptions = invOptions;
+        } catch(e){}
+    }
+
+    let html = '';
+    flavors.forEach(flavor => {
+        let existing = window.gmmCurrentMappings.find(m => m.flavor === flavor) || {};
+        let dropHtml = window.cachedInventoryOptions || '<option value="">-- Loading --</option>';
+        if (existing.linkedIngredient) dropHtml = dropHtml.replace(`value="${existing.linkedIngredient}"`, `value="${existing.linkedIngredient}" selected`);
+        
+        html += `
+            <div class="gmm-row" data-flavor="${flavor}" style="display:flex; gap:8px; align-items:center; margin-bottom:8px; background:white; padding:8px; border-radius:6px; border:1px solid #fde68a;">
+                <div style="flex:1; font-weight:bold; color:#92400e; font-size:13px;">🐙 ${flavor}</div>
+                <select class="gmm-ing" style="flex:2; padding:8px; font-size:12px; border:1px solid #fcd34d; border-radius:4px; outline:none; box-sizing:border-box;">${dropHtml}</select>
+                <input type="number" class="gmm-qty" placeholder="Qty" value="${existing.deductQty || ''}" style="width:70px; padding:8px; font-size:12px; border:1px solid #fcd34d; border-radius:4px; text-align:center; outline:none; box-sizing:border-box;">
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+};
