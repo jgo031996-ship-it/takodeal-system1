@@ -8826,35 +8826,78 @@ window.loadLedger = async function() {
 };
 
 window.setAutoDeduct = async function(docId, staffName, currentDed, balance) {
-    if (balance <= 0) { alert("✅ This employee has no outstanding balance."); return; }
+    if (balance <= 0) { 
+        return Swal.fire('✅ No Debt', 'This employee has no outstanding balance.', 'success'); 
+    }
     
-    let amtStr = prompt(`Set automatic per-cutoff deduction for ${staffName}.\nRemaining Balance: ₱${balance.toLocaleString()}\n\nEnter amount to deduct every payslip (₱):`, currentDed);
-    if (amtStr === null) return;
-    
+    const { value: amtStr } = await Swal.fire({
+        title: '⚙️ Set Auto-Deduct',
+        html: `Set automatic per-cutoff deduction for <b>${staffName}</b>.<br><br>Remaining Balance: <b style="color:#dc2626; font-size:18px;">₱${balance.toLocaleString()}</b>`,
+        input: 'number',
+        inputLabel: 'Amount to deduct every payslip (₱):',
+        inputValue: currentDed,
+        showCancelButton: true,
+        confirmButtonColor: '#d97706',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: '💾 Save Deduction',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (!amtStr) return;
     let amt = parseFloat(amtStr) || 0;
     if (amt < 0) return;
     if (amt > balance) { 
-        alert(`⚠️ Warning: You set the deduction higher than their balance. We will cap it at ₱${balance.toLocaleString()}.`); 
+        await Swal.fire('⚠️ Cap Applied', `You set the deduction higher than their balance. We capped it at ₱${balance.toLocaleString()}.`, 'warning'); 
         amt = balance; 
     }
     
     try {
+        Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         if (docId && docId !== 'undefined') {
             await updateDoc(doc(db, "staff_ledger", docId), { cutoffDeduction: amt });
-            alert(`✅ ${staffName} will now be automatically deducted ₱${amt.toLocaleString()} every cutoff.`);
+            Swal.fire('✅ Saved', `${staffName} will now be automatically deducted ₱${amt.toLocaleString()} every cutoff.`, 'success');
             window.loadLedger();
         } else {
-            alert("❌ You must issue a loan first before setting a deduction rate.");
+            Swal.fire('❌ Error', 'You must issue a loan first before setting a deduction rate.', 'error');
         }
-    } catch (e) { alert("Error setting auto-deduct."); console.error(e); }
+    } catch (e) { Swal.fire('Error', 'Failed to set auto-deduct.', 'error'); console.error(e); }
 };
 
 window.issueLoan = async function(docId, staffName, currentLoaned) {
-    let amount = parseFloat(prompt(`How much are you loaning to ${staffName}? (₱)`));
-    if (isNaN(amount) || amount <= 0) return;
+    const { value: formValues } = await Swal.fire({
+        title: '💸 Issue Company Loan',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Amount to Loan (₱)</label>
+                <input id="swal-loan-amt" type="number" class="swal2-input" placeholder="0.00" style="width: 100%; margin: 5px 0 15px; box-sizing: border-box; font-weight:bold; color:#0f766e;">
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Reason / Description</label>
+                <input id="swal-loan-reason" type="text" class="swal2-input" placeholder="e.g. Tuition fee, Medical emergency" style="width: 100%; margin: 5px 0 10px; box-sizing: border-box;">
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonColor: '#0f766e',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: '✅ Issue Loan',
+        customClass: { popup: 'rounded-2xl shadow-2xl' },
+        preConfirm: () => {
+            const amt = document.getElementById('swal-loan-amt').value;
+            const reason = document.getElementById('swal-loan-reason').value;
+            if (!amt || parseFloat(amt) <= 0) { Swal.showValidationMessage('Please enter a valid loan amount'); return false; }
+            if (!reason.trim()) { Swal.showValidationMessage('Please enter the reason for the loan'); return false; }
+            return { amount: parseFloat(amt), reason: reason.trim() };
+        }
+    });
+
+    if (!formValues) return;
+    let amount = formValues.amount;
+    let reason = formValues.reason;
 
     try {
+        Swal.fire({title: 'Processing Loan...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         let newTotal = currentLoaned + amount;
+        
         if (docId && docId !== 'undefined') {
             await updateDoc(doc(db, "staff_ledger", docId), { totalLoaned: newTotal });
         } else {
@@ -8865,38 +8908,61 @@ window.issueLoan = async function(docId, staffName, currentLoaned) {
                 cutoffDeduction: 0 // Initialize default
             });
         }
-        alert(`✅ Success! ₱${amount.toLocaleString()} added to ${staffName}'s loan balance.`);
+        
+        // 🔥 THE FIX: Log the specific reason into the History Feed so you never forget!
+        await addDoc(collection(db, "staff_deductions"), {
+            staffName: staffName,
+            type: "Company Loan Issued",
+            amount: amount,
+            dateAdded: serverTimestamp(),
+            status: "Active",
+            remarks: reason
+        });
+
+        Swal.fire('✅ Loan Issued!', `₱${amount.toLocaleString()} added to ${staffName}'s balance.\n\nReason Logged: ${reason}`, 'success');
         window.loadLedger();
-    } catch (e) { console.error(e); alert("Failed to issue loan."); }
+    } catch (e) { console.error(e); Swal.fire('Error', "Failed to issue loan.", 'error'); }
 };
 
 window.logLoanPayment = async function(docId, staffName, currentPaid, currentBalance, unpaidVales) {
     // 1. Check if they owe ANYTHING at all
     if (currentBalance <= 0 && unpaidVales <= 0) { 
-        alert("✅ This employee has no outstanding balance or unpaid vales."); 
-        return; 
+        return Swal.fire('✅ No Debt', 'This employee has no outstanding balance or unpaid vales.', 'success'); 
     }
 
-    // 2. Build a clear prompt showing exactly what they owe
+    // 2. Build a beautiful breakdown UI
     let totalOwed = currentBalance + unpaidVales;
-    let promptMsg = `${staffName} owes a total of ₱${totalOwed.toLocaleString()}.\n`;
-    if (currentBalance > 0) promptMsg += `- Company Loan: ₱${currentBalance.toLocaleString()}\n`;
-    if (unpaidVales > 0) promptMsg += `- Unpaid Vales/Meals: ₱${unpaidVales.toLocaleString()}\n`;
-    promptMsg += `\nHow much cash did they hand you to pay this off? (₱)`;
+    let breakdownHtml = `<div style="text-align: left; background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; border: 1px solid #e2e8f0;">`;
+    breakdownHtml += `<b>${staffName}</b> owes a total of <b style="color: #dc2626; font-size: 18px;">₱${totalOwed.toLocaleString()}</b><br><br>`;
+    if (currentBalance > 0) breakdownHtml += `<span style="color:#64748b;">• Company Loan:</span> <b style="color:#0f172a;">₱${currentBalance.toLocaleString()}</b><br>`;
+    if (unpaidVales > 0) breakdownHtml += `<span style="color:#64748b;">• Unpaid Vales/Meals:</span> <b style="color:#0f172a;">₱${unpaidVales.toLocaleString()}</b>`;
+    breakdownHtml += `</div>`;
 
-    let amountStr = prompt(promptMsg);
-    if (amountStr === null || amountStr.trim() === "") return;
-    
+    const { value: amountStr } = await Swal.fire({
+        title: '💵 Log Manual Cash Payment',
+        html: breakdownHtml,
+        input: 'number',
+        inputLabel: 'How much cash did they hand you? (₱)',
+        inputPlaceholder: '0.00',
+        showCancelButton: true,
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: '✅ Confirm Payment',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (!amountStr || amountStr.trim() === "") return;
     let amount = parseFloat(amountStr);
     if (isNaN(amount) || amount <= 0) return;
     if (amount > totalOwed) { 
-        alert(`❌ They only owe ₱${totalOwed.toLocaleString()}. You cannot log a payment higher than what they owe.`); 
-        return; 
+        return Swal.fire('❌ Too High', `They only owe ₱${totalOwed.toLocaleString()}. You cannot log a payment higher than what they owe.`, 'error'); 
     }
 
     let remainingPayment = amount;
 
     try {
+        Swal.fire({title: 'Processing Payment...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
         // 3. SMART LOGIC: Pay off Vales/Meals first (because they are short-term debts)
         if (unpaidVales > 0 && remainingPayment > 0) {
             const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
@@ -8930,7 +8996,6 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
             if (docId && docId !== 'undefined') {
                 await updateDoc(doc(db, "staff_ledger", docId), { totalPaid: currentPaid + remainingPayment });
                 
-                // 🔥 THE FIX: Log Manual Loan Payment to the History Tab!
                 await addDoc(collection(db, "staff_deductions"), {
                     staffName: staffName,
                     type: "Company Loan Payment",
@@ -8943,11 +9008,11 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
             }
         }
 
-        alert(`✅ Payment of ₱${amount.toLocaleString()} successfully logged for ${staffName}!`);
+        Swal.fire('✅ Payment Logged', `Payment of ₱${amount.toLocaleString()} successfully logged for ${staffName}!`, 'success');
         window.loadLedger();
     } catch (e) { 
         console.error(e); 
-        alert("❌ Failed to log manual payment. Check console."); 
+        Swal.fire('❌ Error', 'Failed to log manual payment. Check console.', 'error'); 
     }
 };
 
