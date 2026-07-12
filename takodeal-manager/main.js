@@ -12589,7 +12589,7 @@ window.downloadScheduleImage = function() {
 // ==========================================
 // 📘 LEDGER & VALES HISTORY VIEWER
 // ==========================================
-window.openLedgerHistory = async function(staffName) {
+window.viewLedgerHistory = async function(staffName) {
     document.getElementById('ledgerHistorySubtitle').innerText = staffName;
     document.getElementById('ledgerHistoryModal').style.display = 'flex';
     
