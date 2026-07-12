@@ -300,7 +300,14 @@ window.loadPOSData = async function() {
     window.masterPOSData.variants = {}; 
     window.masterPOSData.addons = [];
     
-    // 🔥 SMART RECIPE LINKER: Downloads Global Add-ons so Mix & Match knows the recipes!
+    // 🐙 NEW: Fetch Global Mix & Match configuration!
+    window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
+    try {
+        const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
+        if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
+    } catch(e) {}
+
+    // 🔥 SMART RECIPE LINKER: Downloads Global Add-ons
     try {
         const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
         addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
@@ -312,8 +319,7 @@ window.loadPOSData = async function() {
             let configData = configSnap.data();
             window.masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
-                payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
-                mixMatchFlavors: configData.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]
+                payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
             let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
             window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
@@ -322,8 +328,7 @@ window.loadPOSData = async function() {
             window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
             window.masterPOSData.settings = { 
                 orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
-                payMethods: ["Cash", "GCash", "Bank"],
-                mixMatchFlavors: ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"] 
+                payMethods: ["Cash", "GCash", "Bank"] 
             };
         }
 
@@ -388,11 +393,11 @@ window.loadPOSData = async function() {
 };
 
 // --- UPGRADED CART & VARIANT LOGIC ---
+// --- UPGRADED CART & VARIANT LOGIC (WITH GLOBAL ENGINE) ---
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
     if (!window.masterPOSData) window.masterPOSData = {};
     if (!window.cart) window.cart = [];
 
-    // 🔥 THE BASE NAME FIX: We strip the size (e.g. "15 Pcs") off the name so Firebase can find the original product!
     let baseName = name;
     let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad)$/i);
     if (match) {
@@ -402,7 +407,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     if (existingItem) { 
         window.pendingItem = JSON.parse(JSON.stringify(existingItem)); 
         window.editIndex = window.cart.indexOf(existingItem); 
-        // 🔥 THE REALNAME FIX: Guarantee the realName is set so the Add-on query doesn't crash
         window.pendingItem.realName = window.pendingItem.realName || window.pendingItem.name;
     } else { 
         window.pendingItem = { name: name, basePrice: basePrice, variantName: 'Standard', variantPrice: basePrice, qty: 1, notes: '', addons: {}, discountType: 'none', discountVal: 0, isGrouped: false, realName: name }; 
@@ -469,6 +473,29 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
         if (!snap.empty) {
             let itemData = snap.docs[0].data();
+            let cat = itemData.category || "Uncategorized";
+
+            // 🌍 THE GLOBAL INTERCEPTOR ENGINE 🌍
+            // 1. Instantly inject Global Mix & Match configurations based on category!
+            let gmm = window.masterPOSData.globalMixMatch;
+            if (gmm && gmm.categories && (gmm.categories.includes('All') || gmm.categories.includes(cat))) {
+                itemData.mixMatchFlavors = gmm.flavors || [];
+                itemData.mixMatchConfig = gmm.mappings || [];
+            }
+
+            // 2. Instantly inject Global Add-Ons based on category!
+            if (!itemData.addons) itemData.addons = [];
+            window.masterPOSData.addons.forEach(ga => {
+                let gaCats = Array.isArray(ga.category) ? ga.category : (ga.category ? ga.category.split(',').map(s=>s.trim()) : []);
+                if (gaCats.includes('All') || gaCats.includes(cat)) {
+                    // Prevent duplicates if you manually added it in the old Product Editor
+                    if (!itemData.addons.find(a => a.name === ga.name)) {
+                        itemData.addons.push(ga);
+                    }
+                }
+            });
+
+            // --- END OF INTERCEPTOR ---
 
             let imgContainer = document.getElementById('modalDynamicImage');
             if (!imgContainer) {
@@ -558,7 +585,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             }
             dynamicAddonDiv.innerHTML = newUiHtml;
 
-            // 🔥 3. ITEM-SPECIFIC MIX & MATCH BUILDER 🔥
+            // 🐙 ITEM-SPECIFIC MIX & MATCH BUILDER
             window.mixMatchState = {};
             let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
             let customArea = document.getElementById('takoyakiCustomizationArea');
@@ -566,7 +593,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             if (customArea) {
                 if (hasMixMatch) {
                     itemData.mixMatchFlavors.forEach(flavor => {
-                        // 🔥 THE MEMORY RESTORE FIX: Remembers your Mix & Match quantities!
                         window.mixMatchState[flavor] = (existingItem && existingItem.mixMatchState && existingItem.mixMatchState[flavor]) ? existingItem.mixMatchState[flavor] : 0;
                     });
                     
