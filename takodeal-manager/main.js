@@ -11378,7 +11378,7 @@ window.loadGlobalAddons = async function() {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center">Fetching Add-Ons...</td></tr>';
     
-    // INJECT THE MASS SYNC & SAVE ORDER BUTTONS
+    // 1. INJECT THE BANNER IF IT IS MISSING
     let tableContainer = tbody.closest('table').parentElement;
     if (!document.getElementById('btnMassSyncAddons')) {
         let syncBtnHtml = `
@@ -11388,8 +11388,8 @@ window.loadGlobalAddons = async function() {
                     <p style="margin: 4px 0 0 0; font-size: 12px; color: #92400e;">Use the Up/Down arrows to arrange your add-ons, then click <b>Save Display Order</b>. Click <b>Mass Sync</b> to push updates to the menu.</p>
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <!-- 🔥 THE BUG FIX: The Global Mix & Match button is now hardcoded securely! -->
-                    <button onclick="window.openGlobalMixMatchModal()" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);">🐙 Global Mix & Match</button>
+                    <!-- The Mix & Match button is baked in here! -->
+                    <button onclick="window.openGlobalMixMatchModal()" id="btnGlobalMixMatch" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);">🐙 Global Mix & Match</button>
                     <button onclick="window.saveGlobalAddonLayout()" id="btnSaveAddonOrder" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save Display Order</button>
                     <button onclick="window.extractAddonsToGlobal()" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">📥 Extract</button>
                     <button id="btnMassSyncAddons" onclick="window.syncGlobalAddonsToMenu()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">🔄 Mass Sync</button>
@@ -11398,7 +11398,6 @@ window.loadGlobalAddons = async function() {
         `;
         tableContainer.insertAdjacentHTML('beforebegin', syncBtnHtml);
         
-        // Add a new column header for the Arrows
         let theadTr = tbody.previousElementSibling.querySelector('tr');
         if (theadTr && theadTr.children[0].innerText !== "Sort") {
             let th = document.createElement('th');
@@ -11406,6 +11405,19 @@ window.loadGlobalAddons = async function() {
             th.style.width = "50px";
             theadTr.insertBefore(th, theadTr.children[0]);
         }
+    }
+
+    // 2. 🐙 FOOLPROOF INJECTOR: If the HTML banner already existed, force the button into it!
+    let massSyncBtn = document.getElementById('btnMassSyncAddons');
+    if (massSyncBtn && !document.getElementById('btnGlobalMixMatch')) {
+        let btn = document.createElement('button');
+        btn.id = "btnGlobalMixMatch";
+        btn.innerHTML = "🐙 Global Mix & Match";
+        btn.style.cssText = "background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-right: 10px; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);";
+        btn.onclick = window.openGlobalMixMatchModal;
+        
+        // Shoves the button right into the banner group!
+        massSyncBtn.parentNode.insertBefore(btn, massSyncBtn.parentNode.firstChild);
     }
 
     try {
