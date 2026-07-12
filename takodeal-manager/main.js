@@ -15648,9 +15648,23 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = 0, dedu
                 if (id) await updateDoc(doc(db, "global_addons", id), res.value);
                 else await addDoc(collection(db, "global_addons"), res.value);
                 
-                Swal.fire({title: '✅ Saved', text: 'Add-on updated successfully.', icon: 'success', timer: 1500, showConfirmButton: false});
-                setTimeout(() => location.reload(), 1500); // Instantly reloads to reflect changes
-            } catch(e) { console.error(e); Swal.fire('Error', 'Failed to save', 'error'); }
+                Swal.fire({
+                    title: '✅ Saved', 
+                    text: 'Add-on updated successfully.', 
+                    icon: 'success', 
+                    timer: 1500, 
+                    showConfirmButton: false,
+                    customClass: { popup: 'rounded-2xl' }
+                });
+                
+                // 🔥 THE FIX: Soft-refresh the table dynamically instead of refreshing the whole website!
+                if (typeof window.loadGlobalAddons === 'function') {
+                    window.loadGlobalAddons();
+                }
+            } catch(e) { 
+                console.error(e); 
+                Swal.fire('Error', 'Failed to save', 'error'); 
+            }
         }
     });
 };
