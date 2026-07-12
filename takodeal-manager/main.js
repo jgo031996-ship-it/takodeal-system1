@@ -15688,10 +15688,27 @@ window.openGlobalMixMatchModal = async function() {
     Swal.fire({title: 'Loading Data...', allowOutsideClick: false, didOpen: ()=>Swal.showLoading()});
     
     let menuCats = new Set();
+    // 🔥 THE FIX: We build the dropdown list completely from scratch here!
+    let invOptions = '<option value="">-- Select Raw Ingredient --</option>';
+
     try {
         const snap = await getDocs(collection(db, "menu"));
         snap.forEach(d => { if(d.data().category) menuCats.add(d.data().category); });
-    } catch(e){}
+
+        // 🔥 THE FIX: Force fetch the inventory list from Main Office every single time!
+        const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+        let items = [];
+        invSnap.forEach(d => items.push(d.data()));
+        items.sort((a,b) => (a.name||"").localeCompare(b.name||""));
+        
+        items.forEach(i => {
+            invOptions += `<option value="${i.name}">${i.name}</option>`;
+        });
+        
+        // Overwrite the global memory with the fresh, complete list!
+        window.cachedInventoryOptions = invOptions;
+
+    } catch(e){ console.error("Error loading Mix Match data:", e); }
     
     let existingConfig = { categories: [], flavors: [], mappings: [] };
     try {
@@ -15765,22 +15782,12 @@ window.renderGmmMapping = async function() {
     
     if (flavors.length === 0) { container.innerHTML = '<span style="font-size:12px; color:#92400e;">Type flavors above to map them...</span>'; return; }
     
-    // Ensure inventory is loaded
-    if (!window.cachedInventoryOptions) {
-        let invOptions = '<option value="">-- No Linked Ingredient --</option>';
-        try {
-            const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
-            let items = []; invSnap.forEach(d => items.push(d.data()));
-            items.sort((a,b) => (a.name||"").localeCompare(b.name||""));
-            items.forEach(i => invOptions += `<option value="${i.name}">${i.name}</option>`);
-            window.cachedInventoryOptions = invOptions;
-        } catch(e){}
-    }
-
     let html = '';
     flavors.forEach(flavor => {
         let existing = window.gmmCurrentMappings.find(m => m.flavor === flavor) || {};
-        let dropHtml = window.cachedInventoryOptions || '<option value="">-- Loading --</option>';
+        
+        // This will now use the freshly downloaded list we built in the modal opener!
+        let dropHtml = window.cachedInventoryOptions || '<option value="">-- Select Raw Ingredient --</option>';
         if (existing.linkedIngredient) dropHtml = dropHtml.replace(`value="${existing.linkedIngredient}"`, `value="${existing.linkedIngredient}" selected`);
         
         html += `
