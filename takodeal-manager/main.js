@@ -16518,11 +16518,11 @@ setTimeout(() => {
 // ========================================================
 // 📥 UPGRADED GLOBAL SALES EXPORTER (WITH ITEMS SOLD)
 // ========================================================
-window.exportGlobalSalesCSV = async function() {
+window.exportDashboardSalesCSV = async function() {
     // 1. Grab the filters exactly as they appear on the Global Dashboard
-    let branchSelect = document.getElementById('globalBranchFilter') || document.querySelector('select');
-    let startDateInput = document.getElementById('globalStartDate') || document.querySelectorAll('input[type="date"]')[0];
-    let endDateInput = document.getElementById('globalEndDate') || document.querySelectorAll('input[type="date"]')[1];
+    let branchSelect = document.getElementById('globalBranchFilter');
+    let startDateInput = document.getElementById('globalStartDate');
+    let endDateInput = document.getElementById('globalEndDate');
 
     let branch = branchSelect ? branchSelect.value : 'All';
     let startDateVal = startDateInput ? startDateInput.value : new Date().toISOString().split('T')[0];
@@ -16530,8 +16530,8 @@ window.exportGlobalSalesCSV = async function() {
 
     if (branch.includes("All")) branch = "All"; // Normalize "All Branches"
 
-    let btn = document.querySelector('button[onclick*="exportGlobalSalesCSV"]') || document.querySelector('button[onclick*="downloadExcel"]');
-    let oldText = btn ? btn.innerText : "Export Sales CSV";
+    let btn = document.getElementById('btnExportSales');
+    let oldText = btn ? btn.innerText : "📥 Export Sales CSV";
     if (btn) { btn.innerText = "⏳ Generating Excel..."; btn.disabled = true; }
 
     try {
@@ -16601,7 +16601,8 @@ window.exportGlobalSalesCSV = async function() {
         // 4. Force UTF-8 encoding for Excel (This guarantees the Peso sign ₱ shows up perfectly!)
         let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         let downloadLink = document.createElement("a");
-        downloadLink.download = `Takodeal_Global_Sales_${startDateVal}_to_${endDateVal}.csv`;
+        let safeBranchName = branch.replace(/[^a-zA-Z0-9]/g, '_');
+        downloadLink.download = `Takodeal_${safeBranchName}_Sales_${startDateVal}_to_${endDateVal}.csv`;
         downloadLink.href = window.URL.createObjectURL(csvFile);
         downloadLink.style.display = "none";
         document.body.appendChild(downloadLink);
