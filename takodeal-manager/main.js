@@ -16824,14 +16824,15 @@ window.downloadExcel = async function(tbodyId, fileName) {
             let endOfDay = new Date(endDateVal);
             endOfDay.setHours(23, 59, 59, 999);
 
+            // 🔥 THE FIX: Removed 'window.' from Firebase commands!
             let q;
             if (branch === "All") {
-                q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
+                q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
             } else {
-                q = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
+                q = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
             }
 
-            const snap = await window.getDocs(q);
+            const snap = await getDocs(q);
 
             if (snap.empty) {
                 Swal.fire('No Data', 'No transactions found for this date range.', 'info');
