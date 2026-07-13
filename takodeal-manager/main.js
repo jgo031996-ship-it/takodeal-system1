@@ -8025,18 +8025,26 @@ window.filterAlertsTable = function() {
 };
 
 // ========================================================
-// 📥 UNIVERSAL EXCEL / CSV EXPORTER (WITH SMART INTERCEPTOR)
+// 📥 UNIVERSAL EXCEL EXPORTER (WITH BULLETPROOF INTERCEPTOR)
 // ========================================================
 window.downloadExcel = async function(tbodyId, fileName) {
+    let tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
     
-    // 🔥 THE INTERCEPTOR: If they are exporting the Transactions list, fetch the Items Sold directly from Firebase!
-    if (tbodyId === 'historyTableBody') {
-        let btn = document.activeElement; // Grab whatever button they just clicked
-        let oldText = btn ? btn.innerText : "Export Active Tab";
-        if (btn) { btn.innerText = "⏳ Fetching Items..."; btn.disabled = true; }
+    let table = tbody.closest('table');
+    if (!table) return;
+    
+    // Scan the headers of the current active table
+    let headers = Array.from(table.querySelectorAll('th')).map(th => th.innerText.trim().toUpperCase());
+    
+    // 🔥 THE BULLETPROOF INTERCEPTOR: If the table has "OR#", we KNOW it's the Transactions tab!
+    if (headers.includes('OR#') && headers.includes('CUSTOMER')) {
+        let btn = document.activeElement; 
+        let oldText = btn && btn.tagName === 'BUTTON' ? btn.innerText : "Export Active Tab";
+        if (btn && btn.tagName === 'BUTTON') { btn.innerText = "⏳ Fetching Items..."; btn.disabled = true; }
 
         try {
-            // Scan for visible filters (Branch and Dates)
+            // 1. Scan for the visible Branch and Date filters on this specific page
             let visibleDateInputs = Array.from(document.querySelectorAll('input[type="date"]')).filter(input => input.offsetWidth > 0 && input.offsetHeight > 0);
             let visibleSelects = Array.from(document.querySelectorAll('select')).filter(select => select.offsetWidth > 0 && select.offsetHeight > 0);
 
@@ -8059,31 +8067,32 @@ window.downloadExcel = async function(tbodyId, fileName) {
             let endOfDay = new Date(endDateVal);
             endOfDay.setHours(23, 59, 59, 999);
 
+            // 2. Fetch directly from Firebase to get the hidden Cart Items
             let q;
             if (branch === "All") {
-                q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+                q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
             } else {
-                q = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+                q = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
             }
 
-            const snap = await getDocs(q);
+            const snap = await window.getDocs(q);
 
             if (snap.empty) {
                 Swal.fire('No Data', 'No transactions found for this date range.', 'info');
-                if (btn) { btn.innerText = oldText; btn.disabled = false; }
+                if (btn && btn.tagName === 'BUTTON') { btn.innerText = oldText; btn.disabled = false; }
                 return;
             }
 
-            // Build CSV Header with 'Items Sold' included!
+            // 3. Build CSV Header with 'Items Sold' included!
             let csv = "OR#,Branch,Cashier,Customer,Items Sold,Amount,Payment Method,Status,Date,Time\n";
 
             snap.forEach(docSnap => {
                 let tx = docSnap.data();
-                let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
+                let d = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : new Date();
                 let dateStr = d.toLocaleDateString('en-PH');
                 let timeStr = d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
 
-                // Extract all items and add-ons perfectly
+                // 🍔 Extract the Cart Items and Add-ons cleanly!
                 let itemsArr = [];
                 if (tx.cart && Array.isArray(tx.cart)) {
                     tx.cart.forEach(item => {
@@ -8102,12 +8111,20 @@ window.downloadExcel = async function(tbodyId, fileName) {
                 let amount = (tx.netTotal || 0).toFixed(2);
                 let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
                 let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
-                let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
+                
+                // Format Split Payments properly if they exist
+                let method = tx.paymentMethod || 'Cash';
+                if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
+                    method = tx.splitDetails.map(s => `${s.method}`).join(' & ');
+                }
+                method = method.replace(/"/g, '""');
+                
                 let status = (tx.status || 'Paid').replace(/"/g, '""');
 
                 csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${amount}","${method}","${status}","${dateStr}","${timeStr}"\n`;
             });
 
+            // 4. Force UTF-8 encoding for Excel
             let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
             let downloadLink = document.createElement("a");
             let safeBranchName = branch.replace(/[^a-zA-Z0-9]/g, '_');
@@ -8122,27 +8139,30 @@ window.downloadExcel = async function(tbodyId, fileName) {
             console.error("Export Error:", error);
             Swal.fire('Error', 'Failed to generate CSV. Please check your internet connection.', 'error');
         } finally {
-            if (btn) { btn.innerText = oldText; btn.disabled = false; }
+            if (btn && btn.tagName === 'BUTTON') { btn.innerText = oldText; btn.disabled = false; }
         }
         
         return; // 🛑 CRITICAL: Stop here so it doesn't run the screen scraper below!
     }
 
     // ==========================================
-    // 📺 STANDARD SCREEN SCRAPER (For 'Daily Sales', 'Monthly Sales', etc)
+    // 📺 STANDARD SCREEN SCRAPER (For 'Daily Sales', 'Shifts Sales', etc)
     // ==========================================
-    let tbody = document.getElementById(tbodyId);
-    if (!tbody) return;
-    let table = tbody.closest('table');
     let rows = table.querySelectorAll('tr');
     let csv = [];
+    let hideLastColExcel = false;
 
     for (let i = 0; i < rows.length; i++) {
         let row = [], cols = rows[i].querySelectorAll('td, th');
         let colCount = cols.length;
         
-        // Remove the Action/View column from Excel
-        if ((tbodyId === 'zReadingTableBody') && i > 0) colCount -= 1; 
+        // 🔥 REMOVE THE ACTION COLUMN SO BUTTONS DON'T SHOW UP IN EXCEL!
+        let lastColText = cols[colCount - 1] ? cols[colCount - 1].innerText.trim().toUpperCase() : '';
+        if (i === 0 && (lastColText === 'ACTION' || lastColText === 'VIEW')) {
+            hideLastColExcel = true;
+        }
+
+        if (hideLastColExcel) colCount -= 1; 
 
         for (let j = 0; j < colCount; j++) {
             let text = cols[j].innerText.replace(/"/g, '""').replace(/₱/g, '₱'); 
