@@ -677,56 +677,93 @@ window.openNewShift = async function (branch, cashier, startCash) {
   }
 };
 
-// --- THE 100% OFFLINE CHECKOUT ENGINE (INSTANT & NON-BLOCKING) ---
+// ========================================================
+// 🛒 TRUE OFFLINE CHECKOUT & SYNC ENGINE
+// ========================================================
+window.offlineQueue = JSON.parse(localStorage.getItem('takodeal_offline_queue')) || [];
+window.isSyncing = false;
+
 window.processCheckout = async function (payload) {
-  try {
-    // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
-    let splitContainer = document.getElementById('splitPaymentContainer');
-    if (splitContainer && splitContainer.style.display !== 'none') {
-        let m1 = document.getElementById('splitMethod1').value;
-        let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
-        let m2 = document.getElementById('splitMethod2').value;
-        let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
-        
-        if (Math.abs((a1 + a2) - payload.netTotal) > 0.01) {
-            alert(`❌ ERROR: The Split Amounts (₱${a1+a2}) do not match the Order Total (₱${payload.netTotal})!\n\nPlease adjust the split amounts.`);
-            return null; 
+    try {
+        // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
+        let splitContainer = document.getElementById('splitPaymentContainer');
+        if (splitContainer && splitContainer.style.display !== 'none') {
+            let m1 = document.getElementById('splitMethod1').value;
+            let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
+            let m2 = document.getElementById('splitMethod2').value;
+            let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
+            
+            if (Math.abs((a1 + a2) - payload.netTotal) > 0.01) {
+                alert(`❌ ERROR: The Split Amounts (₱${a1+a2}) do not match the Order Total (₱${payload.netTotal})!\n\nPlease adjust the split amounts.`);
+                return null; 
+            }
+            
+            payload.paymentMethod = `Split (${m1} & ${m2})`;
+            payload.splitDetails = [ { method: m1, amount: a1 }, { method: m2, amount: a2 } ];
         }
-        
-        payload.paymentMethod = `Split (${m1} & ${m2})`;
-        payload.splitDetails = [ { method: m1, amount: a1 }, { method: m2, amount: a2 } ];
+
+        // 🔥 100% OFFLINE RECEIPT GENERATOR!
+        let d = new Date();
+        let dateStr = d.getFullYear().toString() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+        let localCounter = parseInt(localStorage.getItem('takodeal_offline_rcpt_count')) || 1;
+        localStorage.setItem('takodeal_offline_rcpt_count', localCounter + 1);
+        let randomHash = Math.random().toString(36).substring(2, 5).toUpperCase();
+        const receiptId = `${dateStr}-${localCounter.toString().padStart(4, '0')}-${randomHash}`;
+
+        // Stamp the payload with the exact local time and receipt ID
+        payload.receiptId = receiptId;
+        payload.localTimestamp = new Date().toISOString(); 
+
+        // 1. PUSH TO LOCAL OFFLINE QUEUE (Saves securely to the tablet's hard drive)
+        window.offlineQueue.push(payload);
+        localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
+
+        // Auto-close split container
+        if (splitContainer) splitContainer.style.display = 'none';
+
+        // 2. WAKE UP THE BACKGROUND SYNC ROBOT
+        window.syncOfflineQueue();
+
+        // 3. INSTANT RETURN: The cashier sees the success screen immediately!
+        return receiptId;
+
+    } catch (error) { 
+        console.error("Critical Checkout Error:", error); 
+        return "OFFLINE-" + Date.now().toString().slice(-6); 
     }
+};
 
-    let d = new Date();
-    let dateStr = d.getFullYear().toString() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
-
-    // 🔥 100% OFFLINE RECEIPT GENERATOR!
-    // Instead of asking the cloud to count receipts (which hangs when offline), we generate a localized, guaranteed-unique ID instantly.
-    let localCounter = parseInt(localStorage.getItem('takodeal_offline_rcpt_count')) || 1;
-    localStorage.setItem('takodeal_offline_rcpt_count', localCounter + 1);
+// 🤖 THE INVISIBLE BACKGROUND SYNC ROBOT
+window.syncOfflineQueue = async function() {
+    // If it's already syncing, the queue is empty, or there's no internet, go back to sleep!
+    if (window.isSyncing || window.offlineQueue.length === 0 || !navigator.onLine) return;
     
-    // Format: 20260521-0012-A8F (Date - Local Count - Random Hash to prevent collisions across tablets)
-    let randomHash = Math.random().toString(36).substring(2, 5).toUpperCase();
-    const receiptId = `${dateStr}-${localCounter.toString().padStart(4, '0')}-${randomHash}`;
+    window.isSyncing = true;
+    let badge = document.getElementById('liveClock').nextElementSibling;
 
-    // 🚀 BACKGROUND FIREBASE WRITE (We DO NOT 'await' this. We let it queue silently!)
-    addDoc(collection(db, "transactions"), {
-      ...payload, receiptId: receiptId, timestamp: serverTimestamp()
-    }).catch(e => console.warn("Transaction queued locally for background sync.", e));
+    try {
+        // Process orders one by one from the queue
+        while (window.offlineQueue.length > 0) {
+            if (badge) {
+                badge.innerHTML = `<span style="background: #eab308; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(234,179,8,0.5);">⏳ SYNCING SALES (${window.offlineQueue.length})...</span>`;
+            }
 
-    // ==========================================
-    // 🏦 AUTO-ROUTE & INVENTORY (SILENT BACKGROUND WORKERS)
-    // We wrap all of this in an async timeout so it NEVER blocks the receipt from printing!
-    // ==========================================
-    setTimeout(async () => {
-        // 1. Auto-Route Sales
-        try {
+            let payload = window.offlineQueue[0];
+
+            // --- ☁️ FIREBASE CLOUD SYNC BEGINS ---
+            
+            // 1. Upload Transaction (Using the exact time the cashier pressed checkout)
+            await addDoc(collection(db, "transactions"), {
+                ...payload, 
+                timestamp: new Date(payload.localTimestamp) 
+            });
+
+            // 2. Route Cash to Ledgers
             let paymentsToRoute = payload.splitDetails ? payload.splitDetails : [{ method: payload.paymentMethod || 'Cash', amount: payload.netTotal || 0 }];
             for (let p of paymentsToRoute) {
                 if (p.amount <= 0) continue; 
                 const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", payload.branch), where("name", "==", p.method));
                 const accSnap = await getDocs(accQuery);
-
                 if (!accSnap.empty) {
                     let accDoc = accSnap.docs[0];
                     await updateDoc(doc(db, "cash_accounts", accDoc.id), { balance: (parseFloat(accDoc.data().balance) || 0) + p.amount });
@@ -734,10 +771,8 @@ window.processCheckout = async function (payload) {
                     await addDoc(collection(db, "cash_accounts"), { branch: payload.branch, name: p.method, balance: p.amount });
                 }
             }
-        } catch (err) { console.warn("Ledger auto-route queued locally.", err); }
 
-        // 2. Inventory Updates (SILENT MODE - NO SPAM LOGS!)
-        try {
+            // 3. Deduct Inventory & Recipes
             let lowStockTriggered = false;
             for (let cartItem of payload.cart) {
                 let itemName = cartItem.name || cartItem.itemName;
@@ -753,8 +788,6 @@ window.processCheckout = async function (payload) {
                     if (!invSnap.empty) {
                         let invData = invSnap.docs[0].data();
                         let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
-                        
-                        // Just update the live stock silently
                         await updateDoc(invSnap.docs[0].ref, { currentStock: newStock });
                         if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                     }
@@ -770,8 +803,6 @@ window.processCheckout = async function (payload) {
                             if (!addonInvSnap.empty) {
                                 let invData = addonInvSnap.docs[0].data();
                                 let newStock = (invData.currentStock || 0) - totalAddonDeduct;
-                                
-                                // Just update the live stock silently
                                 await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
                                 if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
                             }
@@ -781,7 +812,7 @@ window.processCheckout = async function (payload) {
             }
             if (lowStockTriggered) window.pendingLowStockAlarm = true;
 
-            // 3. Takoyaki Global Vault Counter
+            // 4. Update Takoyaki Global Vault Counter
             let totalBallsInOrder = 0;
             for (let cartItem of payload.cart) {
                 let match = (cartItem.name || cartItem.itemName).match(/(\d+)\s*Pcs/i);
@@ -790,22 +821,31 @@ window.processCheckout = async function (payload) {
             if (totalBallsInOrder > 0) {
                 await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: increment(totalBallsInOrder) }, { merge: true });
             }
-        } catch(err) { console.warn("Inventory deduction queued locally.", err); }
 
-    }, 10); 
-    // ^ The timeout is set to 10ms so it immediately gets out of the way of the main UI thread!
+            // --- ☁️ FIREBASE CLOUD SYNC ENDS ---
 
-    // Auto-close split container
-    if (splitContainer) splitContainer.style.display = 'none';
-
-    // 🔥 INSTANT RETURN: The cashier sees the success screen immediately, regardless of network speed!
-    return receiptId;
-  } catch (error) { 
-      console.error(error); 
-      // Ultimate fallback so the cashier isn't stuck
-      return "OFFLINE-" + Date.now().toString().slice(-6); 
-  }
+            // If we survived without network errors, the cloud has the data! 
+            // We can now safely delete it from the tablet's local queue.
+            window.offlineQueue.shift();
+            localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
+        }
+    } catch(e) {
+        console.warn("Offline Sync Robot Paused: Internet dropped mid-sync. Will retry automatically.", e);
+    } finally {
+        window.isSyncing = false;
+        if (window.isAppOnline) window.updateNetworkStatusUI(); // Restores the Green Online Badge
+    }
 };
+
+// Automatically wake up the robot whenever the tablet connects to Wi-Fi
+window.addEventListener('online', () => { 
+    window.isAppOnline = true; 
+    window.updateNetworkStatusUI(); 
+    window.syncOfflineQueue(); 
+});
+
+// Run once on boot to clear out any trapped sales from yesterday
+setTimeout(window.syncOfflineQueue, 5000);
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
