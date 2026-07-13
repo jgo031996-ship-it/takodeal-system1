@@ -16514,3 +16514,104 @@ setTimeout(() => {
         window.loadRemittanceAnalytics();
     };
 }, 1500);
+
+// ========================================================
+// 📥 UPGRADED GLOBAL SALES EXPORTER (WITH ITEMS SOLD)
+// ========================================================
+window.exportGlobalSalesCSV = async function() {
+    // 1. Grab the filters exactly as they appear on the Global Dashboard
+    let branchSelect = document.getElementById('globalBranchFilter') || document.querySelector('select');
+    let startDateInput = document.getElementById('globalStartDate') || document.querySelectorAll('input[type="date"]')[0];
+    let endDateInput = document.getElementById('globalEndDate') || document.querySelectorAll('input[type="date"]')[1];
+
+    let branch = branchSelect ? branchSelect.value : 'All';
+    let startDateVal = startDateInput ? startDateInput.value : new Date().toISOString().split('T')[0];
+    let endDateVal = endDateInput ? endDateInput.value : new Date().toISOString().split('T')[0];
+
+    if (branch.includes("All")) branch = "All"; // Normalize "All Branches"
+
+    let btn = document.querySelector('button[onclick*="exportGlobalSalesCSV"]') || document.querySelector('button[onclick*="downloadExcel"]');
+    let oldText = btn ? btn.innerText : "Export Sales CSV";
+    if (btn) { btn.innerText = "⏳ Generating Excel..."; btn.disabled = true; }
+
+    try {
+        // 2. Set precise timeframes for Firebase querying
+        let startOfDay = new Date(startDateVal);
+        startOfDay.setHours(0, 0, 0, 0);
+        let endOfDay = new Date(endDateVal);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        let q;
+        if (branch === "All") {
+            q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        } else {
+            q = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        }
+
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            Swal.fire('No Data', 'No sales found for this date range.', 'info');
+            if (btn) { btn.innerText = oldText; btn.disabled = false; }
+            return;
+        }
+
+        // 3. 🌟 THE UPGRADE: Added "Items Sold" to the header!
+        let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Date,Time\n";
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            let dateStr = d.toLocaleDateString('en-PH');
+            let timeStr = d.toLocaleTimeString('en-PH');
+
+            // 🍔 Extract the Cart Items and Add-ons cleanly!
+            let itemsArr = [];
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let itemName = item.name || item.itemName;
+                    let itemLine = `${item.qty}x ${itemName}`;
+                    
+                    // Include any add-ons they purchased
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            if (item.addons[key].qty > 0) {
+                                itemLine += ` (+${item.addons[key].qty} ${key})`;
+                            }
+                        }
+                    }
+                    itemsArr.push(itemLine);
+                });
+            }
+            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); // Format safely for CSV
+
+            let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
+            let disc = (tx.globalDiscountAmount || 0).toFixed(2);
+            let net = (tx.netTotal || 0).toFixed(2);
+
+            let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
+            let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
+            let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
+            let status = (tx.status || 'Paid').replace(/"/g, '""');
+
+            // Wrap every value in double quotes so Excel handles commas and formatting smoothly
+            csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${gross}","${disc}","${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
+        });
+
+        // 4. Force UTF-8 encoding for Excel (This guarantees the Peso sign ₱ shows up perfectly!)
+        let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+        let downloadLink = document.createElement("a");
+        downloadLink.download = `Takodeal_Global_Sales_${startDateVal}_to_${endDateVal}.csv`;
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = "none";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+    } catch (error) {
+        console.error("Export Error:", error);
+        Swal.fire('Error', 'Failed to generate CSV. Please check your internet connection.', 'error');
+    } finally {
+        if (btn) { btn.innerText = oldText; btn.disabled = false; }
+    }
+};
