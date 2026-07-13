@@ -15253,52 +15253,109 @@ window.filterAuditTable = function() {
     }
 };
 
+// ========================================================
+// 📥 UPGRADED GLOBAL SALES EXPORTER (WITH VISIBILITY SCANNER)
+// ========================================================
 window.exportDashboardSalesCSV = async function() {
-    let startInput = document.getElementById('dashStartDate').value;
-    let endInput = document.getElementById('dashEndDate').value;
-    let branchFilter = document.getElementById('dashBranchFilter') ? document.getElementById('dashBranchFilter').value : "All";
-    
-    if (!startInput || !endInput) { 
-        alert("Please ensure Start and End dates are selected."); return; 
+    // 1. 🔥 THE FIX: Actively scan the screen for the VISIBLE date boxes, ignoring all hidden tabs!
+    let visibleDateInputs = Array.from(document.querySelectorAll('input[type="date"]')).filter(input => input.offsetWidth > 0 && input.offsetHeight > 0);
+    let visibleSelects = Array.from(document.querySelectorAll('select')).filter(select => select.offsetWidth > 0 && select.offsetHeight > 0);
+
+    let branch = 'All';
+    if (visibleSelects.length > 0) {
+        branch = visibleSelects[0].value;
+        if (branch.includes("All")) branch = "All"; // Normalize "All Branches"
+    }
+
+    let startDateVal = new Date().toISOString().split('T')[0];
+    let endDateVal = new Date().toISOString().split('T')[0];
+
+    // Grab the exact dates the user is looking at!
+    if (visibleDateInputs.length >= 2) {
+        startDateVal = visibleDateInputs[0].value || startDateVal;
+        endDateVal = visibleDateInputs[1].value || endDateVal;
     }
 
     let btn = document.getElementById('btnExportSales');
     let oldText = btn ? btn.innerText : "📥 Export Sales CSV";
-    if (btn) { btn.innerText = "⏳ Exporting..."; btn.disabled = true; }
+    if (btn) { btn.innerText = "⏳ Generating Excel..."; btn.disabled = true; }
 
     try {
-        let startOfDay = new Date(startInput + 'T00:00:00');
-        let endOfDay = new Date(endInput + 'T23:59:59');
+        // 2. Set precise timeframes for Firebase querying
+        let startOfDay = new Date(startDateVal);
+        startOfDay.setHours(0, 0, 0, 0);
+        let endOfDay = new Date(endDateVal);
+        endOfDay.setHours(23, 59, 59, 999);
 
-        let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-        if (branchFilter !== "All") {
-            q = query(collection(db, "transactions"), where("branch", "==", branchFilter), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        let q;
+        if (branch === "All") {
+            q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+        } else {
+            q = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
         }
-        
+
         const snap = await getDocs(q);
 
-        let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Net Total\n";
+        if (snap.empty) {
+            Swal.fire('No Data', 'No sales found for this date range.', 'info');
+            if (btn) { btn.innerText = oldText; btn.disabled = false; }
+            return;
+        }
+
+        // 3. Header with "Items Sold" included
+        let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Date,Time\n";
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
             let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            
+            let dateStr = d.toLocaleDateString('en-PH');
+            let timeStr = d.toLocaleTimeString('en-PH');
+
+            // 🍔 Extract the Cart Items and Add-ons cleanly
             let itemsArr = [];
-            if (tx.cart) { tx.cart.forEach(item => { itemsArr.push(`${item.qty}x ${item.name || item.itemName}`); }); }
-            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); 
-            
-            csv += `"${tx.receiptId}","${d.toLocaleDateString('en-PH')}","${d.toLocaleTimeString('en-PH')}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${tx.netTotal}"\n`;
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let itemName = item.name || item.itemName;
+                    let itemLine = `${item.qty}x ${itemName}`;
+                    
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            if (item.addons[key].qty > 0) {
+                                itemLine += ` (+${item.addons[key].qty} ${key})`;
+                            }
+                        }
+                    }
+                    itemsArr.push(itemLine);
+                });
+            }
+            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
+
+            let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
+            let disc = (tx.globalDiscountAmount || 0).toFixed(2);
+            let net = (tx.netTotal || 0).toFixed(2);
+
+            let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
+            let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
+            let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
+            let status = (tx.status || 'Paid').replace(/"/g, '""');
+
+            csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${gross}","${disc}","${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
         });
 
+        // 4. Force UTF-8 encoding for Excel
         let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         let downloadLink = document.createElement("a");
-        downloadLink.download = `Takodeal_Global_Sales_${startInput}_to_${endInput}.csv`;
+        let safeBranchName = branch.replace(/[^a-zA-Z0-9]/g, '_');
+        downloadLink.download = `Takodeal_${safeBranchName}_Sales_${startDateVal}_to_${endDateVal}.csv`;
         downloadLink.href = window.URL.createObjectURL(csvFile);
         downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink); downloadLink.click(); document.body.removeChild(downloadLink);
-        
-    } catch (e) {
-        console.error("Export Error:", e); alert("Failed to export sales data.");
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+    } catch (error) {
+        console.error("Export Error:", error);
+        Swal.fire('Error', 'Failed to generate CSV. Please check your internet connection.', 'error');
     } finally {
         if (btn) { btn.innerText = oldText; btn.disabled = false; }
     }
