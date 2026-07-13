@@ -1401,6 +1401,22 @@
         <!-- 📜 SECTION 5: GENERAL STOCK LOGS -->
         <div id="invTabLogsContent" style="display: none;">
           <div class="card">
+            
+            <!-- 🔥 NEW: HQ Restock Header & Total Cost -->
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
+                <div>
+                    <h3 style="margin: 0; color: #0f766e;">📜 Item Modification Logs</h3>
+                    <span style="font-size: 12px; color: #64748b;">Chronological history of all individual stock changes.</span>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 8px 15px; border-radius: 6px;">
+                        <span style="font-size: 11px; font-weight: bold; color: #166534; text-transform: uppercase;">Lifetime Restock Cost</span>
+                        <div id="lifetimeRestockCost" style="font-size: 18px; font-weight: 900; color: #15803d;">₱0.00</div>
+                    </div>
+                    <button onclick="window.openGroupedRestocks()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.2); transition: 0.2s;">📦 View HQ Restock Invoices</button>
+                </div>
+            </div>
+
             <div class="table-responsive">
               <table class="data-table">
                 <thead><tr><th>DATE / TIME</th><th>BRANCH</th><th>USER</th><th>ITEM MODIFIED</th><th>OLD QTY</th><th>NEW QTY</th><th>VARIANCE / TYPE</th></tr></thead>
