@@ -17,9 +17,7 @@
   
   <style>
     /* 🔥 FIX: Forces SweetAlert to the absolute front so it never hides behind a modal! */
-    .swal2-container { 
-        z-index: 30000 !important; 
-    }
+    .swal2-container { z-index: 30000 !important; }
     
     /* Fix for SweetAlert Modals causing background scrolling/shifting */
     body.swal2-shown:not(.swal2-no-backdrop):not(.swal2-toast-shown) {
@@ -35,7 +33,7 @@
         color: #475569; 
         border: 1px solid #cbd5e1; 
         padding: 8px 14px; 
-        border-radius: 20px; /* Transforms it into a sleek, modern pill shape */
+        border-radius: 20px; 
         font-weight: 800; 
         cursor: pointer; 
         font-size: 12px; 
@@ -45,60 +43,32 @@
         align-items: center; 
         justify-content: center;
         gap: 6px; 
-        white-space: nowrap; /* THE FIX: Strictly prevents the arrow from dropping to the next line! */
+        white-space: nowrap; 
     }
     
     .action-menu-btn:hover { 
-        background: #f8fafc; 
-        color: #0f766e; 
-        border-color: #94a3b8;
-        box-shadow: 0 4px 6px rgba(15, 118, 110, 0.1); 
-        transform: translateY(-1px); /* Gentle lift effect */
+        background: #f8fafc; color: #0f766e; border-color: #94a3b8;
+        box-shadow: 0 4px 6px rgba(15, 118, 110, 0.1); transform: translateY(-1px); 
     }
     
     .action-menu-content { 
-        display: none; 
-        position: absolute; 
-        right: 0; 
-        background-color: white; 
-        min-width: 150px; 
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
-        z-index: 100; 
-        border-radius: 10px; 
-        border: 1px solid #e2e8f0; 
-        overflow: hidden; 
-        margin-top: 8px; 
+        display: none; position: absolute; right: 0; background-color: white; 
+        min-width: 150px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+        z-index: 100; border-radius: 10px; border: 1px solid #e2e8f0; 
+        overflow: hidden; margin-top: 8px; 
     }
     
     .action-menu-content button { 
-        color: #475569; 
-        padding: 12px 15px; 
-        display: block; 
-        border: none; 
-        background: white; 
-        width: 100%; 
-        text-align: left; 
-        font-size: 13px; 
-        font-weight: 700; 
-        cursor: pointer; 
-        border-bottom: 1px solid #f1f5f9; 
-        transition: all 0.2s ease; 
+        color: #475569; padding: 12px 15px; display: block; border: none; 
+        background: white; width: 100%; text-align: left; font-size: 13px; 
+        font-weight: 700; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: all 0.2s ease; 
     }
     
-    .action-menu-content button:hover { 
-        background-color: #f0fdf4; 
-        color: #16a34a; 
-        padding-left: 20px; /* Smooth slide-in effect when hovering over options */
-    }
-    
+    .action-menu-content button:hover { background-color: #f0fdf4; color: #16a34a; padding-left: 20px; }
     .action-menu-content button:last-child { border-bottom: none; }
     
-    .show-action-menu { 
-        display: block; 
-        animation: dropFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
-    }
+    .show-action-menu { display: block; animation: dropFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-    /* Beautiful bouncy pop-in animation for the menu */
     @keyframes dropFade {
         0% { opacity: 0; transform: translateY(-10px) scale(0.95); }
         100% { opacity: 1; transform: translateY(0) scale(1); }
@@ -106,210 +76,154 @@
 
     /* 🔥 REMOVE THE CLUNKY WHITE BOX FROM THE PAGE TITLE */
     .topbar {
-        background: transparent !important;
-        box-shadow: none !important;
-        border: none !important;
-        padding-top: 5px !important;
-        padding-left: 0 !important; 
-        padding-right: 0 !important;
-        margin-bottom: 15px !important;
+        background: transparent !important; box-shadow: none !important; border: none !important;
+        padding-top: 5px !important; padding-left: 0 !important; padding-right: 0 !important; margin-bottom: 15px !important;
     }
       
     html, body {
-        overscroll-behavior-y: none; /* Stops the pull-to-refresh blank space */
-        position: fixed; /* Locks the background entirely */
-        width: 100%;
-        height: 100%;
+        overscroll-behavior-y: none; position: fixed; width: 100%; height: 100%;
     }
     .overlay {
-        position: fixed !important;
-        inset: 0 !important; /* Locks it to all 4 corners perfectly */
-        height: 100% !important; /* Prevents keyboard squish */
+        position: fixed !important; inset: 0 !important; height: 100% !important;
     }
-    
+
+    /* ========================================= */
+    /* 🌟 ENTERPRISE SIDEBAR REDESIGN & COLLAPSE */
+    /* ========================================= */
+    .sidebar {
+        background: #0f172a; /* Deep slate */
+        display: flex;
+        flex-direction: column;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        border-right: 1px solid #1e293b;
+    }
+
+    .nav-menu {
+        flex: 1; overflow-y: auto !important; overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch; padding-bottom: 30px !important;
+    }
+    .nav-menu::-webkit-scrollbar { width: 5px; }
+    .nav-menu::-webkit-scrollbar-track { background: transparent; }
+    .nav-menu::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    .nav-menu::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* The Category Headers */
+    .nav-category {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+        color: #475569; font-weight: 900; padding: 24px 20px 8px 20px; margin-top: 5px;
+    }
+
+    /* The Links */
+    .nav-item {
+        display: flex; align-items: center; padding: 12px 20px; color: #94a3b8;
+        text-decoration: none; font-size: 13.5px; font-weight: 600;
+        transition: all 0.2s ease; border-left: 3px solid transparent; white-space: nowrap;
+    }
+    .nav-item:hover { background: #1e293b; color: #f8fafc; border-left-color: #475569; }
+    .nav-item.active { background: #1e293b; color: #38bdf8; border-left-color: #38bdf8; }
+
+    /* The Emojis/Icons */
+    .nav-icon { font-size: 17px; min-width: 32px; text-align: left; transition: transform 0.2s ease; }
+    .nav-item:hover .nav-icon { transform: scale(1.15); }
+
+    /* The Badge */
+    .nav-badge {
+        background: #ef4444; color: white; font-size: 10px; font-weight: 900;
+        padding: 3px 8px; border-radius: 12px; margin-left: auto; 
+        box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+    }
+
+    /* 🔥 THE COLLAPSED STATE FIX 🔥 */
+    .sidebar.collapsed { width: 75px !important; }
+    .sidebar.collapsed .nav-item { justify-content: center; padding: 15px 0; }
+    .sidebar.collapsed .nav-item .nav-icon { margin: 0; font-size: 22px; }
+    .sidebar.collapsed .sidebar-header { justify-content: center !important; padding: 15px 0 !important; }
+
+    /* Completely hide text, categories, badges, and user profile so they don't break the layout! */
+    .sidebar.collapsed .nav-text,
+    .sidebar.collapsed .nav-category,
+    .sidebar.collapsed .nav-badge,
+    .sidebar.collapsed .logo-text,
+    .sidebar.collapsed #inboxBadge,
+    .sidebar.collapsed .user-profile,
+    .sidebar.collapsed .hamburger-icon {
+        display: none !important;
+    }
+
     /* ========================================= */
     /* 📱 ULTIMATE RESPONSIVE MOBILE & TABLET ENGINE */
     /* ========================================= */
-    
-    /* 1. Global Scroll Fix (Locks the background, unlocks the content!) */
     body {
-        height: 100dvh !important;
-        overflow: hidden !important; 
-        display: flex;
-        margin: 0;
-        font-family: 'Segoe UI', Tahoma, sans-serif;
-        background-color: var(--bg-color, #F8F6F0);
+        height: 100dvh !important; overflow: hidden !important; display: flex;
+        margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color, #F8F6F0);
     }
 
-    /* 🔥 FIX: RESTORE THE TAB HIDING LOGIC */
-    .view { 
-        display: none; 
-        animation: fadeIn 0.2s ease-in-out; 
-    }
-    .view.active { 
-        display: block; 
-    }
-    
-    @keyframes fadeIn { 
-        from { opacity: 0; transform: translateY(5px); } 
-        to { opacity: 1; transform: translateY(0); } 
-    }
-
-    /* 🔥 FIX: MAKE THE SIDEBAR TABS SCROLLABLE */
-    .sidebar {
-        display: flex;
-        flex-direction: column;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
-    }
-    
-    .nav-menu {
-        flex: 1;
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-        -webkit-overflow-scrolling: touch; /* Super smooth swiping on tablets */
-        padding-bottom: 30px !important; /* Breathing room at the bottom */
-    }
-
-    /* Make the scrollbar look sleek, thin, and professional */
-    .nav-menu::-webkit-scrollbar { width: 4px; }
-    .nav-menu::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+    .view { display: none; animation: fadeIn 0.2s ease-in-out; }
+    .view.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
     .main-content {
-        flex: 1;
-        height: 100dvh !important;
-        overflow-y: auto !important; /* 🔥 This is the master scroll switch! */
-        -webkit-overflow-scrolling: touch;
-        padding: 20px;
-        padding-bottom: 250px !important; /* 🔥 Massive cushion so nothing ever gets cut off! */
-        box-sizing: border-box;
+        flex: 1; height: 100dvh !important; overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch; padding: 20px; padding-bottom: 250px !important; box-sizing: border-box;
     }
 
-    /* 2. Auto-Adaptive Grids (Automatically wraps cards without squishing them!) */
-    .stat-grid {
-        display: grid !important;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
-        gap: 15px !important;
-    }
+    .stat-grid { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important; gap: 15px !important; }
+    .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; }
+    .mobile-menu-btn { display: none; background: none; border: none; font-size: 28px; color: #333; cursor: pointer; margin-right: 15px; }
 
-    /* 3. Table Scroll Protector (Keeps wide tables from breaking the screen) */
-    .table-responsive {
-        width: 100%;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        border-radius: 8px;
-    }
-
-    .mobile-menu-btn {
-        display: none;
-        background: none;
-        border: none;
-        font-size: 28px;
-        color: #333;
-        cursor: pointer;
-        margin-right: 15px;
-    }
-
-    /* 📱 TABLET MODE (iPads / Galaxy Tabs) */
+    /* 📱 TABLET MODE */
     @media (max-width: 1024px) {
         .sidebar { width: 80px !important; transition: width 0.3s; }
-        .sidebar .text, .sidebar .brand .text, .user-profile .details { display: none !important; }
+        .sidebar .text, .sidebar .brand .text, .user-profile .details, .nav-category, .nav-badge, .nav-text { display: none !important; }
+        .sidebar .nav-item { justify-content: center; padding: 15px 0; }
+        .sidebar .nav-item .nav-icon { margin: 0; font-size: 22px; }
         .main-content { padding: 15px !important; width: calc(100% - 80px) !important; margin-left: 80px !important; }
         
-        /* 🔥 FIX 1: Make the Top Bar and Buttons wrap beautifully */
         .topbar { flex-wrap: wrap !important; height: auto !important; padding-bottom: 10px; }
         #globalDateControls { width: 100%; margin-top: 10px; justify-content: flex-start !important; }
 
-        /* 🔥 FIX 2: Force side-by-side split screens to STACK vertically on tablets! */
         div[style*="grid-template-columns: 1fr 1fr; gap: 20px;"],
         div[style*="grid-template-columns: 2fr 1fr; gap: 20px;"] {
-            display: flex !important;
-            flex-direction: column !important;
+            display: flex !important; flex-direction: column !important;
         }
 
-        /* 🔥 FIX 3: Stop table text from squishing and wrapping awkwardly */
         table.data-table th, table.data-table td { white-space: nowrap !important; }
-
-        /* Stat cards stay in a grid, but reduced to 2 columns */
         .stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
         div[style*="grid-template-columns: repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
-        
         .modal { width: 95% !important; max-width: 95% !important; }
         .modal-body { max-height: 75vh !important; overflow-y: auto !important; }
     }
 
-    /* 📱 PHONE MODE (Mobile Devices) */
+    /* 📱 PHONE MODE */
     @media (max-width: 768px) {
-        /* Turn sidebar into a sliding hamburger menu */
         .mobile-menu-btn { display: block !important; }
         .sidebar {
-            position: fixed !important;
-            left: -300px !important;
-            top: 0 !important;
-            height: 100dvh !important;
-            width: 260px !important;
-            z-index: 99999 !important;
-            box-shadow: 4px 0 20px rgba(0,0,0,0.5) !important;
-            transition: left 0.3s ease-in-out !important;
+            position: fixed !important; left: -300px !important; top: 0 !important;
+            height: 100dvh !important; width: 260px !important; z-index: 99999 !important;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.5) !important; transition: left 0.3s ease-in-out !important;
         }
         .sidebar.show-mobile { left: 0 !important; }
-        .sidebar .text, .sidebar .brand .text, .user-profile .details { display: block !important; } 
+        /* Restore text and categories inside the slide-out menu */
+        .sidebar .nav-text, .sidebar .brand .text, .user-profile .details, .nav-category, .nav-badge { display: block !important; } 
+        .sidebar .nav-item { justify-content: flex-start; padding: 12px 20px; }
+        .sidebar .nav-item .nav-icon { margin-right: 15px; font-size: 17px; }
 
-        /* Main content takes 100% of the screen */
         .main-content { width: 100% !important; margin-left: 0 !important; padding: 10px !important; padding-bottom: 40px !important; }
-
-        /* Un-crowd the top bar */
         .topbar { flex-direction: column !important; align-items: flex-start !important; gap: 10px; }
-        
-        /* Stack date filters and buttons so they are easy to thumb-tap */
         #globalDateControls { width: 100% !important; flex-direction: column !important; align-items: stretch !important; gap: 10px !important; margin-top: 10px !important; }
         #globalDateControls input, #globalDateControls button { width: 100% !important; margin: 0 !important; }
         
-        /* Prevent iOS zoom-in glitch by forcing 16px font on inputs */
         input, select, button { padding: 12px !important; font-size: 16px !important; }
 
-        /* 🔥 FIX: Un-squish the Analytics Modal stat cards on phones */
-        div[style*="grid-template-columns: repeat(5"] { 
-            grid-template-columns: 1fr 1fr !important; 
-        }
-        /* Make Est. Drawer Cash span the whole top row so the text fits */
-        #analyticsModal .stat-grid .stat-card:nth-child(1) {
-            grid-column: 1 / -1 !important;
-        }
-        /* Ensure the Best Sellers & Payment tables stack vertically */
-        #analyticsModal div[style*="grid-template-columns: 2fr 1fr"] {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 15px !important;
-        }
-        /* Fix modal sizing for small phone screens */
+        div[style*="grid-template-columns: repeat(5"] { grid-template-columns: 1fr 1fr !important; }
+        #analyticsModal .stat-grid .stat-card:nth-child(1) { grid-column: 1 / -1 !important; }
+        #analyticsModal div[style*="grid-template-columns: 2fr 1fr"] { display: flex !important; flex-direction: column !important; gap: 15px !important; }
         .modal { width: 95% !important; max-width: 95% !important; margin: 0 auto !important; }
         .modal-body { padding: 15px !important; }
     }
-    /* ========================================= */
-    /* 📱 SIDEBAR COLLAPSE ENGINE */
-    /* ========================================= */
-    .sidebar { transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow-x: hidden; }
-    .sidebar.collapsed { width: 75px !important; }
-    
-    /* Hide the text, the logo text, and the inbox badge when collapsed */
-    .sidebar.collapsed .nav-text, 
-    .sidebar.collapsed .logo-text, 
-    .sidebar.collapsed #inboxBadge { display: none !important; }
-    
-    /* Center the emoji icons perfectly */
-    .sidebar.collapsed .nav-item { justify-content: center; padding: 15px 0; }
-    .sidebar.collapsed .nav-item .nav-icon { margin: 0; font-size: 22px; }
-    
-    /* Hide the user profile box at the bottom */
-    .sidebar.collapsed .user-profile { display: none !important; }
-    
-    /* Hide the hamburger icon when collapsed */
-    .sidebar.collapsed .hamburger-icon { display: none !important; }
-    
-    /* Center the logo perfectly when collapsed */
-    .sidebar.collapsed .sidebar-header { justify-content: center !important; padding: 15px 0 !important; }
-  </style>
+</style>
 </head>
 
 <body>
