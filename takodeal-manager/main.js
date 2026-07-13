@@ -1260,7 +1260,6 @@ window.renderRestockCart = function () {
 };
 
 window.confirmMultiRestock = async function() {
-    // 🛡️ THE GUARDRAIL: Prevent confirming if an item is hanging in the input boxes!
     let selectedItem = document.getElementById('restockItemSelect');
     let qtyInput = document.getElementById('restockQtyInput');
     
@@ -1290,34 +1289,40 @@ window.confirmMultiRestock = async function() {
         // 1. Process each item mathematically into the inventory
         for (let item of window.restockCart) {
             let docRef = doc(db, "inventory", item.id);
+            // 🔥 THE FIX: Fetch Live Firebase Data to prevent simultaneous math collisions!
             let snap = await getDoc(docRef);
             if (snap.exists()) {
                 let data = snap.data();
                 let oldQty = parseFloat(data.currentStock || 0);
                 
-                // Get the accurate conversion rate
                 let convRate = parseFloat(item.conversionRate || data.conversionRate || data.conversion || 1);
                 let addBaseQty = parseFloat(item.qty) * convRate;
-                let newQty = oldQty + addBaseQty;
+                
+                // 🔥 THE GHOST DEBT FIX: If it was negative, ignore it and treat old stock as 0
+                let baseStockMath = oldQty < 0 ? 0 : oldQty;
+                let newQty = baseStockMath + addBaseQty;
 
                 await updateDoc(docRef, { currentStock: newQty });
 
-                // Log to the standard individual history
-                await addDoc(collection(db, "stock_history"), {
-                    itemId: item.id,
-                    itemName: data.name || item.name,
+                let wipeNote = oldQty < 0 ? ` (Wiped ${oldQty.toFixed(2)} negative ghost debt)` : '';
+
+                // 🔥 THE LEDGER FIX: Ensure it correctly writes to stock_logs so it appears in the Trace Modal!
+                await addDoc(collection(db, "stock_logs"), {
                     branch: data.branch || "Main Office",
+                    item: data.name || item.name,
+                    uom: data.uom || 'units',
                     oldQty: oldQty,
                     newQty: newQty,
-                    variance: `+${addBaseQty} ${data.uom || 'units'}`,
+                    variance: addBaseQty,
                     type: "HQ Delivery Restock",
+                    note: `Supplier: ${supplier}${wipeNote}`,
                     user: cashier,
                     timestamp: new Date()
                 });
             }
         }
 
-        // 2. 🔥 NEW: Save the Grouped "Invoice" Document!
+        // 2. Save the Grouped "Invoice" Document
         await addDoc(collection(db, "hq_restocks"), {
             supplier: supplier,
             totalCost: totalCost,
@@ -1329,7 +1334,6 @@ window.confirmMultiRestock = async function() {
 
         Swal.fire({title: '✅ Restock Complete!', text: 'Inventory updated and grouped invoice saved.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
         
-        // Clean up
         document.getElementById('restockModal').style.display = 'none';
         window.restockCart = [];
         if (typeof window.renderRestockCart === 'function') window.renderRestockCart();
@@ -1338,7 +1342,7 @@ window.confirmMultiRestock = async function() {
 
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
         if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
-        window.updateLifetimeRestockCost(); // Update the top box!
+        if (typeof window.updateLifetimeRestockCost === 'function') window.updateLifetimeRestockCost();
 
     } catch (e) {
         console.error(e);
@@ -1896,243 +1900,220 @@ window.clearDispatchCart = async function() {
 // 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY & ACCOUNTABILITY ENGINE
 // ==========================================
 window.submitMultiDispatch = async function () {
-  let fromBranch = document.getElementById('dispFrom').value;
-  let toBranch = document.getElementById('dispTo').value;
+    let fromBranch = document.getElementById('dispFrom').value;
+    let toBranch = document.getElementById('dispTo').value;
 
-  if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
-  if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
+    if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
+    if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
 
-  let btn = document.getElementById('btnSubmitDispatch');
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let btn = document.getElementById('btnSubmitDispatch');
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
 
-  if (isFranchisee) {
-      if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
-      btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
-      try {
-          await addDoc(collection(db, "purchase_orders"), {
-              branch: toBranch, items: window.dispatchCart, status: "Pending",
-              requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
-          });
-          Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
-          window.dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
-      } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
-      finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
-      return; 
-  }
+    if (isFranchisee) {
+        if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
+        btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
+        try {
+            await addDoc(collection(db, "purchase_orders"), {
+                branch: toBranch, items: window.dispatchCart, status: "Pending",
+                requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
+            });
+            Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
+            window.dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
+        } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
+        finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
+        return; 
+    }
 
-  // Force a sync of the math before we submit
-  for (let i = 0; i < window.dispatchCart.length; i++) {
-      let inp = document.getElementById(`cartQty_${i}`);
-      if (inp) {
-          let val = parseFloat(inp.value) || 0;
-          let conv = window.dispatchCart[i].convRate || 1;
-          window.dispatchCart[i].rawQty = val; window.dispatchCart[i].qty = val * conv;
-      }
-  }
+    for (let i = 0; i < window.dispatchCart.length; i++) {
+        let inp = document.getElementById(`cartQty_${i}`);
+        if (inp) {
+            let val = parseFloat(inp.value) || 0;
+            let conv = window.dispatchCart[i].convRate || 1;
+            window.dispatchCart[i].rawQty = val; window.dispatchCart[i].qty = val * conv;
+        }
+    }
 
-  // Filter the lists!
-  let validCart = window.dispatchCart.filter(i => i.qty > 0);
-  let skippedCart = window.dispatchCart.filter(i => i.qty <= 0); 
+    let validCart = window.dispatchCart.filter(i => i.qty > 0);
+    let skippedCart = window.dispatchCart.filter(i => i.qty <= 0); 
 
-  if (validCart.length === 0) { 
-      return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send. If you want to return the whole list to the feed, click "🧹 Set Aside / Clear Cart" below.', 'warning'); 
-  }
+    if (validCart.length === 0) { 
+        return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); 
+    }
 
-  btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
+    btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
 
-  try {
-      let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
-      if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
+    try {
+        let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
+        if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
 
-      let totalPenaltiesIssued = 0;
+        let totalPenaltiesIssued = 0;
 
-      for (let item of validCart) {
-          let itemNameToFind = item.itemName || item.name;
-          let invItem = window.dispatchInventoryList.find(i => i.name === itemNameToFind);
+        for (let item of validCart) {
+            let itemNameToFind = item.itemName || item.name;
+            let invItem = window.dispatchInventoryList.find(i => i.name === itemNameToFind);
 
-          // 1. DEDUCT FROM HQ
-          let sourceRef;
-          let currentHqStock = 0;
-          
-          if (!invItem) {
-              const newInvRef = await addDoc(collection(db, "inventory"), {
-                  branch: fromBranch, name: itemNameToFind, uom: item.baseUom || 'units',
-                  category: item.category || 'Ingredients', currentStock: 0, 
-                  conversionRate: item.convRate || 1, purchaseUom: item.purchaseUom || 'units'
-              });
-              sourceRef = newInvRef;
-              invItem = { id: newInvRef.id, uom: item.baseUom || 'units', category: item.category || "Ingredients", purchaseUom: item.purchaseUom || 'units', cost: item.cost || 0, reorderLevel: 10 };
-          } else {
-              sourceRef = doc(db, "inventory", invItem.id);
-              currentHqStock = parseFloat(invItem.currentStock) || 0;
-          }
+            let sourceRef;
+            let currentHqStock = 0;
+            
+            if (!invItem) {
+                const newInvRef = await addDoc(collection(db, "inventory"), {
+                    branch: fromBranch, name: itemNameToFind, uom: item.baseUom || 'units',
+                    category: item.category || 'Ingredients', currentStock: 0, 
+                    conversionRate: item.convRate || 1, purchaseUom: item.purchaseUom || 'units'
+                });
+                sourceRef = newInvRef;
+                invItem = { id: newInvRef.id, uom: item.baseUom || 'units', category: item.category || "Ingredients", purchaseUom: item.purchaseUom || 'units', cost: item.cost || 0, reorderLevel: 10 };
+            } else {
+                sourceRef = doc(db, "inventory", invItem.id);
+                // 🔥 THE FIX: Fetch Live Firebase Data to prevent simultaneous math collisions!
+                let liveSnap = await getDoc(sourceRef);
+                if (liveSnap.exists()) {
+                    currentHqStock = parseFloat(liveSnap.data().currentStock) || 0;
+                }
+            }
 
-          await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
+            await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
 
-          // 🔥 THE FIX: Explicitly log the HQ deduction into the Trace Ledger!
-          await addDoc(collection(db, "stock_logs"), {
-              branch: fromBranch, 
-              item: itemNameToFind, 
-              uom: item.baseUom || invItem.uom || 'units',
-              oldQty: currentHqStock, 
-              newQty: currentHqStock - item.qty, 
-              variance: -item.qty,
-              type: "Dispatch Delivery", 
-              note: `Sent to ${toBranch} (Driver: ${driverName})`,
-              user: window.sessionUser ? window.sessionUser.cashierName : "Manager", 
-              timestamp: serverTimestamp()
-          });
+            // 1. Log Deduction to Source Branch (Main Office)
+            await addDoc(collection(db, "stock_logs"), {
+                branch: fromBranch, 
+                item: itemNameToFind, 
+                uom: item.baseUom || invItem.uom || 'units',
+                oldQty: currentHqStock, 
+                newQty: currentHqStock - item.qty, 
+                variance: -item.qty,
+                type: "Dispatch Delivery", 
+                note: `Sent to ${toBranch} (Driver: ${driverName})`,
+                user: window.sessionUser ? window.sessionUser.cashierName : "Manager", 
+                timestamp: serverTimestamp()
+            });
 
-          // 🔥 2. THE NEW ACCOUNTABILITY ENGINE: Pre-Restock Branch Audit & Penalty 🔥
-          if (item.requestType === "Low Stock" || item.requestType === "Out of Stock") {
-              const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
-              const branchInvSnap = await getDocs(branchInvQ);
-              
-              if (!branchInvSnap.empty) {
-                  let bDoc = branchInvSnap.docs[0];
-                  let bData = bDoc.data();
-                  let sysStock = parseFloat(bData.currentStock) || 0;
-                  let physStock = parseFloat(item.physicalStock) || 0;
+            // 🔥 THE FIX: Log "Incoming Dispatch" to Destination Branch so it traces immediately!
+            await addDoc(collection(db, "stock_logs"), {
+                branch: toBranch, 
+                item: itemNameToFind, 
+                uom: item.baseUom || invItem.uom || 'units',
+                oldQty: 0, 
+                newQty: 0, 
+                variance: 0,
+                type: "Incoming Dispatch", 
+                note: `Dispatched from ${fromBranch} (Driver: ${driverName}). Awaiting receipt by cashier.`,
+                user: "System (In Transit)", 
+                timestamp: serverTimestamp()
+            });
 
-                  // A. The Penalty Logic (If System is Positive and they are short)
-                  if (sysStock > 0 && physStock < sysStock) {
-                      let missingQty = sysStock - physStock;
-                      let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(item.cost) || 0;
-                      
-                      // We charge them EXACTLY the raw cost of the missing items to be perfectly fair to accounting.
-                      let penaltyValue = missingQty * costPerUnit;
+            // 2. THE ACCOUNTABILITY ENGINE (Penalty / Ghost Wipe Logic remains untouched)
+            if (item.requestType === "Low Stock" || item.requestType === "Out of Stock") {
+                const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
+                const branchInvSnap = await getDocs(branchInvQ);
+                
+                if (!branchInvSnap.empty) {
+                    let bDoc = branchInvSnap.docs[0];
+                    let bData = bDoc.data();
+                    let sysStock = parseFloat(bData.currentStock) || 0;
+                    let physStock = parseFloat(item.physicalStock) || 0;
 
-                      // 1. Reset Baseline to what they actually have
-                      await updateDoc(bDoc.ref, { currentStock: physStock });
+                    if (sysStock > 0 && physStock < sysStock) {
+                        let missingQty = sysStock - physStock;
+                        let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(item.cost) || 0;
+                        let penaltyValue = missingQty * costPerUnit;
 
-                      // 2. Log Stock History for the branch
-                      await addDoc(collection(db, "stock_logs"), {
-                          branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
-                          oldQty: sysStock, newQty: physStock, variance: -missingQty,
-                          type: "Audit Adjustment (Penalty)",
-                          note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`,
-                          user: "System (HQ)", timestamp: serverTimestamp()
-                      });
+                        await updateDoc(bDoc.ref, { currentStock: physStock });
+                        await addDoc(collection(db, "stock_logs"), {
+                            branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
+                            oldQty: sysStock, newQty: physStock, variance: -missingQty,
+                            type: "Audit Adjustment (Penalty)",
+                            note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`,
+                            user: "System (HQ)", timestamp: serverTimestamp()
+                        });
 
-                      // 3. Log the Penalty to the Ledger (Assigned to the Branch Team)
-                      if (penaltyValue > 0) {
-                          await addDoc(collection(db, "staff_deductions"), {
-                              staffName: `Team ${toBranch}`, // Assigned to the team to be split
-                              type: "Missing Stock Penalty",
-                              amount: penaltyValue,
-                              dateAdded: new Date(),
-                              status: "Unpaid",
-                              remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.`
-                          });
+                        if (penaltyValue > 0) {
+                            await addDoc(collection(db, "staff_deductions"), {
+                                staffName: `Team ${toBranch}`, type: "Missing Stock Penalty",
+                                amount: penaltyValue, dateAdded: new Date(), status: "Unpaid",
+                                remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.`
+                            });
+                            await addDoc(collection(db, "manager_alerts"), {
+                                type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team",
+                                message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch} for missing ${missingQty.toFixed(2)} units.`,
+                                timestamp: serverTimestamp(), isRead: false
+                            });
+                            totalPenaltiesIssued++;
+                        }
+                    } 
+                    else if (sysStock <= 0) {
+                        await updateDoc(bDoc.ref, { currentStock: physStock });
+                        await addDoc(collection(db, "stock_logs"), {
+                            branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
+                            oldQty: sysStock, newQty: physStock, variance: physStock - sysStock,
+                            type: "Negative Stock Wipe", note: `Clean slate reset before restock.`,
+                            user: "System (HQ)", timestamp: serverTimestamp()
+                        });
+                    }
+                }
+            }
 
-                          // 4. Alert the Manager
-                          await addDoc(collection(db, "manager_alerts"), {
-                              type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team",
-                              message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch} for missing ${missingQty.toFixed(2)} units.`,
-                              timestamp: serverTimestamp(), isRead: false
-                          });
-                          totalPenaltiesIssued++;
-                      }
-                  } 
-                  // B. The "Ghost Debt" Logic (If System is Negative)
-                  else if (sysStock <= 0) {
-                      // Clean slate reset before the delivery arrives. NO PENALTY.
-                      await updateDoc(bDoc.ref, { currentStock: physStock });
-                      await addDoc(collection(db, "stock_logs"), {
-                          branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
-                          oldQty: sysStock, newQty: physStock, variance: physStock - sysStock,
-                          type: "Negative Stock Wipe", note: `Clean slate reset before restock.`,
-                          user: "System (HQ)", timestamp: serverTimestamp()
-                      });
-                  }
-              }
-          }
+            // 3. LOG THE DISPATCH
+            await addDoc(collection(db, "dispatch_logs"), {
+                date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
+                time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
+                item: itemNameToFind, qty: item.qty || 0, uom: item.uom || invItem.uom || 'units', 
+                details: `${fromBranch} ➡️ ${toBranch}`, toBranch: toBranch, driver: driverName, status: "In Transit", 
+                displayQty: item.rawQty || item.qty || 0, displayUom: item.friendlyUom || item.uom || invItem.uom || 'units', 
+                convRate: item.convRate || 1, category: item.category || invItem.category || "Uncategorized", 
+                purchaseUom: item.purchaseUom || invItem.purchaseUom || invItem.uom || 'units', cost: item.cost || invItem.cost || 0, reorderLevel: item.reorderLevel || 10 
+            });
+        }
 
-          // 3. LOG THE DISPATCH (In Transit)
-          await addDoc(collection(db, "dispatch_logs"), {
-              date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-              time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
-              item: itemNameToFind, 
-              qty: item.qty || 0, 
-              uom: item.uom || invItem.uom || 'units', 
-              details: `${fromBranch} ➡️ ${toBranch}`,
-              toBranch: toBranch, 
-              driver: driverName, 
-              status: "In Transit", 
-              displayQty: item.rawQty || item.qty || 0,     
-              displayUom: item.friendlyUom || item.uom || invItem.uom || 'units', 
-              convRate: item.convRate || 1, 
-              category: item.category || invItem.category || "Uncategorized", 
-              purchaseUom: item.purchaseUom || invItem.purchaseUom || invItem.uom || 'units', 
-              cost: item.cost || invItem.cost || 0, 
-              reorderLevel: item.reorderLevel || invItem.reorderLevel || 10 
-          });
-      }
+        if (skippedCart.length > 0) {
+            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units" }));
+            let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+            await addDoc(collection(db, "purchase_orders"), {
+                branch: toBranch, items: safeSkippedCart, status: "Delayed", type: "Delayed Delivery",
+                originalRequestDate: todayStr, requestedBy: "System (Postponed / Set Aside)", timestamp: serverTimestamp()
+            });
+        }
 
-      // 🔥 Auto-Set Aside items with 0 qty into a pending request
-      if (skippedCart.length > 0) {
-          let safeSkippedCart = skippedCart.map(i => ({
-              ...i,
-              category: i.category || "Uncategorized",
-              purchaseUom: i.purchaseUom || i.uom || "units"
-          }));
+        window.dispatchCart = [];
+        localStorage.removeItem('takodeal_dispatch_cart');
+        localStorage.removeItem('takodeal_dispatch_to');
+        Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+        
+        let activePoStr = localStorage.getItem('takodeal_active_po');
+        if (activePoStr) {
+            let poIds = activePoStr.split(',');
+            for (let id of poIds) {
+                if (id) {
+                    try { 
+                        let finalStatus = skippedCart.length > 0 ? "Partially Dispatched" : "Completed";
+                        await updateDoc(doc(db, "purchase_orders", id), { 
+                            status: finalStatus,
+                            managerMessage: skippedCart.length > 0 ? "Some items were out of stock and pushed to a delayed request." : "All items shipped."
+                        }); 
+                    } catch(e){}
+                }
+            }
+            localStorage.removeItem('takodeal_active_po');
+        }
 
-          let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-          await addDoc(collection(db, "purchase_orders"), {
-              branch: toBranch,
-              items: safeSkippedCart,
-              status: "Delayed",
-              type: "Delayed Delivery",
-              originalRequestDate: todayStr,
-              requestedBy: "System (Postponed / Set Aside)",
-              timestamp: serverTimestamp()
-          });
-      }
-
-      // 🧹 PURGE THE MEMORY!
-      window.dispatchCart = [];
-      localStorage.removeItem('takodeal_dispatch_cart');
-      localStorage.removeItem('takodeal_dispatch_to');
-      Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-      
-      let activePoStr = localStorage.getItem('takodeal_active_po');
-      if (activePoStr) {
-          let poIds = activePoStr.split(',');
-          for (let id of poIds) {
-              if (id) {
-                  try { 
-                      // 🔥 THE FIX: Tell the Cashier exactly what happened!
-                      let finalStatus = skippedCart.length > 0 ? "Partially Dispatched" : "Completed";
-                      await updateDoc(doc(db, "purchase_orders", id), { 
-                          status: finalStatus,
-                          managerMessage: skippedCart.length > 0 ? "Some items were out of stock and pushed to a delayed request." : "All items shipped."
-                      }); 
-                  } catch(e){}
-              }
-          }
-          localStorage.removeItem('takodeal_active_po');
-      }
-
-      let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
-      let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
-      
-      Swal.fire({
-          title: '🚚 Dispatch Successful!',
-          html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`,
-          icon: 'success',
-          customClass: { popup: 'rounded-2xl shadow-xl' }
-      });
-      
-      window.renderDispatchCart(); 
-      if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
-      window.loadDispatchLogs();
-  } catch (e) { 
-      console.error("Dispatch Execution Error:", e); 
-      Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error');
-  } 
-  finally { 
-      btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; 
-  }
+        let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
+        let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
+        
+        Swal.fire({
+            title: '🚚 Dispatch Successful!',
+            html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+        
+        window.renderDispatchCart(); 
+        if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
+        window.loadDispatchLogs();
+    } catch (e) { 
+        console.error("Dispatch Execution Error:", e); 
+        Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error');
+    } 
+    finally { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
 };
 
 window.activeLogisticsTab = 'Requests'; // Default tab memory
