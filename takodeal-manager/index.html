@@ -27,15 +27,82 @@
         overflow-y: hidden !important;
     }
 
-    /* ⚙️ INVENTORY ACTION DROPDOWN ENGINE */
+    /* ⚙️ INVENTORY ACTION DROPDOWN ENGINE (BEAUTIFIED) */
     .action-menu-container { position: relative; display: inline-block; }
-    .action-menu-btn { background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-    .action-menu-btn:hover { background: #e2e8f0; color: #0f172a; }
-    .action-menu-content { display: none; position: absolute; right: 0; background-color: white; min-width: 140px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 100; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; margin-top: 5px; }
-    .action-menu-content button { color: #334155; padding: 10px 15px; display: block; border: none; background: white; width: 100%; text-align: left; font-size: 12px; font-weight: bold; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: 0.2s; }
-    .action-menu-content button:hover { background-color: #f1f5f9; color: #0f766e; }
+    
+    .action-menu-btn { 
+        background: #ffffff; 
+        color: #475569; 
+        border: 1px solid #cbd5e1; 
+        padding: 8px 14px; 
+        border-radius: 20px; /* Transforms it into a sleek, modern pill shape */
+        font-weight: 800; 
+        cursor: pointer; 
+        font-size: 12px; 
+        transition: all 0.2s ease; 
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        display: inline-flex; 
+        align-items: center; 
+        justify-content: center;
+        gap: 6px; 
+        white-space: nowrap; /* THE FIX: Strictly prevents the arrow from dropping to the next line! */
+    }
+    
+    .action-menu-btn:hover { 
+        background: #f8fafc; 
+        color: #0f766e; 
+        border-color: #94a3b8;
+        box-shadow: 0 4px 6px rgba(15, 118, 110, 0.1); 
+        transform: translateY(-1px); /* Gentle lift effect */
+    }
+    
+    .action-menu-content { 
+        display: none; 
+        position: absolute; 
+        right: 0; 
+        background-color: white; 
+        min-width: 150px; 
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+        z-index: 100; 
+        border-radius: 10px; 
+        border: 1px solid #e2e8f0; 
+        overflow: hidden; 
+        margin-top: 8px; 
+    }
+    
+    .action-menu-content button { 
+        color: #475569; 
+        padding: 12px 15px; 
+        display: block; 
+        border: none; 
+        background: white; 
+        width: 100%; 
+        text-align: left; 
+        font-size: 13px; 
+        font-weight: 700; 
+        cursor: pointer; 
+        border-bottom: 1px solid #f1f5f9; 
+        transition: all 0.2s ease; 
+    }
+    
+    .action-menu-content button:hover { 
+        background-color: #f0fdf4; 
+        color: #16a34a; 
+        padding-left: 20px; /* Smooth slide-in effect when hovering over options */
+    }
+    
     .action-menu-content button:last-child { border-bottom: none; }
-    .show-action-menu { display: block; animation: fadeIn 0.2s ease-in-out; }
+    
+    .show-action-menu { 
+        display: block; 
+        animation: dropFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
+    }
+
+    /* Beautiful bouncy pop-in animation for the menu */
+    @keyframes dropFade {
+        0% { opacity: 0; transform: translateY(-10px) scale(0.95); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
 
     /* 🔥 REMOVE THE CLUNKY WHITE BOX FROM THE PAGE TITLE */
     .topbar {
