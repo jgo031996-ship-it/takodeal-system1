@@ -3306,8 +3306,29 @@ window.openBranchDetails = async function (branch) {
   }
 };
 
-// --- THE LIVE INVENTORY ENGINE (UPGRADED WITH FILTERING) ---
+// --- THE LIVE INVENTORY ENGINE (UPGRADED WITH TOTAL VALUE & ACTION DROPDOWNS) ---
 window.refreshInventoryView = function() { window.loadInventoryData(); };
+
+// 🔥 NEW: Dropdown Helper Functions
+window.toggleActionMenu = function(menuId) {
+    // Close all other open menus first
+    document.querySelectorAll('.action-menu-content').forEach(menu => {
+        if (menu.id !== menuId) menu.classList.remove('show-action-menu');
+    });
+    // Toggle the clicked one
+    document.getElementById(menuId).classList.toggle('show-action-menu');
+};
+
+// Auto-close dropdowns when clicking anywhere else on the screen
+window.addEventListener('click', function(e) {
+    if (!e.target.matches('.action-menu-btn')) {
+        document.querySelectorAll('.action-menu-content').forEach(menu => {
+            if (menu.classList.contains('show-action-menu')) {
+                menu.classList.remove('show-action-menu');
+            }
+        });
+    }
+});
 
 window.loadInventoryData = async function() {
     let branchFilter = document.getElementById('invBranchFilter').value;
@@ -3316,7 +3337,9 @@ window.loadInventoryData = async function() {
     
     let tbody = document.getElementById('inventoryTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 20px;">Loading inventory...</td></tr>';
+    
+    // Updated colspan to 9 for the new Total Value column
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 20px;">Loading inventory...</td></tr>';
     
     try {
         let q = branchFilter === "All" ? query(collection(db, "inventory")) : query(collection(db, "inventory"), where("branch", "==", branchFilter));
@@ -3345,7 +3368,13 @@ window.loadInventoryData = async function() {
             if (baseCost === 0 && d.purchaseCost && d.conversionRate) {
                  baseCost = d.purchaseCost / d.conversionRate;
             }
-            if (stock > 0 && !isNaN(baseCost)) totalValue += (baseCost * stock);
+
+            // 🔥 NEW: Calculate the specific row's total value (only if stock is positive)
+            let rowTotalValue = 0;
+            if (stock > 0 && !isNaN(baseCost)) {
+                rowTotalValue = baseCost * stock;
+                totalValue += rowTotalValue;
+            }
             
             let isLow = stock <= parseFloat(d.reorderLevel || d.lowStockAlert || 5);
             let statusHtml = isLow ? `<span style="color:#ef4444; background:#fef2f2; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Low Stock</span>` : `<span style="color:#16a34a; font-weight:bold; font-size:11px;">In Stock</span>`;
@@ -3379,16 +3408,24 @@ window.loadInventoryData = async function() {
                     <td style="padding: 12px;">${stockHtml}</td>
                     <td style="padding: 12px;">${statusHtml}</td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
-                    <td style="padding: 12px; display:flex; gap:5px; align-items: center; flex-wrap: wrap;">
-                        ${d.branch === 'Main Office' ? `<button onclick="window.sellMainOfficeStock('${d.id}', '${d.name.replace(/'/g, "\\'")}', ${stock}, '${bUom}', ${baseCost})" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">💸 Sell</button>` : ''}
-                        <button onclick="window.openItemLedger('${d.branch}', '${d.name.replace(/'/g, "\\'")}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Trace</button>
-                        <button onclick="window.openEditInvModal('${d.id}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
+                    <td style="padding: 12px; font-weight:900; color:#0f766e; font-size: 14px;">₱${rowTotalValue.toFixed(2)}</td>
+                    <td style="padding: 12px; text-align: center; position: relative;">
+                        <!-- 🔥 NEW: Clean Action Dropdown -->
+                        <div class="action-menu-container">
+                            <button class="action-menu-btn" onclick="window.toggleActionMenu('menu_${d.id}')">⚙️ Actions ▼</button>
+                            <div id="menu_${d.id}" class="action-menu-content">
+                                ${d.branch === 'Main Office' ? `<button onclick="window.sellMainOfficeStock('${d.id}', '${d.name.replace(/'/g, "\\'")}', ${stock}, '${bUom}', ${baseCost})">💸 Sell Stock</button>` : ''}
+                                <button onclick="window.openItemLedger('${d.branch}', '${d.name.replace(/'/g, "\\'")}')">🔍 Trace Ledger</button>
+                                <button onclick="window.openEditInvModal('${d.id}')">✏️ Edit Item</button>
+                            </div>
+                        </div>
                     </td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #64748b; font-weight: bold;">No items match your filters.</td></tr>';
+        // Updated colspan to 9
+        tbody.innerHTML = html || '<tr><td colspan="9" class="text-center" style="padding: 30px; color: #64748b; font-weight: bold;">No items match your filters.</td></tr>';
         
         let tItemsEl = document.getElementById('invTotalItems');
         let tValEl = document.getElementById('invTotalValue');
@@ -3403,7 +3440,8 @@ window.loadInventoryData = async function() {
 
     } catch (e) {
         console.error("Inventory Load Error: ", e);
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color:red; padding:20px;">Error loading inventory. Check connection.</td></tr>';
+        // Updated colspan to 9
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="color:red; padding:20px;">Error loading inventory. Check connection.</td></tr>';
     }
 };
 
