@@ -8034,32 +8034,27 @@ window.downloadExcel = async function(tbodyId, fileName) {
     let table = tbody.closest('table');
     if (!table) return;
     
-    // Scan the headers of the current active table
-    let headers = Array.from(table.querySelectorAll('th')).map(th => th.innerText.trim().toUpperCase());
+    let headers = Array.from(table.querySelectorAll('th, td')).map(cell => cell.innerText.trim().toUpperCase());
     
-    // 🔥 THE BULLETPROOF INTERCEPTOR: If the table has "OR#", we KNOW it's the Transactions tab!
-    if (headers.includes('OR#') && headers.includes('CUSTOMER')) {
+    // 🔥 THE BULLETPROOF INTERCEPTOR: Checks if the table contains 'OR#' or if it's the Sales History table!
+    if (headers.includes('OR#') || headers.includes('OR #') || tbodyId.toLowerCase().includes('history') || tbodyId.toLowerCase().includes('transaction')) {
         let btn = document.activeElement; 
         let oldText = btn && btn.tagName === 'BUTTON' ? btn.innerText : "Export Active Tab";
         if (btn && btn.tagName === 'BUTTON') { btn.innerText = "⏳ Fetching Items..."; btn.disabled = true; }
 
         try {
-            // 1. Scan for the visible Branch and Date filters on this specific page
-            let visibleDateInputs = Array.from(document.querySelectorAll('input[type="date"]')).filter(input => input.offsetWidth > 0 && input.offsetHeight > 0);
-            let visibleSelects = Array.from(document.querySelectorAll('select')).filter(select => select.offsetWidth > 0 && select.offsetHeight > 0);
+            // 1. Grab the exact Date Filters from the Sales History Page
+            let startInput = document.getElementById('histStartDate') || document.querySelectorAll('input[type="date"]')[0];
+            let endInput = document.getElementById('histEndDate') || document.querySelectorAll('input[type="date"]')[1];
+            let branchSelect = document.getElementById('histBranchFilter') || document.querySelector('select');
 
+            let startDateVal = startInput ? startInput.value : new Date().toISOString().split('T')[0];
+            let endDateVal = endInput ? endInput.value : new Date().toISOString().split('T')[0];
+            
             let branch = 'All';
-            if (visibleSelects.length > 0) {
-                branch = visibleSelects[0].value;
+            if (branchSelect) {
+                branch = branchSelect.value;
                 if (branch.includes("All")) branch = "All";
-            }
-
-            let startDateVal = new Date().toISOString().split('T')[0];
-            let endDateVal = new Date().toISOString().split('T')[0];
-
-            if (visibleDateInputs.length >= 2) {
-                startDateVal = visibleDateInputs[0].value || startDateVal;
-                endDateVal = visibleDateInputs[1].value || endDateVal;
             }
 
             let startOfDay = new Date(startDateVal);
@@ -8084,7 +8079,7 @@ window.downloadExcel = async function(tbodyId, fileName) {
             }
 
             // 3. Build CSV Header with 'Items Sold' included!
-            let csv = "OR#,Branch,Cashier,Customer,Items Sold,Amount,Payment Method,Status,Date,Time\n";
+            let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Amount,Discount,Net Amount,Payment Method,Status,Date,Time\n";
 
             snap.forEach(docSnap => {
                 let tx = docSnap.data();
@@ -8108,7 +8103,9 @@ window.downloadExcel = async function(tbodyId, fileName) {
                 }
                 let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
 
-                let amount = (tx.netTotal || 0).toFixed(2);
+                let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
+                let disc = (tx.globalDiscountAmount || 0).toFixed(2);
+                let net = (tx.netTotal || 0).toFixed(2);
                 let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
                 let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
                 
@@ -8121,7 +8118,8 @@ window.downloadExcel = async function(tbodyId, fileName) {
                 
                 let status = (tx.status || 'Paid').replace(/"/g, '""');
 
-                csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${amount}","${method}","${status}","${dateStr}","${timeStr}"\n`;
+                // We add the Peso sign ₱ here so it formats beautifully as money in Excel!
+                csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","₱${gross}","₱${disc}","₱${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
             });
 
             // 4. Force UTF-8 encoding for Excel
@@ -8142,7 +8140,7 @@ window.downloadExcel = async function(tbodyId, fileName) {
             if (btn && btn.tagName === 'BUTTON') { btn.innerText = oldText; btn.disabled = false; }
         }
         
-        return; // 🛑 CRITICAL: Stop here so it doesn't run the screen scraper below!
+        return; // 🛑 CRITICAL: Stop here so it doesn't run the basic screen scraper!
     }
 
     // ==========================================
