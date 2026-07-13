@@ -8025,45 +8025,140 @@ window.filterAlertsTable = function() {
 };
 
 // ========================================================
-// 📥 UNIVERSAL EXCEL / CSV EXPORTER
+// 📥 UNIVERSAL EXCEL / CSV EXPORTER (WITH SMART INTERCEPTOR)
 // ========================================================
-window.downloadExcel = function(tbodyId, fileName) {
+window.downloadExcel = async function(tbodyId, fileName) {
+    
+    // 🔥 THE INTERCEPTOR: If they are exporting the Transactions list, fetch the Items Sold directly from Firebase!
+    if (tbodyId === 'historyTableBody') {
+        let btn = document.activeElement; // Grab whatever button they just clicked
+        let oldText = btn ? btn.innerText : "Export Active Tab";
+        if (btn) { btn.innerText = "⏳ Fetching Items..."; btn.disabled = true; }
+
+        try {
+            // Scan for visible filters (Branch and Dates)
+            let visibleDateInputs = Array.from(document.querySelectorAll('input[type="date"]')).filter(input => input.offsetWidth > 0 && input.offsetHeight > 0);
+            let visibleSelects = Array.from(document.querySelectorAll('select')).filter(select => select.offsetWidth > 0 && select.offsetHeight > 0);
+
+            let branch = 'All';
+            if (visibleSelects.length > 0) {
+                branch = visibleSelects[0].value;
+                if (branch.includes("All")) branch = "All";
+            }
+
+            let startDateVal = new Date().toISOString().split('T')[0];
+            let endDateVal = new Date().toISOString().split('T')[0];
+
+            if (visibleDateInputs.length >= 2) {
+                startDateVal = visibleDateInputs[0].value || startDateVal;
+                endDateVal = visibleDateInputs[1].value || endDateVal;
+            }
+
+            let startOfDay = new Date(startDateVal);
+            startOfDay.setHours(0, 0, 0, 0);
+            let endOfDay = new Date(endDateVal);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            let q;
+            if (branch === "All") {
+                q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+            } else {
+                q = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
+            }
+
+            const snap = await getDocs(q);
+
+            if (snap.empty) {
+                Swal.fire('No Data', 'No transactions found for this date range.', 'info');
+                if (btn) { btn.innerText = oldText; btn.disabled = false; }
+                return;
+            }
+
+            // Build CSV Header with 'Items Sold' included!
+            let csv = "OR#,Branch,Cashier,Customer,Items Sold,Amount,Payment Method,Status,Date,Time\n";
+
+            snap.forEach(docSnap => {
+                let tx = docSnap.data();
+                let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
+                let dateStr = d.toLocaleDateString('en-PH');
+                let timeStr = d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+
+                // Extract all items and add-ons perfectly
+                let itemsArr = [];
+                if (tx.cart && Array.isArray(tx.cart)) {
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let itemLine = `${item.qty}x ${itemName}`;
+                        if (item.addons) {
+                            for (let key in item.addons) {
+                                if (item.addons[key].qty > 0) itemLine += ` (+${item.addons[key].qty} ${key})`;
+                            }
+                        }
+                        itemsArr.push(itemLine);
+                    });
+                }
+                let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
+
+                let amount = (tx.netTotal || 0).toFixed(2);
+                let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
+                let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
+                let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
+                let status = (tx.status || 'Paid').replace(/"/g, '""');
+
+                csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${amount}","${method}","${status}","${dateStr}","${timeStr}"\n`;
+            });
+
+            let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+            let downloadLink = document.createElement("a");
+            let safeBranchName = branch.replace(/[^a-zA-Z0-9]/g, '_');
+            downloadLink.download = `Takodeal_${safeBranchName}_Transactions_${startDateVal}_to_${endDateVal}.csv`;
+            downloadLink.href = window.URL.createObjectURL(csvFile);
+            downloadLink.style.display = "none";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+
+        } catch (error) {
+            console.error("Export Error:", error);
+            Swal.fire('Error', 'Failed to generate CSV. Please check your internet connection.', 'error');
+        } finally {
+            if (btn) { btn.innerText = oldText; btn.disabled = false; }
+        }
+        
+        return; // 🛑 CRITICAL: Stop here so it doesn't run the screen scraper below!
+    }
+
+    // ==========================================
+    // 📺 STANDARD SCREEN SCRAPER (For 'Daily Sales', 'Monthly Sales', etc)
+    // ==========================================
     let tbody = document.getElementById(tbodyId);
     if (!tbody) return;
-    
-    // Find the actual table that wraps around this body
     let table = tbody.closest('table');
     let rows = table.querySelectorAll('tr');
     let csv = [];
 
     for (let i = 0; i < rows.length; i++) {
         let row = [], cols = rows[i].querySelectorAll('td, th');
-        
-        // Loop through columns, but skip the "Action" column so buttons don't go into Excel!
         let colCount = cols.length;
-        if (tbodyId === 'zReadingTableBody' && i > 0) colCount -= 1; 
+        
+        // Remove the Action/View column from Excel
+        if ((tbodyId === 'zReadingTableBody') && i > 0) colCount -= 1; 
 
         for (let j = 0; j < colCount; j++) {
-            // Clean up the text so Excel reads it perfectly
-            let text = cols[j].innerText.replace(/"/g, '""'); 
-            row.push('"' + text + '"');
+            let text = cols[j].innerText.replace(/"/g, '""').replace(/₱/g, '₱'); 
+            row.push('"' + text + '"'); 
         }
         csv.push(row.join(","));
     }
 
-    // Create the downloadable file
-    // 🔥 THE FIX: "\uFEFF" forces Excel to read the Peso signs perfectly!
     let csvFile = new Blob(["\uFEFF" + csv.join("\n")], {type: "text/csv;charset=utf-8;"});
     let tempLink = document.createElement("a");
-    let d = new Date();
-    let dateTag = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    let dateTag = new Date().toISOString().split('T')[0];
     
     tempLink.download = `${fileName}_${dateTag}.csv`;
     tempLink.href = window.URL.createObjectURL(csvFile);
     tempLink.style.display = "none";
-    document.body.appendChild(tempLink);
-    tempLink.click();
-    document.body.removeChild(tempLink);
+    document.body.appendChild(tempLink); tempLink.click(); document.body.removeChild(tempLink);
 };
 
 // ==========================================
