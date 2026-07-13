@@ -1259,49 +1259,252 @@ window.renderRestockCart = function () {
   tbody.innerHTML = html;
 };
 
-window.confirmMultiRestock = async function () {
-  if (restockCart.length === 0) { alert("Cart is empty!"); return; }
-
-  let btn = document.getElementById('btnConfirmRestock');
-  btn.innerText = "⏳ Processing..."; btn.disabled = true;
-
-  try {
-    for (let cartItem of restockCart) {
-      let itemRef = doc(db, "inventory", cartItem.id);
-      let memoryItem = window.globalInventoryList.find(i => i.id === cartItem.id);
-      let currentStock = parseFloat(memoryItem.currentStock) || 0;
-      let newStock = currentStock + cartItem.baseQtyToAdd;
-
-      // 🔥 OPTIONAL PRICING ENGINE: Only alter Base Cost if they actually paid money for this!
-      if (cartItem.totalCost > 0) {
-          let currentAvgCost = parseFloat(memoryItem.baseCost) || parseFloat(memoryItem.cost) || 0;
-          let newTotalValue = (currentStock * currentAvgCost) + cartItem.totalCost;
-          let newAverageCost = newStock > 0 ? (newTotalValue / newStock) : (cartItem.totalCost / cartItem.baseQtyToAdd);
-          
-          await updateDoc(itemRef, { currentStock: newStock, baseCost: newAverageCost, cost: newAverageCost, purchaseCost: (newAverageCost * (parseFloat(memoryItem.conversionRate)||1)) });
-      } else {
-          // They didn't type a cost, just add the stock safely!
-          await updateDoc(itemRef, { currentStock: newStock });
-      }
-
-      await addDoc(collection(db, "stock_logs"), {
-        branch: cartItem.branch, item: cartItem.name, uom: cartItem.baseUom, oldQty: currentStock, newQty: newStock, variance: cartItem.baseQtyToAdd,
-        type: "HQ Delivery Restock", note: `Supplier/Receipt: ${cartItem.supplier || 'N/A'}${cartItem.totalCost > 0 ? ` | Cost: ₱${cartItem.totalCost}` : ''}`,
-        user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: new Date()
-      });
+window.confirmMultiRestock = async function() {
+    // 🛡️ THE GUARDRAIL: Prevent confirming if an item is hanging in the input boxes!
+    let selectedItem = document.getElementById('restockItemSelect');
+    let qtyInput = document.getElementById('restockQtyInput');
+    
+    if (selectedItem && selectedItem.value !== "" && qtyInput && qtyInput.value !== "" && parseFloat(qtyInput.value) > 0) {
+        return Swal.fire({
+            title: 'Hanging Item Detected!',
+            text: 'You have an item selected but haven\'t clicked "Add". Please click the "➕ Add" button to put it in your cart, or clear the selection before confirming.',
+            icon: 'warning',
+            confirmButtonColor: '#f59e0b',
+            customClass: { popup: 'rounded-2xl' }
+        });
     }
 
-    alert(`✅ Successfully restocked ${restockCart.length} items!`);
-    document.getElementById('restockModal').style.display = 'none';
+    if (!window.restockCart || window.restockCart.length === 0) {
+        return Swal.fire('Cart Empty', 'Please add items to the cart first.', 'warning');
+    }
 
-    if (typeof window.loadPurchasesAndAlerts === 'function') window.loadPurchasesAndAlerts(); // Update Alerts tab
-    if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
-  } catch (e) {
-    console.error(e); alert("Failed to process restock.");
-  } finally {
-    btn.innerText = "Confirm Restock"; btn.disabled = false;
-  }
+    let supplier = document.getElementById('restockSupplierInput').value || "HQ Restock";
+    let totalCost = parseFloat(document.getElementById('restockCostInput').value) || 0;
+    let cashier = localStorage.getItem('cashierName') || 'Manager';
+
+    let btn = document.getElementById('btnConfirmRestock');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+
+    try {
+        // 1. Process each item mathematically into the inventory
+        for (let item of window.restockCart) {
+            let docRef = doc(db, "inventory", item.id);
+            let snap = await getDoc(docRef);
+            if (snap.exists()) {
+                let data = snap.data();
+                let oldQty = parseFloat(data.currentStock || 0);
+                
+                // Get the accurate conversion rate
+                let convRate = parseFloat(item.conversionRate || data.conversionRate || data.conversion || 1);
+                let addBaseQty = parseFloat(item.qty) * convRate;
+                let newQty = oldQty + addBaseQty;
+
+                await updateDoc(docRef, { currentStock: newQty });
+
+                // Log to the standard individual history
+                await addDoc(collection(db, "stock_history"), {
+                    itemId: item.id,
+                    itemName: data.name || item.name,
+                    branch: data.branch || "Main Office",
+                    oldQty: oldQty,
+                    newQty: newQty,
+                    variance: `+${addBaseQty} ${data.uom || 'units'}`,
+                    type: "HQ Delivery Restock",
+                    user: cashier,
+                    timestamp: new Date()
+                });
+            }
+        }
+
+        // 2. 🔥 NEW: Save the Grouped "Invoice" Document!
+        await addDoc(collection(db, "hq_restocks"), {
+            supplier: supplier,
+            totalCost: totalCost,
+            items: window.restockCart,
+            user: cashier,
+            timestamp: new Date(),
+            branch: "Main Office" 
+        });
+
+        Swal.fire({title: '✅ Restock Complete!', text: 'Inventory updated and grouped invoice saved.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        
+        // Clean up
+        document.getElementById('restockModal').style.display = 'none';
+        window.restockCart = [];
+        if (typeof window.renderRestockCart === 'function') window.renderRestockCart();
+        document.getElementById('restockSupplierInput').value = '';
+        document.getElementById('restockCostInput').value = '';
+
+        if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
+        if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
+        window.updateLifetimeRestockCost(); // Update the top box!
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to process restock. Check connection.', 'error');
+    } finally {
+        if(btn) { btn.innerText = origText; btn.disabled = false; }
+    }
 };
+
+// ==========================================
+// 📦 HQ RESTOCK INVOICE ENGINE (EDIT & REVERT)
+// ==========================================
+window.updateLifetimeRestockCost = async function() {
+    try {
+        const snap = await getDocs(collection(db, "hq_restocks"));
+        let totalCost = 0;
+        snap.forEach(doc => { totalCost += (parseFloat(doc.data().totalCost) || 0); });
+        
+        let costEl = document.getElementById('lifetimeRestockCost');
+        if (costEl) costEl.innerText = '₱' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2});
+    } catch(e) { console.error("Error calculating lifetime cost", e); }
+};
+
+window.openGroupedRestocks = async function() {
+    Swal.fire({title: 'Loading Invoices...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        const q = query(collection(db, "hq_restocks"), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = `
+        <div class="table-responsive" style="max-height: 50vh; overflow-y: auto;">
+            <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;">
+                <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 10;">
+                    <tr>
+                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Date & User</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Supplier / Ref</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Total Cost</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Items</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569; text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        if (snap.empty) {
+            html += `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No restock invoices found.</td></tr>`;
+        } else {
+            snap.forEach(docSnap => {
+                let d = docSnap.data();
+                let dateStr = d.timestamp?.toDate ? d.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+                let cost = parseFloat(d.totalCost) || 0;
+
+                let itemsList = (d.items || []).map(i => `<span style="background:#f1f5f9; padding:2px 6px; border-radius:4px; margin:2px; display:inline-block; border:1px solid #e2e8f0;">${i.qty}x ${i.name}</span>`).join(' ');
+                
+                let encodedData = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
+
+                html += `
+                    <tr style="border-bottom: 1px solid #e2e8f0;">
+                        <td style="padding: 10px;"><b>${dateStr}</b><br><span style="color:#64748b; font-size: 11px;">${d.user || 'Admin'}</span></td>
+                        <td style="padding: 10px; font-weight: bold; color: #0ea5e9;">${d.supplier || 'N/A'}</td>
+                        <td style="padding: 10px; font-weight: bold; color: #dc2626;">₱${cost.toLocaleString()}</td>
+                        <td style="padding: 10px; font-size: 11px; color: #475569;">${itemsList}</td>
+                        <td style="padding: 10px; text-align: right;">
+                            <button onclick="window.revertAndEditRestock('${encodedData}')" style="background: white; color: #f59e0b; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; white-space: nowrap; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.1);">↩️ Revert & Edit</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `</tbody></table></div>`;
+        window.updateLifetimeRestockCost(); // Refresh cost in background
+
+        Swal.fire({
+            title: '📦 HQ Restock Invoices',
+            html: html,
+            width: 850,
+            showConfirmButton: true,
+            confirmButtonText: 'Close Window',
+            confirmButtonColor: '#64748b',
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
+
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to load invoices', 'error');
+    }
+};
+
+window.revertAndEditRestock = async function(encodedData) {
+    let invoice = JSON.parse(decodeURIComponent(encodedData));
+
+    let confirm = await Swal.fire({
+        title: 'Revert & Edit?',
+        text: 'This will undo the stock additions from this invoice and load the items back into your cart so you can fix them. Proceed?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#f59e0b',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Revert it!',
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({title: 'Reverting Stock...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // 1. Subtract the stock mathematically back out of the system
+        for (let item of invoice.items) {
+            let docRef = window.doc(window.db, "inventory", item.id);
+            let snap = await window.getDoc(docRef);
+            if (snap.exists()) {
+                let data = snap.data();
+                let oldQty = parseFloat(data.currentStock || 0);
+                
+                let convRate = parseFloat(item.conversionRate || data.conversionRate || data.conversion || 1);
+                let subBaseQty = parseFloat(item.qty) * convRate;
+                let newQty = oldQty - subBaseQty;
+
+                await window.updateDoc(docRef, { currentStock: newQty });
+
+                // Log the Reversal
+                await window.addDoc(window.collection(window.db, "stock_history"), {
+                    itemId: item.id,
+                    itemName: data.name || item.name,
+                    branch: data.branch || "Main Office",
+                    oldQty: oldQty,
+                    newQty: newQty,
+                    variance: `-${subBaseQty} ${data.uom || 'units'}`,
+                    type: "HQ Restock Reverted (Edit)",
+                    user: localStorage.getItem('cashierName') || 'Manager',
+                    timestamp: new Date()
+                });
+            }
+        }
+
+        // 2. Delete the old invoice
+        await window.deleteDoc(window.doc(window.db, "hq_restocks", invoice.id));
+
+        // 3. Load items back into the local cart
+        window.restockCart = invoice.items;
+        document.getElementById('restockSupplierInput').value = invoice.supplier || '';
+        document.getElementById('restockCostInput').value = invoice.totalCost || '';
+
+        // 4. Open Modal & Render so they can edit
+        Swal.close();
+        document.getElementById('restockModal').style.display = 'flex';
+        if (typeof window.renderRestockCart === 'function') window.renderRestockCart();
+        if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
+        if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
+        window.updateLifetimeRestockCost();
+
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Restock Reverted! Edit your cart now.', 
+            showConfirmButton: false, timer: 3000
+        });
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to revert stock safely.', 'error');
+    }
+};
+
+// Auto-load the lifetime cost when the page boots up
+setTimeout(() => { window.updateLifetimeRestockCost(); }, 2000);
 
 // ========================================================
 // 🚚 THE DISPATCH & LOGISTICS ENGINE (SMART COMMAND CENTER)
