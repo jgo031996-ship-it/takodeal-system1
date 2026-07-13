@@ -4873,7 +4873,7 @@ window.filterStockReq = function() {
     });
 };
 
-// 🔥 UPGRADED COLOR-CODED HISTORY ENGINE
+// 🔥 UPGRADED MODAL-DRIVEN HISTORY ENGINE
 window.loadStockRequestHistory = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     const tbody = document.getElementById('stockReqHistoryBody');
@@ -4896,33 +4896,40 @@ window.loadStockRequestHistory = async function() {
             else if (d.status === 'Partially Dispatched') { statusBg = '#e0e7ff'; statusColor = '#0284c7'; }
             else if (d.status === 'Delayed') { statusBg = '#fef2f2'; statusColor = '#dc2626'; d.status = 'Delayed (Out of Stock)'; }
 
-            // 🔥 THE COLOR CODING ENGINE (Green = Delivered, Red = Missing/Delayed)
-            let itemsList = d.items.map(i => {
-                let itemColor = '#0f172a'; // Default dark
-                let itemStatusText = '';
-
+            // 🔥 THE FIX: We package the items into a clean array and map the exact HQ status to each item!
+            let modalItems = (d.items || []).map(i => {
+                let itemStatus = 'Pending';
                 if (d.status === 'Completed' || d.status === 'Dispatch on the way 🚚' || d.status === 'Partially Dispatched') {
-                    itemColor = '#16a34a'; // Green
-                    itemStatusText = ' (Processed)';
+                    itemStatus = 'Processed';
                 } else if (d.status === 'Delayed (Out of Stock)' || d.status === 'Delayed') {
-                    itemColor = '#dc2626'; // Red
-                    itemStatusText = ' (Delayed)';
+                    itemStatus = 'Out of Stock';
                 }
+                
+                return {
+                    itemName: i.itemName,
+                    displayQty: i.displayQty,
+                    qty: i.qty,
+                    displayUom: i.displayUom,
+                    uom: i.uom,
+                    status: itemStatus
+                };
+            });
 
-                return `<div style="font-size: 11px; margin-bottom: 2px;">• <strong style="color:${itemColor};">${i.itemName}${itemStatusText}</strong> <span style="color:#94a3b8;">(${i.requestType})</span></div>`;
-            }).join('');
+            // Encode the package safely so the button can read it
+            let encodedItems = encodeURIComponent(JSON.stringify(modalItems));
+            let itemsButton = `<button onclick="window.viewStockRequestItems('${encodedItems}')" style="background: white; border: 1px solid #cbd5e1; color: #0f766e; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-size: 13px; transition: 0.2s;">📦 View Items (${modalItems.length})</button>`;
             
-            let msgHtml = d.managerMessage ? `<div style="margin-top: 5px; padding: 5px; background: white; border: 1px dashed #cbd5e1; font-size: 10px; color: #b91c1c; border-radius: 4px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
+            let msgHtml = d.managerMessage ? `<div style="margin-top: 8px; padding: 8px; background: white; border: 1px dashed #fca5a5; font-size: 11px; color: #b91c1c; border-radius: 6px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
 
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${d.requestedBy || 'Staff'}</td>
-                    <td style="padding: 12px;">
-                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;">${d.status}</span>
+                    <td style="padding: 15px 12px; color: #64748b; font-size: 13px; font-weight: bold;">${dateStr}</td>
+                    <td style="padding: 15px 12px; font-weight: bold; color: #334155; font-size: 14px;">👤 ${d.requestedBy || 'Staff'}</td>
+                    <td style="padding: 15px 12px;">
+                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; display: inline-block;">${d.status}</span>
                         ${msgHtml}
                     </td>
-                    <td style="padding: 12px;">${itemsList}</td>
+                    <td style="padding: 15px 12px;">${itemsButton}</td>
                 </tr>
             `;
         });
@@ -4930,7 +4937,7 @@ window.loadStockRequestHistory = async function() {
         tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 20px;">No requests found.</td></tr>';
     } catch(e) {
         console.error(e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red; padding: 20px;">Error loading history.</td></tr>';
     }
 };
 
@@ -6621,4 +6628,56 @@ window.submitBulletinAcknowledgment = async function() {
         console.error(e); Swal.fire('Error', 'Failed to save signature. Check connection.', 'error');
         btn.innerText = "✅ Sign & Acknowledge"; btn.disabled = false;
     }
+};
+
+// ==========================================
+// 📦 STOCK REQUEST ITEMS MODAL ENGINE
+// ==========================================
+window.viewStockRequestItems = function(itemsJson) {
+    let items = JSON.parse(decodeURIComponent(itemsJson));
+    
+    let html = `
+    <div style="max-height: 60vh; overflow-y: auto; text-align: left;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <tr>
+                    <th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1;">Item Description</th>
+                    <th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1; text-align: center;">Qty Requested</th>
+                    <th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1;">HQ Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    items.forEach(i => {
+        // Dynamic Badge Styling based on HQ's action!
+        let statusBadge = '';
+        if (i.status === 'Processed') {
+            statusBadge = '<span style="color: #16a34a; background: #dcfce7; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">Processed</span>';
+        } else if (i.status === 'Out of Stock') {
+            statusBadge = '<span style="color: #dc2626; background: #fef2f2; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">Out of Stock</span>';
+        } else {
+            statusBadge = `<span style="color: #d97706; background: #fffbeb; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">${i.status || 'Pending'}</span>`;
+        }
+
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px; font-weight: bold; color: #1e293b;">${i.itemName}</td>
+                <td style="padding: 12px; text-align: center; font-weight: bold; color: #0284c7;">${i.displayQty || i.qty || 0} <span style="font-size: 11px; color: #64748b;">${i.displayUom || i.uom || ''}</span></td>
+                <td style="padding: 12px;">${statusBadge}</td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table></div>`;
+
+    Swal.fire({
+        title: '📦 Requested Items',
+        html: html,
+        width: 700,
+        showConfirmButton: true,
+        confirmButtonText: 'Close Window',
+        confirmButtonColor: '#64748b',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
 };
