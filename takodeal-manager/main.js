@@ -16786,3 +16786,147 @@ window.exportDashboardSalesCSV = async function() {
         if (btn) { btn.innerText = oldText; btn.disabled = false; }
     }
 };
+
+// ========================================================
+// 📥 MASTER EXCEL EXPORTER (INTELLIGENT INTERCEPTOR)
+// ========================================================
+window.downloadExcel = async function(tbodyId, fileName) {
+    let tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+
+    let table = tbody.closest('table');
+    if (!table) return;
+
+    let headers = Array.from(table.querySelectorAll('th, td')).map(cell => cell.innerText.trim().toUpperCase());
+
+    // 🔥 INTERCEPTOR: If it's the Transactions tab, fetch directly from Cloud!
+    if (headers.includes('OR#') || headers.includes('OR #') || tbodyId === 'historyTableBody' || tbodyId === 'tbTransBody') {
+        let btn = document.activeElement;
+        let oldText = btn && btn.tagName === 'BUTTON' ? btn.innerText : "Export Active Tab";
+        if (btn && btn.tagName === 'BUTTON') { btn.innerText = "⏳ Fetching Items..."; btn.disabled = true; }
+
+        try {
+            let startInput = document.getElementById('histStartDate');
+            let endInput = document.getElementById('histEndDate');
+            let branchSelect = document.getElementById('histBranchFilter');
+
+            let startDateVal = startInput ? startInput.value : new Date().toISOString().split('T')[0];
+            let endDateVal = endInput ? endInput.value : new Date().toISOString().split('T')[0];
+
+            let branch = 'All';
+            if (branchSelect) {
+                branch = branchSelect.value;
+                if (branch.includes("All")) branch = "All";
+            }
+
+            let startOfDay = new Date(startDateVal);
+            startOfDay.setHours(0, 0, 0, 0);
+            let endOfDay = new Date(endDateVal);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            let q;
+            if (branch === "All") {
+                q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
+            } else {
+                q = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
+            }
+
+            const snap = await window.getDocs(q);
+
+            if (snap.empty) {
+                Swal.fire('No Data', 'No transactions found for this date range.', 'info');
+                if (btn && btn.tagName === 'BUTTON') { btn.innerText = oldText; btn.disabled = false; }
+                return;
+            }
+
+            let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Amount,Discount,Net Amount,Payment Method,Status,Date,Time\n";
+
+            snap.forEach(docSnap => {
+                let tx = docSnap.data();
+                let d = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : new Date();
+                let dateStr = d.toLocaleDateString('en-PH');
+                let timeStr = d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+
+                let itemsArr = [];
+                if (tx.cart && Array.isArray(tx.cart)) {
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let itemLine = `${item.qty}x ${itemName}`;
+                        if (item.addons) {
+                            for (let key in item.addons) {
+                                if (item.addons[key].qty > 0) itemLine += ` (+${item.addons[key].qty} ${key})`;
+                            }
+                        }
+                        itemsArr.push(itemLine);
+                    });
+                }
+                let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
+
+                let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
+                let disc = (tx.globalDiscountAmount || 0).toFixed(2);
+                let net = (tx.netTotal || 0).toFixed(2);
+                let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
+                let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
+
+                let method = tx.paymentMethod || 'Cash';
+                if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
+                    method = tx.splitDetails.map(s => `${s.method}`).join(' & ');
+                }
+                method = method.replace(/"/g, '""');
+                let status = (tx.status || 'Paid').replace(/"/g, '""');
+
+                csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","₱${gross}","₱${disc}","₱${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
+            });
+
+            let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+            let downloadLink = document.createElement("a");
+            let safeBranchName = branch.replace(/[^a-zA-Z0-9]/g, '_');
+            downloadLink.download = `Takodeal_${safeBranchName}_Transactions_${startDateVal}_to_${endDateVal}.csv`;
+            downloadLink.href = window.URL.createObjectURL(csvFile);
+            downloadLink.style.display = "none";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+
+        } catch (error) {
+            console.error("Export Error:", error);
+            Swal.fire('Error', 'Failed to generate CSV. Check connection.', 'error');
+        } finally {
+            if (btn && btn.tagName === 'BUTTON') { btn.innerText = oldText; btn.disabled = false; }
+        }
+        return;
+    }
+
+    // ==========================================
+    // 📺 STANDARD SCREEN SCRAPER
+    // ==========================================
+    let rows = table.querySelectorAll('tr');
+    let csv = [];
+    let hideLastColExcel = false;
+
+    for (let i = 0; i < rows.length; i++) {
+        let row = [], cols = rows[i].querySelectorAll('td, th');
+        let colCount = cols.length;
+
+        let lastColText = cols[colCount - 1] ? cols[colCount - 1].innerText.trim().toUpperCase() : '';
+        if (i === 0 && (lastColText === 'ACTION' || lastColText === 'VIEW' || lastColText === 'DETAILS')) {
+            hideLastColExcel = true;
+        }
+        if (hideLastColExcel) colCount -= 1;
+
+        for (let j = 0; j < colCount; j++) {
+            let text = cols[j].innerText.replace(/"/g, '""').replace(/₱/g, '₱');
+            row.push('"' + text + '"');
+        }
+        csv.push(row.join(","));
+    }
+
+    let csvFile = new Blob(["\uFEFF" + csv.join("\n")], {type: "text/csv;charset=utf-8;"});
+    let tempLink = document.createElement("a");
+    let dateTag = new Date().toISOString().split('T')[0];
+
+    tempLink.download = `${fileName}_${dateTag}.csv`;
+    tempLink.href = window.URL.createObjectURL(csvFile);
+    tempLink.style.display = "none";
+    document.body.appendChild(tempLink); tempLink.click(); document.body.removeChild(tempLink);
+};
