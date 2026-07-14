@@ -4677,12 +4677,12 @@ window.loadStockRequestUI = async function() {
             let itemsByCategory = {};
             snapBranch.forEach(docSnap => {
                 let data = docSnap.data();
+                // 🔥 THE FIX: We removed the hardcoded "Prepared Batch" blocker! 
+                // Now, if "Allow Request" is checked in the Manager App, it WILL show up here.
                 if (data.allowRequest !== false) {
                     let cat = data.category || "Uncategorized";
-                    if (!cat.toLowerCase().includes("prepared batch") && !cat.toLowerCase().includes("prep batch")) {
-                        if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
-                        itemsByCategory[cat].push({ id: docSnap.id, ...data });
-                    }
+                    if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
+                    itemsByCategory[cat].push({ id: docSnap.id, ...data });
                 }
             });
 
