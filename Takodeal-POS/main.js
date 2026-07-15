@@ -1658,7 +1658,7 @@ window.openExpenseModal = async function () {
     } catch (e) { console.error("Error loading inventory for expenses:", e); }
 };
 
-// Mobile-friendly custom search dropdown
+// Mobile-friendly custom search dropdown (UPGRADED WITH "OTHERS" OPTION)
 window.filterExpenseSearch = function() {
     let input = document.getElementById('expSearchInput').value.toLowerCase();
     let resultsDiv = document.getElementById('expSearchResults');
@@ -1671,15 +1671,36 @@ window.filterExpenseSearch = function() {
     
     filtered.forEach(item => {
         let safeItemStr = encodeURIComponent(JSON.stringify(item));
-        html += `<div onclick="window.selectExpenseItem('${safeItemStr}')" style="padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 14px; font-weight: bold; color: #334155;">📦 Restock: ${item.name} <span style="font-size:11px; color:#94a3b8;">(${item.uom || ''})</span></div>`;
+        html += `<div onclick="window.selectExpenseItem('${safeItemStr}')" style="padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 14px; font-weight: bold; color: #334155; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">📦 Restock: ${item.name} <span style="font-size:11px; color:#94a3b8;">(${item.uom || ''})</span></div>`;
     });
 
-    if (html === '') {
-        html = `<div style="padding: 12px 15px; font-size: 13px; color: #64748b; font-style: italic;">No inventory found. This will be saved as a General Expense.</div>`;
-    }
+    // 🔥 NEW: ALWAYS SHOW THE "OTHERS" OPTION AT THE BOTTOM!
+    let customVal = document.getElementById('expSearchInput').value.trim();
+    html += `
+        <div onclick="window.selectCustomExpense()" style="padding: 12px 15px; background: #fffbeb; cursor: pointer; font-size: 14px; font-weight: bold; color: #d97706; border-top: 1px dashed #fcd34d; transition: background 0.2s;" onmouseover="this.style.background='#fef3c7'" onmouseout="this.style.background='#fffbeb'">
+            📝 Others (Log "${customVal}" as General Expense)
+        </div>
+    `;
 
     resultsDiv.innerHTML = html;
     resultsDiv.style.display = 'block';
+};
+
+// 🔥 NEW: Custom Expense Trigger
+window.selectCustomExpense = function() {
+    window.selectedExpenseItem = null; // Tells the system it's NOT physical stock
+    document.getElementById('expSearchResults').style.display = 'none';
+    
+    // Hide UOM container if it exists
+    let uomContainer = document.getElementById('expUomContainer');
+    if (uomContainer) uomContainer.style.display = 'none';
+
+    // Auto-fill QTY to 1 for general expenses so the cashier doesn't get stuck!
+    let qtyInput = document.getElementById('expQtyInput');
+    if (qtyInput && qtyInput.value === '') qtyInput.value = '1';
+
+    // Move cursor to the Cost box automatically
+    document.getElementById('expAmtInput').focus();
 };
 
 window.selectExpenseItem = function(encodedItem) {
@@ -1688,7 +1709,6 @@ window.selectExpenseItem = function(encodedItem) {
     document.getElementById('expSearchInput').value = `Restock: ${item.name}`;
     document.getElementById('expSearchResults').style.display = 'none';
 
-    // 🔥 SHOW UOM DROPDOWN
     let uomContainer = document.getElementById('expUomContainer');
     let uomSelect = document.getElementById('expUomSelect');
     if (uomContainer && uomSelect) {
@@ -1705,14 +1725,21 @@ window.selectExpenseItem = function(encodedItem) {
 
 window.addExpenseToCart = function() {
     let desc = document.getElementById('expSearchInput').value.trim();
-    let rawQty = parseFloat(document.getElementById('expQtyInput').value) || 0;
+    let rawQty = parseFloat(document.getElementById('expQtyInput').value);
     let cost = parseFloat(document.getElementById('expAmtInput').value) || 0;
 
-    if (!desc || cost <= 0) { alert("Enter a description and a valid cost."); return; }
+    // 🔥 THE FIX: If they selected "Others", default the QTY to 1 if it's missing!
+    if (!window.selectedExpenseItem && (isNaN(rawQty) || rawQty <= 0)) {
+        rawQty = 1;
+    }
 
-    // 🔥 SMART UOM MATH
+    if (!desc || cost <= 0 || isNaN(rawQty) || rawQty <= 0) { 
+        alert("Enter a description and a valid cost."); 
+        return; 
+    }
+
     let baseQty = rawQty;
-    let displayUom = '';
+    let displayUom = 'unit(s)'; // Default for General Expenses
     let convRate = 1;
 
     if (window.selectedExpenseItem) {
@@ -1720,7 +1747,7 @@ window.addExpenseToCart = function() {
         displayUom = window.selectedExpenseItem.uom;
         if (uomSelect && uomSelect.value === 'purch') {
             convRate = parseFloat(window.selectedExpenseItem.conversionRate) || 1;
-            baseQty = rawQty * convRate; // Multiply by bulk size!
+            baseQty = rawQty * convRate; 
             displayUom = window.selectedExpenseItem.purchaseUom;
         }
     }
@@ -1768,7 +1795,11 @@ window.renderExpenseCart = function() {
     let html = '';
     window.expenseCart.forEach((item, index) => {
         total += item.cost;
-        let qtyText = item.isRestock && item.displayQty > 0 ? `<br><span style="color:#16a34a; font-size:11px;">+${item.displayQty} ${item.displayUom} (${item.baseQty} ${item.uom} to inventory)</span>` : '';
+        // 🔥 THE FIX: Identifies "Others" dynamically in the cart UI!
+        let qtyText = item.isRestock && item.displayQty > 0 
+            ? `<br><span style="color:#16a34a; font-size:11px;">+${item.displayQty} ${item.displayUom} (${item.baseQty} ${item.uom} to inventory)</span>` 
+            : `<br><span style="color:#ca8a04; font-size:11px; font-weight:bold;">(General Expense / Others)</span>`;
+            
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 10px; font-weight: bold; color: #334155;">${item.description} ${qtyText}</td>
