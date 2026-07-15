@@ -2381,7 +2381,6 @@ window.submitAttendance = async function(type) {
 
     let staffProfile = window.currentBranchStaffCache ? window.currentBranchStaffCache.find(s => s.cashierName === staffName) : null;
     
-    // 🔥 THE FIX: If the tablet's temporary memory is empty, fetch the profile directly from the Cloud!
     if (!staffProfile) {
         try {
             const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
@@ -2513,6 +2512,70 @@ window.submitAttendance = async function(type) {
     }
 
     // ==========================================
+    // ❌ REJECTED REQUEST INTERCEPTOR
+    // ==========================================
+    try {
+        const reqQ = query(collection(db, "staff_requests"), where("staffName", "==", staffName), where("status", "==", "Rejected"));
+        const reqSnap = await getDocs(reqQ);
+        
+        let unreadRejected = null;
+        let unreadReqId = null;
+
+        // Find the first rejected request they haven't acknowledged yet
+        reqSnap.forEach(docSnap => {
+            let data = docSnap.data();
+            if (!data.staffAcknowledged) {
+                unreadRejected = data;
+                unreadReqId = docSnap.id;
+            }
+        });
+
+        if (unreadRejected) {
+            let clockModal = document.getElementById('timeClockModal');
+            if (clockModal) clockModal.style.display = 'none';
+
+            let reqDetails = unreadRejected.amount ? `₱${unreadRejected.amount.toLocaleString()}` : (unreadRejected.item || unreadRejected.leaveType || unreadRejected.explanationCause || "Request");
+
+            const result = await Swal.fire({
+                title: '❌ Request Rejected',
+                html: `Management has reviewed your recent request and it was <b>Rejected</b>.<br><br>
+                       <div style="text-align:left; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-top:10px;">
+                           <span style="font-size:12px; color:#64748b; font-weight:bold;">REQUEST TYPE:</span><br>
+                           <span style="font-size:14px; font-weight:bold; color:#1e293b;">${unreadRejected.type} (${reqDetails})</span><br><br>
+                           <span style="font-size:12px; color:#64748b; font-weight:bold;">MANAGER'S REPLY:</span><br>
+                           <span style="font-size:14px; color:#dc2626; font-style:italic;">"${unreadRejected.managerReply || 'No specific reason provided.'}"</span>
+                       </div>
+                       <br><span style="font-size:13px; color:#475569; font-weight:bold;">Please acknowledge this message to unlock the Time Clock.</span>`,
+                icon: 'error',
+                confirmButtonText: 'I Understand',
+                confirmButtonColor: '#0f766e',
+                allowOutsideClick: false,
+                customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+            });
+
+            if (result.isConfirmed) {
+                Swal.fire({title: 'Clearing Alert...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                await updateDoc(doc(db, "staff_requests", unreadReqId), { staffAcknowledged: true });
+                
+                Swal.fire({
+                    title: 'Unlocked',
+                    text: 'You may now try timing in/out again.',
+                    icon: 'success',
+                    timer: 2000,
+                    showConfirmButton: false,
+                    customClass: { popup: 'rounded-2xl' }
+                });
+            }
+
+            document.getElementById('clockStaffPin').value = ''; 
+            unlockUI(); 
+            return; // Stops the punch! They must retry.
+        }
+    } catch(e) {
+        console.error("Rejected Request Check Failed:", e);
+    }
+
+    // ==========================================
     // 🛡️ ANTI-DOUBLE PUNCH, PENALTIES & HR LOCKS
     // ==========================================
     try {
@@ -2589,37 +2652,6 @@ window.submitAttendance = async function(type) {
                     message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
                     timestamp: new Date(), isRead: false
                 });
-              // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours!
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25) {
-                const { value: reason, isConfirmed } = await Swal.fire({
-                    title: '⚠️ Undertime Detected',
-                    html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
-                    input: 'text',
-                    inputPlaceholder: 'Reason for leaving early...',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonText: 'Submit & Time Out',
-                    confirmButtonColor: '#dc2626',
-                    customClass: { popup: 'rounded-2xl shadow-xl' }
-                });
-
-                if (!isConfirmed || !reason) {
-                    unlockUI(); return; 
-                }
-
-                // Auto-submit Reason Letter to the Manager App
-                await addDoc(collection(db, "staff_requests"), {
-                    type: "Reason Letter",
-                    staffName: staffName,
-                    branch: finalBranch,
-                    status: "Pending",
-                    explanationCause: "Undertime",
-                    explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
-                    timestamp: new Date() // Use JS Date for cross-app compatibility
-                });
-                
-                Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Undertime Letter Sent!', showConfirmButton: false, timer: 3000});
-            }
                 alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
             }
 
@@ -2642,6 +2674,7 @@ window.submitAttendance = async function(type) {
                 }
 
                 // Auto-submit Reason Letter to the Manager App
+                let finalBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
                 await addDoc(collection(db, "staff_requests"), {
                     type: "Reason Letter",
                     staffName: staffName,
@@ -2649,7 +2682,7 @@ window.submitAttendance = async function(type) {
                     status: "Pending",
                     explanationCause: "Undertime",
                     explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
-                    timestamp: new Date() // Use JS Date for cross-app compatibility
+                    timestamp: new Date() 
                 });
                 
                 Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Undertime Letter Sent!', showConfirmButton: false, timer: 3000});
