@@ -17006,7 +17006,7 @@ window.downloadExcel = async function(tbodyId, fileName) {
 };
 
 // ========================================================
-// 🤝 FRANCHISE SIMULATOR & CATEGORY ANALYTICS ENGINE
+// 🤝 FRANCHISE SIMULATOR & P&L ANALYTICS ENGINE
 // ========================================================
 window.runFranchiseSimulator = async function() {
     let branch = document.getElementById('simBranchSelect').value;
@@ -17020,74 +17020,80 @@ window.runFranchiseSimulator = async function() {
     startDate.setHours(0,0,0,0);
 
     try {
-        // 1. Get the global menu so we know exactly what category every item belongs to
         const menuSnap = await getDocs(collection(db, "menu"));
         let menuCategories = {};
         menuSnap.forEach(doc => {
             let item = doc.data();
-            // Automatically normalize categories for easy matching
             let cat = (item.category || "Takoyaki").toLowerCase(); 
             menuCategories[item.name] = cat;
         });
 
-        // 2. Fetch the actual transactions
-        let txQ;
-        if (branch === "All") {
-            txQ = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
-        } else {
-            txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startDate));
-        }
-        
+        // Fetch Transactions
+        let txQ = branch === "All" 
+            ? query(collection(db, "transactions"), where("timestamp", ">=", startDate))
+            : query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startDate));
         const txSnap = await getDocs(txQ);
 
-        // 3. Trackers
-        window.simulatedSales = { tako: 0, tea: 0, coffee: 0 };
+        // Fetch Actual Expenses!
+        let expQ = branch === "All"
+            ? query(collection(db, "expenses"), where("timestamp", ">=", startDate))
+            : query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startDate));
+        const expSnap = await getDocs(expQ);
+
+        window.simulatedData = { tako: 0, tea: 0, coffee: 0, totalSales: 0, totalOpEx: 0, days: days };
         let activeBranchesFound = new Set();
 
+        // Tally Sales
         txSnap.forEach(docSnap => {
             let tx = docSnap.data();
             if (tx.status === "Voided") return;
             activeBranchesFound.add(tx.branch);
 
+            let txTotal = 0;
             if (tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let itemName = item.name || item.itemName;
                     let lineTotal = (item.variantPrice || item.basePrice || 0) * (item.qty || 1);
+                    txTotal += lineTotal;
                     
-                    // Look up the category, default to Takoyaki if missing
                     let cat = menuCategories[itemName] || "takoyaki";
-                    
-                    // Route the money to the correct bucket
-                    if (cat.includes("tea") || cat.includes("beverage") || cat.includes("drinks")) {
-                        window.simulatedSales.tea += lineTotal;
-                    } else if (cat.includes("coffee") || cat.includes("espresso")) {
-                        window.simulatedSales.coffee += lineTotal;
-                    } else {
-                        // Treat Takoyaki and food items here
-                        window.simulatedSales.tako += lineTotal;
-                    }
+                    if (cat.includes("tea") || cat.includes("beverage") || cat.includes("drinks")) window.simulatedData.tea += lineTotal;
+                    else if (cat.includes("coffee") || cat.includes("espresso")) window.simulatedData.coffee += lineTotal;
+                    else window.simulatedData.tako += lineTotal;
                 });
+            }
+            window.simulatedData.totalSales += txTotal;
+        });
+
+        // Tally Expenses (Exclude Remittances/Store Use so we get true Operating Expenses)
+        expSnap.forEach(docSnap => {
+            let exp = docSnap.data();
+            let cat = (exp.category || "").toLowerCase();
+            let desc = (exp.description || "").toLowerCase();
+            if (!desc.includes("remittance") && cat !== "store consumables") {
+                window.simulatedData.totalOpEx += (parseFloat(exp.amount) || 0);
             }
         });
 
-        // If checking "All Branches", we divide by the number of branches to get a true "Average Single Branch" performance
         let branchDivisor = (branch === "All" && activeBranchesFound.size > 0) ? activeBranchesFound.size : 1;
         
-        window.simulatedSales.tako = window.simulatedSales.tako / branchDivisor;
-        window.simulatedSales.tea = window.simulatedSales.tea / branchDivisor;
-        window.simulatedSales.coffee = window.simulatedSales.coffee / branchDivisor;
+        // Averages per branch
+        window.simulatedData.tako /= branchDivisor;
+        window.simulatedData.tea /= branchDivisor;
+        window.simulatedData.coffee /= branchDivisor;
+        window.simulatedData.totalSales /= branchDivisor;
+        window.simulatedData.totalOpEx /= branchDivisor;
 
-        // 4. Update the UI
-        document.getElementById('simTakoSales').innerText = `₱${window.simulatedSales.tako.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-        document.getElementById('simTeaSales').innerText = `₱${window.simulatedSales.tea.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-        document.getElementById('simCoffeeSales').innerText = `₱${window.simulatedSales.coffee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        document.getElementById('simTakoSales').innerText = `₱${window.simulatedData.tako.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        document.getElementById('simTeaSales').innerText = `₱${window.simulatedData.tea.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        document.getElementById('simCoffeeSales').innerText = `₱${window.simulatedData.coffee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
 
-        document.getElementById('simTakoAvg').innerText = `₱${(window.simulatedSales.tako / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
-        document.getElementById('simTeaAvg').innerText = `₱${(window.simulatedSales.tea / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
-        document.getElementById('simCoffeeAvg').innerText = `₱${(window.simulatedSales.coffee / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+        document.getElementById('simTakoAvg').innerText = `₱${(window.simulatedData.tako / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+        document.getElementById('simTeaAvg').innerText = `₱${(window.simulatedData.tea / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+        document.getElementById('simCoffeeAvg').innerText = `₱${(window.simulatedData.coffee / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
 
         document.getElementById('simResultsContainer').style.display = 'block';
-        window.calculateSimulatedRoyalty(); // Run the percentages immediately
+        window.calculateSimulatedRoyalty(); 
 
     } catch(e) {
         console.error("Simulator Error:", e);
@@ -17098,21 +17104,52 @@ window.runFranchiseSimulator = async function() {
 };
 
 window.calculateSimulatedRoyalty = function() {
-    if (!window.simulatedSales) return;
+    if (!window.simulatedData) return;
 
     let takoPct = parseFloat(document.getElementById('simTakoPct').value) || 0;
     let teaPct = parseFloat(document.getElementById('simTeaPct').value) || 0;
     let coffeePct = parseFloat(document.getElementById('simCoffeePct').value) || 0;
+    let foodCostPct = parseFloat(document.getElementById('simFoodCostPct').value) || 35; // Default 35%
+    let franchiseCost = parseFloat(document.getElementById('simFranchiseCost').value) || 350000;
 
-    let takoFee = window.simulatedSales.tako * (takoPct / 100);
-    let teaFee = window.simulatedSales.tea * (teaPct / 100);
-    let coffeeFee = window.simulatedSales.coffee * (coffeePct / 100);
+    let takoFee = window.simulatedData.tako * (takoPct / 100);
+    let teaFee = window.simulatedData.tea * (teaPct / 100);
+    let coffeeFee = window.simulatedData.coffee * (coffeePct / 100);
+    let totalRoyaltyFee = takoFee + teaFee + coffeeFee;
 
-    let grandTotal = takoFee + teaFee + coffeeFee;
-
-    document.getElementById('simTakoFee').innerText = `₱${takoFee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-    document.getElementById('simTeaFee').innerText = `₱${teaFee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-    document.getElementById('simCoffeeFee').innerText = `₱${coffeeFee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    document.getElementById('simTakoFee').innerText = `₱${takoFee.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    document.getElementById('simTeaFee').innerText = `₱${teaFee.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    document.getElementById('simCoffeeFee').innerText = `₱${coffeeFee.toLocaleString(undefined, {minimumFractionDigits:2})}`;
     
-    document.getElementById('simGrandTotal').innerText = `₱${grandTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    // --- P&L MATH ---
+    let grossSales = window.simulatedData.totalSales;
+    let estCogs = grossSales * (foodCostPct / 100);
+    // Net Profit = Gross - COGS - Real Expenses - Simulated Royalty
+    let netProfit = grossSales - estCogs - window.simulatedData.totalOpEx - totalRoyaltyFee;
+    let netMargin = grossSales > 0 ? (netProfit / grossSales) * 100 : 0;
+
+    document.getElementById('simPlSales').innerText = `₱${grossSales.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    document.getElementById('simPlCogs').innerText = `- ₱${estCogs.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    document.getElementById('simPlOpex').innerText = `- ₱${window.simulatedData.totalOpEx.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    
+    let netEl = document.getElementById('simPlNet');
+    netEl.innerText = `₱${netProfit.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    netEl.style.color = netProfit >= 0 ? '#0f766e' : '#dc2626'; // Red if losing money!
+    
+    document.getElementById('simPlMargin').innerText = `${netMargin.toFixed(1)}%`;
+    document.getElementById('simPlMargin').style.color = netMargin >= 15 ? '#16a34a' : (netMargin > 0 ? '#d97706' : '#dc2626');
+
+    // --- ROI MATH ---
+    // Convert the selected period profit into a Monthly average to calculate ROI
+    let monthlyAvgProfit = (netProfit / window.simulatedData.days) * 30;
+    let roiMonths = monthlyAvgProfit > 0 ? (franchiseCost / monthlyAvgProfit) : 0;
+    
+    let roiEl = document.getElementById('simRoiMonths');
+    if (roiMonths > 0) {
+        roiEl.innerText = `${roiMonths.toFixed(1)} Months`;
+        roiEl.style.color = roiMonths <= 18 ? '#0284c7' : '#dc2626'; // Warning if it takes too long
+    } else {
+        roiEl.innerText = "Never (Losing Money)";
+        roiEl.style.color = '#dc2626';
+    }
 };
