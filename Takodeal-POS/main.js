@@ -2589,16 +2589,39 @@ window.submitAttendance = async function(type) {
     // ==========================================
     // 🛡️ ANTI-DOUBLE PUNCH, PENALTIES & HR LOCKS
     // ==========================================
+    let userLogs = [];
     try {
+        // Try the optimal indexed query first
         const q = query(collection(db, "attendance_logs"), 
             where("staffName", "==", staffName), 
             orderBy("timestamp", "desc"), 
             limit(1)
         );
         const lastLogSnap = await getDocs(q);
+        lastLogSnap.forEach(docSnap => userLogs.push(docSnap.data()));
+    } catch(e) {
+        console.warn("Firebase Index missing. Falling back to unbreakable index-free scan...");
+        // 🔥 THE INDEX-FREE FALLBACK: Grabs the last 3 days and sorts mathematically!
+        let lookBack = new Date();
+        lookBack.setHours(lookBack.getHours() - 72); 
         
-        if (!lastLogSnap.empty) {
-            let lastLog = lastLogSnap.docs[0].data();
+        const fallbackQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", lookBack));
+        const fallbackSnap = await getDocs(fallbackQ);
+        
+        fallbackSnap.forEach(docSnap => {
+            let data = docSnap.data();
+            if (data.staffName === staffName) {
+                userLogs.push(data);
+            }
+        });
+        
+        // Sort newest first
+        userLogs.sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
+    }
+
+    try {
+        if (userLogs.length > 0) {
+            let lastLog = userLogs[0]; // The absolute most recent log
             let lastType = lastLog.type; 
             let lastTime = lastLog.timestamp.toDate();
             let now = new Date();
@@ -2648,10 +2671,12 @@ window.submitAttendance = async function(type) {
                 }
             }
 
-            if (type === "TIME OUT" && lastType === "TIME OUT" && hoursSinceLastLog < 1) {
-                alert(`❌ You already Timed Out recently!\n\nPlease avoid double-tapping.`);
+            // 🔥 UPGRADE: Strict Double Time Out Blocker!
+            if (type === "TIME OUT" && lastType === "TIME OUT") {
+                alert(`❌ You already Timed Out!\n\nYou cannot Time Out twice in a row. Please Time In first.`);
                 document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
             }
+
             if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.25) {
                 alert(`❌ You just Timed In a few minutes ago!\n\nTo prevent double-shifts and payroll errors, you must wait at least 15 minutes before Timing Out.`);
                 document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
@@ -2700,7 +2725,7 @@ window.submitAttendance = async function(type) {
             }
         }
     } catch(e) {
-        console.warn("Fast query failed. Using fallback lock method...", e);
+        console.error("Lock Engine Processing Error:", e);
     }
 
     // ==========================================
