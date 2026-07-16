@@ -17004,3 +17004,115 @@ window.downloadExcel = async function(tbodyId, fileName) {
     tempLink.style.display = "none";
     document.body.appendChild(tempLink); tempLink.click(); document.body.removeChild(tempLink);
 };
+
+// ========================================================
+// 🤝 FRANCHISE SIMULATOR & CATEGORY ANALYTICS ENGINE
+// ========================================================
+window.runFranchiseSimulator = async function() {
+    let branch = document.getElementById('simBranchSelect').value;
+    let days = parseInt(document.getElementById('simDaysSelect').value);
+    
+    let btn = document.querySelector('button[onclick="runFranchiseSimulator()"]');
+    btn.innerText = "⏳ Crunching..."; btn.disabled = true;
+
+    let startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0,0,0,0);
+
+    try {
+        // 1. Get the global menu so we know exactly what category every item belongs to
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let menuCategories = {};
+        menuSnap.forEach(doc => {
+            let item = doc.data();
+            // Automatically normalize categories for easy matching
+            let cat = (item.category || "Takoyaki").toLowerCase(); 
+            menuCategories[item.name] = cat;
+        });
+
+        // 2. Fetch the actual transactions
+        let txQ;
+        if (branch === "All") {
+            txQ = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
+        } else {
+            txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startDate));
+        }
+        
+        const txSnap = await getDocs(txQ);
+
+        // 3. Trackers
+        window.simulatedSales = { tako: 0, tea: 0, coffee: 0 };
+        let activeBranchesFound = new Set();
+
+        txSnap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status === "Voided") return;
+            activeBranchesFound.add(tx.branch);
+
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let itemName = item.name || item.itemName;
+                    let lineTotal = (item.variantPrice || item.basePrice || 0) * (item.qty || 1);
+                    
+                    // Look up the category, default to Takoyaki if missing
+                    let cat = menuCategories[itemName] || "takoyaki";
+                    
+                    // Route the money to the correct bucket
+                    if (cat.includes("tea") || cat.includes("beverage") || cat.includes("drinks")) {
+                        window.simulatedSales.tea += lineTotal;
+                    } else if (cat.includes("coffee") || cat.includes("espresso")) {
+                        window.simulatedSales.coffee += lineTotal;
+                    } else {
+                        // Treat Takoyaki and food items here
+                        window.simulatedSales.tako += lineTotal;
+                    }
+                });
+            }
+        });
+
+        // If checking "All Branches", we divide by the number of branches to get a true "Average Single Branch" performance
+        let branchDivisor = (branch === "All" && activeBranchesFound.size > 0) ? activeBranchesFound.size : 1;
+        
+        window.simulatedSales.tako = window.simulatedSales.tako / branchDivisor;
+        window.simulatedSales.tea = window.simulatedSales.tea / branchDivisor;
+        window.simulatedSales.coffee = window.simulatedSales.coffee / branchDivisor;
+
+        // 4. Update the UI
+        document.getElementById('simTakoSales').innerText = `₱${window.simulatedSales.tako.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        document.getElementById('simTeaSales').innerText = `₱${window.simulatedSales.tea.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        document.getElementById('simCoffeeSales').innerText = `₱${window.simulatedSales.coffee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+
+        document.getElementById('simTakoAvg').innerText = `₱${(window.simulatedSales.tako / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+        document.getElementById('simTeaAvg').innerText = `₱${(window.simulatedSales.tea / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+        document.getElementById('simCoffeeAvg').innerText = `₱${(window.simulatedSales.coffee / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+
+        document.getElementById('simResultsContainer').style.display = 'block';
+        window.calculateSimulatedRoyalty(); // Run the percentages immediately
+
+    } catch(e) {
+        console.error("Simulator Error:", e);
+        alert("Failed to run simulation. Check connection.");
+    } finally {
+        btn.innerText = "📊 Crunch Numbers"; btn.disabled = false;
+    }
+};
+
+window.calculateSimulatedRoyalty = function() {
+    if (!window.simulatedSales) return;
+
+    let takoPct = parseFloat(document.getElementById('simTakoPct').value) || 0;
+    let teaPct = parseFloat(document.getElementById('simTeaPct').value) || 0;
+    let coffeePct = parseFloat(document.getElementById('simCoffeePct').value) || 0;
+
+    let takoFee = window.simulatedSales.tako * (takoPct / 100);
+    let teaFee = window.simulatedSales.tea * (teaPct / 100);
+    let coffeeFee = window.simulatedSales.coffee * (coffeePct / 100);
+
+    let grandTotal = takoFee + teaFee + coffeeFee;
+
+    document.getElementById('simTakoFee').innerText = `₱${takoFee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    document.getElementById('simTeaFee').innerText = `₱${teaFee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    document.getElementById('simCoffeeFee').innerText = `₱${coffeeFee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    
+    document.getElementById('simGrandTotal').innerText = `₱${grandTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+};
