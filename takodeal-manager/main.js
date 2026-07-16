@@ -11377,7 +11377,7 @@ window.loadSalesHistoryTab = async function() {
                 timeLabel: `${sTimeStr} - ${eTimeStr}`,
                 timestamp: sTime,
                 sales: 0, cogs: 0, voids: 0, txCount: 0,
-                categorySales: {}, itemSales: {}, transactions: [] // 🔥 REQUIRED: Array to hold the receipts!
+                categorySales: {}, itemSales: {}, transactions: [] 
             };
         });
 
@@ -11395,7 +11395,7 @@ window.loadSalesHistoryTab = async function() {
         allTxArray.sort((a,b) => b.timestamp - a.timestamp);
 
         let txHtml = '';
-        let tNet = 0; let tCogs = 0; let tGrab = 0;
+        let tNet = 0; let tCogs = 0; let tGrab = 0; let tGrabCount = 0; // 🔥 NEW COUNTER VARIABLE
         let dailyAggregates = {}; let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
@@ -11484,7 +11484,6 @@ window.loadSalesHistoryTab = async function() {
                 });
             }
             
-            // 🔥 REQUIRED: Save the actual receipt details to the shift memory for the modal!
             shiftRef.transactions.push({
                 time: timeStr,
                 receiptId: tx.receiptId,
@@ -11504,7 +11503,11 @@ window.loadSalesHistoryTab = async function() {
                 shiftRef.cogs += txCogs;
                 shiftRef.txCount += 1;
 
-                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") tGrab += txNet;
+                // 🔥 THE GRAB COUNTER ALGORITHM 🔥
+                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") {
+                    tGrab += txNet;
+                    tGrabCount += 1; 
+                }
 
                 let oType = tx.orderType || "Take-out";
                 let pMeth = tx.paymentMethod || "Cash";
@@ -11519,12 +11522,10 @@ window.loadSalesHistoryTab = async function() {
                 shiftRef.voids += txNet;
             }
 
-            // 🔥 FIX: Daily Logic Columns (Date first, then Branch)
             if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0, voids: 0 };
             if (isVoid) { dailyAggregates[dailyKey].voids += txNet; } 
             else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
 
-            // 🔥 FIX: Monthly Logic Columns (Month first, then Branch)
             if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
             if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; }
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
@@ -11576,7 +11577,6 @@ window.loadSalesHistoryTab = async function() {
         });
         if(tbodyShifts) tbodyShifts.innerHTML = shiftsHtml || '<tr><td colspan="9" class="text-center" style="padding: 30px; color: #64748b;">No shift aggregates available.</td></tr>';
 
-        // 🔥 FIX: BUILD DAILY HTML (Date first, then Branch)
         let dailyHtml = '';
         Object.values(dailyAggregates).sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(d => {
             let dMargin = d.sales - d.cogs;
@@ -11594,7 +11594,6 @@ window.loadSalesHistoryTab = async function() {
         });
         if(tbodyDaily) tbodyDaily.innerHTML = dailyHtml || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No daily aggregates available.</td></tr>';
 
-        // 🔥 FIX: BUILD MONTHLY HTML (Month first, then Branch)
         let monthlyHtml = '';
         Object.values(monthlyAggregates).sort((a,b) => b.dateObj - a.dateObj).forEach(m => {
             let mMargin = m.sales - m.cogs;
@@ -11617,6 +11616,10 @@ window.loadSalesHistoryTab = async function() {
         document.getElementById('histSumCogs').innerText = `₱${tCogs.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumMargin').innerText = `₱${(tNet - tCogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+        // 🔥 POPULATE THE NEW GRAB COUNTER 🔥
+        let grabCountEl = document.getElementById('histCountGrab');
+        if (grabCountEl) grabCountEl.innerText = `${tGrabCount} Order${tGrabCount !== 1 ? 's' : ''}`;
 
         let cogsCirc = document.getElementById('histCogsPct');
         if (cogsCirc) { let cPct = tNet>0 ? (tCogs/tNet)*100 : 0; cogsCirc.innerText = `${cPct.toFixed(0)}%`; cogsCirc.style.borderColor = cPct>50?'#ef4444':'#10b981'; cogsCirc.style.color = cPct>50?'#ef4444':'#10b981'; }
