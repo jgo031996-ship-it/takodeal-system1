@@ -1109,30 +1109,6 @@
           </div>
       </div>
       
-      <div class="card">
-        <div class="card-header">
-          <h2>📜 Historical Transfer Log</h2>
-        </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead style="background: var(--bg-color); font-size: 11px; color: #64748b; letter-spacing: 0.5px;">
-                <tr>
-                    <th style="padding: 15px 20px;">DATE / TIME SENT</th>
-                    <th style="padding: 15px 20px;">BRANCH & CASHIER</th>
-                    <th style="padding: 15px 20px;">CHANNEL & REF</th>
-                    <th style="padding: 15px 20px; text-align: center;">STATUS</th>
-                    <th style="padding: 15px 20px; text-align: right;">AMOUNT (₱)</th>
-                    <th style="padding: 15px 20px; text-align: center;">ACTION</th>
-                </tr>
-            </thead>
-            <tbody id="transferLogBody">
-              <tr>
-                <td colspan="6" class="text-center">Loading transfer logs...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
       <!-- 📈 NEW: LIFETIME REMITTANCE TREND GRAPH -->
       <div class="card" style="margin-top: 20px; border-top: 4px solid #10b981;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
@@ -4515,6 +4491,35 @@
               <button id="btnSaveSanction" onclick="window.submitNewSanction()" style="padding: 10px 20px; border-radius: 6px; border: none; background: #b91c1c; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(185, 28, 28, 0.3);">🚀 Issue Digital Notice</button>
           </div>
       </div>
+  </div>
+
+  <!-- 🏢 BRANCH REMITTANCE HISTORY MODAL -->
+  <div id="branchTransferHistoryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10050; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: var(--bg-color); width: 95%; max-width: 1000px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-height: 90vh;">
+      <div style="background: var(--primary); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; font-size: 18px; color: white;" id="bthModalTitle">📜 Remittance History</h2>
+        <button onclick="document.getElementById('branchTransferHistoryModal').style.display='none'" style="background: none; border: none; font-size: 28px; cursor: pointer; color: white; line-height: 1;">&times;</button>
+      </div>
+      <div style="padding: 20px; overflow-y: auto; background: #f8fafc; flex: 1;">
+        <div class="table-responsive">
+          <table class="data-table" style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; width: 100%; border-collapse: collapse;">
+            <thead style="background: #f1f5f9; text-transform: uppercase; font-size: 11px; color: #475569; letter-spacing: 0.5px;">
+              <tr>
+                <th style="padding: 15px 20px;">Date / Time Sent</th>
+                <th style="padding: 15px 20px;">Cashier</th>
+                <th style="padding: 15px 20px;">Channel & Ref</th>
+                <th style="padding: 15px 20px; text-align: center;">Status</th>
+                <th style="padding: 15px 20px; text-align: right;">Amount (₱)</th>
+                <th style="padding: 15px 20px; text-align: center;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="bthModalBody">
+              <tr><td colspan="6" class="text-center" style="padding: 30px;">Loading history...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
   
   <style>
