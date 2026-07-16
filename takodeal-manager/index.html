@@ -501,6 +501,88 @@
 
     </div>
 
+    <!-- 📊 FRANCHISE SIMULATOR & CATEGORY ANALYTICS TAB -->
+    <div id="franchiseSimulatorTab" class="dashboard-section" style="display: none; padding: 20px;">
+        <h2 style="color: #0f172a; margin-top: 0;">🤝 Franchise Fee Simulator</h2>
+        <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Analyze historical sales by category to determine fair franchise packages.</p>
+    
+        <div style="display: flex; gap: 15px; margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="flex: 1;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Branch Data</label>
+                <select id="simBranchSelect" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                    <option value="All">All Branches (Average)</option>
+                    <option value="Cabantian">Cabantian</option>
+                    <option value="Citygate">Citygate</option>
+                    <option value="Maa">Maa</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Lookback Period</label>
+                <select id="simDaysSelect" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                    <option value="30">Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                    <option value="180">Last 6 Months</option>
+                </select>
+            </div>
+            <div style="flex: 1; display: flex; align-items: flex-end;">
+                <button onclick="runFranchiseSimulator()" style="width: 100%; padding: 10px; background: #0ea5e9; color: white; font-weight: bold; border: none; border-radius: 6px; cursor: pointer;">
+                    📊 Crunch Numbers
+                </button>
+            </div>
+        </div>
+    
+        <!-- The Results Grid -->
+        <div id="simResultsContainer" style="display: none;">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+                <!-- Takoyaki Package -->
+                <div style="background: white; padding: 20px; border-radius: 8px; border: 2px solid #fca5a5;">
+                    <h3 style="margin: 0 0 10px 0; color: #b91c1c;">🐙 Takoyaki Sales</h3>
+                    <div style="font-size: 24px; font-weight: 900; color: #1e293b;" id="simTakoSales">₱0.00</div>
+                    <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Daily Avg: <span id="simTakoAvg" style="font-weight: bold;">₱0.00</span></div>
+                    
+                    <label style="font-size: 11px; font-weight: bold;">Test Royalty %</label>
+                    <input type="number" id="simTakoPct" value="5" onkeyup="calculateSimulatedRoyalty()" style="width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                    <div style="font-size: 14px; font-weight: bold; color: #16a34a; background: #dcfce7; padding: 8px; border-radius: 4px; text-align: center;">
+                        Est. Fee: <span id="simTakoFee">₱0.00</span>
+                    </div>
+                </div>
+    
+                <!-- Milk Tea Package -->
+                <div style="background: white; padding: 20px; border-radius: 8px; border: 2px solid #bae6fd;">
+                    <h3 style="margin: 0 0 10px 0; color: #0284c7;">🧋 Milk Tea Sales</h3>
+                    <div style="font-size: 24px; font-weight: 900; color: #1e293b;" id="simTeaSales">₱0.00</div>
+                    <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Daily Avg: <span id="simTeaAvg" style="font-weight: bold;">₱0.00</span></div>
+                    
+                    <label style="font-size: 11px; font-weight: bold;">Test Royalty %</label>
+                    <input type="number" id="simTeaPct" value="5" onkeyup="calculateSimulatedRoyalty()" style="width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                    <div style="font-size: 14px; font-weight: bold; color: #16a34a; background: #dcfce7; padding: 8px; border-radius: 4px; text-align: center;">
+                        Est. Fee: <span id="simTeaFee">₱0.00</span>
+                    </div>
+                </div>
+    
+                <!-- Coffee Package -->
+                <div style="background: white; padding: 20px; border-radius: 8px; border: 2px solid #d9f99d;">
+                    <h3 style="margin: 0 0 10px 0; color: #4d7c0f;">☕ Coffee Sales</h3>
+                    <div style="font-size: 24px; font-weight: 900; color: #1e293b;" id="simCoffeeSales">₱0.00</div>
+                    <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Daily Avg: <span id="simCoffeeAvg" style="font-weight: bold;">₱0.00</span></div>
+                    
+                    <label style="font-size: 11px; font-weight: bold;">Test Royalty %</label>
+                    <input type="number" id="simCoffeePct" value="5" onkeyup="calculateSimulatedRoyalty()" style="width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                    <div style="font-size: 14px; font-weight: bold; color: #16a34a; background: #dcfce7; padding: 8px; border-radius: 4px; text-align: center;">
+                        Est. Fee: <span id="simCoffeeFee">₱0.00</span>
+                    </div>
+                </div>
+            </div>
+    
+            <!-- Grand Total Simulator -->
+            <div style="background: #1e293b; color: white; padding: 20px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 14px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">Total Projected Franchise Revenue (Per Selected Period)</div>
+                <div id="simGrandTotal" style="font-size: 36px; font-weight: 900; margin: 10px 0; color: #fde047;">₱0.00</div>
+                <div style="font-size: 12px; color: #cbd5e1;">Use this sandbox to determine if you want to offer an "All-In-One" package or let franchisees pick specific product lines.</div>
+            </div>
+        </div>
+    </div>
+
     <div id="view-history" class="view">
       <div class="card" style="background: transparent; border: none; box-shadow: none;">
         
