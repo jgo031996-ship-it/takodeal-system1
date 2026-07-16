@@ -6249,7 +6249,6 @@ window.MASTER_CloseShift = async function () {
             let isOver = variance > 0;
             let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
             
-            // 🔥 REMOVED THE EXACT AMOUNTS FROM THE UI!
             let alertHtml = isOver 
                 ? `Your declared cash is <b>MORE</b> than the system expects.<br><br>Do not remove any overage. Submit the full amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
                 : `Your declared cash is <b>SHORT</b> of the system expectation.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
@@ -6271,7 +6270,6 @@ window.MASTER_CloseShift = async function () {
                 return; 
             }
 
-            // We still silently log the exact variance to the Manager HQ Feed!
             await addDoc(collection(db, "manager_alerts"), {
                 type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                 expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
@@ -6321,6 +6319,53 @@ window.MASTER_CloseShift = async function () {
             }
         }
 
+        // 👑 7.5 FRANCHISE ROYALTY & PROFIT SHARING ENGINE
+        try {
+            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
+            const bSnap = await getDocs(bQ);
+            let royaltyPct = 0;
+            if (!bSnap.empty) royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
+
+            if (royaltyPct > 0) {
+                // Calculate royalty against total gross digital + cash sales
+                let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
+                let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
+
+                if (royaltyAmount > 0) {
+                    // 1. Log the Expense against the Franchise Branch so their P&L is accurate
+                    await addDoc(collection(db, "expenses"), {
+                        branch: branchName, 
+                        amount: royaltyAmount, 
+                        category: "Franchise Royalty Fee",
+                        account: "System Auto-Deduct", 
+                        note: `Auto-Deducted ${royaltyPct}% Royalty from ₱${totalGrossForRoyalty.toFixed(2)} Total Sales`,
+                        timestamp: serverTimestamp()
+                    });
+
+                    // 2. Route the funds directly to the Main Office "Owner's Equity" Account!
+                    const eqQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", "Owner's Equity"));
+                    const eqSnap = await getDocs(eqQ);
+                    
+                    if (!eqSnap.empty) {
+                        let eqDoc = eqSnap.docs[0];
+                        let newBal = (parseFloat(eqDoc.data().balance) || 0) + royaltyAmount;
+                        await updateDoc(eqDoc.ref, { balance: newBal });
+                        await addDoc(collection(db, "account_logs"), {
+                            accountId: eqDoc.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection",
+                            amount: royaltyAmount, newBalance: newBal, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading`
+                        });
+                    } else {
+                        // Create the account if it's the very first time!
+                        const newEqRef = await addDoc(collection(db, "cash_accounts"), { branch: "Main Office", name: "Owner's Equity", balance: royaltyAmount, createdAt: serverTimestamp() });
+                        await addDoc(collection(db, "account_logs"), {
+                            accountId: newEqRef.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection (Account Created)",
+                            amount: royaltyAmount, newBalance: royaltyAmount, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading`
+                        });
+                    }
+                }
+            }
+        } catch(e) { console.error("Royalty Engine Error:", e); }
+
         // 8. Deduct Ingredient Burn
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
@@ -6349,7 +6394,6 @@ window.MASTER_CloseShift = async function () {
         if (lock) lock.style.display = "flex";
         if (placeBtn) placeBtn.disabled = true;
 
-        // 🔥 THE SUCCESS FIX: Do not show exact Sales Totals!
         Swal.fire({
             title: '✅ SHIFT CLOSED!',
             text: 'Your shift has been successfully ended and securely logged to HQ.',
