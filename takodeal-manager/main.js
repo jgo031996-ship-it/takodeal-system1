@@ -10085,7 +10085,7 @@ window.loadCashFlowHub = async function() {
             totalDrawerCash += drawerAmount;
 
             branchHtml += `
-                <div style="background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center;">
+                <div onclick="window.openBranchTransferHistory('${branch}')" style="background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)';">
                     <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
                     <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${drawerAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     <div style="margin-top: 4px;">${drawerStatus}</div>
@@ -13384,18 +13384,19 @@ window.generateAIReport = async function() {
         let accuracyScore = totalShifts > 0 ? Math.max(0, 100 - ((errorEvents / (totalShifts * 2)) * 100)) : 100;
         let avgSalesPerDay = days > 0 ? totalSales / days : 0;
 
-        // 7. UPDATE UI CARDS
-        document.getElementById('aiStatWaste').innerText = `₱${totalWasteValue.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('aiStatAccuracy').innerText = `${accuracyScore.toFixed(0)}%`;
-        document.getElementById('aiStatAccuracy').style.color = accuracyScore > 85 ? "#16a34a" : "#dc2626";
-        document.getElementById('aiStatTopWaste').innerText = topWastedItem === "None" ? "Looking Good!" : `${topWastedItem}\n(₱${maxWasteValue.toFixed(2)} lost)`;
-        document.getElementById('aiStatShortage').innerText = `₱${totalCashShortage.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        // 7. UPDATE UI CARDS (CRASH-PROOF FIX)
+        const safeSetText = (id, text) => { let el = document.getElementById(id); if (el) el.innerText = text; };
+        const safeSetHtml = (id, html) => { let el = document.getElementById(id); if (el) el.innerHTML = html; };
+        const safeSetColor = (id, color) => { let el = document.getElementById(id); if (el) el.style.color = color; };
+
+        safeSetText('aiStatWaste', `₱${totalWasteValue.toLocaleString(undefined, {minimumFractionDigits:2})}`);
+        safeSetText('aiStatAccuracy', `${accuracyScore.toFixed(0)}%`);
+        safeSetColor('aiStatAccuracy', accuracyScore > 85 ? "#16a34a" : "#dc2626");
+        safeSetText('aiStatTopWaste', topWastedItem === "None" ? "Looking Good!" : `${topWastedItem}\n(₱${maxWasteValue.toFixed(2)} lost)`);
+        safeSetText('aiStatShortage', `₱${totalCashShortage.toLocaleString(undefined, {minimumFractionDigits:2})}`);
         
-        // 🚨 Update the new Bankruptcy Card!
-        let capDrainEl = document.getElementById('aiStatCapitalDrain');
-        if (capDrainEl) {
-            capDrainEl.innerHTML = maxCapitalItem === "None" ? "Healthy Cash Flow" : `${maxCapitalItem}<br><span style="font-size:12px; color:#ef4444;">(₱${maxCapitalTiedUp.toLocaleString(undefined, {minimumFractionDigits:2})} tied up)</span>`;
-        }
+        let capHtml = maxCapitalItem === "None" ? "Healthy Cash Flow" : `${maxCapitalItem}<br><span style="font-size:12px; color:#ef4444;">(₱${maxCapitalTiedUp.toLocaleString(undefined, {minimumFractionDigits:2})} tied up)</span>`;
+        safeSetHtml('aiStatCapitalDrain', capHtml);
 
         // 8. 🧠 THE AI TEXT GENERATION ENGINE
         let reportHTML = `<p><strong>Analysis Period:</strong> Last ${days} days at ${branch}.</p>`;
@@ -17194,7 +17195,6 @@ window.openBranchTransferHistory = async function(branchName) {
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; font-weight: bold; color: #64748b;">⏳ Fetching branch logs...</td></tr>';
 
     try {
-        // Respect the global date filter if you selected one at the top of the screen
         let startDateStr = document.getElementById('transferStartDate')?.value;
         let endDateStr = document.getElementById('transferEndDate')?.value;
         
@@ -17202,22 +17202,22 @@ window.openBranchTransferHistory = async function(branchName) {
         if (startDateStr && endDateStr) {
             let start = new Date(startDateStr); start.setHours(0,0,0,0);
             let end = new Date(endDateStr); end.setHours(23,59,59,999);
-            q = window.query(window.collection(window.db, "remittances"), 
-                window.where("branch", "==", branchName), 
-                window.where("timestamp", ">=", start),
-                window.where("timestamp", "<=", end),
-                window.orderBy("timestamp", "desc")
+            // 🔥 FIX: Removed 'window.' from Firebase functions to prevent scope crashing!
+            q = query(collection(db, "remittances"), 
+                where("branch", "==", branchName), 
+                where("timestamp", ">=", start),
+                where("timestamp", "<=", end),
+                orderBy("timestamp", "desc")
             );
         } else {
-            // Default to the latest 50 transfers so it loads instantly
-            q = window.query(window.collection(window.db, "remittances"), 
-                window.where("branch", "==", branchName), 
-                window.orderBy("timestamp", "desc"), 
-                window.limit(50)
+            q = query(collection(db, "remittances"), 
+                where("branch", "==", branchName), 
+                orderBy("timestamp", "desc"), 
+                limit(50)
             );
         }
 
-        const snap = await window.getDocs(q);
+        const snap = await getDocs(q);
         let html = '';
 
         snap.forEach(docSnap => {
@@ -17225,12 +17225,10 @@ window.openBranchTransferHistory = async function(branchName) {
             let docId = docSnap.id;
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'N/A';
 
-            // Replicate your existing Status Badges
             let statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
             if (d.status === "Received" || d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`;
             if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Rejected</span>`;
 
-            // Action Buttons
             let actionHtml = '';
             if (d.status === "Pending") {
                 actionHtml = `
@@ -17261,50 +17259,9 @@ window.openBranchTransferHistory = async function(branchName) {
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No transfer history found for this branch in the selected timeframe.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No transfer history found for this branch.</td></tr>';
     } catch (e) {
         console.error("Modal Fetch Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #dc2626; padding: 30px; font-weight: bold;">❌ Error connecting to database.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #dc2626; padding: 30px; font-weight: bold;">❌ Error connecting to database. Check console.</td></tr>';
     }
 };
-
-// 🔥 SMART UI HIJACKER: Automatically turns your existing branch boxes into clickable buttons!
-const originalLoadCashExplorer = window.loadCashExplorer;
-if (originalLoadCashExplorer) {
-    window.loadCashExplorer = async function() {
-        await originalLoadCashExplorer(); // Run your original math/rendering first
-        
-        // Wait half a second for the UI to finish drawing, then attach the clicks!
-        setTimeout(() => {
-            let container = document.getElementById('branchFloatingContainer');
-            if (container) {
-                let boxes = container.children;
-                for (let i = 0; i < boxes.length; i++) {
-                    let box = boxes[i];
-                    // Find the branch name inside the box (looking for the 📍 pin)
-                    if (box.innerText.includes('📍')) {
-                        let branchMatch = box.innerText.match(/📍\s*([A-Za-z\s]+)/);
-                        if (branchMatch) {
-                            let branchName = branchMatch[1].trim();
-                            
-                            // Add interactive hover animations
-                            box.style.cursor = 'pointer';
-                            box.style.transition = 'transform 0.2s, box-shadow 0.2s';
-                            box.onmouseover = () => {
-                                box.style.transform = 'translateY(-3px)';
-                                box.style.boxShadow = '0 10px 15px rgba(0,0,0,0.1)';
-                            };
-                            box.onmouseout = () => {
-                                box.style.transform = 'translateY(0)';
-                                box.style.boxShadow = 'none';
-                            };
-                            
-                            // Attach the pop-up function!
-                            box.onclick = () => window.openBranchTransferHistory(branchName);
-                        }
-                    }
-                }
-            }
-        }, 500);
-    };
-}
