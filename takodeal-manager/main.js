@@ -3450,12 +3450,12 @@ window.loadInventoryData = async function() {
 // ========================================================
 window.switchInvTab = function(tab) {
     window.activeInvTab = tab; 
-    let overviewTab = document.getElementById('tabInvOverview'); let auditsTab = document.getElementById('tabInvAudits'); let wasteTab = document.getElementById('tabInvWaste'); let prepTab = document.getElementById('tabInvPrep'); let logsTab = document.getElementById('tabInvStockLogs'); let forecasterTab = document.getElementById('tabInvForecaster'); let alertsTab = document.getElementById('tabInvAlerts');
+    let overviewTab = document.getElementById('tabInvOverview'); let auditsTab = document.getElementById('tabInvAudits'); let wasteTab = document.getElementById('tabInvWaste'); let prepTab = document.getElementById('tabInvPrep'); let logsTab = document.getElementById('tabInvStockLogs'); let forecasterTab = document.getElementById('tabInvForecaster'); let alertsTab = document.getElementById('tabInvAlerts'); let aiBriefTab = document.getElementById('tabInvAIBrief');
     
-    let liveSec = document.getElementById('invTabLiveContent'); let auditsSec = document.getElementById('invSectionAudits'); let wasteSec = document.getElementById('invSectionWaste'); let prepSec = document.getElementById('invSectionPrepLogs'); let logsSec = document.getElementById('invTabLogsContent'); let forecasterSec = document.getElementById('invSectionForecaster'); let alertsSec = document.getElementById('invSectionAlerts');
+    let liveSec = document.getElementById('invTabLiveContent'); let auditsSec = document.getElementById('invSectionAudits'); let wasteSec = document.getElementById('invSectionWaste'); let prepSec = document.getElementById('invSectionPrepLogs'); let logsSec = document.getElementById('invTabLogsContent'); let forecasterSec = document.getElementById('invSectionForecaster'); let alertsSec = document.getElementById('invSectionAlerts'); let aiBriefSec = document.getElementById('invSectionAIBrief');
 
-    [overviewTab, auditsTab, wasteTab, prepTab, logsTab, forecasterTab, alertsTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
-    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec].forEach(s => { if(s) s.style.display = 'none'; });
+    [overviewTab, auditsTab, wasteTab, prepTab, logsTab, forecasterTab, alertsTab, aiBriefTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
+    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec, aiBriefSec].forEach(s => { if(s) s.style.display = 'none'; });
 
     if (tab === 'Overview') { if(overviewTab) { overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e'; } if(liveSec) liveSec.style.display = 'block'; } 
     else if (tab === 'Audits') { if(auditsTab) { auditsTab.style.color = '#0f766e'; auditsTab.style.borderBottomColor = '#0f766e'; } if(auditsSec) auditsSec.style.display = 'block'; } 
@@ -3464,6 +3464,7 @@ window.switchInvTab = function(tab) {
     else if (tab === 'StockLogs') { if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; } if(logsSec) logsSec.style.display = 'block'; } 
     else if (tab === 'Forecaster') { if(forecasterTab) { forecasterTab.style.color = '#0f766e'; forecasterTab.style.borderBottomColor = '#0f766e'; } if(forecasterSec) forecasterSec.style.display = 'block'; }
     else if (tab === 'Alerts') { if(alertsTab) { alertsTab.style.color = '#ef4444'; alertsTab.style.borderBottomColor = '#ef4444'; } if(alertsSec) alertsSec.style.display = 'block'; }
+    else if (tab === 'AIBrief') { if(aiBriefTab) { aiBriefTab.style.color = '#8b5cf6'; aiBriefTab.style.borderBottomColor = '#8b5cf6'; } if(aiBriefSec) aiBriefSec.style.display = 'block'; }
 
     window.refreshActiveInventoryTab();
 };
@@ -3477,6 +3478,7 @@ window.refreshActiveInventoryTab = function() {
     else if (tab === 'StockLogs') window.loadStockLogs();
     else if (tab === 'Forecaster') window.loadForecasterEngine(); 
     else if (tab === 'Alerts') window.loadPurchasesAndAlerts(); 
+    else if (tab === 'AIBrief') window.generateAIReport(); 
 };
 
 window.openInventoryLogs = function() { window.switchInvTab('StockLogs'); };
@@ -13254,13 +13256,31 @@ window.generateAIReport = async function() {
 
         const [wasteSnap, shiftSnap, invSnap, txSnap, bomSnap] = await Promise.all([getDocs(qWaste), getDocs(qShifts), getDocs(qInventory), getDocs(qTx), getDocs(qBom)]);
 
+        // 🚨 2. THE BANKRUPTCY & CAPITAL DRAIN ALGORITHM
         let branchInv = {};
+        let maxCapitalTiedUp = 0;
+        let maxCapitalItem = "None";
+        let totalInventoryValue = 0;
+
         invSnap.forEach(doc => { 
             let d = doc.data();
-            branchInv[d.name] = { cost: parseFloat(d.baseCost) || 0, uom: d.uom || 'units' }; 
+            let cost = parseFloat(d.baseCost) || 0;
+            let stock = parseFloat(d.currentStock) || 0;
+            let totalValue = cost * stock;
+            
+            // Track total money sitting in the warehouse
+            totalInventoryValue += totalValue;
+
+            // Find the single item draining the most capital
+            if (totalValue > maxCapitalTiedUp && stock > 0) {
+                maxCapitalTiedUp = totalValue;
+                maxCapitalItem = d.name;
+            }
+
+            branchInv[d.name] = { cost: cost, uom: d.uom || 'units' }; 
         });
 
-        // 2. MAP RECIPES (BOM)
+        // 3. MAP RECIPES (BOM)
         let recipes = {};
         bomSnap.forEach(doc => {
             let d = doc.data();
@@ -13268,11 +13288,11 @@ window.generateAIReport = async function() {
             recipes[d.menuItem].push({ ingredient: d.ingredientName, qty: parseFloat(d.qty) || 0 });
         });
 
-        // 3. CRUNCH WASTE & AUDIT LOSS DATA
+        // 4. CRUNCH WASTE & AUDIT LOSS DATA
         let totalWasteValue = 0;
         let itemWasteMap = {};
         let missingInventoryEvents = 0;
-        let actualUnexplainedLoss = {}; // 🔥 The Yield Tracker
+        let actualUnexplainedLoss = {}; 
 
         wasteSnap.forEach(doc => {
             let data = doc.data();
@@ -13293,7 +13313,7 @@ window.generateAIReport = async function() {
             
             // Unexplained Audit Loss (Theft / Over-portioning)
             if (data.type === "Manager General Audit" || data.type === "Audit Adjustment (Penalty)") {
-                if (data.variance < 0) { // Only track missing items
+                if (data.variance < 0) { 
                     if (!actualUnexplainedLoss[itemName]) actualUnexplainedLoss[itemName] = 0;
                     actualUnexplainedLoss[itemName] += qtyLost;
                     missingInventoryEvents++;
@@ -13310,7 +13330,7 @@ window.generateAIReport = async function() {
             }
         }
 
-        // 4. CRUNCH YIELD (Theoretical Burn vs Actual Burn)
+        // 5. CRUNCH YIELD (Theoretical Burn vs Actual Burn)
         let theoreticalBurn = {};
         let totalSales = 0;
 
@@ -13326,13 +13346,11 @@ window.generateAIReport = async function() {
                     let qtySold = item.qty || 1;
                     let recipe = recipes[item.name || item.itemName] || [];
                     
-                    // Add Base Recipe to Theoretical Burn
                     recipe.forEach(ing => {
                         if (!theoreticalBurn[ing.ingredient]) theoreticalBurn[ing.ingredient] = 0;
                         theoreticalBurn[ing.ingredient] += (ing.qty * qtySold);
                     });
 
-                    // Add Add-ons to Theoretical Burn
                     if (item.addons) {
                         for (let key in item.addons) {
                             let addon = item.addons[key];
@@ -13346,7 +13364,7 @@ window.generateAIReport = async function() {
             }
         });
 
-        // 5. CRUNCH SHIFT AUDIT DATA
+        // 6. CRUNCH SHIFT AUDIT DATA
         let totalShifts = 0;
         let shiftsWithCashVariance = 0;
         let totalCashShortage = 0;
@@ -13366,29 +13384,43 @@ window.generateAIReport = async function() {
         let accuracyScore = totalShifts > 0 ? Math.max(0, 100 - ((errorEvents / (totalShifts * 2)) * 100)) : 100;
         let avgSalesPerDay = days > 0 ? totalSales / days : 0;
 
-        // 6. UPDATE UI CARDS
+        // 7. UPDATE UI CARDS
         document.getElementById('aiStatWaste').innerText = `₱${totalWasteValue.toLocaleString(undefined, {minimumFractionDigits:2})}`;
         document.getElementById('aiStatAccuracy').innerText = `${accuracyScore.toFixed(0)}%`;
         document.getElementById('aiStatAccuracy').style.color = accuracyScore > 85 ? "#16a34a" : "#dc2626";
         document.getElementById('aiStatTopWaste').innerText = topWastedItem === "None" ? "Looking Good!" : `${topWastedItem}\n(₱${maxWasteValue.toFixed(2)} lost)`;
         document.getElementById('aiStatShortage').innerText = `₱${totalCashShortage.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        
+        // 🚨 Update the new Bankruptcy Card!
+        let capDrainEl = document.getElementById('aiStatCapitalDrain');
+        if (capDrainEl) {
+            capDrainEl.innerHTML = maxCapitalItem === "None" ? "Healthy Cash Flow" : `${maxCapitalItem}<br><span style="font-size:12px; color:#ef4444;">(₱${maxCapitalTiedUp.toLocaleString(undefined, {minimumFractionDigits:2})} tied up)</span>`;
+        }
 
-        // 7. 🧠 THE AI TEXT GENERATION ENGINE
+        // 8. 🧠 THE AI TEXT GENERATION ENGINE
         let reportHTML = `<p><strong>Analysis Period:</strong> Last ${days} days at ${branch}.</p>`;
 
-        // A. Sales & Performance
+        // A. Bankruptcy & Capital Alert
+        if (maxCapitalTiedUp > (totalInventoryValue * 0.4) && maxCapitalTiedUp > 5000) {
+            reportHTML += `<div style="background:#fff1f2; padding:15px; border-left:4px solid #be123c; margin-bottom:15px; border-radius:4px;">
+                <strong style="color:#9f1239; font-size: 15px;">🚨 BANKRUPTCY RISK / CAPITAL DRAIN ALERT:</strong><br>
+                You currently have <strong>₱${maxCapitalTiedUp.toLocaleString(undefined, {minimumFractionDigits:2})}</strong> entirely tied up in <strong>${maxCapitalItem}</strong>. This represents a massive portion of your total asset value (₱${totalInventoryValue.toLocaleString(undefined, {minimumFractionDigits:2})}). If this item spoils or does not sell fast enough, it will severely impact your daily cash flow and ability to pay operational expenses. Consider pausing restocks for this item immediately.
+            </div>`;
+        }
+
+        // B. Sales & Performance
         reportHTML += `<p><strong>📈 Financial Pacing:</strong> Generated <strong>₱${totalSales.toLocaleString()}</strong> in revenue, averaging ₱${avgSalesPerDay.toLocaleString(undefined, {maximumFractionDigits:0})} per day. `;
         if (avgSalesPerDay > 5000) reportHTML += `Volume is extremely healthy, indicating strong local demand.`;
         else reportHTML += `Sales pacing is somewhat moderate. Consider launching localized promotions.`;
         reportHTML += `</p>`;
 
-        // B. Staff Accountability
+        // C. Staff Accountability
         reportHTML += `<p><strong>⚖️ Staff Integrity & Accuracy:</strong> Your staff's operational accuracy is <strong>${accuracyScore.toFixed(0)}%</strong>. `;
         if (accuracyScore < 85) reportHTML += `<span style="color:#dc2626; font-weight:bold;">Critical Alert:</span> High frequency of missing stock and drawer cash (₱${totalCashShortage.toLocaleString()}). Enforce strict blind counts.`;
         else reportHTML += `<span style="color:#16a34a; font-weight:bold;">Excellent.</span> Cash and inventory audits are highly aligned.`;
         reportHTML += `</p>`;
 
-        // C. 🔥 NEW: INGREDIENT YIELD & PORTIONING MATRIX 🔥
+        // D. INGREDIENT YIELD & PORTIONING MATRIX
         reportHTML += `<h4 style="margin-top:25px; margin-bottom: 10px; color:#4c1d95; border-bottom: 2px solid #ddd; padding-bottom: 5px;">📊 Portion Control & Yield Variance Matrix</h4>`;
         reportHTML += `<table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 13px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
             <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
@@ -13410,20 +13442,17 @@ window.generateAIReport = async function() {
             let waste = itemWasteMap[ing] ? itemWasteMap[ing].qty : 0;
             let missing = actualUnexplainedLoss[ing] || 0;
             
-            // Allow a 5% tolerance for scraping bowls, sauce sticking to bottles, etc.
             let tolerance = ideal * 0.05;
             let healthHtml = '';
             
             if (missing > tolerance) {
                 healthHtml = `<span style="background: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⚠️ Over-Portioning / Theft</span>`;
             } else if (missing < -tolerance) {
-                // If they are gaining inventory, they are under-portioning (skimping on ingredients)
                 healthHtml = `<span style="background: #fffbeb; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🔻 Under-Portioning (Skimping)</span>`;
             } else {
                 healthHtml = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Perfect Yield</span>`;
             }
 
-            // Only show items that actually had activity!
             if (ideal > 0 || waste > 0 || missing !== 0) {
                 hasYieldData = true;
                 reportHTML += `
@@ -13440,7 +13469,7 @@ window.generateAIReport = async function() {
         
         if (!hasYieldData) reportHTML += `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #94a3b8;">No yield data available. Ensure recipes are set up and audits are completed.</td></tr>`;
         reportHTML += `</tbody></table>`;
-        reportHTML += `<p style="font-size: 11px; color: #94a3b8; font-style: italic; margin-top: 5px;">* Expected Burn is calculated directly from your BOM recipes multiplied by exact POS sales. Unexplained Loss is triggered by Audit Shortages, pointing directly to staff over-portioning or unrecorded waste.</p>`;
+        reportHTML += `<p style="font-size: 11px; color: #94a3b8; font-style: italic; margin-top: 5px;">* Expected Burn is calculated directly from your BOM recipes multiplied by exact POS sales. Unexplained Loss is triggered by Audit Shortages.</p>`;
 
         document.getElementById('aiReportText').innerHTML = reportHTML;
         
