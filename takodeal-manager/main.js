@@ -13230,9 +13230,8 @@ setInterval(() => {
 }, 2000);
 
 // ========================================================
-// 🧠 TAKODEÁL CEO AI ORACLE ENGINE (INDEX-FREE)
+// 🧠 TAKODEÁL CEO AI ORACLE & YIELD TRACKING ENGINE
 // ========================================================
-
 window.generateAIReport = async function() {
     let branch = document.getElementById('aiBranchSelect').value;
     let days = parseInt(document.getElementById('aiDaysSelect').value);
@@ -13246,42 +13245,60 @@ window.generateAIReport = async function() {
     startDate.setHours(0,0,0,0);
 
     try {
-        // 1. GATHER DATA SOURCES (THE INDEX-FREE WAY)
-        // We only ask Firebase to filter by Date. We do everything else locally!
+        // 1. GATHER DATA SOURCES
         const qWaste = query(collection(db, "stock_logs"), where("timestamp", ">=", startDate));
         const qShifts = query(collection(db, "shifts"), where("startTime", ">=", startDate));
         const qInventory = query(collection(db, "inventory"), where("branch", "==", branch));
+        const qTx = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
+        const qBom = collection(db, "bom");
 
-        const [wasteSnap, shiftSnap, invSnap] = await Promise.all([getDocs(qWaste), getDocs(qShifts), getDocs(qInventory)]);
+        const [wasteSnap, shiftSnap, invSnap, txSnap, bomSnap] = await Promise.all([getDocs(qWaste), getDocs(qShifts), getDocs(qInventory), getDocs(qTx), getDocs(qBom)]);
 
         let branchInv = {};
-        invSnap.forEach(doc => { branchInv[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
+        invSnap.forEach(doc => { 
+            let d = doc.data();
+            branchInv[d.name] = { cost: parseFloat(d.baseCost) || 0, uom: d.uom || 'units' }; 
+        });
 
-        // 2. CRUNCH WASTE DATA
+        // 2. MAP RECIPES (BOM)
+        let recipes = {};
+        bomSnap.forEach(doc => {
+            let d = doc.data();
+            if (!recipes[d.menuItem]) recipes[d.menuItem] = [];
+            recipes[d.menuItem].push({ ingredient: d.ingredientName, qty: parseFloat(d.qty) || 0 });
+        });
+
+        // 3. CRUNCH WASTE & AUDIT LOSS DATA
         let totalWasteValue = 0;
         let itemWasteMap = {};
         let missingInventoryEvents = 0;
+        let actualUnexplainedLoss = {}; // 🔥 The Yield Tracker
 
         wasteSnap.forEach(doc => {
             let data = doc.data();
-            
-            // 🛑 JAVASCRIPT FILTERING: Skip items that don't belong to this branch or aren't waste!
             if (data.branch !== branch) return;
-            if (data.type !== "Waste / Spoilage" && data.type !== "Shift Close Variance") return;
-
+            
             let qtyLost = Math.abs(data.variance || 0);
             let itemName = data.item;
-            
-            let costPerUnit = branchInv[itemName] || 0;
+            let costPerUnit = branchInv[itemName] ? branchInv[itemName].cost : 0;
             let valueLost = qtyLost * costPerUnit;
 
-            totalWasteValue += valueLost;
-
-            if (!itemWasteMap[itemName]) itemWasteMap[itemName] = { qty: 0, value: 0 };
-            itemWasteMap[itemName].qty += qtyLost;
-            itemWasteMap[itemName].value += valueLost;
-
-            if (data.type === "Shift Close Variance") missingInventoryEvents++;
+            // Known Spoilage
+            if (data.type === "Waste / Spoilage") {
+                totalWasteValue += valueLost;
+                if (!itemWasteMap[itemName]) itemWasteMap[itemName] = { qty: 0, value: 0 };
+                itemWasteMap[itemName].qty += qtyLost;
+                itemWasteMap[itemName].value += valueLost;
+            }
+            
+            // Unexplained Audit Loss (Theft / Over-portioning)
+            if (data.type === "Manager General Audit" || data.type === "Audit Adjustment (Penalty)") {
+                if (data.variance < 0) { // Only track missing items
+                    if (!actualUnexplainedLoss[itemName]) actualUnexplainedLoss[itemName] = 0;
+                    actualUnexplainedLoss[itemName] += qtyLost;
+                    missingInventoryEvents++;
+                }
+            }
         });
 
         let topWastedItem = "None";
@@ -13293,98 +13310,140 @@ window.generateAIReport = async function() {
             }
         }
 
-        // 3. CRUNCH SHIFT AUDIT DATA
-        let totalShifts = 0;
-        let shiftsWithCashVariance = 0;
-        let totalCashShortage = 0;
+        // 4. CRUNCH YIELD (Theoretical Burn vs Actual Burn)
+        let theoreticalBurn = {};
         let totalSales = 0;
 
-        shiftSnap.forEach(doc => {
-            let data = doc.data();
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (tx.branch !== branch || tx.status === "Voided") return;
             
-            // 🛑 JAVASCRIPT FILTERING: Skip if wrong branch or not closed
-            if (data.branch !== branch) return;
-            if (data.status !== "Closed") return;
+            let cSales = tx.totalCashSales !== undefined ? tx.totalCashSales : (tx.netTotal || 0);
+            totalSales += cSales;
 
-            totalShifts++;
-            let cSales = data.totalCashSales !== undefined ? data.totalCashSales : (data.grossSales || 0);
-            totalSales += cSales + (data.totalDigitalSales || 0);
-            
-            if (data.difference && Math.abs(data.difference) > 5) { // Allowance of 5 pesos
-                shiftsWithCashVariance++;
-                if (data.difference < 0) totalCashShortage += Math.abs(data.difference);
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let qtySold = item.qty || 1;
+                    let recipe = recipes[item.name || item.itemName] || [];
+                    
+                    // Add Base Recipe to Theoretical Burn
+                    recipe.forEach(ing => {
+                        if (!theoreticalBurn[ing.ingredient]) theoreticalBurn[ing.ingredient] = 0;
+                        theoreticalBurn[ing.ingredient] += (ing.qty * qtySold);
+                    });
+
+                    // Add Add-ons to Theoretical Burn
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            let addon = item.addons[key];
+                            if (addon.qty > 0 && addon.linkedIngredient) {
+                                if (!theoreticalBurn[addon.linkedIngredient]) theoreticalBurn[addon.linkedIngredient] = 0;
+                                theoreticalBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qtySold);
+                            }
+                        }
+                    }
+                });
             }
         });
 
-        // 4. CALCULATE HEALTH SCORES
+        // 5. CRUNCH SHIFT AUDIT DATA
+        let totalShifts = 0;
+        let shiftsWithCashVariance = 0;
+        let totalCashShortage = 0;
+
+        shiftSnap.forEach(doc => {
+            let data = doc.data();
+            if (data.branch !== branch || data.status !== "Closed") return;
+
+            totalShifts++;
+            if (data.difference && data.difference < -5) { 
+                shiftsWithCashVariance++;
+                totalCashShortage += Math.abs(data.difference);
+            }
+        });
+
         let errorEvents = shiftsWithCashVariance + missingInventoryEvents;
         let accuracyScore = totalShifts > 0 ? Math.max(0, 100 - ((errorEvents / (totalShifts * 2)) * 100)) : 100;
         let avgSalesPerDay = days > 0 ? totalSales / days : 0;
 
-        // 5. UPDATE UI CARDS
+        // 6. UPDATE UI CARDS
         document.getElementById('aiStatWaste').innerText = `₱${totalWasteValue.toLocaleString(undefined, {minimumFractionDigits:2})}`;
         document.getElementById('aiStatAccuracy').innerText = `${accuracyScore.toFixed(0)}%`;
         document.getElementById('aiStatAccuracy').style.color = accuracyScore > 85 ? "#16a34a" : "#dc2626";
         document.getElementById('aiStatTopWaste').innerText = topWastedItem === "None" ? "Looking Good!" : `${topWastedItem}\n(₱${maxWasteValue.toFixed(2)} lost)`;
         document.getElementById('aiStatShortage').innerText = `₱${totalCashShortage.toLocaleString(undefined, {minimumFractionDigits:2})}`;
 
-        // 6. 🧠 THE AI TEXT GENERATION ENGINE
+        // 7. 🧠 THE AI TEXT GENERATION ENGINE
         let reportHTML = `<p><strong>Analysis Period:</strong> Last ${days} days at ${branch}.</p>`;
 
         // A. Sales & Performance
-        reportHTML += `<p><strong>📈 Financial Overview:</strong> Over the last ${days} days, this branch generated <strong>₱${totalSales.toLocaleString()}</strong> in gross revenue, averaging ₱${avgSalesPerDay.toLocaleString(undefined, {maximumFractionDigits:0})} per day. `;
-        if (avgSalesPerDay > 5000) reportHTML += `Volume is extremely healthy, indicating strong local demand. Keep pushing up-selling at the counter.`;
-        else reportHTML += `Sales pacing is somewhat moderate. Consider launching localized promotions or checking if "Sold Out" statuses are hurting your ticket averages.`;
+        reportHTML += `<p><strong>📈 Financial Pacing:</strong> Generated <strong>₱${totalSales.toLocaleString()}</strong> in revenue, averaging ₱${avgSalesPerDay.toLocaleString(undefined, {maximumFractionDigits:0})} per day. `;
+        if (avgSalesPerDay > 5000) reportHTML += `Volume is extremely healthy, indicating strong local demand.`;
+        else reportHTML += `Sales pacing is somewhat moderate. Consider launching localized promotions.`;
         reportHTML += `</p>`;
 
-        // B. Waste & Spoilage
-        reportHTML += `<p><strong>🗑️ Waste & Optimization:</strong> The system tracked <strong>₱${totalWasteValue.toLocaleString(undefined, {minimumFractionDigits:2})}</strong> in lost ingredients/materials. `;
-        if (totalWasteValue > 500) {
-            reportHTML += `This is a direct hit to your net margin. The primary culprit is <strong>${topWastedItem}</strong>. <span style="color:#dc2626; font-weight:bold;">Action Required:</span> Immediately review portion control and storage protocols for ${topWastedItem} with the kitchen staff.`;
-        } else {
-            reportHTML += `<span style="color:#16a34a; font-weight:bold;">Great job!</span> Spoilage is being kept to an absolute minimum, protecting your COGS.`;
+        // B. Staff Accountability
+        reportHTML += `<p><strong>⚖️ Staff Integrity & Accuracy:</strong> Your staff's operational accuracy is <strong>${accuracyScore.toFixed(0)}%</strong>. `;
+        if (accuracyScore < 85) reportHTML += `<span style="color:#dc2626; font-weight:bold;">Critical Alert:</span> High frequency of missing stock and drawer cash (₱${totalCashShortage.toLocaleString()}). Enforce strict blind counts.`;
+        else reportHTML += `<span style="color:#16a34a; font-weight:bold;">Excellent.</span> Cash and inventory audits are highly aligned.`;
+        reportHTML += `</p>`;
+
+        // C. 🔥 NEW: INGREDIENT YIELD & PORTIONING MATRIX 🔥
+        reportHTML += `<h4 style="margin-top:25px; margin-bottom: 10px; color:#4c1d95; border-bottom: 2px solid #ddd; padding-bottom: 5px;">📊 Portion Control & Yield Variance Matrix</h4>`;
+        reportHTML += `<table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 13px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+            <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                <tr>
+                    <th style="padding: 10px;">Ingredient</th>
+                    <th style="padding: 10px;">Expected Burn (Sales)</th>
+                    <th style="padding: 10px;">Known Waste</th>
+                    <th style="padding: 10px; color: #dc2626;">Unexplained Loss</th>
+                    <th style="padding: 10px;">Portion Health</th>
+                </tr>
+            </thead>
+            <tbody>
+        `;
+
+        let hasYieldData = false;
+        for (let ing in theoreticalBurn) {
+            let uom = branchInv[ing] ? branchInv[ing].uom : 'units';
+            let ideal = theoreticalBurn[ing];
+            let waste = itemWasteMap[ing] ? itemWasteMap[ing].qty : 0;
+            let missing = actualUnexplainedLoss[ing] || 0;
+            
+            // Allow a 5% tolerance for scraping bowls, sauce sticking to bottles, etc.
+            let tolerance = ideal * 0.05;
+            let healthHtml = '';
+            
+            if (missing > tolerance) {
+                healthHtml = `<span style="background: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⚠️ Over-Portioning / Theft</span>`;
+            } else if (missing < -tolerance) {
+                // If they are gaining inventory, they are under-portioning (skimping on ingredients)
+                healthHtml = `<span style="background: #fffbeb; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🔻 Under-Portioning (Skimping)</span>`;
+            } else {
+                healthHtml = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Perfect Yield</span>`;
+            }
+
+            // Only show items that actually had activity!
+            if (ideal > 0 || waste > 0 || missing !== 0) {
+                hasYieldData = true;
+                reportHTML += `
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px; font-weight: bold; color: #334155;">${ing}</td>
+                        <td style="padding: 10px; color: #0284c7; font-weight: bold;">${ideal.toFixed(2)} ${uom}</td>
+                        <td style="padding: 10px; color: #64748b;">${waste.toFixed(2)} ${uom}</td>
+                        <td style="padding: 10px; color: #dc2626; font-weight: 900;">${missing.toFixed(2)} ${uom}</td>
+                        <td style="padding: 10px;">${healthHtml}</td>
+                    </tr>
+                `;
+            }
         }
-        reportHTML += `</p>`;
-
-        // C. Staff Accountability
-        reportHTML += `<p><strong>⚖️ Staff Integrity & Accuracy:</strong> Based on the Z-Readings and Blind Inventory counts, your staff's operational accuracy is rated at <strong>${accuracyScore.toFixed(0)}%</strong>. `;
-        if (accuracyScore < 85) {
-            reportHTML += `<span style="color:#dc2626; font-weight:bold;">Critical Alert:</span> There were ${missingInventoryEvents} instances of missing physical stock and ₱${totalCashShortage.toLocaleString()} in missing drawer cash. You must confront the specific cashiers on duty during these shortages and mandate the use of Reason Letters.`;
-        } else if (accuracyScore < 95) {
-            reportHTML += `Accuracy is acceptable, but minor variances in stock and cash were detected. Remind cashiers to double-check their change and carefully input waste records before closing.`;
-        } else {
-            reportHTML += `<span style="color:#16a34a; font-weight:bold;">Excellent.</span> Drawer counts and stock audits are perfectly aligned. Your staff is executing the end-of-shift SOP flawlessly.`;
-        }
-        reportHTML += `</p>`;
-
-        // D. Final Strategic Verdict & AI Marketing Suggestions
-        reportHTML += `<div style="background:#f8fafc; padding:15px; border-left:4px solid #8b5cf6; margin-top:20px; border-radius:4px;">
-            <strong style="color:#4c1d95; font-size: 16px;">👑 CEO Action Plan & Content Strategy:</strong><br><br>`;
         
-        if (accuracyScore < 85) {
-            reportHTML += `<strong>Immediate Goal: Stop the Bleeding.</strong><br>
-            Your staff accuracy is critically low. Focus entirely on internal retraining before spending on ads.<br><br>
-            📱 <strong>1-Week Content Video:</strong> <em>"A Day in the Life of a Takodeal Cashier."</em> Have a manager film a highly positive, energetic video showing a cashier correctly counting their drawer and cleaning their station. This acts as both marketing (showing you are clean and professional) and a subtle training video for your actual staff.`;
-        } else if (totalWasteValue > 1000) {
-            reportHTML += `<strong>Immediate Goal: Fix the COGS Leak.</strong><br>
-            Your sales are fine, but you are throwing profits in the trash (₱${totalWasteValue.toLocaleString()} wasted).<br><br>
-            📱 <strong>1-Week Content Video:</strong> <em>"How we make the perfect Takoyaki."</em> Film a close-up, high-quality video of the batter being poured and the exact portion of octopus/filling being added. Emphasize the quality. Send this video to your staff group chat as the "Golden Standard" to follow, reducing their errors and waste.`;
-        } else if (avgSalesPerDay < 3000) {
-            reportHTML += `<strong>Immediate Goal: Drive Foot Traffic.</strong><br>
-            Operations are stable, but volume is too low. We need aggressive local marketing.<br><br>
-            🎯 <strong>Facebook Ad Strategy:</strong> Run a ₱150/day "Reach" campaign targeting a 3km radius around ${branch}. Use an image of a heavily sauced Takoyaki with the text: <em>"Craving authentic Takoyaki? We are right around the corner at ${branch}!"</em><br><br>
-            📱 <strong>1-Week Content Video:</strong> Do a "Customer Challenge." Offer a free drink to the first 5 customers who mention a secret code word from your TikTok/Reels. Film their reactions (with permission).`;
-        } else {
-            reportHTML += `<strong>Immediate Goal: Maximize Profit Margins.</strong><br>
-            You are highly profitable! Operations are smooth and sales are high. Now is the time to push high-margin add-ons.<br><br>
-            🎯 <strong>Facebook Ad Strategy:</strong> Run a "Conversion" or "Message" campaign for bulk orders. <em>"Planning an office party or birthday? Get a Takodeal Family Platter!"</em> Target local businesses and schools.<br><br>
-            📱 <strong>1-Week Content Video:</strong> <em>"The Secret Menu Hack."</em> Film a video showing a customer ordering a regular Takoyaki, but adding Extra Cheese and Spicy Mayo. Make it look irresistible. This will train your customers to ask for high-margin Add-Ons!`;
-        }
-        reportHTML += `</div>`;
+        if (!hasYieldData) reportHTML += `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #94a3b8;">No yield data available. Ensure recipes are set up and audits are completed.</td></tr>`;
+        reportHTML += `</tbody></table>`;
+        reportHTML += `<p style="font-size: 11px; color: #94a3b8; font-style: italic; margin-top: 5px;">* Expected Burn is calculated directly from your BOM recipes multiplied by exact POS sales. Unexplained Loss is triggered by Audit Shortages, pointing directly to staff over-portioning or unrecorded waste.</p>`;
 
         document.getElementById('aiReportText').innerHTML = reportHTML;
         
-        // Hide loading, show UI
         document.getElementById('aiLoadingUI').style.display = 'none';
         document.getElementById('aiStatsGrid').style.display = 'grid';
         document.getElementById('aiReportContainer').style.display = 'block';
@@ -13848,7 +13907,7 @@ window.deleteBranch = async function(docId, name) {
     } catch (e) { console.error(e); alert("Failed to delete branch."); }
 };
 
-// ⚙️ CENTRAL SETTINGS CONTROLLER
+// ⚙️ CENTRAL SETTINGS CONTROLLER (WITH ROYALTY ENGINE)
 window.openBranchSettings = function(docId) {
     let d = window.globalBranchData[docId];
     if (!d) return;
@@ -13859,6 +13918,19 @@ window.openBranchSettings = function(docId) {
     document.getElementById('settingContact').value = d.contact || '';
     document.getElementById('settingWifi').value = d.wifi || '';
     document.getElementById('settingPrinterSize').value = d.printerSize || '58mm';
+    
+    // 🔥 NEW: Inject the Royalty Setting dynamically if it doesn't exist yet!
+    let formContainer = document.getElementById('settingPrinterSize').parentElement.parentElement;
+    if (!document.getElementById('settingRoyalty')) {
+        formContainer.insertAdjacentHTML('beforeend', `
+            <div style="margin-top: 15px; background: #fffbeb; padding: 15px; border: 1px dashed #fcd34d; border-radius: 8px;">
+                <label style="font-size: 12px; font-weight: bold; color: #b45309; display: block; margin-bottom: 5px;">👑 Franchise Royalty Percentage (%)</label>
+                <div style="font-size: 10px; color: #d97706; margin-bottom: 8px;">Enter 0 for company-owned branches. The system will auto-deduct this % from Gross Sales at shift close.</div>
+                <input type="number" id="settingRoyalty" class="input-box" placeholder="e.g. 5" style="width: 100%; border-color: #fcd34d; font-weight: bold; color: #92400e;">
+            </div>
+        `);
+    }
+    document.getElementById('settingRoyalty').value = d.royaltyPercent || 0;
 
     document.getElementById('branchSettingsModal').style.display = 'flex';
 };
@@ -13869,12 +13941,13 @@ window.saveBranchSettings = async function() {
         address: document.getElementById('settingAddress').value.trim(),
         contact: document.getElementById('settingContact').value.trim(),
         wifi: document.getElementById('settingWifi').value.trim(),
-        printerSize: document.getElementById('settingPrinterSize').value
+        printerSize: document.getElementById('settingPrinterSize').value,
+        royaltyPercent: parseFloat(document.getElementById('settingRoyalty').value) || 0
     };
 
     try {
         await updateDoc(doc(db, "branches", docId), payload);
-        alert(`✅ Settings pushed globally! The Cashier App at this branch will update automatically.`);
+        alert(`✅ Settings & Royalties pushed globally!`);
         document.getElementById('branchSettingsModal').style.display = 'none';
         window.loadBranchManager();
     } catch (e) { console.error(e); alert("Failed to push settings."); }
