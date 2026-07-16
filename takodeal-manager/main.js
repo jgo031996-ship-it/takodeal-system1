@@ -17153,3 +17153,129 @@ window.calculateSimulatedRoyalty = function() {
         roiEl.style.color = '#dc2626';
     }
 };
+
+// ========================================================
+// 🏢 MODULAR BRANCH REMITTANCE HISTORY ENGINE
+// ========================================================
+
+window.openBranchTransferHistory = async function(branchName) {
+    document.getElementById('branchTransferHistoryModal').style.display = 'flex';
+    document.getElementById('bthModalTitle').innerText = `📜 Remittance History - ${branchName}`;
+    let tbody = document.getElementById('bthModalBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; font-weight: bold; color: #64748b;">⏳ Fetching branch logs...</td></tr>';
+
+    try {
+        // Respect the global date filter if you selected one at the top of the screen
+        let startDateStr = document.getElementById('transferStartDate')?.value;
+        let endDateStr = document.getElementById('transferEndDate')?.value;
+        
+        let q;
+        if (startDateStr && endDateStr) {
+            let start = new Date(startDateStr); start.setHours(0,0,0,0);
+            let end = new Date(endDateStr); end.setHours(23,59,59,999);
+            q = window.query(window.collection(window.db, "remittances"), 
+                window.where("branch", "==", branchName), 
+                window.where("timestamp", ">=", start),
+                window.where("timestamp", "<=", end),
+                window.orderBy("timestamp", "desc")
+            );
+        } else {
+            // Default to the latest 50 transfers so it loads instantly
+            q = window.query(window.collection(window.db, "remittances"), 
+                window.where("branch", "==", branchName), 
+                window.orderBy("timestamp", "desc"), 
+                window.limit(50)
+            );
+        }
+
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let docId = docSnap.id;
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'N/A';
+
+            // Replicate your existing Status Badges
+            let statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
+            if (d.status === "Received" || d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`;
+            if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Rejected</span>`;
+
+            // Action Buttons
+            let actionHtml = '';
+            if (d.status === "Pending") {
+                actionHtml = `
+                    <div style="display: flex; gap: 5px; justify-content: center;">
+                        <button onclick="window.auditRemittance('${docId}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Audit</button>
+                        <button onclick="window.approveRemittance('${docId}')" style="background: #16a34a; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">Approve</button>
+                        <button onclick="window.rejectRemittance('${docId}')" style="background: #dc2626; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; box-shadow: 0 2px 4px rgba(220,38,38,0.3);">Reject</button>
+                    </div>
+                `;
+            } else {
+                actionHtml = `<span style="color: #94a3b8; font-size: 11px; font-style: italic;">Locked</span>`;
+            }
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px 20px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 15px 20px;">
+                        <div style="font-weight: bold; color: #334155; font-size: 13px;">${d.cashier || d.cashierName || d.staffName || 'Staff'}</div>
+                    </td>
+                    <td style="padding: 15px 20px; font-size: 13px; color: #0f172a;">
+                        <strong>${d.channel || 'Cash'}</strong><br>
+                        <span style="color: #0284c7; font-size: 11px;">Ref: ${d.referenceNumber || d.ref || 'N/A'}</span>
+                    </td>
+                    <td style="padding: 15px 20px; text-align: center;">${statusBadge}</td>
+                    <td style="padding: 15px 20px; text-align: right; font-weight: 900; color: #16a34a; font-size: 14px;">₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 20px; text-align: center;">${actionHtml}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No transfer history found for this branch in the selected timeframe.</td></tr>';
+    } catch (e) {
+        console.error("Modal Fetch Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #dc2626; padding: 30px; font-weight: bold;">❌ Error connecting to database.</td></tr>';
+    }
+};
+
+// 🔥 SMART UI HIJACKER: Automatically turns your existing branch boxes into clickable buttons!
+const originalLoadCashExplorer = window.loadCashExplorer;
+if (originalLoadCashExplorer) {
+    window.loadCashExplorer = async function() {
+        await originalLoadCashExplorer(); // Run your original math/rendering first
+        
+        // Wait half a second for the UI to finish drawing, then attach the clicks!
+        setTimeout(() => {
+            let container = document.getElementById('branchFloatingContainer');
+            if (container) {
+                let boxes = container.children;
+                for (let i = 0; i < boxes.length; i++) {
+                    let box = boxes[i];
+                    // Find the branch name inside the box (looking for the 📍 pin)
+                    if (box.innerText.includes('📍')) {
+                        let branchMatch = box.innerText.match(/📍\s*([A-Za-z\s]+)/);
+                        if (branchMatch) {
+                            let branchName = branchMatch[1].trim();
+                            
+                            // Add interactive hover animations
+                            box.style.cursor = 'pointer';
+                            box.style.transition = 'transform 0.2s, box-shadow 0.2s';
+                            box.onmouseover = () => {
+                                box.style.transform = 'translateY(-3px)';
+                                box.style.boxShadow = '0 10px 15px rgba(0,0,0,0.1)';
+                            };
+                            box.onmouseout = () => {
+                                box.style.transform = 'translateY(0)';
+                                box.style.boxShadow = 'none';
+                            };
+                            
+                            // Attach the pop-up function!
+                            box.onclick = () => window.openBranchTransferHistory(branchName);
+                        }
+                    }
+                }
+            }
+        }, 500);
+    };
+}
