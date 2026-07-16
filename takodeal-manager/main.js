@@ -5799,17 +5799,13 @@ window.executeSelectiveWipe = async function() {
     }
 };
 
-// ==========================================
-// REMITTANCE & CASH TRANSFER EXPLORER
-// ==========================================
-window.loadCashExplorer = async function() {
-    const tbody = document.getElementById('transferLogBody');
-    if (!tbody) return;
-    
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">Fetching remittances...</td></tr>';
+// ========================================================
+// 🏦 MASTER CASH FLOW & EXPLORER ENGINE
+// ========================================================
 
+window.loadCashExplorer = async function() {
+    // 1. We calculate the "Pending Verifications" directly from Firebase!
     const branchFilter = document.getElementById('transferBranchFilter') ? document.getElementById('transferBranchFilter').value : 'All';
-    
     const today = new Date().toISOString().split('T')[0];
     const startInput = document.getElementById('transferStartDate');
     const endInput = document.getElementById('transferEndDate');
@@ -5822,95 +5818,197 @@ window.loadCashExplorer = async function() {
 
     try {
         let pendingQ;
-        let logQ;
-
         if (branchFilter === 'All') {
             pendingQ = query(collection(db, "remittances"), where("status", "==", "Pending"));
-            logQ = query(collection(db, "remittances"), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp), orderBy("timestamp", "desc"));
         } else {
             pendingQ = query(collection(db, "remittances"), where("branch", "==", branchFilter), where("status", "==", "Pending"));
-            logQ = query(collection(db, "remittances"), where("branch", "==", branchFilter), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp), orderBy("timestamp", "desc"));
         }
 
-        const [pendingSnap, logSnap] = await Promise.all([getDocs(pendingQ), getDocs(logQ)]);
-
-        let uniqueTransfers = new Map();
-        let totalCash = 0;
-        let pendingCount = 0;
-
-        logSnap.forEach(docSnap => {
-            let data = docSnap.data();
-            if (data.status === "Received") {
-                totalCash += (data.amount || 0);
-            }
-            uniqueTransfers.set(docSnap.id, data);
-        });
+        const pendingSnap = await getDocs(pendingQ);
+        let pendingTotal = 0;
 
         pendingSnap.forEach(docSnap => {
-            let data = docSnap.data();
-            pendingCount++;
-            uniqueTransfers.set(docSnap.id, data); 
+            pendingTotal += (parseFloat(docSnap.data().amount) || 0);
         });
 
-        let sortedTransfers = Array.from(uniqueTransfers, ([id, data]) => ({ id, ...data }));
-        sortedTransfers.sort((a, b) => {
-            let timeA = a.timestamp ? a.timestamp.toMillis() : 0;
-            let timeB = b.timestamp ? b.timestamp.toMillis() : 0;
-            return timeB - timeA;
+        if (document.getElementById('hubPendingCash')) {
+            document.getElementById('hubPendingCash').innerText = `₱${pendingTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        }
+    } catch (error) {
+        console.error("Cash Explorer Error:", error);
+    }
+};
+
+window.loadCashFlowHub = async function() {
+    try {
+        let safeCash = 0;
+        const accSnap = await getDocs(collection(db, "cash_accounts"));
+        accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
+
+        let branchHtml = '';
+        let totalDrawerCash = 0;
+
+        for (let branch of window.globalActiveBranches) {
+            if (branch === "Main Office") continue;
+
+            let drawerAmount = 0;
+            let drawerStatus = "";
+            let alertColor = "#0f766e";
+            let alertBg = "#f0fdfa";
+            let alertBorder = "#bbf7d0";
+
+            const activeQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
+            const activeSnap = await getDocs(activeQ);
+
+            if (!activeSnap.empty) {
+                let sData = activeSnap.docs[0].data();
+                let sTime = sData.startTime.toDate();
+                drawerAmount = parseFloat(sData.startingCash) || 0;
+
+                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime));
+                const txSnap = await getDocs(txQ);
+                txSnap.forEach(t => {
+                    let tx = t.data();
+                    if (tx.status !== 'Voided') {
+                        if (tx.splitDetails) {
+                            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                            if (cashSplit) drawerAmount += cashSplit.amount;
+                        } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                            drawerAmount += (parseFloat(tx.netTotal) || 0);
+                        }
+                    }
+                });
+
+                const expQ = query(collection(db, "expenses"), where("shiftId", "==", activeSnap.docs[0].id));
+                const expSnap = await getDocs(expQ);
+                expSnap.forEach(e => { drawerAmount -= (parseFloat(e.data().amount) || 0); });
+
+                drawerStatus = '<span style="color:#16a34a; font-weight:bold; font-size:11px;">🟢 Register Open</span>';
+            } else {
+                const closedQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+                const closedSnap = await getDocs(closedQ);
+                if (!closedSnap.empty) {
+                    drawerAmount = parseFloat(closedSnap.docs[0].data().declaredCash) || 0;
+                    drawerStatus = '<span style="color:#64748b; font-weight:bold; font-size:11px;">⚪ Register Closed</span>';
+                } else {
+                    drawerStatus = '<span style="color:#94a3b8; font-weight:bold; font-size:11px;">No Data</span>';
+                }
+            }
+
+            if (drawerAmount > 5000) {
+                alertColor = "#dc2626"; alertBg = "#fef2f2"; alertBorder = "#fecaca";
+            }
+
+            totalDrawerCash += drawerAmount;
+
+            // 🔥 HERE IS THE HARDCODED CLICK! IT WORKS INSTANTLY NOW.
+            branchHtml += `
+                <div onclick="window.openBranchTransferHistory('${branch}')" style="background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)';">
+                    <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
+                    <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${drawerAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="margin-top: 4px;">${drawerStatus}</div>
+                </div>
+            `;
+        }
+
+        document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        
+        if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'none';
+        
+        document.querySelectorAll('div, span, h3').forEach(el => {
+            if (el.innerText === "FLOATING CASH (AT BRANCHES)") el.innerText = "LIVE CASH IN DRAWERS";
+            if (el.innerText === "Expected Z-Reading Cash not yet remitted") el.innerText = "Total physical cash sitting in branches right now";
         });
 
+        document.getElementById('branchFloatingContainer').innerHTML = branchHtml;
+
+    } catch (e) {
+        console.error("Cash Flow Hub Error:", e);
+        document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow.</div>`;
+    }
+};
+
+window.openBranchTransferHistory = async function(branchName) {
+    let modal = document.getElementById('branchTransferHistoryModal');
+    if (!modal) {
+        alert("Modal HTML not found! Make sure Step 2 from the previous prompt was pasted into your index.html.");
+        return;
+    }
+    
+    modal.style.display = 'flex';
+    document.getElementById('bthModalTitle').innerText = `📜 Remittance History - ${branchName}`;
+    let tbody = document.getElementById('bthModalBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; font-weight: bold; color: #64748b;">⏳ Fetching branch logs...</td></tr>';
+
+    try {
+        let startDateStr = document.getElementById('transferStartDate')?.value;
+        let endDateStr = document.getElementById('transferEndDate')?.value;
+        
+        let q;
+        if (startDateStr && endDateStr) {
+            let start = new Date(startDateStr); start.setHours(0,0,0,0);
+            let end = new Date(endDateStr); end.setHours(23,59,59,999);
+            q = query(collection(db, "remittances"), 
+                where("branch", "==", branchName), 
+                where("timestamp", ">=", start),
+                where("timestamp", "<=", end),
+                orderBy("timestamp", "desc")
+            );
+        } else {
+            q = query(collection(db, "remittances"), 
+                where("branch", "==", branchName), 
+                orderBy("timestamp", "desc"), 
+                limit(50)
+            );
+        }
+
+        const snap = await getDocs(q);
         let html = '';
 
-        sortedTransfers.forEach(data => {
-            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'Just now';
-            let status = data.status || "Pending"; 
-            
-            let statusBadge = status === "Received"
-                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`
-                : (status === "Rejected" 
-                    ? `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Rejected</span>`
-                    : `<span style="background: #fef9c3; color: #ca8a04; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`);
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let docId = docSnap.id;
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'N/A';
 
-            let actionBtn = status === "Pending"
-                ? `<div style="display:flex; gap:5px;">
-                    <button onclick="window.viewRemittanceAudit('${data.id}', '${data.branch}', '${data.salesPeriodStart || 'N/A'}', '${data.salesPeriodEnd || 'N/A'}', ${data.amount}, '${data.channel}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">🔍 Audit</button>
-                    <button onclick="approveRemittance('${data.id}', ${data.amount}, '${data.branch}', '${data.channel}')" style="background: #16a34a; color: white; border: none; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">Approve</button>
-                    <button onclick="window.rejectRemittance('${data.id}', '${data.branch}')" style="background: #dc2626; color: white; border: none; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; flex:1;">Reject</button>
-                   </div>`
-                : `<span style="color: #94a3b8; font-size: 12px; display: block; text-align: center;">Locked</span>`;
+            let statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
+            if (d.status === "Received" || d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`;
+            if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Rejected</span>`;
+
+            let actionHtml = '';
+            if (d.status === "Pending") {
+                actionHtml = `
+                    <div style="display: flex; gap: 5px; justify-content: center;">
+                        <button onclick="window.viewRemittanceAudit('${docId}', '${branchName}', '${d.salesPeriodStart || ''}', '${d.salesPeriodEnd || ''}', ${d.amount}, '${d.channel}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">🔍 Audit</button>
+                        <button onclick="window.approveRemittance('${docId}')" style="background: #16a34a; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Approve</button>
+                        <button onclick="window.rejectRemittance('${docId}', '${branchName}')" style="background: #dc2626; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Reject</button>
+                    </div>
+                `;
+            } else {
+                actionHtml = `<span style="color: #94a3b8; font-size: 11px; font-style: italic;">Locked</span>`;
+            }
 
             html += `
-                <tr style="border-bottom: 1px solid var(--border);">
-                    <td style="padding: 15px 20px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px 20px; font-size: 12px; color: #64748b;">${dateStr}</td>
                     <td style="padding: 15px 20px;">
-                        <strong style="color: var(--primary); font-size: 15px;">${data.branch}</strong><br>
-                        <span style="font-size: 12px; color: #64748b;">By: ${data.cashier}</span><br>
-                        <span style="font-size: 11px; color: #94a3b8;">Sales: ${data.salesPeriodStart || 'N/A'} to ${data.salesPeriodEnd || 'N/A'}</span>
+                        <div style="font-weight: bold; color: #334155; font-size: 13px;">${d.cashier || d.cashierName || d.staffName || 'Staff'}</div>
                     </td>
-                    <td style="padding: 15px 20px;">
-                        <strong style="font-size: 13px;">${data.channel}</strong> ➡️ ${data.recipient}<br>
-                        <span style="font-size: 12px; font-family: monospace; color: #0284c7;">Ref: ${data.referenceNumber || 'N/A'}</span>
+                    <td style="padding: 15px 20px; font-size: 13px; color: #0f172a;">
+                        <strong>${d.channel || 'Cash'}</strong><br>
+                        <span style="color: #0284c7; font-size: 11px;">Ref: ${d.referenceNumber || d.ref || 'N/A'}</span>
                     </td>
                     <td style="padding: 15px 20px; text-align: center;">${statusBadge}</td>
-                    <td style="padding: 15px 20px; text-align: right; font-size: 16px; font-weight: bold; color: #16a34a;">
-                        ₱${data.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
-                    </td>
-                    <td style="padding: 15px 20px; width: 180px;">${actionBtn}</td>
+                    <td style="padding: 15px 20px; text-align: right; font-weight: 900; color: #16a34a; font-size: 14px;">₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 20px; text-align: center;">${actionHtml}</td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No remittances found for this filter.</td></tr>';
-        
-        if (document.getElementById('totalTransfersVal')) document.getElementById('totalTransfersVal').innerText = `₱${totalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        if (document.getElementById('pendingTransfersVal')) {
-            document.getElementById('pendingTransfersVal').innerText = pendingCount;
-            document.getElementById('pendingTransfersVal').previousElementSibling.innerText = "PENDING TRANSFERS";
-        }
-
-    } catch (error) {
-        console.error(error);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: red;">Error fetching data. Check Console.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No transfer history found for this branch.</td></tr>';
+    } catch (e) {
+        console.error("Modal Fetch Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #dc2626; padding: 30px; font-weight: bold;">❌ Error connecting to database. Check console.</td></tr>';
     }
 };
 
@@ -10019,97 +10117,6 @@ window.autoFill7DaySupply = function() {
         alert(`✅ Auto-filled ${itemsAdded} items.\n\n⚠️ Warning: The following required items are OUT OF STOCK at the Main Office and were skipped: ${missingFromHQ.join(", ")}`);
     } else {
         alert(`✅ Cart loaded! ${itemsAdded} items added based on the 7-Day Burn Rate.`);
-    }
-};
-
-// ========================================================
-// 🏦 EOD CASH FLOW HUB (LIVE DRAWER CASH DASHBOARD)
-// ========================================================
-window.loadCashFlowHub = async function() {
-    try {
-        let safeCash = 0;
-        const accSnap = await getDocs(collection(db, "cash_accounts"));
-        accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
-
-        let branchHtml = '';
-        let totalDrawerCash = 0;
-
-        // Loop through every branch except Main Office
-        for (let branch of window.globalActiveBranches) {
-            if (branch === "Main Office") continue;
-
-            let drawerAmount = 0;
-            let drawerStatus = "";
-            let alertColor = "#0f766e";
-            let alertBg = "#f0fdfa";
-            let alertBorder = "#bbf7d0";
-
-            // 1. Check if they have an active shift
-            const activeQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
-            const activeSnap = await getDocs(activeQ);
-
-            if (!activeSnap.empty) {
-                // Branch is OPEN! Calculate live drawer cash!
-                let sData = activeSnap.docs[0].data();
-                let sTime = sData.startTime.toDate();
-                drawerAmount = parseFloat(sData.startingCash) || 0;
-
-                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime));
-                const txSnap = await getDocs(txQ);
-                txSnap.forEach(t => {
-                    let tx = t.data();
-                    if (tx.status !== 'Voided' && tx.paymentMethod === 'Cash') drawerAmount += (parseFloat(tx.netTotal) || 0);
-                });
-
-                const expQ = query(collection(db, "expenses"), where("shiftId", "==", activeSnap.docs[0].id));
-                const expSnap = await getDocs(expQ);
-                expSnap.forEach(e => { drawerAmount -= (parseFloat(e.data().amount) || 0); });
-
-                drawerStatus = '<span style="color:#16a34a; font-weight:bold; font-size:11px;">🟢 Register Open</span>';
-            } else {
-                // Branch is CLOSED! Fetch their last declared cash.
-                const closedQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
-                const closedSnap = await getDocs(closedQ);
-                if (!closedSnap.empty) {
-                    drawerAmount = parseFloat(closedSnap.docs[0].data().declaredCash) || 0;
-                    drawerStatus = '<span style="color:#64748b; font-weight:bold; font-size:11px;">⚪ Register Closed</span>';
-                } else {
-                    drawerStatus = '<span style="color:#94a3b8; font-weight:bold; font-size:11px;">No Data</span>';
-                }
-            }
-
-            if (drawerAmount > 5000) {
-                alertColor = "#dc2626"; alertBg = "#fef2f2"; alertBorder = "#fecaca";
-            }
-
-            totalDrawerCash += drawerAmount;
-
-            branchHtml += `
-                <div onclick="window.openBranchTransferHistory('${branch}')" style="background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)';">
-                    <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
-                    <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${drawerAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div style="margin-top: 4px;">${drawerStatus}</div>
-                </div>
-            `;
-        }
-
-        document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        
-        // Hide the pending/lifetime tabs since we simplified this screen!
-        if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'none';
-        
-        // Change the labels to reflect the new logic
-        document.querySelectorAll('div, span, h3').forEach(el => {
-            if (el.innerText === "FLOATING CASH (AT BRANCHES)") el.innerText = "LIVE CASH IN DRAWERS";
-            if (el.innerText === "Expected Z-Reading Cash not yet remitted") el.innerText = "Total physical cash sitting in branches right now";
-        });
-
-        document.getElementById('branchFloatingContainer').innerHTML = branchHtml;
-
-    } catch (e) {
-        console.error("Cash Flow Hub Error:", e);
-        document.getElementById('branchFloatingContainer').innerHTML = `<div style="text-align: center; color: red; grid-column: 1/-1;">Error calculating cash flow.</div>`;
     }
 };
 
@@ -17181,87 +17188,5 @@ window.calculateSimulatedRoyalty = function() {
     } else {
         roiEl.innerText = "Never (Losing Money)";
         roiEl.style.color = '#dc2626';
-    }
-};
-
-// ========================================================
-// 🏢 MODULAR BRANCH REMITTANCE HISTORY ENGINE
-// ========================================================
-
-window.openBranchTransferHistory = async function(branchName) {
-    document.getElementById('branchTransferHistoryModal').style.display = 'flex';
-    document.getElementById('bthModalTitle').innerText = `📜 Remittance History - ${branchName}`;
-    let tbody = document.getElementById('bthModalBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; font-weight: bold; color: #64748b;">⏳ Fetching branch logs...</td></tr>';
-
-    try {
-        let startDateStr = document.getElementById('transferStartDate')?.value;
-        let endDateStr = document.getElementById('transferEndDate')?.value;
-        
-        let q;
-        if (startDateStr && endDateStr) {
-            let start = new Date(startDateStr); start.setHours(0,0,0,0);
-            let end = new Date(endDateStr); end.setHours(23,59,59,999);
-            // 🔥 FIX: Removed 'window.' from Firebase functions to prevent scope crashing!
-            q = query(collection(db, "remittances"), 
-                where("branch", "==", branchName), 
-                where("timestamp", ">=", start),
-                where("timestamp", "<=", end),
-                orderBy("timestamp", "desc")
-            );
-        } else {
-            q = query(collection(db, "remittances"), 
-                where("branch", "==", branchName), 
-                orderBy("timestamp", "desc"), 
-                limit(50)
-            );
-        }
-
-        const snap = await getDocs(q);
-        let html = '';
-
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
-            let docId = docSnap.id;
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'N/A';
-
-            let statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
-            if (d.status === "Received" || d.status === "Approved") statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Received</span>`;
-            if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Rejected</span>`;
-
-            let actionHtml = '';
-            if (d.status === "Pending") {
-                actionHtml = `
-                    <div style="display: flex; gap: 5px; justify-content: center;">
-                        <button onclick="window.auditRemittance('${docId}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Audit</button>
-                        <button onclick="window.approveRemittance('${docId}')" style="background: #16a34a; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">Approve</button>
-                        <button onclick="window.rejectRemittance('${docId}')" style="background: #dc2626; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; box-shadow: 0 2px 4px rgba(220,38,38,0.3);">Reject</button>
-                    </div>
-                `;
-            } else {
-                actionHtml = `<span style="color: #94a3b8; font-size: 11px; font-style: italic;">Locked</span>`;
-            }
-
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <td style="padding: 15px 20px; font-size: 12px; color: #64748b;">${dateStr}</td>
-                    <td style="padding: 15px 20px;">
-                        <div style="font-weight: bold; color: #334155; font-size: 13px;">${d.cashier || d.cashierName || d.staffName || 'Staff'}</div>
-                    </td>
-                    <td style="padding: 15px 20px; font-size: 13px; color: #0f172a;">
-                        <strong>${d.channel || 'Cash'}</strong><br>
-                        <span style="color: #0284c7; font-size: 11px;">Ref: ${d.referenceNumber || d.ref || 'N/A'}</span>
-                    </td>
-                    <td style="padding: 15px 20px; text-align: center;">${statusBadge}</td>
-                    <td style="padding: 15px 20px; text-align: right; font-weight: 900; color: #16a34a; font-size: 14px;">₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 20px; text-align: center;">${actionHtml}</td>
-                </tr>
-            `;
-        });
-
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No transfer history found for this branch.</td></tr>';
-    } catch (e) {
-        console.error("Modal Fetch Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #dc2626; padding: 30px; font-weight: bold;">❌ Error connecting to database. Check console.</td></tr>';
     }
 };
