@@ -2512,7 +2512,7 @@ window.submitAttendance = async function(type) {
     }
 
     // ==========================================
-    // ❌ REJECTED REQUEST INTERCEPTOR
+    // ❌ REJECTED REQUEST INTERCEPTOR (WITH AMNESIA FILTER)
     // ==========================================
     try {
         const reqQ = query(collection(db, "staff_requests"), where("staffName", "==", staffName), where("status", "==", "Rejected"));
@@ -2520,13 +2520,24 @@ window.submitAttendance = async function(type) {
         
         let unreadRejected = null;
         let unreadReqId = null;
+        let nowMs = Date.now();
 
-        // Find the first rejected request they haven't acknowledged yet
         reqSnap.forEach(docSnap => {
             let data = docSnap.data();
+            
             if (!data.staffAcknowledged) {
-                unreadRejected = data;
-                unreadReqId = docSnap.id;
+                // Determine exactly how old this rejection is
+                let actionTime = data.processedAt ? (data.processedAt.toDate ? data.processedAt.toDate().getTime() : new Date(data.processedAt).getTime()) : (data.timestamp ? data.timestamp.toDate().getTime() : 0);
+                let ageInDays = (nowMs - actionTime) / (1000 * 60 * 60 * 24);
+
+                // 🔥 THE FIX: Only block the Time Clock if the rejection happened in the last 7 days!
+                if (ageInDays <= 7) {
+                    unreadRejected = data;
+                    unreadReqId = docSnap.id;
+                } else {
+                    // Silently clear out ancient requests in the background so they don't pile up!
+                    updateDoc(doc(db, "staff_requests", docSnap.id), { staffAcknowledged: true }).catch(e => console.log("Silently cleared old request."));
+                }
             }
         });
 
