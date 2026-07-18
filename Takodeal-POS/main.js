@@ -2521,27 +2521,30 @@ window.submitAttendance = async function(type) {
     }
 
     // ==========================================
-    // ❌ REJECTED REQUEST INTERCEPTOR (WITH AMNESIA FILTER)
+    // 📩 PROCESSED REQUEST INTERCEPTOR (APPROVED & REJECTED)
     // ==========================================
     try {
-        const reqQ = query(collection(db, "staff_requests"), where("staffName", "==", staffName), where("status", "==", "Rejected"));
+        // 🔥 CRASH-PROOF QUERY: We pull all their requests and filter in JavaScript to avoid Firebase Index errors!
+        const reqQ = query(collection(db, "staff_requests"), where("staffName", "==", staffName));
         const reqSnap = await getDocs(reqQ);
         
-        let unreadRejected = null;
+        let unreadRequest = null;
         let unreadReqId = null;
         let nowMs = Date.now();
 
         reqSnap.forEach(docSnap => {
             let data = docSnap.data();
             
-            if (!data.staffAcknowledged) {
-                // Determine exactly how old this rejection is
+            // Only look for requests that are Approved or Rejected, and haven't been acknowledged yet!
+            if (!data.staffAcknowledged && (data.status === "Rejected" || data.status === "Approved")) {
+                
+                // Determine exactly how old this action is
                 let actionTime = data.processedAt ? (data.processedAt.toDate ? data.processedAt.toDate().getTime() : new Date(data.processedAt).getTime()) : (data.timestamp ? data.timestamp.toDate().getTime() : 0);
                 let ageInDays = (nowMs - actionTime) / (1000 * 60 * 60 * 24);
 
-                // 🔥 THE FIX: Only block the Time Clock if the rejection happened in the last 7 days!
+                // Only block the Time Clock if the manager's decision happened in the last 7 days!
                 if (ageInDays <= 7) {
-                    unreadRejected = data;
+                    unreadRequest = data;
                     unreadReqId = docSnap.id;
                 } else {
                     // Silently clear out ancient requests in the background so they don't pile up!
@@ -2550,27 +2553,35 @@ window.submitAttendance = async function(type) {
             }
         });
 
-        if (unreadRejected) {
+        if (unreadRequest) {
             let clockModal = document.getElementById('timeClockModal');
             if (clockModal) clockModal.style.display = 'none';
 
-            let reqDetails = unreadRejected.amount ? `₱${unreadRejected.amount.toLocaleString()}` : (unreadRejected.item || unreadRejected.leaveType || unreadRejected.explanationCause || "Request");
+            let reqDetails = unreadRequest.amount ? `₱${unreadRequest.amount.toLocaleString()}` : (unreadRequest.item || unreadRequest.leaveType || unreadRequest.explanationCause || "Request");
+            
+            // 🔥 DYNAMIC UI: Changes colors and icons based on Approved or Rejected!
+            let isApproved = unreadRequest.status === "Approved";
+            let titleTxt = isApproved ? '✅ Request Approved' : '❌ Request Rejected';
+            let iconType = isApproved ? 'success' : 'error';
+            let colorHex = isApproved ? '#16a34a' : '#dc2626';
+            let bgHex = isApproved ? '#dcfce7' : '#f8fafc';
+            let replyTxt = unreadRequest.managerReply || (isApproved ? 'Approved by Management.' : 'No specific reason provided.');
 
             const result = await Swal.fire({
-                title: '❌ Request Rejected',
-                html: `Management has reviewed your recent request and it was <b>Rejected</b>.<br><br>
-                       <div style="text-align:left; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-top:10px;">
+                title: titleTxt,
+                html: `Management has reviewed your recent request and it was <b>${unreadRequest.status}</b>.<br><br>
+                       <div style="text-align:left; background:${bgHex}; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-top:10px;">
                            <span style="font-size:12px; color:#64748b; font-weight:bold;">REQUEST TYPE:</span><br>
-                           <span style="font-size:14px; font-weight:bold; color:#1e293b;">${unreadRejected.type} (${reqDetails})</span><br><br>
-                           <span style="font-size:12px; color:#64748b; font-weight:bold;">MANAGER'S REPLY:</span><br>
-                           <span style="font-size:14px; color:#dc2626; font-style:italic;">"${unreadRejected.managerReply || 'No specific reason provided.'}"</span>
+                           <span style="font-size:14px; font-weight:bold; color:#1e293b;">${unreadRequest.type} (${reqDetails})</span><br><br>
+                           <span style="font-size:12px; color:#64748b; font-weight:bold;">MANAGER'S MESSAGE:</span><br>
+                           <span style="font-size:14px; color:${colorHex}; font-style:italic;">"${replyTxt}"</span>
                        </div>
                        <br><span style="font-size:13px; color:#475569; font-weight:bold;">Please acknowledge this message to unlock the Time Clock.</span>`,
-                icon: 'error',
+                icon: iconType,
                 confirmButtonText: 'I Understand',
                 confirmButtonColor: '#0f766e',
                 allowOutsideClick: false,
-                customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+                customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
             });
 
             if (result.isConfirmed) {
@@ -2589,10 +2600,10 @@ window.submitAttendance = async function(type) {
 
             document.getElementById('clockStaffPin').value = ''; 
             unlockUI(); 
-            return; // Stops the punch! They must retry.
+            return; // Stops the punch! They must retry so they don't accidentally clock in/out without knowing it.
         }
     } catch(e) {
-        console.error("Rejected Request Check Failed:", e);
+        console.error("Processed Request Check Failed:", e);
     }
 
     // ==========================================
