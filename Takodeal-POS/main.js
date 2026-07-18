@@ -685,6 +685,15 @@ window.isSyncing = false;
 
 window.processCheckout = async function (payload) {
     try {
+        // 🔥 THE CASHIER OVERRIDE FIX: 
+        // This forces the receipt to use the person actively logged into the screen right now,
+        // ignoring who originally opened the shift!
+        let activeCashierName = (window.sessionUser && window.sessionUser.cashierName) 
+            ? window.sessionUser.cashierName 
+            : (localStorage.getItem('cashierName') || 'Unknown');
+        
+        payload.cashier = activeCashierName;
+
         // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
         let splitContainer = document.getElementById('splitPaymentContainer');
         if (splitContainer && splitContainer.style.display !== 'none') {
@@ -1428,7 +1437,7 @@ window.submitComprehensiveCloseShift = async function () {
         if (!shiftId) throw new Error("No active shift found to close.");
         
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashierName = localStorage.getItem('cashierName') || 'Unknown';
+        let cashierName = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
         
         // Ensure we have a valid Date object for queries
         let startTime = new Date();
@@ -6170,7 +6179,7 @@ window.MASTER_CloseShift = async function () {
         if (!shiftId) throw new Error("No active shift found to close.");
 
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashierName = localStorage.getItem('cashierName') || 'Unknown';
+        let cashierName = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
 
         let startTime = new Date();
         if (typeof activeShiftDetails !== 'undefined' && activeShiftDetails && activeShiftDetails.startTime) {
