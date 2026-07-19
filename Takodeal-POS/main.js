@@ -6763,18 +6763,20 @@ window.nextBulletinSlide = function() {
     }
 };
 
-// --- THE INDEPENDENT SIGNATURE PAD (FIXED) ---
+// --- THE INDEPENDENT SIGNATURE PAD (OFFSET FIX) ---
 window.initBulletinSignaturePad = function() {
     let oldCanvas = document.getElementById('bulletinCanvas');
     if (!oldCanvas) return;
     
-    // Safely reset the canvas so old signatures don't get stuck
     let newCanvas = oldCanvas.cloneNode(true);
     oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
     
+    // 🔥 THE FIX: Sync internal resolution to CSS display size to fix the offset!
+    newCanvas.width = newCanvas.offsetWidth;
+    newCanvas.height = newCanvas.offsetHeight;
+    
     const ctx = newCanvas.getContext('2d');
     let isDrawing = false;
-
     window.hasSignedBulletin = false;
     ctx.clearRect(0, 0, newCanvas.width, newCanvas.height);
     ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#0f766e';
@@ -6783,16 +6785,21 @@ window.initBulletinSignaturePad = function() {
     const stopPosition = () => { isDrawing = false; ctx.beginPath(); };
     const draw = (e) => {
         if (!isDrawing) return;
-        e.preventDefault();
-        let x, y; 
-        // 🔥 THE FIX: Tell the pen to draw on the NEW active canvas, not the old deleted one!
-        const rect = newCanvas.getBoundingClientRect(); 
-        if (e.type.includes('touch')) { 
-            x = e.touches[0].clientX - rect.left; 
-            y = e.touches[0].clientY - rect.top; 
-        } else { 
-            x = e.clientX - rect.left; 
-            y = e.clientY - rect.top; 
+        e.preventDefault(); // Stops the tablet screen from scrolling
+        
+        let x, y;
+        const rect = newCanvas.getBoundingClientRect();
+        
+        // Calculate the scale difference to perfectly track the finger!
+        const scaleX = newCanvas.width / rect.width;
+        const scaleY = newCanvas.height / rect.height;
+
+        if (e.type.includes('touch')) {
+            x = (e.touches[0].clientX - rect.left) * scaleX;
+            y = (e.touches[0].clientY - rect.top) * scaleY;
+        } else {
+            x = (e.clientX - rect.left) * scaleX;
+            y = (e.clientY - rect.top) * scaleY;
         }
         ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y);
     };
