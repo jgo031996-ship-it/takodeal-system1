@@ -1222,8 +1222,11 @@ window.viewReceiptDetails = async function (receiptId) {
       // 🔥 THE NEW VERIFIED/UNVERIFIED LABELS 🔥
       let verifyLabel = '';
       if (!isCashTx) {
-          if (tx.paymentVerified) verifyLabel = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified</span>`;
-          else verifyLabel = `<br><span style="color: #dc2626; font-size: 10px; font-weight: bold; animation: pulse 1s infinite;">⏳ Unverified</span>`;
+          if (tx.paymentVerified) {
+              verifyLabel = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified</span>`;
+          } else {
+              verifyLabel = `<br><span style="color: #dc2626; font-size: 10px; font-weight: bold; animation: pulse 1s infinite;">⏳ Unverified</span>`;
+          }
       }
 
       tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
@@ -6935,12 +6938,12 @@ window.startUnverifiedListener = function() {
             let salesTab = document.getElementById('nav-sales'); 
             let existingBanner = document.getElementById('globalUnverifiedBanner');
 
-            if (!currentShiftId) { 
-                if (existingBanner) existingBanner.style.display = 'none';
+            if (unverifiedCount > 0) {
+                // Blink the sidebar tab red
                 if (salesTab) {
-                    salesTab.innerHTML = `<span>🧾</span><div class="nav-item-text">Shift Sales</div>`;
-                    salesTab.style.background = '';
-                    salesTab.style.borderLeftColor = '';
+                    salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${unverifiedCount})</div>`;
+                    salesTab.style.background = '#fef2f2';
+                    salesTab.style.borderLeftColor = '#dc2626';
                 }
                 return; 
             }
