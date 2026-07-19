@@ -3192,16 +3192,31 @@ window.openBranchDetails = async function (branch) {
           });
         }
 
-        // 🔥 UPGRADED ROW WITH CUSTOMER NAME AND VIEW BUTTON
-        transHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
+        // 🔥 SMART DIGITAL PAYMENT VERIFICATION UI 🔥
+        let isDigital = payMethod.toLowerCase() !== "cash" && !payMethod.toLowerCase().includes("store use");
+        let verifyBadge = "";
+        let verifyBtn = "";
+        
+        if (isDigital) {
+            if (tx.paymentVerified) {
+                verifyBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified by Manager</span>`;
+            } else {
+                verifyBadge = `<br><span style="color: #ea580c; font-size: 10px; font-weight: bold; animation: pulse 2s infinite;">⏳ Awaiting Verification</span>`;
+                verifyBtn = `<button onclick="window.verifyDigitalPayment('${tDoc.id}', '${tx.receiptId}')" style="background: #16a34a; border: 1px solid #15803d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✅ Verify</button>`;
+            }
+        }
+
+        // 🔥 UPGRADED ROW WITH VERIFY BUTTON
+        transHtml += `<tr style="border-bottom: 1px solid #f1f5f9; ${isDigital && !tx.paymentVerified ? 'background: #fffbeb;' : ''}">
             <td style="padding: 10px;">${timeStr}</td>
             <td style="padding: 10px;"><strong>${tx.receiptId}</strong></td>
             <td style="padding: 10px; color: #475569; font-weight: bold;">${safeCustomer}</td>
-            <td style="padding: 10px;">${payMethod}</td>
+            <td style="padding: 10px;">${payMethod} ${verifyBadge}</td>
             <td style="padding: 10px;"><span class="badge badge-active"><span class="status-dot green"></span> PAID</span></td>
             <td style="font-weight: 600; color: var(--primary); padding: 10px;">${formatMoney(tx.netTotal)}</td>
-            <td style="padding: 10px; text-align: center;">
+            <td style="padding: 10px; text-align: center; display: flex; gap: 5px; justify-content: center;">
                 <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${payMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                ${verifyBtn}
             </td>
         </tr>`;
       }
@@ -17311,5 +17326,32 @@ window.calculateSimulatedRoyalty = function() {
     } else {
         roiEl.innerText = "Never (Losing Money)";
         roiEl.style.color = '#dc2626';
+    }
+};
+
+// ========================================================
+// ✅ MANAGER GCASH / GRAB VERIFICATION ENGINE
+// ========================================================
+window.verifyDigitalPayment = async function(docId, receiptId) {
+    if (!confirm(`Confirm receipt of funds for Order ${receiptId} into the bank account?`)) return;
+    
+    try {
+        await updateDoc(doc(db, "transactions", docId), {
+            paymentVerified: true,
+            verifiedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager',
+            verifiedAt: serverTimestamp()
+        });
+        
+        // Refresh the modal to show the green badge!
+        let branchTitle = document.getElementById('modalBranchName').innerText.replace('📊 ', '').replace(' Analytics', '');
+        window.openBranchDetails(branchTitle);
+
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Payment Verified!', showConfirmButton: false, timer: 1500
+        });
+    } catch(e) {
+        console.error("Verification Error:", e);
+        alert("Failed to verify payment. Check connection.");
     }
 };
