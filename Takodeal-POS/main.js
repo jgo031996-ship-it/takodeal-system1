@@ -6914,85 +6914,58 @@ window.viewStockRequestItems = function(itemsJson) {
 };
 
 // ========================================================
-// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM & COUNTER
+// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM & SCANNER
 // ========================================================
 window.startUnverifiedListener = function() {
-    // Run every 5 seconds to scan the current shift securely
+    let branchName = localStorage.getItem('takodeal_device_branch');
+    if (!branchName) return;
+
+    // Scan every 5 seconds
     setInterval(async () => {
         try {
-            // Grab the active shift ID directly from the device's memory
-            let currentShiftId = localStorage.getItem('currentShiftId');
-            if (!currentShiftId) return; // Hide banner if no shift is open
+            // Ensure there is an active shift logged in the local window variable
+            if (!window.currentShift || !window.currentShift.active || !window.currentShift.startTime) {
+                let banner = document.getElementById('unverifiedWarningBanner');
+                if (banner) banner.style.display = 'none';
+                return;
+            }
 
-            // Simple, index-free query so Firebase doesn't block it!
-            const txQ = window.query(window.collection(window.db, "transactions"), window.where("shiftId", "==", currentShiftId));
+            let startTime = window.currentShift.startTime.toDate ? window.currentShift.startTime.toDate() : new Date(window.currentShift.startTime);
+            
+            // Query all transactions for this shift
+            const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
             const txSnap = await window.getDocs(txQ);
             
-            let unverifiedCount = 0;
-            let gcashTotal = 0;
-            let grabTotal = 0;
-
+            let unverified = 0;
+            
             txSnap.forEach(doc => {
                 let tx = doc.data();
-                if (tx.status !== 'Voided') {
-                    let method = (tx.paymentMethod || '').toLowerCase();
-                    let amount = parseFloat(tx.netTotal) || 0;
-
-                    // Tally the totals (Case insensitive)
-                    if (method === 'gcash') gcashTotal += amount;
-                    if (method === 'grab') grabTotal += amount;
-
-                    // Count unverified digital payments
-                    if (method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
-                        unverifiedCount++;
-                    }
+                let method = (tx.paymentMethod || '').toLowerCase();
+                
+                // If it is NOT cash, NOT voided, and NOT verified... trigger the alarm!
+                if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
+                    unverified++;
                 }
             });
 
-            // 1. 🔥 LIVE UPDATE THE UI COUNTERS 🔥
-            // This actively searches your screen for the Grab/GCash text and updates the money live!
-            document.querySelectorAll('*').forEach(el => {
-                if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { // Only target exact text nodes
-                    if (el.innerText.includes('Grab: ₱')) {
-                        el.innerText = `Grab: ₱${grabTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    }
-                    if (el.innerText.includes('GCash: ₱') || el.innerText.includes('Gcash: ₱')) {
-                        el.innerText = `GCash: ₱${gcashTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    }
+            // Toggle the Red Warning Banner inside the HTML
+            let banner = document.getElementById('unverifiedWarningBanner');
+            let countText = document.getElementById('unverifiedCountText');
+            
+            if (banner && countText) {
+                if (unverified > 0) {
+                    countText.innerText = unverified;
+                    banner.style.display = 'flex';
+                } else {
+                    banner.style.display = 'none';
                 }
-            });
-
-            // 2. 🔥 POP-UP THE WARNING BANNER 🔥
-            let existingBanner = document.getElementById('globalUnverifiedBanner');
-            if (unverifiedCount > 0) {
-                if (!existingBanner) {
-                    existingBanner = document.createElement('div');
-                    existingBanner.id = 'globalUnverifiedBanner';
-                    existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px 30px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999; cursor: pointer;";
-                    
-                    existingBanner.onclick = () => {
-                        if (typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App before you can end your shift.', 'warning');
-                        else alert('The Manager must verify these digital payments in the HQ App before you can end your shift.');
-                    };
-                    document.body.appendChild(existingBanner);
-                }
-                existingBanner.innerHTML = `
-                    <span style="font-size:24px; animation: pulse 1s infinite;">🚨</span>
-                    <div style="text-align: center;">
-                        <div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Digital Payment(s)!</div>
-                        <div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in HQ before Z-Reading.</div>
-                    </div>
-                `;
-                existingBanner.style.display = 'flex';
-            } else {
-                if (existingBanner) existingBanner.style.display = 'none';
             }
 
         } catch(e) { 
-            // Silently handle errors so it doesn't spam the console
+            // Silently fail so it doesn't interrupt the cashier
         }
     }, 5000);
 };
 
-// Start the scanner after 3 seconds to let Firebase initialize safely
+// Start the scanner!
 setTimeout(window.startUnverifiedListener, 3000);
