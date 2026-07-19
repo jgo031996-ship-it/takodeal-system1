@@ -8577,6 +8577,35 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             penaltyCharged: penaltyAmt
         });
 
+        // 🗑️ INVENTORY DEDUCTION (WASTE APPROVALS)
+        if (action === "Approved" && type === "Waste Report") {
+            const reqSnap = await getDoc(doc(db, "staff_requests", docId));
+            if (reqSnap.exists() && reqSnap.data().items) {
+                let reqData = reqSnap.data();
+                
+                // Process each wasted item
+                for (let item of reqData.items) {
+                    if (!item.id) continue;
+                    const invRef = doc(db, "inventory", item.id);
+                    const invSnap = await getDoc(invRef);
+                    
+                    if (invSnap.exists()) {
+                        let currentStock = parseFloat(invSnap.data().currentStock) || 0;
+                        let newStock = currentStock - item.qty;
+                        
+                        await updateDoc(invRef, { currentStock: newStock });
+                        
+                        await addDoc(collection(db, "stock_logs"), {
+                            branch: reqData.branch, item: item.name, uom: item.uom,
+                            oldQty: currentStock, newQty: newStock, variance: -item.qty,
+                            type: "Waste / Spoilage (HQ Approved)", note: `Reason: ${item.reason} | Appv. by: ${window.sessionUser ? window.sessionUser.cashierName : 'HQ'}`,
+                            user: reqData.staffName, timestamp: serverTimestamp()
+                        });
+                    }
+                }
+            }
+        }
+      
         // STANDARD DEDUCTIONS (Advances & Meals)
         if (action === "Approved" && (type === "Cash Advance" || type === "Staff Meal")) {
             await addDoc(collection(db, "staff_deductions"), {
@@ -17473,4 +17502,71 @@ window.copyAIPrompt = function() {
         showConfirmButton: false, timer: 3000,
         customClass: { popup: 'rounded-2xl shadow-xl border border-gray-100' }
     });
+};
+
+// ========================================================
+// 💾 CSV ARCHIVE & PURGE ENGINE (STORAGE CLEANER)
+// ========================================================
+window.purgeOldWasteData = async function() {
+    if(!confirm("⚠️ DATA PURGE: This will download all Approved/Rejected Waste Reports older than 30 days as an Excel CSV, and permanently delete them from the database to save memory.\n\nProceed?")) return;
+
+    Swal.fire({title: "Scanning database...", didOpen: () => Swal.showLoading()});
+
+    let thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    try {
+        const q = query(collection(db, "staff_requests"), where("type", "==", "Waste Report"), where("timestamp", "<", thirtyDaysAgo));
+        const snap = await getDocs(q);
+
+        if(snap.empty) {
+            Swal.fire("All Clean!", "No waste reports older than 30 days found in the system.", "success");
+            return;
+        }
+
+        let csvContent = "Date,Branch,Staff,Item,Qty,UOM,Reason,Status,Photo URL\n";
+        let batchPromises = [];
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            // Don't delete pending requests, even if they are old!
+            if (data.status === "Pending") return; 
+
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleDateString() : "Unknown";
+
+            if (data.items) {
+                data.items.forEach(item => {
+                    // Wrap text in quotes to prevent commas from breaking the CSV
+                    let row = `"${dateStr}","${data.branch}","${data.staffName}","${item.name}","${item.rawQty}","${item.displayUom}","${item.reason}","${data.status}","${item.photoUrl || 'No Photo Attached'}"`;
+                    csvContent += row + "\n";
+                });
+            }
+            batchPromises.push(deleteDoc(doc(db, "staff_requests", docSnap.id)));
+        });
+
+        if (batchPromises.length === 0) {
+            Swal.fire("No Action Needed", "Only Pending requests were found older than 30 days.", "info");
+            return;
+        }
+
+        // 1. Trigger the automatic CSV File Download to the Owner's PC
+        let blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        let link = document.createElement("a");
+        let url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Takodeal_Waste_Archive_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // 2. Permanently delete the old records from Firebase
+        await Promise.all(batchPromises);
+
+        Swal.fire("✅ System Cleaned", `Downloaded CSV and successfully purged ${batchPromises.length} old records from the database!`, "success");
+
+    } catch (e) {
+        console.error("Purge Error:", e);
+        Swal.fire("Error", "Failed to run the purge process.", "error");
+    }
 };
