@@ -6914,7 +6914,7 @@ window.viewStockRequestItems = function(itemsJson) {
 };
 
 // ========================================================
-// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM
+// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM (CRASH-PROOF)
 // ========================================================
 window.startUnverifiedListener = function() {
     let branchName = localStorage.getItem('takodeal_device_branch');
@@ -6923,49 +6923,66 @@ window.startUnverifiedListener = function() {
     // Run every 5 seconds to scan the current shift
     setInterval(async () => {
         try {
-            if (typeof activeShiftDetails === 'undefined' || !activeShiftDetails || !activeShiftDetails.startTime) return;
+            // 1. Bulletproof: Fetch the currently open shift for this branch directly from Firebase
+            const shiftQ = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branchName), window.where("active", "==", true), window.limit(1));
+            const shiftSnap = await window.getDocs(shiftQ);
             
-            let startTime = activeShiftDetails.startTime.toDate ? activeShiftDetails.startTime.toDate() : new Date(activeShiftDetails.startTime);
+            if (shiftSnap.empty) {
+                let existingBanner = document.getElementById('globalUnverifiedBanner');
+                if (existingBanner) existingBanner.style.display = 'none';
+                return; // No active shift, no need to warn
+            }
+
+            let shiftData = shiftSnap.docs[0].data();
+            let startTime = shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
             
-            const q = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
-            const snap = await getDocs(q);
+            // 2. Scan transactions since the shift started
+            const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
+            const txSnap = await window.getDocs(txQ);
             
             let unverified = 0;
-            snap.forEach(doc => {
+            txSnap.forEach(doc => {
                 let tx = doc.data();
+                // Safe lower-case checking fixes the "GCash" vs "Gcash" bug!
                 if (tx.status !== 'Voided' && tx.paymentMethod && tx.paymentMethod.toLowerCase() !== 'cash' && tx.paymentVerified !== true) {
                     unverified++;
                 }
             });
 
-            // Find the Shift Sales header and inject a warning!
-            let shiftSalesView = document.getElementById('view-shiftsales') || document.querySelector('.view-shiftsales');
-            if (shiftSalesView) {
-                let existingBanner = document.getElementById('unverifiedWarningBanner');
-                if (unverified > 0) {
-                    if (!existingBanner) {
-                        existingBanner = document.createElement('div');
-                        existingBanner.id = 'unverifiedWarningBanner';
-                        existingBanner.style.cssText = "background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px 15px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.1);";
-                        shiftSalesView.insertBefore(existingBanner, shiftSalesView.firstChild);
+            // 3. Inject Global Floating Banner directly into the body!
+            let existingBanner = document.getElementById('globalUnverifiedBanner');
+            if (unverified > 0) {
+                if (!existingBanner) {
+                    existingBanner = document.createElement('div');
+                    existingBanner.id = 'globalUnverifiedBanner';
+                    // Fixed at the top-center of the screen so it cannot be missed or hidden
+                    existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px 30px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999; cursor: pointer;";
+                    
+                    // Clicking the banner tells the cashier what to do
+                    if (typeof Swal !== 'undefined') {
+                        existingBanner.onclick = () => Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App before you can end your shift.', 'warning');
+                    } else {
+                        existingBanner.onclick = () => alert('The Manager must verify these digital payments in the HQ App before you can end your shift.');
                     }
-                    existingBanner.innerHTML = `
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <span style="font-size:24px; animation: pulse 1.5s infinite;">🚨</span>
-                            <div>
-                                <div style="font-size:14px; font-weight:900;">ACTION REQUIRED: ${unverified} Unverified Digital Payment(s)!</div>
-                                <div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in the HQ App before you can end your shift.</div>
-                            </div>
-                        </div>
-                    `;
-                    existingBanner.style.display = 'flex';
-                } else {
-                    if (existingBanner) existingBanner.style.display = 'none';
+                    
+                    document.body.appendChild(existingBanner);
                 }
+                existingBanner.innerHTML = `
+                    <span style="font-size:24px; animation: pulse 1s infinite;">🚨</span>
+                    <div style="text-align: center;">
+                        <div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverified} Unverified Digital Payment(s)!</div>
+                        <div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in HQ before Z-Reading.</div>
+                    </div>
+                `;
+                existingBanner.style.display = 'flex';
+            } else {
+                if (existingBanner) existingBanner.style.display = 'none';
             }
-        } catch(e) {}
+        } catch(e) { 
+            console.warn("Unverified Listener Paused:", e); 
+        }
     }, 5000);
 };
 
-// Start the scanner!
-setTimeout(window.startUnverifiedListener, 5000);
+// Start the scanner after 3 seconds to let Firebase initialize safely
+setTimeout(window.startUnverifiedListener, 3000);
