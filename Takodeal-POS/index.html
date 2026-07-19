@@ -1568,6 +1568,15 @@
       </div>
     </div>
 
+    <!-- 🚨 UNVERIFIED DIGITAL PAYMENT BANNER -->
+    <div id="unverifiedWarningBanner" style="display: none; background: #fff1f2; color: #dc2626; border-bottom: 2px dashed #fca5a5; padding: 12px 25px; align-items: center; justify-content: center; gap: 15px; box-shadow: 0 4px 10px rgba(220, 38, 38, 0.15); z-index: 50; width: 100%; cursor: pointer;" onclick="alert('The Manager must verify these digital payments in the HQ App before you can end your shift.')">
+        <span style="font-size: 24px; animation: pulse 1s infinite;">🚨</span>
+        <div>
+            <div style="font-size: 15px; font-weight: 900;">ACTION REQUIRED: <span id="unverifiedCountText">0</span> Unverified Digital Payment(s)!</div>
+            <div style="font-size: 12px; color: #9f1239;">A manager must approve GCash/Grab transfers in HQ before you can close the register.</div>
+        </div>
+    </div>
+    
     <div class="view-container" id="view-sales">
       <div class="dashboard-layout">
         <div class="sales-table-card">
@@ -2933,10 +2942,11 @@ window.loadSalesDashboard = async function () {
           txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
       }
 
-      // 🔥 TALLY ONLY DIGITAL TOTALS FOR VERIFICATION
+      // 🔥 TALLY ONLY DIGITAL TOTALS FOR VERIFICATION (CASE-INSENSITIVE FIX)
       if (tx.status !== 'Voided') {
-          if (tx.paymentMethod === 'Grab') totalGrab += (tx.netTotal || 0);
-          else if (tx.paymentMethod === 'GCash') totalGCash += (tx.netTotal || 0);
+          let payMethod = (tx.paymentMethod || '').toLowerCase();
+          if (payMethod === 'grab') totalGrab += (tx.netTotal || 0);
+          else if (payMethod === 'gcash') totalGCash += (tx.netTotal || 0);
       }
 
       // 🚨 THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
