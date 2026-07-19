@@ -17404,3 +17404,73 @@ window.bulkVerifyDigitalPayments = async function() {
         Swal.fire('Error', 'Failed to bulk verify. Check connection.', 'error');
     }
 };
+
+// ========================================================
+// ✨ MINI GEMINI PROMPT BUILDER (TAKODEÁL EDITION)
+// ========================================================
+window.generateAIPrompt = function() {
+    const roughIdea = document.getElementById('aiRoughIdea').value.trim();
+    const style = document.getElementById('aiStyle');
+    const styleText = style.options[style.selectedIndex].text;
+    const finalPromptEl = document.getElementById('aiFinalPrompt');
+
+    if (!roughIdea) {
+        Swal.fire({
+            title: 'Hold on!', 
+            text: 'Please type a rough idea for the announcement first.', 
+            icon: 'warning',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        return;
+    }
+
+    // 🔥 This is the "Secret Sauce" - Injecting your exact brand DNA into the prompt!
+    const engineeredPrompt = `Act as an Expert Corporate Communications Director and Master Graphic Designer for TAKODEÁL, a premium fast-growing Takoyaki and beverage franchise based in Davao City.
+
+I need you to generate a highly detailed, professional image generation prompt and the exact copy/text for an internal staff poster.
+
+THE ROUGH IDEA / TOPIC:
+"${roughIdea}"
+
+VISUAL STYLE REQUIRED:
+${styleText}
+
+TAKODEÁL BRANDING GUIDELINES:
+- Colors: Deep slate/black, vibrant amber/orange, and crisp white.
+- Audience: Branch Cashiers, Cooks, and Prep Staff.
+- Tone: Professional, authoritative, highly readable, yet motivating and clear.
+
+YOUR TASK:
+1. Write a 1-paragraph image generation prompt (for an AI like Midjourney or DALL-E) that perfectly describes the layout, lighting, colors, and visual elements of this poster.
+2. Below that, write the exact headline, sub-headline, and bullet points I should type onto the poster. Make the text punchy, strict, and easy for fast-paced food service staff to digest quickly.`;
+
+    finalPromptEl.value = engineeredPrompt;
+    
+    // Quick visual flash to show it worked
+    finalPromptEl.style.borderColor = "#10b981";
+    finalPromptEl.style.backgroundColor = "#ecfdf5";
+    setTimeout(() => {
+        finalPromptEl.style.borderColor = "#8b5cf6";
+        finalPromptEl.style.backgroundColor = "#f5f3ff";
+    }, 500);
+};
+
+window.copyAIPrompt = function() {
+    const finalPromptEl = document.getElementById('aiFinalPrompt');
+    if (!finalPromptEl.value) {
+        Swal.fire('Empty', 'Generate a prompt first before copying!', 'info');
+        return;
+    }
+    
+    // Highlight and copy the text
+    finalPromptEl.select();
+    document.execCommand("copy");
+    
+    Swal.fire({
+        toast: true, position: 'top-end', icon: 'success', 
+        title: '📋 Prompt Copied!', 
+        text: 'Paste this into Google Gemini to get your exact design and wording.',
+        showConfirmButton: false, timer: 3000,
+        customClass: { popup: 'rounded-2xl shadow-xl border border-gray-100' }
+    });
+};
