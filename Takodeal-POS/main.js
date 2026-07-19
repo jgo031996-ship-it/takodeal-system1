@@ -6929,16 +6929,12 @@ window.viewStockRequestItems = function(itemsJson) {
 // 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM & COUNTER
 // ========================================================
 window.startUnverifiedListener = function() {
-    // Run every 5 seconds to scan the current shift securely
     setInterval(async () => {
         try {
-            // Grab the active shift ID directly from the device's memory
             let currentShiftId = localStorage.getItem('currentShiftId');
-            
-            let salesTab = document.getElementById('nav-sales'); // Grab the sidebar tab
+            let salesTab = document.getElementById('nav-sales'); 
             let existingBanner = document.getElementById('globalUnverifiedBanner');
 
-            // If no shift is active, turn off alarms and return tab to normal
             if (!currentShiftId) { 
                 if (existingBanner) existingBanner.style.display = 'none';
                 if (salesTab) {
@@ -6949,7 +6945,6 @@ window.startUnverifiedListener = function() {
                 return; 
             }
 
-            // Simple, index-free query so Firebase doesn't block it!
             const txQ = window.query(window.collection(window.db, "transactions"), window.where("shiftId", "==", currentShiftId));
             const txSnap = await window.getDocs(txQ);
             
@@ -6963,19 +6958,15 @@ window.startUnverifiedListener = function() {
                     let method = (tx.paymentMethod || '').toLowerCase();
                     let amount = parseFloat(tx.netTotal) || 0;
 
-                    // Tally the totals (Case insensitive)
                     if (method === 'gcash') gcashTotal += amount;
                     if (method === 'grab') grabTotal += amount;
 
-                    // Count unverified digital payments
                     if (method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
                         unverifiedCount++;
                     }
                 }
             });
 
-            // 1. 🔥 LIVE UPDATE THE UI COUNTERS 🔥
-            // This actively searches your screen for the Grab/GCash text and updates the money live!
             document.querySelectorAll('*').forEach(el => {
                 if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { 
                     if (el.innerText.includes('Grab: ₱')) {
@@ -6987,9 +6978,7 @@ window.startUnverifiedListener = function() {
                 }
             });
 
-            // 2. 🔥 POP-UP WARNING BANNER & BLINKING SIDEBAR 🔥
             if (unverifiedCount > 0) {
-                // Blink the sidebar tab red
                 if (salesTab) {
                     salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${unverifiedCount})</div>`;
                     salesTab.style.background = '#fef2f2';
@@ -7007,18 +6996,10 @@ window.startUnverifiedListener = function() {
                     };
                     document.body.appendChild(existingBanner);
                 }
-                existingBanner.innerHTML = `
-                    <span style="font-size:24px; animation: pulse 1s infinite;">🚨</span>
-                    <div style="text-align: center;">
-                        <div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Digital Payment(s)!</div>
-                        <div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in HQ before Z-Reading.</div>
-                    </div>
-                `;
+                existingBanner.innerHTML = `<span style="font-size:24px; animation: pulse 1s infinite;">🚨</span><div style="text-align: center;"><div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Digital Payment(s)!</div><div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in HQ before Z-Reading.</div></div>`;
                 existingBanner.style.display = 'flex';
             } else {
-                // If verified, hide banner and fix sidebar
                 if (existingBanner) existingBanner.style.display = 'none';
-                
                 if (salesTab) {
                     salesTab.innerHTML = `<span>🧾</span><div class="nav-item-text">Shift Sales</div>`;
                     salesTab.style.background = '';
@@ -7026,11 +7007,9 @@ window.startUnverifiedListener = function() {
                 }
             }
 
-        } catch(e) { 
-            // Silently handle errors so it doesn't spam the console
-        }
+        } catch(e) { }
     }, 5000);
 };
 
-// Start the scanner after 3 seconds to let Firebase initialize safely
+// Start the scanner!
 setTimeout(window.startUnverifiedListener, 3000);
