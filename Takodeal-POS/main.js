@@ -6706,7 +6706,19 @@ window.openBulletinModal = function() {
     if (!announcement) return;
 
     document.getElementById('bulletinModal').style.display = 'flex';
-    document.getElementById('bulletinTitle').innerText = announcement.title;
+    document.getElementById('bulletinTitle').innerText = announcement.title || "Important Announcement";
+    
+    // 🔥 Inject the new message description
+    let msgEl = document.getElementById('bulletinMessage');
+    if (msgEl) {
+        if (announcement.message && announcement.message.trim() !== "") {
+            msgEl.innerText = announcement.message;
+            msgEl.style.display = 'block';
+        } else {
+            msgEl.style.display = 'none'; // Hide if no message was typed
+        }
+    }
+
     window.currentSlideIndex = 0;
     
     // Wake up the signature pad!
