@@ -8487,11 +8487,15 @@ window.toggleResolvedStaff = function(staffId) {
     }
 };
 
+// ========================================================
+// 📩 UPGRADED STAFF REQUEST HUB (WITH LEDGER INTEGRATION)
+// ========================================================
 window.handleRequest = function(docId, action, type, amount, staffName) {
-    // 1. Build a beautiful popup modal dynamically (No HTML edits required!)
+    const isReasonLetter = type === "Reason Letter" || type === "Cash Shortage / Mishandling";
+
     const modalHtml = `
         <div id="dynamicReplyModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;">
-            <div style="background: white; padding: 25px; border-radius: 12px; width: 400px; max-width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 450px; max-width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
                 <h3 style="margin-top: 0; color: #0f172a;">${action === 'Approved' ? '✅ Approve' : '❌ Reject'} Request</h3>
                 <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Send a message to <strong>${staffName}</strong> regarding this ${type}.</p>
 
@@ -8503,15 +8507,23 @@ window.handleRequest = function(docId, action, type, amount, staffName) {
                 <input type="file" id="replyProofImage" accept="image/jpeg, image/png, image/webp" style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 20px; border: 1px dashed #cbd5e1; border-radius: 6px; box-sizing: border-box;">
                 ` : ''}
 
+                <!-- 🔥 THE SHORTAGE PENALTY PIPELINE 🔥 -->
+                ${isReasonLetter ? `
+                <div style="background: #fff1f2; border: 1px dashed #fca5a5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #b91c1c; display: block; margin-bottom: 5px;">⚠️ Convert Shortage to Salary Deduction (₱)</label>
+                    <div style="font-size: 11px; color: #ef4444; margin-bottom: 8px;">If you want to charge the missing cash to their payroll, enter the amount below.</div>
+                    <input type="number" id="replyPenaltyAmt" placeholder="e.g. 150.00" style="width: 100%; padding: 10px; border: 1px solid #fca5a5; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626; outline: none;">
+                </div>
+                ` : ''}
+
                 <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
-                    <button onclick="document.getElementById('dynamicReplyModal').remove()" style="padding: 8px 15px; border: none; background: #e2e8f0; color: #475569; border-radius: 6px; cursor: pointer; font-weight: bold;">Cancel</button>
-                    <button id="btnSubmitReply" onclick="window.submitRequestReply('${docId}', '${action}', '${type}', ${amount}, '${staffName}')" style="padding: 8px 15px; border: none; background: ${action === 'Approved' ? '#10b981' : '#ef4444'}; color: white; border-radius: 6px; cursor: pointer; font-weight: bold;">Confirm ${action}</button>
+                    <button onclick="document.getElementById('dynamicReplyModal').remove()" style="padding: 10px 15px; border: none; background: #e2e8f0; color: #475569; border-radius: 6px; cursor: pointer; font-weight: bold;">Cancel</button>
+                    <button id="btnSubmitReply" onclick="window.submitRequestReply('${docId}', '${action}', '${type}', ${amount}, '${staffName}')" style="padding: 10px 15px; border: none; background: ${action === 'Approved' ? '#10b981' : '#ef4444'}; color: white; border-radius: 6px; cursor: pointer; font-weight: bold;">Confirm ${action}</button>
                 </div>
             </div>
         </div>
     `;
 
-    // 2. Inject the modal directly into the screen
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 };
 
@@ -8519,6 +8531,8 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
     const btn = document.getElementById('btnSubmitReply');
     const replyMsg = document.getElementById('replyMessage').value.trim();
     const fileInput = document.getElementById('replyProofImage');
+    const penaltyInput = document.getElementById('replyPenaltyAmt');
+    const penaltyAmt = penaltyInput ? parseFloat(penaltyInput.value) || 0 : 0;
 
     btn.innerText = "⏳ Processing...";
     btn.disabled = true;
@@ -8526,7 +8540,6 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
     try {
         let proofUrl = "";
 
-        // 3. If approved and you attached an image, upload it to Firebase Storage!
         if (action === 'Approved' && fileInput && fileInput.files.length > 0) {
             btn.innerText = "⏳ Uploading Proof...";
             const file = fileInput.files[0];
@@ -8540,16 +8553,16 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
 
         btn.innerText = "⏳ Saving to Database...";
 
-        // 4. Update the request status and attach your reply/image
         await updateDoc(doc(db, "staff_requests", docId), {
             status: action,
             managerReply: replyMsg,
             proofImageUrl: proofUrl,
             processedAt: new Date(),
-            processedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
+            processedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            penaltyCharged: penaltyAmt
         });
 
-        // 5. Keep your existing Payroll Deduction Logic perfectly intact!
+        // STANDARD DEDUCTIONS (Advances & Meals)
         if (action === "Approved" && (type === "Cash Advance" || type === "Staff Meal")) {
             await addDoc(collection(db, "staff_deductions"), {
                 staffName: staffName,
@@ -8560,15 +8573,122 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             });
         }
 
-        alert(`✅ Request successfully ${action.toLowerCase()}!`);
+        // 🔥 THE NEW PENALTY/SHORTAGE LEDGER ROUTER 🔥
+        if (penaltyAmt > 0) {
+            await addDoc(collection(db, "staff_deductions"), {
+                staffName: staffName,
+                type: "Cash/Stock Shortage Penalty",
+                amount: penaltyAmt,
+                dateAdded: new Date(),
+                status: "Unpaid",
+                remarks: `Linked to Reason Letter (${action}): ${replyMsg}`
+            });
+        }
+
+        Swal.fire({
+            title: `✅ Request ${action}`, 
+            text: penaltyAmt > 0 ? `Message sent and ₱${penaltyAmt} was added to ${staffName}'s deductions ledger.` : 'Message successfully sent to cashier.', 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
         document.getElementById('dynamicReplyModal').remove();
         window.loadInbox();
+        if (typeof window.loadLedger === 'function') window.loadLedger();
 
     } catch (e) {
         console.error("Action Error:", e);
-        alert("❌ Failed to process request. Check connection.");
+        Swal.fire('Error', 'Failed to process request. Check connection.', 'error');
         btn.innerText = `Confirm ${action}`;
         btn.disabled = false;
+    }
+};
+
+// ========================================================
+// 🕵️‍♂️ FORENSIC ITEM TRACE ENGINE
+// ========================================================
+window.openForecasterItemTrace = async function(itemName, branch) {
+    document.getElementById('forecasterDetailsModal').style.display = 'flex';
+    document.getElementById('forensicModalSubtitle').innerText = `${itemName} | ${branch}`;
+    
+    let tbody = document.getElementById('forecasterDetailsBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; font-weight: bold; color: #64748b;">⏳ Compiling forensic database logs...</td></tr>';
+
+    try {
+        // Look back 30 days maximum to keep performance fast
+        let pastDate = new Date();
+        pastDate.setDate(pastDate.getDate() - 30);
+
+        const q = query(collection(db, "stock_logs"), where("branch", "==", branch), where("item", "==", itemName), where("timestamp", ">=", pastDate));
+        const snap = await getDocs(q);
+
+        let logs = [];
+        let tRestock = 0; let tSales = 0; let tWaste = 0; let tAudit = 0;
+
+        snap.forEach(doc => {
+            let d = doc.data();
+            logs.push(d);
+            
+            let variance = parseFloat(d.variance) || 0;
+            let type = d.type.toLowerCase();
+
+            if (variance > 0 && (type.includes("restock") || type.includes("delivery") || type.includes("received"))) {
+                tRestock += variance;
+            } else if (variance < 0 && type.includes("sales")) {
+                tSales += Math.abs(variance);
+            } else if (variance < 0 && (type.includes("waste") || type.includes("spoilage"))) {
+                tWaste += Math.abs(variance);
+            } else if (type.includes("audit") || type.includes("adjustment") || type.includes("penalty")) {
+                tAudit += variance; // Audits can be positive or negative
+            }
+        });
+
+        // Update the 4 top boxes
+        document.getElementById('fcTotalRestock').innerText = tRestock.toFixed(1);
+        document.getElementById('fcTotalSales').innerText = tSales.toFixed(1);
+        document.getElementById('fcTotalWaste').innerText = tWaste.toFixed(1);
+        
+        let tAuditEl = document.getElementById('fcTotalDiscrepancy');
+        tAuditEl.innerText = tAudit > 0 ? `+${tAudit.toFixed(1)}` : tAudit.toFixed(1);
+        tAuditEl.style.color = tAudit < 0 ? '#dc2626' : (tAudit > 0 ? '#16a34a' : '#d97706');
+
+        // Sort dynamically (newest first)
+        logs.sort((a,b) => {
+            let tA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+            let tB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+            return tB - tA;
+        });
+
+        let html = '';
+        logs.forEach(d => {
+            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : new Date(d.timestamp).toLocaleString()) : 'Unknown';
+            let variance = parseFloat(d.variance) || 0;
+            let varColor = variance > 0 ? '#16a34a' : (variance < 0 ? '#dc2626' : '#64748b');
+            let varText = variance > 0 ? `+${variance}` : variance;
+            
+            // Format type badges cleanly
+            let typeColor = '#f1f5f9'; let typeTextColor = '#475569';
+            if (d.type.toLowerCase().includes("sales")) { typeColor = '#e0f2fe'; typeTextColor = '#0369a1'; }
+            if (d.type.toLowerCase().includes("waste")) { typeColor = '#fee2e2'; typeTextColor = '#b91c1c'; }
+            if (d.type.toLowerCase().includes("restock") || d.type.toLowerCase().includes("delivery")) { typeColor = '#dcfce7'; typeTextColor = '#15803d'; }
+            if (d.type.toLowerCase().includes("audit")) { typeColor = '#fef3c7'; typeTextColor = '#b45309'; }
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; background: white; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 12px 10px; font-size: 11px; color: #64748b; white-space: nowrap;">${dateStr}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">👤 ${d.user || 'System'}</td>
+                    <td style="padding: 12px 10px;"><span style="background: ${typeColor}; color: ${typeTextColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.type}</span></td>
+                    <td style="padding: 12px 10px; text-align: right; font-weight: 900; color: ${varColor}; font-size: 15px;">${varText}</td>
+                    <td style="padding: 12px 10px; padding-left: 20px; font-size: 12px; color: #475569; font-style: italic; max-width: 250px; white-space: normal;">${d.note || '-'}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #94a3b8;">No activity logged for this item in the last 30 days.</td></tr>';
+
+    } catch (e) {
+        console.error("Forensic Trace Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #dc2626; font-weight: bold;">Failed to extract forensic data.</td></tr>';
     }
 };
 
@@ -13589,7 +13709,7 @@ window.loadForecasterEngine = async function() {
                 : `<div style="width: 40px; height: 40px; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid #e2e8f0;">📦</div>`;
 
             html += `
-                <div style="background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); overflow: hidden; border: 1px solid #e2e8f0; display: flex; flex-direction: column;">
+                <div onclick="window.openForecasterItemTrace('${item.name.replace(/'/g, "\\'")}', '${branch}')" style="cursor: pointer; background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); overflow: hidden; border: 1px solid #e2e8f0; display: flex; flex-direction: column; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 10px 25px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(0,0,0,0.03)';">
                     <div style="padding: 15px 20px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 15px; align-items: center;">
                         ${photoHtml}
                         <div>
