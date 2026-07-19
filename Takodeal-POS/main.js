@@ -1215,9 +1215,21 @@ window.viewReceiptDetails = async function (receiptId) {
     let tx = await window.getReceiptDetails(receiptId);
     if (!tx) { alert("Receipt not found!"); return; }
 
-    // 🚨 SECURITY: Mask the totals if physical cash was involved
-    let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
-    let displayTotal = isCashTx ? `<span style="color:#94a3b8; font-family: monospace;">*** (Hidden)</span>` : (tx.netTotal || 0).toFixed(2);
+    // 🚨 THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
+      let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
+      let displayAmount = isCashTx ? `<span style="color:#94a3b8; font-family: monospace; letter-spacing: 2px;">₱***</span>` : `₱${(tx.netTotal || 0).toFixed(2)}`;
+
+      // 🔥 THE NEW VERIFIED/UNVERIFIED LABELS 🔥
+      let verifyLabel = '';
+      if (!isCashTx) {
+          if (tx.paymentVerified) verifyLabel = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified</span>`;
+          else verifyLabel = `<br><span style="color: #dc2626; font-size: 10px; font-weight: bold; animation: pulse 1s infinite;">⏳ Unverified</span>`;
+      }
+
+      tBody += `<tr style="${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}">
+        <td style="font-weight:bold;">${tx.receiptId || 'N/A'}</td>
+        <td>${tx.customerName || '-'}</td>
+        <td>${tx.paymentMethod || 'Unknown'} ${verifyLabel}</td>
 
     let modalHtml = `
         <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #ccc;">
