@@ -4097,159 +4097,140 @@ window.selectWasteItem = function(encodedItem) {
 };
 
 window.addWasteToCart = function() {
-    if (!window.selectedWasteItem) { 
-        Swal.fire('Select Item', 'Please search and select an item from the dropdown list first.', 'warning'); 
-        return; 
-    }
-    
-    let qty = parseFloat(document.getElementById('wasteQty').value);
+    let itemInput = document.getElementById('wasteSearchInput');
+    let rawQty = parseFloat(document.getElementById('wasteQty').value);
     let reason = document.getElementById('wasteReason').value;
+    let photoInput = document.getElementById('wastePhotoInput');
 
-    if (isNaN(qty) || qty <= 0) { 
-        Swal.fire('Invalid Qty', 'Please enter a valid quantity greater than 0.', 'warning'); 
-        return; 
+    if (!itemInput || !itemInput.value || isNaN(rawQty) || rawQty <= 0) {
+        return Swal.fire('Error', 'Please select a valid item and enter a quantity.', 'error');
     }
 
-    let itemData = window.selectedWasteItem;
-
-    // Safety Warning: Prevent negative stock visually
-    if (qty > itemData.currentStock) {
-        if (!confirm(`⚠️ WARNING: The system says you only have ${itemData.currentStock} ${itemData.uom || ''} left.\nWasting ${qty} will push your inventory into the negatives. Continue?`)) {
-            return;
-        }
+    if (!photoInput.files || photoInput.files.length === 0) {
+        return Swal.fire('Photo Required', 'Management requires a photo of the dropped/spoiled item before it can be submitted.', 'warning');
     }
 
-    // Add to the temporary cart array
+    let itemName = itemInput.value.trim();
+    let uomDrop = document.getElementById('wasteUomSelect');
+    let convRate = 1; let displayUom = window.currentWasteItemBUom || 'units'; let baseUom = window.currentWasteItemBUom || 'units';
+
+    if (uomDrop && uomDrop.tagName === 'SELECT') {
+        let selOpt = uomDrop.options[uomDrop.selectedIndex];
+        convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+        displayUom = selOpt.text;
+    }
+
+    let finalQty = rawQty * convRate; 
+
+    if (typeof window.wasteCart === 'undefined') window.wasteCart = [];
+
     window.wasteCart.push({
-        id: itemData.id,
-        name: itemData.name,
-        qty: qty,
-        uom: itemData.uom || 'units',
-        reason: reason,
-        cost: parseFloat(itemData.baseCost) || parseFloat(itemData.cost) || 0
+        id: window.currentWasteItemId || null,
+        name: itemName, rawQty: rawQty, displayUom: displayUom,
+        baseQty: finalQty, baseUom: baseUom, reason: reason,
+        file: photoInput.files[0], // Store the image file!
+        cost: (window.selectedWasteItem ? (window.selectedWasteItem.baseCost || window.selectedWasteItem.cost) : 0) || 0
     });
 
-    // Clear inputs for the next item
-    document.getElementById('wasteSearchInput').value = '';
     document.getElementById('wasteQty').value = '';
-    window.selectedWasteItem = null;
+    itemInput.value = '';
+    photoInput.value = ''; // Reset photo
+    if(uomDrop) uomDrop.innerHTML = '<option value="base" data-conv="1">Units</option>';
     
-    window.renderWasteCart();
-};
-
-window.removeWasteItem = function(index) {
-    window.wasteCart.splice(index, 1);
-    window.renderWasteCart();
+    if (typeof window.renderWasteCart === 'function') window.renderWasteCart();
 };
 
 window.renderWasteCart = function() {
     let tbody = document.getElementById('wasteCartBody');
     let container = document.getElementById('wasteCartContainer');
-    
-    if (window.wasteCart.length === 0) {
+    if (!tbody || !container) return;
+
+    if (window.wasteCart.length > 0) {
+        container.style.display = 'block';
+        let html = '';
+        window.wasteCart.forEach((item, idx) => {
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 0;">
+                        <strong style="color: #0f172a;">${item.name}</strong> <span style="font-size: 10px; color: #16a34a;">(📸 Photo Attached)</span><br>
+                        <span style="font-size: 11px; color: #dc2626;">Reason: ${item.reason}</span>
+                    </td>
+                    <td style="padding: 8px 0; text-align: right;">
+                        <strong style="color: #dc2626;">${item.rawQty} ${item.displayUom}</strong>
+                    </td>
+                    <td style="padding: 8px 0; text-align: right;">
+                        <button onclick="window.wasteCart.splice(${idx}, 1); window.renderWasteCart();" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; font-weight: bold;">✖</button>
+                    </td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+    } else {
         container.style.display = 'none';
-        return;
+        tbody.innerHTML = '';
     }
-    
-    container.style.display = 'block';
-    let html = '';
-    window.wasteCart.forEach((item, index) => {
-        html += `
-            <tr style="border-bottom: 1px dashed #cbd5e1;">
-                <td style="padding: 10px; font-weight: bold; color: #b91c1c;">${item.name}</td>
-                <td style="padding: 10px; font-weight: 900; font-size: 15px;">${item.qty} <span style="font-size:11px; font-weight:normal; color:#64748b;">${item.uom}</span></td>
-                <td style="padding: 10px; color: #475569; font-style: italic;">${item.reason}</td>
-                <td style="padding: 10px; text-align: right;">
-                    <button onclick="window.removeWasteItem(${index})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-weight: bold; font-size: 11px;">✖ Remove</button>
-                </td>
-            </tr>
-        `;
-    });
-    tbody.innerHTML = html;
 };
 
 window.submitWasteCart = async function() {
-    if (window.wasteCart.length === 0) {
-        Swal.fire('Empty List', 'Please add items to the waste list before submitting.', 'info');
-        return;
-    }
-
-    let branch = localStorage.getItem('takodeal_device_branch');
-    let cashierName = localStorage.getItem('cashierName') || "Cashier";
-    
-    if (!confirm(`Are you sure you want to permanently deduct these ${window.wasteCart.length} items from your inventory?`)) return;
+    if (!window.wasteCart || window.wasteCart.length === 0) return Swal.fire('Empty', 'Your waste list is empty.', 'info');
 
     let btn = document.getElementById('btnSubmitWasteCart');
-    let origText = btn.innerText;
-    btn.innerText = "⏳ Processing Waste...";
-    btn.disabled = true;
+    let origText = btn ? btn.innerText : "🗑️ Submit Waste to HQ";
+    if(btn) { btn.innerText = "⏳ Uploading Photos to HQ..."; btn.disabled = true; }
+
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashier = localStorage.getItem('cashierName') || 'Staff';
 
     try {
         let totalValueLost = 0;
-        let wasteDetailsString = [];
+        let uploadedItems = [];
 
-        // Loop through everything in the cart and deduct it
+        // 1. Upload all photos to Firebase Storage securely
         for (let item of window.wasteCart) {
-            let invRef = doc(db, "inventory", item.id);
-            let invSnap = await getDoc(invRef);
-            
-            if (invSnap.exists()) {
-                let currentStock = parseFloat(invSnap.data().currentStock) || 0;
-                let newStock = currentStock - item.qty;
-
-                // 1. Deduct from Live Inventory
-                await updateDoc(invRef, { currentStock: newStock });
-
-                // 2. Log to Global Stock History
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: branch,
-                    item: item.name,
-                    uom: item.uom,
-                    oldQty: currentStock,
-                    newQty: newStock,
-                    variance: -Math.abs(item.qty),
-                    type: "Waste / Spoilage",
-                    note: `Reason: ${item.reason}`,
-                    user: cashierName,
-                    timestamp: serverTimestamp()
-                });
-
-                // Calculate the financial loss
-                let itemLoss = item.qty * item.cost;
-                totalValueLost += itemLoss;
-                wasteDetailsString.push(`${item.qty}x ${item.name}`);
+            let photoUrl = "";
+            if (item.file) {
+                const fileExt = item.file.name.split('.').pop();
+                const fileName = `waste_proofs/${branch}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const storageReference = window.ref(window.storage, fileName);
+                const snapshot = await window.uploadBytes(storageReference, item.file);
+                photoUrl = await window.getDownloadURL(snapshot.ref);
             }
+
+            let itemLoss = item.baseQty * item.cost;
+            totalValueLost += itemLoss;
+
+            uploadedItems.push({
+                id: item.id, name: item.name, rawQty: item.rawQty, displayUom: item.displayUom,
+                qty: item.baseQty, uom: item.baseUom, reason: item.reason, photoUrl: photoUrl
+            });
         }
 
-        // 🚨 3. FIRE THE MANAGER SECURITY ALERT!
-        await addDoc(collection(db, "manager_alerts"), {
-            type: "WASTE_ALERT",
+        // 2. Submit to the Manager's Staff Request Inbox as a Pending Approval!
+        await window.addDoc(window.collection(window.db, "staff_requests"), {
+            type: "Waste Report",
             branch: branch,
-            cashier: cashierName,
-            message: `WASTE REPORT: ${cashierName} logged ${window.wasteCart.length} item(s) as waste (${wasteDetailsString.join(', ')}). Est Value Lost: ₱${totalValueLost.toFixed(2)}.`,
-            timestamp: serverTimestamp(),
-            isRead: false
+            staffName: cashier,
+            items: uploadedItems,
+            totalValueLost: totalValueLost,
+            status: "Pending",
+            timestamp: window.serverTimestamp()
         });
 
         Swal.fire({
-            title: '✅ Waste Logged',
-            text: `Successfully deducted ${window.wasteCart.length} items from inventory. Management has been notified.`,
-            icon: 'success',
-            confirmButtonColor: '#16a34a',
+            title: '✅ Submitted for Approval', 
+            text: `Sent ${window.wasteCart.length} item(s) and photos to the Manager App. Inventory will update once approved!`, 
+            icon: 'success', 
             customClass: { popup: 'rounded-2xl' }
         });
-
-        // Clean up the screen
+        
         window.wasteCart = [];
         window.renderWasteCart();
-        window.loadWasteHistory();
-
+        
     } catch (e) {
-        console.error("Waste Cart Error:", e);
-        Swal.fire('Error', 'Failed to log waste. Check internet connection.', 'error');
+        console.error(e);
+        Swal.fire('Error', 'Failed to submit waste report. Check internet connection.', 'error');
     } finally {
-        btn.innerText = origText;
-        btn.disabled = false;
+        if(btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
 
