@@ -6914,63 +6914,72 @@ window.viewStockRequestItems = function(itemsJson) {
 };
 
 // ========================================================
-// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM (CRASH-PROOF)
+// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM & COUNTER
 // ========================================================
 window.startUnverifiedListener = function() {
-    let branchName = localStorage.getItem('takodeal_device_branch');
-    if (!branchName) return;
-
-    // Run every 5 seconds to scan the current shift
+    // Run every 5 seconds to scan the current shift securely
     setInterval(async () => {
         try {
-            // 1. Bulletproof: Fetch the currently open shift for this branch directly from Firebase
-            const shiftQ = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branchName), window.where("active", "==", true), window.limit(1));
-            const shiftSnap = await window.getDocs(shiftQ);
-            
-            if (shiftSnap.empty) {
-                let existingBanner = document.getElementById('globalUnverifiedBanner');
-                if (existingBanner) existingBanner.style.display = 'none';
-                return; // No active shift, no need to warn
-            }
+            // Grab the active shift ID directly from the device's memory
+            let currentShiftId = localStorage.getItem('currentShiftId');
+            if (!currentShiftId) return; // Hide banner if no shift is open
 
-            let shiftData = shiftSnap.docs[0].data();
-            let startTime = shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
-            
-            // 2. Scan transactions since the shift started
-            const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
+            // Simple, index-free query so Firebase doesn't block it!
+            const txQ = window.query(window.collection(window.db, "transactions"), window.where("shiftId", "==", currentShiftId));
             const txSnap = await window.getDocs(txQ);
             
-            let unverified = 0;
+            let unverifiedCount = 0;
+            let gcashTotal = 0;
+            let grabTotal = 0;
+
             txSnap.forEach(doc => {
                 let tx = doc.data();
-                // Safe lower-case checking fixes the "GCash" vs "Gcash" bug!
-                if (tx.status !== 'Voided' && tx.paymentMethod && tx.paymentMethod.toLowerCase() !== 'cash' && tx.paymentVerified !== true) {
-                    unverified++;
+                if (tx.status !== 'Voided') {
+                    let method = (tx.paymentMethod || '').toLowerCase();
+                    let amount = parseFloat(tx.netTotal) || 0;
+
+                    // Tally the totals (Case insensitive)
+                    if (method === 'gcash') gcashTotal += amount;
+                    if (method === 'grab') grabTotal += amount;
+
+                    // Count unverified digital payments
+                    if (method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
+                        unverifiedCount++;
+                    }
                 }
             });
 
-            // 3. Inject Global Floating Banner directly into the body!
+            // 1. 🔥 LIVE UPDATE THE UI COUNTERS 🔥
+            // This actively searches your screen for the Grab/GCash text and updates the money live!
+            document.querySelectorAll('*').forEach(el => {
+                if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { // Only target exact text nodes
+                    if (el.innerText.includes('Grab: ₱')) {
+                        el.innerText = `Grab: ₱${grabTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    }
+                    if (el.innerText.includes('GCash: ₱') || el.innerText.includes('Gcash: ₱')) {
+                        el.innerText = `GCash: ₱${gcashTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    }
+                }
+            });
+
+            // 2. 🔥 POP-UP THE WARNING BANNER 🔥
             let existingBanner = document.getElementById('globalUnverifiedBanner');
-            if (unverified > 0) {
+            if (unverifiedCount > 0) {
                 if (!existingBanner) {
                     existingBanner = document.createElement('div');
                     existingBanner.id = 'globalUnverifiedBanner';
-                    // Fixed at the top-center of the screen so it cannot be missed or hidden
                     existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px 30px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999; cursor: pointer;";
                     
-                    // Clicking the banner tells the cashier what to do
-                    if (typeof Swal !== 'undefined') {
-                        existingBanner.onclick = () => Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App before you can end your shift.', 'warning');
-                    } else {
-                        existingBanner.onclick = () => alert('The Manager must verify these digital payments in the HQ App before you can end your shift.');
-                    }
-                    
+                    existingBanner.onclick = () => {
+                        if (typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App before you can end your shift.', 'warning');
+                        else alert('The Manager must verify these digital payments in the HQ App before you can end your shift.');
+                    };
                     document.body.appendChild(existingBanner);
                 }
                 existingBanner.innerHTML = `
                     <span style="font-size:24px; animation: pulse 1s infinite;">🚨</span>
                     <div style="text-align: center;">
-                        <div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverified} Unverified Digital Payment(s)!</div>
+                        <div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Digital Payment(s)!</div>
                         <div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in HQ before Z-Reading.</div>
                     </div>
                 `;
@@ -6978,8 +6987,9 @@ window.startUnverifiedListener = function() {
             } else {
                 if (existingBanner) existingBanner.style.display = 'none';
             }
+
         } catch(e) { 
-            console.warn("Unverified Listener Paused:", e); 
+            // Silently handle errors so it doesn't spam the console
         }
     }, 5000);
 };
