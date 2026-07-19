@@ -1438,6 +1438,10 @@
           <span style="font-size: 18px;">🟢</span>
           <div class="nav-item-text" style="font-weight: bold;">Log Grab Earnings</div>
       </div>
+      <div class="nav-item" id="nav-bulletin" onclick="switchView('bulletin'); window.loadBulletinHistory();">
+          <span style="font-size: 18px;">📢</span>
+          <div class="nav-item-text">Bulletin Board</div>
+      </div>
       <div class="nav-item" id="nav-printer"
         onclick="alert('🖨️ PRINTER SETUP\n\n1. Go to your Tablet Settings and pair the Bluetooth Printer.\n2. Open your Print Service App (e.g., RawBT) and ensure it is active.\n\nThe POS will automatically route all tickets through your Print Service!')">
         <span>🖨️</span>
@@ -1816,6 +1820,23 @@
               
               <div id="deliveriesContainer"></div>
         </div>
+    </div>
+    <!-- 📢 CORPORATE BULLETIN BOARD VIEW -->
+    <div class="view-container" id="view-bulletin" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1000px; margin: 0 auto; border: 1px solid var(--border);">
+          
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
+              <div>
+                  <h2 style="margin: 0; color: #0f766e; font-size: 1.5rem;">📢 Corporate Bulletin Board</h2>
+                  <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Review past company announcements and verify your signature records.</p>
+              </div>
+              <button class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);" onclick="window.loadBulletinHistory()">🔄 Refresh</button>
+          </div>
+
+          <div id="bulletinHistoryList" style="display: flex; flex-direction: column; gap: 15px;">
+              <div style="text-align: center; color: #94a3b8; padding: 40px; font-weight: bold;">Loading announcements...</div>
+          </div>
+      </div>
     </div>
     
     <!-- UPDATED MENU TOGGLE VIEW -->
@@ -2562,6 +2583,7 @@
           topBar.innerText = "📅 My Schedule"; 
           if (typeof window.loadPersonalSchedule === 'function') window.loadPersonalSchedule(); 
       }
+      else if (viewName === 'bulletin') { topBar.innerText = "📢 Bulletin Board"; }
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
