@@ -16575,41 +16575,48 @@ window.copyAIPrompt = function() {
 // --- PUBLISH TO TABLETS ---
 window.publishAnnouncement = async function() {
     let title = document.getElementById('announceTitle').value.trim();
+    let message = document.getElementById('announceMessage').value.trim();
     let fileInput = document.getElementById('announceImages');
-    if (!title || fileInput.files.length === 0) return Swal.fire('Error', 'Title and at least 1 image required.', 'error');
+
+    if (!title) return Swal.fire('Error', 'Title is required', 'error');
+    if (!fileInput.files || fileInput.files.length === 0) return Swal.fire('Error', 'At least one image is required', 'error');
 
     let btn = document.getElementById('btnPublishAnnounce');
-    btn.innerText = "⏳ Uploading Images..."; btn.disabled = true;
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Uploading..."; btn.disabled = true;
 
     try {
         let imageUrls = [];
-        for (let i = 0; i < fileInput.files.length; i++) {
-            let file = fileInput.files[i];
-            let ext = file.name.split('.').pop();
-            let storageRef = ref(window.storage, `announcements/${Date.now()}_${i}.${ext}`);
-            let snapshot = await uploadBytes(storageRef, file);
-            let url = await getDownloadURL(snapshot.ref);
+        for (let file of fileInput.files) {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `announcements/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const storageRef = ref(db.app.options.storageBucket ? getStorage(db.app) : window.storage, fileName);
+            const snapshot = await uploadBytes(storageRef, file);
+            const url = await getDownloadURL(snapshot.ref);
             imageUrls.push(url);
         }
 
-        btn.innerText = "⏳ Pushing to Tablets...";
-        
         await addDoc(collection(db, "announcements"), {
             title: title,
+            message: message, // 🔥 SAVES THE NEW MESSAGE FIELD
             images: imageUrls,
-            active: true, 
-            timestamp: serverTimestamp()
+            active: true,
+            timestamp: serverTimestamp(),
+            publisher: window.sessionUser ? window.sessionUser.cashierName : 'Owner'
         });
 
-        Swal.fire('✅ Published!', 'The announcement is now live on all tablets.', 'success');
+        Swal.fire({title: '🚀 Deployed!', text: 'Announcement blasted to all branches!', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        
         document.getElementById('announceTitle').value = '';
+        document.getElementById('announceMessage').value = '';
         fileInput.value = '';
-        window.loadAnnouncementHistory();
-
+        if (typeof window.loadAnnouncementHistory === 'function') window.loadAnnouncementHistory();
+        
     } catch (e) {
-        console.error(e); Swal.fire('Error', 'Upload failed.', 'error');
+        console.error(e);
+        Swal.fire('Error', 'Failed to publish announcement. Check connection.', 'error');
     } finally {
-        btn.innerText = "🚀 Push to All Tablets"; btn.disabled = false;
+        btn.innerText = origText; btn.disabled = false;
     }
 };
 
