@@ -17570,3 +17570,148 @@ window.purgeOldWasteData = async function() {
         Swal.fire("Error", "Failed to run the purge process.", "error");
     }
 };
+
+// ========================================================
+// 🚚 UPGRADED LOGISTICS HUB (PER-BRANCH TABS)
+// ========================================================
+window.logisticsState = {
+    activeBranch: 'All', // Defaults to showing all
+    activeTab: 'requests', // Defaults to Stock Requests
+    requests: [],
+    deliveries: []
+};
+
+window.startLogisticsListeners = function() {
+    // 1. Live Listener for Stock Requests (Purchase Orders)
+    onSnapshot(collection(db, "purchase_orders"), (snap) => {
+        window.logisticsState.requests = [];
+        snap.forEach(doc => window.logisticsState.requests.push({id: doc.id, ...doc.data()}));
+        window.logisticsState.requests.sort((a,b) => b.timestamp - a.timestamp);
+        window.renderLogisticsUI();
+    });
+
+    // 2. Live Listener for Deliveries (Dispatch Logs)
+    onSnapshot(collection(db, "dispatch_logs"), (snap) => {
+        window.logisticsState.deliveries = [];
+        snap.forEach(doc => window.logisticsState.deliveries.push({id: doc.id, ...doc.data()}));
+        window.logisticsState.deliveries.sort((a,b) => b.timestamp - a.timestamp);
+        window.renderLogisticsUI();
+    });
+};
+
+window.switchLogisticsBranch = function(branch) {
+    window.logisticsState.activeBranch = branch;
+    window.renderLogisticsUI();
+};
+
+window.switchLogisticsTab = function(tab) {
+    window.logisticsState.activeTab = tab;
+    
+    let reqBtn = document.getElementById('tabLogRequests');
+    let delBtn = document.getElementById('tabLogDeliveries');
+    
+    // Animate the tab switch
+    if (tab === 'requests') {
+        reqBtn.style.borderBottom = '3px solid #0ea5e9'; reqBtn.style.color = '#0ea5e9'; reqBtn.style.background = 'white';
+        delBtn.style.borderBottom = '3px solid transparent'; delBtn.style.color = '#64748b'; delBtn.style.background = 'transparent';
+    } else {
+        delBtn.style.borderBottom = '3px solid #0ea5e9'; delBtn.style.color = '#0ea5e9'; delBtn.style.background = 'white';
+        reqBtn.style.borderBottom = '3px solid transparent'; reqBtn.style.color = '#64748b'; reqBtn.style.background = 'transparent';
+    }
+    window.renderLogisticsUI();
+};
+
+window.renderLogisticsUI = function() {
+    // 1. Determine Unique Branches
+    let branches = new Set(["Cabantian", "Citygate", "Maa"]); // Standard branches
+    window.logisticsState.requests.forEach(r => { if(r.branch) branches.add(r.branch); });
+    window.logisticsState.deliveries.forEach(d => { if(d.toBranch) branches.add(d.toBranch); });
+    
+    // Build the "All" Button
+    let branchTabsHtml = `<button onclick="window.switchLogisticsBranch('All')" style="flex: 1; min-width: 100px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.logisticsState.activeBranch === 'All' ? '#10b981' : 'transparent'}; background: ${window.logisticsState.activeBranch === 'All' ? 'white' : 'transparent'}; color: ${window.logisticsState.activeBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">🌍 All</button>`;
+    
+    // Build Individual Branch Buttons with Live Badges
+    Array.from(branches).sort().forEach(branch => {
+        let pendingReqs = window.logisticsState.requests.filter(r => r.branch === branch && (r.status === 'Pending' || r.status === 'Delayed')).length;
+        let badgeHtml = pendingReqs > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4);">${pendingReqs}</span>` : '';
+        
+        let isActive = window.logisticsState.activeBranch === branch;
+        branchTabsHtml += `<button onclick="window.switchLogisticsBranch('${branch}')" style="flex: 1; min-width: 120px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${isActive ? '#10b981' : 'transparent'}; background: ${isActive ? 'white' : 'transparent'}; color: ${isActive ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">📍 ${branch} ${badgeHtml}</button>`;
+    });
+    
+    document.getElementById('logisticsBranchTabs').innerHTML = branchTabsHtml;
+
+    // 2. Filter Data based on Active Tab and Active Branch
+    let reqData = window.logisticsState.requests;
+    let delData = window.logisticsState.deliveries;
+    
+    if (window.logisticsState.activeBranch !== 'All') {
+        reqData = reqData.filter(r => r.branch === window.logisticsState.activeBranch);
+        delData = delData.filter(d => d.toBranch === window.logisticsState.activeBranch);
+    }
+
+    // Update the numbers in the main Stock/Delivery tabs based on the active branch filter
+    document.getElementById('badgeLogReqs').innerText = reqData.filter(r => r.status === 'Pending' || r.status === 'Delayed').length;
+    document.getElementById('badgeLogDels').innerText = delData.length;
+
+    // 3. Render List
+    let listContainer = document.getElementById('logisticsFeedList');
+    let html = '';
+
+    if (window.logisticsState.activeTab === 'requests') {
+        if (reqData.length === 0) {
+            html = `<div style="text-align:center; color:#64748b; padding: 60px; font-size: 15px; font-weight: bold;">No stock requests found for ${window.logisticsState.activeBranch}.</div>`;
+        } else {
+            reqData.forEach(req => {
+                let isPending = req.status === 'Pending';
+                let isDelayed = req.status && req.status.includes('Delayed');
+                let bgCol = isPending || isDelayed ? '#fffbeb' : 'white';
+                let borderCol = isPending || isDelayed ? '#fde68a' : '#e2e8f0';
+                let statCol = isPending ? '#d97706' : (isDelayed ? '#dc2626' : '#16a34a');
+                let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+                let itemLen = req.items ? req.items.length : 0;
+                
+                html += `
+                    <div style="background: ${bgCol}; border: 1px solid ${borderCol}; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 16px;">📢 Stock Request from ${req.branch}</h3>
+                            <div style="font-size: 13px; color: #92400e; font-weight: 500;">Requested by: ${req.requestedBy || 'Staff'}</div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${itemLen} items</strong></div>
+                        </div>
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <div style="font-weight: bold; font-size: 13px; color: ${statCol};">${req.status}</div>
+                            <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">🔍 Review Request</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    } else {
+        if (delData.length === 0) {
+            html = `<div style="text-align:center; color:#64748b; padding: 60px; font-size: 15px; font-weight: bold;">No deliveries found for ${window.logisticsState.activeBranch}.</div>`;
+        } else {
+            delData.forEach(del => {
+                let statCol = del.status === 'Received' ? '#16a34a' : (del.status === 'In Transit' ? '#0ea5e9' : '#d97706');
+                
+                html += `
+                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 16px;">📍 To: ${del.toBranch}</h3>
+                            <div style="font-size: 13px; color: #475569; font-weight: 500;">🚚 Driver: ${del.driver || 'Unknown'}</div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${del.date} at ${del.time}</div>
+                        </div>
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <div style="background: ${statCol}; color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">${del.status}</div>
+                            <button onclick="if(typeof window.viewDeliveryDetails === 'function') window.viewDeliveryDetails('${del.id}')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">🔍 Full Details</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    }
+    
+    listContainer.innerHTML = html;
+};
+
+// Auto-start the new tab engine
+setTimeout(window.startLogisticsListeners, 1500);
