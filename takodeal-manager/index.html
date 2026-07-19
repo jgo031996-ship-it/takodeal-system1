@@ -3051,8 +3051,9 @@
         </div>
 
         <div class="card" style="margin-bottom: 0;">
-          <div class="card-header">
-            <h2>🧾 Live Receipt Log</h2>
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h2 style="margin: 0;">🧾 Live Receipt Log</h2>
+            <button onclick="window.bulkVerifyDigitalPayments()" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3); display: flex; align-items: center; gap: 5px;"><span>✅</span> Verify All Pending</button>
           </div>
           <div class="table-responsive">
             <table class="data-table">
