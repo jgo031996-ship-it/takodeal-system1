@@ -3109,7 +3109,7 @@ window.openBranchDetails = async function (branch) {
 
     // Sort transactions by time (newest first)
     let allTx = [];
-    txSnap.forEach(doc => allTx.push(doc.data()));
+    txSnap.forEach(doc => allTx.push({ id: doc.id, ...doc.data() }));
     allTx.sort((a, b) => b.timestamp - a.timestamp);
 
     // 🔥 NEW: Fetch Inventory Base Costs
@@ -3202,7 +3202,7 @@ window.openBranchDetails = async function (branch) {
                 verifyBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified by Manager</span>`;
             } else {
                 verifyBadge = `<br><span style="color: #ea580c; font-size: 10px; font-weight: bold; animation: pulse 2s infinite;">⏳ Awaiting Verification</span>`;
-                verifyBtn = `<button onclick="window.verifyDigitalPayment('${tDoc.id}', '${tx.receiptId}')" style="background: #16a34a; border: 1px solid #15803d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✅ Verify</button>`;
+                verifyBtn = `<button onclick="window.verifyDigitalPayment('${tx.id}', '${tx.receiptId}')" style="background: #16a34a; border: 1px solid #15803d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✅ Verify</button>`;
             }
         }
 
