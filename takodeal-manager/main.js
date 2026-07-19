@@ -17572,17 +17572,17 @@ window.purgeOldWasteData = async function() {
 };
 
 // ========================================================
-// 🚚 UPGRADED LOGISTICS HUB (PER-BRANCH TABS)
+// 🚚 UPGRADED LOGISTICS HUB (PER-BRANCH & TIME TABS)
 // ========================================================
 window.logisticsState = {
     activeBranch: 'All', // Defaults to showing all
     activeTab: 'requests', // Defaults to Stock Requests
+    timeFilter: 'All', // 🔥 NEW DATE FILTER STATE
     requests: [],
     deliveries: []
 };
 
 window.startLogisticsListeners = function() {
-    // 1. Live Listener for Stock Requests (Purchase Orders)
     onSnapshot(collection(db, "purchase_orders"), (snap) => {
         window.logisticsState.requests = [];
         snap.forEach(doc => window.logisticsState.requests.push({id: doc.id, ...doc.data()}));
@@ -17590,7 +17590,6 @@ window.startLogisticsListeners = function() {
         window.renderLogisticsUI();
     });
 
-    // 2. Live Listener for Deliveries (Dispatch Logs)
     onSnapshot(collection(db, "dispatch_logs"), (snap) => {
         window.logisticsState.deliveries = [];
         snap.forEach(doc => window.logisticsState.deliveries.push({id: doc.id, ...doc.data()}));
@@ -17604,13 +17603,17 @@ window.switchLogisticsBranch = function(branch) {
     window.renderLogisticsUI();
 };
 
+window.switchLogisticsTimeFilter = function(filter) {
+    window.logisticsState.timeFilter = filter;
+    window.renderLogisticsUI();
+};
+
 window.switchLogisticsTab = function(tab) {
     window.logisticsState.activeTab = tab;
     
     let reqBtn = document.getElementById('tabLogRequests');
     let delBtn = document.getElementById('tabLogDeliveries');
     
-    // Animate the tab switch
     if (tab === 'requests') {
         reqBtn.style.borderBottom = '3px solid #0ea5e9'; reqBtn.style.color = '#0ea5e9'; reqBtn.style.background = 'white';
         delBtn.style.borderBottom = '3px solid transparent'; delBtn.style.color = '#64748b'; delBtn.style.background = 'transparent';
@@ -17622,17 +17625,45 @@ window.switchLogisticsTab = function(tab) {
 };
 
 window.renderLogisticsUI = function() {
-    // 1. Determine Unique Branches
+    let reqData = window.logisticsState.requests;
+    let delData = window.logisticsState.deliveries;
+    
+    // 🔥 1. APPLY TIME FILTER FIRST
+    let now = new Date();
+    let cutoffDate = null;
+    
+    if (window.logisticsState.timeFilter === 'Today') {
+        cutoffDate = new Date(now.setHours(0,0,0,0));
+    } else if (window.logisticsState.timeFilter === 'Week') {
+        cutoffDate = new Date();
+        cutoffDate.setDate(now.getDate() - 7);
+    } else if (window.logisticsState.timeFilter === 'Month') {
+        cutoffDate = new Date();
+        cutoffDate.setDate(now.getDate() - 30);
+    }
+
+    if (cutoffDate) {
+        reqData = reqData.filter(r => {
+            let d = r.timestamp ? (r.timestamp.toDate ? r.timestamp.toDate() : new Date(r.timestamp)) : new Date(0);
+            return d >= cutoffDate;
+        });
+        delData = delData.filter(d => {
+            let dt = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp)) : new Date(d.date || 0);
+            return dt >= cutoffDate;
+        });
+    }
+
+    // 2. Determine Unique Branches
     let branches = new Set(["Cabantian", "Citygate", "Maa"]); // Standard branches
-    window.logisticsState.requests.forEach(r => { if(r.branch) branches.add(r.branch); });
-    window.logisticsState.deliveries.forEach(d => { if(d.toBranch) branches.add(d.toBranch); });
+    reqData.forEach(r => { if(r.branch) branches.add(r.branch); });
+    delData.forEach(d => { if(d.toBranch) branches.add(d.toBranch); });
     
     // Build the "All" Button
-    let branchTabsHtml = `<button onclick="window.switchLogisticsBranch('All')" style="flex: 1; min-width: 100px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.logisticsState.activeBranch === 'All' ? '#10b981' : 'transparent'}; background: ${window.logisticsState.activeBranch === 'All' ? 'white' : 'transparent'}; color: ${window.logisticsState.activeBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">🌍 All</button>`;
+    let branchTabsHtml = `<button onclick="window.switchLogisticsBranch('All')" style="flex: 1; min-width: 100px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.logisticsState.activeBranch === 'All' ? '#10b981' : 'transparent'}; background: ${window.logisticsState.activeBranch === 'All' ? 'white' : 'transparent'}; color: ${window.logisticsState.activeBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">🌍 All Branches</button>`;
     
-    // Build Individual Branch Buttons with Live Badges
+    // Build Individual Branch Buttons with Live Badges based on FILTERED data
     Array.from(branches).sort().forEach(branch => {
-        let pendingReqs = window.logisticsState.requests.filter(r => r.branch === branch && (r.status === 'Pending' || r.status === 'Delayed')).length;
+        let pendingReqs = reqData.filter(r => r.branch === branch && (r.status === 'Pending' || r.status === 'Delayed')).length;
         let badgeHtml = pendingReqs > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4);">${pendingReqs}</span>` : '';
         
         let isActive = window.logisticsState.activeBranch === branch;
@@ -17641,26 +17672,23 @@ window.renderLogisticsUI = function() {
     
     document.getElementById('logisticsBranchTabs').innerHTML = branchTabsHtml;
 
-    // 2. Filter Data based on Active Tab and Active Branch
-    let reqData = window.logisticsState.requests;
-    let delData = window.logisticsState.deliveries;
-    
+    // 3. Filter Data based on Active Branch
     if (window.logisticsState.activeBranch !== 'All') {
         reqData = reqData.filter(r => r.branch === window.logisticsState.activeBranch);
         delData = delData.filter(d => d.toBranch === window.logisticsState.activeBranch);
     }
 
-    // Update the numbers in the main Stock/Delivery tabs based on the active branch filter
+    // Update the numbers in the main Stock/Delivery tabs based on the active filters
     document.getElementById('badgeLogReqs').innerText = reqData.filter(r => r.status === 'Pending' || r.status === 'Delayed').length;
     document.getElementById('badgeLogDels').innerText = delData.length;
 
-    // 3. Render List
+    // 4. Render List
     let listContainer = document.getElementById('logisticsFeedList');
     let html = '';
 
     if (window.logisticsState.activeTab === 'requests') {
         if (reqData.length === 0) {
-            html = `<div style="text-align:center; color:#64748b; padding: 60px; font-size: 15px; font-weight: bold;">No stock requests found for ${window.logisticsState.activeBranch}.</div>`;
+            html = `<div style="text-align:center; color:#64748b; padding: 60px; font-size: 15px; font-weight: bold;">No stock requests found for the selected filters.</div>`;
         } else {
             reqData.forEach(req => {
                 let isPending = req.status === 'Pending';
@@ -17688,7 +17716,7 @@ window.renderLogisticsUI = function() {
         }
     } else {
         if (delData.length === 0) {
-            html = `<div style="text-align:center; color:#64748b; padding: 60px; font-size: 15px; font-weight: bold;">No deliveries found for ${window.logisticsState.activeBranch}.</div>`;
+            html = `<div style="text-align:center; color:#64748b; padding: 60px; font-size: 15px; font-weight: bold;">No deliveries found for the selected filters.</div>`;
         } else {
             delData.forEach(del => {
                 let statCol = del.status === 'Received' ? '#16a34a' : (del.status === 'In Transit' ? '#0ea5e9' : '#d97706');
