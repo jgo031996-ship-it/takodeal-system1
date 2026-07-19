@@ -3202,7 +3202,7 @@ window.openBranchDetails = async function (branch) {
                 verifyBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified by Manager</span>`;
             } else {
                 verifyBadge = `<br><span style="color: #ea580c; font-size: 10px; font-weight: bold; animation: pulse 2s infinite;">⏳ Awaiting Verification</span>`;
-                verifyBtn = `<button onclick="window.verifyDigitalPayment('${tx.id}', '${tx.receiptId}')" style="background: #16a34a; border: 1px solid #15803d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✅ Verify</button>`;
+                verifyBtn = `<button class="btn-bulk-verify" data-txid="${tx.id}" onclick="window.verifyDigitalPayment('${tx.id}', '${tx.receiptId}')" style="background: #16a34a; border: 1px solid #15803d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✅ Verify</button>`;
             }
         }
 
@@ -17353,5 +17353,54 @@ window.verifyDigitalPayment = async function(docId, receiptId) {
     } catch(e) {
         console.error("Verification Error:", e);
         alert("Failed to verify payment. Check connection.");
+    }
+};
+
+// ========================================================
+// ✅ BULK VERIFICATION ENGINE
+// ========================================================
+window.bulkVerifyDigitalPayments = async function() {
+    // Automatically scrapes the screen for all unverified buttons!
+    let buttons = document.querySelectorAll('.btn-bulk-verify');
+    if (buttons.length === 0) {
+        Swal.fire({
+            title: 'All Caught Up!', 
+            text: 'There are no pending digital payments to verify.', 
+            icon: 'info',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to verify all ${buttons.length} pending digital payments?`)) return;
+    
+    Swal.fire({title: 'Verifying All...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    
+    try {
+        let promises = [];
+        buttons.forEach(btn => {
+            let docId = btn.getAttribute('data-txid');
+            promises.push(updateDoc(doc(db, "transactions", docId), {
+                paymentVerified: true,
+                verifiedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager',
+                verifiedAt: serverTimestamp()
+            }));
+        });
+        
+        await Promise.all(promises);
+        
+        // Refresh the modal to show the green badges
+        let branchTitle = document.getElementById('modalBranchName').innerText.replace('📊 ', '').replace(' Analytics', '');
+        window.openBranchDetails(branchTitle);
+        
+        Swal.fire({
+            title: 'Success', 
+            text: `Successfully verified ${buttons.length} payments!`, 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } catch(e) {
+        console.error("Bulk Verify Error:", e);
+        Swal.fire('Error', 'Failed to bulk verify. Check connection.', 'error');
     }
 };
