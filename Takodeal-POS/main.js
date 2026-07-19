@@ -7000,3 +7000,97 @@ window.startUnverifiedListener = function() {
 
 // Start the scanner!
 setTimeout(window.startUnverifiedListener, 3000);
+
+// ==========================================
+// 📢 CASHIER BULLETIN HISTORY ENGINE
+// ==========================================
+window.loadBulletinHistory = async function() {
+    let container = document.getElementById('bulletinHistoryList');
+    if (!container) return;
+    
+    let cashierName = localStorage.getItem('cashierName') || (window.sessionUser ? window.sessionUser.cashierName : null);
+    if (!cashierName) {
+        container.innerHTML = '<div style="text-align:center; padding:40px; color:#dc2626; font-weight:bold;">❌ Please log in to view your announcements.</div>';
+        return;
+    }
+
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:#64748b; font-weight:bold;">⏳ Fetching corporate announcements...</div>';
+
+    try {
+        // 1. Get all active announcements from HQ
+        const annQ = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
+        const annSnap = await window.getDocs(annQ);
+        
+        // 2. Get this specific cashier's signatures
+        const ackQ = window.query(window.collection(window.db, "acknowledgments"), window.where("staffName", "==", cashierName));
+        const ackSnap = await window.getDocs(ackQ);
+        
+        // Map the signatures to the announcement ID
+        let signatures = {};
+        ackSnap.forEach(doc => {
+            let d = doc.data();
+            signatures[d.announcementId] = d;
+        });
+
+        let announcementsArray = [];
+        annSnap.forEach(doc => announcementsArray.push({id: doc.id, ...doc.data()}));
+        announcementsArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+
+        let html = '';
+        announcementsArray.forEach(ann => {
+            let dateStr = ann.timestamp ? ann.timestamp.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Unknown Date';
+            let sigData = signatures[ann.id];
+            
+            let sigHtml = '';
+            let statusHtml = '';
+
+            // Check if they signed it!
+            if (sigData) {
+                let sigDate = sigData.timestamp ? (sigData.timestamp.toDate ? sigData.timestamp.toDate() : new Date(sigData.timestamp)).toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+                statusHtml = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">✅ Acknowledged on ${sigDate}</span>`;
+                sigHtml = `
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1; display: flex; align-items: center; gap: 15px;">
+                        <span style="font-size: 12px; color: #64748b; font-weight: bold;">Your Signature Record:</span>
+                        <img src="${sigData.signature}" style="height: 45px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 2px;">
+                    </div>`;
+            } else {
+                statusHtml = `<span style="background: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #fecaca;">❌ Unread / Pending</span>`;
+            }
+
+            // Build image gallery
+            let imagesHtml = '';
+            if (ann.images && ann.images.length > 0) {
+                imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
+                ann.images.forEach(img => {
+                    imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="window.open('${img}', '_blank')">`;
+                });
+                imagesHtml += `</div>`;
+            }
+
+            let messageHtml = ann.message ? `<div style="margin-top: 10px; font-size: 13px; color: #334155; line-height: 1.5;">${ann.message}</div>` : '';
+
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
+                        <h3 style="margin: 0; color: #0f172a; font-size: 16px;">${ann.title}</h3>
+                        ${statusHtml}
+                    </div>
+                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 10px;">Published: ${dateStr}</div>
+                    ${messageHtml}
+                    ${imagesHtml}
+                    ${sigHtml}
+                </div>
+            `;
+        });
+
+        if (html === '') {
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#64748b; font-weight:bold;">No announcements found.</div>';
+        } else {
+            container.innerHTML = html;
+        }
+
+    } catch (e) {
+        console.error("Bulletin Fetch Error:", e);
+        container.innerHTML = '<div style="text-align:center; padding:40px; color:#dc2626; font-weight:bold;">❌ Error connecting to the server.</div>';
+    }
+};
