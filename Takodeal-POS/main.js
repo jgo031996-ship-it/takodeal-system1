@@ -694,6 +694,13 @@ window.processCheckout = async function (payload) {
         
         payload.cashier = activeCashierName;
 
+        // 🔥 TAG DIGITAL PAYMENTS AS UNVERIFIED AUTOMATICALLY
+        if (payload.paymentMethod && payload.paymentMethod.toLowerCase() !== "cash") {
+            payload.paymentVerified = false;
+        } else {
+            payload.paymentVerified = true; // Cash is pre-verified by the cashier
+        }
+
         // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
         let splitContainer = document.getElementById('splitPaymentContainer');
         if (splitContainer && splitContainer.style.display !== 'none') {
@@ -6207,9 +6214,17 @@ window.MASTER_CloseShift = async function () {
         const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
         const txSnap = await getDocs(txQ);
 
+        let unverifiedDigitalCount = 0;
+
         txSnap.forEach(docSnap => {
             let tx = docSnap.data();
             if (tx.status !== 'Voided') {
+                
+                // 🚨 CHECK IF MANAGER HAS VERIFIED DIGITAL PAYMENTS
+                if (tx.paymentMethod && tx.paymentMethod.toLowerCase() !== 'cash' && tx.paymentVerified !== true) {
+                    unverifiedDigitalCount++;
+                }
+
                 if (tx.cart) {
                     tx.cart.forEach(item => {
                         let itemName = item.name || item.itemName;
@@ -6247,6 +6262,18 @@ window.MASTER_CloseShift = async function () {
                 }
             }
         });
+
+        // 🚨 UNVERIFIED DIGITAL PAYMENTS LOCKOUT 🚨
+        if (unverifiedDigitalCount > 0) {
+            Swal.fire({
+                title: '⛔ SHIFT CLOSE BLOCKED', 
+                html: `You have <b style="color:#dc2626; font-size:18px;">${unverifiedDigitalCount} unverified digital payment(s)</b> (GCash/Grab/Bank).<br><br>The Manager or Owner must verify these transactions in the Control Center before the system will allow you to close the register.`, 
+                icon: 'error',
+                customClass: { popup: 'rounded-2xl shadow-2xl' }
+            });
+            if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+            return;
+        }
 
         const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
         const expSnap = await getDocs(expQ);
@@ -6885,3 +6912,60 @@ window.viewStockRequestItems = function(itemsJson) {
         customClass: { popup: 'rounded-2xl shadow-2xl' }
     });
 };
+
+// ========================================================
+// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM
+// ========================================================
+window.startUnverifiedListener = function() {
+    let branchName = localStorage.getItem('takodeal_device_branch');
+    if (!branchName) return;
+
+    // Run every 5 seconds to scan the current shift
+    setInterval(async () => {
+        try {
+            if (typeof activeShiftDetails === 'undefined' || !activeShiftDetails || !activeShiftDetails.startTime) return;
+            
+            let startTime = activeShiftDetails.startTime.toDate ? activeShiftDetails.startTime.toDate() : new Date(activeShiftDetails.startTime);
+            
+            const q = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+            const snap = await getDocs(q);
+            
+            let unverified = 0;
+            snap.forEach(doc => {
+                let tx = doc.data();
+                if (tx.status !== 'Voided' && tx.paymentMethod && tx.paymentMethod.toLowerCase() !== 'cash' && tx.paymentVerified !== true) {
+                    unverified++;
+                }
+            });
+
+            // Find the Shift Sales header and inject a warning!
+            let shiftSalesView = document.getElementById('view-shiftsales') || document.querySelector('.view-shiftsales');
+            if (shiftSalesView) {
+                let existingBanner = document.getElementById('unverifiedWarningBanner');
+                if (unverified > 0) {
+                    if (!existingBanner) {
+                        existingBanner = document.createElement('div');
+                        existingBanner.id = 'unverifiedWarningBanner';
+                        existingBanner.style.cssText = "background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px 15px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.1);";
+                        shiftSalesView.insertBefore(existingBanner, shiftSalesView.firstChild);
+                    }
+                    existingBanner.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="font-size:24px; animation: pulse 1.5s infinite;">🚨</span>
+                            <div>
+                                <div style="font-size:14px; font-weight:900;">ACTION REQUIRED: ${unverified} Unverified Digital Payment(s)!</div>
+                                <div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in the HQ App before you can end your shift.</div>
+                            </div>
+                        </div>
+                    `;
+                    existingBanner.style.display = 'flex';
+                } else {
+                    if (existingBanner) existingBanner.style.display = 'none';
+                }
+            }
+        } catch(e) {}
+    }, 5000);
+};
+
+// Start the scanner!
+setTimeout(window.startUnverifiedListener, 5000);
