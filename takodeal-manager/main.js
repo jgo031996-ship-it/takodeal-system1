@@ -14923,21 +14923,42 @@ window.startPOListener = function() {
     });
 };
 
-// 🔊 The Audio Engine (Loud Bell Sound)
+// 🔊 The Audio Engine (Upgraded "Ding-Dong" Bell Sound)
 window.playManagerPing = function() {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'bell';
-        osc.frequency.setValueAtTime(987.77, ctx.currentTime); // High pitch B5
-        gain.gain.setValueAtTime(1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.8);
-    } catch (e) { console.log("Audio blocked by browser policy."); }
+        if (ctx.state === 'suspended') ctx.resume();
+
+        // Note 1 (Ding)
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.type = 'sine'; // 🔥 FIXED: 'sine' is universally supported
+        osc1.frequency.setValueAtTime(987.77, ctx.currentTime); 
+        gain1.gain.setValueAtTime(1, ctx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+        osc1.start(ctx.currentTime);
+        osc1.stop(ctx.currentTime + 0.4);
+
+        // Note 2 (Dong)
+        setTimeout(() => {
+            try {
+                const osc2 = ctx.createOscillator();
+                const gain2 = ctx.createGain();
+                osc2.connect(gain2);
+                gain2.connect(ctx.destination);
+                osc2.type = 'sine'; // 🔥 FIXED
+                osc2.frequency.setValueAtTime(1318.51, ctx.currentTime); 
+                gain2.gain.setValueAtTime(1, ctx.currentTime);
+                gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+                osc2.start(ctx.currentTime);
+                osc2.stop(ctx.currentTime + 0.6);
+            } catch(e) {}
+        }, 150);
+    } catch (e) { 
+        console.log("Audio blocked by browser policy. Click anywhere on the screen first."); 
+    }
 };
 
 // ========================================================
