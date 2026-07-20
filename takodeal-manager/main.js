@@ -17896,7 +17896,7 @@ window.reviewStockRequest = async function(docId) {
 };
 
 // ========================================================
-// 🚚 DELIVERY "FULL DETAILS" VIEWER MODAL
+// 🚚 DELIVERY "FULL DETAILS" & RECALL VIEWER
 // ========================================================
 window.viewDeliveryDetails = function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
@@ -17915,7 +17915,12 @@ window.viewDeliveryDetails = function(encodedGroup) {
     let tbody = document.getElementById('dispatchDetailsBody');
     let html = '';
     
+    // We can only recall a delivery if NO ITEMS have been received yet!
+    let canRecall = true; 
+    
     group.items.forEach(item => {
+        if (item.status !== 'In Transit') canRecall = false;
+
         let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : '#dc2626');
         let varText = item.variance ? `<span style="color:#dc2626; font-weight:bold;">${item.variance} ${item.uom}</span>` : `<span style="color:#94a3b8;">0</span>`;
         let receivedQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : (item.status === 'In Transit' ? '---' : 0);
@@ -17939,5 +17944,87 @@ window.viewDeliveryDetails = function(encodedGroup) {
     });
     
     if(tbody) tbody.innerHTML = html;
+
+    // 🔥 DYNAMIC RECALL BUTTON INJECTION
+    let footerEl = document.getElementById('dispatchDetailsFooter');
+    if (footerEl) {
+        if (canRecall) {
+            footerEl.innerHTML = `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">🔙 Back Load / Recall Dispatch</button>`;
+        } else {
+            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px;">🔒 This delivery is already being processed by the branch and cannot be recalled.</span>`;
+        }
+    }
+
     document.getElementById('dispatchDetailsModal').style.display = 'flex';
+};
+
+// ========================================================
+// 🔙 RECALL / BACK LOAD ENGINE
+// ========================================================
+window.recallDispatch = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    
+    if (!confirm("⚠️ RECALL DISPATCH?\n\nThis will remove the delivery from the destination branch, refund the inventory back to HQ, and load the items into your Dispatch Cart to edit. Proceed?")) return;
+
+    Swal.fire({title: 'Recalling Delivery...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+        
+        // Auto-set the destination branch
+        let branchSelect = document.getElementById('dispTo');
+        if(branchSelect) branchSelect.value = group.toBranch;
+
+        for (let item of group.items) {
+            // 1. Refund the inventory back to HQ
+            let originBranch = item.fromBranch || "Main Office";
+            const invQ = query(collection(db, "inventory"), where("branch", "==", originBranch), where("name", "==", item.item));
+            const invSnap = await getDocs(invQ);
+            
+            if (!invSnap.empty) {
+                let invDoc = invSnap.docs[0];
+                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
+                let refundQty = parseFloat(item.qty) || 0; // The base quantity originally sent
+                
+                await updateDoc(invDoc.ref, { currentStock: currentStock + refundQty });
+                
+                // Log the refund in the stock history
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: originBranch,
+                    item: item.item,
+                    oldQty: currentStock,
+                    newQty: currentStock + refundQty,
+                    variance: refundQty,
+                    type: "Dispatch Recalled",
+                    note: `Recalled misclicked delivery originally sent to ${group.toBranch}`,
+                    user: localStorage.getItem('cashierName') || 'Manager',
+                    timestamp: serverTimestamp()
+                });
+            }
+
+            // 2. Push the item back into the Dispatch Cart!
+            window.dispatchCart.push({
+                id: item.sourceId || item.id,
+                name: item.item,
+                qty: item.displayQty || item.qty,
+                uom: item.displayUom || item.uom,
+                baseQty: item.qty,
+                baseUom: item.uom
+            });
+
+            // 3. Delete the "In Transit" dispatch log so the branch never sees it
+            await deleteDoc(doc(db, "dispatch_logs", item.id));
+        }
+
+        // Render the cart and jump to the Dispatch Tab
+        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
+        if (typeof window.switchView === 'function') window.switchView('dispatch');
+        
+        document.getElementById('dispatchDetailsModal').style.display = 'none';
+        Swal.fire({title: 'Recalled!', text: 'Dispatch reverted. Items are back in your Dispatch Cart.', icon: 'success', timer: 2500, showConfirmButton: false});
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to recall dispatch. Check connection.', 'error');
+    }
 };
