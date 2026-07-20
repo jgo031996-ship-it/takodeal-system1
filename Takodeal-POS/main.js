@@ -6243,16 +6243,26 @@ window.MASTER_CloseShift = async function () {
             }
         });
 
-        // 🚨 UNVERIFIED DIGITAL PAYMENTS LOCKOUT 🚨
+        // 🚨 UNVERIFIED DIGITAL PAYMENTS WARNING (SOFT LOCK) 🚨
         if (unverifiedDigitalCount > 0) {
-            Swal.fire({
-                title: '⛔ SHIFT CLOSE BLOCKED', 
-                html: `You have <b style="color:#dc2626; font-size:18px;">${unverifiedDigitalCount} unverified digital payment(s)</b> (GCash/Grab/Bank).<br><br>The Manager or Owner must verify these transactions in the Control Center before the system will allow you to close the register.`, 
-                icon: 'error',
+            let proceed = await Swal.fire({
+                title: '⚠️ Unverified Payments', 
+                html: `You have <b style="color:#d97706; font-size:18px;">${unverifiedDigitalCount} unverified digital payment(s)</b>.<br><br>You may end your shift, but these will carry over and remain flagged in the system. The Manager will audit them tomorrow morning.`, 
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'End Shift Anyway',
+                cancelButtonText: 'Wait, let me check',
+                confirmButtonColor: '#d97706',
+                cancelButtonColor: '#64748b',
                 customClass: { popup: 'rounded-2xl shadow-2xl' }
             });
-            if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
-            return;
+            
+            // If they click "Wait", abort the closing process
+            if (!proceed.isConfirmed) {
+                let confirmBtn = document.querySelector('#endShiftModal .btn-place') || document.querySelector('button[onclick*="MASTER_CloseShift"]');
+                if (confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
+                return;
+            }
         }
 
         const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
@@ -6913,29 +6923,31 @@ window.viewStockRequestItems = function(itemsJson) {
 };
 
 // ========================================================
-// 🚨 LIVE UNVERIFIED DIGITAL PAYMENT ALARM & COUNTER
+// 🚨 PERSISTENT 48-HOUR UNVERIFIED PAYMENT ALARM
 // ========================================================
 window.startUnverifiedListener = function() {
     setInterval(async () => {
         try {
+            let branch = localStorage.getItem('takodeal_device_branch');
+            if (!branch) return;
+
             let currentShiftId = localStorage.getItem('currentShiftId');
             let salesTab = document.getElementById('nav-sales'); 
             let existingBanner = document.getElementById('globalUnverifiedBanner');
 
-            if (unverifiedCount > 0) {
-                // Blink the sidebar tab red
-                if (salesTab) {
-                    salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${unverifiedCount})</div>`;
-                    salesTab.style.background = '#fef2f2';
-                    salesTab.style.borderLeftColor = '#dc2626';
-                }
-                return; 
-            }
+            // Look back 48 hours to catch yesterday's unverified payments!
+            let lookBack = new Date();
+            lookBack.setHours(lookBack.getHours() - 48);
 
-            const txQ = window.query(window.collection(window.db, "transactions"), window.where("shiftId", "==", currentShiftId));
+            const txQ = window.query(
+                window.collection(window.db, "transactions"), 
+                window.where("branch", "==", branch),
+                window.where("timestamp", ">=", lookBack)
+            );
             const txSnap = await window.getDocs(txQ);
             
             let unverifiedCount = 0;
+            let currentShiftUnverified = 0;
             let gcashTotal = 0;
             let grabTotal = 0;
 
@@ -6945,53 +6957,65 @@ window.startUnverifiedListener = function() {
                     let method = (tx.paymentMethod || '').toLowerCase();
                     let amount = parseFloat(tx.netTotal) || 0;
 
-                    if (method === 'gcash') gcashTotal += amount;
-                    if (method === 'grab') grabTotal += amount;
+                    // Only sum GCash/Grab math for the CURRENT shift
+                    if (tx.shiftId === currentShiftId) {
+                        if (method === 'gcash') gcashTotal += amount;
+                        if (method === 'grab') grabTotal += amount;
+                    }
 
+                    // Check verification for ANY transaction in the last 48 hours
                     if (method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
                         unverifiedCount++;
+                        if (tx.shiftId === currentShiftId) currentShiftUnverified++;
                     }
                 }
             });
 
-            document.querySelectorAll('*').forEach(el => {
-                if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { 
-                    if (el.innerText.includes('Grab: ₱')) {
-                        el.innerText = `Grab: ₱${grabTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            // Update the sidebar math with current shift totals
+            if (currentShiftId) {
+                document.querySelectorAll('*').forEach(el => {
+                    if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { 
+                        if (el.innerText.includes('Grab: ₱')) {
+                            el.innerText = `Grab: ₱${grabTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                        }
+                        if (el.innerText.includes('GCash: ₱') || el.innerText.includes('Gcash: ₱')) {
+                            el.innerText = `GCash: ₱${gcashTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                        }
                     }
-                    if (el.innerText.includes('GCash: ₱') || el.innerText.includes('Gcash: ₱')) {
-                        el.innerText = `GCash: ₱${gcashTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    }
-                }
-            });
+                });
+            }
 
-            if (unverifiedCount > 0) {
+            // Handle the Red Sidebar Tab (Only blinks if the CURRENT shift has unverified items)
+            if (currentShiftUnverified > 0 && currentShiftId) {
                 if (salesTab) {
-                    salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${unverifiedCount})</div>`;
+                    salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${currentShiftUnverified})</div>`;
                     salesTab.style.background = '#fef2f2';
                     salesTab.style.borderLeftColor = '#dc2626';
                 }
+            } else {
+                if (salesTab) {
+                    salesTab.innerHTML = `<span>🧾</span><div class="nav-item-text">Shift Sales</div>`;
+                    salesTab.style.background = '';
+                    salesTab.style.borderLeftColor = '';
+                }
+            }
 
+            // Handle the Global Floating Banner (Shows if ANY payment in 48 hours is unverified!)
+            if (unverifiedCount > 0) {
                 if (!existingBanner) {
                     existingBanner = document.createElement('div');
                     existingBanner.id = 'globalUnverifiedBanner';
                     existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px 30px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999; cursor: pointer;";
                     
                     existingBanner.onclick = () => {
-                        if (typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App before you can end your shift.', 'warning');
-                        else alert('The Manager must verify these digital payments in the HQ App before you can end your shift.');
+                        if (typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App. They carry over from shift to shift until cleared.', 'warning');
                     };
                     document.body.appendChild(existingBanner);
                 }
-                existingBanner.innerHTML = `<span style="font-size:24px; animation: pulse 1s infinite;">🚨</span><div style="text-align: center;"><div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Digital Payment(s)!</div><div style="font-size:11px; color:#9f1239;">A manager must approve GCash/Grab transfers in HQ before Z-Reading.</div></div>`;
+                existingBanner.innerHTML = `<span style="font-size:24px; animation: pulse 1s infinite;">🚨</span><div style="text-align: center;"><div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Digital Payment(s)!</div><div style="font-size:11px; color:#9f1239;">These will remain here until the Manager approves them in the HQ App.</div></div>`;
                 existingBanner.style.display = 'flex';
             } else {
                 if (existingBanner) existingBanner.style.display = 'none';
-                if (salesTab) {
-                    salesTab.innerHTML = `<span>🧾</span><div class="nav-item-text">Shift Sales</div>`;
-                    salesTab.style.background = '';
-                    salesTab.style.borderLeftColor = '';
-                }
             }
 
         } catch(e) { }
