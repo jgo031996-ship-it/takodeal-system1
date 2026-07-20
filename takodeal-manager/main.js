@@ -17771,3 +17771,120 @@ window.renderLogisticsUI = function() {
 
 // Auto-start the new tab engine
 setTimeout(window.startLogisticsListeners, 1500);
+
+// ========================================================
+// 🔍 STOCK REQUEST REVIEW ENGINE (HQ APPROVALS)
+// ========================================================
+window.reviewStockRequest = async function(docId) {
+    try {
+        // Show loading spinner
+        Swal.fire({title: 'Loading Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        const docRef = doc(db, "purchase_orders", docId);
+        const snap = await getDoc(docRef);
+        
+        if (!snap.exists()) {
+            Swal.fire('Error', 'This request could not be found.', 'error');
+            return;
+        }
+        
+        let data = snap.data();
+        let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+        
+        // Build the sleek UI for the modal
+        let itemsHtml = `
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; text-align: left;">
+                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
+                <div style="font-size: 16px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${data.requestedBy || 'Staff'}</div>
+                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
+                <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
+            </div>
+            <div style="max-height: 250px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                    <thead style="background: #1e293b; color: white; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 10px;">Item Description</th>
+                            <th style="padding: 10px; text-align: center;">Qty Requested</th>
+                            <th style="padding: 10px; text-align: center;">Alert Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        if (data.items && data.items.length > 0) {
+            data.items.forEach(item => {
+                let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : '#0284c7');
+                itemsHtml += `
+                    <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                        <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
+                        <td style="padding: 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
+                        <td style="padding: 10px; text-align: center;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
+                    </tr>
+                `;
+            });
+        } else {
+            itemsHtml += `<tr><td colspan="3" style="text-align: center; padding: 15px; color: #64748b;">No items found in this request.</td></tr>`;
+        }
+        
+        itemsHtml += `</tbody></table></div>`;
+
+        // Launch the Approval Window
+        let actionResult = await Swal.fire({
+            title: `📦 Request from ${data.branch}`,
+            html: itemsHtml,
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: '✅ Approve',
+            denyButtonText: '❌ Postpone / Reject',
+            cancelButtonText: 'Close',
+            confirmButtonColor: '#16a34a',
+            denyButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            width: 600,
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
+
+        // Handle the Manager's Decision
+        if (actionResult.isConfirmed) {
+            Swal.fire({title: 'Approving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            
+            await updateDoc(docRef, {
+                status: 'Approved',
+                managerMessage: 'Approved by HQ. Awaiting dispatch.',
+                processedAt: serverTimestamp()
+            });
+            
+            Swal.fire('Approved!', 'The branch has been notified and it is ready for dispatch.', 'success');
+            
+        } else if (actionResult.isDenied) {
+            const { value: rejectReason } = await Swal.fire({
+                title: 'Postpone Request',
+                input: 'text',
+                inputLabel: 'Reason for postponement',
+                inputPlaceholder: 'e.g., Out of stock at HQ, arriving tomorrow',
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'Submit Reason',
+                inputValidator: (value) => {
+                    if (!value) return 'You need to provide a reason for the branch!';
+                }
+            });
+            
+            if (rejectReason) {
+                Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                
+                await updateDoc(docRef, {
+                    status: 'Delayed',
+                    managerMessage: rejectReason,
+                    processedAt: serverTimestamp()
+                });
+                
+                Swal.fire('Postponed', 'The request was delayed and the branch has been notified.', 'info');
+            }
+        }
+        
+    } catch (e) {
+        console.error("Error reviewing stock request:", e);
+        Swal.fire('Error', 'Failed to load request details. Check your connection.', 'error');
+    }
+};
