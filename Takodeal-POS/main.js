@@ -5837,7 +5837,8 @@ window.processStoreUse = async function() {
 // 🔪 KITCHEN PREP TAB & HISTORY ENGINE
 // ========================================================
 window.switchPrepTab = function(tab) {
-    document.getElementById('prepTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    // 🔥 THE FIX: Use 'flex' instead of 'block' so the side-by-side cart doesn't break!
+    document.getElementById('prepTabNew').style.display = tab === 'New' ? 'flex' : 'none';
     document.getElementById('prepTabHistory').style.display = tab === 'History' ? 'block' : 'none';
     
     document.getElementById('btnTabPrepNew').style.background = tab === 'New' ? '#8b5cf6' : 'white';
@@ -5906,10 +5907,23 @@ window.loadKitchenPrepHistory = async function() {
 };
 
 window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
-    if(!confirm(`⚠️ Are you sure you want to UNDO the prep batch for ${itemName}?\n\nThis will instantly subtract ${varianceAmount} from the inventory.`)) return;
+    if(!confirm(`⚠️ Are you sure you want to UNDO the prep batch for ${itemName}?\n\nThis will subtract ${varianceAmount} from prepared stock AND securely return the raw ingredients back to your vault.`)) return;
     
     try {
         let branch = localStorage.getItem('takodeal_device_branch');
+        
+        // 1. Fetch the exact log so we know exactly how many batches they made!
+        const logRef = doc(db, "stock_logs", logId);
+        const logSnap = await getDoc(logRef);
+        
+        if (!logSnap.exists()) {
+            return Swal.fire('Error', 'This log has already been deleted.', 'error');
+        }
+        
+        let logData = logSnap.data();
+        let purchQtyToReturn = logData.purchQty || 1; // Grab the batch multiplier
+
+        // 2. Deduct the finished product from the shelf
         const q = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
         const snap = await getDocs(q);
         
@@ -5919,12 +5933,49 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
             await updateDoc(itemRef, { currentStock: currentStock - varianceAmount });
         }
 
-        await deleteDoc(doc(db, "stock_logs", logId)); // Delete the log
-        alert("✅ Prep batch successfully undone!");
+        // 3. 🔥 THE UPGRADE: Auto-replenish Raw Ingredients using the BOM!
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
+
+        if (!bomSnap.empty) {
+            for (let bomDoc of bomSnap.docs) {
+                let recipe = bomDoc.data();
+                let rawIngredient = recipe.ingredientName;
+                let amountToReturn = (recipe.qty || 0) * purchQtyToReturn;
+
+                const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
+                const rawSnap = await getDocs(rawQ);
+
+                if (!rawSnap.empty) {
+                    let rawRef = rawSnap.docs[0].ref;
+                    let rawData = rawSnap.docs[0].data();
+                    let currentRawStock = parseFloat(rawData.currentStock) || 0;
+
+                    // Add it back to the vault!
+                    await updateDoc(rawRef, { currentStock: currentRawStock + amountToReturn });
+
+                    // Log the replenishment in the ledger for the Manager
+                    await addDoc(collection(db, "stock_logs"), {
+                        branch: branch, item: rawIngredient, uom: rawData.uom || 'units',
+                        oldQty: currentRawStock, newQty: currentRawStock + amountToReturn,
+                        variance: amountToReturn,
+                        type: "Kitchen Prep Undone",
+                        note: `Returned raw ingredients from voided ${purchQtyToReturn} batch(es) of ${itemName}`,
+                        user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
+                    });
+                }
+            }
+        }
+
+        // 4. Delete the old log
+        await deleteDoc(logRef); 
+        
+        Swal.fire({ title: '✅ Undone!', text: 'Prep batch reversed and raw ingredients returned to the vault.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
         window.loadKitchenPrepHistory(); // Refresh table
+        
     } catch(e) {
         console.error(e);
-        alert("Failed to undo prep batch.");
+        Swal.fire('Error', 'Failed to undo prep batch. Check connection.', 'error');
     }
 };
 
