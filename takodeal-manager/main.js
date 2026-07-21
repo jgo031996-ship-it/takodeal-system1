@@ -1691,7 +1691,7 @@ window.removeFromDispatchCart = function (index) {
 };
 
 // ==========================================
-// 🚚 DISPATCH CART ENGINE (PERFECT ALIGNMENT & HQ STOCK ALERTS)
+// 🚚 DISPATCH CART ENGINE (WITH LIVE HQ SYNC)
 // ==========================================
 window.renderDispatchCart = function() {
     let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer') || document.getElementById('dispatchCartBody');
@@ -1730,6 +1730,21 @@ window.renderDispatchCart = function() {
     let html = '';
 
     window.dispatchCart.forEach((item, index) => {
+        
+        // 🔥 THE LIVE SYNC INJECTOR 🔥
+        // Forces the cart item to instantly absorb any name or UOM changes made in the Live HQ Inventory!
+        let hqItemObj = window.dispatchInventoryList ? window.dispatchInventoryList.find(i => i.id === item.sourceId || i.name === (item.name || item.itemName)) : null;
+        
+        if (hqItemObj) {
+            item.name = hqItemObj.name;
+            item.itemName = hqItemObj.name;
+            item.baseUom = hqItemObj.uom || hqItemObj.baseUom || 'units';
+            item.purchaseUom = hqItemObj.purchaseUom || hqItemObj.purchUom || item.baseUom;
+            item.conversionRate = parseFloat(hqItemObj.conversionRate) || parseFloat(hqItemObj.conversion) || 1;
+            item.hqStock = parseFloat(hqItemObj.currentStock) || 0;
+            if (!item.selectedUom) item.selectedUom = 'base';
+        }
+
         let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
         let bUom = item.baseUom || item.uom || 'units';
         let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
@@ -1748,9 +1763,7 @@ window.renderDispatchCart = function() {
         let sysStock = item.systemStock || item.currentStock || 0;
         let physStock = item.physicalStock || 0;
 
-        // 🔥 FETCH LIVE HQ STOCK FROM MEMORY
-        let hqItemObj = window.dispatchInventoryList ? window.dispatchInventoryList.find(i => i.name === (item.name || item.itemName)) : null;
-        let hqStock = hqItemObj ? parseFloat(hqItemObj.currentStock || 0) : parseFloat(item.hqStock || 0);
+        let hqStock = parseFloat(item.hqStock || 0);
         
         let hqColor = hqStock < baseQty ? '#dc2626' : '#16a34a';
         let hqBg = hqStock < baseQty ? '#fef2f2' : '#dcfce7';
@@ -1789,7 +1802,6 @@ window.renderDispatchCart = function() {
                 </tr>
             `;
         } else {
-            // 🔥 THE FIX: CSS Grid guarantees the inputs and buttons stay perfectly aligned!
             html += `
                 <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
                     <div>
