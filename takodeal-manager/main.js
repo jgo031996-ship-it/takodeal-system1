@@ -773,8 +773,8 @@ window.saveEmployeeProfile = async function() {
     let rate = parseFloat(document.getElementById('empHourlyRate').value);
     let pin = document.getElementById('empPin').value.trim();
 
-    if (!name || isNaN(rate) || !pin || pin.length !== 4) {
-        alert("❌ Error: Name, Hourly Rate, and a 4-Digit PIN are strictly required!");
+    if (!name || isNaN(rate) || !pin || pin.length < 4) {
+        alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
         return;
     }
 
