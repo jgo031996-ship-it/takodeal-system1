@@ -7226,3 +7226,77 @@ window.fetchLoginRanking = async function() {
 // Start the Leaderboard Engine
 setTimeout(window.fetchLoginRanking, 2000); // Run once on boot
 setInterval(window.fetchLoginRanking, 30000); // Auto-update every 30 seconds
+
+// ==========================================
+// 🔪 KITCHEN PREP CART ENGINE
+// ==========================================
+window.kitchenPrepCart = [];
+
+window.addToPrepCart = async function(itemName, uom) {
+    // Ask the staff for the quantity before adding it to the cart
+    const { value: qty } = await Swal.fire({
+        title: `Prep ${itemName}`,
+        input: 'number',
+        inputLabel: `Enter quantity (${uom})`,
+        inputPlaceholder: 'e.g. 1, 2, 5',
+        showCancelButton: true,
+        confirmButtonColor: '#d97706',
+        inputValidator: (value) => {
+            if (!value || parseFloat(value) <= 0) return 'Please enter a valid quantity!';
+        },
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (qty) {
+        let parsedQty = parseFloat(qty);
+        let existing = window.kitchenPrepCart.find(i => i.name === itemName);
+
+        // Merge quantities if they add the same item twice
+        if (existing) {
+            existing.qty += parsedQty;
+        } else {
+            window.kitchenPrepCart.push({
+                name: itemName,
+                qty: parsedQty,
+                uom: uom
+            });
+        }
+
+        window.renderPrepCart();
+        
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success',
+            title: 'Added to Prep Cart', showConfirmButton: false, timer: 1500
+        });
+    }
+};
+
+window.removeFromPrepCart = function(index) {
+    window.kitchenPrepCart.splice(index, 1);
+    window.renderPrepCart();
+};
+
+window.renderPrepCart = function() {
+    let container = document.getElementById('prepCartBody');
+    if (!container) return;
+
+    if (window.kitchenPrepCart.length === 0) {
+        container.innerHTML = '<div style="padding: 30px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 14px;">Cart is empty.<br><span style="font-size: 11px; font-weight: normal;">Tap an item on the left to begin.</span></div>';
+        return;
+    }
+
+    let html = '';
+    window.kitchenPrepCart.forEach((item, index) => {
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 10px; border-bottom: 1px solid #e2e8f0; background: white;">
+                <div>
+                    <strong style="color: #0f172a; font-size: 14px;">${item.name}</strong><br>
+                    <span style="color: #059669; font-weight: bold; font-size: 13px;">${item.qty} ${item.uom}</span>
+                </div>
+                <button onclick="window.removeFromPrepCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer;">✖ Remove</button>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+};
