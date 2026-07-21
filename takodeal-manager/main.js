@@ -18249,17 +18249,40 @@ window.verifyAllPendingHistory = async function() {
     
     if(!confirm(`Are you sure you want to verify all ${window.pendingVerifications.length} payments?`)) return;
 
-    Swal.fire({title: 'Verifying All...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    Swal.fire({
+        title: 'Verifying Payments...', 
+        html: `Please wait, processing <b>0</b> of ${window.pendingVerifications.length}...`,
+        allowOutsideClick: false, 
+        didOpen: () => Swal.showLoading()
+    });
+
     try {
-        const batch = writeBatch(db);
-        window.pendingVerifications.forEach(id => {
-            batch.update(doc(db, "transactions", id), { paymentVerified: true });
+        let count = 0;
+        
+        // Loop through each ID and use the standard update function we know works
+        for (let id of window.pendingVerifications) {
+            await updateDoc(doc(db, "transactions", id), { paymentVerified: true });
+            count++;
+            
+            // Update the loading screen text every 5 items so the browser doesn't freeze
+            if (count % 5 === 0 || count === window.pendingVerifications.length) {
+                Swal.update({ html: `Please wait, processing <b style="color:#0ea5e9;">${count}</b> of ${window.pendingVerifications.length}...` });
+            }
+        }
+
+        Swal.fire({
+            title: 'All Verified!', 
+            text: 'The cashiers alarms are now cleared.', 
+            icon: 'success', 
+            timer: 2000, 
+            showConfirmButton: false
         });
-        await batch.commit();
-        Swal.fire({title: 'All Verified!', text: 'The cashiers alarms are now cleared.', icon: 'success', timer: 2000, showConfirmButton: false});
+        
         window.loadUnverifiedHistory();
+        
     } catch(e) {
-        Swal.fire('Error', 'Failed to verify payments.', 'error');
+        console.error("Batch Verification Error:", e); // Added to console so we can see exact errors!
+        Swal.fire('Error', 'Failed to verify payments. Check the developer console.', 'error');
     }
 };
 
