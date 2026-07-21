@@ -18028,3 +18028,108 @@ window.recallDispatch = async function(encodedGroup) {
         Swal.fire('Error', 'Failed to recall dispatch. Check connection.', 'error');
     }
 };
+
+// ========================================================
+// 👥 LIVE STAFF ON DUTY ENGINE
+// ========================================================
+window.fetchLiveStaffOnDuty = async function() {
+    let container = document.getElementById('liveStaffGrid');
+    if (!container) return;
+    
+    try {
+        // 1. Get the very beginning of today
+        let startOfDay = new Date();
+        startOfDay.setHours(0,0,0,0);
+        
+        // 2. Query ALL attendance logs from today
+        const q = window.query(window.collection(window.db, "attendance_logs"), window.where("timestamp", ">=", startOfDay));
+        const snap = await window.getDocs(q);
+        
+        // 3. Find the LATEST punch for every single staff member
+        let latestPunches = {};
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let staff = data.staffName;
+            let punchTime = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
+            
+            if (!latestPunches[staff] || punchTime > latestPunches[staff].time) {
+                latestPunches[staff] = {
+                    branch: data.branch,
+                    type: data.type, // "TIME IN" or "TIME OUT"
+                    time: punchTime
+                };
+            }
+        });
+        
+        // 4. Filter: Keep ONLY staff whose latest punch was "TIME IN"
+        let activeStaffByBranch = {};
+        for (let staff in latestPunches) {
+            let punch = latestPunches[staff];
+            if (punch.type === "TIME IN") {
+                if (!activeStaffByBranch[punch.branch]) {
+                    activeStaffByBranch[punch.branch] = [];
+                }
+                activeStaffByBranch[punch.branch].push({
+                    name: staff,
+                    timeIn: punch.time
+                });
+            }
+        }
+        
+        // 5. Render the UI Boxes
+        let html = '';
+        let branches = Object.keys(activeStaffByBranch).sort();
+        
+        if (branches.length === 0) {
+            html = '<div style="grid-column: 1/-1; background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center; color: #64748b; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">No staff members are currently timed in today.</div>';
+        } else {
+            branches.forEach(branch => {
+                let staffListHtml = '';
+                
+                // Sort staff by who timed in earliest
+                activeStaffByBranch[branch].sort((a,b) => a.timeIn - b.timeIn);
+                
+                activeStaffByBranch[branch].forEach(s => {
+                    let timeStr = s.timeIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                    staffListHtml += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 16px;">👤</span>
+                                <span style="font-weight: bold; color: #334155; font-size: 13px;">${s.name}</span>
+                            </div>
+                            <span style="font-size: 11px; background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 6px; font-weight: bold; border: 1px solid #bbf7d0;">In @ ${timeStr}</span>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                    <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 18px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                        <h4 style="margin: 0 0 10px 0; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 15px;">📍 ${branch}</span>
+                            <span style="background: #0f766e; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px;">${activeStaffByBranch[branch].length} Active</span>
+                        </h4>
+                        <div style="display: flex; flex-direction: column;">
+                            ${staffListHtml}
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        
+        container.innerHTML = html;
+        
+    } catch (e) {
+        console.error("Live Staff Error:", e);
+        container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #ef4444; background: #fef2f2; padding: 20px; border-radius: 8px;">Failed to load live staff data.</div>';
+    }
+};
+
+// Hook it into the Global Dashboard Refresh button!
+setTimeout(() => {
+    let refreshBtn = document.getElementById('btnRefreshData');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', window.fetchLiveStaffOnDuty);
+    }
+    // Run it once on boot
+    window.fetchLiveStaffOnDuty();
+}, 2000);
