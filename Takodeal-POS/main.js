@@ -4568,6 +4568,24 @@ window.loadStockRequestUI = async function() {
         // ⏳ B. PENDING REQUEST BLOCK (EDIT / CANCEL)
         // ==========================================
         if (pendingOrder) {
+            
+            // 🔥 LIVE SYNC INJECTOR 🔥
+            // Force the pending order to sync its names and UOMs with the Live Inventory!
+            pendingOrder.items.forEach(i => {
+                let liveItem = window.stockReqItemsFlat.find(live => live.id === i.sourceId || live.name === i.itemName);
+                if (liveItem) {
+                    i.itemName = liveItem.name; // Auto-update name
+                    // Update UOM labels for display
+                    if (i.selectedUom === 'purch' || i.displayUom === i.purchaseUom) {
+                        i.displayUom = liveItem.purchaseUom || liveItem.uom;
+                        i.purchaseUom = liveItem.purchaseUom || liveItem.uom;
+                    } else {
+                        i.displayUom = liveItem.uom;
+                        i.baseUom = liveItem.uom;
+                    }
+                }
+            });
+
             let pItemsHtml = pendingOrder.items.map(i => `
                 <div style="display:flex; justify-content:space-between; padding: 8px 0; border-bottom: 1px dashed #cbd5e1;">
                     <span style="font-weight:bold; color:#334155;">${i.itemName} <span style="color:#ef4444; font-size:11px;">(${i.requestType})</span></span>
