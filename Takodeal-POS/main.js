@@ -682,8 +682,16 @@ window.openNewShift = async function (branch, cashier, startCash) {
 // ========================================================
 window.offlineQueue = JSON.parse(localStorage.getItem('takodeal_offline_queue')) || [];
 window.isSyncing = false;
+window.isProcessingOrder = false; // 🛡️ Initialize the lock variable
 
 window.processCheckout = async function (payload) {
+    // 🛡️ 1. THE SHIELD: Instantly block spam-clicks!
+    if (window.isProcessingOrder) {
+        console.warn("Checkout Shield activated: Ignored rapid double-click!");
+        return null; 
+    }
+    window.isProcessingOrder = true; // Lock the checkout process
+
     try {
         // 🔥 THE CASHIER OVERRIDE FIX: 
         // This forces the receipt to use the person actively logged into the screen right now,
@@ -746,6 +754,9 @@ window.processCheckout = async function (payload) {
     } catch (error) { 
         console.error("Critical Checkout Error:", error); 
         return "OFFLINE-" + Date.now().toString().slice(-6); 
+    } finally {
+        // 🔓 2. THE RELEASE: Always unlock the button when the process finishes!
+        window.isProcessingOrder = false;
     }
 };
 
