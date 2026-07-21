@@ -11572,7 +11572,13 @@ window.loadSalesHistoryTab = async function() {
             
             let sTimeStr = sTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             let eTimeStr = s.active ? "Present" : eTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-            let dateStr = sTime.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            
+            // 🔥 THE 5:00 AM BUSINESS DAY CUTOFF FIX (For Shifts)
+            let businessShiftDate = new Date(sTime.getTime());
+            if (businessShiftDate.getHours() < 5) {
+                businessShiftDate.setDate(businessShiftDate.getDate() - 1);
+            }
+            let dateStr = businessShiftDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
             window.globalShiftReports[doc.id] = {
                 id: doc.id,
@@ -11600,7 +11606,7 @@ window.loadSalesHistoryTab = async function() {
         allTxArray.sort((a,b) => b.timestamp - a.timestamp);
 
         let txHtml = '';
-        let tNet = 0; let tCogs = 0; let tGrab = 0; let tGrabCount = 0; // 🔥 NEW COUNTER VARIABLE
+        let tNet = 0; let tCogs = 0; let tGrab = 0; let tGrabCount = 0; 
         let dailyAggregates = {}; let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
@@ -11609,9 +11615,17 @@ window.loadSalesHistoryTab = async function() {
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
             let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            let dateStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
-            let monthStr = dDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); 
-            let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+            
+            // 🔥 THE 5:00 AM BUSINESS DAY CUTOFF FIX (For Transactions)
+            let businessDate = new Date(dDate.getTime());
+            if (businessDate.getHours() < 5) {
+                businessDate.setDate(businessDate.getDate() - 1);
+            }
+            
+            let dateStr = businessDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
+            let monthStr = businessDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); 
+            let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }); // Keep real time for display
+            
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
             let safeCashier = tx.cashier || 'Unknown';
             let safeCart = encodeURIComponent(JSON.stringify(tx.cart || tx.items || [])); 
@@ -11708,7 +11722,6 @@ window.loadSalesHistoryTab = async function() {
                 shiftRef.cogs += txCogs;
                 shiftRef.txCount += 1;
 
-                // 🔥 THE GRAB COUNTER ALGORITHM 🔥
                 if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") {
                     tGrab += txNet;
                     tGrabCount += 1; 
@@ -11822,7 +11835,6 @@ window.loadSalesHistoryTab = async function() {
         document.getElementById('histSumMargin').innerText = `₱${(tNet - tCogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-        // 🔥 POPULATE THE NEW GRAB COUNTER 🔥
         let grabCountEl = document.getElementById('histCountGrab');
         if (grabCountEl) grabCountEl.innerText = `${tGrabCount} Order${tGrabCount !== 1 ? 's' : ''}`;
 
