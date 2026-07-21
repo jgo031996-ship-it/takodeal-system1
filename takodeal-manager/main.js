@@ -18042,8 +18042,9 @@ window.fetchLiveStaffOnDuty = async function() {
         startOfDay.setHours(0,0,0,0);
         
         // 2. Query ALL attendance logs from today
-        const q = window.query(window.collection(window.db, "attendance_logs"), window.where("timestamp", ">=", startOfDay));
-        const snap = await window.getDocs(q);
+        // 🔥 THE FIX: Removed 'window.' from Firebase functions so the Manager App can read them!
+        const q = query(collection(db, "attendance_logs"), where("timestamp", ">=", startOfDay));
+        const snap = await getDocs(q);
         
         // 3. Find the LATEST punch for every single staff member
         let latestPunches = {};
@@ -18123,13 +18124,3 @@ window.fetchLiveStaffOnDuty = async function() {
         container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #ef4444; background: #fef2f2; padding: 20px; border-radius: 8px;">Failed to load live staff data.</div>';
     }
 };
-
-// Hook it into the Global Dashboard Refresh button!
-setTimeout(() => {
-    let refreshBtn = document.getElementById('btnRefreshData');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', window.fetchLiveStaffOnDuty);
-    }
-    // Run it once on boot
-    window.fetchLiveStaffOnDuty();
-}, 2000);
