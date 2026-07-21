@@ -1341,6 +1341,18 @@
       }
   </script>
   <div class="login-overlay" id="loginOverlay">
+    <!-- 🏆 LIVE LEADERBOARD WIDGET -->
+    <div id="loginRankingWidget" style="position: absolute; top: 20px; left: 20px; background: rgba(15, 23, 42, 0.85); padding: 15px 20px; border-radius: 12px; color: white; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px); z-index: 10; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+        <div style="font-size: 11px; font-weight: 900; color: #fcd34d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 16px; animation: pulse 2s infinite;">🔥</span> Live Daily Ranking
+        </div>
+        <div id="loginRankingList" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
+            <div style="font-size: 12px; color: #94a3b8;">Loading leaderboard...</div>
+        </div>
+        <div id="loginRankingQuote" style="font-size: 12px; font-style: italic; font-weight: bold; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 12px; line-height: 1.4;">
+            Loading motivation...
+        </div>
+    </div>
     <div style="text-align: center; margin-bottom: 20px;">
         <h1 style="margin: 0; color: #ffffff; font-size: 56px; font-weight: 900; letter-spacing: 3px; text-shadow: 2px 4px 15px rgba(0,0,0,0.6);">TAKODEÁL</h1>
         <h3 id="loginBranchDisplay" style="margin: 5px 0 0 0; color: #fcd34d; font-size: 22px; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 2px 8px rgba(0,0,0,0.6);">📍 Loading Location...</h3>
