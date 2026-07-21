@@ -37,8 +37,9 @@ window.loginStaff = async function() {
     let errorMsg = document.getElementById('loginError');
     let btn = document.querySelector('.login-card .btn-primary');
 
-    if (pinInput.length !== 4) {
-        errorMsg.innerText = "❌ Please enter a 4-digit PIN.";
+    // 🛑 REMOVED THE EXACT 4-DIGIT REQUIREMENT!
+    if (pinInput.length < 1) {
+        errorMsg.innerText = "❌ Please enter your PIN.";
         errorMsg.style.display = 'block';
         return;
     }
