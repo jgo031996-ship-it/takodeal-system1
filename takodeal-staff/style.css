@@ -36,7 +36,16 @@ body, html {
     width: 90%; max-width: 350px; text-align: center;
 }
 
-.login-logo { font-size: 50px; margin-bottom: 10px; }
+.login-logo { 
+    width: 85px; 
+    height: 85px; 
+    object-fit: cover; 
+    border-radius: 50%; 
+    margin: 0 auto 15px auto; 
+    display: block; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+    border: 3px solid var(--primary-light);
+}
 .login-header h2 { margin: 0 0 5px 0; font-weight: 900; color: var(--primary); }
 .login-header p { margin: 0 0 25px 0; font-size: 14px; color: var(--text-muted); }
 
