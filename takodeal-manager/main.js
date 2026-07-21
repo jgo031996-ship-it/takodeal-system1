@@ -2078,13 +2078,41 @@ window.submitMultiDispatch = async function () {
             });
         }
 
+        // 🔥 THE POSTPONE CONSOLIDATOR FIX
         if (skippedCart.length > 0) {
-            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units" }));
+            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units", requestType: i.requestType || 'Low Stock' }));
             let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-            await addDoc(collection(db, "purchase_orders"), {
-                branch: toBranch, items: safeSkippedCart, status: "Delayed", type: "Delayed Delivery",
-                originalRequestDate: todayStr, requestedBy: "System (Postponed / Set Aside)", timestamp: serverTimestamp()
-            });
+            
+            // Step 1: Check if this branch already has a pending "Postponed" ticket
+            const pendingQ = query(collection(db, "purchase_orders"), where("branch", "==", toBranch), where("status", "==", "Delayed"));
+            const pendingSnap = await getDocs(pendingQ);
+            
+            if (!pendingSnap.empty) {
+                // Step 2: If they do, merge the leftovers into the existing ticket!
+                let existingTicket = pendingSnap.docs[0];
+                let existingItems = existingTicket.data().items || [];
+                
+                safeSkippedCart.forEach(skippedItem => {
+                    let match = existingItems.find(i => (i.itemName || i.name) === (skippedItem.itemName || skippedItem.name));
+                    if (match) {
+                        match.qty = (parseFloat(match.qty) || 0) + (parseFloat(skippedItem.qty) || 0);
+                        match.displayQty = match.qty; // Update UI qty
+                    } else {
+                        existingItems.push(skippedItem);
+                    }
+                });
+                
+                await updateDoc(existingTicket.ref, { 
+                    items: existingItems,
+                    timestamp: serverTimestamp() // Bumps it to the top of the feed!
+                });
+            } else {
+                // Step 3: Only create a new ticket if they don't have one!
+                await addDoc(collection(db, "purchase_orders"), {
+                    branch: toBranch, items: safeSkippedCart, status: "Delayed", type: "Delayed Delivery",
+                    originalRequestDate: todayStr, requestedBy: "System (Postponed / Set Aside)", timestamp: serverTimestamp()
+                });
+            }
         }
 
         window.dispatchCart = [];
@@ -17860,8 +17888,11 @@ window.reviewStockRequest = async function(docId) {
                 let baseReqQty = parseFloat(reqItem.qty) || 0;
                 
                 if (existing) {
+                    // 🔥 THE MERGE FIX: Sum the requested quantities!
                     existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
                     existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
+                    // If it was already in the cart with 0 qty (e.g. out of stock), this forces the input box to wake up!
+                    existing.requestType = "Merged Request"; 
                 } else {
                     window.dispatchCart.push({
                         itemName: reqItem.itemName,
