@@ -2530,26 +2530,26 @@ window.submitAttendance = async function(type) {
     // 📩 PROCESSED REQUEST INTERCEPTOR (APPROVED & REJECTED)
     // ==========================================
     try {
-        // 🔥 CRASH-PROOF QUERY: We pull all their requests and filter in JavaScript to avoid Firebase Index errors!
         const reqQ = query(collection(db, "staff_requests"), where("staffName", "==", staffName));
         const reqSnap = await getDocs(reqQ);
         
         let unreadRequest = null;
         let unreadReqId = null;
         let nowMs = Date.now();
+        
+        // 🔥 THE FIX: Hard cutoff date! Anything older than this is instantly purged in the background.
+        let updateCutoff = new Date('2026-07-20T00:00:00').getTime();
 
         reqSnap.forEach(docSnap => {
             let data = docSnap.data();
             
-            // Only look for requests that are Approved or Rejected, and haven't been acknowledged yet!
             if (!data.staffAcknowledged && (data.status === "Rejected" || data.status === "Approved")) {
                 
-                // Determine exactly how old this action is
                 let actionTime = data.processedAt ? (data.processedAt.toDate ? data.processedAt.toDate().getTime() : new Date(data.processedAt).getTime()) : (data.timestamp ? data.timestamp.toDate().getTime() : 0);
                 let ageInDays = (nowMs - actionTime) / (1000 * 60 * 60 * 24);
 
-                // Only block the Time Clock if the manager's decision happened in the last 7 days!
-                if (ageInDays <= 7) {
+                // Only block the Time Clock if the decision happened in the last 2 days AND after our update!
+                if (ageInDays <= 2 && actionTime > updateCutoff) {
                     unreadRequest = data;
                     unreadReqId = docSnap.id;
                 } else {
@@ -2565,7 +2565,6 @@ window.submitAttendance = async function(type) {
 
             let reqDetails = unreadRequest.amount ? `₱${unreadRequest.amount.toLocaleString()}` : (unreadRequest.item || unreadRequest.leaveType || unreadRequest.explanationCause || "Request");
             
-            // 🔥 DYNAMIC UI: Changes colors and icons based on Approved or Rejected!
             let isApproved = unreadRequest.status === "Approved";
             let titleTxt = isApproved ? '✅ Request Approved' : '❌ Request Rejected';
             let iconType = isApproved ? 'success' : 'error';
@@ -2606,7 +2605,7 @@ window.submitAttendance = async function(type) {
 
             document.getElementById('clockStaffPin').value = ''; 
             unlockUI(); 
-            return; // Stops the punch! They must retry so they don't accidentally clock in/out without knowing it.
+            return; 
         }
     } catch(e) {
         console.error("Processed Request Check Failed:", e);
