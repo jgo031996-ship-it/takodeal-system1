@@ -253,7 +253,7 @@
       <a href="#" class="nav-item" id="nav-products" onclick="switchView('products')"><span class="nav-icon">🏷️</span> <span class="nav-text">Menu Costing & BOM</span></a>
       <a href="#" class="nav-item" id="nav-dispatch" onclick="switchView('dispatch')"><span class="nav-icon">🚚</span> <span class="nav-text">Dispatch Stock</span> <span id="poNotificationBadge" style="display:none; background:var(--danger); color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:5px; font-weight:bold;">0</span></a>
       <a href="#" class="nav-item" id="nav-zreadings" onclick="switchView('zreadings')"><span class="nav-icon">📊</span> <span class="nav-text">Z-Reading Reports</span></a>
-      <a href="#" class="nav-item" id="nav-history" onclick="switchView('history')"><span class="nav-icon">🧾</span> <span class="nav-text">Sales History</span></a>
+      <a href="#" class="nav-item" id="nav-history" onclick="switchView('history')"><span class="nav-icon">🧾</span> <span class="nav-text">Sales History</span> <span id="sidebarBadgeUnverified" style="display:none; background:var(--danger); color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:auto; font-weight:bold; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);">0</span></a>
       <a href="#" class="nav-item" id="nav-expenses" onclick="switchView('expenses')"><span class="nav-icon">💸</span> <span class="nav-text">Expense & Restock Feed</span></a>
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')"><span class="nav-icon">👥</span> <span class="nav-text">Staff & Security</span></a>
       <a href="#" class="nav-item" id="nav-sop" onclick="switchView('sop'); window.loadSopManager();"><span class="nav-icon">📋</span> <span class="nav-text">SOP Manager</span></a>
@@ -710,6 +710,7 @@
                 <div id="tabHistDaily" onclick="window.switchHistoryTab('Daily')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Daily Sales</div>
                 <div id="tabHistMonthly" onclick="window.switchHistoryTab('Monthly')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Monthly Sales</div>
                 <div id="tabHistReports" onclick="window.switchHistoryTab('Reports')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">Reports (Optimization)</div>
+                <div id="tabHistUnverified" onclick="window.switchHistoryTab('Unverified')" style="padding: 15px 20px; font-weight: bold; font-size: 15px; color: #dc2626; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;">⚠️ Pending Verifications <span id="badgeUnverifiedTx" style="background:#dc2626; color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:5px; display:none;">0</span></div>
                 <div style="margin-left: auto; display: flex; align-items: center;">
                     <button onclick="downloadExcel('historyTableBody', 'TAKODEAL_Transactions')" style="background: transparent; color: #64748b; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; display: flex; align-items: center; gap: 5px;">📥 Export Active Tab</button>
                 </div>
@@ -838,6 +839,34 @@
                     </thead>
                     <tbody id="productAnalyticsBody">
                       <tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">Click "Run Report" to populate data...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+
+            <!-- ⚠️ PENDING DIGITAL VERIFICATIONS TAB -->
+            <div id="histSecUnverified" style="display: none; padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <h3 style="margin-top: 0; color: #dc2626; display: flex; align-items: center; gap: 8px;"><span style="font-size: 24px;">📱</span> Unverified Digital Payments</h3>
+                        <span style="font-size: 12px; color: var(--text-muted); display: block;">Review and verify GCash, Grab, and Bank transfers from previous shifts. This clears the red alarm on the cashier tablets.</span>
+                    </div>
+                    <button onclick="window.verifyAllPendingHistory()" style="background: #16a34a; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3); transition: 0.2s;">✅ Verify All Displayed</button>
+                </div>
+                <div class="table-responsive">
+                  <table class="data-table" style="border: 1px solid #fecaca; border-radius: 8px; overflow: hidden;">
+                    <thead style="background: #fef2f2;">
+                      <tr>
+                        <th style="color: #b91c1c;">Date & Time</th>
+                        <th style="color: #b91c1c;">Branch</th>
+                        <th style="color: #b91c1c;">Receipt ID</th>
+                        <th style="color: #b91c1c;">Payment Method</th>
+                        <th style="color: #b91c1c; text-align: right;">Amount</th>
+                        <th style="color: #b91c1c; text-align: center;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="unverifiedHistoryBody">
+                      <tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">Click the tab to load pending verifications...</td></tr>
                     </tbody>
                   </table>
                 </div>
