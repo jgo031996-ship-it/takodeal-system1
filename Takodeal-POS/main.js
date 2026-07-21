@@ -7117,3 +7117,101 @@ window.loadBulletinHistory = async function() {
         container.innerHTML = '<div style="text-align:center; padding:40px; color:#dc2626; font-weight:bold;">❌ Error connecting to the server.</div>';
     }
 };
+
+// ========================================================
+// 🏆 LIVE GAMIFICATION LEADERBOARD (LOGIN SCREEN)
+// ========================================================
+window.fetchLoginRanking = async function() {
+    let widget = document.getElementById('loginRankingWidget');
+    let listEl = document.getElementById('loginRankingList');
+    let quoteEl = document.getElementById('loginRankingQuote');
+    
+    if (!widget || !listEl || !quoteEl) return;
+
+    let myBranch = localStorage.getItem('takodeal_device_branch');
+    if (!myBranch) return; // Hide widget if device isn't registered yet
+
+    // Only fetch and show if the login screen is actually visible
+    let loginOverlay = document.getElementById('loginOverlay');
+    if (loginOverlay && loginOverlay.style.display === 'none') return;
+
+    widget.style.display = 'block';
+
+    try {
+        let startOfDay = new Date();
+        startOfDay.setHours(0,0,0,0);
+
+        const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay));
+        const snap = await window.getDocs(q);
+
+        // Ensure this branch is always on the board, even if sales are 0
+        let salesByBranch = {};
+        salesByBranch[myBranch] = 0; 
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status !== 'Voided') {
+                let br = tx.branch || 'Unknown';
+                let amt = parseFloat(tx.netTotal) || 0;
+                if (!salesByBranch[br]) salesByBranch[br] = 0;
+                salesByBranch[br] += amt;
+            }
+        });
+
+        // Convert to array and sort highest to lowest
+        let leaderboard = Object.keys(salesByBranch).map(br => {
+            return { branch: br, sales: salesByBranch[br] };
+        });
+        leaderboard.sort((a, b) => b.sales - a.sales);
+
+        let html = '';
+        let myRank = -1;
+        let medals = ['🥇', '🥈', '🥉'];
+
+        leaderboard.forEach((entry, index) => {
+            if (entry.branch === myBranch) myRank = index + 1;
+            
+            let medal = index < 3 ? medals[index] : '🏅';
+            let isMe = entry.branch === myBranch;
+            let rowBg = isMe ? 'rgba(255,255,255,0.15)' : 'transparent';
+            let rowColor = isMe ? '#ffffff' : '#94a3b8';
+            let rowWeight = isMe ? '900' : 'normal';
+            let salesColor = isMe ? '#10b981' : '#64748b';
+
+            html += `
+                <div style="display: flex; justify-content: space-between; align-items: center; background: ${rowBg}; padding: 6px 10px; border-radius: 6px;">
+                    <span style="color: ${rowColor}; font-weight: ${rowWeight}; font-size: 14px;">${medal} ${entry.branch}</span>
+                    <span style="color: ${salesColor}; font-weight: 900; font-size: 14px;">₱${entry.sales.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+            `;
+        });
+
+        listEl.innerHTML = html;
+
+        // 🧠 DYNAMIC ENCOURAGEMENT QUOTES
+        if (leaderboard[0].sales === 0) {
+            quoteEl.innerHTML = "🚀 The board is empty! Ring up the first sale and take the lead!";
+            quoteEl.style.color = "#bae6fd";
+        } else if (myRank === 1) {
+            quoteEl.innerHTML = `🔥 You are the <b>#1 Top Seller</b> today! Keep up the blazing pace, ${myBranch}!`;
+            quoteEl.style.color = "#fef08a"; // Gold
+        } else if (myRank === 2) {
+            let diff = leaderboard[0].sales - salesByBranch[myBranch];
+            quoteEl.innerHTML = `⚡ You're in <b>2nd place</b>! Just ₱${diff.toLocaleString()} away from taking the crown!`;
+            quoteEl.style.color = "#e2e8f0"; // Silver
+        } else if (myRank === 3) {
+            quoteEl.innerHTML = `💪 You're <b>#3</b> today! Time to turn up the heat and climb the ranks!`;
+            quoteEl.style.color = "#fed7aa"; // Bronze
+        } else {
+            quoteEl.innerHTML = `📈 You are rank <b>#${myRank}</b>. Let's make some noise and push harder!`;
+            quoteEl.style.color = "#bae6fd";
+        }
+
+    } catch (e) {
+        console.error("Ranking error:", e);
+    }
+};
+
+// Start the Leaderboard Engine
+setTimeout(window.fetchLoginRanking, 2000); // Run once on boot
+setInterval(window.fetchLoginRanking, 30000); // Auto-update every 30 seconds
