@@ -18134,3 +18134,160 @@ window.fetchLiveStaffOnDuty = function() {
 setTimeout(() => {
     window.fetchLiveStaffOnDuty();
 }, 1500);
+
+// ========================================================
+// ⚠️ UNVERIFIED DIGITAL PAYMENTS ENGINE (SALES HISTORY)
+// ========================================================
+
+// 1. Upgrade the History Tab Switcher to include the new tab
+window.switchHistoryTab = function(tabName) {
+    // Hide all sections and reset tabs
+    ['Tx', 'Shifts', 'Daily', 'Monthly', 'Reports', 'Unverified'].forEach(id => {
+        let sec = document.getElementById('histSec' + id);
+        if (sec) sec.style.display = 'none';
+        
+        let tab = document.getElementById('tabHist' + id);
+        if (tab) {
+            tab.style.borderBottom = '3px solid transparent';
+            tab.style.color = id === 'Unverified' ? '#ef4444' : '#64748b'; // Keep unverified slightly red
+        }
+    });
+
+    // Show active section
+    let activeSec = document.getElementById('histSec' + tabName);
+    let activeTab = document.getElementById('tabHist' + tabName);
+    
+    if (activeSec) activeSec.style.display = 'block';
+    if (activeTab) {
+        activeTab.style.borderBottom = tabName === 'Unverified' ? '3px solid #dc2626' : '3px solid #0f766e';
+        activeTab.style.color = tabName === 'Unverified' ? '#dc2626' : '#0f766e';
+    }
+
+    if (tabName === 'Unverified') window.loadUnverifiedHistory();
+};
+
+// 2. Fetch the Unverified Payments
+window.pendingVerifications = []; // Store IDs for "Verify All" button
+
+window.loadUnverifiedHistory = async function() {
+    let tbody = document.getElementById('unverifiedHistoryBody');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; font-weight: bold; color: #64748b;">⏳ Scanning database for unverified payments...</td></tr>';
+    
+    try {
+        // Fetch last 7 days to catch forgotten overnight shifts
+        let lookBack = new Date();
+        lookBack.setDate(lookBack.getDate() - 7);
+        
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", lookBack));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        window.pendingVerifications = [];
+        let count = 0;
+
+        let txArray = [];
+        snap.forEach(doc => {
+            let tx = doc.data();
+            let method = (tx.paymentMethod || '').toLowerCase();
+            // Look for valid transactions that are NOT cash and NOT verified
+            if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
+                txArray.push({id: doc.id, ...tx});
+            }
+        });
+
+        // Sort newest first
+        txArray.sort((a, b) => b.timestamp - a.timestamp);
+
+        txArray.forEach(tx => {
+            count++;
+            window.pendingVerifications.push(tx.id);
+            let dateStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+            let methodColor = tx.paymentMethod.toLowerCase() === 'gcash' ? '#0284c7' : '#ea580c';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                    <td style="padding: 15px; font-weight: bold; color: #334155;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #0f172a;">${tx.branch}</td>
+                    <td style="padding: 15px; font-family: monospace; color: #64748b; font-size: 12px;">${tx.receiptId || tx.id}</td>
+                    <td style="padding: 15px; font-weight: 900; color: ${methodColor}; text-transform: uppercase;">${tx.paymentMethod}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #16a34a; text-align: right; font-size: 16px;">₱${parseFloat(tx.netTotal).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px; text-align: center;">
+                        <button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Verify</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        if (count === 0) {
+            html = '<tr><td colspan="6" class="text-center" style="padding: 40px; font-weight: bold; color: #16a34a; font-size: 16px;">🎉 All caught up! No pending digital payments to verify.</td></tr>';
+        }
+
+        tbody.innerHTML = html;
+        window.updateUnverifiedBadges(count);
+
+    } catch(e) {
+        console.error("Error loading unverified:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #dc2626; font-weight: bold;">❌ Failed to load data. Check console.</td></tr>';
+    }
+};
+
+// 3. Action Buttons
+window.verifySingleHistoryPayment = async function(txId) {
+    try {
+        Swal.fire({title: 'Verifying...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        await updateDoc(doc(db, "transactions", txId), { paymentVerified: true });
+        Swal.fire({title: 'Verified!', icon: 'success', timer: 1500, showConfirmButton: false});
+        window.loadUnverifiedHistory(); // Refresh the list
+    } catch(e) {
+        Swal.fire('Error', 'Failed to verify payment.', 'error');
+    }
+};
+
+window.verifyAllPendingHistory = async function() {
+    if(!window.pendingVerifications || window.pendingVerifications.length === 0) return Swal.fire('Oops', 'No payments to verify!', 'info');
+    
+    if(!confirm(`Are you sure you want to verify all ${window.pendingVerifications.length} payments?`)) return;
+
+    Swal.fire({title: 'Verifying All...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        const batch = writeBatch(db);
+        window.pendingVerifications.forEach(id => {
+            batch.update(doc(db, "transactions", id), { paymentVerified: true });
+        });
+        await batch.commit();
+        Swal.fire({title: 'All Verified!', text: 'The cashiers alarms are now cleared.', icon: 'success', timer: 2000, showConfirmButton: false});
+        window.loadUnverifiedHistory();
+    } catch(e) {
+        Swal.fire('Error', 'Failed to verify payments.', 'error');
+    }
+};
+
+// 4. Background Scanner for the Sidebar Badge
+window.updateUnverifiedBadges = function(count) {
+    let badge1 = document.getElementById('badgeUnverifiedTx');
+    let badge2 = document.getElementById('sidebarBadgeUnverified');
+    if(badge1) { badge1.innerText = count; badge1.style.display = count > 0 ? 'inline-block' : 'none'; }
+    if(badge2) { badge2.innerText = count; badge2.style.display = count > 0 ? 'inline-block' : 'none'; }
+};
+
+window.startManagerUnverifiedScanner = function() {
+    setInterval(async () => {
+        try {
+            let lookBack = new Date();
+            lookBack.setDate(lookBack.getDate() - 7);
+            const q = query(collection(db, "transactions"), where("timestamp", ">=", lookBack));
+            const snap = await getDocs(q);
+            
+            let count = 0;
+            snap.forEach(doc => {
+                let tx = doc.data();
+                let method = (tx.paymentMethod || '').toLowerCase();
+                if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) count++;
+            });
+            window.updateUnverifiedBadges(count);
+        } catch(e) {}
+    }, 30000); // Scans in the background every 30 seconds
+};
+
+setTimeout(window.startManagerUnverifiedScanner, 4000); // Start scanner on boot
