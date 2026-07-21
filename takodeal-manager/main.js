@@ -17822,7 +17822,6 @@ window.reviewStockRequest = async function(docId) {
         }
         itemsHtml += `</tbody></table></div>`;
 
-        // Launch the Approval Window with the 3 correct buttons!
         let actionResult = await Swal.fire({
             title: `📦 Request from ${data.branch}`,
             html: itemsHtml,
@@ -17839,25 +17838,54 @@ window.reviewStockRequest = async function(docId) {
         });
 
         if (actionResult.isConfirmed) {
-            // 🔥 LOAD ITEMS TO DISPATCH CART
-            document.getElementById('dispTo').value = data.branch; // Auto-set destination branch
-            
+            // 🔥 THE MEMORY FIX: Properly map fields and save to LocalStorage so it survives the tab switch!
             if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
             
             data.items.forEach(reqItem => {
-                window.dispatchCart.push({
-                    id: reqItem.sourceId || reqItem.id,
-                    name: reqItem.itemName,
-                    qty: reqItem.displayQty || reqItem.qty,
-                    uom: reqItem.displayUom || reqItem.uom,
-                    baseQty: reqItem.qty, 
-                    baseUom: reqItem.uom
-                });
+                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === reqItem.itemName);
+                let rawReqQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
+                let baseReqQty = parseFloat(reqItem.qty) || 0;
+                
+                if (existing) {
+                    existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
+                    existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
+                } else {
+                    window.dispatchCart.push({
+                        itemName: reqItem.itemName,
+                        name: reqItem.itemName,
+                        rawQty: rawReqQty, 
+                        qty: baseReqQty,
+                        uom: reqItem.displayUom || reqItem.uom,
+                        baseUom: reqItem.uom,
+                        friendlyUom: reqItem.displayUom || reqItem.uom,
+                        selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
+                        convRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
+                        conversionRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
+                        sourceId: reqItem.sourceId || reqItem.id,
+                        requestType: reqItem.requestType || 'Request',
+                        physicalStock: reqItem.physicalStock || 0,
+                        systemStock: reqItem.systemStock || 0
+                    });
+                }
             });
 
-            if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
-            if (typeof window.switchView === 'function') window.switchView('dispatch'); // Jump to Dispatch tab
+            // 💾 SAVE TO BROWSER MEMORY (This prevents the cart from wiping when the tab switches!)
+            localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
             
+            // Auto-set the destination dropdown memory
+            localStorage.setItem('takodeal_dispatch_to', data.branch);
+
+            // Link the PO ID so "Clear Cart" or "Send Dispatch" knows which request to update!
+            let activePo = localStorage.getItem('takodeal_active_po') || "";
+            if (!activePo.includes(docId)) {
+                activePo = activePo ? activePo + ',' + docId : docId;
+                localStorage.setItem('takodeal_active_po', activePo);
+            }
+
+            // Jump to the Dispatch Tab
+            if (typeof window.switchView === 'function') window.switchView('dispatch'); 
+            
+            // Update the Database
             await updateDoc(docRef, {
                 status: 'Approved',
                 managerMessage: 'Approved and loaded into Dispatch Cart.',
