@@ -1116,7 +1116,9 @@ window.loadAlerts = window.loadPurchasesAndAlerts;
 // --- THE RESTOCK MODAL LOGIC ---
 window.openMultiRestockModal = async function (preSelectId = null) {
   document.getElementById('restockModal').style.display = 'flex';
-  restockCart = [];
+  
+  // 🔥 THE FIX: Strictly bind this to the window so the Confirm button can see it!
+  window.restockCart = [];
   window.renderRestockCart();
 
   if (window.globalInventoryList.length === 0) {
@@ -1124,7 +1126,7 @@ window.openMultiRestockModal = async function (preSelectId = null) {
     snap.forEach(d => { let obj = d.data(); obj.id = d.id; window.globalInventoryList.push(obj); });
   }
 
-  // 🔥 THE FIX: Transform the Dropdown into a Smart Search Bar
+  // Transform the Dropdown into a Smart Search Bar
   let itemInput = document.getElementById('restockItemSelect');
   if (itemInput.tagName === 'SELECT') {
       let newInput = document.createElement('input');
@@ -1141,7 +1143,6 @@ window.openMultiRestockModal = async function (preSelectId = null) {
   let hqList = window.globalInventoryList.filter(i => i.branch === "Main Office");
   let sortedList = hqList.sort((a, b) => a.name.localeCompare(b.name));
 
-  // Build the invisible datalist for the search bar
   let datalistHtml = '<datalist id="restockDatalist">';
   sortedList.forEach(item => {
     let stockDisplay = `${parseFloat(item.currentStock || 0).toFixed(1)} ${item.uom}`;
@@ -1155,7 +1156,6 @@ window.openMultiRestockModal = async function (preSelectId = null) {
       document.getElementById('restockDatalist').innerHTML = datalistHtml.replace('<datalist id="restockDatalist">', '').replace('</datalist>', '');
   }
 
-  // If a preSelectId was passed from an alert button, auto-fill the search bar
   if (preSelectId) {
       let preItem = window.globalInventoryList.find(i => i.id === preSelectId);
       if (preItem) itemInput.value = preItem.name;
@@ -1168,7 +1168,6 @@ window.updateRestockUomLabel = function () {
   let itemName = document.getElementById('restockItemSelect').value.trim();
   let label = document.getElementById('restockQtyLabel');
   
-  // 🔥 THE FIX: Injecting the Cost Input next to the Qty Input!
   let costContainer = document.getElementById('restockCostContainer');
   if (!costContainer) {
       let qtyInputParent = document.getElementById('restockQtyInput').parentElement;
@@ -1202,15 +1201,28 @@ window.addRestockToCart = function () {
   let convRate = parseFloat(item.conversionRate) || 1;
   let baseQtyToAdd = purchQty * convRate;
 
-  let existing = restockCart.find(i => i.id === item.id);
+  // 🔥 THE FIX: Strictly use window.restockCart
+  if (typeof window.restockCart === 'undefined') window.restockCart = [];
+  
+  let existing = window.restockCart.find(i => i.id === item.id);
   if (existing) {
       existing.purchQty += purchQty;
+      existing.qty += purchQty; // Update the missing qty reference!
       existing.baseQtyToAdd += baseQtyToAdd;
       existing.totalCost += (totalCost || 0);
   } else {
-      restockCart.push({
-        id: item.id, name: item.name, branch: item.branch, purchQty: purchQty, purchUom: item.purchaseUom || 'units',
-        baseQtyToAdd: baseQtyToAdd, baseUom: item.uom, totalCost: totalCost || 0, supplier: supplierName 
+      window.restockCart.push({
+        id: item.id, 
+        name: item.name, 
+        branch: item.branch, 
+        purchQty: purchQty, 
+        qty: purchQty, // 🔥 THE FIX: Added so the Confirm math and Invoice Viewer work perfectly!
+        conversionRate: convRate, // 🔥 THE FIX: Saves the exact conversion rate for reverting!
+        purchUom: item.purchaseUom || 'units',
+        baseQtyToAdd: baseQtyToAdd, 
+        baseUom: item.uom, 
+        totalCost: totalCost || 0, 
+        supplier: supplierName 
       });
   }
 
@@ -1221,14 +1233,13 @@ window.addRestockToCart = function () {
 };
 
 window.removeRestockItem = function (index) {
-  restockCart.splice(index, 1);
+  window.restockCart.splice(index, 1);
   window.renderRestockCart();
 };
 
 window.renderRestockCart = function () {
   let tbody = document.getElementById('restockCartBody');
   
-  // 🔥 THE FIX: Inject a scrollable container around the table!
   let table = tbody.closest('table');
   if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
       let wrapper = document.createElement('div');
@@ -1241,10 +1252,14 @@ window.renderRestockCart = function () {
       wrapper.appendChild(table);
   }
 
-  if (restockCart.length === 0) { tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:var(--text-muted); padding:15px;">Cart is empty.</td></tr>'; return; }
+  // 🔥 THE FIX: Strictly use window.restockCart
+  if (!window.restockCart || window.restockCart.length === 0) { 
+      tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:var(--text-muted); padding:15px;">Cart is empty.</td></tr>'; 
+      return; 
+  }
 
   let html = '';
-  restockCart.forEach((cartItem, idx) => {
+  window.restockCart.forEach((cartItem, idx) => {
     html += `
       <tr>
         <td style="padding: 10px;">
@@ -1289,16 +1304,15 @@ window.confirmMultiRestock = async function() {
         // 1. Process each item mathematically into the inventory
         for (let item of window.restockCart) {
             let docRef = doc(db, "inventory", item.id);
-            // 🔥 THE FIX: Fetch Live Firebase Data to prevent simultaneous math collisions!
             let snap = await getDoc(docRef);
             if (snap.exists()) {
                 let data = snap.data();
                 let oldQty = parseFloat(data.currentStock || 0);
                 
                 let convRate = parseFloat(item.conversionRate || data.conversionRate || data.conversion || 1);
-                let addBaseQty = parseFloat(item.qty) * convRate;
+                // 🔥 THE FIX: Now perfectly calculates using the newly mapped item.qty
+                let addBaseQty = parseFloat(item.qty) * convRate; 
                 
-                // 🔥 THE GHOST DEBT FIX: If it was negative, ignore it and treat old stock as 0
                 let baseStockMath = oldQty < 0 ? 0 : oldQty;
                 let newQty = baseStockMath + addBaseQty;
 
@@ -1306,7 +1320,6 @@ window.confirmMultiRestock = async function() {
 
                 let wipeNote = oldQty < 0 ? ` (Wiped ${oldQty.toFixed(2)} negative ghost debt)` : '';
 
-                // 🔥 THE LEDGER FIX: Ensure it correctly writes to stock_logs so it appears in the Trace Modal!
                 await addDoc(collection(db, "stock_logs"), {
                     branch: data.branch || "Main Office",
                     item: data.name || item.name,
