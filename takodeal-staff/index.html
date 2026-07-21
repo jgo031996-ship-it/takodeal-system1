@@ -13,11 +13,13 @@
     <div id="loginOverlay" class="overlay">
         <div class="login-card">
             <div class="login-header">
-                <div class="login-logo">🐙</div>
+                <!-- 🐙 SQUID REMOVED, LOGO INJECTED -->
+                <img src="logo.jpg" alt="Takodeál" class="login-logo">
                 <h2>Staff Portal</h2>
                 <p>Welcome back! Please enter your PIN.</p>
             </div>
-            <input type="password" id="loginPin" placeholder="4-Digit PIN" maxlength="4" autocomplete="off">
+            <!-- 🛑 4-DIGIT LIMIT REMOVED -->
+            <input type="password" id="loginPin" placeholder="Enter PIN" autocomplete="off">
             <button class="btn-primary" onclick="window.loginStaff()">Secure Login</button>
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
         </div>
