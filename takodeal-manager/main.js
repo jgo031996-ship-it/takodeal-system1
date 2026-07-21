@@ -18247,7 +18247,6 @@ window.loadUnverifiedHistory = async function() {
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; font-weight: bold; color: #64748b;">⏳ Scanning database for unverified payments...</td></tr>';
     
     try {
-        // Fetch last 7 days to catch forgotten overnight shifts
         let lookBack = new Date();
         lookBack.setDate(lookBack.getDate() - 7);
         
@@ -18259,12 +18258,21 @@ window.loadUnverifiedHistory = async function() {
         let count = 0;
 
         let txArray = [];
+        // 🛡️ THE DEDUPLICATOR MEMORY
+        let seenReceipts = {}; 
+
         snap.forEach(doc => {
             let tx = doc.data();
             let method = (tx.paymentMethod || '').toLowerCase();
-            // Look for valid transactions that are NOT cash and NOT verified
             if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
-                txArray.push({id: doc.id, ...tx});
+                
+                let rId = tx.receiptId || tx.id;
+                
+                // 🔥 ONLY ADD IT IF WE HAVEN'T SEEN THIS EXACT RECEIPT YET
+                if (!seenReceipts[rId]) {
+                    seenReceipts[rId] = true;
+                    txArray.push({id: doc.id, ...tx});
+                }
             }
         });
 
