@@ -5,10 +5,143 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Takodeál Staff Portal</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
-<body style="background-color: #F8F6F0; font-family: sans-serif; text-align: center; padding-top: 50px;">
-    <h1 style="color: #2C2421;">👨‍🍳 Takodeál Staff Portal</h1>
-    <p style="color: #E5A93D;">Booting up system...</p>
-    <script src="main.js" type="module"></script>
+<body>
+
+    <!-- 🔒 LOGIN OVERLAY -->
+    <div id="loginOverlay" class="overlay">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo">🐙</div>
+                <h2>Staff Portal</h2>
+                <p>Welcome back! Please enter your PIN.</p>
+            </div>
+            <input type="password" id="loginPin" placeholder="4-Digit PIN" maxlength="4" autocomplete="off">
+            <button class="btn-primary" onclick="window.loginStaff()">Secure Login</button>
+            <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
+        </div>
+    </div>
+
+    <!-- 📱 MAIN APP CONTAINER -->
+    <div id="appContainer" style="display: none;">
+        
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="header-left">
+                <span id="staffAvatar" class="avatar">👤</span>
+                <div class="header-text">
+                    <span class="greeting">Hello,</span>
+                    <strong id="loggedInName">Staff Name</strong>
+                </div>
+            </div>
+            <button class="btn-logout" onclick="window.logoutStaff()">Sign Out</button>
+        </header>
+
+        <!-- VIEWS -->
+        <main class="content-area">
+            
+            <!-- 📢 BULLETIN BOARD -->
+            <div id="view-bulletin" class="view active">
+                <div class="view-header">
+                    <h2>📢 Bulletin Board</h2>
+                    <p>Latest corporate announcements and updates.</p>
+                </div>
+                <div id="bulletinList">
+                    <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading announcements...</div>
+                </div>
+            </div>
+
+            <!-- ⏱️ TIME CLOCK -->
+            <div id="view-timeclock" class="view">
+                <div class="view-header">
+                    <h2>⏱️ Time Clock</h2>
+                    <p>GPS verified attendance logging.</p>
+                </div>
+                <div class="clock-card">
+                    <h1 id="liveTime">00:00 AM</h1>
+                    <p id="liveDate">Loading Date...</p>
+                    <div class="location-status" id="gpsStatus">📍 Verifying GPS Location...</div>
+                    
+                    <div class="clock-actions">
+                        <button class="btn-timein" onclick="window.punchTime('IN')">TIME IN</button>
+                        <button class="btn-timeout" onclick="window.punchTime('OUT')">TIME OUT</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 📥 REQUESTS -->
+            <div id="view-requests" class="view">
+                <div class="view-header">
+                    <h2>📥 Staff Requests</h2>
+                    <p>File leaves, advances, and view manager replies.</p>
+                </div>
+                <div class="request-grid">
+                    <button class="req-card" onclick="window.openReqForm('leave')">🏖️<br>Leave</button>
+                    <button class="req-card" onclick="window.openReqForm('advance')">💸<br>Cash Advance</button>
+                    <button class="req-card" onclick="window.openReqForm('meal')">🍔<br>Staff Meal</button>
+                    <button class="req-card" onclick="window.openReqForm('inbox')">📬<br>My Inbox</button>
+                </div>
+            </div>
+
+            <!-- 🗓️ SCHEDULE -->
+            <div id="view-schedule" class="view">
+                <div class="view-header">
+                    <h2>🗓️ My Schedule</h2>
+                    <p>Your assigned shifts for the current month.</p>
+                </div>
+                <div id="scheduleContainer">
+                    <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading schedule...</div>
+                </div>
+            </div>
+
+            <!-- 📋 SOP CHECKLIST -->
+            <div id="view-sop" class="view">
+                <div class="view-header">
+                    <h2>📋 Daily SOP</h2>
+                    <p>Complete your branch tasks and requirements.</p>
+                </div>
+                <div id="sopContainer">
+                    <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading tasks...</div>
+                </div>
+            </div>
+
+            <!-- 💸 PAYSLIPS -->
+            <div id="view-payslip" class="view">
+                <div class="view-header">
+                    <h2>💸 Payslip Vault</h2>
+                    <p>Digital records for the 3rd & 17th GoTyme cutoffs.</p>
+                </div>
+                <div id="payslipContainer">
+                    <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading payslips...</div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- BOTTOM NAVIGATION -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" onclick="window.switchView('bulletin', this)">
+                <span class="icon">📢</span><span>News</span>
+            </button>
+            <button class="nav-item" onclick="window.switchView('timeclock', this)">
+                <span class="icon">⏱️</span><span>Clock</span>
+            </button>
+            <button class="nav-item" onclick="window.switchView('requests', this)">
+                <span class="icon">📥</span><span>Reqs</span>
+            </button>
+            <button class="nav-item" onclick="window.switchView('schedule', this)">
+                <span class="icon">🗓️</span><span>Sched</span>
+            </button>
+            <button class="nav-item" onclick="window.switchView('sop', this)">
+                <span class="icon">📋</span><span>SOP</span>
+            </button>
+            <button class="nav-item" onclick="window.switchView('payslip', this)">
+                <span class="icon">💸</span><span>Pay</span>
+            </button>
+        </nav>
+    </div>
+
+    <script type="module" src="main.js"></script>
 </body>
 </html>
