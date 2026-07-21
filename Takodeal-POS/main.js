@@ -3000,177 +3000,6 @@ window.submitStaffRequest = async function(requestType) {
 };
 
 // ==========================================
-// 🔪 KITCHEN PREP ENGINE & CART SYSTEM
-// ==========================================
-window.kitchenPrepCart = [];
-
-window.loadKitchenPrep = async function() {
-    let container = document.getElementById('kitchenPrepList');
-    if (!container) return;
-    
-    let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : null);
-    if (!branch) {
-        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Error: Cannot detect your branch.</div>`;
-        return;
-    }
-
-    container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
-
-    try {
-        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
-        let allowedCats = ["Prepared Batch"]; 
-        if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
-            allowedCats = configSnap.data().kitchenPrepCats.map(c => c.trim().toLowerCase());
-        }
-
-        const q = query(collection(db, "inventory"), where("branch", "==", branch));
-        const snap = await getDocs(q);
-        
-        let html = '';
-        let hasItems = false;
-        
-        let items = [];
-        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-
-        items.forEach(d => {
-            let itemCat = (d.category || "").trim().toLowerCase();
-            if (!allowedCats.includes(itemCat)) return;
-            if (d.showInPrep === false) return;
-            
-            hasItems = true;
-         
-            let baseUom = d.uom || d.baseUom || 'units';
-            let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
-
-            let imgSrc = d.image || d.imageUrl;
-            let iconHtml = imgSrc 
-                ? `<img src="${imgSrc}" style="width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 2px solid #e2e8f0; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">` 
-                : `<div style="width: 55px; height: 55px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 10px; border: 2px solid #e2e8f0;">🔪</div>`;
-
-            // 🔥 THE BUTTON FIX: Changed to a blue "Add to Cart" button that triggers the new function!
-            html += `
-                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; transition: transform 0.2s;">
-                    ${iconHtml}
-                    <h3 style="margin: 0 0 5px 0; color: #1e293b; font-size: 16px; font-weight: 900;">${d.name}</h3>
-                    <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(parseFloat(d.currentStock)||0).toFixed(1)} ${baseUom}</span>
-                    
-                    <button onclick="window.addToPrepCart('${d.id}', '${d.name.replace(/'/g, "\\'")}', '${branch}', '${purchUom}', '${baseUom}')" style="background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(2, 132, 199, 0.3); font-size: 14px; transition: 0.2s;">
-                        + Add to Cart (${purchUom})
-                    </button>
-                </div>
-            `;
-        });
-        
-        if (!hasItems) {
-            html = `<div style="text-align:center; padding:40px; color:#94a3b8; grid-column:1/-1;">
-                <span style="font-size: 40px; display: block; margin-bottom: 15px;">🕵️‍♂️</span>
-                No Kitchen Prep items found.<br>In your Manager App > POS Config Hub, ensure "Kitchen Prep Categories" matches the categories of your prep items (e.g. Prepared Batch).
-            </div>`;
-        }
-        
-        container.innerHTML = html;
-        window.renderPrepCart(); // Make sure the cart renders on load!
-    } catch (e) {
-        console.error("Prep Load Error:", e);
-        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1; padding: 20px;">Failed to load items. Check connection.</div>`;
-    }
-};
-
-window.confirmPrepCart = async function() {
-    if (!window.kitchenPrepCart || window.kitchenPrepCart.length === 0) {
-        return Swal.fire('Cart Empty', 'Please add items to the prep cart first.', 'warning');
-    }
-
-    const confirmResult = await Swal.fire({
-        title: 'Confirm Kitchen Prep',
-        html: `<div style="color: #475569;">You are about to securely log <strong>${window.kitchenPrepCart.length}</strong> batch(es) to your live inventory.<br><br><span style="font-size: 12px; color: #64748b;">This will automatically deduct the raw ingredients used.</span></div>`,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: '✅ Yes, Log Everything!',
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#ef4444',
-        customClass: { popup: 'rounded-2xl shadow-2xl' }
-    });
-
-    if (!confirmResult.isConfirmed) return;
-
-    Swal.fire({ title: 'Processing...', text: 'Updating inventory & recipes...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-
-    try {
-        let missingItems = [];
-        let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
-        let totalItemsLogged = 0;
-
-        for (let item of window.kitchenPrepCart) {
-            const invRef = doc(db, "inventory", item.id);
-            const invSnap = await getDoc(invRef);
-            
-            if (invSnap.exists()) {
-                let invData = invSnap.data();
-                let currentStock = invData.currentStock || 0;
-                
-                let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
-                let baseQtyToAdd = item.purchQty * convRate;
-
-                // 1. Add yield to prepared stock
-                await updateDoc(invRef, { currentStock: currentStock + baseQtyToAdd });
-
-                // 2. Deduct raw ingredients via BOM
-                const bomQ = query(collection(db, "bom"), where("menuItem", "==", item.name));
-                const bomSnap = await getDocs(bomQ);
-
-                if (!bomSnap.empty) {
-                    for (let bomDoc of bomSnap.docs) {
-                        let recipe = bomDoc.data();
-                        let rawIngredient = recipe.ingredientName;
-                        let totalAmountToDeduct = (recipe.qty || 0) * item.purchQty; 
-
-                        const rawQ = query(collection(db, "inventory"), where("branch", "==", item.branch), where("name", "==", rawIngredient));
-                        const rawSnap = await getDocs(rawQ);
-
-                        if (!rawSnap.empty) {
-                            let rawRef = rawSnap.docs[0].ref;
-                            let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
-                            await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
-                        } else {
-                            if (!missingItems.includes(rawIngredient)) missingItems.push(rawIngredient);
-                        }
-                    }
-                }
-
-                // 3. Log the history
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: item.branch, item: item.name, variance: baseQtyToAdd, uom: item.baseUom,
-                    purchUom: item.purchUom, purchQty: item.purchQty, 
-                    type: "End-of-Shift Kitchen Prep", note: `Prepared ${item.purchQty} ${item.purchUom}(s) by ${safeCashierName}`, timestamp: new Date()
-                });
-                
-                totalItemsLogged++;
-            }
-        }
-
-        // 🌟 FINAL NOTIFICATION
-        let msg = `<div style="text-align: left; font-size: 14px;">✅ Successfully logged <strong>${totalItemsLogged}</strong> batches to the vault.`;
-        if (missingItems.length > 0) {
-            msg += `<br><br><span style="color: #dc2626;">⚠️ <strong>Warning:</strong> The following raw ingredients are missing from the ${window.kitchenPrepCart[0].branch} warehouse and were not deducted: <strong>${missingItems.join(", ")}</strong></span>`;
-        }
-        msg += `</div>`;
-        
-        Swal.fire({ title: 'Success!', html: msg, icon: 'success', confirmButtonColor: '#16a34a', customClass: { popup: 'rounded-2xl' } });
-        
-        // Clear cart and reset screen
-        window.kitchenPrepCart = [];
-        window.renderPrepCart();
-        window.loadKitchenPrep(); 
-        
-    } catch (e) {
-        console.error("Prep Batch Error:", e);
-        Swal.fire('Error', '❌ Failed to log prep batch. Check connection.', 'error');
-    }
-};
-
-// ==========================================
 // 📱 MOBILE ORDERS ENGINE & LISTENER
 // ==========================================
 window.mobileOrdersList = [];
@@ -7223,47 +7052,118 @@ setTimeout(window.fetchLoginRanking, 2000); // Run once on boot
 setInterval(window.fetchLoginRanking, 30000); // Auto-update every 30 seconds
 
 // ==========================================
-// 🔪 KITCHEN PREP CART ENGINE
+// 🔪 KITCHEN PREP ENGINE & CART SYSTEM (UNIFIED)
 // ==========================================
 window.kitchenPrepCart = [];
 
-window.addToPrepCart = async function(itemName, uom) {
-    // Ask the staff for the quantity before adding it to the cart
-    const { value: qty } = await Swal.fire({
-        title: `Prep ${itemName}`,
-        input: 'number',
-        inputLabel: `Enter quantity (${uom})`,
-        inputPlaceholder: 'e.g. 1, 2, 5',
-        showCancelButton: true,
-        confirmButtonColor: '#d97706',
-        inputValidator: (value) => {
-            if (!value || parseFloat(value) <= 0) return 'Please enter a valid quantity!';
-        },
-        customClass: { popup: 'rounded-2xl' }
-    });
+window.loadKitchenPrep = async function() {
+    let container = document.getElementById('kitchenPrepList');
+    if (!container) return;
+    
+    let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : null);
+    if (!branch) {
+        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1;">Error: Cannot detect your branch.</div>`;
+        return;
+    }
 
-    if (qty) {
-        let parsedQty = parseFloat(qty);
-        let existing = window.kitchenPrepCart.find(i => i.name === itemName);
+    container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
 
-        // Merge quantities if they add the same item twice
-        if (existing) {
-            existing.qty += parsedQty;
-        } else {
-            window.kitchenPrepCart.push({
-                name: itemName,
-                qty: parsedQty,
-                uom: uom
-            });
+    try {
+        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+        let allowedCats = ["Prepared Batch"]; 
+        if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
+            allowedCats = configSnap.data().kitchenPrepCats.map(c => c.trim().toLowerCase());
         }
 
-        window.renderPrepCart();
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
         
-        Swal.fire({
-            toast: true, position: 'top-end', icon: 'success',
-            title: 'Added to Prep Cart', showConfirmButton: false, timer: 1500
+        let html = '';
+        let hasItems = false;
+        
+        let items = [];
+        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+        items.forEach(d => {
+            let itemCat = (d.category || "").trim().toLowerCase();
+            if (!allowedCats.includes(itemCat)) return;
+            if (d.showInPrep === false) return;
+            
+            hasItems = true;
+         
+            let baseUom = d.uom || d.baseUom || 'units';
+            let purchUom = d.purchaseUom || d.purchUom || 'Batch'; 
+
+            let imgSrc = d.image || d.imageUrl;
+            let iconHtml = imgSrc 
+                ? `<img src="${imgSrc}" style="width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 2px solid #e2e8f0; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">` 
+                : `<div style="width: 55px; height: 55px; background: #f8fafc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 10px; border: 2px solid #e2e8f0;">🔪</div>`;
+
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; transition: transform 0.2s;">
+                    ${iconHtml}
+                    <h3 style="margin: 0 0 5px 0; color: #1e293b; font-size: 16px; font-weight: 900;">${d.name}</h3>
+                    <span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 15px;">Stock: ${(parseFloat(d.currentStock)||0).toFixed(1)} ${baseUom}</span>
+                    
+                    <button onclick="window.addToPrepCart('${d.id}', '${d.name.replace(/'/g, "\\'")}', '${branch}', '${purchUom}', '${baseUom}')" style="background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(2, 132, 199, 0.3); font-size: 14px; transition: 0.2s;">
+                        + Add to Cart (${purchUom})
+                    </button>
+                </div>
+            `;
+        });
+        
+        if (!hasItems) {
+            html = `<div style="text-align:center; padding:40px; color:#94a3b8; grid-column:1/-1;">
+                <span style="font-size: 40px; display: block; margin-bottom: 15px;">🕵️‍♂️</span>
+                No Kitchen Prep items found.<br>In your Manager App > POS Config Hub, ensure "Kitchen Prep Categories" matches the categories of your prep items (e.g. Prepared Batch).
+            </div>`;
+        }
+        
+        container.innerHTML = html;
+        window.renderPrepCart(); 
+    } catch (e) {
+        console.error("Prep Load Error:", e);
+        container.innerHTML = `<div style="color:#ef4444; text-align:center; grid-column:1/-1; padding: 20px;">Failed to load items. Check connection.</div>`;
+    }
+};
+
+window.addToPrepCart = async function(invId, itemName, branch, purchUom, baseUom) {
+    if (!purchUom || purchUom === 'undefined') purchUom = 'Batch';
+    if (!baseUom || baseUom === 'undefined') baseUom = 'units';
+
+    const { value: qtyRaw } = await Swal.fire({
+        title: 'Add to Prep Cart',
+        html: `<div style="margin-bottom: 10px; color: #475569; font-size: 15px;">How many <strong>${purchUom}s</strong> of <strong style="color: #0f172a;">${itemName}</strong>?</div>`,
+        input: 'number',
+        inputPlaceholder: `Enter number of ${purchUom}s...`,
+        inputAttributes: { min: 0.1, step: 'any' },
+        showCancelButton: true,
+        confirmButtonText: '➕ Add to Cart',
+        confirmButtonColor: '#0ea5e9',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
+    });
+
+    if (!qtyRaw) return; 
+    let parsedQty = parseFloat(qtyRaw);
+
+    let existing = window.kitchenPrepCart.find(i => i.id === invId);
+    if (existing) {
+        existing.purchQty += parsedQty; 
+    } else {
+        window.kitchenPrepCart.push({
+            id: invId,
+            name: itemName,
+            branch: branch,
+            purchQty: parsedQty,
+            purchUom: purchUom,
+            baseUom: baseUom
         });
     }
+
+    window.renderPrepCart();
+    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Added to Cart', showConfirmButton: false, timer: 1500 });
 };
 
 window.removeFromPrepCart = function(index) {
@@ -7283,15 +7183,103 @@ window.renderPrepCart = function() {
     let html = '';
     window.kitchenPrepCart.forEach((item, index) => {
         html += `
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 10px; border-bottom: 1px solid #e2e8f0; background: white;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; background: white;">
                 <div>
                     <strong style="color: #0f172a; font-size: 14px;">${item.name}</strong><br>
-                    <span style="color: #059669; font-weight: bold; font-size: 13px;">${item.qty} ${item.uom}</span>
+                    <span style="color: #0ea5e9; font-weight: bold; font-size: 13px;">+${item.purchQty} ${item.purchUom}</span>
                 </div>
-                <button onclick="window.removeFromPrepCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer;">✖ Remove</button>
+                <button onclick="window.removeFromPrepCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer;">✖</button>
             </div>
         `;
     });
 
     container.innerHTML = html;
+};
+
+window.confirmPrepCart = async function() {
+    if (!window.kitchenPrepCart || window.kitchenPrepCart.length === 0) {
+        return Swal.fire('Cart Empty', 'Please add items to the prep cart first.', 'warning');
+    }
+
+    const confirmResult = await Swal.fire({
+        title: 'Confirm Kitchen Prep',
+        html: `<div style="color: #475569;">You are about to securely log <strong>${window.kitchenPrepCart.length}</strong> batch(es) to your live inventory.<br><br><span style="font-size: 12px; color: #64748b;">This will automatically deduct the raw ingredients used.</span></div>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: '✅ Yes, Log Everything!',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#ef4444',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    Swal.fire({ title: 'Processing...', text: 'Updating inventory & recipes...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+
+    try {
+        let missingItems = [];
+        let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
+        let totalItemsLogged = 0;
+
+        for (let item of window.kitchenPrepCart) {
+            const invRef = doc(db, "inventory", item.id);
+            const invSnap = await getDoc(invRef);
+            
+            if (invSnap.exists()) {
+                let invData = invSnap.data();
+                let currentStock = invData.currentStock || 0;
+                
+                let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
+                let baseQtyToAdd = item.purchQty * convRate;
+
+                await updateDoc(invRef, { currentStock: currentStock + baseQtyToAdd });
+
+                const bomQ = query(collection(db, "bom"), where("menuItem", "==", item.name));
+                const bomSnap = await getDocs(bomQ);
+
+                if (!bomSnap.empty) {
+                    for (let bomDoc of bomSnap.docs) {
+                        let recipe = bomDoc.data();
+                        let rawIngredient = recipe.ingredientName;
+                        let totalAmountToDeduct = (recipe.qty || 0) * item.purchQty; 
+
+                        const rawQ = query(collection(db, "inventory"), where("branch", "==", item.branch), where("name", "==", rawIngredient));
+                        const rawSnap = await getDocs(rawQ);
+
+                        if (!rawSnap.empty) {
+                            let rawRef = rawSnap.docs[0].ref;
+                            let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
+                            await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
+                        } else {
+                            if (!missingItems.includes(rawIngredient)) missingItems.push(rawIngredient);
+                        }
+                    }
+                }
+
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: item.branch, item: item.name, variance: baseQtyToAdd, uom: item.baseUom,
+                    purchUom: item.purchUom, purchQty: item.purchQty, 
+                    type: "End-of-Shift Kitchen Prep", note: `Prepared ${item.purchQty} ${item.purchUom}(s) by ${safeCashierName}`, timestamp: new Date()
+                });
+                
+                totalItemsLogged++;
+            }
+        }
+
+        let msg = `<div style="text-align: left; font-size: 14px;">✅ Successfully logged <strong>${totalItemsLogged}</strong> batches to the vault.`;
+        if (missingItems.length > 0) {
+            msg += `<br><br><span style="color: #dc2626;">⚠️ <strong>Warning:</strong> The following raw ingredients are missing from the ${window.kitchenPrepCart[0].branch} warehouse and were not deducted: <strong>${missingItems.join(", ")}</strong></span>`;
+        }
+        msg += `</div>`;
+        
+        Swal.fire({ title: 'Success!', html: msg, icon: 'success', confirmButtonColor: '#16a34a', customClass: { popup: 'rounded-2xl' } });
+        
+        window.kitchenPrepCart = [];
+        window.renderPrepCart();
+        window.loadKitchenPrep(); 
+        
+    } catch (e) {
+        console.error("Prep Batch Error:", e);
+        Swal.fire('Error', '❌ Failed to log prep batch. Check connection.', 'error');
+    }
 };
