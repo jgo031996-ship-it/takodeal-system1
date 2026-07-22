@@ -58,13 +58,12 @@ window.requestDeviceAccess = async function() {
         // Generate a standard unique ID
         const newDeviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
-        // Send payload explicitly mapping to the fields your Manager App table renders
-        await setDoc(doc(db, "devices", newDeviceId), {
+        // 🔥 THE FIX: Perfectly matches your Manager App's database structure!
+        await setDoc(doc(db, "pos_devices", newDeviceId), {
             deviceName: name + " (Staff)",
-            branch: "Main Office",
+            branch: "Main Office", // Forces it into the Main Office view
             status: "Blocked",
-            registrationDate: new Date().toLocaleDateString('en-US'),
-            timestamp: serverTimestamp()
+            registeredAt: serverTimestamp() // Matches your Manager App's sorting logic!
         });
 
         localStorage.setItem('takodeal_device_id', newDeviceId);
@@ -77,6 +76,7 @@ window.requestDeviceAccess = async function() {
     }
 };
 
+// 🔥 ALSO UPDATE THIS LISTENER SO IT WATCHES THE CORRECT FOLDER!
 window.listenToDeviceStatus = function(deviceId) {
     document.getElementById('deviceAuthOverlay').style.display = 'flex';
     document.getElementById('registerCard').style.display = 'none';
@@ -84,7 +84,8 @@ window.listenToDeviceStatus = function(deviceId) {
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('appContainer').style.display = 'none';
 
-    onSnapshot(doc(db, "devices", deviceId), (docSnap) => {
+    // 🔥 THE FIX: Watch "pos_devices" instead of "devices"
+    onSnapshot(doc(db, "pos_devices", deviceId), (docSnap) => {
         if (docSnap.exists()) {
             let status = docSnap.data().status;
             if (status === 'Active') {
