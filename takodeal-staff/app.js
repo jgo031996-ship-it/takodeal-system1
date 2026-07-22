@@ -368,6 +368,7 @@ window.switchView = function(viewId, btnElement) {
     
     if (viewId === 'timeclock') window.startCameraAndGPS();
     else window.stopCamera();
+    if (viewId === 'payslip') window.loadPayslipVault();
 };
 
 // ==========================================
@@ -904,4 +905,167 @@ window.submitSopChecklist = async function() {
     } finally {
         btn.innerText = "🚀 Submit Completed Checklist"; btn.disabled = false;
     }
+};
+
+// ==========================================
+// 💸 PAYSLIP VAULT & LIVE ESTIMATOR ENGINE
+// ==========================================
+window.switchPayslipTab = function(tabName) {
+    let liveBtn = document.getElementById('btnTabLivePay');
+    let pastBtn = document.getElementById('btnTabPastPay');
+    
+    if (tabName === 'Live') {
+        liveBtn.style.background = '#0f766e'; liveBtn.style.color = 'white'; liveBtn.style.border = 'none';
+        pastBtn.style.background = 'transparent'; pastBtn.style.color = '#64748b'; pastBtn.style.border = 'none';
+        document.getElementById('payslipLiveSection').style.display = 'block';
+        document.getElementById('payslipPastSection').style.display = 'none';
+    } else {
+        pastBtn.style.background = '#0f172a'; pastBtn.style.color = 'white'; pastBtn.style.border = 'none';
+        liveBtn.style.background = 'transparent'; liveBtn.style.color = '#64748b'; liveBtn.style.border = 'none';
+        document.getElementById('payslipLiveSection').style.display = 'none';
+        document.getElementById('payslipPastSection').style.display = 'block';
+    }
+};
+
+window.loadPayslipVault = async function() {
+    let staffName = localStorage.getItem('takodeal_staff_name');
+    let staffId = localStorage.getItem('takodeal_staff_id');
+    if (!staffName || !staffId) return;
+
+    // 1. Calculate Current Cutoff Dates
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    let startDateStr, endDateStr;
+
+    if (today.getDate() <= 15) {
+        startDateStr = `${yyyy}-${mm}-01`;
+        endDateStr = `${yyyy}-${mm}-15`;
+    } else {
+        startDateStr = `${yyyy}-${mm}-16`;
+        let lastDay = new Date(yyyy, today.getMonth() + 1, 0).getDate();
+        endDateStr = `${yyyy}-${mm}-${String(lastDay).padStart(2, '0')}`;
+    }
+
+    document.getElementById('liveCutoffDates').innerText = `Cutoff Period: ${startDateStr} to ${endDateStr}`;
+    let startTimestamp = new Date(startDateStr + 'T00:00:00');
+    let endTimestamp = new Date(endDateStr + 'T23:59:59');
+
+    try {
+        // --- FETCH LIVE ESTIMATE DATA ---
+        const staffRef = await getDoc(doc(db, "cashiers", staffId));
+        let dailyRate = staffRef.exists() ? (parseFloat(staffRef.data().hourlyRate) || 0) : 0;
+        let ratePerHour = dailyRate / 8;
+
+        const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp));
+        const attSnap = await getDocs(attQ);
+
+        let totalHours = 0;
+        let totalLatePenalty = 0;
+        let activeShifts = {};
+
+        attSnap.forEach(docSnap => {
+            let log = docSnap.data();
+            let penalty = parseFloat(log.penaltyAmount) || 0;
+            totalLatePenalty += penalty;
+
+            if (log.type === "TIME IN") {
+                activeShifts[staffName] = log.timestamp.toDate();
+            } else if (log.type === "TIME OUT" && activeShifts[staffName]) {
+                let timeIn = activeShifts[staffName];
+                let timeOut = log.timestamp.toDate();
+                let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
+                if (hoursWorked <= 18) totalHours += hoursWorked; 
+                delete activeShifts[staffName];
+            }
+        });
+
+        let estGross = totalHours * ratePerHour;
+
+        const dedQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
+        const dedSnap = await getDocs(dedQ);
+        let unpaidVales = 0;
+        dedSnap.forEach(d => {
+            let val = parseFloat(d.data().amount) || 0;
+            unpaidVales += val;
+        });
+
+        let estNet = estGross - totalLatePenalty - unpaidVales;
+
+        document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstLates').innerText = '-₱' + totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+
+
+        // --- FETCH PAST PAYSLIPS VAULT ---
+        const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName), orderBy("processedAt", "desc"));
+        const prSnap = await getDocs(prQ);
+
+        let historyHtml = '';
+        prSnap.forEach(docSnap => {
+            let d = docSnap.data();
+            let pd = d.frozenData || {};
+            let dateStr = d.processedAt ? d.processedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
+            let safeData = encodeURIComponent(JSON.stringify(pd));
+
+            historyHtml += `
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
+                        <div style="font-size: 12px; color: #64748b;">Disbursed: ${dateStr}</div>
+                        <div style="font-size: 16px; font-weight: 900; color: #16a34a; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                    </div>
+                    <div>
+                        <button onclick="window.viewPastPayslip('${safeData}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">🔍 View Record</button>
+                    </div>
+                </div>
+            `;
+        });
+
+        document.getElementById('payslipHistoryList').innerHTML = historyHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
+
+    } catch (e) {
+        console.error("Payslip Fetch Error:", e);
+        document.getElementById('liveCutoffDates').innerText = "Error loading data.";
+        document.getElementById('payslipHistoryList').innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444;">Error connecting to HQ database.</div>';
+    }
+};
+
+window.viewPastPayslip = function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    
+    let html = `
+        <div style="text-align: left; font-size: 13px;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; margin-bottom: 15px;">
+                <span style="color: #64748b;">Cutoff Period:</span>
+                <strong style="color: #0f172a;">${d.start} to ${d.end}</strong>
+            </div>
+            
+            <strong style="color: #0f766e; display: block; margin-bottom: 5px; font-size: 14px;">Income</strong>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Basic Pay (${d.shiftsWorked} shifts):</span> <strong>₱${(d.basicPay||0).toFixed(2)}</strong></div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Night / OT Bonus:</span> <strong>₱${(d.nightBonus||0).toFixed(2)}</strong></div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Holiday Pay:</span> <strong>₱${(d.holidayPayTotal||0).toFixed(2)}</strong></div>
+            
+            <strong style="color: #dc2626; display: block; margin-top: 15px; margin-bottom: 5px; font-size: 14px;">Deductions</strong>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Late/Penalties:</span> <strong>-₱${(d.lateDeduction||0).toFixed(2)}</strong></div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Cash Advances:</span> <strong>-₱${(d.advances||0).toFixed(2)}</strong></div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Meals:</span> <strong>-₱${(d.meals||0).toFixed(2)}</strong></div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong>-₱${(d.loans||0).toFixed(2)}</strong></div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Gov't (SSS/PH/PAGIBIG):</span> <strong>-₱${((d.sss||0)+(d.philhealth||0)+(d.pagibig||0)).toFixed(2)}</strong></div>
+
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 2px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 16px; font-weight: bold; color: #334155;">NET PAID</span>
+                <span style="font-size: 24px; font-weight: 900; color: #16a34a;">₱${(d.finalNetPay||0).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            </div>
+        </div>
+    `;
+
+    Swal.fire({
+        title: `🧾 Payslip Record`,
+        html: html,
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#0f172a',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
 };
