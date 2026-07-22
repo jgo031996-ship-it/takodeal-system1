@@ -25,22 +25,79 @@
         </div>
     </div>
 
-    <!-- 👤 MY PROFILE MODAL -->
+    <!-- 👤 MY PROFILE MODAL (EXPANDED HR VERSION) -->
     <div id="profileModal" class="overlay" style="display: none; z-index: 10000;">
-        <div class="modal-card">
-            <h2 style="margin-top: 0; color: #0f766e;">My Profile</h2>
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img id="profilePreview" src="" alt="Profile" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid #ccfbf1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; margin: 0 auto 15px auto;">
-                <div id="profilePlaceholder" style="width: 120px; height: 120px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 15px auto; border: 4px solid #ccfbf1;">👤</div>
+        <div class="modal-card" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column; padding: 0;">
+            
+            <!-- Sticky Header -->
+            <div style="background: #0f766e; color: white; padding: 15px 20px; border-radius: 20px 20px 0 0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10;">
+                <h2 style="margin: 0; font-size: 18px;">📋 Employee Profile</h2>
+                <button onclick="document.getElementById('profileModal').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
+            </div>
+
+            <!-- Scrollable Body -->
+            <div style="padding: 20px; overflow-y: auto; flex: 1; text-align: left;">
                 
-                <input type="file" id="profileImageInput" accept="image/*" style="display: none;" onchange="window.previewProfileImage(event)">
-                <button class="btn-secondary" onclick="document.getElementById('profileImageInput').click()">📸 Choose New Picture</button>
-                <p style="font-size: 11px; color: #64748b; margin-top: 8px;">Upload a 1x1 or 2x2 professional photo for HQ.</p>
+                <!-- Profile Picture Area -->
+                <div style="text-align: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px dashed #e2e8f0;">
+                    <img id="profilePreview" src="" alt="Profile" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 4px solid #ccfbf1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; margin: 0 auto 10px auto;">
+                    <div id="profilePlaceholder" style="width: 100px; height: 100px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 10px auto; border: 4px solid #ccfbf1;">👤</div>
+                    
+                    <input type="file" id="profileImageInput" accept="image/*" style="display: none;" onchange="window.previewProfileImage(event)">
+                    <button class="btn-secondary" onclick="document.getElementById('profileImageInput').click()" style="padding: 8px 15px; font-size: 12px; width: auto;">📸 Upload 1x1 / 2x2 Photo</button>
+                </div>
+
+                <!-- Personal Details -->
+                <h3 style="color: #0f766e; font-size: 14px; margin: 0 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">👤 Personal Details</h3>
+                <div class="profile-grid">
+                    <div class="form-group"><label>Full Name *</label><input type="text" id="profFullName" placeholder="e.g. Alwinna Carupo"></div>
+                    <div class="form-group"><label>Schedule Nickname</label><input type="text" id="profNickname" placeholder="e.g. Wenna"></div>
+                </div>
+                <div class="profile-grid">
+                    <div class="form-group"><label>Phone Number</label><input type="text" id="profPhone" placeholder="09xxxxxxxxx"></div>
+                    <div class="form-group"><label>Home Address</label><input type="text" id="profAddress" placeholder="Street, Barangay..."></div>
+                </div>
+
+                <!-- Emergency Contact -->
+                <h3 style="color: #dc2626; font-size: 14px; margin: 15px 0 10px 0; border-bottom: 2px solid #fecaca; padding-bottom: 5px;">🚨 Emergency Contact & Email</h3>
+                <div style="background: #fef2f2; padding: 15px; border-radius: 8px; border: 1px dashed #fca5a5; margin-bottom: 15px;">
+                    <div class="profile-grid">
+                        <div class="form-group"><label style="color:#b91c1c;">Contact Name</label><input type="text" id="profEmergName" placeholder="e.g. Maria Laude"></div>
+                        <div class="form-group"><label style="color:#b91c1c;">Emergency Number</label><input type="text" id="profEmergNum" placeholder="09xxxxxxxxx"></div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;"><label style="color:#b91c1c;">Staff Email Address</label><input type="email" id="profEmail" placeholder="staff@gmail.com"></div>
+                </div>
+
+                <!-- Disbursement Details -->
+                <h3 style="color: #0284c7; font-size: 14px; margin: 15px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📱 Disbursement Accounts</h3>
+                <div class="profile-grid">
+                    <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
+                        <label style="font-size: 11px; font-weight: bold; color: #0369a1; display: block; margin-bottom: 8px;">GCash Details</label>
+                        <input type="text" id="profGcashName" placeholder="Account Name" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; font-size: 12px;">
+                        <input type="text" id="profGcashNum" placeholder="GCash Number" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; font-size: 12px;">
+                    </div>
+                    <div style="background: #fdf4ff; padding: 12px; border-radius: 8px; border: 1px solid #e879f9;">
+                        <label style="font-size: 11px; font-weight: bold; color: #a21caf; display: block; margin-bottom: 8px;">GoTyme Details</label>
+                        <input type="text" id="profGotymeName" placeholder="Account Name" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; font-size: 12px;">
+                        <input type="text" id="profGotymeNum" placeholder="Account Number" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; font-size: 12px;">
+                    </div>
+                </div>
+
+                <!-- Government IDs -->
+                <h3 style="color: #d97706; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">🏛️ Government IDs</h3>
+                <div class="profile-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                    <div class="form-group"><label>SSS Number</label><input type="text" id="profSss" placeholder="00-0000000-0"></div>
+                    <div class="form-group"><label>PhilHealth</label><input type="text" id="profPhilhealth" placeholder="00-000000000-0"></div>
+                    <div class="form-group"><label>Pag-IBIG</label><input type="text" id="profPagibig" placeholder="0000-0000-0000"></div>
+                </div>
+
             </div>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn-primary" id="btnSaveProfile" onclick="window.uploadProfilePicture()" style="flex: 1;">💾 Save Profile</button>
-                <button class="btn-cancel" onclick="document.getElementById('profileModal').style.display='none'" style="flex: 1;">Close</button>
+
+            <!-- Sticky Footer -->
+            <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
+                <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">💾 Save Employee Data</button>
             </div>
+
         </div>
     </div>
 
