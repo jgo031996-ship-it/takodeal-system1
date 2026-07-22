@@ -2,7 +2,7 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById('topAvatar').style.backgroundImage = `url('${savedPic}')`;
         }
         window.startLiveClock();
+        window.startInboxListener();
         window.loadAnnouncements();
     }
 });
@@ -101,6 +102,7 @@ window.loginStaff = async function() {
             }, 300);
             
             window.startLiveClock();
+            window.startInboxListener();
             window.loadAnnouncements();
         } else {
             errorMsg.innerText = "❌ Incorrect PIN. Please try again."; errorMsg.style.display = 'block';
@@ -376,6 +378,10 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 };
 
 window.punchTime = async function(type) {
+    let lastPunch = localStorage.getItem('takodeal_last_punch');
+    if (lastPunch && (Date.now() - parseInt(lastPunch) < 60000)) {
+        return Swal.fire('Cooldown Active', 'Please wait 1 minute before punching again to prevent accidental double-logs.', 'warning');
+    }
     if (!window.currentLat || !window.currentLng) return Swal.fire('GPS Required', 'Please wait for GPS verification or enable Location Services.', 'warning');
     
     // Find closest branch
@@ -409,7 +415,7 @@ window.punchTime = async function(type) {
         await addDoc(collection(db, "attendance_logs"), {
             staffName: staffName, branch: closestBranch, type: type, timestamp: serverTimestamp(),
             locationLat: window.currentLat, locationLng: window.currentLng, distanceMeters: Math.round(minDistance),
-            photoBase64: photoBase64
+            photoBase64: photoBase64, localStorage.setItem('takodeal_last_punch', Date.now());
         });
         Swal.fire('✅ Success', `${type} logged at ${closestBranch}!`, 'success');
     } catch(e) { console.error(e); Swal.fire('Error', 'Failed to log time. Check connection.', 'error'); } 
@@ -417,7 +423,7 @@ window.punchTime = async function(type) {
 };
 
 // ==========================================
-// 📥 STAFF REQUESTS ENGINE
+// 📥 STAFF REQUESTS & INBOX ENGINE
 // ==========================================
 window.openReqForm = function(type) {
     if (type === 'Inbox') return window.loadInbox();
@@ -441,6 +447,10 @@ window.openReqForm = function(type) {
         formHtml = `
             <div class="form-group"><label>Menu Item Consumed</label><input type="text" id="reqItem" placeholder="e.g. 4 Pcs Pork"></div>
             <div class="form-group"><label>Equivalent Cost (₱)</label><input type="number" id="reqAmount" placeholder="0.00"></div>
+            <div class="form-group">
+                <label>Attach POS Receipt Photo *</label>
+                <input type="file" id="reqMealProof" accept="image/*" style="border: 1px dashed #0f766e; background: #f0fdf4; padding: 10px;">
+            </div>
         `;
     }
     
@@ -453,59 +463,137 @@ window.submitStaffRequest = async function() {
         type: window.currentReqType,
         staffName: localStorage.getItem('takodeal_staff_name'),
         status: "Pending",
+        staffAcknowledged: false, // Tracks if staff has read the manager's reply
         timestamp: serverTimestamp()
     };
+
+    let fileToUpload = null;
 
     if (payload.type === 'Leave') {
         payload.startDate = document.getElementById('reqStart').value;
         payload.endDate = document.getElementById('reqEnd').value;
-        payload.reason = document.getElementById('reqReason').value;
-        if (!payload.startDate || !payload.reason) return alert("Fill all fields.");
+        payload.reason = document.getElementById('reqReason').value.trim();
+        if (!payload.startDate || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
     } else if (payload.type === 'Cash Advance') {
         payload.amount = parseFloat(document.getElementById('reqAmount').value);
-        payload.reason = document.getElementById('reqReason').value;
-        if (!payload.amount || !payload.reason) return alert("Fill all fields.");
+        payload.reason = document.getElementById('reqReason').value.trim();
+        if (!payload.amount || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
     } else if (payload.type === 'Staff Meal') {
-        payload.item = document.getElementById('reqItem').value;
+        payload.item = document.getElementById('reqItem').value.trim();
         payload.amount = parseFloat(document.getElementById('reqAmount').value);
-        if (!payload.item || !payload.amount) return alert("Fill all fields.");
+        fileToUpload = document.getElementById('reqMealProof').files[0];
+        if (!payload.item || !payload.amount || !fileToUpload) return Swal.fire('Incomplete', 'You must fill all fields and attach the receipt photo.', 'warning');
     }
 
     let btn = document.getElementById('btnSubmitReq');
-    btn.innerText = "Sending..."; btn.disabled = true;
+    btn.innerText = fileToUpload ? "⏳ Uploading Photo..." : "⏳ Sending..."; 
+    btn.disabled = true;
 
     try {
+        // Handle Photo Upload if Staff Meal
+        if (fileToUpload) {
+            const fileExt = fileToUpload.name.split('.').pop();
+            const fileName = `staff_requests/meal_${payload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
+            const storageReference = ref(storage, fileName);
+            const snapshot = await uploadBytes(storageReference, fileToUpload);
+            payload.proofImageUrl = await getDownloadURL(snapshot.ref);
+        }
+
         await addDoc(collection(db, "staff_requests"), payload);
-        Swal.fire('Sent!', 'Request submitted to HQ.', 'success');
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Submitted to HQ!', showConfirmButton: false, timer: 2000});
         document.getElementById('requestModal').style.display = 'none';
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to send.', 'error'); }
-    finally { btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; }
+    } catch(e) { 
+        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error'); 
+    } finally { 
+        btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; 
+    }
+};
+
+// --- NOTIFICATION ENGINE ---
+window.playNotificationPing = function() {
+    try {
+        let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime);
+        gain.gain.setValueAtTime(1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.5);
+    } catch(e){}
+};
+
+window.startInboxListener = function() {
+    let staffName = localStorage.getItem('takodeal_staff_name');
+    if (!staffName) return;
+
+    const q = query(collection(db, "staff_requests"), where("staffName", "==", staffName));
+    onSnapshot(q, (snapshot) => {
+        let unreadCount = 0;
+        snapshot.forEach(doc => {
+            let d = doc.data();
+            // Count if it's Approved/Rejected AND the staff hasn't read it yet!
+            if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) {
+                unreadCount++;
+            }
+        });
+
+        let badge = document.getElementById('navReqBadge');
+        if (badge) {
+            if (unreadCount > 0) {
+                badge.style.display = 'block';
+                badge.innerText = unreadCount;
+                if (window.lastUnreadCount !== undefined && unreadCount > window.lastUnreadCount) window.playNotificationPing();
+                window.lastUnreadCount = unreadCount;
+            } else {
+                badge.style.display = 'none';
+                window.lastUnreadCount = 0;
+            }
+        }
+    });
 };
 
 window.loadInbox = async function() {
     let container = document.getElementById('reqInboxContainer');
     let listEl = document.getElementById('reqInboxList');
     container.style.display = 'block';
-    listEl.innerHTML = 'Loading...';
+    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8;">Loading...</div>';
 
     try {
         const q = query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name')));
         const snap = await getDocs(q);
+        
+        let docsArray = [];
+        snap.forEach(docSnap => docsArray.push({id: docSnap.id, ...docSnap.data()}));
+        docsArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+
         let html = '';
-        snap.forEach(doc => {
-            let d = doc.data();
+        docsArray.forEach(d => {
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
             let color = d.status === 'Approved' ? '#16a34a' : (d.status === 'Rejected' ? '#dc2626' : '#d97706');
+            let bg = d.status === 'Approved' ? '#dcfce7' : (d.status === 'Rejected' ? '#fef2f2' : '#fffbeb');
+            
+            let replyHtml = d.managerReply ? `<div style="margin-top: 8px; padding: 8px; background: #f8fafc; border-left: 3px solid ${color}; border-radius: 4px; font-size: 12px; color: #475569;"><b>HQ Reply:</b> ${d.managerReply}</div>` : '';
+            let proofHtml = d.proofImageUrl ? `<div style="margin-top: 8px; font-size: 11px;"><a href="${d.proofImageUrl}" target="_blank" style="color:#0ea5e9; text-decoration:none;">📸 View Receipt Attached</a></div>` : '';
+
             html += `
-                <div class="req-item-card">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <strong style="color:#0f172a;">${d.type}</strong>
-                        <span style="color:${color}; font-weight:bold; font-size:12px;">${d.status}</span>
+                <div class="req-item-card" style="border-left: 4px solid ${color};">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                        <strong style="color:#0f172a; font-size:14px;">${d.type}</strong>
+                        <span style="background:${bg}; color:${color}; font-weight:bold; font-size:11px; padding:4px 8px; border-radius:6px;">${d.status}</span>
                     </div>
-                    <div style="font-size:11px; color:#64748b;">📅 ${dateStr}</div>
+                    <div style="font-size:11px; color:#64748b;">📅 Submitted: ${dateStr}</div>
+                    ${proofHtml}
+                    ${replyHtml}
                 </div>
             `;
+
+            // 🔥 Mark as Read: If they open the inbox, acknowledge any unread replies!
+            if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) {
+                updateDoc(doc(db, "staff_requests", d.id), { staffAcknowledged: true });
+            }
         });
-        listEl.innerHTML = html || '<div style="color:#64748b; font-size:13px;">No requests found.</div>';
-    } catch(e) { listEl.innerHTML = 'Error loading inbox.'; }
+        
+        listEl.innerHTML = html || '<div style="color:#64748b; font-size:13px; text-align:center;">No requests found.</div>';
+    } catch(e) { console.error(e); listEl.innerHTML = 'Error loading inbox.'; }
 };
