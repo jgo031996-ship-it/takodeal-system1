@@ -6,6 +6,8 @@
     <title>Takodeál Staff Portal</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- 🤖 Face AI Brain -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
 
@@ -13,15 +15,46 @@
     <div id="loginOverlay" class="overlay">
         <div class="login-card">
             <div class="login-header">
-                <!-- 🐙 SQUID REMOVED, LOGO INJECTED -->
                 <img src="logo.jpg" alt="Takodeál" class="login-logo">
                 <h2>Staff Portal</h2>
                 <p>Welcome back! Please enter your PIN.</p>
             </div>
-            <!-- 🛑 4-DIGIT LIMIT REMOVED -->
             <input type="password" id="loginPin" placeholder="Enter PIN" autocomplete="off">
             <button class="btn-primary" onclick="window.loginStaff()">Secure Login</button>
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
+        </div>
+    </div>
+
+    <!-- 👤 MY PROFILE MODAL -->
+    <div id="profileModal" class="overlay" style="display: none; z-index: 10000;">
+        <div class="modal-card">
+            <h2 style="margin-top: 0; color: #0f766e;">My Profile</h2>
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img id="profilePreview" src="" alt="Profile" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid #ccfbf1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; margin: 0 auto 15px auto;">
+                <div id="profilePlaceholder" style="width: 120px; height: 120px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 15px auto; border: 4px solid #ccfbf1;">👤</div>
+                
+                <input type="file" id="profileImageInput" accept="image/*" style="display: none;" onchange="window.previewProfileImage(event)">
+                <button class="btn-secondary" onclick="document.getElementById('profileImageInput').click()">📸 Choose New Picture</button>
+                <p style="font-size: 11px; color: #64748b; margin-top: 8px;">Upload a 1x1 or 2x2 professional photo for HQ.</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-primary" id="btnSaveProfile" onclick="window.uploadProfilePicture()" style="flex: 1;">💾 Save Profile</button>
+                <button class="btn-cancel" onclick="document.getElementById('profileModal').style.display='none'" style="flex: 1;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📝 STAFF REQUESTS MODAL -->
+    <div id="requestModal" class="overlay" style="display: none; z-index: 10000;">
+        <div class="modal-card">
+            <h2 id="reqModalTitle" style="margin-top: 0; color: #0f766e;">Submit Request</h2>
+            <div id="reqModalBody" style="margin-bottom: 20px; text-align: left;">
+                <!-- Dynamic form injected here -->
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-primary" id="btnSubmitReq" onclick="window.submitStaffRequest()" style="flex: 1;">🚀 Submit to HQ</button>
+                <button class="btn-cancel" onclick="document.getElementById('requestModal').style.display='none'" style="flex: 1;">Cancel</button>
+            </div>
         </div>
     </div>
 
@@ -31,7 +64,8 @@
         <!-- HEADER -->
         <header class="app-header">
             <div class="header-left">
-                <span id="staffAvatar" class="avatar">👤</span>
+                <!-- Clickable Avatar! -->
+                <div id="topAvatar" class="avatar" onclick="window.openProfile()" style="cursor: pointer; background-size: cover; background-position: center;">👤</div>
                 <div class="header-text">
                     <span class="greeting">Hello,</span>
                     <strong id="loggedInName">Staff Name</strong>
@@ -61,13 +95,20 @@
                     <p>GPS verified attendance logging.</p>
                 </div>
                 <div class="clock-card">
+                    <!-- 📷 Camera Feed Area -->
+                    <div id="cameraContainer" style="margin-bottom: 15px; border-radius: 12px; overflow: hidden; background: #000; height: 250px; position: relative;">
+                        <video id="clockVideo" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+                        <canvas id="clockCanvas" style="display: none;"></canvas>
+                        <div id="cameraStatus" style="position: absolute; bottom: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;">📷 Initializing Camera...</div>
+                    </div>
+
                     <h1 id="liveTime">00:00 AM</h1>
                     <p id="liveDate">Loading Date...</p>
                     <div class="location-status" id="gpsStatus">📍 Verifying GPS Location...</div>
                     
                     <div class="clock-actions">
-                        <button class="btn-timein" onclick="window.punchTime('IN')">TIME IN</button>
-                        <button class="btn-timeout" onclick="window.punchTime('OUT')">TIME OUT</button>
+                        <button class="btn-timein" id="btnTimeIn" onclick="window.punchTime('TIME IN')">TIME IN</button>
+                        <button class="btn-timeout" id="btnTimeOut" onclick="window.punchTime('TIME OUT')">TIME OUT</button>
                     </div>
                 </div>
             </div>
@@ -79,10 +120,15 @@
                     <p>File leaves, advances, and view manager replies.</p>
                 </div>
                 <div class="request-grid">
-                    <button class="req-card" onclick="window.openReqForm('leave')">🏖️<br>Leave</button>
-                    <button class="req-card" onclick="window.openReqForm('advance')">💸<br>Cash Advance</button>
-                    <button class="req-card" onclick="window.openReqForm('meal')">🍔<br>Staff Meal</button>
-                    <button class="req-card" onclick="window.openReqForm('inbox')">📬<br>My Inbox</button>
+                    <button class="req-card" onclick="window.openReqForm('Leave')">🏖️<br>Leave</button>
+                    <button class="req-card" onclick="window.openReqForm('Cash Advance')">💸<br>Cash Advance</button>
+                    <button class="req-card" onclick="window.openReqForm('Staff Meal')">🍔<br>Staff Meal</button>
+                    <button class="req-card" onclick="window.openReqForm('Inbox')">📬<br>My Inbox</button>
+                </div>
+                <!-- Inbox Area -->
+                <div id="reqInboxContainer" style="margin-top: 20px; display: none;">
+                    <h3 style="color: #0f766e; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">My Inbox</h3>
+                    <div id="reqInboxList"></div>
                 </div>
             </div>
 
