@@ -1,6 +1,3 @@
-// ========================================================
-// 🔥 1. FIREBASE ENGINE & IMPORTS
-// ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
@@ -22,7 +19,6 @@ window.storage = storage;
 
 console.log("🚀 Takodeál Staff Portal Booted Successfully!");
 
-// 🌍 BRANCH COORDINATES FOR GPS
 window.BRANCH_ZONES = {
     "Cabantian": { lat: 7.130415, lng: 125.617306 },
     "Citygate":  { lat: 7.111076, lng: 125.612883 },
@@ -35,20 +31,17 @@ window.ALLOWED_RADIUS_METERS = 50;
 // 🔒 DEVICE FLEET & SECURITY ENGINE
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
-    // Wipe out the old manual key test so it forces the new Fleet update
-    localStorage.removeItem('takodeal_device_trusted');
+    localStorage.removeItem('takodeal_device_trusted'); // Wipe manual auth
 
     let deviceId = localStorage.getItem('takodeal_device_id');
 
     if (!deviceId) {
-        // First time opening! Show Registration Form
         document.getElementById('deviceAuthOverlay').style.display = 'flex';
         document.getElementById('registerCard').style.display = 'block';
         document.getElementById('pendingCard').style.display = 'none';
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'none';
     } else {
-        // Device exists, start listening to the Manager App for approval!
         window.listenToDeviceStatus(deviceId);
     }
 });
@@ -60,21 +53,18 @@ window.requestDeviceAccess = async function() {
     let btn = document.querySelector('#registerCard .btn-primary');
     btn.innerText = "⏳ Registering..."; btn.disabled = true;
 
-    // Generate a secure unique ID for this specific phone
     let newDeviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
     try {
-        // Send to Manager App's Database. Set to "Blocked" so Manager has to explicitly Unblock it!
         await setDoc(doc(db, "devices", newDeviceId), {
             deviceName: name,
-            branch: "Staff App", // Identifies it in your Fleet Dashboard
-            status: "Blocked",   // Shows up as RED in your Manager App
+            branch: "Staff App",
+            status: "Blocked",
             timestamp: serverTimestamp()
         });
 
         localStorage.setItem('takodeal_device_id', newDeviceId);
         window.listenToDeviceStatus(newDeviceId);
-
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to connect to HQ.', 'error');
@@ -83,23 +73,19 @@ window.requestDeviceAccess = async function() {
 };
 
 window.listenToDeviceStatus = function(deviceId) {
-    // Show the "Access Blocked / Waiting for HQ" screen
     document.getElementById('deviceAuthOverlay').style.display = 'flex';
     document.getElementById('registerCard').style.display = 'none';
     document.getElementById('pendingCard').style.display = 'block';
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('appContainer').style.display = 'none';
 
-    // Real-time listener: The exact second you click "Unblock", this fires!
     onSnapshot(doc(db, "devices", deviceId), (docSnap) => {
         if (docSnap.exists()) {
             let status = docSnap.data().status;
             if (status === 'Active') {
-                // HQ Approved! Drop the vault doors!
                 document.getElementById('deviceAuthOverlay').style.display = 'none';
                 window.checkNormalLogin();
             } else {
-                // Still Blocked by HQ, keep vault closed
                 document.getElementById('deviceAuthOverlay').style.display = 'flex';
                 document.getElementById('registerCard').style.display = 'none';
                 document.getElementById('pendingCard').style.display = 'block';
@@ -134,7 +120,7 @@ window.checkNormalLogin = function() {
 window.loginStaff = async function() {
     let pinInput = document.getElementById('loginPin').value.trim();
     let errorMsg = document.getElementById('loginError');
-    let btn = document.querySelector('.login-card .btn-primary');
+    let btn = document.querySelector('#loginOverlay .btn-primary');
 
     if (pinInput.length < 1) {
         errorMsg.innerText = "❌ Please enter your PIN.";
@@ -150,8 +136,7 @@ window.loginStaff = async function() {
         let staffData = null; let docId = null;
 
         if (!snapStr.empty) {
-            staffData = snapStr.docs[0].data();
-            docId = snapStr.docs[0].id;
+            staffData = snapStr.docs[0].data(); docId = snapStr.docs[0].id;
         } else {
             let pinNum = parseInt(pinInput);
             if (!isNaN(pinNum)) {
@@ -180,7 +165,7 @@ window.loginStaff = async function() {
                 document.getElementById('loginOverlay').style.opacity = '1';
             }, 300);
             
-            window.startLiveClock();
+            if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
             window.loadAnnouncements();
             window.startInboxListener();
         } else {
@@ -199,13 +184,17 @@ window.logoutStaff = function() {
         showCancelButton: true, confirmButtonColor: '#0f766e', confirmButtonText: 'Yes, sign out'
     }).then((result) => {
         if (result.isConfirmed) {
-            localStorage.clear();
+            localStorage.removeItem('takodeal_staff_name');
+            localStorage.removeItem('takodeal_staff_id');
+            localStorage.removeItem('takodeal_staff_pic');
             location.reload(); 
         }
     });
 };
 
-// --- PROFILE DATA & PICTURE ENGINE ---
+// ==========================================
+// 📋 PROFILE ENGINE
+// ==========================================
 window.selectedProfileFile = null;
 
 window.openProfile = async function() {
@@ -244,7 +233,6 @@ window.openProfile = async function() {
             document.getElementById('profPhilhealth').value = d.philhealthNumber || '';
             document.getElementById('profPagibig').value = d.pagibigNumber || '';
             
-            // Read-Only Deductions
             document.getElementById('viewSssDed').innerText = '₱' + (parseFloat(d.sssDeduction) || 0).toFixed(2);
             document.getElementById('viewPhDed').innerText = '₱' + (parseFloat(d.philhealthDeduction) || 0).toFixed(2);
             document.getElementById('viewPagibigDed').innerText = '₱' + (parseFloat(d.pagibigDeduction) || 0).toFixed(2);
@@ -277,7 +265,6 @@ window.previewProfileImage = async function(event) {
 
 window.uploadProfilePicture = async function() {
     if (!window.selectedProfileFile) return;
-    
     let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
 
@@ -285,16 +272,13 @@ window.uploadProfilePicture = async function() {
         const fileExt = window.selectedProfileFile.name.split('.').pop();
         const fileName = `staff_profiles/${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
         const storageReference = ref(storage, fileName);
-        
         const snapshot = await uploadBytes(storageReference, window.selectedProfileFile);
         const photoUrl = await getDownloadURL(snapshot.ref);
 
         await updateDoc(doc(db, "cashiers", staffId), { profilePicUrl: photoUrl });
-        
         localStorage.setItem('takodeal_staff_pic', photoUrl);
         document.getElementById('topAvatar').innerText = '';
         document.getElementById('topAvatar').style.backgroundImage = `url('${photoUrl}')`;
-        
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Photo Uploaded!', showConfirmButton: false, timer: 2000});
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to upload photo.', 'error');
@@ -331,13 +315,11 @@ window.saveProfileData = async function() {
 
     try {
         await updateDoc(doc(db, "cashiers", staffId), payload);
-        
         localStorage.setItem('takodeal_staff_name', payload.cashierName);
         document.getElementById('loggedInName').innerText = payload.cashierName;
 
         let successMsg = newPin ? 'Your profile and new PIN have been securely saved.' : 'Your HR profile has been securely synced to HQ.';
         Swal.fire('✅ Saved', successMsg, 'success');
-        
         document.getElementById('profileModal').style.display = 'none';
         document.getElementById('profPin').value = ''; 
     } catch (e) {
@@ -372,30 +354,23 @@ window.loadAnnouncements = async function() {
     if (!cashierName) return;
 
     try {
-        // 1. Get Announcements from HQ
         const q = query(collection(db, "announcements"), where("active", "==", true));
         const snap = await getDocs(q);
 
-        // 2. Get the Signatures specifically for THIS logged-in staff member
         const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
         const ackSnap = await getDocs(ackQ);
 
         let signatures = {};
-        ackSnap.forEach(doc => {
-            let d = doc.data();
-            signatures[d.announcementId] = d;
-        });
+        ackSnap.forEach(doc => { let d = doc.data(); signatures[d.announcementId] = d; });
 
         let announcementsArray = [];
         snap.forEach(docSnap => announcementsArray.push({id: docSnap.id, ...docSnap.data()}));
-        announcementsArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+        announcementsArray.sort((a,b) => b.timestamp - a.timestamp); 
 
         let html = '';
         announcementsArray.forEach(ann => {
             let dateStr = ann.timestamp ? ann.timestamp.toDate().toLocaleDateString() : 'Recent';
             let sigData = signatures[ann.id];
-
-            // Clean up long messages for the preview card
             let shortMsg = ann.message ? ann.message.substring(0, 100) + (ann.message.length > 100 ? '...' : '') : '';
 
             let statusBadge = sigData
@@ -404,7 +379,6 @@ window.loadAnnouncements = async function() {
 
             let sigDateStr = sigData && sigData.timestamp ? sigData.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
 
-            // Package the data securely for the modal
             let safeData = {
                 title: ann.title || 'Announcement',
                 message: ann.message || '',
@@ -414,18 +388,17 @@ window.loadAnnouncements = async function() {
                 signatureImg: sigData ? sigData.signature : '',
                 signatureDate: sigDateStr
             };
-
             let modalData = encodeURIComponent(JSON.stringify(safeData));
 
             html += `
-                <div class="req-item-card" onclick="window.viewAnnouncement('${modalData}')" style="cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.2s;" onmouseover="this.style.transform='scale(0.98)'" onmouseout="this.style.transform='scale(1)'">
+                <div class="req-item-card" onclick="window.viewAnnouncement('${modalData}')" style="cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.2s;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
                         <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
                         <div style="margin-left: 10px;">${statusBadge}</div>
                     </div>
                     <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
                     <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${shortMsg}</p>
-                    <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; text-align: right;">View Full Details & Images &rarr;</div>
+                    <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; text-align: right;">View Full Details &rarr;</div>
                 </div>
             `;
         });
@@ -435,7 +408,6 @@ window.loadAnnouncements = async function() {
 
 window.viewAnnouncement = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
-
     let imagesHtml = '';
     if (data.images && data.images.length > 0) {
         imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
@@ -445,36 +417,23 @@ window.viewAnnouncement = function(encodedData) {
         imagesHtml += `</div>`;
     }
 
-    let sigHtml = '';
-    if (data.hasSignature) {
-        sigHtml = `
-            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px;">
-                <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${data.signatureDate}</span>
-                <img src="${data.signatureImg}" style="height: 50px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            </div>
-        `;
-    } else {
-        sigHtml = `
-            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #fef2f2; border-radius: 8px; padding: 15px;">
-                <span style="font-size: 12px; color: #dc2626; font-weight: bold; display: block;">❌ You have not signed this yet.</span>
-                <span style="font-size: 11px; color: #b91c1c;">(The signing pad will appear automatically if this is a forced compliance update).</span>
-            </div>
-        `;
-    }
+    let sigHtml = data.hasSignature 
+        ? `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px;">
+            <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${data.signatureDate}</span>
+            <img src="${data.signatureImg}" style="height: 50px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">
+           </div>`
+        : `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #fef2f2; border-radius: 8px; padding: 15px;">
+            <span style="font-size: 12px; color: #dc2626; font-weight: bold; display: block;">❌ You have not signed this yet.</span>
+           </div>`;
 
     Swal.fire({
         title: `<div style="text-align:left; font-size: 18px; color: #0f172a; margin-bottom: 10px;">${data.title}</div>`,
-        html: `
-            <div style="text-align: left;">
+        html: `<div style="text-align: left;">
                 <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">📅 Published: ${data.dateStr}</div>
                 <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
-                ${imagesHtml}
-                ${sigHtml}
-            </div>
-        `,
-        showCloseButton: true,
-        showConfirmButton: false,
-        customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-200' }
+                ${imagesHtml}${sigHtml}
+               </div>`,
+        showCloseButton: true, showConfirmButton: false
     });
 };
 
@@ -499,11 +458,9 @@ window.startCameraAndGPS = async function() {
     try {
         window.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
         videoEl.srcObject = window.cameraStream;
-        statusEl.innerText = "🟢 Camera Active (AI Standby)";
-        statusEl.style.background = "rgba(22, 163, 74, 0.8)";
+        statusEl.innerText = "🟢 Camera Active (AI Standby)"; statusEl.style.background = "rgba(22, 163, 74, 0.8)";
     } catch (e) {
-        statusEl.innerText = "❌ Camera Access Denied";
-        statusEl.style.background = "rgba(220, 38, 38, 0.8)";
+        statusEl.innerText = "❌ Camera Access Denied"; statusEl.style.background = "rgba(220, 38, 38, 0.8)";
     }
 
     let gpsEl = document.getElementById('gpsStatus');
@@ -513,8 +470,7 @@ window.startCameraAndGPS = async function() {
     }
     navigator.geolocation.getCurrentPosition(
         (position) => {
-            window.currentLat = position.coords.latitude;
-            window.currentLng = position.coords.longitude;
+            window.currentLat = position.coords.latitude; window.currentLng = position.coords.longitude;
             gpsEl.innerText = "🟢 Location Verified"; gpsEl.style.color = "#16a34a"; gpsEl.style.background = "#dcfce7";
         },
         (error) => {
@@ -526,8 +482,7 @@ window.startCameraAndGPS = async function() {
 
 window.stopCamera = function() {
     if (window.cameraStream) {
-        window.cameraStream.getTracks().forEach(t => t.stop());
-        window.cameraStream = null;
+        window.cameraStream.getTracks().forEach(t => t.stop()); window.cameraStream = null;
     }
 };
 
@@ -539,16 +494,14 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 };
 
 window.punchTime = async function(type) {
-    // 🛑 SPAM BLOCKER
     let lastPunch = localStorage.getItem('takodeal_last_punch');
     if (lastPunch && (Date.now() - parseInt(lastPunch) < 60000)) {
-        return Swal.fire('Cooldown Active', 'Please wait 1 minute before punching again to prevent accidental double-logs.', 'warning');
+        return Swal.fire('Cooldown Active', 'Please wait 1 minute before punching again.', 'warning');
     }
 
-    if (!window.currentLat || !window.currentLng) return Swal.fire('GPS Required', 'Please wait for GPS verification or enable Location Services.', 'warning');
+    if (!window.currentLat || !window.currentLng) return Swal.fire('GPS Required', 'Please wait for GPS verification.', 'warning');
     
-    let closestBranch = "Unknown";
-    let minDistance = 999999;
+    let closestBranch = "Unknown"; let minDistance = 999999;
     for (let branch in window.BRANCH_ZONES) {
         let zone = window.BRANCH_ZONES[branch];
         let dist = window.getDistanceInMeters(window.currentLat, window.currentLng, zone.lat, zone.lng);
@@ -564,13 +517,9 @@ window.punchTime = async function(type) {
     const canvas = document.getElementById('clockCanvas');
     if (video && canvas && video.videoWidth > 0) {
         canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        
-        // Mirror the canvas capture so the saved photo matches the screen
         const ctx = canvas.getContext('2d');
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
+        ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0);
-        
         photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
     }
 
@@ -585,9 +534,9 @@ window.punchTime = async function(type) {
             photoBase64: photoBase64
         });
         
-        localStorage.setItem('takodeal_last_punch', Date.now()); // Set Cooldown Timer
+        localStorage.setItem('takodeal_last_punch', Date.now()); 
         Swal.fire('✅ Success', `${type} logged at ${closestBranch}!`, 'success');
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to log time. Check connection.', 'error'); } 
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to log time.', 'error'); } 
     finally { btnIn.disabled = false; btnOut.disabled = false; }
 };
 
@@ -596,31 +545,20 @@ window.punchTime = async function(type) {
 // ==========================================
 window.openReqForm = function(type) {
     if (type === 'Inbox') return window.loadInbox();
-
-    let formHtml = '';
-    window.currentReqType = type;
+    let formHtml = ''; window.currentReqType = type;
     document.getElementById('reqModalTitle').innerText = type + " Request";
 
     if (type === 'Leave') {
-        formHtml = `
-            <div class="form-group"><label>Start Date</label><input type="date" id="reqStart"></div>
+        formHtml = `<div class="form-group"><label>Start Date</label><input type="date" id="reqStart"></div>
             <div class="form-group"><label>End Date</label><input type="date" id="reqEnd"></div>
-            <div class="form-group"><label>Reason</label><textarea id="reqReason" rows="3"></textarea></div>
-        `;
+            <div class="form-group"><label>Reason</label><textarea id="reqReason" rows="3"></textarea></div>`;
     } else if (type === 'Cash Advance') {
-        formHtml = `
-            <div class="form-group"><label>Amount (₱)</label><input type="number" id="reqAmount" placeholder="0.00"></div>
-            <div class="form-group"><label>Reason / Purpose</label><textarea id="reqReason" rows="2"></textarea></div>
-        `;
+        formHtml = `<div class="form-group"><label>Amount (₱)</label><input type="number" id="reqAmount" placeholder="0.00"></div>
+            <div class="form-group"><label>Reason / Purpose</label><textarea id="reqReason" rows="2"></textarea></div>`;
     } else if (type === 'Staff Meal') {
-        formHtml = `
-            <div class="form-group"><label>Menu Item Consumed</label><input type="text" id="reqItem" placeholder="e.g. 4 Pcs Pork"></div>
+        formHtml = `<div class="form-group"><label>Menu Item Consumed</label><input type="text" id="reqItem" placeholder="e.g. 4 Pcs Pork"></div>
             <div class="form-group"><label>Equivalent Cost (₱)</label><input type="number" id="reqAmount" placeholder="0.00"></div>
-            <div class="form-group">
-                <label>Attach POS Receipt Photo *</label>
-                <input type="file" id="reqMealProof" accept="image/*" style="border: 1px dashed #0f766e; background: #f0fdf4; padding: 10px;">
-            </div>
-        `;
+            <div class="form-group"><label>Attach POS Receipt Photo *</label><input type="file" id="reqMealProof" accept="image/*" style="border: 1px dashed #0f766e; background: #f0fdf4; padding: 10px;"></div>`;
     }
     
     document.getElementById('reqModalBody').innerHTML = formHtml;
@@ -628,65 +566,43 @@ window.openReqForm = function(type) {
 };
 
 window.submitStaffRequest = async function() {
-    let payload = {
-        type: window.currentReqType,
-        staffName: localStorage.getItem('takodeal_staff_name'),
-        status: "Pending",
-        staffAcknowledged: false, 
-        timestamp: serverTimestamp()
-    };
-
+    let payload = { type: window.currentReqType, staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: serverTimestamp() };
     let fileToUpload = null;
 
     if (payload.type === 'Leave') {
-        payload.startDate = document.getElementById('reqStart').value;
-        payload.endDate = document.getElementById('reqEnd').value;
-        payload.reason = document.getElementById('reqReason').value.trim();
+        payload.startDate = document.getElementById('reqStart').value; payload.endDate = document.getElementById('reqEnd').value; payload.reason = document.getElementById('reqReason').value.trim();
         if (!payload.startDate || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
     } else if (payload.type === 'Cash Advance') {
-        payload.amount = parseFloat(document.getElementById('reqAmount').value);
-        payload.reason = document.getElementById('reqReason').value.trim();
+        payload.amount = parseFloat(document.getElementById('reqAmount').value); payload.reason = document.getElementById('reqReason').value.trim();
         if (!payload.amount || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
     } else if (payload.type === 'Staff Meal') {
-        payload.item = document.getElementById('reqItem').value.trim();
-        payload.amount = parseFloat(document.getElementById('reqAmount').value);
-        fileToUpload = document.getElementById('reqMealProof').files[0];
-        if (!payload.item || !payload.amount || !fileToUpload) return Swal.fire('Incomplete', 'You must fill all fields and attach the receipt photo.', 'warning');
+        payload.item = document.getElementById('reqItem').value.trim(); payload.amount = parseFloat(document.getElementById('reqAmount').value); fileToUpload = document.getElementById('reqMealProof').files[0];
+        if (!payload.item || !payload.amount || !fileToUpload) return Swal.fire('Incomplete', 'You must attach the receipt photo.', 'warning');
     }
 
     let btn = document.getElementById('btnSubmitReq');
-    btn.innerText = fileToUpload ? "⏳ Uploading Photo..." : "⏳ Sending..."; 
-    btn.disabled = true;
+    btn.innerText = fileToUpload ? "⏳ Uploading Photo..." : "⏳ Sending..."; btn.disabled = true;
 
     try {
         if (fileToUpload) {
-            const fileExt = fileToUpload.name.split('.').pop();
-            const fileName = `staff_requests/meal_${payload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
-            const storageReference = ref(storage, fileName);
-            const snapshot = await uploadBytes(storageReference, fileToUpload);
+            const fileName = `staff_requests/meal_${payload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileToUpload.name.split('.').pop()}`;
+            const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload);
             payload.proofImageUrl = await getDownloadURL(snapshot.ref);
         }
-
         await addDoc(collection(db, "staff_requests"), payload);
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Submitted to HQ!', showConfirmButton: false, timer: 2000});
         document.getElementById('requestModal').style.display = 'none';
-    } catch(e) { 
-        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error'); 
-    } finally { 
-        btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; 
-    }
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to send request.', 'error'); } 
+    finally { btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; }
 };
 
-// --- NOTIFICATION ENGINE ---
 window.playNotificationPing = function() {
     try {
         let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        let osc = audioCtx.createOscillator();
-        let gain = audioCtx.createGain();
+        let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'sine'; osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime);
-        gain.gain.setValueAtTime(1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        gain.gain.setValueAtTime(1, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
         osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.5);
     } catch(e){}
 };
@@ -695,48 +611,32 @@ window.startInboxListener = function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
     if (!staffName) return;
 
-    const q = query(collection(db, "staff_requests"), where("staffName", "==", staffName));
-    onSnapshot(q, (snapshot) => {
+    onSnapshot(query(collection(db, "staff_requests"), where("staffName", "==", staffName)), (snapshot) => {
         let unreadCount = 0;
-        snapshot.forEach(doc => {
-            let d = doc.data();
-            if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) {
-                unreadCount++;
-            }
-        });
-
+        snapshot.forEach(doc => { let d = doc.data(); if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) unreadCount++; });
         let badge = document.getElementById('navReqBadge');
         if (badge) {
             if (unreadCount > 0) {
-                badge.style.display = 'block';
-                badge.innerText = unreadCount;
+                badge.style.display = 'block'; badge.innerText = unreadCount;
                 if (window.lastUnreadCount !== undefined && unreadCount > window.lastUnreadCount) window.playNotificationPing();
                 window.lastUnreadCount = unreadCount;
-            } else {
-                badge.style.display = 'none';
-                window.lastUnreadCount = 0;
-            }
+            } else { badge.style.display = 'none'; window.lastUnreadCount = 0; }
         }
     });
 };
 
 window.loadInbox = async function() {
-    let container = document.getElementById('reqInboxContainer');
     let listEl = document.getElementById('reqInboxList');
-    container.style.display = 'block';
+    document.getElementById('reqInboxContainer').style.display = 'block';
     listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8;">Loading...</div>';
 
     try {
-        const q = query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name')));
-        const snap = await getDocs(q);
-        
-        let docsArray = [];
-        snap.forEach(docSnap => docsArray.push({id: docSnap.id, ...docSnap.data()}));
+        const snap = await getDocs(query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name'))));
+        let docsArray = []; snap.forEach(docSnap => docsArray.push({id: docSnap.id, ...docSnap.data()}));
         docsArray.sort((a,b) => b.timestamp - a.timestamp); 
 
         let html = '';
         docsArray.forEach(d => {
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
             let color = d.status === 'Approved' ? '#16a34a' : (d.status === 'Rejected' ? '#dc2626' : '#d97706');
             let bg = d.status === 'Approved' ? '#dcfce7' : (d.status === 'Rejected' ? '#fef2f2' : '#fffbeb');
             
@@ -749,17 +649,12 @@ window.loadInbox = async function() {
                         <strong style="color:#0f172a; font-size:14px;">${d.type}</strong>
                         <span style="background:${bg}; color:${color}; font-weight:bold; font-size:11px; padding:4px 8px; border-radius:6px;">${d.status}</span>
                     </div>
-                    <div style="font-size:11px; color:#64748b;">📅 Submitted: ${dateStr}</div>
-                    ${proofHtml}
-                    ${replyHtml}
+                    <div style="font-size:11px; color:#64748b;">📅 Submitted: ${d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent'}</div>
+                    ${proofHtml}${replyHtml}
                 </div>
             `;
-
-            if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) {
-                updateDoc(doc(db, "staff_requests", d.id), { staffAcknowledged: true });
-            }
+            if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) updateDoc(doc(db, "staff_requests", d.id), { staffAcknowledged: true });
         });
-        
         listEl.innerHTML = html || '<div style="color:#64748b; font-size:13px; text-align:center;">No requests found.</div>';
     } catch(e) { console.error(e); listEl.innerHTML = 'Error loading inbox.'; }
 };
