@@ -55,26 +55,20 @@ window.requestDeviceAccess = async function() {
     btn.innerText = "⏳ Registering..."; btn.disabled = true;
 
     try {
-        // 1. Use addDoc to generate a standard 20-character Firebase ID to match the Manager App!
-        const docRef = await addDoc(collection(db, "devices"), {
+        // Generate a standard unique ID
+        const newDeviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+        // Send payload explicitly mapping to the fields your Manager App table renders
+        await setDoc(doc(db, "devices", newDeviceId), {
             deviceName: name + " (Staff)",
             branch: "Main Office",
             status: "Blocked",
-            
-            // 2. Send EVERY possible date format so the Manager App table cannot fail to read it!
             registrationDate: new Date().toLocaleDateString('en-US'),
-            dateAdded: new Date().toLocaleDateString('en-US'),
-            createdAt: serverTimestamp(),
-            timestamp: serverTimestamp(),
-            
-            // 3. Extra fail-safes
-            deviceType: "Mobile",
-            active: false
+            timestamp: serverTimestamp()
         });
 
-        // Save the newly generated native Firebase ID to lock the phone
-        localStorage.setItem('takodeal_device_id', docRef.id);
-        window.listenToDeviceStatus(docRef.id);
+        localStorage.setItem('takodeal_device_id', newDeviceId);
+        window.listenToDeviceStatus(newDeviceId);
 
     } catch(e) {
         console.error(e);
