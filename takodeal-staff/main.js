@@ -32,9 +32,24 @@ window.BRANCH_ZONES = {
 window.ALLOWED_RADIUS_METERS = 50;
 
 // ==========================================
-// 🔒 LOGIN & PROFILE ENGINE
+// 🔒 DEVICE SECURITY & LOGIN ENGINE
 // ==========================================
+const MASTER_COMPANY_KEY = "TAKO-2026"; // 👈 You can change this secret key to anything you want!
+
 document.addEventListener("DOMContentLoaded", () => {
+    // 1. Check if the device is a Trusted Takodeál Device
+    let isTrusted = localStorage.getItem('takodeal_device_trusted');
+    
+    if (!isTrusted) {
+        // LOCK THE APP DOWN!
+        document.getElementById('deviceAuthOverlay').style.display = 'flex';
+        document.getElementById('loginOverlay').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'none';
+        return; 
+    }
+
+    // 2. If Trusted, proceed to normal session checks
+    document.getElementById('deviceAuthOverlay').style.display = 'none';
     let savedName = localStorage.getItem('takodeal_staff_name');
     let savedPic = localStorage.getItem('takodeal_staff_pic');
     
@@ -49,8 +64,28 @@ document.addEventListener("DOMContentLoaded", () => {
         window.startLiveClock();
         window.loadAnnouncements();
         window.startInboxListener();
+    } else {
+        document.getElementById('loginOverlay').style.display = 'flex';
     }
 });
+
+window.authorizeDevice = function() {
+    let input = document.getElementById('companyKeyInput').value.trim();
+    if (input === MASTER_COMPANY_KEY) {
+        // Mark device as trusted permanently!
+        localStorage.setItem('takodeal_device_trusted', 'true');
+        Swal.fire({toast: true, position: 'top', icon: 'success', title: 'Device Authorized!', showConfirmButton: false, timer: 2000});
+        
+        // Smooth transition to PIN screen
+        document.getElementById('deviceAuthOverlay').style.opacity = '0';
+        setTimeout(() => {
+            document.getElementById('deviceAuthOverlay').style.display = 'none';
+            document.getElementById('loginOverlay').style.display = 'flex';
+        }, 300);
+    } else {
+        document.getElementById('authError').style.display = 'block';
+    }
+};
 
 window.loginStaff = async function() {
     let pinInput = document.getElementById('loginPin').value.trim();
