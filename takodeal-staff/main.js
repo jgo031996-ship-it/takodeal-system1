@@ -133,7 +133,6 @@ window.openProfile = async function() {
     let placeholder = document.getElementById('profilePlaceholder');
     let staffId = localStorage.getItem('takodeal_staff_id');
     
-    // 1. Setup the Picture
     if (pic && pic.length > 5) {
         preview.src = pic; preview.style.display = 'block'; placeholder.style.display = 'none';
     } else {
@@ -141,11 +140,11 @@ window.openProfile = async function() {
     }
     
     window.selectedProfileFile = null;
+    document.getElementById('profPin').value = ''; // Always clear PIN field on load
     
-    // 2. Fetch the latest HR Data from Firebase!
     try {
         const docRef = doc(db, "cashiers", staffId);
-        const docSnap = await window.getDoc(docRef);
+        const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
             let d = docSnap.data();
@@ -163,6 +162,17 @@ window.openProfile = async function() {
             document.getElementById('profSss').value = d.sssNumber || '';
             document.getElementById('profPhilhealth').value = d.philhealthNumber || '';
             document.getElementById('profPagibig').value = d.pagibigNumber || '';
+            
+            // Render the Read-Only Deductions
+            document.getElementById('viewSssDed').innerText = '₱' + (parseFloat(d.sssDeduction) || 0).toFixed(2);
+            document.getElementById('viewPhDed').innerText = '₱' + (parseFloat(d.philhealthDeduction) || 0).toFixed(2);
+            document.getElementById('viewPagibigDed').innerText = '₱' + (parseFloat(d.pagibigDeduction) || 0).toFixed(2);
+            
+            let customDedText = "None";
+            if (d.customDeductions && d.customDeductions.length > 0) {
+                customDedText = d.customDeductions.map(c => `${c.name}: ₱${parseFloat(c.amount).toFixed(2)}`).join('<br>');
+            }
+            document.getElementById('viewCustomDed').innerHTML = customDedText;
         }
     } catch(e) { console.error("Error fetching profile data:", e); }
 
@@ -218,7 +228,6 @@ window.saveProfileData = async function() {
     let staffId = localStorage.getItem('takodeal_staff_id');
     let btn = document.getElementById('btnSaveProfileData');
     
-    // Grab all the typed data
     let payload = {
         cashierName: document.getElementById('profFullName').value.trim(),
         scheduleName: document.getElementById('profNickname').value.trim(),
@@ -236,6 +245,12 @@ window.saveProfileData = async function() {
         pagibigNumber: document.getElementById('profPagibig').value.trim()
     };
 
+    // Grab the new PIN (if they typed one)
+    let newPin = document.getElementById('profPin').value.trim();
+    if (newPin) {
+        payload.pin = newPin; // Appends it to the save payload!
+    }
+
     if (!payload.cashierName) return Swal.fire('Required', 'Full Name cannot be empty.', 'warning');
 
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
@@ -243,12 +258,14 @@ window.saveProfileData = async function() {
     try {
         await updateDoc(doc(db, "cashiers", staffId), payload);
         
-        // Update the name on their screen in case they changed it
         localStorage.setItem('takodeal_staff_name', payload.cashierName);
         document.getElementById('loggedInName').innerText = payload.cashierName;
 
-        Swal.fire('✅ Saved', 'Your HR profile has been securely synced to HQ.', 'success');
+        let successMsg = newPin ? 'Your profile and new PIN have been securely saved.' : 'Your HR profile has been securely synced to HQ.';
+        Swal.fire('✅ Saved', successMsg, 'success');
+        
         document.getElementById('profileModal').style.display = 'none';
+        document.getElementById('profPin').value = ''; // Wipe PIN field for security
     } catch (e) {
         console.error("Save Profile Error:", e);
         Swal.fire('Error', 'Failed to save data. Check internet connection.', 'error');
