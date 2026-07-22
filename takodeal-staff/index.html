@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Takodeál Staff Portal</title>
+    <link rel="icon" type="image/jpeg" href="logo.jpg">
+    <link rel="apple-touch-icon" href="logo.jpg">
+    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- 🤖 Face AI Brain -->
@@ -176,7 +179,7 @@
                 <div class="clock-card">
                     <!-- 📷 Camera Feed Area -->
                     <div id="cameraContainer" style="margin-bottom: 15px; border-radius: 12px; overflow: hidden; background: #000; height: 250px; position: relative;">
-                        <video id="clockVideo" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+                        <video id="clockVideo" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
                         <canvas id="clockCanvas" style="display: none;"></canvas>
                         <div id="cameraStatus" style="position: absolute; bottom: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;">📷 Initializing Camera...</div>
                     </div>
@@ -255,7 +258,8 @@
                 <span class="icon">⏱️</span><span>Clock</span>
             </button>
             <button class="nav-item" onclick="window.switchView('requests', this)">
-                <span class="icon">📥</span><span>Reqs</span>
+                <span class="icon" style="position:relative;">📥<span id="navReqBadge" style="display:none; position:absolute; top:-5px; right:-10px; background:#dc2626; color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">!</span></span>
+                <span>Reqs</span>
             </button>
             <button class="nav-item" onclick="window.switchView('schedule', this)">
                 <span class="icon">🗓️</span><span>Sched</span>
