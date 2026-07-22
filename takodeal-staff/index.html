@@ -14,6 +14,19 @@
 </head>
 <body>
 
+    <!-- 🔐 DEVICE REGISTRATION OVERLAY (ANTI-SPY LOCK) -->
+    <div id="deviceAuthOverlay" class="overlay" style="z-index: 20000; display: none;">
+        <div class="login-card">
+            <div class="login-header">
+                <h2 style="color: #0f766e; font-size: 22px; margin-bottom: 5px;">🔒 Restricted Access</h2>
+                <p style="font-size: 12px; color: #64748b; line-height: 1.4;">This device is not recognized. Please enter the Takodeál Company Key to authorize this phone.</p>
+            </div>
+            <input type="password" id="companyKeyInput" placeholder="Enter Company Key" autocomplete="off" style="text-align: center; letter-spacing: 2px;">
+            <button class="btn-primary" onclick="window.authorizeDevice()" style="background: #0f172a;">Authorize Device</button>
+            <div id="authError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Invalid Company Key.</div>
+        </div>
+    </div>
+    
     <!-- 🔒 LOGIN OVERLAY -->
     <div id="loginOverlay" class="overlay">
         <div class="login-card">
