@@ -41,19 +41,22 @@ document.addEventListener("DOMContentLoaded", () => {
     let isTrusted = localStorage.getItem('takodeal_device_trusted');
     
     if (!isTrusted) {
-        // LOCK THE APP DOWN!
+        // STAY LOCKED! 
         document.getElementById('deviceAuthOverlay').style.display = 'flex';
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'none';
         return; 
     }
 
-    // 2. If Trusted, proceed to normal session checks
+    // 2. If Trusted, hide the security lock
     document.getElementById('deviceAuthOverlay').style.display = 'none';
+
+    // 3. Check if someone is already logged in
     let savedName = localStorage.getItem('takodeal_staff_name');
     let savedPic = localStorage.getItem('takodeal_staff_pic');
     
     if (savedName) {
+        // Load the app directly
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         document.getElementById('loggedInName').innerText = savedName;
@@ -65,7 +68,9 @@ document.addEventListener("DOMContentLoaded", () => {
         window.loadAnnouncements();
         window.startInboxListener();
     } else {
+        // Trusted device, but no one logged in. Show the PIN screen!
         document.getElementById('loginOverlay').style.display = 'flex';
+        document.getElementById('appContainer').style.display = 'none';
     }
 });
 
