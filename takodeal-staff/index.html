@@ -16,13 +16,24 @@
     <!-- 🔐 DEVICE FLEET REGISTRATION OVERLAY -->
     <div id="deviceAuthOverlay" class="overlay" style="z-index: 20000; display: flex; flex-direction: column; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.95)), url('logo.jpg'); background-size: cover; background-position: center; background-attachment: fixed;">
         
+        <!-- Step 1: Request Access Card -->
         <div class="login-card" id="registerCard">
             <div class="login-header">
                 <img src="logo.jpg" alt="Takodeál" class="login-logo">
                 <h2 style="color: #0f766e; font-size: 22px; margin-bottom: 5px;">Register Device</h2>
-                <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 20px;">Enter a name for this phone to request access from HQ.</p>
+                <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 15px;">Enter a name for this phone and select your branch to request access from HQ.</p>
             </div>
-            <input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 15px; font-size: 16px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none;">
+            
+            <input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 12px; font-size: 15px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; box-sizing: border-box; outline: none;">
+            
+            <select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
+                <option value="Auto">📍 Auto-Detect Branch via GPS</option>
+                <option value="Cabantian">📍 Cabantian Branch</option>
+                <option value="Citygate">📍 Citygate Branch</option>
+                <option value="Maa">📍 Maa Branch</option>
+                <option value="Main Office">🏢 Main Office / Roving</option>
+            </select>
+
             <button class="btn-primary" onclick="window.requestDeviceAccess()">Request Access</button>
         </div>
 
@@ -214,13 +225,50 @@
                 </div>
             </div>
 
+            <!-- 📋 DAILY SOP VIEW -->
             <div id="view-sop" class="view">
                 <div class="view-header">
-                    <h2>📋 Daily SOP</h2>
-                    <p>Complete your branch tasks and requirements.</p>
+                    <h2>📋 Daily SOP Checklist</h2>
+                    <p>Complete your shift tasks and submit compliance report to HQ.</p>
                 </div>
-                <div id="sopContainer">
-                    <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading tasks...</div>
+
+                <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 140px;">
+                            <label style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">1. Branch Location</label>
+                            <select id="sopBranchSelect" onchange="window.onSopBranchChange()" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f766e; outline: none; background: #f8fafc; font-size: 13px;">
+                                <option value="Cabantian">📍 Cabantian</option>
+                                <option value="Citygate">📍 Citygate</option>
+                                <option value="Maa">📍 Maa</option>
+                                <option value="Main Office">🏢 Main Office</option>
+                            </select>
+                        </div>
+                        <div style="flex: 1; min-width: 140px;">
+                            <label style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">2. Assigned Role / Shift</label>
+                            <select id="sopRoleSelect" onchange="window.renderSopTasks()" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a; outline: none; background: #f8fafc; font-size: 13px;">
+                                <option value="">-- Choose Role --</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="sopGpsBadge" style="font-size: 11px; color: #16a34a; background: #dcfce7; padding: 4px 8px; border-radius: 6px; font-weight: bold; display: inline-block;">📍 GPS Location Active</div>
+                </div>
+
+                <!-- Dynamic Task Checklist Container -->
+                <div id="sopTasksContainer" style="display: none; background: white; border-radius: 12px; padding: 15px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+                        <h3 id="sopTitleHeader" style="margin: 0; color: #0f766e; font-size: 15px;">Shift Tasks</h3>
+                        <span id="sopProgressBadge" style="background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 12px;">0/0 Done</span>
+                    </div>
+
+                    <div id="sopTaskList" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                        <!-- Tasks dynamically injected here -->
+                    </div>
+
+                    <button id="btnSubmitSop" onclick="window.submitSopChecklist()" style="width: 100%; background: #0f766e; color: white; border: none; padding: 14px; font-size: 15px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.2);">🚀 Submit Completed Checklist</button>
+                </div>
+
+                <div id="sopEmptyState" style="text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 14px;">
+                    Select a Role/Shift above to view your daily tasks.
                 </div>
             </div>
 
