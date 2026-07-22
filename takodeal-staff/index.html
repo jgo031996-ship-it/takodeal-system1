@@ -68,7 +68,7 @@
                     <div class="form-group" style="margin-bottom: 0;"><label style="color:#b91c1c;">Staff Email Address</label><input type="email" id="profEmail" placeholder="staff@gmail.com"></div>
                 </div>
 
-                <!-- Disbursement Details -->
+                <!-- Disbursement Accounts -->
                 <h3 style="color: #0284c7; font-size: 14px; margin: 15px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📱 Disbursement Accounts</h3>
                 <div class="profile-grid">
                     <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
@@ -89,6 +89,28 @@
                     <div class="form-group"><label>SSS Number</label><input type="text" id="profSss" placeholder="00-0000000-0"></div>
                     <div class="form-group"><label>PhilHealth</label><input type="text" id="profPhilhealth" placeholder="00-000000000-0"></div>
                     <div class="form-group"><label>Pag-IBIG</label><input type="text" id="profPagibig" placeholder="0000-0000-0000"></div>
+                </div>
+
+                <!-- Security / Change PIN -->
+                <h3 style="color: #16a34a; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🔒 Security</h3>
+                <div class="form-group">
+                    <label>Change Login PIN</label>
+                    <input type="text" id="profPin" placeholder="Enter new PIN (Leave blank to keep current PIN)" style="border-color: #86efac; background: #f0fdf4;">
+                </div>
+
+                <!-- Read-Only Deductions -->
+                <h3 style="color: #64748b; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">💸 Payroll Deductions (View Only)</h3>
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; margin-bottom: 15px;">
+                    <div class="profile-grid" style="margin-bottom: 15px; grid-template-columns: 1fr 1fr 1fr;">
+                        <div><label style="font-size: 11px; color: #64748b; display: block;">SSS (Cutoff)</label><span id="viewSssDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
+                        <div><label style="font-size: 11px; color: #64748b; display: block;">PhilHealth</label><span id="viewPhDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
+                        <div><label style="font-size: 11px; color: #64748b; display: block;">Pag-IBIG</label><span id="viewPagibigDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; color: #64748b; display: block; margin-bottom: 4px;">Other Custom Deductions</label>
+                        <div id="viewCustomDed" style="font-weight: bold; color: #dc2626; font-size: 13px;">None</div>
+                    </div>
+                    <div style="font-size: 10px; color: #94a3b8; margin-top: 12px; font-style: italic;">* Note: Deductions are managed securely by HQ and cannot be edited here.</div>
                 </div>
 
             </div>
