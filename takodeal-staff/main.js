@@ -47,8 +47,8 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById('topAvatar').style.backgroundImage = `url('${savedPic}')`;
         }
         window.startLiveClock();
-        window.startInboxListener();
         window.loadAnnouncements();
+        window.startInboxListener();
     }
 });
 
@@ -102,8 +102,8 @@ window.loginStaff = async function() {
             }, 300);
             
             window.startLiveClock();
-            window.startInboxListener();
             window.loadAnnouncements();
+            window.startInboxListener();
         } else {
             errorMsg.innerText = "❌ Incorrect PIN. Please try again."; errorMsg.style.display = 'block';
         }
@@ -120,8 +120,8 @@ window.logoutStaff = function() {
         showCancelButton: true, confirmButtonColor: '#0f766e', confirmButtonText: 'Yes, sign out'
     }).then((result) => {
         if (result.isConfirmed) {
-            localStorage.clear(); // Wipe session
-            location.reload(); // Hard reset
+            localStorage.clear();
+            location.reload(); 
         }
     });
 };
@@ -142,7 +142,7 @@ window.openProfile = async function() {
     }
     
     window.selectedProfileFile = null;
-    document.getElementById('profPin').value = ''; // Always clear PIN field on load
+    document.getElementById('profPin').value = ''; 
     
     try {
         const docRef = doc(db, "cashiers", staffId);
@@ -165,7 +165,7 @@ window.openProfile = async function() {
             document.getElementById('profPhilhealth').value = d.philhealthNumber || '';
             document.getElementById('profPagibig').value = d.pagibigNumber || '';
             
-            // Render the Read-Only Deductions
+            // Read-Only Deductions
             document.getElementById('viewSssDed').innerText = '₱' + (parseFloat(d.sssDeduction) || 0).toFixed(2);
             document.getElementById('viewPhDed').innerText = '₱' + (parseFloat(d.philhealthDeduction) || 0).toFixed(2);
             document.getElementById('viewPagibigDed').innerText = '₱' + (parseFloat(d.pagibigDeduction) || 0).toFixed(2);
@@ -192,8 +192,6 @@ window.previewProfileImage = async function(event) {
             document.getElementById('profilePlaceholder').style.display = 'none';
         }
         reader.readAsDataURL(file);
-        
-        // Auto-Upload the picture the moment they select it!
         await window.uploadProfilePicture();
     }
 };
@@ -212,10 +210,8 @@ window.uploadProfilePicture = async function() {
         const snapshot = await uploadBytes(storageReference, window.selectedProfileFile);
         const photoUrl = await getDownloadURL(snapshot.ref);
 
-        // Update Cashier Database
         await updateDoc(doc(db, "cashiers", staffId), { profilePicUrl: photoUrl });
         
-        // Update Local Memory & Header Icon
         localStorage.setItem('takodeal_staff_pic', photoUrl);
         document.getElementById('topAvatar').innerText = '';
         document.getElementById('topAvatar').style.backgroundImage = `url('${photoUrl}')`;
@@ -247,11 +243,8 @@ window.saveProfileData = async function() {
         pagibigNumber: document.getElementById('profPagibig').value.trim()
     };
 
-    // Grab the new PIN (if they typed one)
     let newPin = document.getElementById('profPin').value.trim();
-    if (newPin) {
-        payload.pin = newPin; // Appends it to the save payload!
-    }
+    if (newPin) payload.pin = newPin;
 
     if (!payload.cashierName) return Swal.fire('Required', 'Full Name cannot be empty.', 'warning');
 
@@ -267,7 +260,7 @@ window.saveProfileData = async function() {
         Swal.fire('✅ Saved', successMsg, 'success');
         
         document.getElementById('profileModal').style.display = 'none';
-        document.getElementById('profPin').value = ''; // Wipe PIN field for security
+        document.getElementById('profPin').value = ''; 
     } catch (e) {
         console.error("Save Profile Error:", e);
         Swal.fire('Error', 'Failed to save data. Check internet connection.', 'error');
@@ -287,7 +280,6 @@ window.switchView = function(viewId, btnElement) {
     document.querySelectorAll('.bottom-nav .nav-item').forEach(btn => btn.classList.remove('active'));
     if (btnElement) btnElement.classList.add('active');
     
-    // Trigger View Specific Logic
     if (viewId === 'timeclock') window.startCameraAndGPS();
     else window.stopCamera();
 };
@@ -325,13 +317,14 @@ window.cameraStream = null;
 window.startLiveClock = function() {
     setInterval(() => {
         const now = new Date();
-        document.getElementById('liveTime').innerHTML = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        document.getElementById('liveDate').innerHTML = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        const timeEl = document.getElementById('liveTime');
+        const dateEl = document.getElementById('liveDate');
+        if (timeEl) timeEl.innerHTML = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (dateEl) dateEl.innerHTML = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
     }, 1000);
 };
 
 window.startCameraAndGPS = async function() {
-    // 1. Start Camera
     let videoEl = document.getElementById('clockVideo');
     let statusEl = document.getElementById('cameraStatus');
     try {
@@ -344,7 +337,6 @@ window.startCameraAndGPS = async function() {
         statusEl.style.background = "rgba(220, 38, 38, 0.8)";
     }
 
-    // 2. Start GPS
     let gpsEl = document.getElementById('gpsStatus');
     if (!navigator.geolocation) {
         gpsEl.innerText = "❌ GPS not supported on this device."; gpsEl.style.color = "#dc2626"; gpsEl.style.background = "#fef2f2";
@@ -378,13 +370,14 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 };
 
 window.punchTime = async function(type) {
+    // 🛑 SPAM BLOCKER
     let lastPunch = localStorage.getItem('takodeal_last_punch');
     if (lastPunch && (Date.now() - parseInt(lastPunch) < 60000)) {
         return Swal.fire('Cooldown Active', 'Please wait 1 minute before punching again to prevent accidental double-logs.', 'warning');
     }
+
     if (!window.currentLat || !window.currentLng) return Swal.fire('GPS Required', 'Please wait for GPS verification or enable Location Services.', 'warning');
     
-    // Find closest branch
     let closestBranch = "Unknown";
     let minDistance = 999999;
     for (let branch in window.BRANCH_ZONES) {
@@ -397,13 +390,18 @@ window.punchTime = async function(type) {
         return Swal.fire('Out of Range', `You are ${Math.round(minDistance)}m away from ${closestBranch}. You must be within ${window.ALLOWED_RADIUS_METERS}m to punch in.`, 'error');
     }
 
-    // Capture Photo
     let photoBase64 = "";
     const video = document.getElementById('clockVideo');
     const canvas = document.getElementById('clockCanvas');
     if (video && canvas && video.videoWidth > 0) {
         canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0);
+        
+        // Mirror the canvas capture so the saved photo matches the screen
+        const ctx = canvas.getContext('2d');
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0);
+        
         photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
     }
 
@@ -415,8 +413,10 @@ window.punchTime = async function(type) {
         await addDoc(collection(db, "attendance_logs"), {
             staffName: staffName, branch: closestBranch, type: type, timestamp: serverTimestamp(),
             locationLat: window.currentLat, locationLng: window.currentLng, distanceMeters: Math.round(minDistance),
-            photoBase64: photoBase64, localStorage.setItem('takodeal_last_punch', Date.now());
+            photoBase64: photoBase64
         });
+        
+        localStorage.setItem('takodeal_last_punch', Date.now()); // Set Cooldown Timer
         Swal.fire('✅ Success', `${type} logged at ${closestBranch}!`, 'success');
     } catch(e) { console.error(e); Swal.fire('Error', 'Failed to log time. Check connection.', 'error'); } 
     finally { btnIn.disabled = false; btnOut.disabled = false; }
@@ -463,7 +463,7 @@ window.submitStaffRequest = async function() {
         type: window.currentReqType,
         staffName: localStorage.getItem('takodeal_staff_name'),
         status: "Pending",
-        staffAcknowledged: false, // Tracks if staff has read the manager's reply
+        staffAcknowledged: false, 
         timestamp: serverTimestamp()
     };
 
@@ -490,7 +490,6 @@ window.submitStaffRequest = async function() {
     btn.disabled = true;
 
     try {
-        // Handle Photo Upload if Staff Meal
         if (fileToUpload) {
             const fileExt = fileToUpload.name.split('.').pop();
             const fileName = `staff_requests/meal_${payload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
@@ -532,7 +531,6 @@ window.startInboxListener = function() {
         let unreadCount = 0;
         snapshot.forEach(doc => {
             let d = doc.data();
-            // Count if it's Approved/Rejected AND the staff hasn't read it yet!
             if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) {
                 unreadCount++;
             }
@@ -565,7 +563,7 @@ window.loadInbox = async function() {
         
         let docsArray = [];
         snap.forEach(docSnap => docsArray.push({id: docSnap.id, ...docSnap.data()}));
-        docsArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+        docsArray.sort((a,b) => b.timestamp - a.timestamp); 
 
         let html = '';
         docsArray.forEach(d => {
@@ -588,7 +586,6 @@ window.loadInbox = async function() {
                 </div>
             `;
 
-            // 🔥 Mark as Read: If they open the inbox, acknowledge any unread replies!
             if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) {
                 updateDoc(doc(db, "staff_requests", d.id), { staffAcknowledged: true });
             }
