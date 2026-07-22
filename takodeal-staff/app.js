@@ -760,6 +760,7 @@ window.onSopBranchChange = async function() {
 
 window.renderSopTasks = function() {
     let roleName = document.getElementById('sopRoleSelect').value;
+    let branch = document.getElementById('sopBranchSelect').value;
     let container = document.getElementById('sopTasksContainer');
     let emptyState = document.getElementById('sopEmptyState');
     let list = document.getElementById('sopTaskList');
@@ -773,15 +774,25 @@ window.renderSopTasks = function() {
     let tasks = window.currentSopRoles[roleName] || [];
     document.getElementById('sopTitleHeader').innerText = `Tasks for ${roleName}`;
     
+    // 🔥 THE MEMORY ENGINE: Check if they started this checklist earlier today!
+    let draftKey = `takodeal_sop_draft_${branch}_${roleName}`;
+    let savedDraft = [];
+    try { savedDraft = JSON.parse(localStorage.getItem(draftKey)) || []; } catch(e){}
+
     let html = '';
     tasks.forEach((taskText, index) => {
+        // Retrieve memory states
+        let isChecked = savedDraft[index] ? savedDraft[index].checked : false;
+        let savedRemark = savedDraft[index] ? savedDraft[index].remark : "";
+
+        // Notice the new oninput="window.updateSopProgress()" attached to the text box!
         html += `
             <div class="sop-task-item" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; transition: 0.2s;">
                 <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer; margin: 0;">
-                    <input type="checkbox" class="sop-chk" data-index="${index}" onchange="window.updateSopProgress()" style="width: 20px; height: 20px; margin-top: 2px; accent-color: #0f766e; cursor: pointer;">
+                    <input type="checkbox" class="sop-chk" data-index="${index}" onchange="window.updateSopProgress()" ${isChecked ? 'checked' : ''} style="width: 20px; height: 20px; margin-top: 2px; accent-color: #0f766e; cursor: pointer;">
                     <div style="flex: 1;">
                         <span style="font-size: 14px; font-weight: bold; color: #0f172a; line-height: 1.4; display: block;">${taskText}</span>
-                        <input type="text" class="sop-remark" placeholder="Optional remark/note if skipped or issue found..." style="width: 100%; padding: 6px 10px; margin-top: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
+                        <input type="text" class="sop-remark" placeholder="Optional remark/note if skipped or issue found..." value="${savedRemark}" oninput="window.updateSopProgress()" style="width: 100%; padding: 6px 10px; margin-top: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
                     </div>
                 </label>
             </div>
@@ -810,6 +821,22 @@ window.updateSopProgress = function() {
             badge.style.background = "#e0f2fe";
             badge.style.color = "#0284c7";
         }
+    }
+
+    // 🔥 THE MEMORY ENGINE: Auto-save the state to LocalStorage every time they type or click!
+    let branch = document.getElementById('sopBranchSelect').value;
+    let roleName = document.getElementById('sopRoleSelect').value;
+    
+    if (branch && roleName && total > 0) {
+        let draftKey = `takodeal_sop_draft_${branch}_${roleName}`;
+        let draftData = [];
+        document.querySelectorAll('.sop-task-item').forEach(item => {
+            draftData.push({
+                checked: item.querySelector('.sop-chk').checked,
+                remark: item.querySelector('.sop-remark').value
+            });
+        });
+        localStorage.setItem(draftKey, JSON.stringify(draftData));
     }
 };
 
@@ -855,6 +882,9 @@ window.submitSopChecklist = async function() {
             timestamp: serverTimestamp()
         });
 
+        // 🔥 THE MEMORY ENGINE: Wipe the memory clean only AFTER successful submission!
+        localStorage.removeItem(`takodeal_sop_draft_${branch}_${roleName}`);
+
         Swal.fire({
             title: '✅ SOP Submitted!',
             text: `Compliance Score: ${scorePercentage}%. Your report has been logged to HQ.`,
@@ -863,7 +893,7 @@ window.submitSopChecklist = async function() {
             customClass: { popup: 'rounded-2xl' }
         });
 
-        // Reset check selections
+        // Reset check selections visually
         document.querySelectorAll('.sop-chk').forEach(c => c.checked = false);
         document.querySelectorAll('.sop-remark').forEach(r => r.value = '');
         window.updateSopProgress();
