@@ -2,7 +2,7 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, getDocs, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -124,14 +124,16 @@ window.logoutStaff = function() {
     });
 };
 
-// --- PROFILE PICTURE UPLOAD ---
+// --- PROFILE DATA & PICTURE ENGINE ---
 window.selectedProfileFile = null;
 
-window.openProfile = function() {
+window.openProfile = async function() {
     let pic = localStorage.getItem('takodeal_staff_pic');
     let preview = document.getElementById('profilePreview');
     let placeholder = document.getElementById('profilePlaceholder');
+    let staffId = localStorage.getItem('takodeal_staff_id');
     
+    // 1. Setup the Picture
     if (pic && pic.length > 5) {
         preview.src = pic; preview.style.display = 'block'; placeholder.style.display = 'none';
     } else {
@@ -139,10 +141,35 @@ window.openProfile = function() {
     }
     
     window.selectedProfileFile = null;
+    
+    // 2. Fetch the latest HR Data from Firebase!
+    try {
+        const docRef = doc(db, "cashiers", staffId);
+        const docSnap = await window.getDoc(docRef);
+        
+        if (docSnap.exists()) {
+            let d = docSnap.data();
+            document.getElementById('profFullName').value = d.cashierName || '';
+            document.getElementById('profNickname').value = d.scheduleName || '';
+            document.getElementById('profPhone').value = d.phone || '';
+            document.getElementById('profAddress').value = d.address || '';
+            document.getElementById('profEmergName').value = d.emergencyName || '';
+            document.getElementById('profEmergNum').value = d.emergencyNumber || '';
+            document.getElementById('profEmail').value = d.email || '';
+            document.getElementById('profGcashName').value = d.gcashName || '';
+            document.getElementById('profGcashNum').value = d.gcashNumber || '';
+            document.getElementById('profGotymeName').value = d.gotymeName || '';
+            document.getElementById('profGotymeNum').value = d.gotymeNumber || '';
+            document.getElementById('profSss').value = d.sssNumber || '';
+            document.getElementById('profPhilhealth').value = d.philhealthNumber || '';
+            document.getElementById('profPagibig').value = d.pagibigNumber || '';
+        }
+    } catch(e) { console.error("Error fetching profile data:", e); }
+
     document.getElementById('profileModal').style.display = 'flex';
 };
 
-window.previewProfileImage = function(event) {
+window.previewProfileImage = async function(event) {
     const file = event.target.files[0];
     if (file) {
         window.selectedProfileFile = file;
@@ -153,14 +180,14 @@ window.previewProfileImage = function(event) {
             document.getElementById('profilePlaceholder').style.display = 'none';
         }
         reader.readAsDataURL(file);
+        
+        // Auto-Upload the picture the moment they select it!
+        await window.uploadProfilePicture();
     }
 };
 
 window.uploadProfilePicture = async function() {
-    if (!window.selectedProfileFile) return Swal.fire('No Photo', 'Please choose a picture first.', 'warning');
-    
-    let btn = document.getElementById('btnSaveProfile');
-    btn.innerText = "⏳ Uploading..."; btn.disabled = true;
+    if (!window.selectedProfileFile) return;
     
     let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
@@ -176,17 +203,57 @@ window.uploadProfilePicture = async function() {
         // Update Cashier Database
         await updateDoc(doc(db, "cashiers", staffId), { profilePicUrl: photoUrl });
         
-        // Update Local Memory
+        // Update Local Memory & Header Icon
         localStorage.setItem('takodeal_staff_pic', photoUrl);
         document.getElementById('topAvatar').innerText = '';
         document.getElementById('topAvatar').style.backgroundImage = `url('${photoUrl}')`;
         
-        Swal.fire('✅ Success', 'Profile picture updated!', 'success');
-        document.getElementById('profileModal').style.display = 'none';
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Photo Uploaded!', showConfirmButton: false, timer: 2000});
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to upload photo.', 'error');
+    }
+};
+
+window.saveProfileData = async function() {
+    let staffId = localStorage.getItem('takodeal_staff_id');
+    let btn = document.getElementById('btnSaveProfileData');
+    
+    // Grab all the typed data
+    let payload = {
+        cashierName: document.getElementById('profFullName').value.trim(),
+        scheduleName: document.getElementById('profNickname').value.trim(),
+        phone: document.getElementById('profPhone').value.trim(),
+        address: document.getElementById('profAddress').value.trim(),
+        emergencyName: document.getElementById('profEmergName').value.trim(),
+        emergencyNumber: document.getElementById('profEmergNum').value.trim(),
+        email: document.getElementById('profEmail').value.trim(),
+        gcashName: document.getElementById('profGcashName').value.trim(),
+        gcashNumber: document.getElementById('profGcashNum').value.trim(),
+        gotymeName: document.getElementById('profGotymeName').value.trim(),
+        gotymeNumber: document.getElementById('profGotymeNum').value.trim(),
+        sssNumber: document.getElementById('profSss').value.trim(),
+        philhealthNumber: document.getElementById('profPhilhealth').value.trim(),
+        pagibigNumber: document.getElementById('profPagibig').value.trim()
+    };
+
+    if (!payload.cashierName) return Swal.fire('Required', 'Full Name cannot be empty.', 'warning');
+
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        await updateDoc(doc(db, "cashiers", staffId), payload);
+        
+        // Update the name on their screen in case they changed it
+        localStorage.setItem('takodeal_staff_name', payload.cashierName);
+        document.getElementById('loggedInName').innerText = payload.cashierName;
+
+        Swal.fire('✅ Saved', 'Your HR profile has been securely synced to HQ.', 'success');
+        document.getElementById('profileModal').style.display = 'none';
+    } catch (e) {
+        console.error("Save Profile Error:", e);
+        Swal.fire('Error', 'Failed to save data. Check internet connection.', 'error');
     } finally {
-        btn.innerText = "💾 Save Profile"; btn.disabled = false;
+        btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
     }
 };
 
