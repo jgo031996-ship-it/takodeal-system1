@@ -58,9 +58,10 @@ window.requestDeviceAccess = async function() {
 
     try {
         await setDoc(doc(db, "devices", newDeviceId), {
-            deviceName: name,
-            branch: "Staff App",
+            deviceName: name + " (Staff App)", // Adds a tag so you know it's a mobile phone
+            branch: "Main Office",             // Forces it to bypass any branch filters!
             status: "Blocked",
+            registrationDate: new Date().toLocaleDateString('en-US'), // Sends the exact date text the Manager App expects
             timestamp: serverTimestamp()
         });
 
