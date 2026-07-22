@@ -15,7 +15,8 @@
 <body>
 
     <!-- 🔐 DEVICE REGISTRATION OVERLAY (ANTI-SPY LOCK) -->
-    <div id="deviceAuthOverlay" class="overlay" style="z-index: 20000; display: none;">
+    <!-- Notice we changed this to "display: flex;" so it shows by default! -->
+    <div id="deviceAuthOverlay" class="overlay" style="z-index: 20000; display: flex;">
         <div class="login-card">
             <div class="login-header">
                 <h2 style="color: #0f766e; font-size: 22px; margin-bottom: 5px;">🔒 Restricted Access</h2>
@@ -26,12 +27,13 @@
             <div id="authError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Invalid Company Key.</div>
         </div>
     </div>
-    
+
     <!-- 🔒 LOGIN OVERLAY -->
-    <div id="loginOverlay" class="overlay">
+    <!-- Notice we changed this to "display: none;" so it stays hidden! -->
+    <div id="loginOverlay" class="overlay" style="display: none;">
         <div class="login-card">
             <div class="login-header">
-                <img src="logo.jpg" alt="Takodeál" class="login-logo">
+                <img src="logo.png" alt="Takodeál" class="login-logo">
                 <h2>Staff Portal</h2>
                 <p>Welcome back! Please enter your PIN.</p>
             </div>
