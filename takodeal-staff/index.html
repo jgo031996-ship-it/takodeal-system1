@@ -15,16 +15,23 @@
 <body>
 
     <!-- 🔐 DEVICE FLEET REGISTRATION OVERLAY -->
-    <div id="deviceAuthOverlay" class="overlay" style="z-index: 20000; display: flex; flex-direction: column;">
+    <!-- Notice the new background styling here! -->
+    <div id="deviceAuthOverlay" class="overlay" style="z-index: 20000; display: flex; flex-direction: column; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.95)), url('logo.png'); background-size: cover; background-position: center; background-attachment: fixed;">
         
         <!-- Step 1: Request Access Card -->
         <div class="login-card" id="registerCard">
             <div class="login-header">
-                <h2 style="color: #0f766e; font-size: 22px; margin-bottom: 5px;">📱 Register Device</h2>
-                <p style="font-size: 12px; color: #64748b; line-height: 1.4;">Enter a name for this phone to request access from HQ.</p>
+                <!-- Added the logo inside the card to match the PIN screen! -->
+                <img src="logo.png" alt="Takodeál" class="login-logo">
+                <h2 style="color: #0f766e; font-size: 22px; margin-bottom: 5px;">Register Device</h2>
+                <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 20px;">Enter a name for this phone to request access from HQ.</p>
             </div>
-            <input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="text-align: center; margin-bottom: 15px;">
-            <button class="btn-primary" onclick="window.requestDeviceAccess()" style="background: #0f172a;">Request Access</button>
+            
+            <!-- Upgraded the input box to perfectly match the PIN box -->
+            <input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 15px; font-size: 16px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none;">
+            
+            <!-- Removed the dark inline color so it defaults to Takodeál Green -->
+            <button class="btn-primary" onclick="window.requestDeviceAccess()">Request Access</button>
         </div>
 
         <!-- Step 2: Blocked / Waiting for HQ Card -->
@@ -39,8 +46,8 @@
     </div>
 
     <!-- 🔒 LOGIN OVERLAY -->
-    <!-- Notice we changed this to "display: none;" so it stays hidden! -->
-    <div id="loginOverlay" class="overlay" style="display: none;">
+    <!-- Added the exact same background styling here for a seamless transition! -->
+    <div id="loginOverlay" class="overlay" style="display: none; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.95)), url('logo.png'); background-size: cover; background-position: center; background-attachment: fixed;">
         <div class="login-card">
             <div class="login-header">
                 <img src="logo.png" alt="Takodeál" class="login-logo">
