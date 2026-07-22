@@ -289,24 +289,114 @@ window.switchView = function(viewId, btnElement) {
 // ==========================================
 window.loadAnnouncements = async function() {
     let container = document.getElementById('bulletinList');
+    let cashierName = localStorage.getItem('takodeal_staff_name');
+    if (!cashierName) return;
+
     try {
+        // 1. Get Announcements from HQ
         const q = query(collection(db, "announcements"), where("active", "==", true));
         const snap = await getDocs(q);
-        
+
+        // 2. Get the Signatures specifically for THIS logged-in staff member
+        const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
+        const ackSnap = await getDocs(ackQ);
+
+        let signatures = {};
+        ackSnap.forEach(doc => {
+            let d = doc.data();
+            signatures[d.announcementId] = d;
+        });
+
+        let announcementsArray = [];
+        snap.forEach(docSnap => announcementsArray.push({id: docSnap.id, ...docSnap.data()}));
+        announcementsArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+
         let html = '';
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
-            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleDateString() : 'Recent';
+        announcementsArray.forEach(ann => {
+            let dateStr = ann.timestamp ? ann.timestamp.toDate().toLocaleDateString() : 'Recent';
+            let sigData = signatures[ann.id];
+
+            // Clean up long messages for the preview card
+            let shortMsg = ann.message ? ann.message.substring(0, 100) + (ann.message.length > 100 ? '...' : '') : '';
+
+            let statusBadge = sigData
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #bbf7d0;">✅ Signed</span>`
+                : `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #fecaca;">❌ Unread</span>`;
+
+            let sigDateStr = sigData && sigData.timestamp ? sigData.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+
+            // Package the data securely for the modal
+            let safeData = {
+                title: ann.title || 'Announcement',
+                message: ann.message || '',
+                images: ann.images || [],
+                dateStr: dateStr,
+                hasSignature: !!sigData,
+                signatureImg: sigData ? sigData.signature : '',
+                signatureDate: sigDateStr
+            };
+
+            let modalData = encodeURIComponent(JSON.stringify(safeData));
+
             html += `
-                <div class="req-item-card">
-                    <h3 style="margin:0 0 5px 0; color:#0f172a;">${data.title}</h3>
-                    <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 ${dateStr}</div>
-                    <p style="font-size:13px; color:#334155;">${data.message || ''}</p>
+                <div class="req-item-card" onclick="window.viewAnnouncement('${modalData}')" style="cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.2s;" onmouseover="this.style.transform='scale(0.98)'" onmouseout="this.style.transform='scale(1)'">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
+                        <div style="margin-left: 10px;">${statusBadge}</div>
+                    </div>
+                    <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
+                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${shortMsg}</p>
+                    <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; text-align: right;">View Full Details & Images &rarr;</div>
                 </div>
             `;
         });
         container.innerHTML = html || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No new announcements.</div>';
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); container.innerHTML = '<div style="text-align:center; padding: 40px; color: #dc2626;">Error loading announcements.</div>';}
+};
+
+window.viewAnnouncement = function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+
+    let imagesHtml = '';
+    if (data.images && data.images.length > 0) {
+        imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
+        data.images.forEach(img => {
+            imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="window.open('${img}', '_blank')">`;
+        });
+        imagesHtml += `</div>`;
+    }
+
+    let sigHtml = '';
+    if (data.hasSignature) {
+        sigHtml = `
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px;">
+                <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${data.signatureDate}</span>
+                <img src="${data.signatureImg}" style="height: 50px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            </div>
+        `;
+    } else {
+        sigHtml = `
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #fef2f2; border-radius: 8px; padding: 15px;">
+                <span style="font-size: 12px; color: #dc2626; font-weight: bold; display: block;">❌ You have not signed this yet.</span>
+                <span style="font-size: 11px; color: #b91c1c;">(The signing pad will appear automatically if this is a forced compliance update).</span>
+            </div>
+        `;
+    }
+
+    Swal.fire({
+        title: `<div style="text-align:left; font-size: 18px; color: #0f172a; margin-bottom: 10px;">${data.title}</div>`,
+        html: `
+            <div style="text-align: left;">
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">📅 Published: ${data.dateStr}</div>
+                <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
+                ${imagesHtml}
+                ${sigHtml}
+            </div>
+        `,
+        showCloseButton: true,
+        showConfirmButton: false,
+        customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-200' }
+    });
 };
 
 // ==========================================
