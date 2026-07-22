@@ -15,26 +15,18 @@
 <body>
 
     <!-- 🔐 DEVICE FLEET REGISTRATION OVERLAY -->
-    <!-- Notice the new background styling here! -->
     <div id="deviceAuthOverlay" class="overlay" style="z-index: 20000; display: flex; flex-direction: column; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.95)), url('logo.png'); background-size: cover; background-position: center; background-attachment: fixed;">
         
-        <!-- Step 1: Request Access Card -->
         <div class="login-card" id="registerCard">
             <div class="login-header">
-                <!-- Added the logo inside the card to match the PIN screen! -->
                 <img src="logo.png" alt="Takodeál" class="login-logo">
                 <h2 style="color: #0f766e; font-size: 22px; margin-bottom: 5px;">Register Device</h2>
                 <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 20px;">Enter a name for this phone to request access from HQ.</p>
             </div>
-            
-            <!-- Upgraded the input box to perfectly match the PIN box -->
             <input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 15px; font-size: 16px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none;">
-            
-            <!-- Removed the dark inline color so it defaults to Takodeál Green -->
             <button class="btn-primary" onclick="window.requestDeviceAccess()">Request Access</button>
         </div>
 
-        <!-- Step 2: Blocked / Waiting for HQ Card -->
         <div class="login-card" id="pendingCard" style="display: none;">
             <div class="login-header">
                 <h2 style="color: #dc2626; font-size: 22px; margin-bottom: 5px;">🚫 Access Blocked</h2>
@@ -42,11 +34,9 @@
             </div>
             <div style="margin-top: 20px; font-size: 40px; text-align: center;">🔒</div>
         </div>
-
     </div>
 
     <!-- 🔒 LOGIN OVERLAY -->
-    <!-- Added the exact same background styling here for a seamless transition! -->
     <div id="loginOverlay" class="overlay" style="display: none; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.95)), url('logo.png'); background-size: cover; background-position: center; background-attachment: fixed;">
         <div class="login-card">
             <div class="login-header">
@@ -60,29 +50,21 @@
         </div>
     </div>
 
-    <!-- 👤 MY PROFILE MODAL (EXPANDED HR VERSION) -->
+    <!-- 👤 MY PROFILE MODAL -->
     <div id="profileModal" class="overlay" style="display: none; z-index: 10000;">
         <div class="modal-card" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column; padding: 0;">
-            
-            <!-- Sticky Header -->
             <div style="background: #0f766e; color: white; padding: 15px 20px; border-radius: 20px 20px 0 0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10;">
                 <h2 style="margin: 0; font-size: 18px;">📋 Employee Profile</h2>
                 <button onclick="document.getElementById('profileModal').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
             </div>
-
-            <!-- Scrollable Body -->
             <div style="padding: 20px; overflow-y: auto; flex: 1; text-align: left;">
-                
-                <!-- Profile Picture Area -->
                 <div style="text-align: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px dashed #e2e8f0;">
                     <img id="profilePreview" src="" alt="Profile" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 4px solid #ccfbf1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; margin: 0 auto 10px auto;">
                     <div id="profilePlaceholder" style="width: 100px; height: 100px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 10px auto; border: 4px solid #ccfbf1;">👤</div>
-                    
                     <input type="file" id="profileImageInput" accept="image/*" style="display: none;" onchange="window.previewProfileImage(event)">
                     <button class="btn-secondary" onclick="document.getElementById('profileImageInput').click()" style="padding: 8px 15px; font-size: 12px; width: auto;">📸 Upload 1x1 / 2x2 Photo</button>
                 </div>
 
-                <!-- Personal Details -->
                 <h3 style="color: #0f766e; font-size: 14px; margin: 0 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">👤 Personal Details</h3>
                 <div class="profile-grid">
                     <div class="form-group"><label>Full Name *</label><input type="text" id="profFullName" placeholder="e.g. Alwinna Carupo"></div>
@@ -93,7 +75,6 @@
                     <div class="form-group"><label>Home Address</label><input type="text" id="profAddress" placeholder="Street, Barangay..."></div>
                 </div>
 
-                <!-- Emergency Contact -->
                 <h3 style="color: #dc2626; font-size: 14px; margin: 15px 0 10px 0; border-bottom: 2px solid #fecaca; padding-bottom: 5px;">🚨 Emergency Contact & Email</h3>
                 <div style="background: #fef2f2; padding: 15px; border-radius: 8px; border: 1px dashed #fca5a5; margin-bottom: 15px;">
                     <div class="profile-grid">
@@ -103,7 +84,6 @@
                     <div class="form-group" style="margin-bottom: 0;"><label style="color:#b91c1c;">Staff Email Address</label><input type="email" id="profEmail" placeholder="staff@gmail.com"></div>
                 </div>
 
-                <!-- Disbursement Accounts -->
                 <h3 style="color: #0284c7; font-size: 14px; margin: 15px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📱 Disbursement Accounts</h3>
                 <div class="profile-grid">
                     <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
@@ -118,7 +98,6 @@
                     </div>
                 </div>
 
-                <!-- Government IDs -->
                 <h3 style="color: #d97706; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">🏛️ Government IDs</h3>
                 <div class="profile-grid" style="grid-template-columns: 1fr 1fr 1fr;">
                     <div class="form-group"><label>SSS Number</label><input type="text" id="profSss" placeholder="00-0000000-0"></div>
@@ -126,18 +105,16 @@
                     <div class="form-group"><label>Pag-IBIG</label><input type="text" id="profPagibig" placeholder="0000-0000-0000"></div>
                 </div>
 
-                <!-- Security / Change PIN -->
                 <h3 style="color: #16a34a; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🔒 Security</h3>
                 <div class="form-group">
                     <label>Change Login PIN</label>
                     <input type="text" id="profPin" placeholder="Enter new PIN (Leave blank to keep current PIN)" style="border-color: #86efac; background: #f0fdf4;">
                 </div>
 
-                <!-- Read-Only Deductions -->
                 <h3 style="color: #64748b; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">💸 Payroll Deductions (View Only)</h3>
                 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; margin-bottom: 15px;">
                     <div class="profile-grid" style="margin-bottom: 15px; grid-template-columns: 1fr 1fr 1fr;">
-                        <div><label style="font-size: 11px; color: #64748b; display: block;">SSS (Cutoff)</label><span id="viewSssDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
+                        <div><label style="font-size: 11px; color: #64748b; display: block;">SSS</label><span id="viewSssDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
                         <div><label style="font-size: 11px; color: #64748b; display: block;">PhilHealth</label><span id="viewPhDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
                         <div><label style="font-size: 11px; color: #64748b; display: block;">Pag-IBIG</label><span id="viewPagibigDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
                     </div>
@@ -147,14 +124,10 @@
                     </div>
                     <div style="font-size: 10px; color: #94a3b8; margin-top: 12px; font-style: italic;">* Note: Deductions are managed securely by HQ and cannot be edited here.</div>
                 </div>
-
             </div>
-
-            <!-- Sticky Footer -->
             <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
                 <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">💾 Save Employee Data</button>
             </div>
-
         </div>
     </div>
 
@@ -174,11 +147,8 @@
 
     <!-- 📱 MAIN APP CONTAINER -->
     <div id="appContainer" style="display: none;">
-        
-        <!-- HEADER -->
         <header class="app-header">
             <div class="header-left">
-                <!-- Clickable Avatar! -->
                 <div id="topAvatar" class="avatar" onclick="window.openProfile()" style="cursor: pointer; background-size: cover; background-position: center;">👤</div>
                 <div class="header-text">
                     <span class="greeting">Hello,</span>
@@ -188,10 +158,8 @@
             <button class="btn-logout" onclick="window.logoutStaff()">Sign Out</button>
         </header>
 
-        <!-- VIEWS -->
         <main class="content-area">
             
-            <!-- 📢 BULLETIN BOARD -->
             <div id="view-bulletin" class="view active">
                 <div class="view-header">
                     <h2>📢 Bulletin Board</h2>
@@ -202,24 +170,20 @@
                 </div>
             </div>
 
-            <!-- ⏱️ TIME CLOCK -->
             <div id="view-timeclock" class="view">
                 <div class="view-header">
                     <h2>⏱️ Time Clock</h2>
                     <p>GPS verified attendance logging.</p>
                 </div>
                 <div class="clock-card">
-                    <!-- 📷 Camera Feed Area -->
                     <div id="cameraContainer" style="margin-bottom: 15px; border-radius: 12px; overflow: hidden; background: #000; height: 250px; position: relative;">
                         <video id="clockVideo" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
                         <canvas id="clockCanvas" style="display: none;"></canvas>
                         <div id="cameraStatus" style="position: absolute; bottom: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;">📷 Initializing Camera...</div>
                     </div>
-
                     <h1 id="liveTime">00:00 AM</h1>
                     <p id="liveDate">Loading Date...</p>
                     <div class="location-status" id="gpsStatus">📍 Verifying GPS Location...</div>
-                    
                     <div class="clock-actions">
                         <button class="btn-timein" id="btnTimeIn" onclick="window.punchTime('TIME IN')">TIME IN</button>
                         <button class="btn-timeout" id="btnTimeOut" onclick="window.punchTime('TIME OUT')">TIME OUT</button>
@@ -227,7 +191,6 @@
                 </div>
             </div>
 
-            <!-- 📥 REQUESTS -->
             <div id="view-requests" class="view">
                 <div class="view-header">
                     <h2>📥 Staff Requests</h2>
@@ -239,14 +202,12 @@
                     <button class="req-card" onclick="window.openReqForm('Staff Meal')">🍔<br>Staff Meal</button>
                     <button class="req-card" onclick="window.openReqForm('Inbox')">📬<br>My Inbox</button>
                 </div>
-                <!-- Inbox Area -->
                 <div id="reqInboxContainer" style="margin-top: 20px; display: none;">
                     <h3 style="color: #0f766e; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">My Inbox</h3>
                     <div id="reqInboxList"></div>
                 </div>
             </div>
 
-            <!-- 🗓️ SCHEDULE -->
             <div id="view-schedule" class="view">
                 <div class="view-header">
                     <h2>🗓️ My Schedule</h2>
@@ -257,7 +218,6 @@
                 </div>
             </div>
 
-            <!-- 📋 SOP CHECKLIST -->
             <div id="view-sop" class="view">
                 <div class="view-header">
                     <h2>📋 Daily SOP</h2>
@@ -268,11 +228,10 @@
                 </div>
             </div>
 
-            <!-- 💸 PAYSLIPS -->
             <div id="view-payslip" class="view">
                 <div class="view-header">
                     <h2>💸 Payslip Vault</h2>
-                    <p>Digital records for the 3rd & 17th GoTyme cutoffs.</p>
+                    <p>Digital records for the 4th & 18th GoTyme cutoffs.</p>
                 </div>
                 <div id="payslipContainer">
                     <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading payslips...</div>
@@ -281,7 +240,6 @@
 
         </main>
 
-        <!-- BOTTOM NAVIGATION -->
         <nav class="bottom-nav">
             <button class="nav-item active" onclick="window.switchView('bulletin', this)">
                 <span class="icon">📢</span><span>News</span>
