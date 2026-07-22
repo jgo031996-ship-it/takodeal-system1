@@ -54,19 +54,28 @@ window.requestDeviceAccess = async function() {
     let btn = document.querySelector('#registerCard .btn-primary');
     btn.innerText = "⏳ Registering..."; btn.disabled = true;
 
-    let newDeviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-
     try {
-        await setDoc(doc(db, "devices", newDeviceId), {
-            deviceName: name + " (Staff App)", // Adds a tag so you know it's a mobile phone
-            branch: "Main Office",             // Forces it to bypass any branch filters!
+        // 1. Use addDoc to generate a standard 20-character Firebase ID to match the Manager App!
+        const docRef = await addDoc(collection(db, "devices"), {
+            deviceName: name + " (Staff)",
+            branch: "Main Office",
             status: "Blocked",
-            registrationDate: new Date().toLocaleDateString('en-US'), // Sends the exact date text the Manager App expects
-            timestamp: serverTimestamp()
+            
+            // 2. Send EVERY possible date format so the Manager App table cannot fail to read it!
+            registrationDate: new Date().toLocaleDateString('en-US'),
+            dateAdded: new Date().toLocaleDateString('en-US'),
+            createdAt: serverTimestamp(),
+            timestamp: serverTimestamp(),
+            
+            // 3. Extra fail-safes
+            deviceType: "Mobile",
+            active: false
         });
 
-        localStorage.setItem('takodeal_device_id', newDeviceId);
-        window.listenToDeviceStatus(newDeviceId);
+        // Save the newly generated native Firebase ID to lock the phone
+        localStorage.setItem('takodeal_device_id', docRef.id);
+        window.listenToDeviceStatus(docRef.id);
+
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to connect to HQ.', 'error');
