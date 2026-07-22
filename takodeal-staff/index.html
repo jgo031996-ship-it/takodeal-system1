@@ -272,13 +272,51 @@
                 </div>
             </div>
 
+            <!-- 💸 PAYSLIP VAULT VIEW -->
             <div id="view-payslip" class="view">
                 <div class="view-header">
                     <h2>💸 Payslip Vault</h2>
-                    <p>Digital records for the 3rd & 17th GoTyme cutoffs.</p>
+                    <p>Track your live earnings and download past records.</p>
                 </div>
-                <div id="payslipContainer">
-                    <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading payslips...</div>
+
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; background: white; padding: 5px; border-radius: 10px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <button id="btnTabLivePay" onclick="window.switchPayslipTab('Live')" style="flex: 1; padding: 12px; background: #0f766e; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s;">Live Estimate</button>
+                    <button id="btnTabPastPay" onclick="window.switchPayslipTab('Past')" style="flex: 1; padding: 12px; background: transparent; color: #64748b; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s;">Past Payslips</button>
+                </div>
+
+                <!-- TAB 1: Live Current Cutoff -->
+                <div id="payslipLiveSection" style="display: block;">
+                    <div style="background: linear-gradient(135deg, #0f766e, #064e3b); color: white; padding: 25px; border-radius: 16px; margin-bottom: 20px; text-align: center; box-shadow: 0 10px 25px rgba(15, 118, 110, 0.3);">
+                        <p style="margin: 0 0 5px 0; font-size: 11px; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px; font-weight: bold;">Current Cutoff Est. Net Pay</p>
+                        <h1 id="liveEstNetPay" style="margin: 0; font-size: 42px; font-weight: 900; letter-spacing: -1px;">₱0.00</h1>
+                        <p id="liveCutoffDates" style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9; font-weight: bold;">Calculating dates...</p>
+                    </div>
+
+                    <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                        <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">Breakdown Preview</h3>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;">
+                            <span style="color: #64748b; font-weight: bold;">Estimated Basic Pay:</span>
+                            <strong id="liveEstGross" style="color: #16a34a;">₱0.00</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;">
+                            <span style="color: #64748b; font-weight: bold;">Late Penalties:</span>
+                            <strong id="liveEstLates" style="color: #ef4444;">-₱0.00</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;">
+                            <span style="color: #64748b; font-weight: bold;">Unpaid Vales/Meals:</span>
+                            <strong id="liveEstVales" style="color: #ef4444;">-₱0.00</strong>
+                        </div>
+                        <div style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #94a3b8; font-style: italic; text-align: center;">
+                            * Note: This is an unverified live estimate. Final totals may change based on HR adjustments, loans, and government deductions upon payout.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: Past Payslips Vault -->
+                <div id="payslipPastSection" style="display: none;">
+                    <div id="payslipHistoryList">
+                        <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading past records...</div>
+                    </div>
                 </div>
             </div>
         </main>
