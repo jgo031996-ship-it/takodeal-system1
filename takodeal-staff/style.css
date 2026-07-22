@@ -176,3 +176,13 @@ input[type="password"]:focus { border-color: var(--primary); box-shadow: 0 0 0 4
     background: white; border: 1px solid var(--border); padding: 15px;
     border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
+
+/* --- PROFILE GRID SYSTEM --- */
+.profile-grid { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 10px; 
+}
+@media (max-width: 500px) {
+    .profile-grid { grid-template-columns: 1fr; } /* Stacks nicely on very small phones */
+}
