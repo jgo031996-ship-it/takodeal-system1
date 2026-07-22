@@ -2,7 +2,7 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -32,31 +32,88 @@ window.BRANCH_ZONES = {
 window.ALLOWED_RADIUS_METERS = 50;
 
 // ==========================================
-// 🔒 DEVICE SECURITY & LOGIN ENGINE
+// 🔒 DEVICE FLEET & SECURITY ENGINE
 // ==========================================
-const MASTER_COMPANY_KEY = "TAKO-2026"; // 👈 You can change this secret key to anything you want!
-
 document.addEventListener("DOMContentLoaded", () => {
-    // 1. Check if the device is a Trusted Takodeál Device
-    let isTrusted = localStorage.getItem('takodeal_device_trusted');
-    
-    if (!isTrusted) {
-        // STAY LOCKED! 
+    // Wipe out the old manual key test so it forces the new Fleet update
+    localStorage.removeItem('takodeal_device_trusted');
+
+    let deviceId = localStorage.getItem('takodeal_device_id');
+
+    if (!deviceId) {
+        // First time opening! Show Registration Form
         document.getElementById('deviceAuthOverlay').style.display = 'flex';
+        document.getElementById('registerCard').style.display = 'block';
+        document.getElementById('pendingCard').style.display = 'none';
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'none';
-        return; 
+    } else {
+        // Device exists, start listening to the Manager App for approval!
+        window.listenToDeviceStatus(deviceId);
     }
+});
 
-    // 2. If Trusted, hide the security lock
-    document.getElementById('deviceAuthOverlay').style.display = 'none';
+window.requestDeviceAccess = async function() {
+    let name = document.getElementById('deviceNameInput').value.trim();
+    if (!name) return Swal.fire('Required', 'Please enter a device name (e.g. Aljhon Phone).', 'warning');
 
-    // 3. Check if someone is already logged in
+    let btn = document.querySelector('#registerCard .btn-primary');
+    btn.innerText = "⏳ Registering..."; btn.disabled = true;
+
+    // Generate a secure unique ID for this specific phone
+    let newDeviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+    try {
+        // Send to Manager App's Database. Set to "Blocked" so Manager has to explicitly Unblock it!
+        await setDoc(doc(db, "devices", newDeviceId), {
+            deviceName: name,
+            branch: "Staff App", // Identifies it in your Fleet Dashboard
+            status: "Blocked",   // Shows up as RED in your Manager App
+            timestamp: serverTimestamp()
+        });
+
+        localStorage.setItem('takodeal_device_id', newDeviceId);
+        window.listenToDeviceStatus(newDeviceId);
+
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to connect to HQ.', 'error');
+        btn.innerText = "Request Access"; btn.disabled = false;
+    }
+};
+
+window.listenToDeviceStatus = function(deviceId) {
+    // Show the "Access Blocked / Waiting for HQ" screen
+    document.getElementById('deviceAuthOverlay').style.display = 'flex';
+    document.getElementById('registerCard').style.display = 'none';
+    document.getElementById('pendingCard').style.display = 'block';
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'none';
+
+    // Real-time listener: The exact second you click "Unblock", this fires!
+    onSnapshot(doc(db, "devices", deviceId), (docSnap) => {
+        if (docSnap.exists()) {
+            let status = docSnap.data().status;
+            if (status === 'Active') {
+                // HQ Approved! Drop the vault doors!
+                document.getElementById('deviceAuthOverlay').style.display = 'none';
+                window.checkNormalLogin();
+            } else {
+                // Still Blocked by HQ, keep vault closed
+                document.getElementById('deviceAuthOverlay').style.display = 'flex';
+                document.getElementById('registerCard').style.display = 'none';
+                document.getElementById('pendingCard').style.display = 'block';
+                document.getElementById('loginOverlay').style.display = 'none';
+            }
+        }
+    });
+};
+
+window.checkNormalLogin = function() {
     let savedName = localStorage.getItem('takodeal_staff_name');
     let savedPic = localStorage.getItem('takodeal_staff_pic');
     
     if (savedName) {
-        // Load the app directly
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         document.getElementById('loggedInName').innerText = savedName;
@@ -64,31 +121,13 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById('topAvatar').innerText = '';
             document.getElementById('topAvatar').style.backgroundImage = `url('${savedPic}')`;
         }
-        window.startLiveClock();
+        
+        if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
         window.loadAnnouncements();
         window.startInboxListener();
     } else {
-        // Trusted device, but no one logged in. Show the PIN screen!
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('appContainer').style.display = 'none';
-    }
-});
-
-window.authorizeDevice = function() {
-    let input = document.getElementById('companyKeyInput').value.trim();
-    if (input === MASTER_COMPANY_KEY) {
-        // Mark device as trusted permanently!
-        localStorage.setItem('takodeal_device_trusted', 'true');
-        Swal.fire({toast: true, position: 'top', icon: 'success', title: 'Device Authorized!', showConfirmButton: false, timer: 2000});
-        
-        // Smooth transition to PIN screen
-        document.getElementById('deviceAuthOverlay').style.opacity = '0';
-        setTimeout(() => {
-            document.getElementById('deviceAuthOverlay').style.display = 'none';
-            document.getElementById('loginOverlay').style.display = 'flex';
-        }, 300);
-    } else {
-        document.getElementById('authError').style.display = 'block';
     }
 };
 
