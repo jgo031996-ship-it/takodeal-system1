@@ -1,3 +1,4 @@
+// Takodeál Staff Engine v3.0 - Fleet Access Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
@@ -17,7 +18,7 @@ const storage = getStorage(app);
 window.db = db;
 window.storage = storage;
 
-console.log("🚀 Takodeál Staff Portal Booted Successfully!");
+console.log("🚀 Takodeál Staff Portal Booted (v3.0 - Fleet Engine Active)");
 
 window.BRANCH_ZONES = {
     "Cabantian": { lat: 7.130415, lng: 125.617306 },
@@ -31,7 +32,7 @@ window.ALLOWED_RADIUS_METERS = 50;
 // 🔒 DEVICE FLEET & SECURITY ENGINE
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
-    localStorage.removeItem('takodeal_device_trusted'); // Wipe manual auth
+    localStorage.removeItem('takodeal_device_trusted');
 
     let deviceId = localStorage.getItem('takodeal_device_id');
 
