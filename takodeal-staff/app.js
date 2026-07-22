@@ -47,23 +47,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
+// ==========================================
+// 🔒 DEVICE FLEET & SECURITY ENGINE
+// ==========================================
 window.requestDeviceAccess = async function() {
     let name = document.getElementById('deviceNameInput').value.trim();
+    let selectedBranch = document.getElementById('deviceBranchInput').value;
+
     if (!name) return Swal.fire('Required', 'Please enter a device name (e.g. Aljhon Phone).', 'warning');
 
     let btn = document.querySelector('#registerCard .btn-primary');
     btn.innerText = "⏳ Registering..."; btn.disabled = true;
 
+    // Detect branch via GPS if set to Auto or default to chosen option
+    let targetBranch = selectedBranch;
+    if (selectedBranch === 'Auto') {
+        targetBranch = window.getClosestBranch() || "Main Office";
+    }
+
     try {
-        // Generate a standard unique ID
         const newDeviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
-        // 🔥 THE FIX: Perfectly matches your Manager App's database structure!
         await setDoc(doc(db, "pos_devices", newDeviceId), {
             deviceName: name + " (Staff)",
-            branch: "Main Office", // Forces it into the Main Office view
+            branch: targetBranch,
             status: "Blocked",
-            registeredAt: serverTimestamp() // Matches your Manager App's sorting logic!
+            registeredAt: serverTimestamp()
         });
 
         localStorage.setItem('takodeal_device_id', newDeviceId);
@@ -76,7 +85,6 @@ window.requestDeviceAccess = async function() {
     }
 };
 
-// 🔥 ALSO UPDATE THIS LISTENER SO IT WATCHES THE CORRECT FOLDER!
 window.listenToDeviceStatus = function(deviceId) {
     document.getElementById('deviceAuthOverlay').style.display = 'flex';
     document.getElementById('registerCard').style.display = 'none';
@@ -84,7 +92,6 @@ window.listenToDeviceStatus = function(deviceId) {
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('appContainer').style.display = 'none';
 
-    // 🔥 THE FIX: Watch "pos_devices" instead of "devices"
     onSnapshot(doc(db, "pos_devices", deviceId), (docSnap) => {
         if (docSnap.exists()) {
             let status = docSnap.data().status;
@@ -99,6 +106,18 @@ window.listenToDeviceStatus = function(deviceId) {
             }
         }
     });
+};
+
+window.getClosestBranch = function() {
+    if (!window.currentLat || !window.currentLng) return null;
+    let closestBranch = "Main Office";
+    let minDistance = 999999;
+    for (let branch in window.BRANCH_ZONES) {
+        let zone = window.BRANCH_ZONES[branch];
+        let dist = window.getDistanceInMeters(window.currentLat, window.currentLng, zone.lat, zone.lng);
+        if (dist < minDistance) { minDistance = dist; closestBranch = branch; }
+    }
+    return closestBranch;
 };
 
 window.checkNormalLogin = function() {
@@ -663,4 +682,196 @@ window.loadInbox = async function() {
         });
         listEl.innerHTML = html || '<div style="color:#64748b; font-size:13px; text-align:center;">No requests found.</div>';
     } catch(e) { console.error(e); listEl.innerHTML = 'Error loading inbox.'; }
+};
+
+// ==========================================
+// 📋 DYNAMIC MULTI-BRANCH SOP ENGINE
+// ==========================================
+window.currentSopRoles = {};
+
+// Hook into view navigation
+const originalSwitchView = window.switchView;
+window.switchView = function(viewId, btnElement) {
+    if (typeof originalSwitchView === 'function') originalSwitchView(viewId, btnElement);
+
+    if (viewId === 'sop') {
+        window.initSopModule();
+    }
+};
+
+window.initSopModule = async function() {
+    // 1. Determine nearest branch via GPS or fallback
+    let detectedBranch = window.getClosestBranch() || "Cabantian";
+    let branchSelect = document.getElementById('sopBranchSelect');
+    let gpsBadge = document.getElementById('sopGpsBadge');
+
+    if (branchSelect) {
+        branchSelect.value = detectedBranch;
+    }
+
+    if (gpsBadge) {
+        if (window.currentLat && window.currentLng) {
+            gpsBadge.innerText = `🟢 GPS Detected: Near ${detectedBranch}`;
+            gpsBadge.style.background = "#dcfce7";
+            gpsBadge.style.color = "#16a34a";
+        } else {
+            gpsBadge.innerText = `📍 Default Branch: ${detectedBranch} (Select if relocated)`;
+            gpsBadge.style.background = "#fffbeb";
+            gpsBadge.style.color = "#d97706";
+        }
+    }
+
+    await window.onSopBranchChange();
+};
+
+window.onSopBranchChange = async function() {
+    let branch = document.getElementById('sopBranchSelect').value;
+    let roleSelect = document.getElementById('sopRoleSelect');
+    
+    document.getElementById('sopTasksContainer').style.display = 'none';
+    document.getElementById('sopEmptyState').style.display = 'block';
+    
+    if (!branch) return;
+    
+    roleSelect.innerHTML = '<option value="">⏳ Loading roles...</option>';
+
+    try {
+        // Pull exact roles configured in Manager App for this branch
+        const docSnap = await getDoc(doc(db, "settings", "sop_" + branch));
+        window.currentSopRoles = docSnap.exists() ? (docSnap.data().roles || {}) : {};
+
+        let roleKeys = Object.keys(window.currentSopRoles);
+        let html = '<option value="">-- Select Role / Shift --</option>';
+
+        if (roleKeys.length === 0) {
+            html = '<option value="">No roles configured for this branch</option>';
+        } else {
+            roleKeys.forEach(role => {
+                html += `<option value="${role}">${role}</option>`;
+            });
+        }
+        roleSelect.innerHTML = html;
+
+    } catch (e) {
+        console.error("SOP Fetch Error:", e);
+        roleSelect.innerHTML = '<option value="">Error loading tasks</option>';
+    }
+};
+
+window.renderSopTasks = function() {
+    let roleName = document.getElementById('sopRoleSelect').value;
+    let container = document.getElementById('sopTasksContainer');
+    let emptyState = document.getElementById('sopEmptyState');
+    let list = document.getElementById('sopTaskList');
+
+    if (!roleName || !window.currentSopRoles[roleName]) {
+        container.style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+    }
+
+    let tasks = window.currentSopRoles[roleName] || [];
+    document.getElementById('sopTitleHeader').innerText = `Tasks for ${roleName}`;
+    
+    let html = '';
+    tasks.forEach((taskText, index) => {
+        html += `
+            <div class="sop-task-item" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; transition: 0.2s;">
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer; margin: 0;">
+                    <input type="checkbox" class="sop-chk" data-index="${index}" onchange="window.updateSopProgress()" style="width: 20px; height: 20px; margin-top: 2px; accent-color: #0f766e; cursor: pointer;">
+                    <div style="flex: 1;">
+                        <span style="font-size: 14px; font-weight: bold; color: #0f172a; line-height: 1.4; display: block;">${taskText}</span>
+                        <input type="text" class="sop-remark" placeholder="Optional remark/note if skipped or issue found..." style="width: 100%; padding: 6px 10px; margin-top: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
+                    </div>
+                </label>
+            </div>
+        `;
+    });
+
+    list.innerHTML = html || '<div style="color:#64748b; font-style:italic;">No tasks defined for this role.</div>';
+    emptyState.style.display = 'none';
+    container.style.display = 'block';
+    
+    window.updateSopProgress();
+};
+
+window.updateSopProgress = function() {
+    let allChecks = document.querySelectorAll('.sop-chk');
+    let checkedCount = document.querySelectorAll('.sop-chk:checked').length;
+    let total = allChecks.length;
+
+    let badge = document.getElementById('sopProgressBadge');
+    if (badge) {
+        badge.innerText = `${checkedCount}/${total} Done`;
+        if (checkedCount === total && total > 0) {
+            badge.style.background = "#dcfce7";
+            badge.style.color = "#16a34a";
+        } else {
+            badge.style.background = "#e0f2fe";
+            badge.style.color = "#0284c7";
+        }
+    }
+};
+
+window.submitSopChecklist = async function() {
+    let branch = document.getElementById('sopBranchSelect').value;
+    let roleName = document.getElementById('sopRoleSelect').value;
+    let staffName = localStorage.getItem('takodeal_staff_name') || 'Staff';
+
+    if (!roleName) return Swal.fire('Required', 'Please select your role first.', 'warning');
+
+    let taskItems = document.querySelectorAll('.sop-task-item');
+    if (taskItems.length === 0) return Swal.fire('Empty', 'No tasks to submit.', 'warning');
+
+    let completedTasks = [];
+    let doneCount = 0;
+
+    taskItems.forEach(item => {
+        let taskText = item.querySelector('span').innerText;
+        let isChecked = item.querySelector('.sop-chk').checked;
+        let remark = item.querySelector('.sop-remark').value.trim();
+
+        if (isChecked) doneCount++;
+
+        completedTasks.push({
+            task: taskText,
+            status: isChecked ? 'done' : 'skipped',
+            remark: remark
+        });
+    });
+
+    let scorePercentage = Math.round((doneCount / taskItems.length) * 100);
+
+    let btn = document.getElementById('btnSubmitSop');
+    btn.innerText = "⏳ Submitting to HQ..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "sop_logs"), {
+            branch: branch,
+            staffName: staffName,
+            roleName: roleName,
+            scorePercentage: scorePercentage,
+            tasks: completedTasks,
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '✅ SOP Submitted!',
+            text: `Compliance Score: ${scorePercentage}%. Your report has been logged to HQ.`,
+            icon: 'success',
+            confirmButtonColor: '#0f766e',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        // Reset check selections
+        document.querySelectorAll('.sop-chk').forEach(c => c.checked = false);
+        document.querySelectorAll('.sop-remark').forEach(r => r.value = '');
+        window.updateSopProgress();
+
+    } catch (e) {
+        console.error("SOP Submit Error:", e);
+        Swal.fire('Error', 'Failed to submit checklist. Check connection.', 'error');
+    } finally {
+        btn.innerText = "🚀 Submit Completed Checklist"; btn.disabled = false;
+    }
 };
