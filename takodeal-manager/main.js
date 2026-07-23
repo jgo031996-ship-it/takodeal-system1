@@ -2352,7 +2352,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR UPGRADE)
+// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR UPGRADE + DELETE BUTTON)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -2395,14 +2395,22 @@ window.reviewPurchaseOrder = async function(poId) {
             </tr>`;
         });
         html += `</tbody></table></div>`;
+
+        // 🔥 NEW: INJECT THE DELETE/DISPOSE BUTTON INSIDE THE MODAL!
+        html += `
+            <button onclick="window.deleteStockRequest('${poId}')" style="margin-top: 15px; width: 100%; padding: 12px; background: #fef2f2; border: 1px dashed #fca5a5; color: #dc2626; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                🗑️ Permanently Delete / Dispose Request
+            </button>
+        `;
         
         let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
         
         Swal.fire({
             title: titleTxt, html: html, width: '700px',
             showCancelButton: true, showDenyButton: true,
-            confirmButtonColor: '#0ea5e9', cancelButtonColor: '#94a3b8', denyButtonColor: '#dc2626',
-            confirmButtonText: '📥 Load into Dispatch Cart', cancelButtonText: 'Set Aside (Close)', denyButtonText: '✖ Delete Request',
+            // Colors matching your UI exactly!
+            confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#dc2626',
+            confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏳ Postpone / Set Aside', cancelButtonText: '✖ Close Window',
             customClass: { popup: 'rounded-2xl shadow-xl' }
         }).then(async (result) => {
             if (result.isConfirmed) {
@@ -2478,14 +2486,75 @@ window.reviewPurchaseOrder = async function(poId) {
                 window.renderDispatchCart(); 
                 window.loadDispatchLogs();
                 
-                Swal.fire({title: 'Loaded!', text: 'Items are securely added to the cart.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+                Swal.fire({title: 'Loaded to Cart! 🛒', text: `Items moved to Dispatch for ${po.branch}.`, icon: 'success', timer: 2000, showConfirmButton: false});
+                
             } else if (result.isDenied) {
-                if (confirm("Permanently delete this request from the queue?")) {
-                    await deleteDoc(poRef); window.loadDispatchLogs();
+                // 🔥 POSTPONE / SET ASIDE LOGIC 🔥
+                const { value: rejectReason } = await Swal.fire({
+                    title: 'Postpone Request',
+                    input: 'text',
+                    inputLabel: 'Reason for postponing (e.g., waiting for supplier delivery)',
+                    inputPlaceholder: 'Out of stock at HQ...',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc2626',
+                    confirmButtonText: 'Set Aside',
+                    inputValidator: (value) => { if (!value) return 'You need to provide a reason!'; }
+                });
+                
+                if (rejectReason) {
+                    Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                    await updateDoc(poRef, {
+                        status: 'Delayed',
+                        managerMessage: rejectReason,
+                        processedAt: serverTimestamp()
+                    });
+                    Swal.fire('Postponed', 'The request was set aside and flagged as Delayed.', 'info');
+                    window.loadDispatchLogs(); // Refresh the list
                 }
             }
         });
     } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
+};
+
+// ==========================================
+// 🗑️ DISPOSE / DELETE STOCK REQUEST ENGINE
+// ==========================================
+window.deleteStockRequest = async function(poId) {
+    // 1. Double check so you don't accidentally delete something important!
+    let confirmDelete = await Swal.fire({
+        title: 'Dispose Request?',
+        text: "Are you sure you want to permanently delete this request? This action cannot be undone.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Delete it!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!confirmDelete.isConfirmed) return;
+
+    Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // 2. Wipe it permanently from the Firebase Cloud
+        await deleteDoc(doc(db, "purchase_orders", poId));
+        
+        Swal.fire({
+            title: 'Deleted!', 
+            text: 'The request has been permanently disposed.', 
+            icon: 'success', 
+            timer: 2000, 
+            showConfirmButton: false,
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        // 3. Auto-refresh the Logistics Feed so it disappears from the list
+        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs(); 
+    } catch (e) {
+        console.error("Delete Error:", e);
+        Swal.fire('Error', 'Failed to delete the request. Check your connection.', 'error');
+    }
 };
 
 window.approvePurchaseOrder = async function(poId) {
