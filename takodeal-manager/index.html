@@ -3848,10 +3848,17 @@
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Address</label>
             <input type="text" id="empAddress" placeholder="Full Address" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
           </div>
+          
+          <!-- MOVED EMAIL BOX HERE -->
+          <div style="grid-column: span 2;">
+              <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Staff Email Address (Optional)</label>
+              <input type="email" id="empEmail" placeholder="staff@gmail.com" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
+          </div>
+
           <div style="grid-column: span 2; background: #fff1f2; padding: 18px; border-radius: 8px; border: 1px solid #fecaca; margin-top: 5px;">
-              <h4 style="margin: 0 0 12px 0; color: #be123c; font-size: 13px;">🚨 Emergency Contact & Email</h4>
+              <h4 style="margin: 0 0 12px 0; color: #be123c; font-size: 13px;">🚨 Emergency Contact</h4>
               
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                   <div>
                       <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Contact Name</label>
                       <input type="text" id="empEmergencyName" placeholder="e.g. Maria Laude" style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
@@ -3860,11 +3867,6 @@
                       <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Emergency Number</label>
                       <input type="text" id="empEmergencyPhone" placeholder="09xx..." style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
                   </div>
-              </div>
-              
-              <div>
-                  <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Staff Email Address (Optional)</label>
-                  <input type="email" id="empEmail" placeholder="staff@gmail.com" style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
               </div>
           </div>
           <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border: 1px solid #bae6fd;">
