@@ -1219,7 +1219,12 @@
         color: var(--primary);
         border-bottom-color: var(--primary);
       }
-  
+
+      /* Forces SweetAlert to obey the scroll limits on mobile/tablets! */
+      .custom-swal-html {
+          overflow: hidden !important; 
+      }
+    
   </style>
 </head>
 
