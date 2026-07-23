@@ -17831,13 +17831,11 @@ window.renderLogisticsUI = function() {
     });
     document.getElementById('logisticsBranchTabs').innerHTML = branchTabsHtml;
 
-    // 3. Filter Data by Branch
     if (window.logisticsState.activeBranch !== 'All') {
         reqData = reqData.filter(r => r.branch === window.logisticsState.activeBranch);
         delData = delData.filter(d => d.toBranch === window.logisticsState.activeBranch);
     }
 
-    // 🔥 GROUP DELIVERIES INTO SHIPMENTS SO IT DOESN'T EXPLODE THE LIST
     let dispatchGroups = {};
     delData.forEach(del => {
         let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
@@ -17848,9 +17846,8 @@ window.renderLogisticsUI = function() {
     });
 
     document.getElementById('badgeLogReqs').innerText = reqData.filter(r => r.status === 'Pending' || r.status === 'Delayed').length;
-    document.getElementById('badgeLogDels').innerText = Object.keys(dispatchGroups).length; // Count shipments, not items!
+    document.getElementById('badgeLogDels').innerText = Object.keys(dispatchGroups).length;
 
-    // 4. Render List
     let listContainer = document.getElementById('logisticsFeedList');
     let html = '';
 
@@ -17864,14 +17861,13 @@ window.renderLogisticsUI = function() {
                 let borderCol = isPending || isDelayed ? '#fde68a' : '#e2e8f0';
                 let statCol = isPending ? '#d97706' : (isDelayed ? '#dc2626' : '#16a34a');
                 let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-                let itemLen = req.items ? req.items.length : 0;
                 
                 html += `
                     <div style="background: ${bgCol}; border: 1px solid ${borderCol}; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 16px;">📢 Stock Request from ${req.branch}</h3>
                             <div style="font-size: 13px; color: #92400e; font-weight: 500;">Requested by: ${req.requestedBy || 'Staff'}</div>
-                            <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${itemLen} items</strong></div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
                         </div>
                         <div style="display: flex; gap: 15px; align-items: center;">
                             <div style="font-weight: bold; font-size: 13px; color: ${statCol};">${req.status}</div>
@@ -17887,13 +17883,24 @@ window.renderLogisticsUI = function() {
             for (let key in dispatchGroups) {
                 let group = dispatchGroups[key];
                 
-                // Calculate actual status based on if items went missing
                 let hasMissing = group.items.some(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
                 let allReceived = group.items.every(i => i.status === 'Received');
-                let overallStatus = group.status === 'In Transit' ? 'In Transit' : (hasMissing ? 'Discrepancy / Lost' : (allReceived ? 'Received' : 'Partially Received'));
-                let statCol = overallStatus === 'Received' ? '#16a34a' : (overallStatus === 'In Transit' ? '#0ea5e9' : '#dc2626');
                 
-                let encodedGroup = encodeURIComponent(JSON.stringify(group)); // Send group data to the Full Details button
+                // 🔥 SMART STATUS ENGINE
+                let overallStatus = 'In Transit';
+                if (group.items.some(i => i.status === 'In Transit')) overallStatus = 'In Transit';
+                else if (group.items.every(i => i.status === 'Arrived' || i.status === 'Received') && !allReceived) overallStatus = 'Arrived at Branch';
+                else if (hasMissing) overallStatus = 'Discrepancy / Lost';
+                else if (allReceived) overallStatus = 'Received';
+
+                let statCol = overallStatus === 'Received' ? '#16a34a' : (overallStatus === 'Arrived at Branch' ? '#8b5cf6' : (overallStatus === 'In Transit' ? '#0ea5e9' : '#dc2626'));
+                
+                let encodedGroup = encodeURIComponent(JSON.stringify(group)); 
+
+                let actionButtons = '';
+                if (overallStatus === 'In Transit') {
+                    actionButtons = `<button onclick="window.markDispatchArrived('${encodedGroup}')" style="background: #8b5cf6; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">📍 Mark Arrived</button>`;
+                }
 
                 html += `
                     <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
@@ -17902,9 +17909,10 @@ window.renderLogisticsUI = function() {
                             <div style="font-size: 13px; color: #475569; font-weight: 500;">🚚 Driver: ${group.driver || 'Unknown'}</div>
                             <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${group.date} at ${group.time} • <strong>${group.items.length} items</strong></div>
                         </div>
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            <div style="background: ${statCol}; color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">${overallStatus}</div>
-                            <button onclick="window.viewDeliveryDetails('${encodedGroup}')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">🔍 Full Details</button>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="background: ${statCol}; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">${overallStatus}</div>
+                            ${actionButtons}
+                            <button onclick="window.viewDeliveryDetails('${encodedGroup}')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">🔍 Full Details</button>
                         </div>
                     </div>
                 `;
@@ -17913,7 +17921,6 @@ window.renderLogisticsUI = function() {
     }
     listContainer.innerHTML = html;
 };
-
 // Auto-start the new tab engine
 setTimeout(window.startLogisticsListeners, 1500);
 
@@ -18075,29 +18082,50 @@ window.reviewStockRequest = async function(docId) {
 window.viewDeliveryDetails = function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
     
+    // Find receiver info
+    let receiverName = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    
+    let receivedItem = group.items.find(i => i.receivedBy);
+    if (receivedItem) {
+        receiverName = receivedItem.receivedBy;
+        if (receivedItem.receivedAt) {
+            let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
+            receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+        }
+    }
+
     let headerEl = document.getElementById('dispatchDetailsHeader');
     if(headerEl) {
         headerEl.innerHTML = `
-            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                <strong style="color:#0f172a; font-size:16px;">📍 To: ${group.toBranch}</strong>
-                <span style="font-weight:bold; color:#0ea5e9;">📅 ${group.date} @ ${group.time}</span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Dispatch Info</div>
+                    <div style="margin-top: 5px; color: #0f172a; font-size: 15px;"><strong>📍 To:</strong> ${group.toBranch}</div>
+                    <div style="margin-top: 5px; color: #334155;"><strong>🚚 Driver:</strong> ${group.driver}</div>
+                    <div style="margin-top: 5px; color: #475569; font-size: 12px;"><strong>📅 Sent:</strong> ${group.date} at ${group.time}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Receiving Info</div>
+                    <div style="margin-top: 5px;"><strong>👤 Received By:</strong> <span style="color: #0f766e; font-weight: bold;">${receiverName}</span></div>
+                    <div style="margin-top: 5px; color: #475569;"><strong>⏰ Arrived:</strong> ${receivedTimeStr}</div>
+                </div>
             </div>
-            <div style="color:#64748b;">🚚 Driver: <strong style="color:#334155;">${group.driver}</strong></div>
         `;
     }
     
     let tbody = document.getElementById('dispatchDetailsBody');
     let html = '';
     
-    // We can only recall a delivery if NO ITEMS have been received yet!
+    // We can only recall a delivery if it is strictly "In Transit" (Not Arrived or Received)
     let canRecall = true; 
     
     group.items.forEach(item => {
         if (item.status !== 'In Transit') canRecall = false;
 
-        let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : '#dc2626');
+        let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : (item.status === 'Arrived' ? '#8b5cf6' : '#dc2626'));
         let varText = item.variance ? `<span style="color:#dc2626; font-weight:bold;">${item.variance} ${item.uom}</span>` : `<span style="color:#94a3b8;">0</span>`;
-        let receivedQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : (item.status === 'In Transit' ? '---' : 0);
+        let receivedQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : (item.status === 'In Transit' || item.status === 'Arrived' ? '---' : 0);
         let expectedQty = item.displayQty || item.qty;
         let displayUom = item.displayUom || item.uom;
 
@@ -18125,7 +18153,7 @@ window.viewDeliveryDetails = function(encodedGroup) {
         if (canRecall) {
             footerEl.innerHTML = `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">🔙 Back Load / Recall Dispatch</button>`;
         } else {
-            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px;">🔒 This delivery is already being processed by the branch and cannot be recalled.</span>`;
+            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px;">🔒 This delivery has already Arrived and cannot be recalled.</span>`;
         }
     }
 
@@ -18133,7 +18161,34 @@ window.viewDeliveryDetails = function(encodedGroup) {
 };
 
 // ========================================================
-// 🔙 RECALL / BACK LOAD ENGINE
+// 📍 MARK DISPATCH AS ARRIVED ENGINE
+// ========================================================
+window.markDispatchArrived = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    if (!confirm(`Mark delivery to ${group.toBranch} as ARRIVED?\n\nThe branch staff will now be notified and can begin receiving the items.`)) return;
+
+    Swal.fire({title: 'Updating Status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        group.items.forEach(item => {
+            if (item.status === 'In Transit') {
+                promises.push(updateDoc(doc(db, "dispatch_logs", item.id), { 
+                    status: 'Arrived',
+                    arrivedAt: serverTimestamp() 
+                }));
+            }
+        });
+        await Promise.all(promises);
+        Swal.fire('Arrived!', 'Delivery marked as arrived at the branch.', 'success');
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to update status.', 'error');
+    }
+};
+
+// ========================================================
+// 🔙 RECALL / BACK LOAD ENGINE (CART FIX)
 // ========================================================
 window.recallDispatch = async function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
@@ -18158,11 +18213,10 @@ window.recallDispatch = async function(encodedGroup) {
             if (!invSnap.empty) {
                 let invDoc = invSnap.docs[0];
                 let currentStock = parseFloat(invDoc.data().currentStock) || 0;
-                let refundQty = parseFloat(item.qty) || 0; // The base quantity originally sent
+                let refundQty = parseFloat(item.qty) || 0; 
                 
                 await updateDoc(invDoc.ref, { currentStock: currentStock + refundQty });
                 
-                // Log the refund in the stock history
                 await addDoc(collection(db, "stock_logs"), {
                     branch: originBranch,
                     item: item.item,
@@ -18170,7 +18224,7 @@ window.recallDispatch = async function(encodedGroup) {
                     newQty: currentStock + refundQty,
                     variance: refundQty,
                     type: "Dispatch Recalled",
-                    note: `Recalled misclicked delivery originally sent to ${group.toBranch}`,
+                    note: `Recalled delivery originally sent to ${group.toBranch}`,
                     user: localStorage.getItem('cashierName') || 'Manager',
                     timestamp: serverTimestamp()
                 });
@@ -18186,11 +18240,13 @@ window.recallDispatch = async function(encodedGroup) {
                 baseUom: item.uom
             });
 
-            // 3. Delete the "In Transit" dispatch log so the branch never sees it
+            // 3. Delete the dispatch log so the branch never sees it
             await deleteDoc(doc(db, "dispatch_logs", item.id));
         }
 
-        // Render the cart and jump to the Dispatch Tab
+        // 🔥 THE FIX: Save the cart to LocalStorage so it survives the tab switch!
+        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+
         if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
         if (typeof window.switchView === 'function') window.switchView('dispatch');
         
@@ -18347,7 +18403,7 @@ window.loadUnverifiedHistory = async function() {
     let tbody = document.getElementById('unverifiedHistoryBody');
     if(!tbody) return;
     
-    // 🔥 DYNAMICALLY UPDATE THE TABLE HEADERS TO INCLUDE 'CASHIER'
+    // 🔥 DYNAMICALLY UPDATE THE TABLE HEADERS FOR THE NEW LAYOUT
     let theadTr = tbody.previousElementSibling;
     if (theadTr && theadTr.tagName === 'THEAD') {
         theadTr = theadTr.querySelector('tr');
@@ -18356,9 +18412,9 @@ window.loadUnverifiedHistory = async function() {
         theadTr.innerHTML = `
             <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Date & Time</th>
             <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Branch</th>
-            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Receipt ID</th>
-            <th style="padding: 10px 15px; color: #0284c7; text-align: left; font-size: 11px; text-transform: uppercase;">Cashier</th>
-            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Payment Method</th>
+            <th style="padding: 10px 15px; color: #0284c7; text-align: left; font-size: 11px; text-transform: uppercase;">Cashier & Customer</th>
+            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Order Details</th>
+            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Payment</th>
             <th style="padding: 10px 15px; color: #475569; text-align: right; font-size: 11px; text-transform: uppercase;">Amount</th>
             <th style="padding: 10px 15px; color: #475569; text-align: center; font-size: 11px; text-transform: uppercase;">Action</th>
         `;
@@ -18378,17 +18434,13 @@ window.loadUnverifiedHistory = async function() {
         let count = 0;
 
         let txArray = [];
-        // 🛡️ THE DEDUPLICATOR MEMORY
         let seenReceipts = {}; 
 
         snap.forEach(doc => {
             let tx = doc.data();
             let method = (tx.paymentMethod || '').toLowerCase();
             if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
-                
                 let rId = tx.receiptId || tx.id;
-                
-                // 🔥 ONLY ADD IT IF WE HAVEN'T SEEN THIS EXACT RECEIPT YET
                 if (!seenReceipts[rId]) {
                     seenReceipts[rId] = true;
                     txArray.push({id: doc.id, ...tx});
@@ -18406,23 +18458,36 @@ window.loadUnverifiedHistory = async function() {
             let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             let methodColor = tx.paymentMethod.toLowerCase() === 'gcash' ? '#0284c7' : '#ea580c';
 
-            // 🔥 NEW: Extract Cashier, Customer, and Cart data safely for the View button!
             let safeCustomer = (tx.customerName || 'Guest').replace(/'/g, "\\'");
             let safeCashier = tx.cashier || 'Unknown';
             let safeCart = encodeURIComponent(JSON.stringify(tx.cart || tx.items || []));
 
+            // 🔥 NEW: Extract the items sold to show them directly in the table!
+            let itemsHtml = '';
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let itemName = item.name || item.itemName;
+                    itemsHtml += `<div style="font-size: 12px; color: #334155; margin-bottom: 2px;">• ${item.qty}x ${itemName}</div>`;
+                });
+            } else {
+                itemsHtml = `<div style="font-size: 12px; color: #94a3b8; font-style: italic;">No items recorded</div>`;
+            }
+
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
-                    <td style="padding: 15px; font-weight: bold; color: #334155;">${dateStr}</td>
-                    <td style="padding: 15px; font-weight: bold; color: #0f172a;">${tx.branch}</td>
-                    <td style="padding: 15px; font-family: monospace; color: #64748b; font-size: 12px;">${tx.receiptId || tx.id}</td>
-                    <td style="padding: 15px; font-weight: bold; color: #0284c7;">👤 ${safeCashier}</td>
-                    <td style="padding: 15px; font-weight: 900; color: ${methodColor}; text-transform: uppercase;">${tx.paymentMethod}</td>
-                    <td style="padding: 15px; font-weight: 900; color: #16a34a; text-align: right; font-size: 16px;">₱${parseFloat(tx.netTotal).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                    <td style="padding: 15px; text-align: center;">
-                        <div style="display: flex; gap: 5px; justify-content: center; align-items: center;">
-                            <button onclick="window.viewReceiptDetails('${tx.receiptId || tx.id}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
-                            <button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Verify</button>
+                    <td style="padding: 15px; font-weight: bold; color: #334155; vertical-align: top;">${dateStr}<br><span style="font-size: 11px; color: #64748b; font-weight: normal; font-family: monospace;">${tx.receiptId || tx.id}</span></td>
+                    <td style="padding: 15px; font-weight: bold; color: #0f172a; vertical-align: top;">${tx.branch}</td>
+                    <td style="padding: 15px; vertical-align: top;">
+                        <div style="font-weight: bold; color: #0284c7;">👤 ${safeCashier}</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">🛒 ${safeCustomer}</div>
+                    </td>
+                    <td style="padding: 15px; max-width: 200px; vertical-align: top;">${itemsHtml}</td>
+                    <td style="padding: 15px; font-weight: 900; color: ${methodColor}; text-transform: uppercase; vertical-align: top;">${tx.paymentMethod}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #16a34a; text-align: right; font-size: 16px; vertical-align: top;">₱${parseFloat(tx.netTotal).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px; text-align: center; vertical-align: top;">
+                        <div style="display: flex; gap: 5px; justify-content: center; align-items: center; flex-direction: column;">
+                            <button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; width: 100%; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Verify</button>
+                            <button onclick="window.viewReceiptDetails('${tx.receiptId || tx.id}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; width: 100%;">🔍 View Full</button>
                         </div>
                     </td>
                 </tr>
