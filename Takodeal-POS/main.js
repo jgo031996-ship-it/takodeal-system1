@@ -2727,8 +2727,12 @@ window.submitAttendance = async function(type) {
                 alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
             }
 
-            // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours!
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25) {
+            // 🔥 Check if the staff profile has the Working Student toggle enabled!
+            let isWorkingStudent = staffProfile.isWorkingStudent === true;
+
+            // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours (BUT IGNORE WORKING STUDENTS!)
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25 && !isWorkingStudent) {
+                
                 const { value: reason, isConfirmed } = await Swal.fire({
                     title: '⚠️ Undertime Detected',
                     html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
