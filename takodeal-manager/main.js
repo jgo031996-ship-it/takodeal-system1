@@ -678,6 +678,9 @@ window.addNewStaff = function() {
     
     // 🔥 NEW: Set toggle to checked by default for new staff
     if (document.getElementById('empNightDiff')) document.getElementById('empNightDiff').checked = true;
+    
+    // 🎓 STUDENT FIX: Uncheck the student status for new hires
+    if (document.getElementById('staffWorkingStudent')) document.getElementById('staffWorkingStudent').checked = false;
 
     document.getElementById('empPhone').value = '';
     document.getElementById('empAddress').value = '';
@@ -706,6 +709,9 @@ window.openEmployeeProfile = function(docId) {
     
     // 🔥 NEW: Load the saved toggle state (defaults to true if not set)
     if (document.getElementById('empNightDiff')) document.getElementById('empNightDiff').checked = (data.eligibleNightDiff !== false);
+    
+    // 🎓 STUDENT FIX: Load the Working Student status!
+    if (document.getElementById('staffWorkingStudent')) document.getElementById('staffWorkingStudent').checked = data.isWorkingStudent || false;
 
     document.getElementById('empPhone').value = data.phone || '';
     document.getElementById('empAddress').value = data.address || '';
@@ -716,11 +722,13 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empSSS').value = data.sss || '';
     document.getElementById('empPhilhealth').value = data.philhealth || '';
     document.getElementById('empPagibig').value = data.pagibig || '';
+    
     // Load Dynamic Deductions
-   document.getElementById('customDeductionsContainer').innerHTML = ''; 
-   if (data.customDeductions && data.customDeductions.length > 0) {
-       data.customDeductions.forEach(d => window.addCustomDeductionRow(d.name, d.amount));
-   }
+    document.getElementById('customDeductionsContainer').innerHTML = ''; 
+    if (data.customDeductions && data.customDeductions.length > 0) {
+        data.customDeductions.forEach(d => window.addCustomDeductionRow(d.name, d.amount));
+    }
+    
     document.getElementById('empSSSAmount').value = data.sssAmount || '';
     document.getElementById('empPhilAmount').value = data.philHealthAmount || '';
     document.getElementById('empPagibigAmount').value = data.pagibigAmount || '';
@@ -742,7 +750,6 @@ window.openEmployeeProfile = function(docId) {
                 let dateStr = d.dateAdded ? d.dateAdded.toDate().toLocaleDateString() : '';
                 let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
                 
-                // 🔥 NEW: Add the manual "Mark Paid" button here so the Owner can clear old stuck vales!
                 let actionHtml = d.status === 'Unpaid' 
                     ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>` 
                     : `<span style="font-size:11px; color:#94a3b8; font-weight:bold;">Cleared</span>`;
@@ -771,6 +778,10 @@ window.saveEmployeeProfile = async function() {
     let name = document.getElementById('empFullName').value.trim();
     let branch = document.getElementById('empBranchAssign').value;
     let rate = parseFloat(document.getElementById('empHourlyRate').value);
+    
+    // 🎓 STUDENT FIX: Grab the checkbox value safely
+    let isWorkingStudent = document.getElementById('staffWorkingStudent') ? document.getElementById('staffWorkingStudent').checked : false;
+    
     let pin = document.getElementById('empPin').value.trim();
 
     if (!name || isNaN(rate) || !pin || pin.length < 4) {
@@ -785,7 +796,7 @@ window.saveEmployeeProfile = async function() {
          let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
          if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
      });
-  
+ 
     let payload = {
         cashierName: name,
         branch: branch,
@@ -797,6 +808,7 @@ window.saveEmployeeProfile = async function() {
         
         // 🔥 NEW: Save the toggle state to the cloud!
         eligibleNightDiff: document.getElementById('empNightDiff') ? document.getElementById('empNightDiff').checked : true,
+        isWorkingStudent: isWorkingStudent, // 🎓 STUDENT FIX: Added to Payload!
         
         phone: document.getElementById('empPhone').value.trim(),
         address: document.getElementById('empAddress').value.trim(),
