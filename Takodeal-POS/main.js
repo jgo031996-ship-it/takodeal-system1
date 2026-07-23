@@ -6929,8 +6929,11 @@ window.startUnverifiedListener = function() {
 setTimeout(window.startUnverifiedListener, 3000);
 
 // ==========================================
-// 📢 CASHIER BULLETIN HISTORY ENGINE
+// 📢 CASHIER BULLETIN & SIGNATURE ENGINE
 // ==========================================
+window.hasAutoShownBulletin = false; // Prevents the popup from spamming every time they click a tab
+window.isSignatureBlank = true;
+
 window.loadBulletinHistory = async function() {
     let container = document.getElementById('bulletinHistoryList');
     if (!container) return;
@@ -6945,12 +6948,12 @@ window.loadBulletinHistory = async function() {
 
     try {
         // 1. Get all active announcements from HQ
-        const annQ = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
-        const annSnap = await window.getDocs(annQ);
+        const annQ = query(collection(db, "announcements"), where("active", "==", true));
+        const annSnap = await getDocs(annQ);
         
         // 2. Get this specific cashier's signatures
-        const ackQ = window.query(window.collection(window.db, "acknowledgments"), window.where("staffName", "==", cashierName));
-        const ackSnap = await window.getDocs(ackQ);
+        const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
+        const ackSnap = await getDocs(ackQ);
         
         // Map the signatures to the announcement ID
         let signatures = {};
@@ -6964,48 +6967,44 @@ window.loadBulletinHistory = async function() {
         announcementsArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
 
         let html = '';
+        let unreadAnnouncements = [];
+
         announcementsArray.forEach(ann => {
             let dateStr = ann.timestamp ? ann.timestamp.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Unknown Date';
             let sigData = signatures[ann.id];
+            let shortMsg = ann.message ? ann.message.substring(0, 100) + (ann.message.length > 100 ? '...' : '') : '';
+
+            let statusBadge = sigData
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">✅ Signed</span>`
+                : `<span style="background: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #fecaca; animation: pulse 2s infinite;">❌ Requires Signature</span>`;
+
+            let sigDateStr = sigData && sigData.timestamp ? (sigData.timestamp.toDate ? sigData.timestamp.toDate() : new Date(sigData.timestamp)).toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+
+            let safeData = {
+                id: ann.id, 
+                title: ann.title || 'Announcement',
+                message: ann.message || '',
+                images: ann.images || [],
+                dateStr: dateStr,
+                hasSignature: !!sigData,
+                signatureImg: sigData ? sigData.signature : '',
+                signatureDate: sigDateStr
+            };
             
-            let sigHtml = '';
-            let statusHtml = '';
+            let modalData = encodeURIComponent(JSON.stringify(safeData));
 
-            // Check if they signed it!
-            if (sigData) {
-                let sigDate = sigData.timestamp ? (sigData.timestamp.toDate ? sigData.timestamp.toDate() : new Date(sigData.timestamp)).toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-                statusHtml = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">✅ Acknowledged on ${sigDate}</span>`;
-                sigHtml = `
-                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1; display: flex; align-items: center; gap: 15px;">
-                        <span style="font-size: 12px; color: #64748b; font-weight: bold;">Your Signature Record:</span>
-                        <img src="${sigData.signature}" style="height: 45px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 2px;">
-                    </div>`;
-            } else {
-                statusHtml = `<span style="background: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #fecaca;">❌ Unread / Pending</span>`;
-            }
-
-            // Build image gallery
-            let imagesHtml = '';
-            if (ann.images && ann.images.length > 0) {
-                imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
-                ann.images.forEach(img => {
-                    imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="window.open('${img}', '_blank')">`;
-                });
-                imagesHtml += `</div>`;
-            }
-
-            let messageHtml = ann.message ? `<div style="margin-top: 10px; font-size: 13px; color: #334155; line-height: 1.5;">${ann.message}</div>` : '';
+            // Track unread announcements for the auto-popup!
+            if (!sigData) unreadAnnouncements.push(modalData);
 
             html += `
-                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div onclick="window.viewAnnouncement('${modalData}')" style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; cursor: pointer; transition: transform 0.2s;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
                         <h3 style="margin: 0; color: #0f172a; font-size: 16px;">${ann.title}</h3>
-                        ${statusHtml}
+                        ${statusBadge}
                     </div>
                     <div style="font-size: 11px; color: #94a3b8; margin-bottom: 10px;">Published: ${dateStr}</div>
-                    ${messageHtml}
-                    ${imagesHtml}
-                    ${sigHtml}
+                    <div style="margin-top: 10px; font-size: 13px; color: #334155; line-height: 1.5;">${shortMsg}</div>
+                    <div style="font-size: 12px; color: #0ea5e9; font-weight: bold; text-align: right; margin-top: 10px;">View Full Details & Sign &rarr;</div>
                 </div>
             `;
         });
@@ -7016,9 +7015,182 @@ window.loadBulletinHistory = async function() {
             container.innerHTML = html;
         }
 
+        // 🔥 THE AUTO-POPUP ENGINE
+        if (unreadAnnouncements.length > 0 && !window.hasAutoShownBulletin) {
+            window.hasAutoShownBulletin = true;
+            setTimeout(() => {
+                window.viewAnnouncement(unreadAnnouncements[0]); 
+            }, 1000); 
+        }
+
     } catch (e) {
         console.error("Bulletin Fetch Error:", e);
         container.innerHTML = '<div style="text-align:center; padding:40px; color:#dc2626; font-weight:bold;">❌ Error connecting to the server.</div>';
+    }
+};
+
+window.viewAnnouncement = function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    let imagesHtml = '';
+    
+    if (data.images && data.images.length > 0) {
+        imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
+        data.images.forEach(img => {
+            imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="window.open('${img}', '_blank')">`;
+        });
+        imagesHtml += `</div>`;
+    }
+
+    let sigHtml = '';
+
+    if (data.hasSignature) {
+        sigHtml = `
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px; border: 1px solid #bbf7d0;">
+                <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${data.signatureDate}</span>
+                <img src="${data.signatureImg}" style="height: 60px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">
+            </div>`;
+    } else {
+        // 🔥 THE SIGNATURE PAD UI 🔥
+        sigHtml = `
+            <div style="margin-top: 25px; padding: 20px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px;">
+                <h4 style="margin: 0 0 5px 0; color: #b45309; text-align: center; font-size: 15px;">Mandatory Acknowledgment</h4>
+                <p style="font-size: 11px; color: #92400e; text-align: center; margin-bottom: 15px;">Please sign your name inside the box below to confirm you have read and understood this update.</p>
+                
+                <div style="background: white; border: 2px dashed #d97706; border-radius: 8px; overflow: hidden; touch-action: none; position: relative;">
+                    <canvas id="sigCanvas" width="300" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button onclick="window.clearSignature()" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear</button>
+                    <button onclick="window.submitSignature('${data.id}')" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
+                </div>
+            </div>`;
+    }
+
+    Swal.fire({
+        title: `<div style="text-align:left; font-size: 18px; color: #0f172a; margin-bottom: 5px;">${data.title}</div>`,
+        
+        // Ensure max-height is set so the internal scrollbar is forced to appear!
+        html: `<div style="text-align: left; max-height: 50vh; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding-right: 10px; margin-bottom: 10px;">
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">📅 Published: ${data.dateStr}</div>
+                <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
+                ${imagesHtml}
+                ${sigHtml}
+               </div>`,
+               
+        showCloseButton: true, 
+        showConfirmButton: false,
+        allowOutsideClick: data.hasSignature,
+        // 🔥 THE FIX: Tell SweetAlert itself not to stretch past the screen!
+        customClass: { popup: 'rounded-2xl shadow-2xl', htmlContainer: 'custom-swal-html' },
+        didOpen: () => {
+            if (!data.hasSignature) {
+                window.initSignaturePad();
+            }
+        }
+    });
+};
+
+window.initSignaturePad = function() {
+    const canvas = document.getElementById('sigCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#0f172a';
+    window.isSignatureBlank = true;
+
+    let drawing = false;
+
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) * (canvas.width / rect.width),
+            y: (clientY - rect.top) * (canvas.height / rect.height)
+        };
+    };
+
+    const startDraw = (e) => { 
+        drawing = true; 
+        window.isSignatureBlank = false;
+        const pos = getPos(e); 
+        ctx.beginPath(); 
+        ctx.moveTo(pos.x, pos.y); 
+        e.preventDefault(); 
+    };
+
+    const draw = (e) => { 
+        if (!drawing) return; 
+        const pos = getPos(e); 
+        ctx.lineTo(pos.x, pos.y); 
+        ctx.stroke(); 
+        e.preventDefault(); 
+    };
+
+    const stopDraw = (e) => { 
+        drawing = false; 
+        ctx.closePath(); 
+        if(e) e.preventDefault(); 
+    };
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDraw);
+    canvas.addEventListener('mouseout', stopDraw);
+
+    canvas.addEventListener('touchstart', startDraw, {passive: false});
+    canvas.addEventListener('touchmove', draw, {passive: false});
+    canvas.addEventListener('touchend', stopDraw, {passive: false});
+};
+
+window.clearSignature = function() {
+    const canvas = document.getElementById('sigCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        window.isSignatureBlank = true;
+    }
+};
+
+window.submitSignature = async function(announcementId) {
+    const canvas = document.getElementById('sigCanvas');
+    if (!canvas) return;
+
+    if (window.isSignatureBlank) {
+        return Swal.showValidationMessage("Please draw your signature in the box first.");
+    }
+
+    let btn = document.getElementById('btnSubmitSig');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    let sigDataUrl = canvas.toDataURL("image/png");
+    let cashierName = localStorage.getItem('cashierName') || (window.sessionUser ? window.sessionUser.cashierName : 'Unknown Staff');
+
+    try {
+        await addDoc(collection(db, "acknowledgments"), {
+            announcementId: announcementId,
+            staffName: cashierName,
+            signature: sigDataUrl,
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Acknowledgment saved!', 
+            showConfirmButton: false, timer: 2500
+        });
+
+        Swal.close();
+        window.loadBulletinHistory();
+
+    } catch (e) {
+        console.error("Signature Save Error:", e);
+        Swal.showValidationMessage("Failed to save signature. Check connection.");
+        btn.innerText = origText; btn.disabled = false;
     }
 };
 
