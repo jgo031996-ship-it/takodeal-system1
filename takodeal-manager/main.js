@@ -18349,7 +18349,25 @@ window.pendingVerifications = []; // Store IDs for "Verify All" button
 window.loadUnverifiedHistory = async function() {
     let tbody = document.getElementById('unverifiedHistoryBody');
     if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; font-weight: bold; color: #64748b;">⏳ Scanning database for unverified payments...</td></tr>';
+    
+    // 🔥 DYNAMICALLY UPDATE THE TABLE HEADERS TO INCLUDE 'CASHIER'
+    let theadTr = tbody.previousElementSibling;
+    if (theadTr && theadTr.tagName === 'THEAD') {
+        theadTr = theadTr.querySelector('tr');
+    }
+    if (theadTr) {
+        theadTr.innerHTML = `
+            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Date & Time</th>
+            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Branch</th>
+            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Receipt ID</th>
+            <th style="padding: 10px 15px; color: #0284c7; text-align: left; font-size: 11px; text-transform: uppercase;">Cashier</th>
+            <th style="padding: 10px 15px; color: #475569; text-align: left; font-size: 11px; text-transform: uppercase;">Payment Method</th>
+            <th style="padding: 10px 15px; color: #475569; text-align: right; font-size: 11px; text-transform: uppercase;">Amount</th>
+            <th style="padding: 10px 15px; color: #475569; text-align: center; font-size: 11px; text-transform: uppercase;">Action</th>
+        `;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; font-weight: bold; color: #64748b;">⏳ Scanning database for unverified payments...</td></tr>';
     
     try {
         let lookBack = new Date();
@@ -18388,24 +18406,34 @@ window.loadUnverifiedHistory = async function() {
             count++;
             window.pendingVerifications.push(tx.id);
             let dateStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+            let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             let methodColor = tx.paymentMethod.toLowerCase() === 'gcash' ? '#0284c7' : '#ea580c';
+
+            // 🔥 NEW: Extract Cashier, Customer, and Cart data safely for the View button!
+            let safeCustomer = (tx.customerName || 'Guest').replace(/'/g, "\\'");
+            let safeCashier = tx.cashier || 'Unknown';
+            let safeCart = encodeURIComponent(JSON.stringify(tx.cart || tx.items || []));
 
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
                     <td style="padding: 15px; font-weight: bold; color: #334155;">${dateStr}</td>
                     <td style="padding: 15px; font-weight: bold; color: #0f172a;">${tx.branch}</td>
                     <td style="padding: 15px; font-family: monospace; color: #64748b; font-size: 12px;">${tx.receiptId || tx.id}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #0284c7;">👤 ${safeCashier}</td>
                     <td style="padding: 15px; font-weight: 900; color: ${methodColor}; text-transform: uppercase;">${tx.paymentMethod}</td>
                     <td style="padding: 15px; font-weight: 900; color: #16a34a; text-align: right; font-size: 16px;">₱${parseFloat(tx.netTotal).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
                     <td style="padding: 15px; text-align: center;">
-                        <button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Verify</button>
+                        <div style="display: flex; gap: 5px; justify-content: center; align-items: center;">
+                            <button onclick="window.viewReceiptDetails('${tx.receiptId || tx.id}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                            <button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Verify</button>
+                        </div>
                     </td>
                 </tr>
             `;
         });
 
         if (count === 0) {
-            html = '<tr><td colspan="6" class="text-center" style="padding: 40px; font-weight: bold; color: #16a34a; font-size: 16px;">🎉 All caught up! No pending digital payments to verify.</td></tr>';
+            html = '<tr><td colspan="7" class="text-center" style="padding: 40px; font-weight: bold; color: #16a34a; font-size: 16px;">🎉 All caught up! No pending digital payments to verify.</td></tr>';
         }
 
         tbody.innerHTML = html;
@@ -18413,7 +18441,7 @@ window.loadUnverifiedHistory = async function() {
 
     } catch(e) {
         console.error("Error loading unverified:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #dc2626; font-weight: bold;">❌ Failed to load data. Check console.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #dc2626; font-weight: bold;">❌ Failed to load data. Check console.</td></tr>';
     }
 };
 
