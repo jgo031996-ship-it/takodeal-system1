@@ -9086,36 +9086,41 @@ window.openPayslipModal = async function(staffName) {
         }
     }
 
-    const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
-    const safeSetVal = (id, val) => { let el = document.getElementById(id); if (el) el.value = val; };
+    // 🔥 THE FIX: Universal setter for both Inputs and Text elements
+    const safeSet = (id, val) => { 
+        let el = document.getElementById(id); 
+        if (!el) return;
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') el.value = val;
+        else el.innerText = val;
+    };
 
-    safeSetText('psName', data.name || "Unknown");
-    safeSetText('psBranch', data.branch || "Unassigned");
-    safeSetText('psStart', data.start || "");
-    safeSetText('psEnd', data.end || "");
+    safeSet('psName', data.name || "Unknown");
+    safeSet('psBranch', data.branch || "Unassigned");
+    safeSet('psStart', data.start || "");
+    safeSet('psEnd', data.end || "");
     
     let safeBasicPay = parseFloat(data.basicPay) || 0;
-    safeSetText('psBasicPay', safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    safeSet('psBasicPay', safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
     
-    safeSetText('psDaysWorked', data.shiftsWorked || 0);
-    safeSetText('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
+    safeSet('psDaysWorked', data.shiftsWorked || 0);
+    safeSet('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
     
+    // 🔥 THE DATE FIX: Automatically inject today's date into the Pay Distributed field
     let today = new Date();
-    safeSetVal('psPayDistributed', today.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }));
+    let formattedDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    safeSet('psPayDistributed', formattedDate);
 
-    safeSetVal('psOvertime', data.nightBonus || 0);
-    safeSetVal('psStraightBonus', data.straightBonus || 0); 
-    safeSetVal('psHoliday', data.holidayPayTotal || 0);
+    safeSet('psOvertime', data.nightBonus || 0);
+    safeSet('psStraightBonus', data.straightBonus || 0); 
+    safeSet('psHoliday', data.holidayPayTotal || 0);
     
-    // 🔥 THE FIX: We are now correctly targeting 'lateDeduction' so the ₱260 maps perfectly!
-    safeSetVal('psLate', data.lateDeduction || 0); 
-    
-    safeSetVal('psSSS', data.sss || 0);
-    safeSetVal('psPhil', data.philhealth || 0);
-    safeSetVal('psPagibig', data.pagibig || 0);
-    safeSetVal('psAdvance', data.advances || 0);
-    safeSetVal('psLoans', data.loans || 0);
-    safeSetVal('psFoods', data.meals || 0);
+    safeSet('psLate', data.lateDeduction || 0); 
+    safeSet('psSSS', data.sss || 0);
+    safeSet('psPhil', data.philhealth || 0);
+    safeSet('psPagibig', data.pagibig || 0);
+    safeSet('psAdvance', data.advances || 0);
+    safeSet('psLoans', data.loans || 0);
+    safeSet('psFoods', data.meals || 0);
     
     let dynamicArea = document.getElementById('psDynamicDeductionsArea');
     if (dynamicArea) {
@@ -9158,18 +9163,21 @@ window.openPayslipModal = async function(staffName) {
 };
 
 window.recalcPayslip = function() {
-    const getVal = (id) => { let el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
+    // 🔥 SMART EXTRACTOR: Grabs numbers perfectly from Text OR Inputs
+    const getVal = (id) => { 
+        let el = document.getElementById(id); 
+        if (!el) return 0;
+        let val = (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') ? el.value : el.innerText;
+        return parseFloat(val.toString().replace(/,/g, '')) || 0;
+    };
+
     const safeSetText = (id, val) => { let el = document.getElementById(id); if (el) el.innerText = val; };
 
-    let basicEl = document.getElementById('psBasicPay');
-    let basic = 0;
-    if (basicEl) {
-        basic = parseFloat(basicEl.innerText.replace(/,/g, '')) || 0;
-    }
-
+    let basic = getVal('psBasicPay');
     let overtime = getVal('psOvertime');
-    let straightBonus = getVal('psStraightBonus'); // 🔥 Grabs the value from the box
+    let straightBonus = getVal('psStraightBonus'); 
     let holiday = getVal('psHoliday');
+    
     let late = getVal('psLate');
     let sss = getVal('psSSS');
     let phil = getVal('psPhil');
@@ -9177,18 +9185,16 @@ window.recalcPayslip = function() {
     let advance = getVal('psAdvance');
     let loans = getVal('psLoans');
     let foods = getVal('psFoods');
-    // 🔥 DYNAMIC CUSTOM DEDUCTIONS MATH
+    
     let customDeductionsSum = 0;
     document.querySelectorAll('.ps-dynamic-deduction').forEach(inp => {
         customDeductionsSum += (parseFloat(inp.value) || 0);
     });
 
     let gross = basic + overtime + straightBonus + holiday; 
-    // Replace 'wifi' with the new custom sum
     let deductions = late + sss + phil + pagibig + advance + loans + foods + customDeductionsSum;
     let net = gross - deductions;
 
-    // 🔥 FIX: Targets 'psGross' specifically to match your native HTML
     safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psTotalDeduct', deductions.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2}));
@@ -9201,26 +9207,30 @@ window.finalizePayslip = async function() {
     let data = window.currentPayslipData;
     if (!data) return;
     
-    // Grab the final net pay from the UI
     let netPayStr = document.getElementById('psNetPay').innerText.replace(/,/g, '');
     let finalNetPay = parseFloat(netPayStr) || 0;
 
-    // 🔥 GRAB THE EXACT NUMBERS TYPED IN THE OVERRIDE BOXES
-    let actualLoanDeducted = parseFloat(document.getElementById('psLoans').value) || 0;
-    let actualValeDeducted = parseFloat(document.getElementById('psAdvance').value) || 0;
-    let actualFoodDeducted = parseFloat(document.getElementById('psFoods').value) || 0;
+    // 🔥 THE MEAL/VALE EXTRACTOR FIX: Correctly reads the text numbers from the HTML
+    const getFieldVal = (id) => {
+        let el = document.getElementById(id);
+        if (!el) return 0;
+        let val = (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') ? el.value : el.innerText;
+        return parseFloat(val.toString().replace(/,/g, '')) || 0;
+    };
+
+    let actualLoanDeducted = getFieldVal('psLoans');
+    let actualValeDeducted = getFieldVal('psAdvance');
+    let actualFoodDeducted = getFieldVal('psFoods');
 
     if (!window.liveAccounts || window.liveAccounts.length === 0) {
         if(typeof window.loadAccountsAndBudget === 'function') await window.loadAccountsAndBudget();
     }
 
-    // Build the dropdown options dynamically
     let optionsHtml = '';
     window.liveAccounts.forEach((a, i) => {
         optionsHtml += `<option value="${i}">${a.name} (Bal: ₱${a.balance.toLocaleString(undefined, {minimumFractionDigits: 2})})</option>`;
     });
 
-    // Pop the beautiful SweetAlert Modal
     const { value: accIdx, isConfirmed } = await Swal.fire({
         title: '💸 Disburse Payroll',
         html: `
@@ -9245,14 +9255,12 @@ window.finalizePayslip = async function() {
         customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' },
         preConfirm: () => {
             const val = document.getElementById('swal-acc-select').value;
-            if (!val) {
-                Swal.showValidationMessage('❌ Please select an account to deduct from.');
-            }
+            if (!val) { Swal.showValidationMessage('❌ Please select an account to deduct from.'); }
             return val;
         }
     });
 
-    if (!isConfirmed || !accIdx) return; // User clicked Cancel
+    if (!isConfirmed || !accIdx) return; 
 
     let selAcc = window.liveAccounts[parseInt(accIdx)];
     if (!selAcc) { 
@@ -9278,11 +9286,8 @@ window.finalizePayslip = async function() {
     btn.innerText = "⏳ Processing..."; btn.disabled = true;
     
     try {
-        // 1. Deduct money from Selected Cash Account
         await updateDoc(doc(db, "cash_accounts", selAcc.id), { balance: selAcc.balance - finalNetPay });
 
-        // 2. Log it as an official Expense in your dashboard feed
-        // 🔥 THE FIX: Route the expense directly to the Main Office, but note the Branch!
         await addDoc(collection(db, "expenses"), {
             branch: "Main Office", 
             amount: finalNetPay, 
@@ -9292,7 +9297,6 @@ window.finalizePayslip = async function() {
             timestamp: serverTimestamp()
         });
 
-        // 3. Deduct exactly what you typed for the LOAN in the ledger
         if (actualLoanDeducted > 0) {
             let lId = data.ledgerId;
             if (!lId) {
@@ -9308,7 +9312,6 @@ window.finalizePayslip = async function() {
                     let currentPaid = parseFloat(ledgerSnap.data().totalPaid) || 0;
                     await updateDoc(ledgerRef, { totalPaid: currentPaid + actualLoanDeducted });
                     
-                    // 🔥 THE FIX: Log Loan Payment to the History Tab!
                     await addDoc(collection(db, "staff_deductions"), {
                         staffName: data.name,
                         type: "Company Loan Payment",
@@ -9322,7 +9325,7 @@ window.finalizePayslip = async function() {
             }
         }
         
-        // 4. 🔥 SMART VALE & MEAL CLEARER (INDEX-FREE PARTIAL PAYMENTS)
+        // 4. 🔥 SMART VALE & MEAL CLEARER 
         let remainingValeToClear = actualValeDeducted;
         let remainingFoodToClear = actualFoodDeducted;
 
@@ -9335,7 +9338,6 @@ window.finalizePayslip = async function() {
                 if (d.data().status === "Unpaid") pendingDeductions.push({ id: d.id, ...d.data() });
             });
 
-            // Sort oldest first so we pay off old debts first!
             pendingDeductions.sort((a, b) => (a.dateAdded?.toDate() || 0) - (b.dateAdded?.toDate() || 0));
 
             for (let dData of pendingDeductions) {
@@ -9348,7 +9350,7 @@ window.finalizePayslip = async function() {
                         remainingValeToClear -= dAmt;
                     } else {
                         await updateDoc(dRef, { amount: dAmt - remainingValeToClear });
-                        remainingValeToClear = 0; // Partial payment applied!
+                        remainingValeToClear = 0; 
                     }
                 }
                 else if (dData.type === "Staff Meal" && remainingFoodToClear > 0) {
@@ -9357,33 +9359,27 @@ window.finalizePayslip = async function() {
                         remainingFoodToClear -= dAmt;
                     } else {
                         await updateDoc(dRef, { amount: dAmt - remainingFoodToClear });
-                        remainingFoodToClear = 0; // Partial payment applied!
+                        remainingFoodToClear = 0; 
                     }
                 }
             }
         }
 
-        // 5. 🔥 FREEZE THE PAYSLIP DATA WITH YOUR EDITED NUMBERS 🔥
         data.isPaid = true; 
         data.loans = actualLoanDeducted;
         data.advances = actualValeDeducted;
         data.meals = actualFoodDeducted;
         
-        // Grab live edits directly from the screen
-        data.lateDeduction = parseFloat(document.getElementById('psLate').value) || 0;
-        data.sss = parseFloat(document.getElementById('psSSS').value) || 0;
-        data.philhealth = parseFloat(document.getElementById('psPhil').value) || 0;
-        data.pagibig = parseFloat(document.getElementById('psPagibig').value) || 0;
-        data.straightBonus = parseFloat(document.getElementById('psStraightBonus').value) || 0;
-        data.holidayPayTotal = parseFloat(document.getElementById('psHoliday').value) || 0;
-        data.nightBonus = parseFloat(document.getElementById('psOvertime').value) || 0;
+        data.lateDeduction = getFieldVal('psLate');
+        data.sss = getFieldVal('psSSS');
+        data.philhealth = getFieldVal('psPhil');
+        data.pagibig = getFieldVal('psPagibig');
+        data.straightBonus = getFieldVal('psStraightBonus');
+        data.holidayPayTotal = getFieldVal('psHoliday');
+        data.nightBonus = getFieldVal('psOvertime');
 
-        // 🛡️ THE ULTIMATE CRASH PREVENTER: Wipe out ANY undefined values!
-        // Firebase strictly forbids 'undefined'. If a number gets lost in memory, this forces it to 0.
         Object.keys(data).forEach(key => {
-            if (data[key] === undefined) {
-                data[key] = 0; 
-            }
+            if (data[key] === undefined) { data[key] = 0; }
         });
 
         await addDoc(collection(db, "payroll_records"), {
@@ -9408,9 +9404,10 @@ window.finalizePayslip = async function() {
         
         window.downloadPayslipImage();
         
-        window.loadLedger(); 
-        window.generateAutoPayslips(); 
-        window.loadAccountsAndBudget();
+        if (typeof window.loadLedger === 'function') window.loadLedger(); 
+        if (typeof window.generateAutoPayslips === 'function') window.generateAutoPayslips(); 
+        if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
+
     } catch (e) {
         console.error(e); alert("❌ Failed to finalize payslip.");
         if (btn) { btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false; }
