@@ -7524,3 +7524,122 @@ window.confirmPrepCart = async function() {
         Swal.fire('Error', '❌ Failed to log prep batch. Check connection.', 'error');
     }
 };
+
+// ========================================================
+// 🖋️ MASTER UNIVERSAL SIGNATURE ENGINE (OVERRIDES ALL DUPLICATES)
+// ========================================================
+window.initSignaturePad = function() {
+    // 1. Smartly detect WHICH modal is currently visible on the screen!
+    let activeCanvasId = null;
+    if (document.getElementById('signatureCanvas') && document.getElementById('signatureCanvas').offsetWidth > 0) {
+        activeCanvasId = 'signatureCanvas'; // Sanctions / NTE Modal
+    } else if (document.getElementById('sigCanvas') && document.getElementById('sigCanvas').offsetWidth > 0) {
+        activeCanvasId = 'sigCanvas'; // Bulletin Board Modal (New)
+    } else if (document.getElementById('bulletinCanvas') && document.getElementById('bulletinCanvas').offsetWidth > 0) {
+        activeCanvasId = 'bulletinCanvas'; // Bulletin Board Modal (Old Backup)
+    }
+
+    if (!activeCanvasId) return;
+
+    let oldCanvas = document.getElementById(activeCanvasId);
+    
+    // 2. Clone the canvas to wipe out any duplicate ghost event listeners
+    let newCanvas = oldCanvas.cloneNode(true);
+    oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
+    
+    // 3. 🔥 THE MAGIC FIX: Force the internal drawing resolution to match the physical screen size!
+    newCanvas.width = newCanvas.offsetWidth || 300;
+    newCanvas.height = newCanvas.offsetHeight || 150;
+    
+    const ctx = newCanvas.getContext('2d');
+    let isDrawing = false;
+    
+    // Reset the correct safety variables
+    if (activeCanvasId === 'signatureCanvas') {
+        window.hasSignedNTE = false;
+    } else {
+        window.isSignatureBlank = true;
+        window.hasSignedBulletin = false;
+    }
+
+    ctx.clearRect(0, 0, newCanvas.width, newCanvas.height);
+    
+    // 4. Style the pen (Thick, smooth, and color-coded!)
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // Red ink for Sanctions, Deep Slate for Bulletins
+    ctx.strokeStyle = activeCanvasId === 'signatureCanvas' ? '#dc2626' : '#0f172a'; 
+
+    const getPos = (e) => {
+        const rect = newCanvas.getBoundingClientRect();
+        // Calculate the exact scale difference to perfectly track the finger!
+        const scaleX = newCanvas.width / rect.width;
+        const scaleY = newCanvas.height / rect.height;
+        
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    };
+
+    const startPosition = (e) => {
+        isDrawing = true;
+        // Flip the safety switches so the Submit button works!
+        if (activeCanvasId === 'signatureCanvas') window.hasSignedNTE = true;
+        else { window.isSignatureBlank = false; window.hasSignedBulletin = true; }
+        
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        e.preventDefault(); // CRITICAL: Stops the tablet screen from pulling/scrolling while drawing!
+    };
+
+    const draw = (e) => {
+        if (!isDrawing) return;
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        e.preventDefault();
+    };
+
+    const stopPosition = () => {
+        isDrawing = false;
+        ctx.closePath(); 
+    };
+
+    // Attach Mouse listeners (For PC)
+    newCanvas.addEventListener('mousedown', startPosition);
+    newCanvas.addEventListener('mousemove', draw);
+    newCanvas.addEventListener('mouseup', stopPosition);
+    newCanvas.addEventListener('mouseout', stopPosition);
+
+    // Attach Touch listeners (For Tablets)
+    newCanvas.addEventListener('touchstart', startPosition, { passive: false });
+    newCanvas.addEventListener('touchmove', draw, { passive: false });
+    newCanvas.addEventListener('touchend', stopPosition);
+};
+
+// Protect against old HTML buttons trying to call different names!
+window.initBulletinSignaturePad = window.initSignaturePad;
+
+// Universal Clear Button
+window.clearSignature = function() {
+    ['signatureCanvas', 'sigCanvas', 'bulletinCanvas'].forEach(id => {
+        const canvas = document.getElementById(id);
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    });
+    // Lock everything down again
+    window.hasSignedNTE = false;
+    window.isSignatureBlank = true;
+    window.hasSignedBulletin = false;
+};
+
+// Protect against old HTML buttons trying to call different names!
+window.clearBulletinSignature = window.clearSignature;
