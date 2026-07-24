@@ -2365,7 +2365,7 @@ window.reviewPurchaseOrder = async function(poId) {
         
         const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
         let hqStock = {};
-        let hqDetails = {}; // 🔥 Grab ALL HQ details to steal the exact UOMs!
+        let hqDetails = {}; 
         hqSnap.forEach(d => {
             hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
             hqDetails[d.data().name] = d.data(); 
@@ -2376,27 +2376,31 @@ window.reviewPurchaseOrder = async function(poId) {
                 <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                     <tr>
                         <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Item Requested</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Branch Report</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: right; color: #16a34a;">HQ Stock</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569; text-align: center;">Qty</th>
+                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: center;">Alert Type</th>
                     </tr>
                 </thead>
                 <tbody>`;
         
         po.items.forEach(item => {
-            let hqAvail = hqStock[item.itemName] || 0;
-            let reportTxt = item.requestType ? 
-                `<span style="color: #dc2626; font-weight: bold;">${item.requestType}</span><br><span style="font-size:10px; color:#64748b; font-weight:bold;">Actual: ${item.physicalStock} | Sys: ${item.systemStock}</span>` : 
-                `<span style="color: #0f766e; font-weight: bold;">Requested: ${item.qty} ${item.uom}</span>`;
-            
-            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
-                <td style="padding: 10px;">${reportTxt}</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold; color: #16a34a; font-size: 14px;">${hqAvail} <span style="font-size:10px; color:#94a3b8; font-weight:normal;">${item.uom}</span></td>
-            </tr>`;
+            // 🔥 THE COLOR ASSIGNER: Makes "Lost in Transit" visually violent
+            let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : (item.requestType === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
+            let alertStyle = item.requestType === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: ${alertColor}15;`;
+            let rowBg = item.requestType === 'Lost in Transit' ? '#fff1f2' : 'white';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
+                    <td style="padding: 10px; font-weight: bold; color: #334155;">
+                        ${item.itemName}<br>
+                        <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${hqStock[item.itemName] || 0} ${item.uom}</span>
+                    </td>
+                    <td style="padding: 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
+                    <td style="padding: 10px; text-align: center;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
+                </tr>
+            `;
         });
         html += `</tbody></table></div>`;
 
-        // 🔥 NEW: INJECT THE DELETE/DISPOSE BUTTON INSIDE THE MODAL!
         html += `
             <button onclick="window.deleteStockRequest('${poId}')" style="margin-top: 15px; width: 100%; padding: 12px; background: #fef2f2; border: 1px dashed #fca5a5; color: #dc2626; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                 🗑️ Permanently Delete / Dispose Request
@@ -2408,7 +2412,6 @@ window.reviewPurchaseOrder = async function(poId) {
         Swal.fire({
             title: titleTxt, html: html, width: '700px',
             showCancelButton: true, showDenyButton: true,
-            // Colors matching your UI exactly!
             confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#dc2626',
             confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏳ Postpone / Set Aside', cancelButtonText: '✖ Close Window',
             customClass: { popup: 'rounded-2xl shadow-xl' }
@@ -2417,7 +2420,6 @@ window.reviewPurchaseOrder = async function(poId) {
                 
                 if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
 
-                // 🔥 AUTO-CLEAR ENGINE: Sets aside old branch items securely without crashing!
                 let storedDest = localStorage.getItem('takodeal_dispatch_to');
                 if (window.dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
                     await window.clearDispatchCart(); 
@@ -2434,21 +2436,20 @@ window.reviewPurchaseOrder = async function(poId) {
 
                 po.items.forEach(newItem => {
                     let itemName = newItem.itemName || newItem.name;
-                    let hqData = hqDetails[itemName] || {}; // Pull real UOMs from HQ
+                    let hqData = hqDetails[itemName] || {}; 
 
-                    // 🔥 THE UOM MATH FIX: Forcibly map the strict conversion rates and "Packs" from HQ!
                     let pUom = hqData.purchaseUom || hqData.purchUom || newItem.purchaseUom || newItem.uom || 'units';
                     let bUom = hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units';
                     let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
 
                     let mappedItem = {
                         ...newItem, 
-                        rawQty: parseFloat(newItem.qty) || 0,
+                        rawQty: parseFloat(newItem.displayQty || newItem.qty) || 0,
                         purchaseUom: pUom,
                         baseUom: bUom,
                         conversionRate: cRate,
                         selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                        hqStock: parseFloat(hqData.currentStock) || 0 // 🔥 Save exact HQ stock for the UI!
+                        hqStock: parseFloat(hqData.currentStock) || 0
                     };
 
                     mappedItem.convRate = (mappedItem.selectedUom === 'purch') ? cRate : 1;
@@ -2489,11 +2490,10 @@ window.reviewPurchaseOrder = async function(poId) {
                 Swal.fire({title: 'Loaded to Cart! 🛒', text: `Items moved to Dispatch for ${po.branch}.`, icon: 'success', timer: 2000, showConfirmButton: false});
                 
             } else if (result.isDenied) {
-                // 🔥 POSTPONE / SET ASIDE LOGIC 🔥
                 const { value: rejectReason } = await Swal.fire({
                     title: 'Postpone Request',
                     input: 'text',
-                    inputLabel: 'Reason for postponing (e.g., waiting for supplier delivery)',
+                    inputLabel: 'Reason for postponing',
                     inputPlaceholder: 'Out of stock at HQ...',
                     showCancelButton: true,
                     confirmButtonColor: '#dc2626',
@@ -2508,8 +2508,8 @@ window.reviewPurchaseOrder = async function(poId) {
                         managerMessage: rejectReason,
                         processedAt: serverTimestamp()
                     });
-                    Swal.fire('Postponed', 'The request was set aside and flagged as Delayed.', 'info');
-                    window.loadDispatchLogs(); // Refresh the list
+                    Swal.fire('Postponed', 'The request was set aside.', 'info');
+                    window.loadDispatchLogs(); 
                 }
             }
         });
@@ -18117,11 +18117,12 @@ window.viewDeliveryDetails = function(encodedGroup) {
     let tbody = document.getElementById('dispatchDetailsBody');
     let html = '';
     
-    // We can only recall a delivery if it is strictly "In Transit" (Not Arrived or Received)
     let canRecall = true; 
+    let hasMissing = false; // 🔥 Tracking if we need the new button!
     
     group.items.forEach(item => {
         if (item.status !== 'In Transit') canRecall = false;
+        if (item.status === 'Lost in Transit' || item.status === 'Discrepancy') hasMissing = true;
 
         let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : (item.status === 'Arrived' ? '#8b5cf6' : '#dc2626'));
         let varText = item.variance ? `<span style="color:#dc2626; font-weight:bold;">${item.variance} ${item.uom}</span>` : `<span style="color:#94a3b8;">0</span>`;
@@ -18147,13 +18148,21 @@ window.viewDeliveryDetails = function(encodedGroup) {
     
     if(tbody) tbody.innerHTML = html;
 
-    // 🔥 DYNAMIC RECALL BUTTON INJECTION
     let footerEl = document.getElementById('dispatchDetailsFooter');
     if (footerEl) {
+        footerEl.innerHTML = '';
+        
+        // 🔥 INJECT RECALL OR REQUEUE BUTTONS INTELLIGENTLY
         if (canRecall) {
-            footerEl.innerHTML = `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s;">🔙 Back Load / Recall Dispatch</button>`;
-        } else {
-            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px;">🔒 This delivery has already Arrived and cannot be recalled.</span>`;
+            footerEl.innerHTML += `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s; width: 100%; margin-bottom: 10px;">🔙 Back Load / Recall Dispatch</button>`;
+        } 
+        
+        if (hasMissing) {
+            footerEl.innerHTML += `<button onclick="window.requeueLostItems('${encodedGroup}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); font-size: 14px; transition: 0.2s; width: 100%;">🔄 Auto-Requeue Lost Items to Requests</button>`;
+        }
+
+        if (!canRecall && !hasMissing) {
+            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px; display: block; text-align: center;">🔒 This delivery has been fully processed by the branch.</span>`;
         }
     }
 
@@ -18188,7 +18197,64 @@ window.markDispatchArrived = async function(encodedGroup) {
 };
 
 // ========================================================
-// 🔙 RECALL / BACK LOAD ENGINE (CART FIX)
+// 🔄 AUTO-REQUEUE LOST ITEMS ENGINE
+// ========================================================
+window.requeueLostItems = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    
+    if (!confirm(`Re-queue all missing/lost items for ${group.toBranch} as a new Stock Request?`)) return;
+
+    Swal.fire({title: 'Generating Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let lostItems = group.items.filter(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
+        
+        let poItems = lostItems.map(item => {
+            let varianceQty = Math.abs(parseFloat(item.variance) || 0);
+            let cRate = parseFloat(item.convRate) || 1;
+            let displayQty = varianceQty / cRate; // Reverse engineers the original package size!
+
+            return {
+                itemName: item.item,
+                name: item.item,
+                qty: varianceQty,
+                displayQty: displayQty,
+                uom: item.baseUom || item.uom,
+                displayUom: item.displayUom || item.purchaseUom || item.uom,
+                requestType: 'Lost in Transit', // 🔥 This triggers the RED tag!
+                physicalStock: 0,
+                systemStock: 0
+            };
+        });
+
+        // 1. Create the new Purchase Order
+        await addDoc(collection(db, "purchase_orders"), {
+            branch: group.toBranch,
+            items: poItems,
+            status: "Pending",
+            type: "Lost Item Replacement",
+            requestedBy: "System (Auto-Requeue)",
+            timestamp: serverTimestamp()
+        });
+
+        // 2. Mark the dispatch logs as Re-queued so the button disappears
+        let promises = lostItems.map(item => 
+            updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Lost (Re-queued)' })
+        );
+        await Promise.all(promises);
+
+        Swal.fire('Success', 'Lost items have been instantly sent to the Stock Requests feed!', 'success');
+        document.getElementById('dispatchDetailsModal').style.display = 'none';
+        window.loadDispatchLogs(); // Refresh the list
+
+    } catch (e) {
+        console.error("Requeue Error:", e);
+        Swal.fire('Error', 'Failed to requeue lost items. Check console.', 'error');
+    }
+};
+
+// ========================================================
+// 🔙 RECALL / BACK LOAD ENGINE (CART BLANK FIX)
 // ========================================================
 window.recallDispatch = async function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
@@ -18200,12 +18266,10 @@ window.recallDispatch = async function(encodedGroup) {
     try {
         if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
         
-        // Auto-set the destination branch
         let branchSelect = document.getElementById('dispTo');
         if(branchSelect) branchSelect.value = group.toBranch;
 
         for (let item of group.items) {
-            // 1. Refund the inventory back to HQ
             let originBranch = item.fromBranch || "Main Office";
             const invQ = query(collection(db, "inventory"), where("branch", "==", originBranch), where("name", "==", item.item));
             const invSnap = await getDocs(invQ);
@@ -18230,21 +18294,27 @@ window.recallDispatch = async function(encodedGroup) {
                 });
             }
 
-            // 2. Push the item back into the Dispatch Cart!
+            // 🔥 THE FIX: Added exact variable mapping so the UI input boxes don't render blank!
             window.dispatchCart.push({
                 id: item.sourceId || item.id,
+                sourceId: item.sourceId || item.id,
+                itemName: item.item,
                 name: item.item,
-                qty: item.displayQty || item.qty,
-                uom: item.displayUom || item.uom,
-                baseQty: item.qty,
-                baseUom: item.uom
+                rawQty: parseFloat(item.displayQty) || parseFloat(item.qty) || 0,
+                qty: parseFloat(item.qty) || 0,
+                uom: item.baseUom || item.uom,
+                baseUom: item.baseUom || item.uom,
+                friendlyUom: item.displayUom || item.uom,
+                purchaseUom: item.purchaseUom || item.displayUom || item.uom,
+                selectedUom: (item.displayUom !== item.uom) ? 'purch' : 'base',
+                convRate: parseFloat(item.convRate) || 1,
+                conversionRate: parseFloat(item.convRate) || 1,
+                category: item.category || "Ingredients"
             });
 
-            // 3. Delete the dispatch log so the branch never sees it
             await deleteDoc(doc(db, "dispatch_logs", item.id));
         }
 
-        // 🔥 THE FIX: Save the cart to LocalStorage so it survives the tab switch!
         localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
 
         if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
