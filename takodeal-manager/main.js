@@ -11451,20 +11451,19 @@ window.recalcModalNetSales = function() {
 };
 
 // ==========================================
-// 🧾 DYNAMIC DIGITAL RECEIPT VIEWER
+// 🧾 DYNAMIC DIGITAL RECEIPT VIEWER (UNDEFINED FIX)
 // ==========================================
 window.viewReceiptDetails = function(receiptId, customer, time, payment, total, cartEncoded) {
-    // 🔥 FIRST NAME EXTRACTOR
     let safeCashierName = "Cashier";
     try {
         let fullCashierName = window.globalShiftReports && Object.values(window.globalShiftReports).find(s => s.transactions && s.transactions.some(t => t.receiptId === receiptId))?.cashier || 'System';
-        safeCashierName = fullCashierName.split(' ')[0]; // Grabs just the first name!
+        safeCashierName = fullCashierName.split(' ')[0]; 
     } catch(e) {}
+    
     let cart = JSON.parse(decodeURIComponent(cartEncoded));
     let itemsHtml = '';
 
     cart.forEach(item => {
-        // 🔥 UPGRADE: Safely catch both POS (qty/variantPrice) AND Mobile App (quantity/price) data formats!
         let qty = item.qty || item.quantity || 1;
         let price = parseFloat(item.variantPrice || item.basePrice || item.price) || 0;
         
@@ -11477,7 +11476,10 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
             for (let key in item.addons) {
                 let addon = item.addons[key];
                 if (addon.qty > 0) {
-                    addonsHtml += `<div style="font-size: 11px; color: #64748b; margin-left: 10px;">+ ${addon.name} (₱${addon.price} x ${addon.qty})</div>`;
+                    // 🔥 THE FIX: Fallback to the 'key' (which holds the flavor name) if addon.name is missing!
+                    let addonName = addon.name || key; 
+                    let addonPrice = parseFloat(addon.price) || 0;
+                    addonsHtml += `<div style="font-size: 11px; color: #64748b; margin-left: 10px;">+ ${addonName} (₱${addonPrice} x ${addon.qty})</div>`;
                 }
             }
         }
