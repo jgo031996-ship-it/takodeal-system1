@@ -397,8 +397,7 @@ window.loadPOSData = async function() {
     }
 };
 
-// --- UPGRADED CART & VARIANT LOGIC ---
-// --- UPGRADED CART & VARIANT LOGIC (WITH GLOBAL ENGINE) ---
+// --- UPGRADED CART & VARIANT LOGIC (WITH SMART BASE FLAVOR COUNTERS) ---
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
     if (!window.masterPOSData) window.masterPOSData = {};
     if (!window.cart) window.cart = [];
@@ -480,27 +479,20 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             let itemData = snap.docs[0].data();
             let cat = itemData.category || "Uncategorized";
 
-            // 🌍 THE GLOBAL INTERCEPTOR ENGINE 🌍
-            // 1. Instantly inject Global Mix & Match configurations based on category!
+            // 🌍 GLOBAL INTERCEPTOR ENGINE
             let gmm = window.masterPOSData.globalMixMatch;
             if (gmm && gmm.categories && (gmm.categories.includes('All') || gmm.categories.includes(cat))) {
                 itemData.mixMatchFlavors = gmm.flavors || [];
                 itemData.mixMatchConfig = gmm.mappings || [];
             }
 
-            // 2. Instantly inject Global Add-Ons based on category!
             if (!itemData.addons) itemData.addons = [];
             window.masterPOSData.addons.forEach(ga => {
                 let gaCats = Array.isArray(ga.category) ? ga.category : (ga.category ? ga.category.split(',').map(s=>s.trim()) : []);
                 if (gaCats.includes('All') || gaCats.includes(cat)) {
-                    // Prevent duplicates if you manually added it in the old Product Editor
-                    if (!itemData.addons.find(a => a.name === ga.name)) {
-                        itemData.addons.push(ga);
-                    }
+                    if (!itemData.addons.find(a => a.name === ga.name)) itemData.addons.push(ga);
                 }
             });
-
-            // --- END OF INTERCEPTOR ---
 
             let imgContainer = document.getElementById('modalDynamicImage');
             if (!imgContainer) {
@@ -540,28 +532,28 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 let baseFlavors = addonsList.filter(a => a.price === 0);
                 let extras = addonsList.filter(a => a.price > 0);
 
+                // 🔥 THE NEW BASE FLAVOR NUMBER COUNTER LOGIC
+                window.currentBaseFlavorsInfo = baseFlavors;
+                window.baseFlavorState = {};
+
                 if (baseFlavors.length > 0) {
-                    newUiHtml += `
-                        <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">BASE FLAVOR (Required)</label>
-                        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
-                    `;
+                    let defaultQty = existingItem ? 0 : window.pendingItem.qty;
                     
                     baseFlavors.forEach((bf, bfIdx) => {
-                        let isChecked = '';
-                        if (existingItem) {
-                            if (existingItem.addons && existingItem.addons[bf.name]) isChecked = 'checked';
+                        if (existingItem && existingItem.addons && existingItem.addons[bf.name]) {
+                            window.baseFlavorState[bf.name] = existingItem.addons[bf.name].qty;
                         } else {
-                            if (bfIdx === 0) isChecked = 'checked';
+                            window.baseFlavorState[bf.name] = (bfIdx === 0) ? defaultQty : 0;
                         }
-
-                        newUiHtml += `
-                            <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: bold; color: #b45309;">
-                                <span><input type="radio" name="baseSauce" class="addon-radio" value="${bf.name}|0|${bf.linkedIngredient || ''}|${bf.deductQty || 0}" ${isChecked} style="accent-color: #d97706; transform: scale(1.2); margin-right: 8px;" onchange="window.updateModalTotals()"> ${bf.name}</span>
-                                <span style="color: #d97706; font-size: 11px;">Free</span>
-                            </label>
-                        `;
                     });
-                    newUiHtml += `</div>`;
+
+                    newUiHtml += `
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px; width: 100%;">
+                            <label style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">BASE FLAVOR (Required)</label>
+                            <span id="baseFlavorCounter" style="font-size: 11px; font-weight: bold; color: #b45309;">0 Pcs</span>
+                        </div>
+                        <div id="baseFlavorList" style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;"></div>
+                    `;
                 }
 
                 if (extras.length > 0) {
@@ -570,7 +562,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                         let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
-                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="window.updateModalTotals()"> ${a.name}</span>
+                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
                                 <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
                             </label>
                         `;
@@ -589,6 +581,9 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 addonContainer.appendChild(dynamicAddonDiv);
             }
             dynamicAddonDiv.innerHTML = newUiHtml;
+            
+            // Draw the Base Flavor Counters
+            if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
 
             // 🐙 ITEM-SPECIFIC MIX & MATCH BUILDER
             window.mixMatchState = {};
@@ -619,6 +614,199 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     }
     
     if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
+};
+
+// 🔥 NEW: BASE FLAVOR RENDERER & LOGIC 🔥
+window.renderBaseFlavorsList = function() {
+    let list = document.getElementById('baseFlavorList');
+    let counterDisplay = document.getElementById('baseFlavorCounter');
+    if (!list || !counterDisplay || !window.currentBaseFlavorsInfo) return;
+
+    let requiredTotal = window.pendingItem.qty;
+    let currentTotal = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
+    
+    counterDisplay.innerText = `${currentTotal} / ${requiredTotal} Pcs`;
+    counterDisplay.style.color = currentTotal === requiredTotal ? "#16a34a" : "#dc2626";
+
+    let html = '';
+    window.currentBaseFlavorsInfo.forEach(bf => {
+        let count = window.baseFlavorState[bf.name] || 0;
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 6px 10px; border: 1px solid #fde68a; border-radius: 6px;">
+                <span style="font-size: 13px; font-weight: bold; color: #b45309;">${bf.name} <span style="font-size: 10px; color: #d97706;">(Free)</span></span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn-qty-small" style="width: 26px; height: 26px; border-color: #fcd34d; color: #d97706; font-size: 16px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', -1)">-</button>
+                    <span style="font-weight: 900; font-size: 14px; color: #0f172a; width: 20px; text-align: center;">${count}</span>
+                    <button class="btn-qty-small" style="width: 26px; height: 26px; border-color: #fcd34d; color: #d97706; font-size: 16px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', 1)">+</button>
+                </div>
+            </div>
+        `;
+    });
+    list.innerHTML = html;
+};
+
+window.adjustBaseFlavorQty = function(flavor, delta) {
+    let requiredTotal = window.pendingItem.qty;
+    let currentTotal = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
+    let currentCount = window.baseFlavorState[flavor] || 0;
+
+    if (delta > 0 && currentTotal >= requiredTotal) {
+        document.getElementById('baseFlavorCounter').style.animation = "shake 0.5s";
+        setTimeout(() => document.getElementById('baseFlavorCounter').style.animation = "", 500);
+        return; 
+    }
+    if (delta < 0 && currentCount <= 0) return; 
+
+    window.baseFlavorState[flavor] = currentCount + delta;
+    window.renderBaseFlavorsList();
+};
+
+window.adjustModalMainQty = function(delta) {
+    let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1;
+    if (cur + delta > 0) {
+        window.pendingItem.qty = cur + delta;
+        document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
+        
+        // Auto-balance Base Flavors so they don't have to manually click them constantly
+        if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
+            let firstFlavor = window.currentBaseFlavorsInfo[0].name;
+            if (delta > 0) {
+                window.baseFlavorState[firstFlavor] += delta;
+            } else {
+                for (let f of window.currentBaseFlavorsInfo) {
+                    if (window.baseFlavorState[f.name] > 0) {
+                        window.baseFlavorState[f.name] -= 1;
+                        break;
+                    }
+                }
+            }
+            if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
+        }
+
+        window.updateModalTotals();
+    }
+};
+
+window.setDiscountType = function(type) {
+    window.pendingItem.discountType = type;
+    document.querySelectorAll('.discount-grid .var-btn').forEach(b => b.classList.remove('active'));
+    let dvi = document.getElementById('discountValueInput');
+    dvi.style.display = type === 'none' ? 'none' : 'block';
+    dvi.value = '';
+    
+    if (type === 'none') { document.getElementById('btnDiscNone').classList.add('active'); window.pendingItem.discountVal = 0; }
+    else if (type === 'percentage') { document.getElementById('btnDiscPerc').classList.add('active'); dvi.placeholder = "Enter %"; }
+    else if (type === 'fixed') { document.getElementById('btnDiscFixed').classList.add('active'); dvi.placeholder = "Enter amount"; }
+    
+    window.updateModalTotals();
+};
+
+window.updateModalTotals = function() {
+    let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
+    let addonsTotal = 0; 
+
+    // Calculate Checkboxes
+    document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
+        let parts = cb.value.split('|');
+        addonsTotal += (parseFloat(parts[1]) || 0);
+    });
+
+    let lineTotal = (window.pendingItem.variantPrice + addonsTotal) * qty;
+    let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; 
+    window.pendingItem.discountVal = discInput;
+
+    let calcDisc = 0;
+    if (window.pendingItem.discountType === 'percentage' && discInput > 0) calcDisc = lineTotal * (discInput / 100);
+    else if (window.pendingItem.discountType === 'fixed' && discInput > 0) calcDisc = discInput;
+
+    let finalTotal = lineTotal - calcDisc;
+
+    document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
+    document.getElementById('confirmAddToCartText').innerText = window.editIndex > -1 ? 'Update Order' : 'Add to Order';
+};
+
+window.confirmAddOrUpdateToCart = function() {
+    let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
+    window.pendingItem.notes = document.getElementById('orderNotesInput').value;
+    window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
+    window.pendingItem.addons = {}; 
+
+    // 🔥 VALIDATE BASE FLAVORS
+    if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
+        let totalBase = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
+        if (totalBase !== qty) {
+            Swal.fire('Incomplete Flavors', `Please select exactly ${qty} base flavor(s). You have currently selected ${totalBase}.`, 'warning');
+            return;
+        }
+        
+        // Save them to the Addons array WITH THE NAME FIX to prevent "undefined" bugs!
+        for (let flavor in window.baseFlavorState) {
+            let count = window.baseFlavorState[flavor];
+            if (count > 0) {
+                let bfInfo = window.currentBaseFlavorsInfo.find(b => b.name === flavor);
+                window.pendingItem.addons[flavor] = { name: flavor, price: 0, qty: count, linkedIngredient: bfInfo.linkedIngredient || '', deductQty: bfInfo.deductQty || 0 };
+            }
+        }
+    }
+
+    if (typeof window.mixMatchState !== 'undefined') {
+        let totalCustomPcs = Object.values(window.mixMatchState).reduce((a, b) => a + b, 0);
+        if (totalCustomPcs > 0) {
+            window.pendingItem.notes = window.pendingItem.notes ? window.pendingItem.notes + " | MIX: " : "MIX: ";
+            for (let flavor in window.mixMatchState) {
+                let count = window.mixMatchState[flavor];
+                if (count > 0) {
+                    let linkedIng = flavor;
+                    let deductQty = 1; 
+                    
+                    if (window.masterPOSData && window.masterPOSData.addons) {
+                        let matchingAddon = window.masterPOSData.addons.find(a => (a.name || "").toLowerCase() === flavor.toLowerCase());
+                        if (matchingAddon) {
+                            linkedIng = matchingAddon.linkedIngredient || flavor;
+                            deductQty = parseFloat(matchingAddon.deductQty) || 1;
+                        }
+                    }
+
+                    window.pendingItem.addons[`${flavor} Filling`] = { name: `${flavor} Filling`, price: 0, qty: count, linkedIngredient: linkedIng, deductQty: deductQty };
+                    window.pendingItem.notes += `${count} ${flavor}, `;
+                }
+            }
+            window.pendingItem.notes = window.pendingItem.notes.replace(/, $/, '');
+        }
+    } 
+
+    // Save Checkbox Addons (WITH THE NAME FIX to prevent "undefined" bugs)
+    document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
+        let p = cb.value.split('|');
+        window.pendingItem.addons[p[0]] = { name: p[0], price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
+    });
+
+    let addonsTotal = 0; 
+    for (let key in window.pendingItem.addons) addonsTotal += (window.pendingItem.addons[key].price * window.pendingItem.addons[key].qty);
+    
+    let lineTotalBeforeDisc = (window.pendingItem.variantPrice + addonsTotal) * qty;
+    let rowDiscount = 0;
+    if (window.pendingItem.discountType === 'percentage' && window.pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (window.pendingItem.discountVal / 100);
+    else if (window.pendingItem.discountType === 'fixed' && window.pendingItem.discountVal > 0) rowDiscount = window.pendingItem.discountVal;
+    
+    let finalTotal = lineTotalBeforeDisc - rowDiscount;
+    window.pendingItem.lineTotalFinal = finalTotal < 0 ? 0 : finalTotal; 
+    window.pendingItem.qty = qty;
+    
+    if (window.editIndex >= 0) { 
+        window.cart[window.editIndex] = JSON.parse(JSON.stringify(window.pendingItem)); 
+        window.editIndex = -1; 
+    } else { 
+        window.cart.push(JSON.parse(JSON.stringify(window.pendingItem))); 
+    }
+    
+    if (typeof window.closeModal === 'function') {
+        window.closeModal('variantModal'); 
+    } else if (typeof closeModal === 'function') {
+        closeModal('variantModal');
+    }
+    
+    window.renderCart();
 };
 
 window.toggleSplitPaymentUI = function(event) {
@@ -1222,11 +1410,11 @@ window.getReceiptDetails = async function (receiptId) {
   } catch (e) { console.error(e); return null; }
 };
 
+// --- RECEIPT DETAILS ENGINE (UNDEFINED FIX APPLIED) ---
 window.viewReceiptDetails = async function (receiptId) {
     let tx = await window.getReceiptDetails(receiptId);
     if (!tx) { alert("Receipt not found!"); return; }
 
-    // 🚨 THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
     let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
     let displayTotal = isCashTx ? '***' : (tx.netTotal || 0).toFixed(2);
 
@@ -1247,7 +1435,11 @@ window.viewReceiptDetails = async function (receiptId) {
             let addonsText = '';
             if (item.addons) {
                 for(let key in item.addons) {
-                    if(item.addons[key].qty > 0) addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${item.addons[key].qty}x ${key}</span>`;
+                    if(item.addons[key].qty > 0) {
+                        // 🔥 THE FIX: Fallback to the dictionary key if addon.name is undefined!
+                        let addonName = item.addons[key].name || key; 
+                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${item.addons[key].qty}x ${addonName}</span>`;
+                    }
                 }
             }
             
