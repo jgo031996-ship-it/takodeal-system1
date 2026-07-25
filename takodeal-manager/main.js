@@ -1901,6 +1901,10 @@ window.clearDispatchCart = async function() {
     }
 
     let branch = localStorage.getItem('takodeal_dispatch_to') || "Unknown Branch";
+    
+    // 🔥 GRAB THE OLD IDs FIRST BEFORE WE CLEAR THE CART!
+    let activePos = localStorage.getItem('takodeal_active_po') || "";
+    let poArray = activePos ? activePos.split(',') : [];
 
     Swal.fire({title: 'Consolidating...', text: 'Merging into a single request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
@@ -1915,16 +1919,12 @@ window.clearDispatchCart = async function() {
             timestamp: serverTimestamp()
         });
 
-        // 2. 🔥 THE FIX: DELETE all the old fragmented requests so they don't duplicate!
-        let activePos = localStorage.getItem('takodeal_active_po');
-        if (activePos) {
-            let poArray = activePos.split(',');
-            for (let oldPoId of poArray) {
-                if (oldPoId && oldPoId.trim() !== '') {
-                    try {
-                        await deleteDoc(doc(db, "purchase_orders", oldPoId.trim()));
-                    } catch(e) { console.log("Old PO already deleted."); }
-                }
+        // 2. 🔥 THE FIX: Actively loop through and DELETE all the old fragmented requests!
+        for (let oldPoId of poArray) {
+            if (oldPoId && oldPoId.trim() !== '') {
+                try {
+                    await deleteDoc(doc(db, "purchase_orders", oldPoId.trim()));
+                } catch(e) { console.log("Old PO already deleted or missing."); }
             }
         }
 
@@ -1939,7 +1939,7 @@ window.clearDispatchCart = async function() {
         if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
         if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
 
-        Swal.fire({title: 'Merged!', text: 'Requests successfully combined and set aside.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
+        Swal.fire({title: 'Merged!', text: 'Requests successfully combined and old fragments deleted.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
 
     } catch (error) {
         console.error(error);
@@ -2366,7 +2366,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (DELETE BUTTON AT TOP)
+// 🔍 THE REVIEW REQUEST MODAL (WITH SECURE DELETE BUTTON)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -2376,6 +2376,7 @@ window.reviewPurchaseOrder = async function(poId) {
         if (!poSnap.exists()) return Swal.fire('Error', 'Request not found.', 'error');
         
         let po = poSnap.data();
+        let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
         
         const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
         let hqStock = {};
@@ -2385,47 +2386,60 @@ window.reviewPurchaseOrder = async function(poId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
-        // 🔥 THE FIX: Inject the Delete button ABOVE the scrolling table so it never gets hidden!
+        // 🔥 BEAUTIFUL HEADER MATCHING YOUR SCREENSHOT
         let html = `
-            <button onclick="window.deleteStockRequest('${poId}')" style="margin-bottom: 15px; width: 100%; padding: 12px; background: #fef2f2; border: 1px dashed #fca5a5; color: #dc2626; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                🗑️ Permanently Delete / Dispose Request
-            </button>
-            <div style="max-height: 40vh; overflow-y: auto; text-align: left;">
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
+                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
+                <div style="font-size: 15px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${po.requestedBy || 'Staff'}</div>
+                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
+                <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
+            </div>
+
+            <div style="max-height: 35vh; overflow-y: auto; text-align: left; border: 1px solid #cbd5e1; border-radius: 8px; border-bottom: none;">
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <thead style="background: #0f172a; color: white; position: sticky; top: 0; z-index: 10;">
                     <tr>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569;">Item Requested</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; color: #475569; text-align: center;">Qty</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; text-align: center;">Alert Type</th>
+                        <th style="padding: 10px; text-align: left;">Item Description</th>
+                        <th style="padding: 10px; text-align: center;">Qty Requested</th>
+                        <th style="padding: 10px; text-align: center;">Alert Type</th>
                     </tr>
                 </thead>
                 <tbody>`;
         
         po.items.forEach(item => {
             let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : (item.requestType === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
-            let alertStyle = item.requestType === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: ${alertColor}15;`;
+            let alertStyle = item.requestType === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
             let rowBg = item.requestType === 'Lost in Transit' ? '#fff1f2' : 'white';
 
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
-                    <td style="padding: 10px; font-weight: bold; color: #334155;">
+                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">
                         ${item.itemName}<br>
                         <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${hqStock[item.itemName] || 0} ${item.uom}</span>
                     </td>
-                    <td style="padding: 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
-                    <td style="padding: 10px; text-align: center;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
+                    <td style="padding: 12px 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
+                    <td style="padding: 12px 10px; text-align: center;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
                 </tr>
             `;
         });
         html += `</tbody></table></div>`;
+
+        // 🔥 THE FIX: INJECT THE DELETE BUTTON OUTSIDE THE SCROLLING TABLE!
+        html += `
+            <div style="margin-top: 15px;">
+                <button onclick="window.deleteStockRequest('${poId}')" style="width: 100%; padding: 12px; background: #fef2f2; border: 1px dashed #fca5a5; color: #dc2626; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">
+                    🗑️ Permanently Delete / Dispose Request
+                </button>
+            </div>
+        `;
         
-        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
+        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📦 Request from ${po.branch}`;
         
         Swal.fire({
-            title: titleTxt, html: html, width: '700px',
+            title: titleTxt, html: html, width: '600px',
             showCancelButton: true, showDenyButton: true,
             confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#dc2626',
-            confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏳ Postpone / Set Aside', cancelButtonText: '✖ Close Window',
+            confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '✖ Postpone / Set Aside', cancelButtonText: 'Close Window',
             customClass: { popup: 'rounded-2xl shadow-xl' }
         }).then(async (result) => {
             if (result.isConfirmed) {
@@ -2558,11 +2572,8 @@ window.deleteStockRequest = async function(poId) {
             customClass: { popup: 'rounded-2xl' }
         });
         
-        // Auto-refresh the Logistics Feed
         if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs(); 
-        
-        // Force the modal to close immediately
-        Swal.close();
+        Swal.close(); // Force the modal to close instantly
     } catch (e) {
         console.error("Delete Error:", e);
         Swal.fire('Error', 'Failed to delete the request.', 'error');
