@@ -3387,13 +3387,25 @@ window.openBranchDetails = async function (branch) {
             }
         }
 
-        // 🔥 UPGRADED ROW WITH VERIFY BUTTON
+        // 🔥 THE ANTI-THEFT PREP TIMER ENGINE 🔥
+        let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : Date.now();
+        let minutesElapsed = Math.floor((Date.now() - txTimeMs) / 60000);
+        
+        let statusDisplay = '';
+        if (minutesElapsed < 10) {
+            let timeLeft = 10 - minutesElapsed;
+            statusDisplay = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
+        } else {
+            statusDisplay = `<span class="badge badge-active"><span class="status-dot green"></span> PAID</span>`;
+        }
+
+        // 🔥 UPGRADED ROW WITH VERIFY BUTTON & TIMER
         transHtml += `<tr style="border-bottom: 1px solid #f1f5f9; ${isDigital && !tx.paymentVerified ? 'background: #fffbeb;' : ''}">
             <td style="padding: 10px;">${timeStr}</td>
             <td style="padding: 10px;"><strong>${tx.receiptId}</strong></td>
             <td style="padding: 10px; color: #475569; font-weight: bold;">${safeCustomer}</td>
-            <td style="padding: 10px;">${payMethod} ${verifyBadge}</td>
-            <td style="padding: 10px;"><span class="badge badge-active"><span class="status-dot green"></span> PAID</span></td>
+            <td style="padding: 10px;">${payMethod}${verifyBadge}</td>
+            <td style="padding: 10px;">${statusDisplay}</td>
             <td style="font-weight: 600; color: var(--primary); padding: 10px;">${formatMoney(tx.netTotal)}</td>
             <td style="padding: 10px; text-align: center; display: flex; gap: 5px; justify-content: center;">
                 <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${payMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
@@ -18718,3 +18730,26 @@ window.startManagerUnverifiedScanner = function() {
 };
 
 setTimeout(window.startManagerUnverifiedScanner, 4000); // Start scanner on boot
+
+// ==========================================
+// 🍳 LIVE PREP TIMER UPDATER ENGINE
+// ==========================================
+setInterval(() => {
+    document.querySelectorAll('.live-prep-timer').forEach(el => {
+        let txTime = parseInt(el.getAttribute('data-time'));
+        let minutesElapsed = Math.floor((Date.now() - txTime) / 60000);
+        
+        if (minutesElapsed < 10) {
+            let timeLeft = 10 - minutesElapsed;
+            el.innerHTML = `🍳 COOKING (${timeLeft}m)`;
+        } else {
+            // Determine if it's the rounded pill (History) or square badge (Analytics)
+            let isPill = el.style.borderRadius === '12px';
+            if (isPill) {
+                el.outerHTML = `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
+            } else {
+                el.outerHTML = `<span class="badge badge-active"><span class="status-dot green"></span> PAID</span>`;
+            }
+        }
+    });
+}, 15000); // Ticks every 15 seconds!
