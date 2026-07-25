@@ -397,9 +397,11 @@ window.loadPOSData = async function() {
     }
 };
 
-// --- UPGRADED CART & VARIANT LOGIC (WITH SMART BASE FLAVOR COUNTERS) ---
+// ========================================================
+// 🛒 CORE ORDERING & CART ENGINE
+// ========================================================
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
-    // 🔥 THE FIX: Explicitly WIPE the memory clean every time the modal opens!
+    // 🔥 THE FIX: Explicitly WIPE the ghost memory clean every time the modal opens!
     window.currentBaseFlavorsInfo = [];
     window.baseFlavorState = {};
     window.mixMatchState = {};
@@ -587,6 +589,8 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             
             if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
 
+            // 🐙 ITEM-SPECIFIC MIX & MATCH BUILDER
+            window.mixMatchState = {};
             let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
             let customArea = document.getElementById('takoyakiCustomizationArea');
             
@@ -616,7 +620,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
 };
 
-// 🔥 NEW: BASE FLAVOR RENDERER & LOGIC 🔥
 window.renderBaseFlavorsList = function() {
     let list = document.getElementById('baseFlavorList');
     let counterDisplay = document.getElementById('baseFlavorCounter');
@@ -667,7 +670,6 @@ window.adjustModalMainQty = function(delta) {
         window.pendingItem.qty = cur + delta;
         document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
         
-        // Auto-balance Base Flavors so they don't have to manually click them constantly
         if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
             let firstFlavor = window.currentBaseFlavorsInfo[0].name;
             if (delta > 0) {
@@ -705,7 +707,6 @@ window.updateModalTotals = function() {
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
     let addonsTotal = 0; 
 
-    // Calculate Checkboxes
     document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
         let parts = cb.value.split('|');
         addonsTotal += (parseFloat(parts[1]) || 0);
@@ -731,7 +732,6 @@ window.confirmAddOrUpdateToCart = function() {
     window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
     window.pendingItem.addons = {}; 
 
-    // 🔥 VALIDATE BASE FLAVORS
     if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
         let totalBase = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
         if (totalBase !== qty) {
@@ -739,7 +739,6 @@ window.confirmAddOrUpdateToCart = function() {
             return;
         }
         
-        // Save them to the Addons array WITH THE NAME FIX to prevent "undefined" bugs!
         for (let flavor in window.baseFlavorState) {
             let count = window.baseFlavorState[flavor];
             if (count > 0) {
@@ -775,7 +774,6 @@ window.confirmAddOrUpdateToCart = function() {
         }
     } 
 
-    // Save Checkbox Addons (WITH THE NAME FIX to prevent "undefined" bugs)
     document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
         let p = cb.value.split('|');
         window.pendingItem.addons[p[0]] = { name: p[0], price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
@@ -807,6 +805,54 @@ window.confirmAddOrUpdateToCart = function() {
     }
     
     window.renderCart();
+};
+
+window.renderCart = function() {
+    const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
+    if (!window.cart || window.cart.length === 0) { 
+        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
+        document.getElementById('displaySubTotal').innerText = '₱0.00'; 
+        document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
+        window.currentGrandTotal = 0; 
+    } else {
+        window.cart.forEach((item, index) => {
+            grandTotal += item.lineTotalFinal;
+            let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
+
+            let addonsText = '';
+            if (item.addons) {
+                for (let key in item.addons) {
+                    let addon = item.addons[key];
+                    if (addon.qty > 0) {
+                        let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
+                        addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
+                    }
+                }
+            }
+
+            list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
+                <div class="cart-item-desc">
+                    <span class="cart-item-name">${item.name}</span>
+                    <div class="cart-item-subtext">${addonsText}${notesText}</div>
+                </div>
+                <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
+                <div class="cart-item-qty">x ${item.qty}</div>
+                <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
+                <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">✖</button>
+            </li>`;
+        });
+        window.currentGrandTotal = grandTotal; 
+        document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
+        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
+    }
+};
+
+window.clearCart = function() { 
+    if (!window.cart || window.cart.length === 0) return; 
+    if (confirm("Clear order?")) { 
+        window.cart = []; 
+        window.renderCart(); 
+    } 
 };
 
 window.toggleSplitPaymentUI = function(event) {
@@ -7104,18 +7150,16 @@ window.startUnverifiedListener = function() {
                 if (!existingBanner) {
                     existingBanner = document.createElement('div');
                     existingBanner.id = 'globalUnverifiedBanner';
-                    // 🔥 Removed the full-banner onclick so we can click the X button independently
                     existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 10px 20px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999;";
                     document.body.appendChild(existingBanner);
                 }
                 
-                // 🔥 THE FIX: Added a distinct Close (x) button and a clickable text area!
                 existingBanner.innerHTML = `
                     <span style="font-size:24px; animation: pulse 1s infinite; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">🚨</span>
                     <div style="text-align: center; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">
                         <div style="font-size:14px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Payment(s)!</div>
                     </div>
-                    <span onclick="document.getElementById('globalUnverifiedBanner').style.display='none'; window.hideUnverifiedBanner=true;" style="font-size: 24px; cursor: pointer; color: #9f1239; padding-left: 10px; font-weight: bold;" title="Dismiss">&times;</span>
+                    <span onclick="document.getElementById('globalUnverifiedBanner').style.display='none'; window.hideUnverifiedBanner=true;" style="font-size: 24px; cursor: pointer; color: #9f1239; padding-left: 10px; font-weight: bold; transition: 0.2s;" title="Dismiss">&times;</span>
                 `;
                 existingBanner.style.display = 'flex';
             } else {
