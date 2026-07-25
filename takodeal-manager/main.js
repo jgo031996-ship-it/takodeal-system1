@@ -3125,6 +3125,9 @@ window.addMenuItem = async function () {
   }
 };
 
+// ==========================================
+// ✏️ EDIT MENU ITEM (WITH AUTO-SYNC RECIPES)
+// ==========================================
 window.editMenuItem = async function (docId, currentName, currentCat, currentPrice) {
     const { value: formValues, isConfirmed } = await Swal.fire({
         title: '✏️ Edit Menu Item',
@@ -3156,6 +3159,8 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
 
     if (!isConfirmed || !formValues.name || isNaN(formValues.price)) return;
 
+    Swal.fire({title: 'Syncing Database...', text: 'Updating menu and linked recipes...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
     try {
         await updateDoc(doc(db, "menu", docId), { 
             name: formValues.name, 
@@ -3163,6 +3168,18 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
             price: formValues.price, 
             basePrice: formValues.price 
         });
+
+        // 🔥 THE MAGIC FIX: CASCADE RENAME RECIPES SO INVENTORY KEEPS DEDUCTING!
+        if (currentName !== formValues.name) {
+            const bomQ = query(collection(db, "bom"), where("menuItem", "==", currentName));
+            const bomSnap = await getDocs(bomQ);
+            let updatePromises = [];
+            bomSnap.forEach(bDoc => {
+                updatePromises.push(updateDoc(doc(db, "bom", bDoc.id), { menuItem: formValues.name }));
+            });
+            await Promise.all(updatePromises);
+            console.log(`✅ Synced recipes from ${currentName} to ${formValues.name}`);
+        }
         
         Swal.fire({
             title: '✅ Saved!',
@@ -3175,7 +3192,7 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
         
         window.loadMenuEditor();
     } catch (error) {
-        console.error(error); Swal.fire('Error', 'Failed to update price.', 'error');
+        console.error(error); Swal.fire('Error', 'Failed to update item.', 'error');
     }
 };
 
@@ -6201,6 +6218,8 @@ window.rejectRemittance = async function(docId, branchName) {
     
     if (confirm(`Final Confirmation: Reject this remittance?`)) {
         try {
+            Swal.fire({title: 'Rejecting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
             await updateDoc(doc(db, "remittances", docId), {
                 status: "Rejected",
                 rejectedReason: reason,
@@ -6208,16 +6227,20 @@ window.rejectRemittance = async function(docId, branchName) {
                 rejectedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
             });
             
-            alert("❌ Remittance has been rejected and locked.");
-            window.loadCashExplorer(); // Refresh the table instantly
+            Swal.fire("Rejected", "Remittance has been rejected and locked.", "success");
             
-            // If you have a dashboard refresher, this triggers it so the floating cash updates
+            window.loadCashExplorer(); // Refresh the table instantly
             if (typeof window.loadUnremittedCashDashboard === 'function') window.loadUnremittedCashDashboard();
             if (typeof window.loadDashboard === 'function') window.loadDashboard();
             
+            // 🔥 THE UI FIX: Refresh the Modal so the button disappears instantly!
+            if (document.getElementById('branchTransferHistoryModal') && document.getElementById('branchTransferHistoryModal').style.display === 'flex') {
+                window.openBranchTransferHistory(branchName);
+            }
+            
         } catch (e) {
             console.error("Error rejecting remittance:", e);
-            alert("Failed to reject remittance. Please check your connection.");
+            Swal.fire("Error", "Failed to reject remittance. Please check your connection.", "error");
         }
     }
 };
@@ -6227,6 +6250,8 @@ window.approveRemittance = async function (docId) {
     if (!confirm("✅ Mark this remittance as safely received and deposit it into your Cash Accounts?")) return;
     
     try {
+        Swal.fire({title: 'Approving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
         // 1. Fetch the exact remittance document to see how much money is coming in
         const remitRef = doc(db, "remittances", docId);
         const remitSnap = await getDoc(remitRef);
@@ -6243,13 +6268,11 @@ window.approveRemittance = async function (docId) {
         }
 
         // 3. Find that matching account in your Master Cash & Budget database
-        // 🔥 FIX: We MUST specify "Main Office" so it doesn't accidentally deposit into a branch's account!
         const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", targetAccountName));
         const accSnap = await getDocs(accQuery);
 
         if (accSnap.empty) {
-            // SAFETY LOCK: If they remitted to "BDO" but you haven't created a "BDO" account yet!
-            alert(`⚠️ Routing Error: No cash account named "${targetAccountName}" found in the Main Office!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}" for the Main Office, and try approving this again.`);
+            Swal.fire('⚠️ Routing Error', `No cash account named "${targetAccountName}" found in the Main Office!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}" for the Main Office, and try approving this again.`, 'error');
             return; 
         }
 
@@ -6260,7 +6283,6 @@ window.approveRemittance = async function (docId) {
         
         await updateDoc(doc(db, "cash_accounts", targetAccDoc.id), { balance: newBalance });
 
-        // 🔥 FIX: Create the Audit Log so it shows up in your history!
         await addDoc(collection(db, "account_logs"), {
             accountId: targetAccDoc.id,
             accountName: targetAccountName,
@@ -6270,21 +6292,26 @@ window.approveRemittance = async function (docId) {
             newBalance: newBalance,
             user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
             timestamp: serverTimestamp(),
-            note: `Remitted by ${data.cashier} from ${data.branch}`
+            note: `Remitted by ${data.cashier || data.staffName} from ${data.branch}`
         });
 
         // 5. Finally, mark the remittance as safely Received
         await updateDoc(remitRef, { status: "Received" });
 
-        alert(`✅ Success! ₱${amountToDeposit.toLocaleString()} has been officially deposited into your [${targetAccountName}] account.`);
+        Swal.fire('✅ Success!', `₱${amountToDeposit.toLocaleString()} has been officially deposited into your [${targetAccountName}] account.`, 'success');
         
         // Refresh the screens
         window.loadCashExplorer(); 
         if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
 
+        // 🔥 THE UI FIX: Refresh the Modal so the button disappears instantly!
+        if (document.getElementById('branchTransferHistoryModal') && document.getElementById('branchTransferHistoryModal').style.display === 'flex') {
+            window.openBranchTransferHistory(data.branch);
+        }
+
     } catch (e) {
         console.error("Deposit Error:", e); 
-        alert("❌ Failed to approve and route the remittance.");
+        Swal.fire("Error", "Failed to approve and route the remittance.", "error");
     }
 };
 
