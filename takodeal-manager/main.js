@@ -1889,7 +1889,7 @@ window.updateDispatchUom = function(index, val) {
 };
 
 // ==========================================
-// 🧹 DISPATCH CART CLEARER & AUTO-MERGE ENGINE
+// 🧹 DISPATCH CART CLEARER (BRUTE FORCE SWEEP)
 // ==========================================
 window.clearDispatchCart = async function() {
     if (!window.dispatchCart || window.dispatchCart.length === 0) {
@@ -1901,12 +1901,8 @@ window.clearDispatchCart = async function() {
     }
 
     let branch = localStorage.getItem('takodeal_dispatch_to') || "Unknown Branch";
-    
-    // 🔥 GRAB THE OLD IDs FIRST BEFORE WE CLEAR THE CART!
-    let activePos = localStorage.getItem('takodeal_active_po') || "";
-    let poArray = activePos ? activePos.split(',') : [];
 
-    Swal.fire({title: 'Consolidating...', text: 'Merging into a single request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    Swal.fire({title: 'Consolidating...', text: 'Merging into a master request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
         // 1. Create ONE master combined request!
@@ -1919,14 +1915,27 @@ window.clearDispatchCart = async function() {
             timestamp: serverTimestamp()
         });
 
-        // 2. 🔥 THE FIX: Actively loop through and DELETE all the old fragmented requests!
+        // 2. 🔥 THE BRUTE FORCE FIX: 
+        // Search Firebase for ANY request connected to this cart (status = "Drafting") and DELETE IT!
+        const draftQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Drafting"));
+        const draftSnap = await getDocs(draftQ);
+        
+        let deletePromises = [];
+        draftSnap.forEach(d => {
+            deletePromises.push(deleteDoc(doc(db, "purchase_orders", d.id)));
+        });
+
+        // Also sweep up any loose IDs stored in the local memory just in case!
+        let activePos = localStorage.getItem('takodeal_active_po') || "";
+        let poArray = activePos ? activePos.split(',') : [];
         for (let oldPoId of poArray) {
             if (oldPoId && oldPoId.trim() !== '') {
-                try {
-                    await deleteDoc(doc(db, "purchase_orders", oldPoId.trim()));
-                } catch(e) { console.log("Old PO already deleted or missing."); }
+                deletePromises.push(deleteDoc(doc(db, "purchase_orders", oldPoId.trim())).catch(e => { /* Ignore if already deleted */ }));
             }
         }
+
+        // Execute the mass deletion!
+        await Promise.all(deletePromises);
 
         // 3. Clear Cart Memory completely
         window.dispatchCart = [];
@@ -1939,7 +1948,7 @@ window.clearDispatchCart = async function() {
         if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
         if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
 
-        Swal.fire({title: 'Merged!', text: 'Requests successfully combined and old fragments deleted.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
+        Swal.fire({title: 'Merged!', text: 'Requests combined and old fragments permanently deleted.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
 
     } catch (error) {
         console.error(error);
@@ -2366,7 +2375,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (WITH SECURE DELETE BUTTON)
+// 🔍 THE REVIEW REQUEST MODAL (DELETE AT TOP)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -2386,8 +2395,14 @@ window.reviewPurchaseOrder = async function(poId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
-        // 🔥 BEAUTIFUL HEADER MATCHING YOUR SCREENSHOT
+        // 🔥 THE FIX: The Delete button is now at the absolute TOP of the window!
         let html = `
+            <div style="margin-bottom: 15px;">
+                <button onclick="window.deleteStockRequest('${poId}')" style="width: 100%; padding: 14px; background: #fef2f2; border: 2px solid #fca5a5; color: #b91c1c; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.15); text-transform: uppercase;">
+                    🗑️ Permanently Delete Request
+                </button>
+            </div>
+
             <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
                 <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
                 <div style="font-size: 15px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${po.requestedBy || 'Staff'}</div>
@@ -2423,15 +2438,6 @@ window.reviewPurchaseOrder = async function(poId) {
             `;
         });
         html += `</tbody></table></div>`;
-
-        // 🔥 THE FIX: INJECT THE DELETE BUTTON OUTSIDE THE SCROLLING TABLE!
-        html += `
-            <div style="margin-top: 15px;">
-                <button onclick="window.deleteStockRequest('${poId}')" style="width: 100%; padding: 12px; background: #fef2f2; border: 1px dashed #fca5a5; color: #dc2626; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">
-                    🗑️ Permanently Delete / Dispose Request
-                </button>
-            </div>
-        `;
         
         let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📦 Request from ${po.branch}`;
         
@@ -2508,6 +2514,7 @@ window.reviewPurchaseOrder = async function(poId) {
                 localStorage.setItem('takodeal_dispatch_to', po.branch);
                 localStorage.setItem('takodeal_active_po', poArray.join(','));
                 
+                // 🔥 FLAG AS DRAFTING: This allows our new bulk-delete engine to find it!
                 await updateDoc(poRef, { status: "Drafting" });
                 
                 window.renderDispatchCart(); 
