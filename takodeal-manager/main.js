@@ -11910,7 +11910,20 @@ window.loadSalesHistoryTab = async function() {
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
 
             let statusStyle = isVoid ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
-            let statusBadge = isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
+            
+            // 🔥 ANTI THEFT TIMER FOR MAIN HISTORY TAB 🔥
+            let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : Date.now();
+            let minutesElapsed = Math.floor((Date.now() - txTimeMs) / 60000);
+            
+            let statusBadge = '';
+            if (isVoid) {
+                statusBadge = `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>`;
+            } else if (minutesElapsed < 10) {
+                let timeLeft = 10 - minutesElapsed;
+                statusBadge = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 12px; font-weight: 900; font-size: 11px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
+            } else {
+                statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
+            }
 
             txHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
