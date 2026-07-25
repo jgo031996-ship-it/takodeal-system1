@@ -17879,6 +17879,9 @@ window.switchLogisticsTab = function(tab) {
     window.renderLogisticsUI();
 };
 
+// ========================================================
+// 🚚 LOGISTICS FEED UI (WITH BULK DELETE ENGINE)
+// ========================================================
 window.renderLogisticsUI = function() {
     let reqData = window.logisticsState.requests;
     let delData = window.logisticsState.deliveries;
@@ -17935,9 +17938,20 @@ window.renderLogisticsUI = function() {
     let listContainer = document.getElementById('logisticsFeedList');
     let html = '';
 
+    // 🔥 THE BULK ACTION BAR 🔥
+    let bulkActionBar = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <label style="font-size: 14px; font-weight: bold; color: #334155; cursor: pointer; display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" onclick="document.querySelectorAll('.bulk-log-cb').forEach(cb => cb.checked = this.checked)" style="width:20px; height:20px; accent-color: #0ea5e9; cursor: pointer;"> Select All
+            </label>
+            <button onclick="window.bulkDeleteLogistics()" style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(220,38,38,0.3); transition: 0.2s;">🗑️ Delete Selected</button>
+        </div>
+    `;
+
     if (window.logisticsState.activeTab === 'requests') {
         if (reqData.length === 0) { html = `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No stock requests found.</div>`; } 
         else {
+            html += bulkActionBar; // Inject the select-all bar!
             reqData.forEach(req => {
                 let isPending = req.status === 'Pending';
                 let isDelayed = req.status && req.status.includes('Delayed');
@@ -17946,13 +17960,15 @@ window.renderLogisticsUI = function() {
                 let statCol = isPending ? '#d97706' : (isDelayed ? '#dc2626' : '#16a34a');
                 let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
                 
-                // 🔥 THE FIX: Injected the Delete Button right next to the Review Button!
                 html += `
                     <div style="background: ${bgCol}; border: 1px solid ${borderCol}; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 16px;">📢 Stock Request from ${req.branch}</h3>
-                            <div style="font-size: 13px; color: #92400e; font-weight: 500;">Requested by: ${req.requestedBy || 'Staff'}</div>
-                            <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <input type="checkbox" class="bulk-log-cb" value="${req.id}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
+                            <div>
+                                <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 16px;">📢 Stock Request from ${req.branch}</h3>
+                                <div style="font-size: 13px; color: #92400e; font-weight: 500;">Requested by: ${req.requestedBy || 'Staff'}</div>
+                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
+                            </div>
                         </div>
                         <div style="display: flex; gap: 10px; align-items: center;">
                             <div style="font-weight: bold; font-size: 13px; color: ${statCol}; margin-right: 5px;">${req.status}</div>
@@ -17966,13 +17982,12 @@ window.renderLogisticsUI = function() {
     } else {
         if (Object.keys(dispatchGroups).length === 0) { html = `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No deliveries found.</div>`; } 
         else {
+            html += bulkActionBar; // Inject the select-all bar!
             for (let key in dispatchGroups) {
                 let group = dispatchGroups[key];
-                
                 let hasMissing = group.items.some(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
                 let allReceived = group.items.every(i => i.status === 'Received');
                 
-                // 🔥 SMART STATUS ENGINE
                 let overallStatus = 'In Transit';
                 if (group.items.some(i => i.status === 'In Transit')) overallStatus = 'In Transit';
                 else if (group.items.every(i => i.status === 'Arrived' || i.status === 'Received') && !allReceived) overallStatus = 'Arrived at Branch';
@@ -17982,6 +17997,8 @@ window.renderLogisticsUI = function() {
                 let statCol = overallStatus === 'Received' ? '#16a34a' : (overallStatus === 'Arrived at Branch' ? '#8b5cf6' : (overallStatus === 'In Transit' ? '#0ea5e9' : '#dc2626'));
                 
                 let encodedGroup = encodeURIComponent(JSON.stringify(group)); 
+                // Collect all Firebase IDs associated with this group into a single comma-separated list
+                let groupFirebaseIds = group.items.map(i => i.id).join(',');
 
                 let actionButtons = '';
                 if (overallStatus === 'In Transit') {
@@ -17990,15 +18007,19 @@ window.renderLogisticsUI = function() {
 
                 html += `
                     <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 16px;">📍 To: ${group.toBranch}</h3>
-                            <div style="font-size: 13px; color: #475569; font-weight: 500;">🚚 Driver: ${group.driver || 'Unknown'}</div>
-                            <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${group.date} at ${group.time} • <strong>${group.items.length} items</strong></div>
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <input type="checkbox" class="bulk-log-cb" value="${groupFirebaseIds}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
+                            <div>
+                                <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 16px;">📍 To: ${group.toBranch}</h3>
+                                <div style="font-size: 13px; color: #475569; font-weight: 500;">🚚 Driver: ${group.driver || 'Unknown'}</div>
+                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${group.date} at ${group.time} • <strong>${group.items.length} items</strong></div>
+                            </div>
                         </div>
                         <div style="display: flex; gap: 10px; align-items: center;">
                             <div style="background: ${statCol}; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">${overallStatus}</div>
                             ${actionButtons}
                             <button onclick="window.viewDeliveryDetails('${encodedGroup}')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">🔍 Full Details</button>
+                            <button onclick="window.deleteDeliveryGroup('${encodedGroup}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;" title="Delete Delivery">🗑️</button>
                         </div>
                     </div>
                 `;
@@ -18009,6 +18030,88 @@ window.renderLogisticsUI = function() {
 };
 // Auto-start the new tab engine
 setTimeout(window.startLogisticsListeners, 1500);
+
+// ========================================================
+// 🗑️ INDIVIDUAL DELIVERY DELETE ENGINE
+// ========================================================
+window.deleteDeliveryGroup = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    if (!confirm(`⚠️ Are you sure you want to permanently delete the delivery to ${group.toBranch}?\n\nThis will instantly remove all items inside it from the system.`)) return;
+
+    Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        group.items.forEach(item => {
+            promises.push(deleteDoc(doc(db, "dispatch_logs", item.id)));
+        });
+        await Promise.all(promises);
+
+        Swal.fire({title: 'Deleted!', text: 'Delivery deleted successfully.', icon: 'success', timer: 1500, showConfirmButton: false});
+        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to delete delivery.', 'error');
+    }
+};
+
+// ========================================================
+// 🧹 BULK DELETE ENGINE (HANDLES BOTH TABS SEAMLESSLY)
+// ========================================================
+window.bulkDeleteLogistics = async function() {
+    let checkboxes = document.querySelectorAll('.bulk-log-cb:checked');
+    if (checkboxes.length === 0) return Swal.fire('No Items Selected', 'Please check the boxes of the items you want to delete.', 'info');
+
+    let isRequests = window.logisticsState.activeTab === 'requests';
+    let targetType = isRequests ? `stock requests` : `deliveries`;
+
+    let confirmDelete = await Swal.fire({
+        title: 'Bulk Delete?',
+        text: `Are you sure you want to permanently delete ${checkboxes.length} ${targetType}? This cannot be undone.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Delete All!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!confirmDelete.isConfirmed) return;
+
+    Swal.fire({title: 'Erasing Data...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        checkboxes.forEach(cb => {
+            if (isRequests) {
+                // Delete single purchase_order documents
+                promises.push(deleteDoc(doc(db, "purchase_orders", cb.value)));
+            } else {
+                // Delete grouped dispatch_log documents (value is a comma-separated list of IDs!)
+                let ids = cb.value.split(',');
+                ids.forEach(id => {
+                    if (id) promises.push(deleteDoc(doc(db, "dispatch_logs", id)));
+                });
+            }
+        });
+
+        await Promise.all(promises);
+
+        Swal.fire({
+            title: 'Deleted!', 
+            text: 'Selected items have been permanently deleted.', 
+            icon: 'success', 
+            timer: 1500, 
+            showConfirmButton: false, 
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs(); 
+    } catch (e) {
+        console.error("Bulk Delete Error:", e);
+        Swal.fire('Error', 'Failed to delete selected items.', 'error');
+    }
+};
 
 // ========================================================
 // 🔍 STOCK REQUEST REVIEW ENGINE (HQ APPROVALS)
