@@ -681,53 +681,129 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
     return R * c; 
 };
 
+// ==========================================
+// ⏱️ STRICT TIME CLOCK & SOP BLOCKER ENGINE
+// ==========================================
 window.punchTime = async function(type) {
-    let lastPunch = localStorage.getItem('takodeal_last_punch');
-    if (lastPunch && (Date.now() - parseInt(lastPunch) < 60000)) {
-        return Swal.fire('Cooldown Active', 'Please wait 1 minute before punching again.', 'warning');
-    }
-
-    if (!window.currentLat || !window.currentLng) return Swal.fire('GPS Required', 'Please wait for GPS verification.', 'warning');
-    
-    let closestBranch = "Unknown"; let minDistance = 999999;
-    for (let branch in window.BRANCH_ZONES) {
-        let zone = window.BRANCH_ZONES[branch];
-        let dist = window.getDistanceInMeters(window.currentLat, window.currentLng, zone.lat, zone.lng);
-        if (dist < minDistance) { minDistance = dist; closestBranch = branch; }
-    }
-
-    if (minDistance > window.ALLOWED_RADIUS_METERS) {
-        return Swal.fire('Out of Range', `You are ${Math.round(minDistance)}m away from ${closestBranch}. You must be within ${window.ALLOWED_RADIUS_METERS}m to punch in.`, 'error');
-    }
-
-    let photoBase64 = "";
-    const video = document.getElementById('clockVideo');
-    const canvas = document.getElementById('clockCanvas');
-    if (video && canvas && video.videoWidth > 0) {
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-        ctx.drawImage(video, 0, 0);
-        photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
-    }
-
     let staffName = localStorage.getItem('takodeal_staff_name');
-    let btnIn = document.getElementById('btnTimeIn'); let btnOut = document.getElementById('btnTimeOut');
-    btnIn.disabled = true; btnOut.disabled = true;
+    if (!staffName) return Swal.fire('Error', 'Not logged in.', 'error');
+
+    let btnIn = document.getElementById('btnTimeIn'); 
+    let btnOut = document.getElementById('btnTimeOut');
+    if (btnIn) btnIn.disabled = true; 
+    if (btnOut) btnOut.disabled = true;
 
     try {
+        Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+        // 1. ☁️ LIVE CLOUD DOUBLE-PUNCH SHIELD
+        // Pulls the last 18 hours of logs from the cloud to see if ANY device timed them in/out!
+        let lookBack = new Date();
+        lookBack.setHours(lookBack.getHours() - 18); 
+        const q = query(collection(db, "attendance_logs"), where("staffName", "==", staffName), where("timestamp", ">=", lookBack));
+        const snap = await getDocs(q);
+        
+        let userLogs = [];
+        snap.forEach(doc => userLogs.push(doc.data()));
+        userLogs.sort((a,b) => b.timestamp.toDate() - a.timestamp.toDate());
+
+        if (userLogs.length > 0) {
+            let lastLog = userLogs[0];
+            let lastType = lastLog.type;
+            let lastTime = lastLog.timestamp.toDate();
+            let hoursSince = (new Date() - lastTime) / (1000 * 60 * 60);
+
+            if (type === "TIME IN" && lastType === "TIME IN" && hoursSince < 12) {
+                Swal.fire('Already Timed In', 'You are already clocked in! (Checked via cloud). Please Time Out first.', 'error');
+                return;
+            }
+            if (type === "TIME OUT" && lastType.includes("TIME OUT")) {
+                Swal.fire('Already Timed Out', 'You are already clocked out! (Checked via cloud). Please Time In first.', 'error');
+                return;
+            }
+            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSince < 0.25) {
+                Swal.fire('Too Soon', 'You just timed in less than 15 minutes ago. Please wait before timing out.', 'warning');
+                return;
+            }
+        } else if (type === "TIME OUT") {
+            Swal.fire('No Time In Found', 'You cannot Time Out without Timing In first today.', 'error');
+            return;
+        }
+
+        // 2. 📋 THE DAILY SOP COMPLIANCE BLOCKER (ONLY ON TIME OUT)
+        if (type === "TIME OUT") {
+            let startOfDay = new Date();
+            startOfDay.setHours(0,0,0,0);
+            const sopQ = query(collection(db, "sop_logs"), where("staffName", "==", staffName), where("timestamp", ">=", startOfDay));
+            const sopSnap = await getDocs(sopQ);
+            
+            if (sopSnap.empty) {
+                Swal.fire({
+                    title: '📋 SOP Required!',
+                    html: 'You cannot Time Out until you have submitted your Daily SOP Checklist.<br><br><span style="font-size:12px; color:#dc2626; font-weight:bold;">If tasks are unfinished, you must mark them as "Missed" and type a reason.</span>',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Go to SOP',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#0f766e',
+                    customClass: { popup: 'rounded-2xl' }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        window.switchView('sop', document.querySelectorAll('.bottom-nav .nav-item')[4]);
+                    }
+                });
+                return; // Completely stops the Time Out from proceeding!
+            }
+        }
+
+        // 3. 📍 GPS VERIFICATION
+        if (!window.currentLat || !window.currentLng) {
+            Swal.fire('GPS Required', 'Please wait for GPS verification. Ensure your location is turned on.', 'warning');
+            return;
+        }
+        
+        let closestBranch = "Unknown"; let minDistance = 999999;
+        for (let branch in window.BRANCH_ZONES) {
+            let zone = window.BRANCH_ZONES[branch];
+            let dist = window.getDistanceInMeters(window.currentLat, window.currentLng, zone.lat, zone.lng);
+            if (dist < minDistance) { minDistance = dist; closestBranch = branch; }
+        }
+
+        if (minDistance > window.ALLOWED_RADIUS_METERS) {
+            Swal.fire('Out of Range', `You are ${Math.round(minDistance)}m away from ${closestBranch}. You must be within ${window.ALLOWED_RADIUS_METERS}m to punch.`, 'error');
+            return;
+        }
+
+        // 4. 📸 PHOTO CAPTURE
+        let photoBase64 = "";
+        const video = document.getElementById('clockVideo');
+        const canvas = document.getElementById('clockCanvas');
+        if (video && canvas && video.videoWidth > 0) {
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0);
+            photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+        }
+
+        // 5. 💾 SAVE TO FIREBASE
         await addDoc(collection(db, "attendance_logs"), {
             staffName: staffName, branch: closestBranch, type: type, timestamp: serverTimestamp(),
             locationLat: window.currentLat, locationLng: window.currentLng, distanceMeters: Math.round(minDistance),
             photoBase64: photoBase64
         });
         
-        localStorage.setItem('takodeal_last_punch', Date.now()); 
-        Swal.fire('✅ Success', `${type} logged at ${closestBranch}!`, 'success');
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to log time.', 'error'); } 
-    finally { btnIn.disabled = false; btnOut.disabled = false; }
-};
+        Swal.fire('✅ Success', `${type} logged securely at ${closestBranch}!`, 'success');
 
+    } catch(e) { 
+        console.error(e); 
+        Swal.fire('Error', 'Failed to log time. Check internet connection.', 'error'); 
+    } 
+    finally { 
+        if(btnIn) btnIn.disabled = false; 
+        if(btnOut) btnOut.disabled = false; 
+    }
+};
 // ==========================================
 // 📥 STAFF REQUESTS & INBOX ENGINE
 // ==========================================
@@ -813,6 +889,9 @@ window.startInboxListener = function() {
     });
 };
 
+// ==========================================
+// 📥 STAFF INBOX (WITH DETAILED EXTRACTOR)
+// ==========================================
 window.loadInbox = async function() {
     let listEl = document.getElementById('reqInboxList');
     document.getElementById('reqInboxContainer').style.display = 'block';
@@ -829,15 +908,27 @@ window.loadInbox = async function() {
             let bg = d.status === 'Approved' ? '#dcfce7' : (d.status === 'Rejected' ? '#fef2f2' : '#fffbeb');
             
             let replyHtml = d.managerReply ? `<div style="margin-top: 8px; padding: 8px; background: #f8fafc; border-left: 3px solid ${color}; border-radius: 4px; font-size: 12px; color: #475569;"><b>HQ Reply:</b> ${d.managerReply}</div>` : '';
-            let proofHtml = d.proofImageUrl ? `<div style="margin-top: 8px; font-size: 11px;"><a href="${d.proofImageUrl}" target="_blank" style="color:#0ea5e9; text-decoration:none;">📸 View Receipt Attached</a></div>` : '';
+            let proofHtml = d.proofImageUrl ? `<div style="margin-top: 8px; font-size: 11px;"><a href="${d.proofImageUrl}" target="_blank" style="color:#0ea5e9; text-decoration:none; font-weight:bold;">📸 View Receipt Attached</a></div>` : '';
+
+            // 🔥 THE FIX: EXPLICITLY EXTRACT THE REQUEST DETAILS!
+            let detailText = "";
+            if (d.type === "Leave") detailText = `📅 ${d.startDate} to ${d.endDate} (${d.leaveType})<br><span style="color:#64748b; font-size:12px;">Reason: ${d.reason}</span>`;
+            else if (d.type === "Cash Advance") detailText = `💸 ₱${(parseFloat(d.amount)||0).toFixed(2)}<br><span style="color:#64748b; font-size:12px;">Reason: ${d.reason}</span>`;
+            else if (d.type === "Staff Meal") detailText = `🍔 ${d.item} (₱${(parseFloat(d.amount)||0).toFixed(2)})`;
+            else if (d.type === "Reason Letter") detailText = `✉️ ${d.explanationCause || 'Letter'}<br><span style="color:#64748b; font-size:12px;">${d.explanationMessage || ''}</span>`;
+            else if (d.type === "Waste Report") detailText = `🗑️ Waste Log (₱${(parseFloat(d.totalValueLost)||0).toFixed(2)})<br><span style="color:#64748b; font-size:12px;">${(d.items || []).length} items submitted</span>`;
+            else detailText = d.reason || d.item || "";
 
             html += `
-                <div class="req-item-card" style="border-left: 4px solid ${color};">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-                        <strong style="color:#0f172a; font-size:14px;">${d.type}</strong>
-                        <span style="background:${bg}; color:${color}; font-weight:bold; font-size:11px; padding:4px 8px; border-radius:6px;">${d.status}</span>
+                <div class="req-item-card" style="border-left: 4px solid ${color}; margin-bottom: 15px; padding: 15px; background: white; border-radius: 8px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
+                        <strong style="color:#0f172a; font-size:15px;">${d.type}</strong>
+                        <span style="background:${bg}; color:${color}; font-weight:bold; font-size:11px; padding:4px 8px; border-radius:6px; height: fit-content;">${d.status}</span>
                     </div>
-                    <div style="font-size:11px; color:#64748b;">📅 Submitted: ${d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent'}</div>
+                    <div style="font-size:13px; color:#334155; margin-bottom: 10px; font-weight: 500; line-height: 1.4;">
+                        ${detailText}
+                    </div>
+                    <div style="font-size:11px; color:#94a3b8;">📅 Submitted: ${d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent'}</div>
                     ${proofHtml}${replyHtml}
                 </div>
             `;
@@ -1089,6 +1180,26 @@ window.switchPayslipTab = function(tabName) {
     }
 };
 
+// ==========================================
+// 💸 PAYSLIP VAULT & LIVE ESTIMATOR ENGINE
+// ==========================================
+window.switchPayslipTab = function(tabName) {
+    let liveBtn = document.getElementById('btnTabLivePay');
+    let pastBtn = document.getElementById('btnTabPastPay');
+    
+    if (tabName === 'Live') {
+        liveBtn.style.background = '#0f766e'; liveBtn.style.color = 'white'; liveBtn.style.border = 'none';
+        pastBtn.style.background = 'transparent'; pastBtn.style.color = '#64748b'; pastBtn.style.border = 'none';
+        document.getElementById('payslipLiveSection').style.display = 'block';
+        document.getElementById('payslipPastSection').style.display = 'none';
+    } else {
+        pastBtn.style.background = '#0f172a'; pastBtn.style.color = 'white'; pastBtn.style.border = 'none';
+        liveBtn.style.background = 'transparent'; liveBtn.style.color = '#64748b'; liveBtn.style.border = 'none';
+        document.getElementById('payslipLiveSection').style.display = 'none';
+        document.getElementById('payslipPastSection').style.display = 'block';
+    }
+};
+
 window.loadPayslipVault = async function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
@@ -1133,7 +1244,7 @@ window.loadPayslipVault = async function() {
 
             if (log.type === "TIME IN") {
                 activeShifts[staffName] = log.timestamp.toDate();
-            } else if (log.type === "TIME OUT" && activeShifts[staffName]) {
+            } else if (log.type.includes("TIME OUT") && activeShifts[staffName]) {
                 let timeIn = activeShifts[staffName];
                 let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
@@ -1159,6 +1270,96 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
 
+        // 🔥 THE FIX: INJECTING THE DETAILED ATTENDANCE & DEDUCTIONS TABLES 🔥
+        let logsContainer = document.getElementById('liveCutoffDetailedLogs');
+        if (!logsContainer) {
+            let liveSection = document.getElementById('payslipLiveSection');
+            logsContainer = document.createElement('div');
+            logsContainer.id = 'liveCutoffDetailedLogs';
+            liveSection.appendChild(logsContainer);
+        }
+
+        let activeDeductions = [];
+        dedSnap.forEach(d => activeDeductions.push(d.data()));
+
+        let shiftPairs = [];
+        let tempIn = null;
+        let sortedAttLogs = [];
+        attSnap.forEach(d => sortedAttLogs.push(d.data()));
+        sortedAttLogs.sort((a,b) => a.timestamp.toDate() - b.timestamp.toDate());
+
+        sortedAttLogs.forEach(log => {
+            if (log.type === "TIME IN") {
+                tempIn = log.timestamp.toDate();
+            } else if (log.type.includes("TIME OUT") && tempIn) {
+                let outTime = log.timestamp.toDate();
+                let hrs = (outTime - tempIn) / (1000 * 60 * 60);
+                shiftPairs.push({ in: tempIn, out: outTime, hrs: hrs, penalty: log.penaltyApplied });
+                tempIn = null;
+            }
+        });
+
+        if (tempIn) {
+            shiftPairs.push({ in: tempIn, out: "Active Shift", hrs: 0, penalty: false, isActive: true });
+        }
+
+        let detailsHtml = `
+            <div style="margin-top: 20px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">⏱️ Attendance Logs (This Cutoff)</h3>
+                <div style="max-height: 250px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                        <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 5;">
+                            <tr><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">In</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Out</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Hrs</th></tr>
+                        </thead>
+                        <tbody>
+        `;
+
+        if (shiftPairs.length > 0) {
+            shiftPairs.reverse().forEach(p => {
+                let dateStr = p.in.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                let inStr = p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+                let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+                let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : `${p.hrs.toFixed(2)}h`;
+                let pAlert = p.penalty ? `<br><span style="color:#ef4444; font-size:9px; font-weight:bold;">PENALTY</span>` : '';
+                
+                detailsHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 8px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 10px 8px; color: #16a34a; font-weight: bold;">${inStr}</td>
+                    <td style="padding: 10px 8px; color: #dc2626; font-weight: bold;">${outStr}${pAlert}</td>
+                    <td style="padding: 10px 8px; font-weight: bold; color: #334155;">${hrStr}</td>
+                </tr>`;
+            });
+        } else {
+            detailsHtml += `<tr><td colspan="4" style="padding: 15px; text-align: center; color: #94a3b8;">No valid Time In/Out pairs found.</td></tr>`;
+        }
+        detailsHtml += `</tbody></table></div></div>`;
+
+        detailsHtml += `
+            <div style="margin-top: 15px; background: white; border-radius: 12px; border: 1px solid #fca5a5; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <h3 style="margin-top: 0; color: #b91c1c; font-size: 14px; border-bottom: 2px solid #fecaca; padding-bottom: 8px;">💸 Active Unpaid Deductions</h3>
+                <div style="max-height: 150px; overflow-y: auto;">
+        `;
+
+        if (activeDeductions.length > 0) {
+            activeDeductions.forEach(d => {
+                let dDate = d.dateAdded || d.timestamp;
+                let dateStr = dDate ? dDate.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+                detailsHtml += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0;">
+                        <div>
+                            <strong style="color: #334155;">${d.type}</strong><br>
+                            <span style="font-size: 11px; color: #64748b;">${dateStr} - ${d.remarks || d.item || 'Pending'}</span>
+                        </div>
+                        <strong style="color: #dc2626;">-₱${parseFloat(d.amount).toFixed(2)}</strong>
+                    </div>
+                `;
+            });
+        } else {
+            detailsHtml += `<div style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px;">No active deductions. You're clear! 🎉</div>`;
+        }
+        detailsHtml += `</div></div>`;
+
+        logsContainer.innerHTML = detailsHtml;
 
         // --- FETCH PAST PAYSLIPS VAULT ---
         const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName), orderBy("processedAt", "desc"));
