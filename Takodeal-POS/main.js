@@ -3862,8 +3862,8 @@ setTimeout(() => {
     let safeBranch = localStorage.getItem('takodeal_device_branch');
     if (!safeBranch) return;
 
-    // Listens silently in the background
-    onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "==", "In Transit")), (snap) => {
+    // 🔥 THE FIX: Tell the Cashier App to listen for BOTH "In Transit" AND "Arrived" statuses!
+    onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "in", ["In Transit", "Arrived"])), (snap) => {
         window.incomingDeliveriesList = [];
         snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
@@ -3883,6 +3883,10 @@ setTimeout(() => {
         // If they are currently looking at the tab, refresh it instantly
         if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
              if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
+        }
+        // Also refresh the Deliveries tab if they are in it!
+        if (document.getElementById('view-deliveries') && document.getElementById('view-deliveries').classList.contains('active')) {
+             if (typeof window.renderDeliveriesTab === 'function') window.renderDeliveriesTab();
         }
     });
 }, 3000);
@@ -4724,10 +4728,10 @@ window.loadStockRequestUI = async function() {
         const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Pending"));
         const poSnap = await getDocs(poQ);
         
-        // 2. Check for Incoming Deliveries (In Transit)
-        const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("status", "==", "In Transit"));
+        // 2. 🔥 THE FIX: Check for Incoming Deliveries (Both In Transit & Arrived)
+        const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("status", "in", ["In Transit", "Arrived"]));
         const delSnap = await getDocs(delQ);
-        
+            
         window.incomingDeliveriesList = [];
         delSnap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
@@ -4737,7 +4741,6 @@ window.loadStockRequestUI = async function() {
             docs.sort((a,b) => b.timestamp - a.timestamp);
             pendingOrder = docs[0];
         }
-
         let dynamicHtml = '';
 
         // ==========================================
