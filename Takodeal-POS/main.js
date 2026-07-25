@@ -399,6 +399,12 @@ window.loadPOSData = async function() {
 
 // --- UPGRADED CART & VARIANT LOGIC (WITH SMART BASE FLAVOR COUNTERS) ---
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
+    // 🔥 THE FIX: Explicitly WIPE the memory clean every time the modal opens!
+    window.currentBaseFlavorsInfo = [];
+    window.baseFlavorState = {};
+    window.mixMatchState = {};
+    window.maxMixMatch = 0;
+
     if (!window.masterPOSData) window.masterPOSData = {};
     if (!window.cart) window.cart = [];
 
@@ -532,11 +538,8 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 let baseFlavors = addonsList.filter(a => a.price === 0);
                 let extras = addonsList.filter(a => a.price > 0);
 
-                // 🔥 THE NEW BASE FLAVOR NUMBER COUNTER LOGIC
-                window.currentBaseFlavorsInfo = baseFlavors;
-                window.baseFlavorState = {};
-
                 if (baseFlavors.length > 0) {
+                    window.currentBaseFlavorsInfo = baseFlavors;
                     let defaultQty = existingItem ? 0 : window.pendingItem.qty;
                     
                     baseFlavors.forEach((bf, bfIdx) => {
@@ -582,11 +585,8 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             }
             dynamicAddonDiv.innerHTML = newUiHtml;
             
-            // Draw the Base Flavor Counters
             if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
 
-            // 🐙 ITEM-SPECIFIC MIX & MATCH BUILDER
-            window.mixMatchState = {};
             let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
             let customArea = document.getElementById('takoyakiCustomizationArea');
             
@@ -7100,18 +7100,23 @@ window.startUnverifiedListener = function() {
             }
 
             // Handle the Global Floating Banner (Shows if ANY payment in 48 hours is unverified!)
-            if (unverifiedCount > 0) {
+            if (unverifiedCount > 0 && !window.hideUnverifiedBanner) {
                 if (!existingBanner) {
                     existingBanner = document.createElement('div');
                     existingBanner.id = 'globalUnverifiedBanner';
-                    existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px 30px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999; cursor: pointer;";
-                    
-                    existingBanner.onclick = () => {
-                        if (typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App. They carry over from shift to shift until cleared.', 'warning');
-                    };
+                    // 🔥 Removed the full-banner onclick so we can click the X button independently
+                    existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 10px 20px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999;";
                     document.body.appendChild(existingBanner);
                 }
-                existingBanner.innerHTML = `<span style="font-size:24px; animation: pulse 1s infinite;">🚨</span><div style="text-align: center;"><div style="font-size:15px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Digital Payment(s)!</div><div style="font-size:11px; color:#9f1239;">These will remain here until the Manager approves them in the HQ App.</div></div>`;
+                
+                // 🔥 THE FIX: Added a distinct Close (x) button and a clickable text area!
+                existingBanner.innerHTML = `
+                    <span style="font-size:24px; animation: pulse 1s infinite; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">🚨</span>
+                    <div style="text-align: center; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">
+                        <div style="font-size:14px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Payment(s)!</div>
+                    </div>
+                    <span onclick="document.getElementById('globalUnverifiedBanner').style.display='none'; window.hideUnverifiedBanner=true;" style="font-size: 24px; cursor: pointer; color: #9f1239; padding-left: 10px; font-weight: bold;" title="Dismiss">&times;</span>
+                `;
                 existingBanner.style.display = 'flex';
             } else {
                 if (existingBanner) existingBanner.style.display = 'none';
