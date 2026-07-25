@@ -1888,49 +1888,63 @@ window.updateDispatchUom = function(index, val) {
     window.renderDispatchCart();
 };
 
+// ==========================================
+// 🧹 DISPATCH CART CLEARER & AUTO-MERGE ENGINE
+// ==========================================
 window.clearDispatchCart = async function() {
-    let activePoStr = localStorage.getItem('takodeal_active_po');
-    
-    // 🔥 AUTO-SAVE DRAFTS FIX: Saves inputs back to the pending request before clearing!
-    if (activePoStr && window.dispatchCart && window.dispatchCart.length > 0) {
-        let poIds = activePoStr.split(',');
-        let primaryPoId = poIds[0];
-        if (primaryPoId) {
-            try { 
-                await updateDoc(doc(db, "purchase_orders", primaryPoId), { 
-                    status: "Pending",
-                    items: window.dispatchCart 
-                }); 
-            } catch(e){ console.error("Draft save error", e); }
-        }
-        for (let i = 1; i < poIds.length; i++) {
-            if (poIds[i]) {
-                try { await updateDoc(doc(db, "purchase_orders", poIds[i]), { status: "Pending" }); } catch(e){}
-            }
-        }
-    } else if (activePoStr) {
-        let poIds = activePoStr.split(',');
-        for (let id of poIds) {
-            if (id) {
-                try { await updateDoc(doc(db, "purchase_orders", id), { status: "Pending" }); } catch(e){}
-            }
-        }
+    if (!window.dispatchCart || window.dispatchCart.length === 0) {
+        localStorage.removeItem('takodeal_dispatch_cart');
+        localStorage.removeItem('takodeal_dispatch_to');
+        localStorage.removeItem('takodeal_active_po');
+        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
+        return;
     }
-    
-    window.dispatchCart = [];
-    localStorage.removeItem('takodeal_dispatch_cart');
-    localStorage.removeItem('takodeal_dispatch_to');
-    localStorage.removeItem('takodeal_active_po');
-    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-    
-    let dispFrom = document.getElementById('dispFrom');
-    let dispTo = document.getElementById('dispTo');
-    
-    if (dispFrom) dispFrom.value = "Main Office";
-    if (dispTo) dispTo.value = "";
-    
-    window.renderDispatchCart();
-    if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+
+    let branch = localStorage.getItem('takodeal_dispatch_to') || "Unknown Branch";
+
+    Swal.fire({title: 'Consolidating...', text: 'Merging into a single request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // 1. Create ONE master combined request!
+        await addDoc(collection(db, "purchase_orders"), {
+            branch: branch,
+            items: window.dispatchCart,
+            status: "Pending",
+            type: "Internal Request",
+            requestedBy: "System (Merged / Set Aside)",
+            timestamp: serverTimestamp()
+        });
+
+        // 2. 🔥 THE FIX: DELETE all the old fragmented requests so they don't duplicate!
+        let activePos = localStorage.getItem('takodeal_active_po');
+        if (activePos) {
+            let poArray = activePos.split(',');
+            for (let oldPoId of poArray) {
+                if (oldPoId && oldPoId.trim() !== '') {
+                    try {
+                        await deleteDoc(doc(db, "purchase_orders", oldPoId.trim()));
+                    } catch(e) { console.log("Old PO already deleted."); }
+                }
+            }
+        }
+
+        // 3. Clear Cart Memory completely
+        window.dispatchCart = [];
+        localStorage.removeItem('takodeal_dispatch_cart');
+        localStorage.removeItem('takodeal_dispatch_to');
+        localStorage.removeItem('takodeal_active_po');
+        
+        Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+
+        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
+        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+
+        Swal.fire({title: 'Merged!', text: 'Requests successfully combined and set aside.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
+
+    } catch (error) {
+        console.error(error);
+        Swal.fire('Error', 'Failed to consolidate requests.', 'error');
+    }
 };
 
 // ==========================================
@@ -2352,7 +2366,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (AUTO-CLEAR UPGRADE + DELETE BUTTON)
+// 🔍 THE REVIEW REQUEST MODAL (DELETE BUTTON AT TOP)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -2371,7 +2385,12 @@ window.reviewPurchaseOrder = async function(poId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
-        let html = `<div style="max-height: 40vh; overflow-y: auto; text-align: left;">
+        // 🔥 THE FIX: Inject the Delete button ABOVE the scrolling table so it never gets hidden!
+        let html = `
+            <button onclick="window.deleteStockRequest('${poId}')" style="margin-bottom: 15px; width: 100%; padding: 12px; background: #fef2f2; border: 1px dashed #fca5a5; color: #dc2626; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                🗑️ Permanently Delete / Dispose Request
+            </button>
+            <div style="max-height: 40vh; overflow-y: auto; text-align: left;">
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                     <tr>
@@ -2383,7 +2402,6 @@ window.reviewPurchaseOrder = async function(poId) {
                 <tbody>`;
         
         po.items.forEach(item => {
-            // 🔥 THE COLOR ASSIGNER: Makes "Lost in Transit" visually violent
             let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : (item.requestType === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
             let alertStyle = item.requestType === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: ${alertColor}15;`;
             let rowBg = item.requestType === 'Lost in Transit' ? '#fff1f2' : 'white';
@@ -2400,12 +2418,6 @@ window.reviewPurchaseOrder = async function(poId) {
             `;
         });
         html += `</tbody></table></div>`;
-
-        html += `
-            <button onclick="window.deleteStockRequest('${poId}')" style="margin-top: 15px; width: 100%; padding: 12px; background: #fef2f2; border: 1px dashed #fca5a5; color: #dc2626; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                🗑️ Permanently Delete / Dispose Request
-            </button>
-        `;
         
         let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📝 Purchase Order: ${po.branch}`;
         
@@ -2520,7 +2532,6 @@ window.reviewPurchaseOrder = async function(poId) {
 // 🗑️ DISPOSE / DELETE STOCK REQUEST ENGINE
 // ==========================================
 window.deleteStockRequest = async function(poId) {
-    // 1. Double check so you don't accidentally delete something important!
     let confirmDelete = await Swal.fire({
         title: 'Dispose Request?',
         text: "Are you sure you want to permanently delete this request? This action cannot be undone.",
@@ -2537,9 +2548,7 @@ window.deleteStockRequest = async function(poId) {
     Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        // 2. Wipe it permanently from the Firebase Cloud
         await deleteDoc(doc(db, "purchase_orders", poId));
-        
         Swal.fire({
             title: 'Deleted!', 
             text: 'The request has been permanently disposed.', 
@@ -2549,11 +2558,14 @@ window.deleteStockRequest = async function(poId) {
             customClass: { popup: 'rounded-2xl' }
         });
         
-        // 3. Auto-refresh the Logistics Feed so it disappears from the list
+        // Auto-refresh the Logistics Feed
         if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs(); 
+        
+        // Force the modal to close immediately
+        Swal.close();
     } catch (e) {
         console.error("Delete Error:", e);
-        Swal.fire('Error', 'Failed to delete the request. Check your connection.', 'error');
+        Swal.fire('Error', 'Failed to delete the request.', 'error');
     }
 };
 
