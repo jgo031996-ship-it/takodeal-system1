@@ -17946,6 +17946,7 @@ window.renderLogisticsUI = function() {
                 let statCol = isPending ? '#d97706' : (isDelayed ? '#dc2626' : '#16a34a');
                 let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
                 
+                // 🔥 THE FIX: Injected the Delete Button right next to the Review Button!
                 html += `
                     <div style="background: ${bgCol}; border: 1px solid ${borderCol}; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
                         <div>
@@ -17953,9 +17954,10 @@ window.renderLogisticsUI = function() {
                             <div style="font-size: 13px; color: #92400e; font-weight: 500;">Requested by: ${req.requestedBy || 'Staff'}</div>
                             <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
                         </div>
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            <div style="font-weight: bold; font-size: 13px; color: ${statCol};">${req.status}</div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="font-weight: bold; font-size: 13px; color: ${statCol}; margin-right: 5px;">${req.status}</div>
                             <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">🔍 Review Request</button>
+                            <button onclick="if(typeof window.deleteStockRequest === 'function') window.deleteStockRequest('${req.id}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;" title="Delete Request">🗑️</button>
                         </div>
                     </div>
                 `;
