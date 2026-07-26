@@ -7891,3 +7891,104 @@ window.clearSignature = function() {
 
 // Protect against old HTML buttons trying to call different names!
 window.clearBulletinSignature = window.clearSignature;
+
+// ==========================================
+// 🚀 STANDALONE WEB-BLUETOOTH ESC/POS ENGINE
+// ==========================================
+window.posBluetoothDevice = null;
+window.posBluetoothCharacteristic = null;
+
+window.connectBluetoothPrinter = async function() {
+    try {
+        // Asks the browser to scan for nearby Bluetooth thermal printers
+        const device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '0000ae30-0000-1000-8000-00805f9b34fb']
+        });
+
+        Swal.fire({title: 'Pairing...', text: 'Connecting to hardware...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+        const server = await device.gatt.connect();
+        window.posBluetoothDevice = device;
+
+        // Search for the writable TX channel on the printer
+        let foundChar = null;
+        const services = await server.getPrimaryServices();
+        for (let service of services) {
+            const characteristics = await service.getCharacteristics();
+            for (let char of characteristics) {
+                if (char.properties.write || char.properties.writeWithoutResponse) {
+                    foundChar = char;
+                    break;
+                }
+            }
+            if (foundChar) break;
+        }
+
+        if (foundChar) {
+            window.posBluetoothCharacteristic = foundChar;
+            Swal.fire('Connected!', `Successfully paired to ${device.name}`, 'success');
+            
+            // Instantly rename the sidebar button so the cashier knows it is connected!
+            let btn = document.getElementById('nav-printer');
+            if (btn) {
+                btn.innerHTML = `<span>🖨️</span><div class="nav-item-text" style="color:#10b981; font-weight:bold;">${device.name.substring(0,8)}</div>`;
+            }
+            
+            // Auto-reconnect listener if someone unplugs the printer
+            device.addEventListener('gattserverdisconnected', () => {
+                window.posBluetoothCharacteristic = null;
+                if (btn) btn.innerHTML = `<span>🖨️</span><div class="nav-item-text" style="color:#ef4444; font-weight:bold;">Offline</div>`;
+            });
+        } else {
+            throw new Error("Device does not support direct ESC/POS writing.");
+        }
+    } catch (error) {
+        console.error("Bluetooth Error:", error);
+        Swal.fire('Connection Failed', error.message || 'Could not connect to printer.', 'error');
+    }
+};
+
+window.sendToBluetoothPrinter = async function(escposString, isJustDrawer = false) {
+    if (!window.posBluetoothCharacteristic) {
+        return Swal.fire({
+            title: 'Printer Offline',
+            text: 'Please pair your Bluetooth printer first.',
+            icon: 'warning',
+            confirmButtonText: 'Pair Now',
+            showCancelButton: true
+        }).then((result) => {
+            if(result.isConfirmed) window.connectBluetoothPrinter();
+        });
+    }
+
+    try {
+        let finalCommand = escposString;
+        
+        // Auto-inject the Paper Cut command unless we are just kicking the drawer!
+        if (!isJustDrawer) {
+            finalCommand += "\n\n\n\x1D\x56\x41\x10"; 
+        }
+        
+        const data = new TextEncoder().encode(finalCommand);
+
+        // 🔥 CHUNKING ENGINE: Bypasses Android's 512-byte Bluetooth limit by splitting the receipt into tiny packets and firing them like a machine gun!
+        const CHUNK_SIZE = 256;
+        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+            await window.posBluetoothCharacteristic.writeValue(data.slice(i, i + CHUNK_SIZE));
+        }
+    } catch(e) {
+        console.error("Print Error:", e);
+        Swal.fire('Print Failed', 'Hardware connection lost. Please re-pair.', 'error');
+        window.posBluetoothCharacteristic = null;
+    }
+};
+
+// Auto-override the sidebar button when the app loads so it triggers the scanner instead of the old alert box!
+setTimeout(() => {
+    let printerBtn = document.getElementById('nav-printer');
+    if (printerBtn) {
+        printerBtn.removeAttribute('onclick');
+        printerBtn.onclick = window.connectBluetoothPrinter;
+    }
+}, 2000);
