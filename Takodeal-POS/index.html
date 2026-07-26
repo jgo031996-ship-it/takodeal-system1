@@ -3765,9 +3765,9 @@ window.printReceipt = async function(type) {
         let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
         
         // \x1B\x40 RESETS THE PRINTER
-        let plainTextReceipt = "\x1B\x40\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n";
+        let plainTextReceipt = "\x1B\x40\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
         
-        // 🔥 THE FIX: Removed RawBT Intent and replaced it with the direct Bluetooth Engine!
+        // 🔥 Send directly to the hardware!
         if (typeof window.sendToBluetoothPrinter === 'function') {
             await window.sendToBluetoothPrinter(plainTextReceipt, false);
         } else {
@@ -3907,7 +3907,7 @@ window.printReceipt = async function(type) {
     let footerLines = footerMsg.split('\n');
     footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
     
-    // 🔥 THE FIX: Removed RawBT Intent and replaced it with the direct Bluetooth Engine!
+    // 🔥 Send directly to the hardware!
     if (typeof window.sendToBluetoothPrinter === 'function') {
         await window.sendToBluetoothPrinter(proReceipt, false);
     } else {
