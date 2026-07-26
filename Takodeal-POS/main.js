@@ -7893,102 +7893,160 @@ window.clearSignature = function() {
 window.clearBulletinSignature = window.clearSignature;
 
 // ==========================================
-// 🚀 STANDALONE WEB-BLUETOOTH ESC/POS ENGINE
+// 🚀 HYBRID MULTI-PRINTER & RAWBT HUB
 // ==========================================
-window.posBluetoothDevice = null;
-window.posBluetoothCharacteristic = null;
+window.mainPrinterChar = null;
+window.kitchenPrinterChar = null;
+window.barPrinterChar = null;
 
-window.connectBluetoothPrinter = async function() {
+window.switchPrinterMode = function(mode) {
+    localStorage.setItem('takodeal_printer_mode', mode);
+    let bleUI = document.getElementById('blePrinterSetup');
+    let rawbtUI = document.getElementById('rawbtPrinterSetup');
+    if (bleUI) bleUI.style.display = mode === 'ble' ? 'flex' : 'none';
+    if (rawbtUI) rawbtUI.style.display = mode === 'rawbt' ? 'block' : 'none';
+};
+
+window.openPrinterManager = function() {
+    let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
+    let isBle = currentMode === 'ble';
+
+    Swal.fire({
+        title: '🖨️ Printer Management',
+        html: `
+            <div style="margin-bottom: 15px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #cbd5e1; text-align: left;">
+                <label style="font-weight: bold; color: #334155; font-size: 14px; display: flex; flex-direction: column; gap: 8px;">
+                    <span>⚙️ Printer Engine Mode:</span>
+                    <select id="printerModeSelect" onchange="window.switchPrinterMode(this.value)" style="padding: 10px; border-radius: 6px; border: 1px solid #94a3b8; font-weight: bold; width: 100%; outline: none; background: white; cursor: pointer;">
+                        <option value="ble" ${isBle ? 'selected' : ''}>⚡ Fast Direct Bluetooth (New)</option>
+                        <option value="rawbt" ${!isBle ? 'selected' : ''}>🐢 Legacy App (RawBT - For Old Printers)</option>
+                    </select>
+                </label>
+            </div>
+
+            <div id="blePrinterSetup" style="display:${isBle ? 'flex' : 'none'}; flex-direction:column; gap:12px; text-align: left;">
+                <p style="font-size: 12px; color: #64748b; margin-top: 0; text-align: center;">Tap below to pair modern printers. Unpaired categories automatically route to the Main Printer.</p>
+                <button onclick="window.connectSpecificPrinter('main')" style="padding:15px; background:${window.mainPrinterChar ? '#16a34a' : '#f8fafc'}; color:${window.mainPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">
+                    ${window.mainPrinterChar ? '✅ Main Printer Paired' : '🧾 Pair Main Printer'}
+                </button>
+                <button onclick="window.connectSpecificPrinter('kitchen')" style="padding:15px; background:${window.kitchenPrinterChar ? '#d97706' : '#f8fafc'}; color:${window.kitchenPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">
+                    ${window.kitchenPrinterChar ? '✅ Kitchen Printer Paired' : '🍳 Pair Kitchen Printer'}
+                </button>
+                <button onclick="window.connectSpecificPrinter('bar')" style="padding:15px; background:${window.barPrinterChar ? '#0284c7' : '#f8fafc'}; color:${window.barPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">
+                    ${window.barPrinterChar ? '✅ Bar Printer Paired' : '🥤 Pair Bar Printer'}
+                </button>
+            </div>
+            
+            <div id="rawbtPrinterSetup" style="display:${!isBle ? 'block' : 'none'}; padding: 15px; background: #fffbeb; border: 1px dashed #d97706; border-radius: 8px; color: #b45309; font-size: 13px; font-weight: bold; text-align: left;">
+                ⚠️ Legacy Mode is Active.<br><br>The POS will bypass the browser and route all tickets to the RawBT Android App. Ensure Printer 001 is paired in your Android Bluetooth settings.
+            </div>
+        `,
+        showConfirmButton: true,
+        confirmButtonText: 'Done',
+        confirmButtonColor: '#64748b',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+};
+
+window.connectSpecificPrinter = async function(target) {
     try {
-        // Asks the browser to scan for nearby Bluetooth thermal printers
         const device = await navigator.bluetooth.requestDevice({
             acceptAllDevices: true,
             optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '0000ae30-0000-1000-8000-00805f9b34fb']
         });
 
         Swal.fire({title: 'Pairing...', text: 'Connecting to hardware...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
         const server = await device.gatt.connect();
-        window.posBluetoothDevice = device;
 
-        // Search for the writable TX channel on the printer
         let foundChar = null;
         const services = await server.getPrimaryServices();
         for (let service of services) {
             const characteristics = await service.getCharacteristics();
             for (let char of characteristics) {
                 if (char.properties.write || char.properties.writeWithoutResponse) {
-                    foundChar = char;
-                    break;
+                    foundChar = char; break;
                 }
             }
             if (foundChar) break;
         }
 
         if (foundChar) {
-            window.posBluetoothCharacteristic = foundChar;
-            Swal.fire('Connected!', `Successfully paired to ${device.name}`, 'success');
+            if (target === 'main') window.mainPrinterChar = foundChar;
+            else if (target === 'kitchen') window.kitchenPrinterChar = foundChar;
+            else if (target === 'bar') window.barPrinterChar = foundChar;
+
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: `${target.toUpperCase()} Printer Paired!`, showConfirmButton: false, timer: 2000 });
+            window.openPrinterManager(); // Re-open the menu to show the green checkmark
             
-            // Instantly rename the sidebar button so the cashier knows it is connected!
-            let btn = document.getElementById('nav-printer');
-            if (btn) {
-                btn.innerHTML = `<span>🖨️</span><div class="nav-item-text" style="color:#10b981; font-weight:bold;">${device.name.substring(0,8)}</div>`;
-            }
-            
-            // Auto-reconnect listener if someone unplugs the printer
             device.addEventListener('gattserverdisconnected', () => {
-                window.posBluetoothCharacteristic = null;
-                if (btn) btn.innerHTML = `<span>🖨️</span><div class="nav-item-text" style="color:#ef4444; font-weight:bold;">Offline</div>`;
+                if (target === 'main') window.mainPrinterChar = null;
+                else if (target === 'kitchen') window.kitchenPrinterChar = null;
+                else if (target === 'bar') window.barPrinterChar = null;
             });
         } else {
             throw new Error("Device does not support direct ESC/POS writing.");
         }
     } catch (error) {
-        console.error("Bluetooth Error:", error);
-        Swal.fire('Connection Failed', error.message || 'Could not connect to printer.', 'error');
+        console.error(error);
+        Swal.fire('Connection Failed', error.message || 'Could not connect to printer.', 'error').then(() => window.openPrinterManager());
     }
 };
 
-window.sendToBluetoothPrinter = async function(escposString, isJustDrawer = false) {
-    if (!window.posBluetoothCharacteristic) {
+window.sendToBluetoothPrinter = async function(escposString, isJustDrawer = false, target = 'main') {
+    let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
+    
+    // 🚀 HYBRID INTERCEPTOR: If branch is using Legacy Mode, bypass BLE and send to RawBT!
+    if (currentMode === 'rawbt') {
+        let finalCommand = escposString;
+        if (!isJustDrawer) finalCommand += "\n\n\n\n"; // Adding padding for RawBT
+        let base64Encoded = btoa(unescape(encodeURIComponent(finalCommand)));
+        window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        return;
+    }
+
+    // ⚡ FAST BLE ROUTING
+    let activeChar = null;
+    if (target === 'kitchen') activeChar = window.kitchenPrinterChar || window.mainPrinterChar;
+    else if (target === 'bar') activeChar = window.barPrinterChar || window.mainPrinterChar;
+    else activeChar = window.mainPrinterChar;
+
+    if (!activeChar) {
         return Swal.fire({
             title: 'Printer Offline',
-            text: 'Please pair your Bluetooth printer first.',
+            text: 'No printer found! Please pair your Main Printer first.',
             icon: 'warning',
-            confirmButtonText: 'Pair Now',
+            confirmButtonText: 'Open Printer Setup',
             showCancelButton: true
         }).then((result) => {
-            if(result.isConfirmed) window.connectBluetoothPrinter();
+            if(result.isConfirmed) window.openPrinterManager();
         });
     }
 
     try {
         let finalCommand = escposString;
-        
-        // Auto-inject the Paper Cut command unless we are just kicking the drawer!
-        if (!isJustDrawer) {
-            finalCommand += "\n\n\n\x1D\x56\x41\x10"; 
-        }
+        if (!isJustDrawer) finalCommand += "\n\n\n\x1D\x56\x41\x10"; 
         
         const data = new TextEncoder().encode(finalCommand);
-
-        // 🔥 CHUNKING ENGINE: Bypasses Android's 512-byte Bluetooth limit by splitting the receipt into tiny packets and firing them like a machine gun!
         const CHUNK_SIZE = 256;
         for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-            await window.posBluetoothCharacteristic.writeValue(data.slice(i, i + CHUNK_SIZE));
+            await activeChar.writeValue(data.slice(i, i + CHUNK_SIZE));
         }
     } catch(e) {
         console.error("Print Error:", e);
         Swal.fire('Print Failed', 'Hardware connection lost. Please re-pair.', 'error');
-        window.posBluetoothCharacteristic = null;
+        
+        if (activeChar === window.kitchenPrinterChar) window.kitchenPrinterChar = null;
+        else if (activeChar === window.barPrinterChar) window.barPrinterChar = null;
+        else window.mainPrinterChar = null;
     }
 };
 
-// Auto-override the sidebar button when the app loads so it triggers the scanner instead of the old alert box!
+// Auto-override the sidebar button
 setTimeout(() => {
     let printerBtn = document.getElementById('nav-printer');
     if (printerBtn) {
         printerBtn.removeAttribute('onclick');
-        printerBtn.onclick = window.connectBluetoothPrinter;
+        printerBtn.onclick = window.openPrinterManager;
+        printerBtn.innerHTML = `<span style="font-size: 18px;">🖨️</span><div class="nav-item-text">Printer Hub</div>`;
     }
 }, 2000);
