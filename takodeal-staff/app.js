@@ -682,7 +682,7 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 };
 
 // ==========================================
-// ⏱️ STRICT TIME CLOCK & SOP BLOCKER ENGINE
+// ⏱️ STRICT TIME CLOCK & SOP BLOCKER ENGINE (CRASH-PROOF)
 // ==========================================
 window.punchTime = async function(type) {
     let staffName = localStorage.getItem('takodeal_staff_name');
@@ -697,14 +697,22 @@ window.punchTime = async function(type) {
         Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
         // 1. ☁️ LIVE CLOUD DOUBLE-PUNCH SHIELD
-        // Pulls the last 18 hours of logs from the cloud to see if ANY device timed them in/out!
         let lookBack = new Date();
         lookBack.setHours(lookBack.getHours() - 18); 
-        const q = query(collection(db, "attendance_logs"), where("staffName", "==", staffName), where("timestamp", ">=", lookBack));
+        
+        // 🔥 THE FIX: Removed the composite ">=" timestamp query to bypass the Index crash!
+        const q = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
         const snap = await getDocs(q);
         
         let userLogs = [];
-        snap.forEach(doc => userLogs.push(doc.data()));
+        snap.forEach(doc => {
+            let d = doc.data();
+            // Filter the time locally instead of asking Firebase to do it!
+            if (d.timestamp && d.timestamp.toDate() >= lookBack) {
+                userLogs.push(d);
+            }
+        });
+        
         userLogs.sort((a,b) => b.timestamp.toDate() - a.timestamp.toDate());
 
         if (userLogs.length > 0) {
@@ -734,10 +742,21 @@ window.punchTime = async function(type) {
         if (type === "TIME OUT") {
             let startOfDay = new Date();
             startOfDay.setHours(0,0,0,0);
-            const sopQ = query(collection(db, "sop_logs"), where("staffName", "==", staffName), where("timestamp", ">=", startOfDay));
+            
+            // 🔥 THE FIX: Removed the composite ">=" timestamp query to bypass the Index crash!
+            const sopQ = query(collection(db, "sop_logs"), where("staffName", "==", staffName));
             const sopSnap = await getDocs(sopQ);
             
-            if (sopSnap.empty) {
+            let hasSopToday = false;
+            sopSnap.forEach(doc => {
+                let d = doc.data();
+                // Filter the time locally instead of asking Firebase to do it!
+                if (d.timestamp && d.timestamp.toDate() >= startOfDay) {
+                    hasSopToday = true;
+                }
+            });
+            
+            if (!hasSopToday) {
                 Swal.fire({
                     title: '📋 SOP Required!',
                     html: 'You cannot Time Out until you have submitted your Daily SOP Checklist.<br><br><span style="font-size:12px; color:#dc2626; font-weight:bold;">If tasks are unfinished, you must mark them as "Missed" and type a reason.</span>',
