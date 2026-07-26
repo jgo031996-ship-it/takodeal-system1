@@ -3701,7 +3701,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
     }
 
 // ==========================================
-// 🖨️ ULTIMATE RAWBT PRINTER ENGINE (MASTER VERSION)
+// 🖨️ ULTIMATE STANDALONE PRINTER ENGINE
 // ==========================================
 window.printReceipt = async function(type) {
     let d = lastTransactionData; if (!d || !d.cart) return;
@@ -3765,9 +3765,14 @@ window.printReceipt = async function(type) {
         let tempDiv = document.createElement("div"); tempDiv.innerHTML = html.replace(/<\/span>\s*<span[^>]*>/gi, "    ").replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/div>/gi, "\n"); 
         
         // \x1B\x40 RESETS THE PRINTER
-        let plainTextReceipt = "\x1B\x40\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
-        let base64Encoded = btoa(unescape(encodeURIComponent(plainTextReceipt)));
-        window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+        let plainTextReceipt = "\x1B\x40\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n";
+        
+        // 🔥 THE FIX: Removed RawBT Intent and replaced it with the direct Bluetooth Engine!
+        if (typeof window.sendToBluetoothPrinter === 'function') {
+            await window.sendToBluetoothPrinter(plainTextReceipt, false);
+        } else {
+            alert("Bluetooth printer engine not found. Please pair the printer first.");
+        }
         return;
     }
 
@@ -3901,10 +3906,13 @@ window.printReceipt = async function(type) {
     
     let footerLines = footerMsg.split('\n');
     footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
-    proReceipt += "\n\n\n\n";
     
-    let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-    window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+    // 🔥 THE FIX: Removed RawBT Intent and replaced it with the direct Bluetooth Engine!
+    if (typeof window.sendToBluetoothPrinter === 'function') {
+        await window.sendToBluetoothPrinter(proReceipt, false);
+    } else {
+        alert("Bluetooth printer engine not found. Please pair the printer first.");
+    }
 };
 
 // ==========================================
@@ -3995,8 +4003,7 @@ window.deleteParkedOrderManually = async function(docId) {
       window.updateParkedBadge();
 };
 
-
-window.printParkedReceipt = function(docId) {
+window.printParkedReceipt = async function(docId) {
       let order = window.currentParkedOrdersList.find(o => o.id === docId); 
       if (!order) { alert("Order data missing! Please refresh."); return; }
       
@@ -4009,7 +4016,8 @@ window.printParkedReceipt = function(docId) {
           return " ".repeat(leftPad) + cleanText;
       }
 
-      let proReceipt = "";
+      // 🔥 Added the initialization command \x1B\x40 to wake up the printer!
+      let proReceipt = "\x1B\x40\n";
       proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
       proReceipt += centerTxt("** PAY LATER (PARKED) **") + "\n";
       proReceipt += "================================\n";
@@ -4076,157 +4084,162 @@ window.printParkedReceipt = function(docId) {
       if (totalDiscount > 0) proReceipt += formatLine("Discount:", -parseFloat(totalDiscount));
       proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
       proReceipt += "--------------------------------\n";
-      proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n\n\n\n";
+      proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n";
       
-      let base64Encoded = btoa(unescape(encodeURIComponent(proReceipt)));
-      window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+      // 🔥 THE FIX: Removed RawBT Intent and replaced it with the direct Bluetooth Engine!
+      if (typeof window.sendToBluetoothPrinter === 'function') {
+          await window.sendToBluetoothPrinter(proReceipt, false);
+      } else {
+          alert("Bluetooth printer engine not found. Please pair the printer first.");
+      }
+}; // <-- PROPERLY CLOSED PRINT FUNCTION!
 
-      // ==========================================
-      // 📱 MOBILE ORDERS ENGINE & LISTENER
-      // ==========================================
-      window.mobileOrdersList = [];
-      window.mobileOrdersUnsubscribe = null;
-      
-      window.startMobileOrdersListener = function(branch) {
-          if (window.mobileOrdersUnsubscribe) {
-              window.mobileOrdersUnsubscribe(); // Clear old listener
-          }
-      
-          // Listen ONLY for orders meant for this specific branch
-          const q = window.query(
-              window.collection(window.db, "incoming_orders"),
-              window.where("branch", "==", branch),
-              window.where("status", "==", "mobile_queue")
-          );
-      
-          window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
-              let initialLoad = window.mobileOrdersList.length === 0;
-              window.mobileOrdersList = [];
-              let newOrdersFound = false;
-      
-              snapshot.forEach((doc) => {
-                  window.mobileOrdersList.push({ id: doc.id, ...doc.data() });
-              });
-      
-              // Check if a brand new order arrived while the app was already running
-              snapshot.docChanges().forEach((change) => {
-                  if (change.type === "added" && !initialLoad) newOrdersFound = true;
-              });
-      
-              // Update the Red Notification Badge
-              let badge = document.getElementById('mobileBadge');
-              if (badge) {
-                  if (window.mobileOrdersList.length > 0) {
-                      badge.innerText = window.mobileOrdersList.length;
-                      badge.style.display = 'block';
-                  } else {
-                      badge.style.display = 'none';
-                  }
-              }
-      
-              // Refresh UI if the cashier is currently looking at the modal
-              if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
-                  window.showMobileOrders();
-              }
-      
-              // PLAY SOUND PING!
-              if (newOrdersFound) window.playNotificationPing();
-          });
-      };
-      
-      // Generates a simple, loud browser "ding" without needing an audio file
-      window.playNotificationPing = function() {
-          try {
-              const ctx = new (window.AudioContext || window.webkitAudioContext)();
-              const osc = ctx.createOscillator();
-              const gain = ctx.createGain();
-              osc.connect(gain);
-              gain.connect(ctx.destination);
-              osc.type = 'bell';
-              osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch notification
-              gain.gain.setValueAtTime(1, ctx.currentTime);
-              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-              osc.start();
-              osc.stop(ctx.currentTime + 0.5);
-          } catch (e) { console.log("Audio ping blocked by browser auto-play policy"); }
-      };
-      
-      window.showMobileOrders = function() {
-          document.getElementById('mobileOrdersModal').style.display = 'flex';
-          let container = document.getElementById('mobileListContainer');
-      
-          if (window.mobileOrdersList.length === 0) {
-              container.innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Queue is empty. No incoming orders.</div>';
-              return;
-          }
-      
-          let html = '';
-          window.mobileOrdersList.forEach(o => {
-              let itemsHtml = o.items.map(i => {
-                  return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;">
-                            <div><strong>${i.quantity}x ${i.name}</strong></div>
-                            <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
-                          </div>`;
-              }).join('');
-      
-              let paymentColor = o.paymentMode === 'gcash' ? '#3b82f6' : '#f59e0b';
-              let paymentLabel = o.paymentMode === 'gcash' ? 'GCash (Verify Ref: ' + (o.gcashRef || 'No Ref') + ')' : 'Cash (Pay at Counter)';
-      
-              html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                          <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
-                              <strong style="font-size:16px;">👤 ${o.customerName}</strong>
-                              <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
-                          </div>
-                          <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; margin-bottom: 10px; text-align: center;">
-                              ${paymentLabel}
-                          </div>
-                          <div style="margin-bottom:15px;">${itemsHtml}</div>
-                          <div style="display:flex; gap:10px;">
-                              <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
-                              <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
-                          </div>
-                       </div>`;
-          });
-          container.innerHTML = html;
-      };
-      
-      // When Cashier accepts, it pulls the mobile order straight into their POS Cart!
-      window.acceptMobileOrder = async function(docId) {
-          let order = window.mobileOrdersList.find(o => o.id === docId);
-          if (!order) return;
-      
-          if (typeof cart !== 'undefined' && cart.length > 0) {
-              if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
-          }
-      
-          // Map the mobile cart to the POS cart
-          cart = order.items.map(i => ({
-              name: i.name,
-              basePrice: i.price,
-              variantName: 'Standard',
-              variantPrice: i.price,
-              qty: i.quantity,
-              lineTotalFinal: i.price * i.quantity,
-              discountType: 'none',
-              discountVal: 0,
-              addons: {},
-              notes: '📱 Mobile App Order'
-          }));
-      
-          // Auto-fill customer name for the receipt
-          document.getElementById('finalCustomerName').value = order.customerName;
-      
-          // Delete it from the incoming queue in Firebase
-          await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
-      
-          if (typeof renderCart === 'function') renderCart();
-          closeModal('mobileOrdersModal');
-      };
-      
-      window.rejectMobileOrder = async function(docId) {
-          if (!confirm("Are you sure you want to delete this order from the queue?")) return;
-          await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
-      };
+
+// ==========================================
+// 📱 MOBILE ORDERS ENGINE & LISTENER (RESCUED)
+// ==========================================
+window.mobileOrdersList = [];
+window.mobileOrdersUnsubscribe = null;
+
+window.startMobileOrdersListener = function(branch) {
+    if (window.mobileOrdersUnsubscribe) {
+        window.mobileOrdersUnsubscribe(); // Clear old listener
+    }
+
+    // Listen ONLY for orders meant for this specific branch
+    const q = window.query(
+        window.collection(window.db, "incoming_orders"),
+        window.where("branch", "==", branch),
+        window.where("status", "==", "mobile_queue")
+    );
+
+    window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
+        let initialLoad = window.mobileOrdersList.length === 0;
+        window.mobileOrdersList = [];
+        let newOrdersFound = false;
+
+        snapshot.forEach((doc) => {
+            window.mobileOrdersList.push({ id: doc.id, ...doc.data() });
+        });
+
+        // Check if a brand new order arrived while the app was already running
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added" && !initialLoad) newOrdersFound = true;
+        });
+
+        // Update the Red Notification Badge
+        let badge = document.getElementById('mobileBadge');
+        if (badge) {
+            if (window.mobileOrdersList.length > 0) {
+                badge.innerText = window.mobileOrdersList.length;
+                badge.style.display = 'block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // Refresh UI if the cashier is currently looking at the modal
+        if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
+            window.showMobileOrders();
+        }
+
+        // PLAY SOUND PING!
+        if (newOrdersFound) window.playNotificationPing();
+    });
+};
+
+// Generates a simple, loud browser "ding" without needing an audio file
+window.playNotificationPing = function() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'bell';
+        osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch notification
+        gain.gain.setValueAtTime(1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+    } catch (e) { console.log("Audio ping blocked by browser auto-play policy"); }
+};
+
+window.showMobileOrders = function() {
+    document.getElementById('mobileOrdersModal').style.display = 'flex';
+    let container = document.getElementById('mobileListContainer');
+
+    if (window.mobileOrdersList.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Queue is empty. No incoming orders.</div>';
+        return;
+    }
+
+    let html = '';
+    window.mobileOrdersList.forEach(o => {
+        let itemsHtml = o.items.map(i => {
+            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;">
+                      <div><strong>${i.quantity}x ${i.name}</strong></div>
+                      <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
+                    </div>`;
+        }).join('');
+
+        let paymentColor = o.paymentMode === 'gcash' ? '#3b82f6' : '#f59e0b';
+        let paymentLabel = o.paymentMode === 'gcash' ? 'GCash (Verify Ref: ' + (o.gcashRef || 'No Ref') + ')' : 'Cash (Pay at Counter)';
+
+        html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
+                        <strong style="font-size:16px;">👤 ${o.customerName}</strong>
+                        <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
+                    </div>
+                    <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; margin-bottom: 10px; text-align: center;">
+                        ${paymentLabel}
+                    </div>
+                    <div style="margin-bottom:15px;">${itemsHtml}</div>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
+                        <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
+                    </div>
+                 </div>`;
+    });
+    container.innerHTML = html;
+};
+
+// When Cashier accepts, it pulls the mobile order straight into their POS Cart!
+window.acceptMobileOrder = async function(docId) {
+    let order = window.mobileOrdersList.find(o => o.id === docId);
+    if (!order) return;
+
+    if (typeof cart !== 'undefined' && cart.length > 0) {
+        if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
+    }
+
+    // Map the mobile cart to the POS cart
+    cart = order.items.map(i => ({
+        name: i.name,
+        basePrice: i.price,
+        variantName: 'Standard',
+        variantPrice: i.price,
+        qty: i.quantity,
+        lineTotalFinal: i.price * i.quantity,
+        discountType: 'none',
+        discountVal: 0,
+        addons: {},
+        notes: '📱 Mobile App Order'
+    }));
+
+    // Auto-fill customer name for the receipt
+    document.getElementById('finalCustomerName').value = order.customerName;
+
+    // Delete it from the incoming queue in Firebase
+    await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
+
+    if (typeof renderCart === 'function') renderCart();
+    closeModal('mobileOrdersModal');
+};
+
+window.rejectMobileOrder = async function(docId) {
+    if (!confirm("Are you sure you want to delete this order from the queue?")) return;
+    await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
 };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
