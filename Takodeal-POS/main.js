@@ -3900,7 +3900,7 @@ window.renderDeliveriesTab = function() {
         return;
     }
 
-    // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH / SHIPMENT SHEET
+    // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH
     let dispatchGroups = {};
     window.incomingDeliveriesList.forEach(del => {
         let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
@@ -3910,6 +3910,7 @@ window.renderDeliveriesTab = function() {
                 date: del.date || 'Recent Date',
                 time: del.time || '--:--',
                 driver: del.driver || 'Assigned Driver',
+                status: del.status || 'In Transit', // 🔥 WE NOW TRACK THE STATUS
                 items: []
             };
         }
@@ -3921,27 +3922,61 @@ window.renderDeliveriesTab = function() {
     for (let key in dispatchGroups) {
         let dispatch = dispatchGroups[key];
         
+        // 🔥 SECURITY LOCK: Check if it actually arrived!
+        let isArrived = dispatch.status === 'Arrived';
+        
         let itemsTableRows = '';
         dispatch.items.forEach(item => {
             let friendlyQty = item.displayQty || item.qty;
             let friendlyUom = item.displayUom || item.uom;
             
+            // Generate the inputs ONLY if it has arrived
+            let inputHtml = '';
+            let exceptionHtml = '';
+            
+            if (isArrived) {
+                inputHtml = `<input type="number" id="recv_val_${item.id}" data-expected="${friendlyQty}" placeholder="${friendlyQty}" style="width: 85px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-weight: bold; outline: none;">`;
+                exceptionHtml = `
+                    <label style="display: flex; align-items: center; justify-content: center; gap: 4px; background: #fff5f5; border: 1px dashed #fca5a5; padding: 6px 10px; border-radius: 6px; color: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; margin-bottom: 6px; width: 100%; box-sizing: border-box;">
+                        <input type="checkbox" id="missing_check_${item.id}" onchange="window.toggleMissingItemRow('${item.id}')" style="accent-color: #dc2626; cursor: pointer;"> Not Delivered
+                    </label>
+                    <input type="text" id="remark_val_${item.id}" placeholder="Remarks / Reason..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box; outline: none; text-align: center;">
+                `;
+            } else {
+                inputHtml = `<span style="color: #94a3b8; font-size: 12px; font-style: italic;">🔒 Locked</span>`;
+                exceptionHtml = `<span style="color: #94a3b8; font-size: 12px; font-style: italic;">🔒 Locked</span>`;
+            }
+            
             itemsTableRows += `
                 <tr style="border-bottom: 1px solid #f1f5f9;" id="row_${item.id}">
                     <td style="padding: 12px 8px; font-weight: bold; color: #334155;">📦 ${item.item}</td>
                     <td style="padding: 12px 8px; font-weight: bold; color: #0284c7; text-align: center;">${friendlyQty} ${friendlyUom}</td>
-                    <td style="padding: 12px 8px; text-align: center;">
-                        <input type="number" id="recv_val_${item.id}" data-expected="${friendlyQty}" placeholder="${friendlyQty}" style="width: 85px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-weight: bold; outline: none;">
-                    </td>
-                    <td style="padding: 12px 8px; text-align: center; vertical-align: top;">
-                        <label style="display: flex; align-items: center; justify-content: center; gap: 4px; background: #fff5f5; border: 1px dashed #fca5a5; padding: 6px 10px; border-radius: 6px; color: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; margin-bottom: 6px; width: 100%; box-sizing: border-box;">
-                            <input type="checkbox" id="missing_check_${item.id}" onchange="window.toggleMissingItemRow('${item.id}')" style="accent-color: #dc2626; cursor: pointer;"> Not Delivered
-                        </label>
-                        <input type="text" id="remark_val_${item.id}" placeholder="Remarks / Reason..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box; outline: none; text-align: center;">
-                    </td>
+                    <td style="padding: 12px 8px; text-align: center;">${inputHtml}</td>
+                    <td style="padding: 12px 8px; text-align: center; vertical-align: top;">${exceptionHtml}</td>
                 </tr>
             `;
         });
+
+        // Toggle the Bottom Action Area
+        let actionHtml = '';
+        if (isArrived) {
+            actionHtml = `
+                <div style="background: #fff1f2; color: #be123c; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 15px; border: 1px dashed #fecaca;">
+                    ⚠️ IMPORTANT: Enter the physical quantity using the UNIT SHOWN below (e.g. Jars, Bottles, Sacks). DO NOT type grams or mL. The system will convert it automatically!
+                </div>
+                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}'); setTimeout(()=>window.loadStockRequestUI(), 2000);" style="width: 100%; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.2); transition: 0.2s;">
+                    📥 Confirm and Receive Complete Shipment
+                </button>`;
+        } else {
+            actionHtml = `
+                <div style="background: #eff6ff; color: #0369a1; border: 2px dashed #bae6fd; padding: 15px; text-align: center; font-weight: bold; border-radius: 8px; font-size: 14px;">
+                    🚚 This shipment is still In Transit. The receiving controls will unlock once HQ/Driver marks it as "Arrived".
+                </div>`;
+        }
+
+        let statusBadge = isArrived 
+            ? `<span style="background:#dcfce7; color:#16a34a; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">📍 Status: Arrived</span>`
+            : `<span style="background:#fef3c7; color:#d97706; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">🚚 Status: In Transit</span>`;
 
         html += `
             <div style="background: white; border: 2px solid #cbd5e1; padding: 20px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);">
@@ -3951,12 +3986,11 @@ window.renderDeliveriesTab = function() {
                         <span style="font-size: 12px; color: #64748b; font-weight: 500;">Dispatched: <strong>${dispatch.date} @ ${dispatch.time}</strong></span>
                     </div>
                     <div style="text-align: right;">
-                        <span style="background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">🚚 Driver: ${dispatch.driver}</span>
+                        <div style="margin-bottom: 5px;">${statusBadge}</div>
+                        <span style="background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">Driver: ${dispatch.driver}</span>
                     </div>
                 </div>
-                <div style="background: #fff1f2; color: #be123c; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 15px; border: 1px dashed #fecaca;">
-                    ⚠️ IMPORTANT: Enter the physical quantity using the UNIT SHOWN below (e.g. Jars, Bottles, Sacks). DO NOT type grams or mL. The system will convert it automatically!
-                </div>
+                
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; text-align: left; font-size: 13px;">
                     <thead>
                         <tr style="background: #f8fafc; color: #475569; border-bottom: 1px solid #cbd5e1;">
@@ -3966,14 +4000,9 @@ window.renderDeliveriesTab = function() {
                             <th style="padding: 10px 8px; text-align: center;">Security Exception</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        ${itemsTableRows}
-                    </tbody>
+                    <tbody>${itemsTableRows}</tbody>
                 </table>
-
-                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}')" style="width: 100%; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.2); transition: 0.2s;">
-                    📥 Confirm and Receive Complete Shipment
-                </button>
+                ${actionHtml}
             </div>
         `;
     }
