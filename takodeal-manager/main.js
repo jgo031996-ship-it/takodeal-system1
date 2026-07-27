@@ -1535,698 +1535,10 @@ window.revertAndEditRestock = async function(encodedData) {
 // Auto-load the lifetime cost when the page boots up
 setTimeout(() => { window.updateLifetimeRestockCost(); }, 2000);
 
-// ========================================================
-// 🚚 THE DISPATCH & LOGISTICS ENGINE (SMART COMMAND CENTER)
-// ========================================================
-window.dispatchCart = [];
-window.dispatchInventoryList = [];
 
-window.loadDispatchDashboard = async function() {
-  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-  let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
 
-  const branches = window.globalActiveBranches ? window.globalActiveBranches : ["Main Office", "Cabantian", "Citygate", "Maa", "SM Lanang"];
-  
-  let fromHtml = '<option value="">-- Select Source --</option>';
-  let toHtml = '<option value="">-- Select Destination --</option>';
-  let btn = document.getElementById('btnSubmitDispatch');
 
-  if (isFranchisee) {
-      fromHtml = `<option value="Main Office">Main Office (HQ)</option>`;
-      toHtml = `<option value="${myBranch}">${myBranch}</option>`;
-      if (btn) btn.innerText = "📝 Request Stock from HQ";
-  } else {
-      branches.forEach(b => {
-        fromHtml += `<option value="${b}">${b}</option>`;
-        toHtml += `<option value="${b}">${b}</option>`;
-      });
-      if (btn) btn.innerText = "🚀 Send Dispatch Delivery";
-  }
 
-  document.getElementById('dispFrom').innerHTML = fromHtml;
-  document.getElementById('dispFrom').value = "Main Office";
-  document.getElementById('dispTo').innerHTML = toHtml;
-
-  // 💾 VAULT RECOVERY: Restore Cart if they accidentally refreshed!
-  let savedCart = localStorage.getItem('takodeal_dispatch_cart');
-  if (savedCart && !isFranchisee) {
-      try { window.dispatchCart = JSON.parse(savedCart); } catch(e) { window.dispatchCart = []; }
-      let savedTo = localStorage.getItem('takodeal_dispatch_to');
-      if (savedTo) setTimeout(() => { document.getElementById('dispTo').value = savedTo; }, 100);
-  } else {
-      window.dispatchCart = [];
-  }
-  
-  if (isFranchisee) document.getElementById('dispTo').value = myBranch;
-
-  window.renderDispatchCart();
-  await window.loadDispatchInventory();
-  await window.loadDispatchLogs();
-};
-
-window.loadDispatchInventory = async function () {
-    let fromBranch = document.getElementById('dispFrom').value;
-    let itemInput = document.getElementById('dispItem');
-
-    if (itemInput.tagName === 'SELECT') {
-        let newInput = document.createElement('input');
-        newInput.id = 'dispItem'; newInput.setAttribute('list', 'dispatchDatalist');
-        newInput.placeholder = "Type to search item to send...";
-        newInput.style.cssText = "width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #334155;";
-        newInput.onchange = window.updateDispatchUomLabel; newInput.onkeyup = window.updateDispatchUomLabel; 
-        itemInput.parentNode.replaceChild(newInput, itemInput); itemInput = newInput;
-    }
-
-    if (!fromBranch) { itemInput.placeholder = 'Select source branch first...'; itemInput.disabled = true; itemInput.value = ''; return; }
-    
-    itemInput.disabled = false; itemInput.placeholder = 'Scanning warehouse...'; itemInput.value = '';
-    window.dispatchInventoryList = [];
-
-    try {
-        const q = query(collection(db, "inventory"), where("branch", "==", fromBranch));
-        const snap = await getDocs(q);
-        
-        let datalistHtml = '<datalist id="dispatchDatalist">';
-        let sortedStock = [];
-        
-        // 🔥 THE CRASH FIX: We NO LONGER hide items with 0 stock! This prevents the "Item Not Found" crash!
-        snap.forEach(docSnap => { let data = docSnap.data(); sortedStock.push({ id: docSnap.id, ...data }); });
-        
-        sortedStock.sort((a, b) => a.name.localeCompare(b.name));
-        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-
-        sortedStock.forEach(data => {
-            window.dispatchInventoryList.push(data);
-            let safeStock = parseFloat(data.currentStock).toFixed(1);
-            if (isFranchisee) datalistHtml += `<option value="${data.name}">${data.name} (Request in ${data.uom})</option>`;
-            else datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
-        });
-        datalistHtml += '</datalist>';
-
-        let existingList = document.getElementById('dispatchDatalist');
-        if (existingList) existingList.remove();
-        document.body.insertAdjacentHTML('beforeend', datalistHtml);
-
-        itemInput.placeholder = 'Type to search item...'; window.updateDispatchUomLabel();
-        
-        if (window.dispatchCart.length > 0) window.renderDispatchCart();
-        
-    } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
-};
-
-window.updateDispatchUomLabel = function() {
-    let itemName = document.getElementById('dispItem').value.trim();
-    let uomDrop = document.getElementById('dispUomSelect');
-    if (!itemName) { uomDrop.innerHTML = '<option value="base">Units</option>'; return; }
-
-    let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
-    if (invItem) {
-        let baseUom = invItem.uom || 'units'; let purchUom = invItem.purchaseUom || 'Bulk';
-        uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
-    }
-};
-
-window.addToDispatchCart = function () {
-    let itemName = document.getElementById('dispItem').value;
-    let rawQty = parseFloat(document.getElementById('dispQty').value);
-    if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
-
-    let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
-    if (!invItem) return;
-
-    let uomSelect = document.getElementById('dispUomSelect'); 
-    let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
-
-    let masterConv = parseFloat(invItem.conversionRate) || parseFloat(invItem.conversion) || 1;
-    let convRate = (selectedUomType === 'purch') ? masterConv : 1;
-    let friendlyUom = (selectedUomType === 'purch') ? (invItem.purchaseUom || "Bulk") : invItem.uom;
-    let finalBaseQty = rawQty * convRate;
-
-    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-    if (!isFranchisee && finalBaseQty > invItem.currentStock) { 
-        let stockInPurch = invItem.currentStock / convRate;
-        let msg = `You are trying to send <strong>${rawQty} ${friendlyUom}</strong> (${finalBaseQty} ${invItem.uom}), but HQ only has <strong>${stockInPurch.toFixed(2)} ${friendlyUom}</strong> available.<br><br>It will be added, but flagged in Red.`; 
-        Swal.fire({ title: '⚠️ Low HQ Stock', html: msg, icon: 'warning', confirmButtonColor: '#f59e0b' });
-    }
-
-    let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
-    if (existing) { 
-        existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawQty;
-        existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty; 
-        existing.friendlyUom = friendlyUom; 
-        existing.convRate = convRate;
-        existing.selectedUom = selectedUomType;
-        existing.conversionRate = masterConv; 
-        existing.hqStock = parseFloat(invItem.currentStock) || 0; 
-    } else {
-        window.dispatchCart.push({ 
-            itemName: itemName, name: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, rawQty: rawQty,            
-            friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", 
-            purchaseUom: invItem.purchaseUom || invItem.uom, selectedUom: selectedUomType,
-            conversionRate: masterConv,
-            baseUom: invItem.baseUom || invItem.uom,
-            cost: invItem.cost || 0, reorderLevel: invItem.reorderLevel || 10,
-            hqStock: parseFloat(invItem.currentStock) || 0 
-        });
-    }
-
-    document.getElementById('dispQty').value = ''; document.getElementById('dispItem').value = ''; 
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-    window.renderDispatchCart();
-};
-
-window.removeFromDispatchCart = function (index) { 
-    window.dispatchCart.splice(index, 1); 
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-    window.renderDispatchCart(); 
-};
-
-// ==========================================
-// 🚚 DISPATCH CART ENGINE (WITH LIVE HQ SYNC)
-// ==========================================
-window.renderDispatchCart = function() {
-    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer') || document.getElementById('dispatchCartBody');
-    
-    if (!container) {
-        let allTags = document.querySelectorAll('div, td, span, p');
-        for(let i=0; i<allTags.length; i++) {
-            if(allTags[i].innerText && allTags[i].innerText.trim() === 'Cart is empty.') {
-                container = allTags[i];
-                container.id = 'dispatchItemsList';
-                break;
-            }
-        }
-    }
-
-    if (!container) {
-        let btn = document.getElementById('btnSubmitDispatch') || document.querySelector('button[onclick*="submitMultiDispatch"]');
-        if (btn) {
-            container = btn.previousElementSibling;
-            container.id = 'dispatchItemsList';
-        }
-    }
-
-    if (!container) return;
-
-    if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-    if (window.dispatchCart.length === 0) {
-        let emptyHtml = container.tagName.toLowerCase() === 'tbody' 
-            ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' 
-            : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
-        container.innerHTML = emptyHtml;
-        return;
-    }
-    
-    let isTable = container.tagName.toLowerCase() === 'tbody';
-    let html = '';
-
-    window.dispatchCart.forEach((item, index) => {
-        
-        // 🔥 THE LIVE SYNC INJECTOR 🔥
-        // Forces the cart item to instantly absorb any name or UOM changes made in the Live HQ Inventory!
-        let hqItemObj = window.dispatchInventoryList ? window.dispatchInventoryList.find(i => i.id === item.sourceId || i.name === (item.name || item.itemName)) : null;
-        
-        if (hqItemObj) {
-            item.name = hqItemObj.name;
-            item.itemName = hqItemObj.name;
-            item.baseUom = hqItemObj.uom || hqItemObj.baseUom || 'units';
-            item.purchaseUom = hqItemObj.purchaseUom || hqItemObj.purchUom || item.baseUom;
-            item.conversionRate = parseFloat(hqItemObj.conversionRate) || parseFloat(hqItemObj.conversion) || 1;
-            item.hqStock = parseFloat(hqItemObj.currentStock) || 0;
-            if (!item.selectedUom) item.selectedUom = 'base';
-        }
-
-        let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-        let bUom = item.baseUom || item.uom || 'units';
-        let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
-        
-        if (!item.selectedUom) item.selectedUom = (item.friendlyUom === pUom && pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base';
-        
-        let rawQty = parseFloat(item.rawQty) || 0;
-        let baseQty = parseFloat(item.qty) || 0;
-
-        let uomOptions = '';
-        if (pUom.toLowerCase() !== bUom.toLowerCase()) {
-            uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
-        }
-        uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
-
-        let sysStock = item.systemStock || item.currentStock || 0;
-        let physStock = item.physicalStock || 0;
-
-        let hqStock = parseFloat(item.hqStock || 0);
-        
-        let hqColor = hqStock < baseQty ? '#dc2626' : '#16a34a';
-        let hqBg = hqStock < baseQty ? '#fef2f2' : '#dcfce7';
-        let hqBorder = hqStock < baseQty ? '#fca5a5' : '#bbf7d0';
-        let hqWarningText = hqStock < baseQty ? '⚠️ LOW HQ STOCK' : '🟢 HQ Stock OK';
-
-        if (isTable) {
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px; width: 45%;">
-                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                        ${item.requestType ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Branch Report (Phys: ${physStock} | Sys: ${sysStock})</span><br>` : ''}
-                        
-                        <span style="font-size: 11px; color: ${hqColor}; background: ${hqBg}; border: 1px dashed ${hqBorder}; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; font-weight: bold;">
-                            🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})
-                        </span><br>
-
-                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                    </td>
-                    <td style="padding: 15px 10px; text-align: center; width: 35%;">
-                        <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
-                            <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
-                                oninput="window.updateDispatchQty(${index}, this.value)" 
-                                style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
-                            
-                            <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                                style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
-                                ${uomOptions}
-                            </select>
-                        </div>
-                    </td>
-                    <td style="padding: 15px 10px; text-align: right; width: 20%;">
-                        <button onclick="window.removeFromDispatchCart(${index})" 
-                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
-                    </td>
-                </tr>
-            `;
-        } else {
-            html += `
-                <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
-                    <div>
-                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                        ${item.requestType ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Branch Report (Phys: ${physStock} | Sys: ${sysStock})</span><br>` : ''}
-                        
-                        <span style="font-size: 11px; color: ${hqColor}; background: ${hqBg}; border: 1px dashed ${hqBorder}; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; font-weight: bold;">
-                            🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})
-                        </span><br>
-
-                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                    </div>
-                    <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
-                        <input type="number" step="any" value="${rawQty || ''}" 
-                            oninput="window.updateDispatchQty(${index}, this.value)" 
-                            style="width: 70px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
-                        
-                        <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                            style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none; max-width: 100px;">
-                            ${uomOptions}
-                        </select>
-                    </div>
-                    <div style="text-align: right;">
-                        <button onclick="window.removeFromDispatchCart(${index})" 
-                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;">✖ Remove</button>
-                    </div>
-                </div>
-            `;
-        }
-    });
-
-    if (isTable) {
-        html += `<tr><td colspan="3" style="padding: 15px; text-align: right; border-top: 2px dashed #e2e8f0;"><button onclick="window.clearDispatchCart()" style="background: #f8fafc; color: #475569; border: 1px dashed #cbd5e1; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></td></tr>`;
-    } else {
-        html += `<div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;"><button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></div>`;
-    }
-
-    container.innerHTML = html;
-};
-
-window.updateDispatchQty = function(index, val) {
-    let item = window.dispatchCart[index];
-    item.rawQty = parseFloat(val) || 0;
-    
-    let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-    let bUom = item.baseUom || item.uom || 'units';
-    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
-    
-    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
-    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
-    item.qty = item.rawQty * item.convRate;
-    
-    let textSpan = document.getElementById(`dispatch_send_text_${index}`);
-    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${item.qty.toFixed(2)} ${bUom})`;
-
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-};
-
-window.updateDispatchUom = function(index, val) {
-    let item = window.dispatchCart[index];
-    item.selectedUom = val;
-    
-    let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-    let bUom = item.baseUom || item.uom || 'units';
-    let masterConv = parseFloat(item.conversionRate) || parseFloat(item.convRate) || parseFloat(item.conversion) || 1;
-    
-    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
-    item.friendlyUom = (item.selectedUom === 'purch') ? pUom : bUom;
-    item.qty = item.rawQty * item.convRate;
-    
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-    window.renderDispatchCart();
-};
-
-// ==========================================
-// 🧹 DISPATCH CART CLEARER (BRUTE FORCE SWEEP)
-// ==========================================
-window.clearDispatchCart = async function() {
-    if (!window.dispatchCart || window.dispatchCart.length === 0) {
-        localStorage.removeItem('takodeal_dispatch_cart');
-        localStorage.removeItem('takodeal_dispatch_to');
-        localStorage.removeItem('takodeal_active_po');
-        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
-        return;
-    }
-
-    let branch = localStorage.getItem('takodeal_dispatch_to') || "Unknown Branch";
-
-    Swal.fire({title: 'Consolidating...', text: 'Merging into a master request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        // 1. Create ONE master combined request!
-        await addDoc(collection(db, "purchase_orders"), {
-            branch: branch,
-            items: window.dispatchCart,
-            status: "Pending",
-            type: "Internal Request",
-            requestedBy: "System (Merged / Set Aside)",
-            timestamp: serverTimestamp()
-        });
-
-        // 2. 🔥 THE BRUTE FORCE FIX: 
-        // Search Firebase for ANY request connected to this cart (status = "Drafting") and DELETE IT!
-        const draftQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Drafting"));
-        const draftSnap = await getDocs(draftQ);
-        
-        let deletePromises = [];
-        draftSnap.forEach(d => {
-            deletePromises.push(deleteDoc(doc(db, "purchase_orders", d.id)));
-        });
-
-        // Also sweep up any loose IDs stored in the local memory just in case!
-        let activePos = localStorage.getItem('takodeal_active_po') || "";
-        let poArray = activePos ? activePos.split(',') : [];
-        for (let oldPoId of poArray) {
-            if (oldPoId && oldPoId.trim() !== '') {
-                deletePromises.push(deleteDoc(doc(db, "purchase_orders", oldPoId.trim())).catch(e => { /* Ignore if already deleted */ }));
-            }
-        }
-
-        // Execute the mass deletion!
-        await Promise.all(deletePromises);
-
-        // 3. Clear Cart Memory completely
-        window.dispatchCart = [];
-        localStorage.removeItem('takodeal_dispatch_cart');
-        localStorage.removeItem('takodeal_dispatch_to');
-        localStorage.removeItem('takodeal_active_po');
-        
-        Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-
-        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
-        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
-
-        Swal.fire({title: 'Merged!', text: 'Requests combined and old fragments permanently deleted.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
-
-    } catch (error) {
-        console.error(error);
-        Swal.fire('Error', 'Failed to consolidate requests.', 'error');
-    }
-};
-
-// ==========================================
-// 🚀 MASTER WORKFLOW: SEND ACTUAL DELIVERY & ACCOUNTABILITY ENGINE
-// ==========================================
-window.submitMultiDispatch = async function () {
-    let fromBranch = document.getElementById('dispFrom').value;
-    let toBranch = document.getElementById('dispTo').value;
-
-    if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
-    if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
-
-    let btn = document.getElementById('btnSubmitDispatch');
-    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-
-    if (isFranchisee) {
-        if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
-        btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
-        try {
-            await addDoc(collection(db, "purchase_orders"), {
-                branch: toBranch, items: window.dispatchCart, status: "Pending",
-                requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp()
-            });
-            Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
-            window.dispatchCart = []; window.renderDispatchCart(); window.loadDispatchLogs();
-        } catch (e) { console.error(e); Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
-        finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
-        return; 
-    }
-
-    for (let i = 0; i < window.dispatchCart.length; i++) {
-        let inp = document.getElementById(`cartQty_${i}`);
-        if (inp) {
-            let val = parseFloat(inp.value) || 0;
-            let conv = window.dispatchCart[i].convRate || 1;
-            window.dispatchCart[i].rawQty = val; window.dispatchCart[i].qty = val * conv;
-        }
-    }
-
-    let validCart = [];
-    let skippedCart = []; 
-
-    window.dispatchCart.forEach(item => {
-        let sentRaw = parseFloat(item.rawQty) || 0;
-        let sentBase = parseFloat(item.qty) || 0;
-        
-        let origRaw = parseFloat(item.origRawQty) || sentRaw;
-        let origBase = parseFloat(item.origBaseQty) || sentBase;
-
-        if (sentBase > 0) validCart.push(item);
-
-        let remainingRaw = origRaw - sentRaw;
-        let remainingBase = origBase - sentBase;
-
-        // 🔥 THE FIX: If they sent LESS than requested (or 0), send the exact remainder to the Delayed Tab!
-        if (remainingBase > 0) {
-            skippedCart.push({
-                ...item,
-                qty: remainingBase,
-                displayQty: remainingRaw,
-                rawQty: remainingRaw,
-                requestType: 'Delayed / Backlogged'
-            });
-        }
-    });
-
-    if (validCart.length === 0) { 
-        return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); 
-    }
-
-    btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
-
-    try {
-        let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
-        if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
-
-        let totalPenaltiesIssued = 0;
-
-        for (let item of validCart) {
-            let itemNameToFind = item.itemName || item.name;
-            let invItem = window.dispatchInventoryList.find(i => i.name === itemNameToFind);
-
-            let sourceRef;
-            let currentHqStock = 0;
-            
-            if (!invItem) {
-                const newInvRef = await addDoc(collection(db, "inventory"), {
-                    branch: fromBranch, name: itemNameToFind, uom: item.baseUom || 'units',
-                    category: item.category || 'Ingredients', currentStock: 0, 
-                    conversionRate: item.convRate || 1, purchaseUom: item.purchaseUom || 'units'
-                });
-                sourceRef = newInvRef;
-                invItem = { id: newInvRef.id, uom: item.baseUom || 'units', category: item.category || "Ingredients", purchaseUom: item.purchaseUom || 'units', cost: item.cost || 0, reorderLevel: 10 };
-            } else {
-                sourceRef = doc(db, "inventory", invItem.id);
-                // 🔥 THE FIX: Fetch Live Firebase Data to prevent simultaneous math collisions!
-                let liveSnap = await getDoc(sourceRef);
-                if (liveSnap.exists()) {
-                    currentHqStock = parseFloat(liveSnap.data().currentStock) || 0;
-                }
-            }
-
-            await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
-
-            // 1. Log Deduction to Source Branch (Main Office)
-            await addDoc(collection(db, "stock_logs"), {
-                branch: fromBranch, 
-                item: itemNameToFind, 
-                uom: item.baseUom || invItem.uom || 'units',
-                oldQty: currentHqStock, 
-                newQty: currentHqStock - item.qty, 
-                variance: -item.qty,
-                type: "Dispatch Delivery", 
-                note: `Sent to ${toBranch} (Driver: ${driverName})`,
-                user: window.sessionUser ? window.sessionUser.cashierName : "Manager", 
-                timestamp: serverTimestamp()
-            });
-
-            // 🔥 THE FIX: Log "Incoming Dispatch" to Destination Branch so it traces immediately!
-            await addDoc(collection(db, "stock_logs"), {
-                branch: toBranch, 
-                item: itemNameToFind, 
-                uom: item.baseUom || invItem.uom || 'units',
-                oldQty: 0, 
-                newQty: 0, 
-                variance: 0,
-                type: "Incoming Dispatch", 
-                note: `Dispatched from ${fromBranch} (Driver: ${driverName}). Awaiting receipt by cashier.`,
-                user: "System (In Transit)", 
-                timestamp: serverTimestamp()
-            });
-
-            // 2. THE ACCOUNTABILITY ENGINE (Penalty / Ghost Wipe Logic remains untouched)
-            if (item.requestType === "Low Stock" || item.requestType === "Out of Stock") {
-                const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
-                const branchInvSnap = await getDocs(branchInvQ);
-                
-                if (!branchInvSnap.empty) {
-                    let bDoc = branchInvSnap.docs[0];
-                    let bData = bDoc.data();
-                    let sysStock = parseFloat(bData.currentStock) || 0;
-                    let physStock = parseFloat(item.physicalStock) || 0;
-
-                    if (sysStock > 0 && physStock < sysStock) {
-                        let missingQty = sysStock - physStock;
-                        let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(item.cost) || 0;
-                        let penaltyValue = missingQty * costPerUnit;
-
-                        await updateDoc(bDoc.ref, { currentStock: physStock });
-                        await addDoc(collection(db, "stock_logs"), {
-                            branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
-                            oldQty: sysStock, newQty: physStock, variance: -missingQty,
-                            type: "Audit Adjustment (Penalty)",
-                            note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`,
-                            user: "System (HQ)", timestamp: serverTimestamp()
-                        });
-
-                        if (penaltyValue > 0) {
-                            await addDoc(collection(db, "staff_deductions"), {
-                                staffName: `Team ${toBranch}`, type: "Missing Stock Penalty",
-                                amount: penaltyValue, dateAdded: new Date(), status: "Unpaid",
-                                remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.`
-                            });
-                            await addDoc(collection(db, "manager_alerts"), {
-                                type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team",
-                                message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch} for missing ${missingQty.toFixed(2)} units.`,
-                                timestamp: serverTimestamp(), isRead: false
-                            });
-                            totalPenaltiesIssued++;
-                        }
-                    } 
-                    else if (sysStock <= 0) {
-                        await updateDoc(bDoc.ref, { currentStock: physStock });
-                        await addDoc(collection(db, "stock_logs"), {
-                            branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units',
-                            oldQty: sysStock, newQty: physStock, variance: physStock - sysStock,
-                            type: "Negative Stock Wipe", note: `Clean slate reset before restock.`,
-                            user: "System (HQ)", timestamp: serverTimestamp()
-                        });
-                    }
-                }
-            }
-
-            // 3. LOG THE DISPATCH
-            await addDoc(collection(db, "dispatch_logs"), {
-                date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-                time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
-                item: itemNameToFind, qty: item.qty || 0, uom: item.uom || invItem.uom || 'units', 
-                details: `${fromBranch} ➡️ ${toBranch}`, toBranch: toBranch, driver: driverName, status: "In Transit", 
-                displayQty: item.rawQty || item.qty || 0, displayUom: item.friendlyUom || item.uom || invItem.uom || 'units', 
-                convRate: item.convRate || 1, category: item.category || invItem.category || "Uncategorized", 
-                purchaseUom: item.purchaseUom || invItem.purchaseUom || invItem.uom || 'units', cost: item.cost || invItem.cost || 0, reorderLevel: item.reorderLevel || 10 
-            });
-        }
-
-        // 🔥 THE POSTPONE CONSOLIDATOR FIX
-        if (skippedCart.length > 0) {
-            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units", requestType: i.requestType || 'Low Stock' }));
-            let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-            
-            // Step 1: Check if this branch already has a pending "Postponed" ticket
-            const pendingQ = query(collection(db, "purchase_orders"), where("branch", "==", toBranch), where("status", "==", "Delayed"));
-            const pendingSnap = await getDocs(pendingQ);
-            
-            if (!pendingSnap.empty) {
-                // Step 2: If they do, merge the leftovers into the existing ticket!
-                let existingTicket = pendingSnap.docs[0];
-                let existingItems = existingTicket.data().items || [];
-                
-                safeSkippedCart.forEach(skippedItem => {
-                    let match = existingItems.find(i => (i.itemName || i.name) === (skippedItem.itemName || skippedItem.name));
-                    if (match) {
-                        match.qty = (parseFloat(match.qty) || 0) + (parseFloat(skippedItem.qty) || 0);
-                        match.displayQty = match.qty; // Update UI qty
-                    } else {
-                        existingItems.push(skippedItem);
-                    }
-                });
-                
-                await updateDoc(existingTicket.ref, { 
-                    items: existingItems,
-                    timestamp: serverTimestamp() // Bumps it to the top of the feed!
-                });
-            } else {
-                // Step 3: Only create a new ticket if they don't have one!
-                await addDoc(collection(db, "purchase_orders"), {
-                    branch: toBranch, items: safeSkippedCart, status: "Delayed", type: "Delayed Delivery",
-                    originalRequestDate: todayStr, requestedBy: "System (Postponed / Set Aside)", timestamp: serverTimestamp()
-                });
-            }
-        }
-
-        window.dispatchCart = [];
-        localStorage.removeItem('takodeal_dispatch_cart');
-        localStorage.removeItem('takodeal_dispatch_to');
-        Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-        
-        let activePoStr = localStorage.getItem('takodeal_active_po');
-        if (activePoStr) {
-            let poIds = activePoStr.split(',');
-            for (let id of poIds) {
-                if (id) {
-                    try { 
-                        let finalStatus = skippedCart.length > 0 ? "Partially Dispatched" : "Completed";
-                        await updateDoc(doc(db, "purchase_orders", id), { 
-                            status: finalStatus,
-                            managerMessage: skippedCart.length > 0 ? "Some items were out of stock and pushed to a delayed request." : "All items shipped."
-                        }); 
-                    } catch(e){}
-                }
-            }
-            localStorage.removeItem('takodeal_active_po');
-        }
-
-        let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
-        let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
-        
-        Swal.fire({
-            title: '🚚 Dispatch Successful!',
-            html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        });
-        
-        window.renderDispatchCart(); 
-        if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
-        window.loadDispatchLogs();
-    } catch (e) { 
-        console.error("Dispatch Execution Error:", e); 
-        Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error');
-    } 
-    finally { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
-};
 
 window.activeLogisticsTab = 'Requests'; // Default tab memory
 
@@ -2758,6 +2070,1004 @@ window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) 
     tbody.innerHTML = html;
     document.getElementById('dispatchDetailsModal').style.display = 'flex';
 };
+
+// ========================================================
+// 🚚 THE DISPATCH & LOGISTICS ENGINE (SMART COMMAND CENTER)
+// ========================================================
+window.dispatchCart = [];
+window.dispatchInventoryList = [];
+
+window.loadDispatchDashboard = async function() {
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+
+    const branches = window.globalActiveBranches ? window.globalActiveBranches : ["Main Office", "Cabantian", "Citygate", "Maa", "SM Lanang"];
+    
+    let fromHtml = '<option value="">-- Select Source --</option>';
+    let toHtml = '<option value="">-- Select Destination --</option>';
+    let btn = document.getElementById('btnSubmitDispatch');
+
+    if (isFranchisee) {
+        fromHtml = `<option value="Main Office">Main Office (HQ)</option>`;
+        toHtml = `<option value="${myBranch}">${myBranch}</option>`;
+        if (btn) btn.innerText = "📝 Request Stock from HQ";
+    } else {
+        branches.forEach(b => {
+            fromHtml += `<option value="${b}">${b}</option>`;
+            toHtml += `<option value="${b}">${b}</option>`;
+        });
+        if (btn) btn.innerText = "🚀 Send Dispatch Delivery";
+    }
+
+    document.getElementById('dispFrom').innerHTML = fromHtml;
+    document.getElementById('dispFrom').value = "Main Office";
+    document.getElementById('dispTo').innerHTML = toHtml;
+
+    // 💾 VAULT RECOVERY: Restore Cart if they accidentally refreshed!
+    let savedCart = localStorage.getItem('takodeal_dispatch_cart');
+    if (savedCart && !isFranchisee) {
+        try { window.dispatchCart = JSON.parse(savedCart); } catch(e) { window.dispatchCart = []; }
+        let savedTo = localStorage.getItem('takodeal_dispatch_to');
+        if (savedTo) setTimeout(() => { document.getElementById('dispTo').value = savedTo; }, 100);
+    } else {
+        window.dispatchCart = [];
+    }
+    
+    if (isFranchisee) document.getElementById('dispTo').value = myBranch;
+
+    window.renderDispatchCart();
+    await window.loadDispatchInventory();
+};
+
+window.loadDispatchInventory = async function () {
+    let fromBranch = document.getElementById('dispFrom').value;
+    let itemInput = document.getElementById('dispItem');
+
+    if (itemInput.tagName === 'SELECT') {
+        let newInput = document.createElement('input');
+        newInput.id = 'dispItem'; newInput.setAttribute('list', 'dispatchDatalist');
+        newInput.placeholder = "Type to search item to send...";
+        newInput.style.cssText = "width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #334155;";
+        newInput.onchange = window.updateDispatchUomLabel; newInput.onkeyup = window.updateDispatchUomLabel; 
+        itemInput.parentNode.replaceChild(newInput, itemInput); itemInput = newInput;
+    }
+
+    if (!fromBranch) { itemInput.placeholder = 'Select source branch first...'; itemInput.disabled = true; itemInput.value = ''; return; }
+    
+    itemInput.disabled = false; itemInput.placeholder = 'Scanning warehouse...'; itemInput.value = '';
+    window.dispatchInventoryList = [];
+
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", fromBranch));
+        const snap = await getDocs(q);
+        
+        let datalistHtml = '<datalist id="dispatchDatalist">';
+        let sortedStock = [];
+        
+        snap.forEach(docSnap => { let data = docSnap.data(); sortedStock.push({ id: docSnap.id, ...data }); });
+        sortedStock.sort((a, b) => a.name.localeCompare(b.name));
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+
+        sortedStock.forEach(data => {
+            window.dispatchInventoryList.push(data);
+            let safeStock = parseFloat(data.currentStock).toFixed(1);
+            if (isFranchisee) datalistHtml += `<option value="${data.name}">${data.name} (Request in ${data.uom})</option>`;
+            else datalistHtml += `<option value="${data.name}">Available: ${safeStock} ${data.uom}</option>`;
+        });
+        datalistHtml += '</datalist>';
+
+        let existingList = document.getElementById('dispatchDatalist');
+        if (existingList) existingList.remove();
+        document.body.insertAdjacentHTML('beforeend', datalistHtml);
+
+        itemInput.placeholder = 'Type to search item...'; window.updateDispatchUomLabel();
+        if (window.dispatchCart.length > 0) window.renderDispatchCart();
+    } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
+};
+
+window.updateDispatchUomLabel = function() {
+    let itemName = document.getElementById('dispItem').value.trim();
+    let uomDrop = document.getElementById('dispUomSelect');
+    if (!itemName) { uomDrop.innerHTML = '<option value="base">Units</option>'; return; }
+
+    let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
+    if (invItem) {
+        let baseUom = invItem.uom || 'units'; let purchUom = invItem.purchaseUom || 'Bulk';
+        uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
+    }
+};
+
+window.addToDispatchCart = function () {
+    let itemName = document.getElementById('dispItem').value;
+    let rawQty = parseFloat(document.getElementById('dispQty').value);
+    if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
+
+    let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
+    if (!invItem) return;
+
+    let uomSelect = document.getElementById('dispUomSelect'); 
+    let selectedUomType = uomSelect ? uomSelect.value : 'base'; 
+
+    let masterConv = parseFloat(invItem.conversionRate) || parseFloat(invItem.conversion) || 1;
+    let convRate = (selectedUomType === 'purch') ? masterConv : 1;
+    let friendlyUom = (selectedUomType === 'purch') ? (invItem.purchaseUom || "Bulk") : invItem.uom;
+    let finalBaseQty = rawQty * convRate;
+
+    let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
+    if (existing) { 
+        existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawQty;
+        existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty; 
+        existing.origRawQty = existing.rawQty;
+        existing.origBaseQty = existing.qty;
+        existing.friendlyUom = friendlyUom; 
+        existing.convRate = convRate;
+        existing.selectedUom = selectedUomType;
+        existing.conversionRate = masterConv; 
+        existing.hqStock = parseFloat(invItem.currentStock) || 0; 
+    } else {
+        window.dispatchCart.push({ 
+            itemName: itemName, name: itemName, qty: finalBaseQty, uom: invItem.uom, sourceId: invItem.id, rawQty: rawQty,
+            origRawQty: rawQty, origBaseQty: finalBaseQty,            
+            friendlyUom: friendlyUom, convRate: convRate, category: invItem.category || "Ingredients", 
+            purchaseUom: invItem.purchaseUom || invItem.uom, selectedUom: selectedUomType,
+            conversionRate: masterConv, baseUom: invItem.baseUom || invItem.uom, cost: invItem.cost || 0, 
+            hqStock: parseFloat(invItem.currentStock) || 0 
+        });
+    }
+
+    document.getElementById('dispQty').value = ''; document.getElementById('dispItem').value = ''; 
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+    window.renderDispatchCart();
+};
+
+window.removeFromDispatchCart = function (index) { 
+    window.dispatchCart.splice(index, 1); 
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+    window.renderDispatchCart(); 
+};
+
+window.renderDispatchCart = function() {
+    let container = document.getElementById('dispatchItemsList') || document.getElementById('dispatchCartContainer') || document.getElementById('dispatchCartBody');
+    if (!container) return;
+
+    if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+    if (window.dispatchCart.length === 0) {
+        let emptyHtml = container.tagName.toLowerCase() === 'tbody' ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
+        container.innerHTML = emptyHtml; return;
+    }
+    
+    let isTable = container.tagName.toLowerCase() === 'tbody';
+    let html = '';
+
+    window.dispatchCart.forEach((item, index) => {
+        let hqItemObj = window.dispatchInventoryList ? window.dispatchInventoryList.find(i => i.id === item.sourceId || i.name === (item.name || item.itemName)) : null;
+        if (hqItemObj) {
+            item.name = hqItemObj.name; item.itemName = hqItemObj.name; item.baseUom = hqItemObj.uom || hqItemObj.baseUom || 'units';
+            item.purchaseUom = hqItemObj.purchaseUom || hqItemObj.purchUom || item.baseUom;
+            item.conversionRate = parseFloat(hqItemObj.conversionRate) || parseFloat(hqItemObj.conversion) || 1;
+            item.hqStock = parseFloat(hqItemObj.currentStock) || 0;
+            if (!item.selectedUom) item.selectedUom = 'base';
+        }
+
+        let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+        let bUom = item.baseUom || item.uom || 'units';
+        let rawQty = parseFloat(item.rawQty) || 0;
+        let baseQty = parseFloat(item.qty) || 0;
+        let hqStock = parseFloat(item.hqStock || 0);
+        
+        let uomOptions = '';
+        if (pUom.toLowerCase() !== bUom.toLowerCase()) uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
+        uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
+
+        let hqColor = hqStock < baseQty ? '#dc2626' : '#16a34a';
+        let hqWarningText = hqStock < baseQty ? '⚠️ LOW HQ STOCK' : '🟢 HQ Stock OK';
+
+        html += `
+            <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
+                <div>
+                    <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
+                    <span style="font-size: 11px; color: ${hqColor}; font-weight: bold;">🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})</span><br>
+                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+                </div>
+                <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
+                    <input type="number" step="any" value="${rawQty || ''}" oninput="window.updateDispatchQty(${index}, this.value)" style="width: 70px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
+                    <select onchange="window.updateDispatchUom(${index}, this.value)" style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none; max-width: 100px;">${uomOptions}</select>
+                </div>
+                <div style="text-align: right;">
+                    <button onclick="window.removeFromDispatchCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖ Remove</button>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `<div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;"><button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></div>`;
+    container.innerHTML = html;
+};
+
+window.updateDispatchQty = function(index, val) {
+    let item = window.dispatchCart[index];
+    item.rawQty = parseFloat(val) || 0;
+    let bUom = item.baseUom || item.uom || 'units';
+    let masterConv = parseFloat(item.conversionRate) || 1;
+    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
+    item.qty = item.rawQty * item.convRate;
+    let textSpan = document.getElementById(`dispatch_send_text_${index}`);
+    if(textSpan) textSpan.innerText = `Sending in ${bUom} (${item.qty.toFixed(2)} ${bUom})`;
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+};
+
+window.updateDispatchUom = function(index, val) {
+    let item = window.dispatchCart[index];
+    item.selectedUom = val;
+    let masterConv = parseFloat(item.conversionRate) || 1;
+    item.convRate = (item.selectedUom === 'purch') ? masterConv : 1;
+    item.qty = item.rawQty * item.convRate;
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+    window.renderDispatchCart();
+};
+
+window.clearDispatchCart = async function() {
+    if (!window.dispatchCart || window.dispatchCart.length === 0) {
+        localStorage.removeItem('takodeal_dispatch_cart'); localStorage.removeItem('takodeal_dispatch_to'); localStorage.removeItem('takodeal_active_po');
+        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart(); return;
+    }
+    let branch = localStorage.getItem('takodeal_dispatch_to') || "Unknown Branch";
+    Swal.fire({title: 'Consolidating...', text: 'Merging into a master request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        await addDoc(collection(db, "purchase_orders"), {
+            branch: branch, items: window.dispatchCart, status: "Pending", type: "Internal Request", requestedBy: "System (Merged / Set Aside)", timestamp: serverTimestamp()
+        });
+
+        const draftQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Drafting"));
+        const draftSnap = await getDocs(draftQ);
+        let deletePromises = [];
+        draftSnap.forEach(d => { deletePromises.push(deleteDoc(doc(db, "purchase_orders", d.id))); });
+
+        let activePos = localStorage.getItem('takodeal_active_po') || "";
+        let poArray = activePos ? activePos.split(',') : [];
+        for (let oldPoId of poArray) {
+            if (oldPoId && oldPoId.trim() !== '') deletePromises.push(deleteDoc(doc(db, "purchase_orders", oldPoId.trim())).catch(e => {}));
+        }
+
+        await Promise.all(deletePromises);
+
+        window.dispatchCart = []; localStorage.removeItem('takodeal_dispatch_cart'); localStorage.removeItem('takodeal_dispatch_to'); localStorage.removeItem('takodeal_active_po');
+        Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+
+        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
+        Swal.fire({title: 'Merged!', text: 'Requests combined and old fragments permanently deleted.', icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }});
+    } catch (error) { Swal.fire('Error', 'Failed to consolidate requests.', 'error'); }
+};
+
+window.submitMultiDispatch = async function () {
+    let fromBranch = document.getElementById('dispFrom').value;
+    let toBranch = document.getElementById('dispTo').value;
+
+    if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
+    if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
+
+    let btn = document.getElementById('btnSubmitDispatch');
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+
+    if (isFranchisee) {
+        if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
+        btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
+        try {
+            await addDoc(collection(db, "purchase_orders"), { branch: toBranch, items: window.dispatchCart, status: "Pending", requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp() });
+            Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
+            window.dispatchCart = []; window.renderDispatchCart();
+        } catch (e) { Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
+        finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
+        return; 
+    }
+
+    let validCart = [];
+    let skippedCart = []; 
+
+    window.dispatchCart.forEach(item => {
+        let sentRaw = parseFloat(item.rawQty) || 0;
+        let sentBase = parseFloat(item.qty) || 0;
+        let origRaw = parseFloat(item.origRawQty) || sentRaw;
+        let origBase = parseFloat(item.origBaseQty) || sentBase;
+
+        if (sentBase > 0) validCart.push(item);
+
+        let remainingRaw = origRaw - sentRaw;
+        let remainingBase = origBase - sentBase;
+
+        if (remainingBase > 0) {
+            skippedCart.push({ ...item, qty: remainingBase, displayQty: remainingRaw, rawQty: remainingRaw, requestType: 'Delayed / Backlogged' });
+        }
+    });
+
+    if (validCart.length === 0) return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); 
+
+    btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
+
+    try {
+        let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
+        if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
+
+        let totalPenaltiesIssued = 0;
+
+        for (let item of validCart) {
+            let itemNameToFind = item.itemName || item.name;
+            let invItem = window.dispatchInventoryList.find(i => i.name === itemNameToFind);
+
+            let sourceRef; let currentHqStock = 0;
+            if (!invItem) {
+                const newInvRef = await addDoc(collection(db, "inventory"), { branch: fromBranch, name: itemNameToFind, uom: item.baseUom || 'units', category: item.category || 'Ingredients', currentStock: 0, conversionRate: item.convRate || 1, purchaseUom: item.purchaseUom || 'units' });
+                sourceRef = newInvRef; invItem = { id: newInvRef.id, uom: item.baseUom || 'units', category: item.category || "Ingredients", purchaseUom: item.purchaseUom || 'units', cost: item.cost || 0, reorderLevel: 10 };
+            } else {
+                sourceRef = doc(db, "inventory", invItem.id);
+                let liveSnap = await getDoc(sourceRef);
+                if (liveSnap.exists()) currentHqStock = parseFloat(liveSnap.data().currentStock) || 0;
+            }
+
+            await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
+
+            await addDoc(collection(db, "stock_logs"), {
+                branch: fromBranch, item: itemNameToFind, uom: item.baseUom || invItem.uom || 'units', oldQty: currentHqStock, newQty: currentHqStock - item.qty, variance: -item.qty,
+                type: "Dispatch Delivery", note: `Sent to ${toBranch} (Driver: ${driverName})`, user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
+            });
+
+            await addDoc(collection(db, "stock_logs"), {
+                branch: toBranch, item: itemNameToFind, uom: item.baseUom || invItem.uom || 'units', oldQty: 0, newQty: 0, variance: 0,
+                type: "Incoming Dispatch", note: `Dispatched from ${fromBranch} (Driver: ${driverName}). Awaiting receipt by cashier.`, user: "System (In Transit)", timestamp: serverTimestamp()
+            });
+
+            if (item.requestType === "Low Stock" || item.requestType === "Out of Stock") {
+                const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
+                const branchInvSnap = await getDocs(branchInvQ);
+                
+                if (!branchInvSnap.empty) {
+                    let bDoc = branchInvSnap.docs[0]; let bData = bDoc.data();
+                    let sysStock = parseFloat(bData.currentStock) || 0; let physStock = parseFloat(item.physicalStock) || 0;
+
+                    if (sysStock > 0 && physStock < sysStock) {
+                        let missingQty = sysStock - physStock;
+                        let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(item.cost) || 0;
+                        let penaltyValue = missingQty * costPerUnit;
+
+                        await updateDoc(bDoc.ref, { currentStock: physStock });
+                        await addDoc(collection(db, "stock_logs"), { branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: -missingQty, type: "Audit Adjustment (Penalty)", note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`, user: "System (HQ)", timestamp: serverTimestamp() });
+
+                        if (penaltyValue > 0) {
+                            await addDoc(collection(db, "staff_deductions"), { staffName: `Team ${toBranch}`, type: "Missing Stock Penalty", amount: penaltyValue, dateAdded: new Date(), status: "Unpaid", remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.` });
+                            await addDoc(collection(db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch}.`, timestamp: serverTimestamp(), isRead: false });
+                            totalPenaltiesIssued++;
+                        }
+                    } 
+                    else if (sysStock <= 0) {
+                        await updateDoc(bDoc.ref, { currentStock: physStock });
+                        await addDoc(collection(db, "stock_logs"), { branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: physStock - sysStock, type: "Negative Stock Wipe", note: `Clean slate reset before restock.`, user: "System (HQ)", timestamp: serverTimestamp() });
+                    }
+                }
+            }
+
+            await addDoc(collection(db, "dispatch_logs"), {
+                date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
+                time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
+                item: itemNameToFind, qty: item.qty || 0, uom: item.uom || invItem.uom || 'units', 
+                details: `${fromBranch} ➡️ ${toBranch}`, toBranch: toBranch, driver: driverName, status: "In Transit", 
+                displayQty: item.rawQty || item.qty || 0, displayUom: item.friendlyUom || item.uom || invItem.uom || 'units', 
+                convRate: item.convRate || 1, category: item.category || invItem.category || "Uncategorized"
+            });
+        }
+
+        if (skippedCart.length > 0) {
+            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units", requestType: i.requestType || 'Low Stock' }));
+            let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+            
+            const pendingQ = query(collection(db, "purchase_orders"), where("branch", "==", toBranch), where("status", "==", "Delayed"));
+            const pendingSnap = await getDocs(pendingQ);
+            
+            if (!pendingSnap.empty) {
+                let existingTicket = pendingSnap.docs[0]; let existingItems = existingTicket.data().items || [];
+                safeSkippedCart.forEach(skippedItem => {
+                    let match = existingItems.find(i => (i.itemName || i.name) === (skippedItem.itemName || skippedItem.name));
+                    if (match) { match.qty = (parseFloat(match.qty) || 0) + (parseFloat(skippedItem.qty) || 0); match.displayQty = match.qty; } 
+                    else { existingItems.push(skippedItem); }
+                });
+                await updateDoc(existingTicket.ref, { items: existingItems, timestamp: serverTimestamp() });
+            } else {
+                await addDoc(collection(db, "purchase_orders"), { branch: toBranch, items: safeSkippedCart, status: "Delayed", type: "Delayed Delivery", originalRequestDate: todayStr, requestedBy: "System (Postponed / Set Aside)", timestamp: serverTimestamp() });
+            }
+        }
+
+        // 🔥 THE GHOST ERADICATOR 🔥
+        let activePoStr = localStorage.getItem('takodeal_active_po');
+        if (activePoStr) {
+            let poIds = activePoStr.split(',');
+            for (let id of poIds) {
+                if (id) {
+                    try { await deleteDoc(doc(db, "purchase_orders", id)); } catch(e){}
+                }
+            }
+            localStorage.removeItem('takodeal_active_po');
+        }
+
+        window.dispatchCart = []; localStorage.removeItem('takodeal_dispatch_cart'); localStorage.removeItem('takodeal_dispatch_to');
+        Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+
+        let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
+        let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
+        
+        Swal.fire({ title: '🚚 Dispatch Successful!', html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`, icon: 'success', customClass: { popup: 'rounded-2xl shadow-xl' } });
+        
+        window.renderDispatchCart(); if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
+    } catch (e) { Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error'); } 
+    finally { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
+};
+
+window.logisticsState = { activeBranch: 'All', activeTab: 'requests', timeFilter: 'All', requests: [], deliveries: [] };
+window.poUnsubscribe = null;
+
+window.startPOListener = function() {
+    if (window.poUnsubscribe) window.poUnsubscribe(); 
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+
+    let q = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Delayed", "Drafting"]));
+    if (isFranchisee) q = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Delayed", "Drafting"]));
+
+    let initialLoad = true;
+    window.poUnsubscribe = window.onSnapshot(q, (snapshot) => {
+        let pendingCount = 0; let newOrderArrived = false;
+        window.logisticsState.requests = [];
+        snapshot.forEach(doc => {
+            let data = doc.data(); window.logisticsState.requests.push({id: doc.id, ...data});
+            if (data.status === 'Pending') pendingCount++;
+        });
+        window.logisticsState.requests.sort((a,b) => b.timestamp - a.timestamp);
+        snapshot.docChanges().forEach((change) => { if (change.type === "added" && !initialLoad) newOrderArrived = true; });
+
+        let badge = document.getElementById('poNotificationBadge');
+        if (badge) { badge.innerText = pendingCount; badge.style.display = pendingCount > 0 ? 'inline-block' : 'none'; }
+        window.renderLogisticsUI();
+
+        if (newOrderArrived) {
+            window.playManagerPing();
+            Swal.fire({ title: '🔔 New Stock Request!', text: 'A branch just reported an inventory variance or sent a Purchase Order.', icon: 'info', toast: true, position: 'top-end', showConfirmButton: false, timer: 5000 });
+        }
+        initialLoad = false;
+    });
+
+    onSnapshot(collection(db, "dispatch_logs"), (snap) => {
+        window.logisticsState.deliveries = [];
+        snap.forEach(doc => window.logisticsState.deliveries.push({id: doc.id, ...doc.data()}));
+        window.logisticsState.deliveries.sort((a,b) => b.timestamp - a.timestamp);
+        window.renderLogisticsUI();
+    });
+};
+
+window.switchLogisticsBranch = function(branch) { window.logisticsState.activeBranch = branch; window.renderLogisticsUI(); };
+window.switchLogisticsTab = function(tab) { window.logisticsState.activeTab = tab; window.renderLogisticsUI(); };
+
+window.renderLogisticsUI = function() {
+    let reqData = window.logisticsState.requests || [];
+    let delData = window.logisticsState.deliveries || [];
+    
+    let pendingRequests = reqData.filter(r => r.status === 'Pending' || r.status === 'Drafting');
+    let delayedRequests = reqData.filter(r => r.status === 'Delayed');
+
+    let branches = new Set(["Cabantian", "Citygate", "Maa"]);
+    reqData.forEach(r => { if(r.branch) branches.add(r.branch); });
+    delData.forEach(d => { if(d.toBranch) branches.add(d.toBranch); });
+    
+    let branchTabsHtml = `<button onclick="window.switchLogisticsBranch('All')" style="flex: 1; min-width: 100px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.logisticsState.activeBranch === 'All' ? '#10b981' : 'transparent'}; background: ${window.logisticsState.activeBranch === 'All' ? 'white' : 'transparent'}; color: ${window.logisticsState.activeBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">🌍 All Branches</button>`;
+    
+    Array.from(branches).sort().forEach(branch => {
+        let branchPending = pendingRequests.filter(r => r.branch === branch).length;
+        let badgeHtml = branchPending > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px;">${branchPending}</span>` : '';
+        let isActive = window.logisticsState.activeBranch === branch;
+        branchTabsHtml += `<button onclick="window.switchLogisticsBranch('${branch}')" style="flex: 1; min-width: 120px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${isActive ? '#10b981' : 'transparent'}; background: ${isActive ? 'white' : 'transparent'}; color: ${isActive ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">📍 ${branch} ${badgeHtml}</button>`;
+    });
+    let branchContainer = document.getElementById('logisticsBranchTabs');
+    if (branchContainer) branchContainer.innerHTML = branchTabsHtml;
+
+    if (window.logisticsState.activeBranch !== 'All') {
+        pendingRequests = pendingRequests.filter(r => r.branch === window.logisticsState.activeBranch);
+        delayedRequests = delayedRequests.filter(r => r.branch === window.logisticsState.activeBranch);
+        delData = delData.filter(d => d.toBranch === window.logisticsState.activeBranch);
+    }
+
+    let dispatchGroups = {};
+    delData.forEach(del => {
+        let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
+        if (!dispatchGroups[groupKey]) dispatchGroups[groupKey] = { dispatchId: groupKey, toBranch: del.toBranch, date: del.date, time: del.time, driver: del.driver, status: del.status, items: [] };
+        dispatchGroups[groupKey].items.push(del);
+    });
+
+    let listContainer = document.getElementById('logisticsFeedList') || document.getElementById('dispatchLogBody')?.closest('.card');
+    if (!listContainer) return;
+    
+    let activeTab = window.logisticsState.activeTab || 'requests';
+    let tabHtml = `
+        <div id="logisticsTabContainer" style="display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 15px; background: #f8fafc; border-radius: 8px 8px 0 0; overflow: hidden;">
+            <button onclick="window.switchLogisticsTab('requests')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='requests'?'#0ea5e9':'transparent'}; background: ${activeTab==='requests'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='requests'?'#0ea5e9':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s;">
+                📢 Stock Requests (<span id="tabCountReq">${pendingRequests.length}</span>)
+            </button>
+            <button onclick="window.switchLogisticsTab('delayed')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='delayed'?'#dc2626':'transparent'}; background: ${activeTab==='delayed'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='delayed'?'#dc2626':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
+                ⏳ Delayed Items (<span id="tabCountDelayed">${delayedRequests.length}</span>)
+            </button>
+            <button onclick="window.switchLogisticsTab('deliveries')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='deliveries'?'#16a34a':'transparent'}; background: ${activeTab==='deliveries'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='deliveries'?'#16a34a':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
+                🚚 Deliveries (<span id="tabCountDel">${Object.keys(dispatchGroups).length}</span>)
+            </button>
+        </div>
+    `;
+
+    let bulkActionBar = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <label style="font-size: 14px; font-weight: bold; color: #334155; cursor: pointer; display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" onclick="document.querySelectorAll('.bulk-log-cb').forEach(cb => cb.checked = this.checked)" style="width:20px; height:20px; accent-color: #0ea5e9; cursor: pointer;"> Select All
+            </label>
+            <button onclick="window.bulkDeleteLogistics()" style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(220,38,38,0.3); transition: 0.2s;">🗑️ Delete Selected</button>
+        </div>
+    `;
+
+    let html = tabHtml;
+
+    if (activeTab === 'requests') {
+        if (pendingRequests.length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No stock requests found.</div>`; } 
+        else {
+            html += bulkActionBar; 
+            pendingRequests.forEach(req => {
+                let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+                let statBadge = req.status === "Drafting" ? `<div style="font-weight: bold; font-size: 13px; color: #0369a1; background: #bae6fd; padding: 4px 8px; border-radius: 6px;">Drafting in Cart</div>` : `<div style="font-weight: bold; font-size: 13px; color: #d97706; background: #fef3c7; padding: 4px 8px; border-radius: 6px;">Pending</div>`;
+
+                html += `
+                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <input type="checkbox" class="bulk-log-cb" value="${req.id}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
+                            <div>
+                                <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 16px;">📢 Stock Request from ${req.branch}</h3>
+                                <div style="font-size: 13px; color: #92400e; font-weight: 500;">Requested by: ${req.requestedBy || 'Staff'}</div>
+                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            ${statBadge}
+                            <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">🔍 Review Request</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    } else if (activeTab === 'delayed') {
+        if (delayedRequests.length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No delayed or backlogged items.</div>`; } 
+        else {
+            html += bulkActionBar; 
+            delayedRequests.forEach(req => {
+                let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+                let origDate = req.originalRequestDate || dateStr;
+
+                html += `
+                    <div style="background: #fff1f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <input type="checkbox" class="bulk-log-cb" value="${req.id}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
+                            <div>
+                                <h3 style="margin: 0 0 5px 0; color: #b91c1c; font-size: 16px;">⏳ Delayed Items for ${req.branch}</h3>
+                                <div style="font-size: 11px; color: #ef4444; font-weight: bold;">Originally Requested: ${origDate}</div>
+                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 Set Aside: ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); transition: 0.2s;">🛒 Load to Cart</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    } else {
+        if (Object.keys(dispatchGroups).length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No deliveries found.</div>`; } 
+        else {
+            html += bulkActionBar; 
+            for (let key in dispatchGroups) {
+                let group = dispatchGroups[key];
+                let hasMissing = group.items.some(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
+                let allReceived = group.items.every(i => i.status === 'Received');
+                
+                let overallStatus = 'In Transit';
+                if (group.items.some(i => i.status === 'In Transit')) overallStatus = 'In Transit';
+                else if (group.items.every(i => i.status === 'Arrived' || i.status === 'Received') && !allReceived) overallStatus = 'Arrived at Branch';
+                else if (hasMissing) overallStatus = 'Discrepancy / Lost';
+                else if (allReceived) overallStatus = 'Received';
+
+                let statCol = overallStatus === 'Received' ? '#16a34a' : (overallStatus === 'Arrived at Branch' ? '#8b5cf6' : (overallStatus === 'In Transit' ? '#0ea5e9' : '#dc2626'));
+                let encodedGroup = encodeURIComponent(JSON.stringify(group)); 
+                let groupFirebaseIds = group.items.map(i => i.id).join(',');
+
+                let actionButtons = '';
+                if (overallStatus === 'In Transit') {
+                    actionButtons = `<button onclick="window.markDispatchArrived('${encodedGroup}')" style="background: #8b5cf6; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">📍 Mark Arrived</button>`;
+                }
+
+                html += `
+                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <input type="checkbox" class="bulk-log-cb" value="${groupFirebaseIds}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
+                            <div>
+                                <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 16px;">📍 To: ${group.toBranch}</h3>
+                                <div style="font-size: 13px; color: #475569; font-weight: 500;">🚚 Driver: ${group.driver || 'Unknown'}</div>
+                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${group.date} at ${group.time} • <strong>${group.items.length} items</strong></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="background: ${statCol}; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">${overallStatus}</div>
+                            ${actionButtons}
+                            <button onclick="window.viewDeliveryDetails('${encodedGroup}')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">🔍 Full Details</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    }
+    // Ensures we wipe out the old table logic completely!
+    if (listContainer.tagName === 'TBODY') {
+        let card = listContainer.closest('.card');
+        card.innerHTML = html;
+        card.id = 'logisticsFeedList';
+    } else {
+        listContainer.innerHTML = html;
+    }
+};
+
+window.reviewStockRequest = async function(docId) {
+    try {
+        Swal.fire({title: 'Loading Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        const docRef = doc(db, "purchase_orders", docId);
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) return Swal.fire('Error', 'This request could not be found.', 'error');
+        
+        let data = snap.data();
+        let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+        
+        let itemsHtml = `
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; text-align: left;">
+                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
+                <div style="font-size: 16px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${data.requestedBy || 'Staff'}</div>
+                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
+                <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
+            </div>
+            <div style="max-height: 250px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                    <thead style="background: #1e293b; color: white; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 10px;">Item Description</th>
+                            <th style="padding: 10px; text-align: center;">Qty Requested</th>
+                            <th style="padding: 10px; text-align: center;">Alert Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        if (data.items && data.items.length > 0) {
+            data.items.forEach(item => {
+                let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : '#0284c7');
+                itemsHtml += `
+                    <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                        <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
+                        <td style="padding: 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
+                        <td style="padding: 10px; text-align: center;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
+                    </tr>
+                `;
+            });
+        }
+        itemsHtml += `</tbody></table></div>`;
+
+        let actionResult = await Swal.fire({
+            title: `📦 Request from ${data.branch}`,
+            html: itemsHtml,
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: '🛒 Load to Dispatch Cart',
+            denyButtonText: '❌ Postpone / Set Aside',
+            cancelButtonText: 'Close Window',
+            confirmButtonColor: '#16a34a',
+            denyButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            width: 600,
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
+
+        if (actionResult.isConfirmed) {
+            if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+            
+            data.items.forEach(reqItem => {
+                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === reqItem.itemName);
+                let rawReqQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
+                let baseReqQty = parseFloat(reqItem.qty) || 0;
+                
+                if (existing) {
+                    existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
+                    existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
+                    existing.origRawQty = existing.rawQty;
+                    existing.origBaseQty = existing.qty;
+                    existing.requestType = "Merged Request"; 
+                } else {
+                    window.dispatchCart.push({
+                        itemName: reqItem.itemName, name: reqItem.itemName,
+                        rawQty: rawReqQty, qty: baseReqQty,
+                        origRawQty: rawReqQty, origBaseQty: baseReqQty,
+                        uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.uom,
+                        friendlyUom: reqItem.displayUom || reqItem.uom,
+                        selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
+                        convRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
+                        conversionRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
+                        sourceId: reqItem.sourceId || reqItem.id,
+                        requestType: reqItem.requestType || 'Request',
+                        physicalStock: reqItem.physicalStock || 0, systemStock: reqItem.systemStock || 0
+                    });
+                }
+            });
+
+            localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+            localStorage.setItem('takodeal_dispatch_to', data.branch);
+
+            let activePo = localStorage.getItem('takodeal_active_po') || "";
+            if (!activePo.includes(docId)) {
+                activePo = activePo ? activePo + ',' + docId : docId;
+                localStorage.setItem('takodeal_active_po', activePo);
+            }
+
+            if (typeof window.switchView === 'function') window.switchView('dispatch'); 
+            
+            // 🔥 THE DRAFTING FIX: Hides the card instantly when loaded to cart!
+            await updateDoc(docRef, {
+                status: 'Drafting',
+                managerMessage: 'Approved and loaded into Dispatch Cart.',
+                processedAt: serverTimestamp()
+            });
+            
+            Swal.fire({title: 'Loaded to Cart! 🛒', text: `Items moved to Dispatch for ${data.branch}.`, icon: 'success', timer: 2000, showConfirmButton: false});
+            
+        } else if (actionResult.isDenied) {
+            const { value: rejectReason } = await Swal.fire({
+                title: 'Set Aside Request',
+                input: 'text',
+                inputLabel: 'Reason for postponement',
+                inputPlaceholder: 'e.g., Out of stock at HQ, arriving tomorrow',
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'Submit Reason',
+                inputValidator: (value) => { if (!value) return 'You need to provide a reason!'; }
+            });
+            
+            if (rejectReason) {
+                Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                await updateDoc(docRef, {
+                    status: 'Delayed',
+                    managerMessage: rejectReason,
+                    processedAt: serverTimestamp()
+                });
+                Swal.fire('Postponed', 'The request was set aside and the branch was notified.', 'info');
+            }
+        }
+    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to load request details.', 'error'); }
+};
+
+window.viewDeliveryDetails = function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    
+    let arrivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    let arrivedItem = group.items.find(i => i.arrivedAt);
+    if (arrivedItem && arrivedItem.arrivedAt) {
+        let aDate = arrivedItem.arrivedAt.seconds ? new Date(arrivedItem.arrivedAt.seconds * 1000) : new Date(arrivedItem.arrivedAt);
+        arrivedTimeStr = aDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + aDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    let receiverName = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    let receivedItem = group.items.find(i => i.receivedBy);
+    if (receivedItem) {
+        receiverName = receivedItem.receivedBy;
+        if (receivedItem.receivedAt) {
+            let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
+            receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+        }
+    }
+
+    let headerEl = document.getElementById('dispatchDetailsHeader');
+    if(headerEl) {
+        headerEl.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Dispatch Info</div>
+                    <div style="margin-top: 5px; color: #0f172a; font-size: 15px;"><strong>📍 To:</strong> ${group.toBranch}</div>
+                    <div style="margin-top: 5px; color: #334155;"><strong>🚚 Driver:</strong> ${group.driver}</div>
+                    <div style="margin-top: 5px; color: #475569; font-size: 12px;"><strong>📅 Sent:</strong> ${group.date} at ${group.time}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Receiving Info</div>
+                    <div style="margin-top: 5px;"><strong>👤 Received By:</strong> <span style="color: #0f766e; font-weight: bold;">${receiverName}</span></div>
+                    <div style="margin-top: 5px; color: #475569;"><strong>📍 Arrived at Branch:</strong> ${arrivedTimeStr}</div>
+                    <div style="margin-top: 5px; color: #475569;"><strong>✅ Confirmed Received:</strong> ${receivedTimeStr}</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    let tbody = document.getElementById('dispatchDetailsBody');
+    let html = '';
+    let canRecall = true; let hasMissing = false; 
+    
+    group.items.forEach(item => {
+        if (item.status !== 'In Transit') canRecall = false;
+        if (item.status === 'Lost in Transit' || item.status === 'Discrepancy') hasMissing = true;
+
+        let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : (item.status === 'Arrived' ? '#8b5cf6' : '#dc2626'));
+        let varText = item.variance ? `<span style="color:#dc2626; font-weight:bold;">${item.variance} ${item.uom}</span>` : `<span style="color:#94a3b8;">0</span>`;
+        let receivedQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : (item.status === 'In Transit' || item.status === 'Arrived' ? '---' : 0);
+        let expectedQty = item.displayQty || item.qty;
+        let displayUom = item.displayUom || item.uom;
+
+        let remarksHtml = item.receivingRemarks ? `<div style="font-size:11px; color:#ef4444; margin-top:4px; font-style:italic;">Reason: ${item.receivingRemarks}</div>` : '';
+        
+        html += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding:12px; font-weight:bold; color:#334155;">${item.item}</td>
+                <td style="padding:12px; font-weight:bold; color:#0f172a; text-align:center;">${expectedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
+                <td style="padding:12px; font-weight:bold; color:#0ea5e9; text-align:center;">${receivedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
+                <td style="padding:12px; text-align:center;">${varText}</td>
+                <td style="padding:12px; text-align:center;">
+                    <span style="background:${statColor}15; color:${statColor}; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; border: 1px solid ${statColor}50;">${item.status}</span>
+                    ${remarksHtml}
+                </td>
+            </tr>
+        `;
+    });
+    
+    if(tbody) tbody.innerHTML = html;
+
+    let footerEl = document.getElementById('dispatchDetailsFooter');
+    if (footerEl) {
+        footerEl.innerHTML = '';
+        if (canRecall) { footerEl.innerHTML += `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s; width: 100%; margin-bottom: 10px;">🔙 Back Load / Recall Dispatch</button>`; } 
+        if (hasMissing) { footerEl.innerHTML += `<button onclick="window.requeueLostItems('${encodedGroup}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); font-size: 14px; transition: 0.2s; width: 100%;">🔄 Auto-Requeue Lost Items to Requests</button>`; }
+        if (!canRecall && !hasMissing) { footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px; display: block; text-align: center;">🔒 This delivery has been fully processed by the branch.</span>`; }
+    }
+
+    document.getElementById('dispatchDetailsModal').style.display = 'flex';
+};
+
+window.markDispatchArrived = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    if (!confirm(`Mark delivery to ${group.toBranch} as ARRIVED?\n\nThe branch staff will now be notified and can begin receiving the items.`)) return;
+
+    Swal.fire({title: 'Updating Status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        group.items.forEach(item => {
+            if (item.status === 'In Transit') promises.push(updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Arrived', arrivedAt: serverTimestamp() }));
+        });
+        await Promise.all(promises);
+        Swal.fire('Arrived!', 'Delivery marked as arrived at the branch.', 'success');
+    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to update status.', 'error'); }
+};
+
+window.requeueLostItems = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    if (!confirm(`Re-queue all missing/lost items for ${group.toBranch} as a new Stock Request?`)) return;
+
+    Swal.fire({title: 'Generating Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let lostItems = group.items.filter(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
+        
+        let poItems = lostItems.map(item => {
+            let varianceQty = Math.abs(parseFloat(item.variance) || 0);
+            let cRate = parseFloat(item.convRate) || 1;
+            let displayQty = varianceQty / cRate; 
+
+            return { itemName: item.item, name: item.item, qty: varianceQty, displayQty: displayQty, uom: item.baseUom || item.uom, displayUom: item.displayUom || item.purchaseUom || item.uom, requestType: 'Lost in Transit', physicalStock: 0, systemStock: 0 };
+        });
+
+        await addDoc(collection(db, "purchase_orders"), { branch: group.toBranch, items: poItems, status: "Pending", type: "Lost Item Replacement", requestedBy: "System (Auto-Requeue)", timestamp: serverTimestamp() });
+
+        let promises = lostItems.map(item => updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Lost (Re-queued)' }));
+        await Promise.all(promises);
+
+        Swal.fire('Success', 'Lost items have been instantly sent to the Stock Requests feed!', 'success');
+        document.getElementById('dispatchDetailsModal').style.display = 'none';
+    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to requeue lost items.', 'error'); }
+};
+
+window.recallDispatch = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    if (!confirm("⚠️ RECALL DISPATCH?\n\nThis will remove the delivery from the destination branch, refund the inventory back to HQ, and load the items into your Dispatch Cart to edit. Proceed?")) return;
+
+    Swal.fire({title: 'Recalling Delivery...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+        let branchSelect = document.getElementById('dispTo');
+        if(branchSelect) branchSelect.value = group.toBranch;
+
+        for (let item of group.items) {
+            let originBranch = item.fromBranch || "Main Office";
+            const invQ = query(collection(db, "inventory"), where("branch", "==", originBranch), where("name", "==", item.item));
+            const invSnap = await getDocs(invQ);
+            
+            if (!invSnap.empty) {
+                let invDoc = invSnap.docs[0];
+                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
+                let refundQty = parseFloat(item.qty) || 0; 
+                
+                await updateDoc(invDoc.ref, { currentStock: currentStock + refundQty });
+                await addDoc(collection(db, "stock_logs"), { branch: originBranch, item: item.item, oldQty: currentStock, newQty: currentStock + refundQty, variance: refundQty, type: "Dispatch Recalled", note: `Recalled delivery originally sent to ${group.toBranch}`, user: localStorage.getItem('cashierName') || 'Manager', timestamp: serverTimestamp() });
+            }
+
+            window.dispatchCart.push({
+                id: item.sourceId || item.id, sourceId: item.sourceId || item.id, itemName: item.item, name: item.item,
+                rawQty: parseFloat(item.displayQty) || parseFloat(item.qty) || 0, qty: parseFloat(item.qty) || 0,
+                uom: item.baseUom || item.uom, baseUom: item.baseUom || item.uom, friendlyUom: item.displayUom || item.uom,
+                purchaseUom: item.purchaseUom || item.displayUom || item.uom, selectedUom: (item.displayUom !== item.uom) ? 'purch' : 'base',
+                convRate: parseFloat(item.convRate) || 1, conversionRate: parseFloat(item.convRate) || 1, category: item.category || "Ingredients"
+            });
+
+            await deleteDoc(doc(db, "dispatch_logs", item.id));
+        }
+
+        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+
+        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
+        if (typeof window.switchView === 'function') window.switchView('dispatch');
+        
+        document.getElementById('dispatchDetailsModal').style.display = 'none';
+        Swal.fire({title: 'Recalled!', text: 'Dispatch reverted. Items are back in your Dispatch Cart.', icon: 'success', timer: 2500, showConfirmButton: false});
+
+    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to recall dispatch.', 'error'); }
+};
+
+window.bulkDeleteLogistics = async function() {
+    let checkboxes = document.querySelectorAll('.bulk-log-cb:checked');
+    if (checkboxes.length === 0) return Swal.fire('No Items Selected', 'Please check the boxes of the items you want to delete.', 'info');
+
+    let isRequests = window.logisticsState.activeTab !== 'deliveries';
+    let targetType = isRequests ? `stock requests` : `deliveries`;
+
+    let confirmDelete = await Swal.fire({ title: 'Bulk Delete?', text: `Are you sure you want to permanently delete ${checkboxes.length} ${targetType}? This cannot be undone.`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', cancelButtonColor: '#64748b', confirmButtonText: 'Yes, Delete All!', customClass: { popup: 'rounded-2xl shadow-xl' }});
+    if (!confirmDelete.isConfirmed) return;
+
+    Swal.fire({title: 'Erasing Data...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        checkboxes.forEach(cb => {
+            if (isRequests) {
+                promises.push(deleteDoc(doc(db, "purchase_orders", cb.value)));
+            } else {
+                let ids = cb.value.split(',');
+                ids.forEach(id => { if (id) promises.push(deleteDoc(doc(db, "dispatch_logs", id))); });
+            }
+        });
+
+        await Promise.all(promises);
+        Swal.fire({ title: 'Deleted!', text: 'Selected items have been permanently deleted.', icon: 'success', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
+    } catch (e) { console.error("Bulk Delete Error:", e); Swal.fire('Error', 'Failed to delete selected items.', 'error'); }
+};
+
+window.deleteDeliveryGroup = async function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    if (!confirm(`⚠️ Are you sure you want to permanently delete the delivery to ${group.toBranch}?\n\nThis will instantly remove all items inside it from the system.`)) return;
+
+    Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        group.items.forEach(item => { promises.push(deleteDoc(doc(db, "dispatch_logs", item.id))); });
+        await Promise.all(promises);
+
+        Swal.fire({title: 'Deleted!', text: 'Delivery deleted successfully.', icon: 'success', timer: 1500, showConfirmButton: false});
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to delete delivery.', 'error'); }
+};
+
+// Auto-start the new Logistics engine
+setTimeout(() => { if (typeof window.startPOListener === 'function') window.startPOListener(); }, 1500);
 
 // ========================================================
 // 🧠 PHASE 5: SMART BURN RATE & SUPPLY CHAIN ENGINE
@@ -14948,72 +15258,6 @@ window.viewStoreUseLogs = async function() {
     }
 };
 
-// ========================================================
-// 🔔 REAL-TIME LOGISTICS NOTIFICATION ENGINE
-// ========================================================
-window.poUnsubscribe = null;
-
-window.startPOListener = function() {
-    if (window.poUnsubscribe) window.poUnsubscribe(); // Clear old listener
-
-    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
-
-    // 🔒 Listen for Pending Requests (Master hears all, Franchisee hears their own)
-    let q = query(collection(db, "purchase_orders"), where("status", "==", "Pending"));
-    if (isFranchisee) {
-        q = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "==", "Pending"));
-    }
-
-    let initialLoad = true;
-
-    window.poUnsubscribe = window.onSnapshot(q, (snapshot) => {
-        let pendingCount = snapshot.docs.length;
-        let newOrderArrived = false;
-
-        // Check if the change is a BRAND NEW request (not just the app loading)
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "added" && !initialLoad) {
-                newOrderArrived = true;
-            }
-        });
-
-        // 1. Update the Red Badge on the Sidebar
-        let badge = document.getElementById('poNotificationBadge');
-        if (badge) {
-            if (pendingCount > 0) {
-                badge.innerText = pendingCount;
-                badge.style.display = 'inline-block';
-            } else {
-                badge.style.display = 'none';
-            }
-        }
-
-        // 2. Auto-Refresh the Dispatch Table if the Manager is currently looking at it!
-        let dispatchView = document.getElementById('view-dispatch');
-        if (dispatchView && dispatchView.classList.contains('active')) {
-            if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
-        }
-
-        // 3. Trigger the DING! and the Pop-up Toast
-        if (newOrderArrived) {
-            window.playManagerPing();
-            Swal.fire({
-                title: '🔔 New Stock Request!',
-                text: 'A branch just reported an inventory variance or sent a Purchase Order.',
-                icon: 'info',
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 5000,
-                customClass: { popup: 'shadow-2xl border border-blue-200' }
-            });
-        }
-
-        initialLoad = false;
-    });
-};
-
 // 🔊 The Audio Engine (Upgraded "Ding-Dong" Bell Sound)
 window.playManagerPing = function() {
     try {
@@ -17582,353 +17826,6 @@ window.purgeOldWasteData = async function() {
     }
 };
 
-// ========================================================
-// 🔔 REAL-TIME LOGISTICS NOTIFICATION ENGINE (UPGRADED TABS)
-// ========================================================
-window.poUnsubscribe = null;
-
-window.startLogisticsListeners = function() {
-    if (window.poUnsubscribe) window.poUnsubscribe(); 
-
-    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
-
-    // 🔒 Listen for Pending, Drafting AND Delayed Requests!
-    let q = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Delayed", "Drafting"]));
-    if (isFranchisee) {
-        q = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Delayed", "Drafting"]));
-    }
-
-    let initialLoad = true;
-
-    window.poUnsubscribe = window.onSnapshot(q, (snapshot) => {
-        let pendingCount = 0;
-        let newOrderArrived = false;
-
-        window.logisticsState.requests = [];
-        snapshot.forEach(doc => {
-            let data = doc.data();
-            window.logisticsState.requests.push({id: doc.id, ...data});
-            if (data.status === 'Pending') pendingCount++;
-        });
-        window.logisticsState.requests.sort((a,b) => b.timestamp - a.timestamp);
-
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "added" && !initialLoad) newOrderArrived = true;
-        });
-
-        let badge = document.getElementById('poNotificationBadge');
-        if (badge) {
-            badge.innerText = pendingCount;
-            badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
-        }
-
-        window.renderLogisticsUI();
-
-        if (newOrderArrived) {
-            window.playManagerPing();
-            Swal.fire({ title: '🔔 New Stock Request!', text: 'A branch just reported an inventory variance or sent a Purchase Order.', icon: 'info', toast: true, position: 'top-end', showConfirmButton: false, timer: 5000 });
-        }
-        initialLoad = false;
-    });
-
-    onSnapshot(collection(db, "dispatch_logs"), (snap) => {
-        window.logisticsState.deliveries = [];
-        snap.forEach(doc => window.logisticsState.deliveries.push({id: doc.id, ...doc.data()}));
-        window.logisticsState.deliveries.sort((a,b) => b.timestamp - a.timestamp);
-        window.renderLogisticsUI();
-    });
-};
-
-window.switchLogisticsBranch = function(branch) {
-    window.logisticsState.activeBranch = branch;
-    window.renderLogisticsUI();
-};
-
-window.switchLogisticsTab = function(tab) {
-    window.logisticsState.activeTab = tab;
-    window.renderLogisticsUI();
-};
-
-window.renderLogisticsUI = function() {
-    let reqData = window.logisticsState.requests || [];
-    let delData = window.logisticsState.deliveries || [];
-    
-    // Split the requests into Normal vs Delayed
-    let pendingRequests = reqData.filter(r => r.status === 'Pending' || r.status === 'Drafting');
-    let delayedRequests = reqData.filter(r => r.status === 'Delayed');
-
-    let branches = new Set(["Cabantian", "Citygate", "Maa"]);
-    reqData.forEach(r => { if(r.branch) branches.add(r.branch); });
-    delData.forEach(d => { if(d.toBranch) branches.add(d.toBranch); });
-    
-    let branchTabsHtml = `<button onclick="window.switchLogisticsBranch('All')" style="flex: 1; min-width: 100px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.logisticsState.activeBranch === 'All' ? '#10b981' : 'transparent'}; background: ${window.logisticsState.activeBranch === 'All' ? 'white' : 'transparent'}; color: ${window.logisticsState.activeBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">🌍 All Branches</button>`;
-    
-    Array.from(branches).sort().forEach(branch => {
-        let branchPending = pendingRequests.filter(r => r.branch === branch).length;
-        let badgeHtml = branchPending > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px;">${branchPending}</span>` : '';
-        let isActive = window.logisticsState.activeBranch === branch;
-        branchTabsHtml += `<button onclick="window.switchLogisticsBranch('${branch}')" style="flex: 1; min-width: 120px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${isActive ? '#10b981' : 'transparent'}; background: ${isActive ? 'white' : 'transparent'}; color: ${isActive ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">📍 ${branch} ${badgeHtml}</button>`;
-    });
-    document.getElementById('logisticsBranchTabs').innerHTML = branchTabsHtml;
-
-    if (window.logisticsState.activeBranch !== 'All') {
-        pendingRequests = pendingRequests.filter(r => r.branch === window.logisticsState.activeBranch);
-        delayedRequests = delayedRequests.filter(r => r.branch === window.logisticsState.activeBranch);
-        delData = delData.filter(d => d.toBranch === window.logisticsState.activeBranch);
-    }
-
-    let dispatchGroups = {};
-    delData.forEach(del => {
-        let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
-        if (!dispatchGroups[groupKey]) {
-            dispatchGroups[groupKey] = { dispatchId: groupKey, toBranch: del.toBranch, date: del.date, time: del.time, driver: del.driver, status: del.status, items: [] };
-        }
-        dispatchGroups[groupKey].items.push(del);
-    });
-
-    let listContainer = document.getElementById('logisticsFeedList');
-    if (!listContainer) return;
-    
-    // 🔥 THE NEW 3-TAB INTERFACE
-    let activeTab = window.logisticsState.activeTab || 'requests';
-    let tabHtml = `
-        <div id="logisticsTabContainer" style="display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 15px; background: #f8fafc; border-radius: 8px 8px 0 0; overflow: hidden;">
-            <button onclick="window.switchLogisticsTab('requests')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='requests'?'#0ea5e9':'transparent'}; background: ${activeTab==='requests'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='requests'?'#0ea5e9':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s;">
-                📢 Stock Requests (<span id="tabCountReq">${pendingRequests.length}</span>)
-            </button>
-            <button onclick="window.switchLogisticsTab('delayed')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='delayed'?'#dc2626':'transparent'}; background: ${activeTab==='delayed'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='delayed'?'#dc2626':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
-                ⏳ Delayed Items (<span id="tabCountDelayed">${delayedRequests.length}</span>)
-            </button>
-            <button onclick="window.switchLogisticsTab('deliveries')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='deliveries'?'#16a34a':'transparent'}; background: ${activeTab==='deliveries'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='deliveries'?'#16a34a':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
-                🚚 Deliveries (<span id="tabCountDel">${Object.keys(dispatchGroups).length}</span>)
-            </button>
-        </div>
-    `;
-
-    let bulkActionBar = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <label style="font-size: 14px; font-weight: bold; color: #334155; cursor: pointer; display: flex; align-items: center; gap: 10px;">
-                <input type="checkbox" onclick="document.querySelectorAll('.bulk-log-cb').forEach(cb => cb.checked = this.checked)" style="width:20px; height:20px; accent-color: #0ea5e9; cursor: pointer;"> Select All
-            </label>
-            <button onclick="window.bulkDeleteLogistics()" style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(220,38,38,0.3); transition: 0.2s;">🗑️ Delete Selected</button>
-        </div>
-    `;
-
-    let html = tabHtml;
-
-    // RENDER PENDING REQUESTS
-    if (activeTab === 'requests') {
-        if (pendingRequests.length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No stock requests found.</div>`; } 
-        else {
-            html += bulkActionBar; 
-            pendingRequests.forEach(req => {
-                let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-                let statBadge = req.status === "Drafting" ? `<div style="font-weight: bold; font-size: 13px; color: #0369a1; background: #bae6fd; padding: 4px 8px; border-radius: 6px;">Drafting in Cart</div>` : `<div style="font-weight: bold; font-size: 13px; color: #d97706; background: #fef3c7; padding: 4px 8px; border-radius: 6px;">Pending</div>`;
-
-                html += `
-                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            <input type="checkbox" class="bulk-log-cb" value="${req.id}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
-                            <div>
-                                <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 16px;">📢 Stock Request from ${req.branch}</h3>
-                                <div style="font-size: 13px; color: #92400e; font-weight: 500;">Requested by: ${req.requestedBy || 'Staff'}</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            ${statBadge}
-                            <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">🔍 Review Request</button>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-    } 
-    // RENDER DELAYED / BACKLOGGED ITEMS
-    else if (activeTab === 'delayed') {
-        if (delayedRequests.length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No delayed or backlogged items.</div>`; } 
-        else {
-            html += bulkActionBar; 
-            delayedRequests.forEach(req => {
-                let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-                let origDate = req.originalRequestDate || dateStr;
-
-                html += `
-                    <div style="background: #fff1f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            <input type="checkbox" class="bulk-log-cb" value="${req.id}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
-                            <div>
-                                <h3 style="margin: 0 0 5px 0; color: #b91c1c; font-size: 16px;">⏳ Delayed Items for ${req.branch}</h3>
-                                <div style="font-size: 11px; color: #ef4444; font-weight: bold;">Originally Requested: ${origDate}</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 Set Aside: ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); transition: 0.2s;">🛒 Load to Cart</button>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-    }
-    // RENDER DELIVERIES
-    else {
-        if (Object.keys(dispatchGroups).length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No deliveries found.</div>`; } 
-        else {
-            html += bulkActionBar; 
-            for (let key in dispatchGroups) {
-                let group = dispatchGroups[key];
-                let hasMissing = group.items.some(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
-                let allReceived = group.items.every(i => i.status === 'Received');
-                
-                let overallStatus = 'In Transit';
-                if (group.items.some(i => i.status === 'In Transit')) overallStatus = 'In Transit';
-                else if (group.items.every(i => i.status === 'Arrived' || i.status === 'Received') && !allReceived) overallStatus = 'Arrived at Branch';
-                else if (hasMissing) overallStatus = 'Discrepancy / Lost';
-                else if (allReceived) overallStatus = 'Received';
-
-                let statCol = overallStatus === 'Received' ? '#16a34a' : (overallStatus === 'Arrived at Branch' ? '#8b5cf6' : (overallStatus === 'In Transit' ? '#0ea5e9' : '#dc2626'));
-                
-                let encodedGroup = encodeURIComponent(JSON.stringify(group)); 
-                let groupFirebaseIds = group.items.map(i => i.id).join(',');
-
-                let actionButtons = '';
-                if (overallStatus === 'In Transit') {
-                    actionButtons = `<button onclick="window.markDispatchArrived('${encodedGroup}')" style="background: #8b5cf6; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">📍 Mark Arrived</button>`;
-                }
-
-                html += `
-                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            <input type="checkbox" class="bulk-log-cb" value="${groupFirebaseIds}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
-                            <div>
-                                <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 16px;">📍 To: ${group.toBranch}</h3>
-                                <div style="font-size: 13px; color: #475569; font-weight: 500;">🚚 Driver: ${group.driver || 'Unknown'}</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 ${group.date} at ${group.time} • <strong>${group.items.length} items</strong></div>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <div style="background: ${statCol}; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">${overallStatus}</div>
-                            ${actionButtons}
-                            <button onclick="window.viewDeliveryDetails('${encodedGroup}')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">🔍 Full Details</button>
-                        </div>
-                    </div>
-                `;
-            }
-        }
-    }
-    listContainer.innerHTML = html;
-};
-
-// ========================================================
-// 🚚 UPGRADED DELIVERY DETAILS MODAL (TIMESTAMPS FIX)
-// ========================================================
-window.viewDeliveryDetails = function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    
-    // Find arrival info
-    let arrivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
-    let arrivedItem = group.items.find(i => i.arrivedAt);
-    if (arrivedItem && arrivedItem.arrivedAt) {
-        let aDate = arrivedItem.arrivedAt.seconds ? new Date(arrivedItem.arrivedAt.seconds * 1000) : new Date(arrivedItem.arrivedAt);
-        arrivedTimeStr = aDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + aDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-    }
-
-    // Find receiver info
-    let receiverName = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
-    let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
-    let receivedItem = group.items.find(i => i.receivedBy);
-    if (receivedItem) {
-        receiverName = receivedItem.receivedBy;
-        if (receivedItem.receivedAt) {
-            let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
-            receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-        }
-    }
-
-    let headerEl = document.getElementById('dispatchDetailsHeader');
-    if(headerEl) {
-        headerEl.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
-                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Dispatch Info</div>
-                    <div style="margin-top: 5px; color: #0f172a; font-size: 15px;"><strong>📍 To:</strong> ${group.toBranch}</div>
-                    <div style="margin-top: 5px; color: #334155;"><strong>🚚 Driver:</strong> ${group.driver}</div>
-                    <div style="margin-top: 5px; color: #475569; font-size: 12px;"><strong>📅 Sent:</strong> ${group.date} at ${group.time}</div>
-                </div>
-                <div>
-                    <div style="font-size: 11px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Receiving Info</div>
-                    <div style="margin-top: 5px;"><strong>👤 Received By:</strong> <span style="color: #0f766e; font-weight: bold;">${receiverName}</span></div>
-                    <div style="margin-top: 5px; color: #475569;"><strong>📍 Arrived at Branch:</strong> ${arrivedTimeStr}</div>
-                    <div style="margin-top: 5px; color: #475569;"><strong>✅ Confirmed Received:</strong> ${receivedTimeStr}</div>
-                </div>
-            </div>
-        `;
-    }
-    
-    let tbody = document.getElementById('dispatchDetailsBody');
-    let html = '';
-    
-    let canRecall = true; 
-    let hasMissing = false; 
-    
-    group.items.forEach(item => {
-        if (item.status !== 'In Transit') canRecall = false;
-        if (item.status === 'Lost in Transit' || item.status === 'Discrepancy') hasMissing = true;
-
-        let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : (item.status === 'Arrived' ? '#8b5cf6' : '#dc2626'));
-        let varText = item.variance ? `<span style="color:#dc2626; font-weight:bold;">${item.variance} ${item.uom}</span>` : `<span style="color:#94a3b8;">0</span>`;
-        let receivedQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : (item.status === 'In Transit' || item.status === 'Arrived' ? '---' : 0);
-        let expectedQty = item.displayQty || item.qty;
-        let displayUom = item.displayUom || item.uom;
-
-        let remarksHtml = item.receivingRemarks ? `<div style="font-size:11px; color:#ef4444; margin-top:4px; font-style:italic;">Reason: ${item.receivingRemarks}</div>` : '';
-        
-        html += `
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding:12px; font-weight:bold; color:#334155;">${item.item}</td>
-                <td style="padding:12px; font-weight:bold; color:#0f172a; text-align:center;">${expectedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
-                <td style="padding:12px; font-weight:bold; color:#0ea5e9; text-align:center;">${receivedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
-                <td style="padding:12px; text-align:center;">${varText}</td>
-                <td style="padding:12px; text-align:center;">
-                    <span style="background:${statColor}15; color:${statColor}; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; border: 1px solid ${statColor}50;">${item.status}</span>
-                    ${remarksHtml}
-                </td>
-            </tr>
-        `;
-    });
-    
-    if(tbody) tbody.innerHTML = html;
-
-    let footerEl = document.getElementById('dispatchDetailsFooter');
-    if (footerEl) {
-        footerEl.innerHTML = '';
-        if (canRecall) {
-            footerEl.innerHTML += `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s; width: 100%; margin-bottom: 10px;">🔙 Back Load / Recall Dispatch</button>`;
-        } 
-        if (hasMissing) {
-            footerEl.innerHTML += `<button onclick="window.requeueLostItems('${encodedGroup}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); font-size: 14px; transition: 0.2s; width: 100%;">🔄 Auto-Requeue Lost Items to Requests</button>`;
-        }
-        if (!canRecall && !hasMissing) {
-            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px; display: block; text-align: center;">🔒 This delivery has been fully processed by the branch.</span>`;
-        }
-    }
-
-    document.getElementById('dispatchDetailsModal').style.display = 'flex';
-};
-
-// ========================================================
-// 🚚 UPGRADED LOGISTICS HUB (PER-BRANCH & TIME TABS)
-// ========================================================
-window.logisticsState = {
-    activeBranch: 'All', // Defaults to showing all
-    activeTab: 'requests', // Defaults to Stock Requests
-    timeFilter: 'All', // 🔥 NEW DATE FILTER STATE
-    requests: [],
-    deliveries: []
-};
-
 window.switchLogisticsBranch = function(branch) {
     window.logisticsState.activeBranch = branch;
     window.renderLogisticsUI();
@@ -17937,88 +17834,6 @@ window.switchLogisticsBranch = function(branch) {
 window.switchLogisticsTimeFilter = function(filter) {
     window.logisticsState.timeFilter = filter;
     window.renderLogisticsUI();
-};
-
-// ========================================================
-// 🗑️ INDIVIDUAL DELIVERY DELETE ENGINE
-// ========================================================
-window.deleteDeliveryGroup = async function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!confirm(`⚠️ Are you sure you want to permanently delete the delivery to ${group.toBranch}?\n\nThis will instantly remove all items inside it from the system.`)) return;
-
-    Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        let promises = [];
-        group.items.forEach(item => {
-            promises.push(deleteDoc(doc(db, "dispatch_logs", item.id)));
-        });
-        await Promise.all(promises);
-
-        Swal.fire({title: 'Deleted!', text: 'Delivery deleted successfully.', icon: 'success', timer: 1500, showConfirmButton: false});
-        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to delete delivery.', 'error');
-    }
-};
-
-// ========================================================
-// 🧹 BULK DELETE ENGINE (HANDLES BOTH TABS SEAMLESSLY)
-// ========================================================
-window.bulkDeleteLogistics = async function() {
-    let checkboxes = document.querySelectorAll('.bulk-log-cb:checked');
-    if (checkboxes.length === 0) return Swal.fire('No Items Selected', 'Please check the boxes of the items you want to delete.', 'info');
-
-    let isRequests = window.logisticsState.activeTab === 'requests';
-    let targetType = isRequests ? `stock requests` : `deliveries`;
-
-    let confirmDelete = await Swal.fire({
-        title: 'Bulk Delete?',
-        text: `Are you sure you want to permanently delete ${checkboxes.length} ${targetType}? This cannot be undone.`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Yes, Delete All!',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
-    });
-
-    if (!confirmDelete.isConfirmed) return;
-
-    Swal.fire({title: 'Erasing Data...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        let promises = [];
-        checkboxes.forEach(cb => {
-            if (isRequests) {
-                // Delete single purchase_order documents
-                promises.push(deleteDoc(doc(db, "purchase_orders", cb.value)));
-            } else {
-                // Delete grouped dispatch_log documents (value is a comma-separated list of IDs!)
-                let ids = cb.value.split(',');
-                ids.forEach(id => {
-                    if (id) promises.push(deleteDoc(doc(db, "dispatch_logs", id)));
-                });
-            }
-        });
-
-        await Promise.all(promises);
-
-        Swal.fire({
-            title: 'Deleted!', 
-            text: 'Selected items have been permanently deleted.', 
-            icon: 'success', 
-            timer: 1500, 
-            showConfirmButton: false, 
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs(); 
-    } catch (e) {
-        console.error("Bulk Delete Error:", e);
-        Swal.fire('Error', 'Failed to delete selected items.', 'error');
-    }
 };
 
 // ========================================================
@@ -18174,166 +17989,6 @@ window.reviewStockRequest = async function(docId) {
     } catch (e) {
         console.error(e);
         Swal.fire('Error', 'Failed to load request details.', 'error');
-    }
-};
-
-// ========================================================
-// 📍 MARK DISPATCH AS ARRIVED ENGINE
-// ========================================================
-window.markDispatchArrived = async function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!confirm(`Mark delivery to ${group.toBranch} as ARRIVED?\n\nThe branch staff will now be notified and can begin receiving the items.`)) return;
-
-    Swal.fire({title: 'Updating Status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        let promises = [];
-        group.items.forEach(item => {
-            if (item.status === 'In Transit') {
-                promises.push(updateDoc(doc(db, "dispatch_logs", item.id), { 
-                    status: 'Arrived',
-                    arrivedAt: serverTimestamp() 
-                }));
-            }
-        });
-        await Promise.all(promises);
-        Swal.fire('Arrived!', 'Delivery marked as arrived at the branch.', 'success');
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to update status.', 'error');
-    }
-};
-
-// ========================================================
-// 🔄 AUTO-REQUEUE LOST ITEMS ENGINE
-// ========================================================
-window.requeueLostItems = async function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    
-    if (!confirm(`Re-queue all missing/lost items for ${group.toBranch} as a new Stock Request?`)) return;
-
-    Swal.fire({title: 'Generating Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        let lostItems = group.items.filter(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
-        
-        let poItems = lostItems.map(item => {
-            let varianceQty = Math.abs(parseFloat(item.variance) || 0);
-            let cRate = parseFloat(item.convRate) || 1;
-            let displayQty = varianceQty / cRate; // Reverse engineers the original package size!
-
-            return {
-                itemName: item.item,
-                name: item.item,
-                qty: varianceQty,
-                displayQty: displayQty,
-                uom: item.baseUom || item.uom,
-                displayUom: item.displayUom || item.purchaseUom || item.uom,
-                requestType: 'Lost in Transit', // 🔥 This triggers the RED tag!
-                physicalStock: 0,
-                systemStock: 0
-            };
-        });
-
-        // 1. Create the new Purchase Order
-        await addDoc(collection(db, "purchase_orders"), {
-            branch: group.toBranch,
-            items: poItems,
-            status: "Pending",
-            type: "Lost Item Replacement",
-            requestedBy: "System (Auto-Requeue)",
-            timestamp: serverTimestamp()
-        });
-
-        // 2. Mark the dispatch logs as Re-queued so the button disappears
-        let promises = lostItems.map(item => 
-            updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Lost (Re-queued)' })
-        );
-        await Promise.all(promises);
-
-        Swal.fire('Success', 'Lost items have been instantly sent to the Stock Requests feed!', 'success');
-        document.getElementById('dispatchDetailsModal').style.display = 'none';
-        window.loadDispatchLogs(); // Refresh the list
-
-    } catch (e) {
-        console.error("Requeue Error:", e);
-        Swal.fire('Error', 'Failed to requeue lost items. Check console.', 'error');
-    }
-};
-
-// ========================================================
-// 🔙 RECALL / BACK LOAD ENGINE (CART BLANK FIX)
-// ========================================================
-window.recallDispatch = async function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    
-    if (!confirm("⚠️ RECALL DISPATCH?\n\nThis will remove the delivery from the destination branch, refund the inventory back to HQ, and load the items into your Dispatch Cart to edit. Proceed?")) return;
-
-    Swal.fire({title: 'Recalling Delivery...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-        
-        let branchSelect = document.getElementById('dispTo');
-        if(branchSelect) branchSelect.value = group.toBranch;
-
-        for (let item of group.items) {
-            let originBranch = item.fromBranch || "Main Office";
-            const invQ = query(collection(db, "inventory"), where("branch", "==", originBranch), where("name", "==", item.item));
-            const invSnap = await getDocs(invQ);
-            
-            if (!invSnap.empty) {
-                let invDoc = invSnap.docs[0];
-                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
-                let refundQty = parseFloat(item.qty) || 0; 
-                
-                await updateDoc(invDoc.ref, { currentStock: currentStock + refundQty });
-                
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: originBranch,
-                    item: item.item,
-                    oldQty: currentStock,
-                    newQty: currentStock + refundQty,
-                    variance: refundQty,
-                    type: "Dispatch Recalled",
-                    note: `Recalled delivery originally sent to ${group.toBranch}`,
-                    user: localStorage.getItem('cashierName') || 'Manager',
-                    timestamp: serverTimestamp()
-                });
-            }
-
-            // 🔥 THE FIX: Added exact variable mapping so the UI input boxes don't render blank!
-            window.dispatchCart.push({
-                id: item.sourceId || item.id,
-                sourceId: item.sourceId || item.id,
-                itemName: item.item,
-                name: item.item,
-                rawQty: parseFloat(item.displayQty) || parseFloat(item.qty) || 0,
-                qty: parseFloat(item.qty) || 0,
-                uom: item.baseUom || item.uom,
-                baseUom: item.baseUom || item.uom,
-                friendlyUom: item.displayUom || item.uom,
-                purchaseUom: item.purchaseUom || item.displayUom || item.uom,
-                selectedUom: (item.displayUom !== item.uom) ? 'purch' : 'base',
-                convRate: parseFloat(item.convRate) || 1,
-                conversionRate: parseFloat(item.convRate) || 1,
-                category: item.category || "Ingredients"
-            });
-
-            await deleteDoc(doc(db, "dispatch_logs", item.id));
-        }
-
-        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-
-        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
-        if (typeof window.switchView === 'function') window.switchView('dispatch');
-        
-        document.getElementById('dispatchDetailsModal').style.display = 'none';
-        Swal.fire({title: 'Recalled!', text: 'Dispatch reverted. Items are back in your Dispatch Cart.', icon: 'success', timer: 2500, showConfirmButton: false});
-
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to recall dispatch. Check connection.', 'error');
     }
 };
 
