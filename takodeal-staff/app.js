@@ -973,27 +973,60 @@ window.switchView = function(viewId, btnElement) {
 };
 
 window.initSopModule = async function() {
-    // 1. Determine nearest branch via GPS or fallback
-    let detectedBranch = window.getClosestBranch() || "Cabantian";
     let branchSelect = document.getElementById('sopBranchSelect');
     let gpsBadge = document.getElementById('sopGpsBadge');
+    let staffName = localStorage.getItem('takodeal_staff_name');
 
-    if (branchSelect) {
-        branchSelect.value = detectedBranch;
-    }
+    let targetBranch = window.getClosestBranch() || "Cabantian"; // Initial fallback
 
     if (gpsBadge) {
-        if (window.currentLat && window.currentLng) {
-            gpsBadge.innerText = `🟢 GPS Detected: Near ${detectedBranch}`;
-            gpsBadge.style.background = "#dcfce7";
-            gpsBadge.style.color = "#16a34a";
-        } else {
-            gpsBadge.innerText = `📍 Default Branch: ${detectedBranch} (Select if relocated)`;
-            gpsBadge.style.background = "#fffbeb";
-            gpsBadge.style.color = "#d97706";
-        }
+        gpsBadge.innerText = "⏳ Syncing with Active Shift...";
+        gpsBadge.style.background = "#fffbeb";
+        gpsBadge.style.color = "#d97706";
     }
 
+    try {
+        // 🔥 SMART CLOUD SYNC: Find out exactly where they timed in!
+        if (staffName) {
+            // We use the same index-free query we used for the Time Clock so it never crashes!
+            const q = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
+            const snap = await getDocs(q);
+            
+            let userLogs = [];
+            snap.forEach(doc => {
+                let d = doc.data();
+                if (d.timestamp) userLogs.push(d);
+            });
+            
+            // Sort locally (Newest first)
+            userLogs.sort((a,b) => b.timestamp.toDate() - a.timestamp.toDate());
+
+            // Check their very last punch
+            if (userLogs.length > 0) {
+                let lastLog = userLogs[0];
+                // If their last action was a TIME IN, lock the SOP to that exact branch!
+                if (lastLog.type.includes("TIME IN")) {
+                    targetBranch = lastLog.branch || targetBranch;
+                }
+            }
+        }
+    } catch(e) {
+        console.error("Error fetching shift branch:", e);
+    }
+
+    // Apply the branch to the dropdown
+    if (branchSelect) {
+        branchSelect.value = targetBranch;
+    }
+
+    // Update the visual badge so they know it worked
+    if (gpsBadge) {
+        gpsBadge.innerText = `📍 Synced to Shift Location: ${targetBranch}`;
+        gpsBadge.style.background = "#dcfce7";
+        gpsBadge.style.color = "#16a34a";
+    }
+
+    // Trigger the role loader automatically!
     await window.onSopBranchChange();
 };
 
