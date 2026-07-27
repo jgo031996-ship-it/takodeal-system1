@@ -2232,14 +2232,12 @@ window.renderDispatchCart = function() {
     if (!container) return;
 
     if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-    
-    let isTable = container.tagName.toLowerCase() === 'tbody';
-
     if (window.dispatchCart.length === 0) {
-        let emptyHtml = isTable ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
+        let emptyHtml = container.tagName.toLowerCase() === 'tbody' ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
         container.innerHTML = emptyHtml; return;
     }
     
+    let isTable = container.tagName.toLowerCase() === 'tbody';
     let html = '';
 
     window.dispatchCart.forEach((item, index) => {
@@ -2264,54 +2262,42 @@ window.renderDispatchCart = function() {
 
         let hqColor = hqStock < baseQty ? '#dc2626' : '#16a34a';
         let hqWarningText = hqStock < baseQty ? '⚠️ LOW HQ STOCK' : '🟢 HQ Stock OK';
-        let hqBgColor = hqStock < baseQty ? '#fef2f2' : '#dcfce7';
-        let hqBorderColor = hqStock < baseQty ? '#fca5a5' : '#bbf7d0';
 
-        // 🔥 THE FIX: Properly injecting Table Rows (<tr>) if it is inside the table body!
         if (isTable) {
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 15px 10px; width: 45%; vertical-align: middle;">
                         <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
                         ${item.requestType && item.requestType !== 'Request' ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Branch Report (Phys: ${item.physicalStock || 0} | Sys: ${item.systemStock || 0})</span><br>` : ''}
-                        
-                        <span style="font-size: 11px; color: ${hqColor}; background: ${hqBgColor}; border: 1px dashed ${hqBorderColor}; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; font-weight: bold;">
+                        <span style="font-size: 11px; color: ${hqColor}; background: ${hqStock < baseQty ? '#fef2f2' : '#dcfce7'}; border: 1px dashed ${hqStock < baseQty ? '#fca5a5' : '#bbf7d0'}; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; font-weight: bold;">
                             🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})
                         </span><br>
-
                         <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
                     </td>
                     <td style="padding: 15px 10px; text-align: center; width: 35%; vertical-align: middle;">
                         <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
-                            <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
-                                oninput="window.updateDispatchQty(${index}, this.value)" 
-                                style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
-                            
-                            <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                                style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
-                                ${uomOptions}
-                            </select>
+                            <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" oninput="window.updateDispatchQty(${index}, this.value)" style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
+                            <select onchange="window.updateDispatchUom(${index}, this.value)" style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">${uomOptions}</select>
                         </div>
                     </td>
                     <td style="padding: 15px 10px; text-align: right; width: 20%; vertical-align: middle;">
-                        <button onclick="window.removeFromDispatchCart(${index})" 
-                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
+                        <button onclick="window.removeFromDispatchCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
                     </td>
                 </tr>
             `;
         } else {
-            // Fallback for non-table layouts
+            // 🔥 FIXED GRID ALIGNMENT
             html += `
-                <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
-                    <div>
+                <div style="display: grid; grid-template-columns: 4fr 3fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
+                    <div style="padding-right: 10px;">
                         <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
                         ${item.requestType && item.requestType !== 'Request' ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Branch Report (Phys: ${item.physicalStock || 0} | Sys: ${item.systemStock || 0})</span><br>` : ''}
                         <span style="font-size: 11px; color: ${hqColor}; font-weight: bold;">🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})</span><br>
                         <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
                     </div>
-                    <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
-                        <input type="number" step="any" value="${rawQty || ''}" oninput="window.updateDispatchQty(${index}, this.value)" style="width: 70px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
-                        <select onchange="window.updateDispatchUom(${index}, this.value)" style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; cursor: pointer; outline: none;">${uomOptions}</select>
+                    <div style="display:flex; justify-content:flex-start; align-items:center; gap: 5px;">
+                        <input type="number" step="any" value="${rawQty || ''}" oninput="window.updateDispatchQty(${index}, this.value)" style="width: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
+                        <select onchange="window.updateDispatchUom(${index}, this.value)" style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; cursor: pointer; outline: none; max-width: 110px;">${uomOptions}</select>
                     </div>
                     <div style="text-align: right;">
                         <button onclick="window.removeFromDispatchCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖ Remove</button>
@@ -2408,26 +2394,46 @@ window.submitMultiDispatch = async function () {
         return; 
     }
 
+    for (let i = 0; i < window.dispatchCart.length; i++) {
+        let inp = document.getElementById(`cartQty_${i}`);
+        if (inp) {
+            let val = parseFloat(inp.value) || 0;
+            let conv = window.dispatchCart[i].convRate || 1;
+            window.dispatchCart[i].rawQty = val; window.dispatchCart[i].qty = val * conv;
+        }
+    }
+
     let validCart = [];
     let skippedCart = []; 
 
     window.dispatchCart.forEach(item => {
         let sentRaw = parseFloat(item.rawQty) || 0;
         let sentBase = parseFloat(item.qty) || 0;
-        let origRaw = parseFloat(item.origRawQty) || sentRaw;
-        let origBase = parseFloat(item.origBaseQty) || sentBase;
+        
+        // Use the original request amounts (fall back to 0 if it was an auto-alert)
+        let origRaw = parseFloat(item.origRawQty) || 0;
+        let origBase = parseFloat(item.origBaseQty) || 0;
+
+        let isAutoAlert = item.requestType === 'Low Stock' || item.requestType === 'Out of Stock';
 
         if (sentBase > 0) validCart.push(item);
 
         let remainingRaw = origRaw - sentRaw;
         let remainingBase = origBase - sentBase;
 
-        if (remainingBase > 0) {
-            skippedCart.push({ ...item, qty: remainingBase, displayQty: remainingRaw, rawQty: remainingRaw, requestType: 'Delayed / Backlogged' });
+        // 🔥 THE MATH FIX: If there is remaining requested stock, OR if it's an auto-alert and we sent 0, delay it!
+        if (remainingBase > 0 || (isAutoAlert && sentBase <= 0)) {
+            skippedCart.push({
+                ...item,
+                qty: isAutoAlert ? 0 : remainingBase,
+                displayQty: isAutoAlert ? 0 : remainingRaw,
+                rawQty: isAutoAlert ? 0 : remainingRaw
+                // We purposefully do NOT overwrite requestType here so it retains its "Low Stock" badge!
+            });
         }
     });
 
-    if (validCart.length === 0) return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); 
+    if (validCart.length === 0) return Swal.fire('Empty Dispatch', 'You must send a quantity greater than 0 for at least one item.', 'warning'); 
 
     btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
 
@@ -2481,7 +2487,7 @@ window.submitMultiDispatch = async function () {
 
                         if (penaltyValue > 0) {
                             await addDoc(collection(db, "staff_deductions"), { staffName: `Team ${toBranch}`, type: "Missing Stock Penalty", amount: penaltyValue, dateAdded: new Date(), status: "Unpaid", remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.` });
-                            await addDoc(collection(db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch}.`, timestamp: serverTimestamp(), isRead: false });
+                            await addDoc(collection(db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch} for missing ${missingQty.toFixed(2)} units.`, timestamp: serverTimestamp(), isRead: false });
                             totalPenaltiesIssued++;
                         }
                     } 
@@ -2503,7 +2509,7 @@ window.submitMultiDispatch = async function () {
         }
 
         if (skippedCart.length > 0) {
-            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units", requestType: i.requestType || 'Low Stock' }));
+            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units" }));
             let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
             
             const pendingQ = query(collection(db, "purchase_orders"), where("branch", "==", toBranch), where("status", "==", "Delayed"));
@@ -2522,7 +2528,6 @@ window.submitMultiDispatch = async function () {
             }
         }
 
-        // 🔥 THE GHOST ERADICATOR 🔥
         let activePoStr = localStorage.getItem('takodeal_active_po');
         if (activePoStr) {
             let poIds = activePoStr.split(',');
@@ -2537,7 +2542,7 @@ window.submitMultiDispatch = async function () {
         window.dispatchCart = []; localStorage.removeItem('takodeal_dispatch_cart'); localStorage.removeItem('takodeal_dispatch_to');
         Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
 
-        let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) with 0 qty were auto-set aside into the Stock Requests feed).` : '';
+        let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) unfulfilled were auto-set aside into the Delayed Items tab).` : '';
         let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
         
         Swal.fire({ title: '🚚 Dispatch Successful!', html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`, icon: 'success', customClass: { popup: 'rounded-2xl shadow-xl' } });
@@ -2793,7 +2798,7 @@ window.reviewStockRequest = async function(docId) {
             data.items.forEach(item => {
                 let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : '#0284c7');
                 
-                // 🔥 THE FIX: Show Physical vs System if it's an auto-generated low stock alert!
+                // 🔥 THE UI FIX: Show Phys vs Sys instead of "0 Requested"
                 let qtyDisplay = '';
                 if ((item.requestType === 'Low Stock' || item.requestType === 'Out of Stock') && item.physicalStock !== undefined) {
                     qtyDisplay = `
@@ -2843,7 +2848,8 @@ window.reviewStockRequest = async function(docId) {
                     existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
                     existing.origRawQty = existing.rawQty;
                     existing.origBaseQty = existing.qty;
-                    existing.requestType = "Merged Request"; 
+                    // Preserve the tag so it doesn't break later!
+                    existing.requestType = reqItem.requestType || existing.requestType; 
                 } else {
                     window.dispatchCart.push({
                         itemName: reqItem.itemName, name: reqItem.itemName,
