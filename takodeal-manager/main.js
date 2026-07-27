@@ -1746,7 +1746,7 @@ window.reviewPurchaseOrder = async function(poId) {
                 <thead style="background: #0f172a; color: white; position: sticky; top: 0; z-index: 10;">
                     <tr>
                         <th style="padding: 10px; text-align: left;">Item Description</th>
-                        <th style="padding: 10px; text-align: center;">Qty Requested</th>
+                        <th style="padding: 10px; text-align: center;">Phys Count</th>
                         <th style="padding: 10px; text-align: center;">Alert Type</th>
                     </tr>
                 </thead>
