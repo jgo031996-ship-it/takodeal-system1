@@ -1199,26 +1199,6 @@ window.switchPayslipTab = function(tabName) {
     }
 };
 
-// ==========================================
-// 💸 PAYSLIP VAULT & LIVE ESTIMATOR ENGINE
-// ==========================================
-window.switchPayslipTab = function(tabName) {
-    let liveBtn = document.getElementById('btnTabLivePay');
-    let pastBtn = document.getElementById('btnTabPastPay');
-    
-    if (tabName === 'Live') {
-        liveBtn.style.background = '#0f766e'; liveBtn.style.color = 'white'; liveBtn.style.border = 'none';
-        pastBtn.style.background = 'transparent'; pastBtn.style.color = '#64748b'; pastBtn.style.border = 'none';
-        document.getElementById('payslipLiveSection').style.display = 'block';
-        document.getElementById('payslipPastSection').style.display = 'none';
-    } else {
-        pastBtn.style.background = '#0f172a'; pastBtn.style.color = 'white'; pastBtn.style.border = 'none';
-        liveBtn.style.background = 'transparent'; liveBtn.style.color = '#64748b'; liveBtn.style.border = 'none';
-        document.getElementById('payslipLiveSection').style.display = 'none';
-        document.getElementById('payslipPastSection').style.display = 'block';
-    }
-};
-
 window.loadPayslipVault = async function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
@@ -1252,74 +1232,85 @@ window.loadPayslipVault = async function() {
         const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp));
         const attSnap = await getDocs(attQ);
 
+        // 🔥 THE FIX: Fetch Manual Overtime & Bonuses!
+        const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName), where("dateAdded", ">=", startTimestamp), where("dateAdded", "<=", endTimestamp));
+        const bonusSnap = await getDocs(bonusQ);
+        let totalBonuses = 0;
+        bonusSnap.forEach(b => { totalBonuses += (parseFloat(b.data().amount) || 0); });
+
         let totalHours = 0;
         let totalLatePenalty = 0;
         let activeShifts = {};
-
+        let shiftPairs = [];
+        let tempIn = null;
+        let sortedAttLogs = [];
+        
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
             let penalty = parseFloat(log.penaltyAmount) || 0;
             totalLatePenalty += penalty;
+            
+            sortedAttLogs.push(log);
 
             if (log.type === "TIME IN") {
+                tempIn = log.timestamp.toDate();
                 activeShifts[staffName] = log.timestamp.toDate();
             } else if (log.type.includes("TIME OUT") && activeShifts[staffName]) {
                 let timeIn = activeShifts[staffName];
                 let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 if (hoursWorked <= 18) totalHours += hoursWorked; 
+                
+                shiftPairs.push({ in: timeIn, out: timeOut, hrs: hoursWorked, penalty: log.penaltyApplied });
+                tempIn = null;
                 delete activeShifts[staffName];
             }
         });
+
+        if (tempIn) {
+            shiftPairs.push({ in: tempIn, out: "Active Shift", hrs: 0, penalty: false, isActive: true });
+        }
 
         let estGross = totalHours * ratePerHour;
 
         const dedQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
         const dedSnap = await getDocs(dedQ);
         let unpaidVales = 0;
+        let activeDeductions = [];
+        
         dedSnap.forEach(d => {
             let val = parseFloat(d.data().amount) || 0;
             unpaidVales += val;
+            activeDeductions.push(d.data());
         });
 
-        let estNet = estGross - totalLatePenalty - unpaidVales;
+        // 🔥 THE FIX: Add Overtime to the Net Pay Math!
+        let estNet = (estGross + totalBonuses) - totalLatePenalty - unpaidVales;
 
         document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
 
-        // 🔥 THE FIX: INJECTING THE DETAILED ATTENDANCE & DEDUCTIONS TABLES 🔥
+        // 🔥 THE FIX: Inject the Overtime row dynamically into the UI!
+        let grossRow = document.getElementById('liveEstGross').parentElement;
+        if (!document.getElementById('liveEstOTRow')) {
+            grossRow.insertAdjacentHTML('afterend', `
+                <div id="liveEstOTRow" style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;">
+                    <span style="color: #64748b; font-weight: bold;">Overtime / Bonuses:</span>
+                    <strong id="liveEstOT" style="color: #0ea5e9;">+₱0.00</strong>
+                </div>
+            `);
+        }
+        document.getElementById('liveEstOT').innerText = '+₱' + totalBonuses.toLocaleString(undefined, {minimumFractionDigits: 2});
+
+        // --- DETAILED ATTENDANCE & DEDUCTIONS TABLES ---
         let logsContainer = document.getElementById('liveCutoffDetailedLogs');
         if (!logsContainer) {
             let liveSection = document.getElementById('payslipLiveSection');
             logsContainer = document.createElement('div');
             logsContainer.id = 'liveCutoffDetailedLogs';
             liveSection.appendChild(logsContainer);
-        }
-
-        let activeDeductions = [];
-        dedSnap.forEach(d => activeDeductions.push(d.data()));
-
-        let shiftPairs = [];
-        let tempIn = null;
-        let sortedAttLogs = [];
-        attSnap.forEach(d => sortedAttLogs.push(d.data()));
-        sortedAttLogs.sort((a,b) => a.timestamp.toDate() - b.timestamp.toDate());
-
-        sortedAttLogs.forEach(log => {
-            if (log.type === "TIME IN") {
-                tempIn = log.timestamp.toDate();
-            } else if (log.type.includes("TIME OUT") && tempIn) {
-                let outTime = log.timestamp.toDate();
-                let hrs = (outTime - tempIn) / (1000 * 60 * 60);
-                shiftPairs.push({ in: tempIn, out: outTime, hrs: hrs, penalty: log.penaltyApplied });
-                tempIn = null;
-            }
-        });
-
-        if (tempIn) {
-            shiftPairs.push({ in: tempIn, out: "Active Shift", hrs: 0, penalty: false, isActive: true });
         }
 
         let detailsHtml = `
@@ -1388,6 +1379,10 @@ window.loadPayslipVault = async function() {
         prSnap.forEach(docSnap => {
             let d = docSnap.data();
             let pd = d.frozenData || {};
+            
+            // 🔥 Inject the exact date the Manager approved the payroll into the data package!
+            pd.processedAt = d.processedAt; 
+            
             let dateStr = d.processedAt ? d.processedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
             let safeData = encodeURIComponent(JSON.stringify(pd));
 
@@ -1414,40 +1409,110 @@ window.loadPayslipVault = async function() {
     }
 };
 
+// ==========================================
+// 🧾 THE UPGRADED PAYSLIP UI ENGINE
+// ==========================================
 window.viewPastPayslip = function(encodedData) {
     let d = JSON.parse(decodeURIComponent(encodedData));
     
+    // Safely extract the date it was disbursed
+    let disbursedDateStr = 'Pending';
+    if (d.processedAt) {
+        let pDate = d.processedAt.seconds ? new Date(d.processedAt.seconds * 1000) : new Date(d.processedAt);
+        disbursedDateStr = pDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    } else {
+        disbursedDateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+
+    // Use the actual data from the frozen snapshot (Manager App format)
+    let basicPay = parseFloat(d.basicPay || 0).toFixed(2);
+    let otPay = parseFloat(d.nightBonus || d.overtime || 0).toFixed(2);
+    let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
+    let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
+    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay)).toFixed(2);
+
+    let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
+    let sss = parseFloat(d.sss || 0).toFixed(2);
+    let phil = parseFloat(d.philhealth || 0).toFixed(2);
+    let pagibig = parseFloat(d.pagibig || 0).toFixed(2);
+    let vale = parseFloat(d.advances || 0).toFixed(2);
+    let loans = parseFloat(d.loans || 0).toFixed(2);
+    let meals = parseFloat(d.meals || 0).toFixed(2);
+    let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
+    
+    // Calculate total deductions properly
+    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts)).toFixed(2);
+    
+    // Ensure Net Pay is accurate
+    let netPay = parseFloat(d.finalNetPay || (grossIncome - totalDeduct)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
     let html = `
-        <div style="text-align: left; font-size: 13px;">
-            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; margin-bottom: 15px;">
-                <span style="color: #64748b;">Cutoff Period:</span>
-                <strong style="color: #0f172a;">${d.start} to ${d.end}</strong>
+        <div style="background: white; padding: 20px; border: 2px solid #0f172a; border-radius: 8px; font-family: 'Arial', sans-serif; color: #000; text-align: left; max-width: 100%; box-sizing: border-box;">
+            
+            <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 15px;">
+                <h2 style="margin: 0; font-size: 28px; font-weight: 900; letter-spacing: 2px;">TAKODEÁL</h2>
+                <div style="font-size: 14px; color: #333;">Official Payslip</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 13px; margin-bottom: 20px;">
+                <div>
+                    <div style="margin-bottom: 4px;"><strong>Employee:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${d.name || d.staffName}</span></div>
+                    <div style="margin-bottom: 4px;"><strong>Department:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${d.branch || 'N/A'}</span></div>
+                </div>
+                <div>
+                    <div style="margin-bottom: 4px;"><strong>Cutoff:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${d.start || d.startDate} to ${d.end || d.endDate}</span></div>
+                    <div style="margin-bottom: 4px;"><strong>Disbursed:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${disbursedDateStr}</span></div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; border: 2px solid #000; font-size: 12px; margin-bottom: 20px;">
+                <!-- INCOME COLUMN -->
+                <div style="border-right: 2px solid #000;">
+                    <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 2px solid #000; text-align: center; font-size: 13px;">INCOME</div>
+                    <div style="padding: 10px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Basic Pay (${d.shiftsWorked || 0} shifts)</span> <strong>${basicPay}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Overtime / Night Diff</span> <strong>${otPay}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Straight Duty Bonus</span> <strong>${straightPay}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Holiday Pay</span> <strong>${holPay}</strong></div>
+                    </div>
+                    <div style="border-top: 2px solid #000; padding: 10px; display: flex; justify-content: space-between; font-weight: 900; font-size: 13px;">
+                        <span>GROSS INCOME</span> <span>${grossIncome}</span>
+                    </div>
+                </div>
+
+                <!-- DEDUCTIONS COLUMN -->
+                <div>
+                    <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 2px solid #000; text-align: center; font-size: 13px;">DEDUCTIONS</div>
+                    <div style="padding: 10px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Late/Undertime</span> <strong>${lateDeduct}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>SSS / Phil / Pag-IBIG</span> <strong>${(parseFloat(sss)+parseFloat(phil)+parseFloat(pagibig)).toFixed(2)}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Cash Advance (Vale)</span> <strong>${vale}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Company Loans</span> <strong>${loans}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Foods / Custom</span> <strong>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</strong></div>
+                    </div>
+                    <div style="border-top: 2px solid #000; padding: 10px; display: flex; justify-content: space-between; font-weight: 900; font-size: 13px;">
+                        <span>TOTAL DEDUCT</span> <span>${totalDeduct}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: stretch; margin-top: 10px; border: 2px solid #000;">
+                <div style="background: #e2e8f0; padding: 15px 20px; font-weight: 900; font-size: 18px; border-right: 2px solid #000; display: flex; align-items: center;">NET PAY</div>
+                <div style="flex: 1; padding: 15px 20px; font-weight: 900; font-size: 26px; text-align: center; color: #16a34a;">₱${netPay}</div>
             </div>
             
-            <strong style="color: #0f766e; display: block; margin-bottom: 5px; font-size: 14px;">Income</strong>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Basic Pay (${d.shiftsWorked} shifts):</span> <strong>₱${(d.basicPay||0).toFixed(2)}</strong></div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Night / OT Bonus:</span> <strong>₱${(d.nightBonus||0).toFixed(2)}</strong></div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Holiday Pay:</span> <strong>₱${(d.holidayPayTotal||0).toFixed(2)}</strong></div>
-            
-            <strong style="color: #dc2626; display: block; margin-top: 15px; margin-bottom: 5px; font-size: 14px;">Deductions</strong>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Late/Penalties:</span> <strong>-₱${(d.lateDeduction||0).toFixed(2)}</strong></div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Cash Advances:</span> <strong>-₱${(d.advances||0).toFixed(2)}</strong></div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Meals:</span> <strong>-₱${(d.meals||0).toFixed(2)}</strong></div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong>-₱${(d.loans||0).toFixed(2)}</strong></div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Gov't (SSS/PH/PAGIBIG):</span> <strong>-₱${((d.sss||0)+(d.philhealth||0)+(d.pagibig||0)).toFixed(2)}</strong></div>
-
-            <div style="margin-top: 20px; padding-top: 15px; border-top: 2px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 16px; font-weight: bold; color: #334155;">NET PAID</span>
-                <span style="font-size: 24px; font-weight: 900; color: #16a34a;">₱${(d.finalNetPay||0).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <div style="text-align: center; margin-top: 15px; font-size: 10px; color: #64748b; font-style: italic;">
+                System Generated Digital Payslip • Takodeal POS
             </div>
         </div>
     `;
 
     Swal.fire({
-        title: `🧾 Payslip Record`,
         html: html,
+        width: '600px',
+        showConfirmButton: true,
         confirmButtonText: 'Close',
         confirmButtonColor: '#0f172a',
-        customClass: { popup: 'rounded-2xl shadow-2xl' }
+        customClass: { popup: 'rounded-2xl shadow-2xl p-0' }
     });
 };
