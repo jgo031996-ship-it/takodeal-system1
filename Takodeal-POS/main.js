@@ -7979,45 +7979,98 @@ window.openPrinterManager = function() {
 
 window.connectSpecificPrinter = async function(target) {
     try {
-        const device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '0000ae30-0000-1000-8000-00805f9b34fb']
-        });
+        let device = null;
+        // Check if the tablet already remembers this specific printer
+        let savedDeviceId = localStorage.getItem(`takodeal_printer_${target}_id`);
+
+        // 🔥 PHASE 1: THE SILENT MEMORY BYPASS (SPEED UPGRADE)
+        if (savedDeviceId && navigator.bluetooth && navigator.bluetooth.getDevices) {
+            const permittedDevices = await navigator.bluetooth.getDevices();
+            // Look through the authorized devices for our saved ID
+            device = permittedDevices.find(d => d.id === savedDeviceId);
+            
+            if (device) {
+                console.log(`Found authorized ${target} printer in memory. Bypassing scan...`);
+            }
+        }
+
+        // 🔥 PHASE 2: FALLBACK MANUAL SCAN (First Time Setup)
+        if (!device) {
+            console.log(`No memory for ${target} printer. Opening Bluetooth scanner...`);
+            device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [
+                    '000018f0-0000-1000-8000-00805f9b34fb', 
+                    'e7810a71-73ae-499d-8c15-faa9aef0c3f2', 
+                    '0000ae30-0000-1000-8000-00805f9b34fb'
+                ]
+            });
+            // Save the unique ID so we never have to scan for it again!
+            localStorage.setItem(`takodeal_printer_${target}_id`, device.id);
+        }
 
         Swal.fire({title: 'Pairing...', text: 'Connecting to hardware...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        // Establish the GATT connection
         const server = await device.gatt.connect();
-
         let foundChar = null;
         const services = await server.getPrimaryServices();
+        
         for (let service of services) {
             const characteristics = await service.getCharacteristics();
             for (let char of characteristics) {
                 if (char.properties.write || char.properties.writeWithoutResponse) {
-                    foundChar = char; break;
+                    foundChar = char; 
+                    break;
                 }
             }
             if (foundChar) break;
         }
 
         if (foundChar) {
+            // Assign to the correct global variable based on the target
             if (target === 'main') window.mainPrinterChar = foundChar;
             else if (target === 'kitchen') window.kitchenPrinterChar = foundChar;
             else if (target === 'bar') window.barPrinterChar = foundChar;
 
-            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: `${target.toUpperCase()} Printer Paired!`, showConfirmButton: false, timer: 2000 });
+            Swal.fire({ 
+                toast: true, position: 'top-end', icon: 'success', 
+                title: `${target.toUpperCase()} Printer Paired!`, 
+                showConfirmButton: false, timer: 2000 
+            });
+            
             window.openPrinterManager(); // Re-open the menu to show the green checkmark
             
+            // Handle accidental disconnects gracefully
             device.addEventListener('gattserverdisconnected', () => {
+                console.warn(`${target.toUpperCase()} Printer disconnected.`);
                 if (target === 'main') window.mainPrinterChar = null;
                 else if (target === 'kitchen') window.kitchenPrinterChar = null;
                 else if (target === 'bar') window.barPrinterChar = null;
+                
+                Swal.fire({
+                    toast: true, position: 'top-end', icon: 'warning',
+                    title: `${target.toUpperCase()} Printer Offline`, 
+                    text: 'Bluetooth connection lost.',
+                    showConfirmButton: false, timer: 4000
+                });
             });
+            
         } else {
             throw new Error("Device does not support direct ESC/POS writing.");
         }
     } catch (error) {
         console.error(error);
-        Swal.fire('Connection Failed', error.message || 'Could not connect to printer.', 'error').then(() => window.openPrinterManager());
+        
+        // If the cashier simply clicked "Cancel" on the scan popup, fail silently
+        if (error.name === 'NotFoundError' || error.code === 8) {
+            Swal.close();
+            return;
+        }
+        
+        // If it was a genuine failure, alert them
+        Swal.fire('Connection Failed', error.message || 'Could not connect to printer. Please ensure it is powered on.', 'error')
+            .then(() => window.openPrinterManager());
     }
 };
 
