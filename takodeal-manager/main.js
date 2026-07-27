@@ -1993,8 +1993,32 @@ window.submitMultiDispatch = async function () {
         }
     }
 
-    let validCart = window.dispatchCart.filter(i => i.qty > 0);
-    let skippedCart = window.dispatchCart.filter(i => i.qty <= 0); 
+    let validCart = [];
+    let skippedCart = []; 
+
+    window.dispatchCart.forEach(item => {
+        let sentRaw = parseFloat(item.rawQty) || 0;
+        let sentBase = parseFloat(item.qty) || 0;
+        
+        let origRaw = parseFloat(item.origRawQty) || sentRaw;
+        let origBase = parseFloat(item.origBaseQty) || sentBase;
+
+        if (sentBase > 0) validCart.push(item);
+
+        let remainingRaw = origRaw - sentRaw;
+        let remainingBase = origBase - sentBase;
+
+        // 🔥 THE FIX: If they sent LESS than requested (or 0), send the exact remainder to the Delayed Tab!
+        if (remainingBase > 0) {
+            skippedCart.push({
+                ...item,
+                qty: remainingBase,
+                displayQty: remainingRaw,
+                rawQty: remainingRaw,
+                requestType: 'Delayed / Backlogged'
+            });
+        }
+    });
 
     if (validCart.length === 0) { 
         return Swal.fire('Empty Dispatch', 'You must set a quantity greater than 0 for the items you want to send.', 'warning'); 
@@ -2316,11 +2340,6 @@ window.loadDispatchLogs = async function() {
         console.error(e); 
         tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red; padding: 20px;">Error loading logs</td></tr>'; 
     }
-};
-
-window.switchLogisticsTab = function(tab) {
-    window.activeLogisticsTab = tab;
-    window.renderLogisticsFeed();
 };
 
 window.renderLogisticsFeed = function() {
@@ -8340,161 +8359,6 @@ window.filterAlertsTable = function() {
             }
         }
     }
-};
-
-// ========================================================
-// 📥 UNIVERSAL EXCEL EXPORTER (WITH BULLETPROOF INTERCEPTOR)
-// ========================================================
-window.downloadExcel = async function(tbodyId, fileName) {
-    let tbody = document.getElementById(tbodyId);
-    if (!tbody) return;
-    
-    let table = tbody.closest('table');
-    if (!table) return;
-    
-    let headers = Array.from(table.querySelectorAll('th, td')).map(cell => cell.innerText.trim().toUpperCase());
-    
-    // 🔥 THE BULLETPROOF INTERCEPTOR: Checks if the table contains 'OR#' or if it's the Sales History table!
-    if (headers.includes('OR#') || headers.includes('OR #') || tbodyId.toLowerCase().includes('history') || tbodyId.toLowerCase().includes('transaction')) {
-        let btn = document.activeElement; 
-        let oldText = btn && btn.tagName === 'BUTTON' ? btn.innerText : "Export Active Tab";
-        if (btn && btn.tagName === 'BUTTON') { btn.innerText = "⏳ Fetching Items..."; btn.disabled = true; }
-
-        try {
-            // 1. Grab the exact Date Filters from the Sales History Page
-            let startInput = document.getElementById('histStartDate') || document.querySelectorAll('input[type="date"]')[0];
-            let endInput = document.getElementById('histEndDate') || document.querySelectorAll('input[type="date"]')[1];
-            let branchSelect = document.getElementById('histBranchFilter') || document.querySelector('select');
-
-            let startDateVal = startInput ? startInput.value : new Date().toISOString().split('T')[0];
-            let endDateVal = endInput ? endInput.value : new Date().toISOString().split('T')[0];
-            
-            let branch = 'All';
-            if (branchSelect) {
-                branch = branchSelect.value;
-                if (branch.includes("All")) branch = "All";
-            }
-
-            let startOfDay = new Date(startDateVal);
-            startOfDay.setHours(0, 0, 0, 0);
-            let endOfDay = new Date(endDateVal);
-            endOfDay.setHours(23, 59, 59, 999);
-
-            // 2. Fetch directly from Firebase to get the hidden Cart Items
-            let q;
-            if (branch === "All") {
-                q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
-            } else {
-                q = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay), window.orderBy("timestamp", "desc"));
-            }
-
-            const snap = await window.getDocs(q);
-
-            if (snap.empty) {
-                Swal.fire('No Data', 'No transactions found for this date range.', 'info');
-                if (btn && btn.tagName === 'BUTTON') { btn.innerText = oldText; btn.disabled = false; }
-                return;
-            }
-
-            // 3. Build CSV Header with 'Items Sold' included!
-            let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Amount,Discount,Net Amount,Payment Method,Status,Date,Time\n";
-
-            snap.forEach(docSnap => {
-                let tx = docSnap.data();
-                let d = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : new Date();
-                let dateStr = d.toLocaleDateString('en-PH');
-                let timeStr = d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-
-                // 🍔 Extract the Cart Items and Add-ons cleanly!
-                let itemsArr = [];
-                if (tx.cart && Array.isArray(tx.cart)) {
-                    tx.cart.forEach(item => {
-                        let itemName = item.name || item.itemName;
-                        let itemLine = `${item.qty}x ${itemName}`;
-                        if (item.addons) {
-                            for (let key in item.addons) {
-                                if (item.addons[key].qty > 0) itemLine += ` (+${item.addons[key].qty} ${key})`;
-                            }
-                        }
-                        itemsArr.push(itemLine);
-                    });
-                }
-                let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
-
-                let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
-                let disc = (tx.globalDiscountAmount || 0).toFixed(2);
-                let net = (tx.netTotal || 0).toFixed(2);
-                let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
-                let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
-                
-                // Format Split Payments properly if they exist
-                let method = tx.paymentMethod || 'Cash';
-                if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
-                    method = tx.splitDetails.map(s => `${s.method}`).join(' & ');
-                }
-                method = method.replace(/"/g, '""');
-                
-                let status = (tx.status || 'Paid').replace(/"/g, '""');
-
-                // We add the Peso sign ₱ here so it formats beautifully as money in Excel!
-                csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","₱${gross}","₱${disc}","₱${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
-            });
-
-            // 4. Force UTF-8 encoding for Excel
-            let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-            let downloadLink = document.createElement("a");
-            let safeBranchName = branch.replace(/[^a-zA-Z0-9]/g, '_');
-            downloadLink.download = `Takodeal_${safeBranchName}_Transactions_${startDateVal}_to_${endDateVal}.csv`;
-            downloadLink.href = window.URL.createObjectURL(csvFile);
-            downloadLink.style.display = "none";
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            document.body.removeChild(downloadLink);
-
-        } catch (error) {
-            console.error("Export Error:", error);
-            Swal.fire('Error', 'Failed to generate CSV. Please check your internet connection.', 'error');
-        } finally {
-            if (btn && btn.tagName === 'BUTTON') { btn.innerText = oldText; btn.disabled = false; }
-        }
-        
-        return; // 🛑 CRITICAL: Stop here so it doesn't run the basic screen scraper!
-    }
-
-    // ==========================================
-    // 📺 STANDARD SCREEN SCRAPER (For 'Daily Sales', 'Shifts Sales', etc)
-    // ==========================================
-    let rows = table.querySelectorAll('tr');
-    let csv = [];
-    let hideLastColExcel = false;
-
-    for (let i = 0; i < rows.length; i++) {
-        let row = [], cols = rows[i].querySelectorAll('td, th');
-        let colCount = cols.length;
-        
-        // 🔥 REMOVE THE ACTION COLUMN SO BUTTONS DON'T SHOW UP IN EXCEL!
-        let lastColText = cols[colCount - 1] ? cols[colCount - 1].innerText.trim().toUpperCase() : '';
-        if (i === 0 && (lastColText === 'ACTION' || lastColText === 'VIEW')) {
-            hideLastColExcel = true;
-        }
-
-        if (hideLastColExcel) colCount -= 1; 
-
-        for (let j = 0; j < colCount; j++) {
-            let text = cols[j].innerText.replace(/"/g, '""').replace(/₱/g, '₱'); 
-            row.push('"' + text + '"'); 
-        }
-        csv.push(row.join(","));
-    }
-
-    let csvFile = new Blob(["\uFEFF" + csv.join("\n")], {type: "text/csv;charset=utf-8;"});
-    let tempLink = document.createElement("a");
-    let dateTag = new Date().toISOString().split('T')[0];
-    
-    tempLink.download = `${fileName}_${dateTag}.csv`;
-    tempLink.href = window.URL.createObjectURL(csvFile);
-    tempLink.style.display = "none";
-    document.body.appendChild(tempLink); tempLink.click(); document.body.removeChild(tempLink);
 };
 
 // ==========================================
@@ -15892,114 +15756,6 @@ window.filterAuditTable = function() {
 };
 
 // ========================================================
-// 📥 UPGRADED GLOBAL SALES EXPORTER (WITH VISIBILITY SCANNER)
-// ========================================================
-window.exportDashboardSalesCSV = async function() {
-    // 1. 🔥 THE FIX: Actively scan the screen for the VISIBLE date boxes, ignoring all hidden tabs!
-    let visibleDateInputs = Array.from(document.querySelectorAll('input[type="date"]')).filter(input => input.offsetWidth > 0 && input.offsetHeight > 0);
-    let visibleSelects = Array.from(document.querySelectorAll('select')).filter(select => select.offsetWidth > 0 && select.offsetHeight > 0);
-
-    let branch = 'All';
-    if (visibleSelects.length > 0) {
-        branch = visibleSelects[0].value;
-        if (branch.includes("All")) branch = "All"; // Normalize "All Branches"
-    }
-
-    let startDateVal = new Date().toISOString().split('T')[0];
-    let endDateVal = new Date().toISOString().split('T')[0];
-
-    // Grab the exact dates the user is looking at!
-    if (visibleDateInputs.length >= 2) {
-        startDateVal = visibleDateInputs[0].value || startDateVal;
-        endDateVal = visibleDateInputs[1].value || endDateVal;
-    }
-
-    let btn = document.getElementById('btnExportSales');
-    let oldText = btn ? btn.innerText : "📥 Export Sales CSV";
-    if (btn) { btn.innerText = "⏳ Generating Excel..."; btn.disabled = true; }
-
-    try {
-        // 2. Set precise timeframes for Firebase querying
-        let startOfDay = new Date(startDateVal);
-        startOfDay.setHours(0, 0, 0, 0);
-        let endOfDay = new Date(endDateVal);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        let q;
-        if (branch === "All") {
-            q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-        } else {
-            q = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
-        }
-
-        const snap = await getDocs(q);
-
-        if (snap.empty) {
-            Swal.fire('No Data', 'No sales found for this date range.', 'info');
-            if (btn) { btn.innerText = oldText; btn.disabled = false; }
-            return;
-        }
-
-        // 3. Header with "Items Sold" included
-        let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Date,Time\n";
-
-        snap.forEach(docSnap => {
-            let tx = docSnap.data();
-            let d = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            let dateStr = d.toLocaleDateString('en-PH');
-            let timeStr = d.toLocaleTimeString('en-PH');
-
-            // 🍔 Extract the Cart Items and Add-ons cleanly
-            let itemsArr = [];
-            if (tx.cart && Array.isArray(tx.cart)) {
-                tx.cart.forEach(item => {
-                    let itemName = item.name || item.itemName;
-                    let itemLine = `${item.qty}x ${itemName}`;
-                    
-                    if (item.addons) {
-                        for (let key in item.addons) {
-                            if (item.addons[key].qty > 0) {
-                                itemLine += ` (+${item.addons[key].qty} ${key})`;
-                            }
-                        }
-                    }
-                    itemsArr.push(itemLine);
-                });
-            }
-            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
-
-            let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
-            let disc = (tx.globalDiscountAmount || 0).toFixed(2);
-            let net = (tx.netTotal || 0).toFixed(2);
-
-            let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
-            let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
-            let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
-            let status = (tx.status || 'Paid').replace(/"/g, '""');
-
-            csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${gross}","${disc}","${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
-        });
-
-        // 4. Force UTF-8 encoding for Excel
-        let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-        let downloadLink = document.createElement("a");
-        let safeBranchName = branch.replace(/[^a-zA-Z0-9]/g, '_');
-        downloadLink.download = `Takodeal_${safeBranchName}_Sales_${startDateVal}_to_${endDateVal}.csv`;
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-
-    } catch (error) {
-        console.error("Export Error:", error);
-        Swal.fire('Error', 'Failed to generate CSV. Please check your internet connection.', 'error');
-    } finally {
-        if (btn) { btn.innerText = oldText; btn.disabled = false; }
-    }
-};
-
-// ========================================================
 // 🛠️ ASSETS & EQUIPMENT MANAGER ENGINE
 // ========================================================
 
@@ -17827,22 +17583,53 @@ window.purgeOldWasteData = async function() {
 };
 
 // ========================================================
-// 🚚 UPGRADED LOGISTICS HUB (PER-BRANCH & TIME TABS)
+// 🔔 REAL-TIME LOGISTICS NOTIFICATION ENGINE (UPGRADED TABS)
 // ========================================================
-window.logisticsState = {
-    activeBranch: 'All', // Defaults to showing all
-    activeTab: 'requests', // Defaults to Stock Requests
-    timeFilter: 'All', // 🔥 NEW DATE FILTER STATE
-    requests: [],
-    deliveries: []
-};
+window.poUnsubscribe = null;
 
 window.startLogisticsListeners = function() {
-    onSnapshot(collection(db, "purchase_orders"), (snap) => {
+    if (window.poUnsubscribe) window.poUnsubscribe(); 
+
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+
+    // 🔒 Listen for Pending, Drafting AND Delayed Requests!
+    let q = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Delayed", "Drafting"]));
+    if (isFranchisee) {
+        q = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Delayed", "Drafting"]));
+    }
+
+    let initialLoad = true;
+
+    window.poUnsubscribe = window.onSnapshot(q, (snapshot) => {
+        let pendingCount = 0;
+        let newOrderArrived = false;
+
         window.logisticsState.requests = [];
-        snap.forEach(doc => window.logisticsState.requests.push({id: doc.id, ...doc.data()}));
+        snapshot.forEach(doc => {
+            let data = doc.data();
+            window.logisticsState.requests.push({id: doc.id, ...data});
+            if (data.status === 'Pending') pendingCount++;
+        });
         window.logisticsState.requests.sort((a,b) => b.timestamp - a.timestamp);
+
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added" && !initialLoad) newOrderArrived = true;
+        });
+
+        let badge = document.getElementById('poNotificationBadge');
+        if (badge) {
+            badge.innerText = pendingCount;
+            badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+        }
+
         window.renderLogisticsUI();
+
+        if (newOrderArrived) {
+            window.playManagerPing();
+            Swal.fire({ title: '🔔 New Stock Request!', text: 'A branch just reported an inventory variance or sent a Purchase Order.', icon: 'info', toast: true, position: 'top-end', showConfirmButton: false, timer: 5000 });
+        }
+        initialLoad = false;
     });
 
     onSnapshot(collection(db, "dispatch_logs"), (snap) => {
@@ -17858,52 +17645,19 @@ window.switchLogisticsBranch = function(branch) {
     window.renderLogisticsUI();
 };
 
-window.switchLogisticsTimeFilter = function(filter) {
-    window.logisticsState.timeFilter = filter;
-    window.renderLogisticsUI();
-};
-
 window.switchLogisticsTab = function(tab) {
     window.logisticsState.activeTab = tab;
-    
-    let reqBtn = document.getElementById('tabLogRequests');
-    let delBtn = document.getElementById('tabLogDeliveries');
-    
-    if (tab === 'requests') {
-        reqBtn.style.borderBottom = '3px solid #0ea5e9'; reqBtn.style.color = '#0ea5e9'; reqBtn.style.background = 'white';
-        delBtn.style.borderBottom = '3px solid transparent'; delBtn.style.color = '#64748b'; delBtn.style.background = 'transparent';
-    } else {
-        delBtn.style.borderBottom = '3px solid #0ea5e9'; delBtn.style.color = '#0ea5e9'; delBtn.style.background = 'white';
-        reqBtn.style.borderBottom = '3px solid transparent'; reqBtn.style.color = '#64748b'; reqBtn.style.background = 'transparent';
-    }
     window.renderLogisticsUI();
 };
 
-// ========================================================
-// 🚚 LOGISTICS FEED UI (WITH BULK DELETE ENGINE)
-// ========================================================
 window.renderLogisticsUI = function() {
-    let reqData = window.logisticsState.requests;
-    let delData = window.logisticsState.deliveries;
+    let reqData = window.logisticsState.requests || [];
+    let delData = window.logisticsState.deliveries || [];
     
-    // 1. APPLY TIME FILTER
-    let now = new Date();
-    let cutoffDate = null;
-    
-    if (window.logisticsState.timeFilter === 'Today') {
-        cutoffDate = new Date(now.setHours(0,0,0,0));
-    } else if (window.logisticsState.timeFilter === 'Week') {
-        cutoffDate = new Date(); cutoffDate.setDate(now.getDate() - 7);
-    } else if (window.logisticsState.timeFilter === 'Month') {
-        cutoffDate = new Date(); cutoffDate.setDate(now.getDate() - 30);
-    }
+    // Split the requests into Normal vs Delayed
+    let pendingRequests = reqData.filter(r => r.status === 'Pending' || r.status === 'Drafting');
+    let delayedRequests = reqData.filter(r => r.status === 'Delayed');
 
-    if (cutoffDate) {
-        reqData = reqData.filter(r => { let d = r.timestamp ? (r.timestamp.toDate ? r.timestamp.toDate() : new Date(r.timestamp)) : new Date(0); return d >= cutoffDate; });
-        delData = delData.filter(d => { let dt = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp)) : new Date(d.date || 0); return dt >= cutoffDate; });
-    }
-
-    // 2. Branch Badges
     let branches = new Set(["Cabantian", "Citygate", "Maa"]);
     reqData.forEach(r => { if(r.branch) branches.add(r.branch); });
     delData.forEach(d => { if(d.toBranch) branches.add(d.toBranch); });
@@ -17911,15 +17665,16 @@ window.renderLogisticsUI = function() {
     let branchTabsHtml = `<button onclick="window.switchLogisticsBranch('All')" style="flex: 1; min-width: 100px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.logisticsState.activeBranch === 'All' ? '#10b981' : 'transparent'}; background: ${window.logisticsState.activeBranch === 'All' ? 'white' : 'transparent'}; color: ${window.logisticsState.activeBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">🌍 All Branches</button>`;
     
     Array.from(branches).sort().forEach(branch => {
-        let pendingReqs = reqData.filter(r => r.branch === branch && (r.status === 'Pending' || r.status === 'Delayed')).length;
-        let badgeHtml = pendingReqs > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px;">${pendingReqs}</span>` : '';
+        let branchPending = pendingRequests.filter(r => r.branch === branch).length;
+        let badgeHtml = branchPending > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px;">${branchPending}</span>` : '';
         let isActive = window.logisticsState.activeBranch === branch;
         branchTabsHtml += `<button onclick="window.switchLogisticsBranch('${branch}')" style="flex: 1; min-width: 120px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${isActive ? '#10b981' : 'transparent'}; background: ${isActive ? 'white' : 'transparent'}; color: ${isActive ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">📍 ${branch} ${badgeHtml}</button>`;
     });
     document.getElementById('logisticsBranchTabs').innerHTML = branchTabsHtml;
 
     if (window.logisticsState.activeBranch !== 'All') {
-        reqData = reqData.filter(r => r.branch === window.logisticsState.activeBranch);
+        pendingRequests = pendingRequests.filter(r => r.branch === window.logisticsState.activeBranch);
+        delayedRequests = delayedRequests.filter(r => r.branch === window.logisticsState.activeBranch);
         delData = delData.filter(d => d.toBranch === window.logisticsState.activeBranch);
     }
 
@@ -17932,13 +17687,25 @@ window.renderLogisticsUI = function() {
         dispatchGroups[groupKey].items.push(del);
     });
 
-    document.getElementById('badgeLogReqs').innerText = reqData.filter(r => r.status === 'Pending' || r.status === 'Delayed').length;
-    document.getElementById('badgeLogDels').innerText = Object.keys(dispatchGroups).length;
-
     let listContainer = document.getElementById('logisticsFeedList');
-    let html = '';
+    if (!listContainer) return;
+    
+    // 🔥 THE NEW 3-TAB INTERFACE
+    let activeTab = window.logisticsState.activeTab || 'requests';
+    let tabHtml = `
+        <div id="logisticsTabContainer" style="display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 15px; background: #f8fafc; border-radius: 8px 8px 0 0; overflow: hidden;">
+            <button onclick="window.switchLogisticsTab('requests')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='requests'?'#0ea5e9':'transparent'}; background: ${activeTab==='requests'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='requests'?'#0ea5e9':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s;">
+                📢 Stock Requests (<span id="tabCountReq">${pendingRequests.length}</span>)
+            </button>
+            <button onclick="window.switchLogisticsTab('delayed')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='delayed'?'#dc2626':'transparent'}; background: ${activeTab==='delayed'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='delayed'?'#dc2626':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
+                ⏳ Delayed Items (<span id="tabCountDelayed">${delayedRequests.length}</span>)
+            </button>
+            <button onclick="window.switchLogisticsTab('deliveries')" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid ${activeTab==='deliveries'?'#16a34a':'transparent'}; background: ${activeTab==='deliveries'?'white':'transparent'}; font-weight: 900; color: ${activeTab==='deliveries'?'#16a34a':'#64748b'}; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
+                🚚 Deliveries (<span id="tabCountDel">${Object.keys(dispatchGroups).length}</span>)
+            </button>
+        </div>
+    `;
 
-    // 🔥 THE BULK ACTION BAR 🔥
     let bulkActionBar = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
             <label style="font-size: 14px; font-weight: bold; color: #334155; cursor: pointer; display: flex; align-items: center; gap: 10px;">
@@ -17948,20 +17715,19 @@ window.renderLogisticsUI = function() {
         </div>
     `;
 
-    if (window.logisticsState.activeTab === 'requests') {
-        if (reqData.length === 0) { html = `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No stock requests found.</div>`; } 
+    let html = tabHtml;
+
+    // RENDER PENDING REQUESTS
+    if (activeTab === 'requests') {
+        if (pendingRequests.length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No stock requests found.</div>`; } 
         else {
-            html += bulkActionBar; // Inject the select-all bar!
-            reqData.forEach(req => {
-                let isPending = req.status === 'Pending';
-                let isDelayed = req.status && req.status.includes('Delayed');
-                let bgCol = isPending || isDelayed ? '#fffbeb' : 'white';
-                let borderCol = isPending || isDelayed ? '#fde68a' : '#e2e8f0';
-                let statCol = isPending ? '#d97706' : (isDelayed ? '#dc2626' : '#16a34a');
+            html += bulkActionBar; 
+            pendingRequests.forEach(req => {
                 let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-                
+                let statBadge = req.status === "Drafting" ? `<div style="font-weight: bold; font-size: 13px; color: #0369a1; background: #bae6fd; padding: 4px 8px; border-radius: 6px;">Drafting in Cart</div>` : `<div style="font-weight: bold; font-size: 13px; color: #d97706; background: #fef3c7; padding: 4px 8px; border-radius: 6px;">Pending</div>`;
+
                 html += `
-                    <div style="background: ${bgCol}; border: 1px solid ${borderCol}; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
                         <div style="display: flex; gap: 15px; align-items: center;">
                             <input type="checkbox" class="bulk-log-cb" value="${req.id}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
                             <div>
@@ -17971,18 +17737,46 @@ window.renderLogisticsUI = function() {
                             </div>
                         </div>
                         <div style="display: flex; gap: 10px; align-items: center;">
-                            <div style="font-weight: bold; font-size: 13px; color: ${statCol}; margin-right: 5px;">${req.status}</div>
+                            ${statBadge}
                             <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">🔍 Review Request</button>
-                            <button onclick="if(typeof window.deleteStockRequest === 'function') window.deleteStockRequest('${req.id}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;" title="Delete Request">🗑️</button>
                         </div>
                     </div>
                 `;
             });
         }
-    } else {
-        if (Object.keys(dispatchGroups).length === 0) { html = `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No deliveries found.</div>`; } 
+    } 
+    // RENDER DELAYED / BACKLOGGED ITEMS
+    else if (activeTab === 'delayed') {
+        if (delayedRequests.length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No delayed or backlogged items.</div>`; } 
         else {
-            html += bulkActionBar; // Inject the select-all bar!
+            html += bulkActionBar; 
+            delayedRequests.forEach(req => {
+                let dateStr = req.timestamp ? req.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+                let origDate = req.originalRequestDate || dateStr;
+
+                html += `
+                    <div style="background: #fff1f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <input type="checkbox" class="bulk-log-cb" value="${req.id}" style="width:22px; height:22px; accent-color: #0ea5e9; cursor: pointer;">
+                            <div>
+                                <h3 style="margin: 0 0 5px 0; color: #b91c1c; font-size: 16px;">⏳ Delayed Items for ${req.branch}</h3>
+                                <div style="font-size: 11px; color: #ef4444; font-weight: bold;">Originally Requested: ${origDate}</div>
+                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">📅 Set Aside: ${dateStr} • <strong>${req.items ? req.items.length : 0} items</strong></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); transition: 0.2s;">🛒 Load to Cart</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    }
+    // RENDER DELIVERIES
+    else {
+        if (Object.keys(dispatchGroups).length === 0) { html += `<div style="text-align:center; color:#64748b; padding: 60px; font-weight: bold;">No deliveries found.</div>`; } 
+        else {
+            html += bulkActionBar; 
             for (let key in dispatchGroups) {
                 let group = dispatchGroups[key];
                 let hasMissing = group.items.some(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
@@ -17997,7 +17791,6 @@ window.renderLogisticsUI = function() {
                 let statCol = overallStatus === 'Received' ? '#16a34a' : (overallStatus === 'Arrived at Branch' ? '#8b5cf6' : (overallStatus === 'In Transit' ? '#0ea5e9' : '#dc2626'));
                 
                 let encodedGroup = encodeURIComponent(JSON.stringify(group)); 
-                // Collect all Firebase IDs associated with this group into a single comma-separated list
                 let groupFirebaseIds = group.items.map(i => i.id).join(',');
 
                 let actionButtons = '';
@@ -18019,7 +17812,6 @@ window.renderLogisticsUI = function() {
                             <div style="background: ${statCol}; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">${overallStatus}</div>
                             ${actionButtons}
                             <button onclick="window.viewDeliveryDetails('${encodedGroup}')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">🔍 Full Details</button>
-                            <button onclick="window.deleteDeliveryGroup('${encodedGroup}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;" title="Delete Delivery">🗑️</button>
                         </div>
                     </div>
                 `;
@@ -18028,8 +17820,124 @@ window.renderLogisticsUI = function() {
     }
     listContainer.innerHTML = html;
 };
-// Auto-start the new tab engine
-setTimeout(window.startLogisticsListeners, 1500);
+
+// ========================================================
+// 🚚 UPGRADED DELIVERY DETAILS MODAL (TIMESTAMPS FIX)
+// ========================================================
+window.viewDeliveryDetails = function(encodedGroup) {
+    let group = JSON.parse(decodeURIComponent(encodedGroup));
+    
+    // Find arrival info
+    let arrivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    let arrivedItem = group.items.find(i => i.arrivedAt);
+    if (arrivedItem && arrivedItem.arrivedAt) {
+        let aDate = arrivedItem.arrivedAt.seconds ? new Date(arrivedItem.arrivedAt.seconds * 1000) : new Date(arrivedItem.arrivedAt);
+        arrivedTimeStr = aDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + aDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // Find receiver info
+    let receiverName = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
+    let receivedItem = group.items.find(i => i.receivedBy);
+    if (receivedItem) {
+        receiverName = receivedItem.receivedBy;
+        if (receivedItem.receivedAt) {
+            let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
+            receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+        }
+    }
+
+    let headerEl = document.getElementById('dispatchDetailsHeader');
+    if(headerEl) {
+        headerEl.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Dispatch Info</div>
+                    <div style="margin-top: 5px; color: #0f172a; font-size: 15px;"><strong>📍 To:</strong> ${group.toBranch}</div>
+                    <div style="margin-top: 5px; color: #334155;"><strong>🚚 Driver:</strong> ${group.driver}</div>
+                    <div style="margin-top: 5px; color: #475569; font-size: 12px;"><strong>📅 Sent:</strong> ${group.date} at ${group.time}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Receiving Info</div>
+                    <div style="margin-top: 5px;"><strong>👤 Received By:</strong> <span style="color: #0f766e; font-weight: bold;">${receiverName}</span></div>
+                    <div style="margin-top: 5px; color: #475569;"><strong>📍 Arrived at Branch:</strong> ${arrivedTimeStr}</div>
+                    <div style="margin-top: 5px; color: #475569;"><strong>✅ Confirmed Received:</strong> ${receivedTimeStr}</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    let tbody = document.getElementById('dispatchDetailsBody');
+    let html = '';
+    
+    let canRecall = true; 
+    let hasMissing = false; 
+    
+    group.items.forEach(item => {
+        if (item.status !== 'In Transit') canRecall = false;
+        if (item.status === 'Lost in Transit' || item.status === 'Discrepancy') hasMissing = true;
+
+        let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : (item.status === 'Arrived' ? '#8b5cf6' : '#dc2626'));
+        let varText = item.variance ? `<span style="color:#dc2626; font-weight:bold;">${item.variance} ${item.uom}</span>` : `<span style="color:#94a3b8;">0</span>`;
+        let receivedQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : (item.status === 'In Transit' || item.status === 'Arrived' ? '---' : 0);
+        let expectedQty = item.displayQty || item.qty;
+        let displayUom = item.displayUom || item.uom;
+
+        let remarksHtml = item.receivingRemarks ? `<div style="font-size:11px; color:#ef4444; margin-top:4px; font-style:italic;">Reason: ${item.receivingRemarks}</div>` : '';
+        
+        html += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding:12px; font-weight:bold; color:#334155;">${item.item}</td>
+                <td style="padding:12px; font-weight:bold; color:#0f172a; text-align:center;">${expectedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
+                <td style="padding:12px; font-weight:bold; color:#0ea5e9; text-align:center;">${receivedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
+                <td style="padding:12px; text-align:center;">${varText}</td>
+                <td style="padding:12px; text-align:center;">
+                    <span style="background:${statColor}15; color:${statColor}; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; border: 1px solid ${statColor}50;">${item.status}</span>
+                    ${remarksHtml}
+                </td>
+            </tr>
+        `;
+    });
+    
+    if(tbody) tbody.innerHTML = html;
+
+    let footerEl = document.getElementById('dispatchDetailsFooter');
+    if (footerEl) {
+        footerEl.innerHTML = '';
+        if (canRecall) {
+            footerEl.innerHTML += `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s; width: 100%; margin-bottom: 10px;">🔙 Back Load / Recall Dispatch</button>`;
+        } 
+        if (hasMissing) {
+            footerEl.innerHTML += `<button onclick="window.requeueLostItems('${encodedGroup}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); font-size: 14px; transition: 0.2s; width: 100%;">🔄 Auto-Requeue Lost Items to Requests</button>`;
+        }
+        if (!canRecall && !hasMissing) {
+            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px; display: block; text-align: center;">🔒 This delivery has been fully processed by the branch.</span>`;
+        }
+    }
+
+    document.getElementById('dispatchDetailsModal').style.display = 'flex';
+};
+
+// ========================================================
+// 🚚 UPGRADED LOGISTICS HUB (PER-BRANCH & TIME TABS)
+// ========================================================
+window.logisticsState = {
+    activeBranch: 'All', // Defaults to showing all
+    activeTab: 'requests', // Defaults to Stock Requests
+    timeFilter: 'All', // 🔥 NEW DATE FILTER STATE
+    requests: [],
+    deliveries: []
+};
+
+window.switchLogisticsBranch = function(branch) {
+    window.logisticsState.activeBranch = branch;
+    window.renderLogisticsUI();
+};
+
+window.switchLogisticsTimeFilter = function(filter) {
+    window.logisticsState.timeFilter = filter;
+    window.renderLogisticsUI();
+};
 
 // ========================================================
 // 🗑️ INDIVIDUAL DELIVERY DELETE ENGINE
@@ -18189,7 +18097,9 @@ window.reviewStockRequest = async function(docId) {
                     // 🔥 THE MERGE FIX: Sum the requested quantities!
                     existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
                     existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
-                    // If it was already in the cart with 0 qty (e.g. out of stock), this forces the input box to wake up!
+                    // Update original request memory so partial dispatches work!
+                    existing.origRawQty = existing.rawQty;
+                    existing.origBaseQty = existing.qty;
                     existing.requestType = "Merged Request"; 
                 } else {
                     window.dispatchCart.push({
@@ -18197,6 +18107,8 @@ window.reviewStockRequest = async function(docId) {
                         name: reqItem.itemName,
                         rawQty: rawReqQty, 
                         qty: baseReqQty,
+                        origRawQty: rawReqQty, // 🔥 TRACK THE ORIGINAL REQUEST
+                        origBaseQty: baseReqQty, // 🔥 TRACK THE ORIGINAL REQUEST
                         uom: reqItem.displayUom || reqItem.uom,
                         baseUom: reqItem.uom,
                         friendlyUom: reqItem.displayUom || reqItem.uom,
@@ -18263,99 +18175,6 @@ window.reviewStockRequest = async function(docId) {
         console.error(e);
         Swal.fire('Error', 'Failed to load request details.', 'error');
     }
-};
-
-// ========================================================
-// 🚚 DELIVERY "FULL DETAILS" & RECALL VIEWER
-// ========================================================
-window.viewDeliveryDetails = function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    
-    // Find receiver info
-    let receiverName = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
-    let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
-    
-    let receivedItem = group.items.find(i => i.receivedBy);
-    if (receivedItem) {
-        receiverName = receivedItem.receivedBy;
-        if (receivedItem.receivedAt) {
-            let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
-            receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-        }
-    }
-
-    let headerEl = document.getElementById('dispatchDetailsHeader');
-    if(headerEl) {
-        headerEl.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
-                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Dispatch Info</div>
-                    <div style="margin-top: 5px; color: #0f172a; font-size: 15px;"><strong>📍 To:</strong> ${group.toBranch}</div>
-                    <div style="margin-top: 5px; color: #334155;"><strong>🚚 Driver:</strong> ${group.driver}</div>
-                    <div style="margin-top: 5px; color: #475569; font-size: 12px;"><strong>📅 Sent:</strong> ${group.date} at ${group.time}</div>
-                </div>
-                <div>
-                    <div style="font-size: 11px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Receiving Info</div>
-                    <div style="margin-top: 5px;"><strong>👤 Received By:</strong> <span style="color: #0f766e; font-weight: bold;">${receiverName}</span></div>
-                    <div style="margin-top: 5px; color: #475569;"><strong>⏰ Arrived:</strong> ${receivedTimeStr}</div>
-                </div>
-            </div>
-        `;
-    }
-    
-    let tbody = document.getElementById('dispatchDetailsBody');
-    let html = '';
-    
-    let canRecall = true; 
-    let hasMissing = false; // 🔥 Tracking if we need the new button!
-    
-    group.items.forEach(item => {
-        if (item.status !== 'In Transit') canRecall = false;
-        if (item.status === 'Lost in Transit' || item.status === 'Discrepancy') hasMissing = true;
-
-        let statColor = item.status === 'Received' ? '#16a34a' : (item.status === 'In Transit' ? '#0ea5e9' : (item.status === 'Arrived' ? '#8b5cf6' : '#dc2626'));
-        let varText = item.variance ? `<span style="color:#dc2626; font-weight:bold;">${item.variance} ${item.uom}</span>` : `<span style="color:#94a3b8;">0</span>`;
-        let receivedQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : (item.status === 'In Transit' || item.status === 'Arrived' ? '---' : 0);
-        let expectedQty = item.displayQty || item.qty;
-        let displayUom = item.displayUom || item.uom;
-
-        let remarksHtml = item.receivingRemarks ? `<div style="font-size:11px; color:#ef4444; margin-top:4px; font-style:italic;">Reason: ${item.receivingRemarks}</div>` : '';
-        
-        html += `
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding:12px; font-weight:bold; color:#334155;">${item.item}</td>
-                <td style="padding:12px; font-weight:bold; color:#0f172a; text-align:center;">${expectedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
-                <td style="padding:12px; font-weight:bold; color:#0ea5e9; text-align:center;">${receivedQty} <span style="font-size:11px; color:#64748b;">${displayUom}</span></td>
-                <td style="padding:12px; text-align:center;">${varText}</td>
-                <td style="padding:12px; text-align:center;">
-                    <span style="background:${statColor}15; color:${statColor}; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; border: 1px solid ${statColor}50;">${item.status}</span>
-                    ${remarksHtml}
-                </td>
-            </tr>
-        `;
-    });
-    
-    if(tbody) tbody.innerHTML = html;
-
-    let footerEl = document.getElementById('dispatchDetailsFooter');
-    if (footerEl) {
-        footerEl.innerHTML = '';
-        
-        // 🔥 INJECT RECALL OR REQUEUE BUTTONS INTELLIGENTLY
-        if (canRecall) {
-            footerEl.innerHTML += `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s; width: 100%; margin-bottom: 10px;">🔙 Back Load / Recall Dispatch</button>`;
-        } 
-        
-        if (hasMissing) {
-            footerEl.innerHTML += `<button onclick="window.requeueLostItems('${encodedGroup}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); font-size: 14px; transition: 0.2s; width: 100%;">🔄 Auto-Requeue Lost Items to Requests</button>`;
-        }
-
-        if (!canRecall && !hasMissing) {
-            footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px; display: block; text-align: center;">🔒 This delivery has been fully processed by the branch.</span>`;
-        }
-    }
-
-    document.getElementById('dispatchDetailsModal').style.display = 'flex';
 };
 
 // ========================================================
