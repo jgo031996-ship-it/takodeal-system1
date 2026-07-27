@@ -2798,20 +2798,25 @@ window.reviewStockRequest = async function(docId) {
             data.items.forEach(item => {
                 let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : '#0284c7');
                 
-                // 🔥 THE UI FIX: Show Phys vs Sys instead of "0 Requested"
+                // 🔥 THE FIX: Smart UI that detects Physical Counts vs Standard Requests
                 let qtyDisplay = '';
-                if ((item.requestType === 'Low Stock' || item.requestType === 'Out of Stock') && item.physicalStock !== undefined) {
+                if (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock') {
+                    // For auto-alerts, the "qty" sent from the Cashier App is actually their physical count!
+                    let physCount = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
+                    let sysCount = item.systemStock !== undefined ? item.systemStock : 'Unknown';
+
                     qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${item.physicalStock} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${item.systemStock} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
                     `;
                 } else {
+                    // Standard Request Format
                     qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
                 }
 
                 itemsHtml += `
                     <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
-                        <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
+                        <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName || item.name}</td>
                         <td style="padding: 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
                         <td style="padding: 10px; text-align: center; vertical-align: middle;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50;">${item.requestType || 'Request'}</span></td>
                     </tr>
@@ -2839,22 +2844,37 @@ window.reviewStockRequest = async function(docId) {
             if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
             
             data.items.forEach(reqItem => {
-                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === reqItem.itemName);
+                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === (reqItem.itemName || reqItem.name));
+                
                 let rawReqQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
                 let baseReqQty = parseFloat(reqItem.qty) || 0;
+                
+                // Protect the physical/system data so it passes into the cart
+                let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : rawReqQty;
+                let sysStockToPass = reqItem.systemStock || 0;
+
+                // 🔥 THE FIX: If it's a Stock Alert, force the "Send Qty" to 0!
+                if (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock') {
+                    rawReqQty = 0; 
+                    baseReqQty = 0;
+                }
                 
                 if (existing) {
                     existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
                     existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
                     existing.origRawQty = existing.rawQty;
                     existing.origBaseQty = existing.qty;
-                    // Preserve the tag so it doesn't break later!
                     existing.requestType = reqItem.requestType || existing.requestType; 
+                    existing.physicalStock = physStockToPass;
+                    existing.systemStock = sysStockToPass;
                 } else {
                     window.dispatchCart.push({
-                        itemName: reqItem.itemName, name: reqItem.itemName,
-                        rawQty: rawReqQty, qty: baseReqQty,
-                        origRawQty: rawReqQty, origBaseQty: baseReqQty,
+                        itemName: reqItem.itemName || reqItem.name, 
+                        name: reqItem.itemName || reqItem.name,
+                        rawQty: rawReqQty, 
+                        qty: baseReqQty,
+                        origRawQty: rawReqQty, 
+                        origBaseQty: baseReqQty,
                         uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.uom,
                         friendlyUom: reqItem.displayUom || reqItem.uom,
                         selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
@@ -2862,7 +2882,8 @@ window.reviewStockRequest = async function(docId) {
                         conversionRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
                         sourceId: reqItem.sourceId || reqItem.id,
                         requestType: reqItem.requestType || 'Request',
-                        physicalStock: reqItem.physicalStock || 0, systemStock: reqItem.systemStock || 0
+                        physicalStock: physStockToPass, 
+                        systemStock: sysStockToPass
                     });
                 }
             });
