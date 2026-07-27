@@ -2787,7 +2787,7 @@ window.reviewStockRequest = async function(docId) {
                     <thead style="background: #1e293b; color: white; position: sticky; top: 0;">
                         <tr>
                             <th style="padding: 10px;">Item Description</th>
-                            <th style="padding: 10px; text-align: center;">Stock Status / Req</th>
+                            <th style="padding: 10px; text-align: center;">Stock Status / Request</th>
                             <th style="padding: 10px; text-align: center;">Alert Type</th>
                         </tr>
                     </thead>
@@ -2798,20 +2798,22 @@ window.reviewStockRequest = async function(docId) {
             data.items.forEach(item => {
                 let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : '#0284c7');
                 
-                // 🔥 THE FIX: Smart UI that detects Physical Counts vs Standard Requests
+                // 🔥 THE UI FIX: Detects if it's an auto-alert and changes the text!
+                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock');
                 let qtyDisplay = '';
-                if (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock') {
-                    // For auto-alerts, the "qty" sent from the Cashier App is actually their physical count!
+
+                if (isAudit) {
+                    // It extracts the physical count from the 'qty' variable sent by the Cashier App
                     let physCount = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
-                    let sysCount = item.systemStock !== undefined ? item.systemStock : 'Unknown';
+                    let sysCount = item.systemStock !== undefined ? item.systemStock : '---';
 
                     qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys Count: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys Expected: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
                     `;
                 } else {
-                    // Standard Request Format
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
+                    let reqQty = item.displayQty || item.qty || 0;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
                 }
 
                 itemsHtml += `
@@ -2846,24 +2848,21 @@ window.reviewStockRequest = async function(docId) {
             data.items.forEach(reqItem => {
                 let existing = window.dispatchCart.find(i => (i.itemName || i.name) === (reqItem.itemName || reqItem.name));
                 
-                let rawReqQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
-                let baseReqQty = parseFloat(reqItem.qty) || 0;
-                
-                // Protect the physical/system data so it passes into the cart
-                let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : rawReqQty;
-                let sysStockToPass = reqItem.systemStock || 0;
+                let isAudit = (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock');
 
-                // 🔥 THE FIX: If it's a Stock Alert, force the "Send Qty" to 0!
-                if (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock') {
-                    rawReqQty = 0; 
-                    baseReqQty = 0;
-                }
+                // 🔥 THE CART FIX: If it's a Stock Alert, force the "Qty to Send" to 0!
+                let rawReqQty = isAudit ? 0 : (parseFloat(reqItem.displayQty || reqItem.qty) || 0);
+                let baseReqQty = isAudit ? 0 : (parseFloat(reqItem.qty) || 0);
+                
+                // Safely capture the physical stock for the UI badge
+                let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : (isAudit ? (reqItem.displayQty || reqItem.qty) : 0);
+                let sysStockToPass = reqItem.systemStock !== undefined ? reqItem.systemStock : 0;
                 
                 if (existing) {
                     existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
                     existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
-                    existing.origRawQty = existing.rawQty;
-                    existing.origBaseQty = existing.qty;
+                    existing.origRawQty = (parseFloat(existing.origRawQty) || 0) + rawReqQty;
+                    existing.origBaseQty = (parseFloat(existing.origBaseQty) || 0) + baseReqQty;
                     existing.requestType = reqItem.requestType || existing.requestType; 
                     existing.physicalStock = physStockToPass;
                     existing.systemStock = sysStockToPass;
@@ -2875,11 +2874,11 @@ window.reviewStockRequest = async function(docId) {
                         qty: baseReqQty,
                         origRawQty: rawReqQty, 
                         origBaseQty: baseReqQty,
-                        uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.uom,
+                        uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.baseUom || reqItem.uom,
                         friendlyUom: reqItem.displayUom || reqItem.uom,
                         selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
-                        convRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
-                        conversionRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
+                        convRate: reqItem.convRate || 1, 
+                        conversionRate: reqItem.conversionRate || 1,
                         sourceId: reqItem.sourceId || reqItem.id,
                         requestType: reqItem.requestType || 'Request',
                         physicalStock: physStockToPass, 
