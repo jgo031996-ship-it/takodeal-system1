@@ -2232,12 +2232,14 @@ window.renderDispatchCart = function() {
     if (!container) return;
 
     if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+    
+    let isTable = container.tagName.toLowerCase() === 'tbody';
+
     if (window.dispatchCart.length === 0) {
-        let emptyHtml = container.tagName.toLowerCase() === 'tbody' ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
+        let emptyHtml = isTable ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
         container.innerHTML = emptyHtml; return;
     }
     
-    let isTable = container.tagName.toLowerCase() === 'tbody';
     let html = '';
 
     window.dispatchCart.forEach((item, index) => {
@@ -2262,26 +2264,69 @@ window.renderDispatchCart = function() {
 
         let hqColor = hqStock < baseQty ? '#dc2626' : '#16a34a';
         let hqWarningText = hqStock < baseQty ? '⚠️ LOW HQ STOCK' : '🟢 HQ Stock OK';
+        let hqBgColor = hqStock < baseQty ? '#fef2f2' : '#dcfce7';
+        let hqBorderColor = hqStock < baseQty ? '#fca5a5' : '#bbf7d0';
 
-        html += `
-            <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
-                <div>
-                    <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                    <span style="font-size: 11px; color: ${hqColor}; font-weight: bold;">🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})</span><br>
-                    <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+        // 🔥 THE FIX: Properly injecting Table Rows (<tr>) if it is inside the table body!
+        if (isTable) {
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 10px; width: 45%; vertical-align: middle;">
+                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
+                        ${item.requestType && item.requestType !== 'Request' ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Branch Report (Phys: ${item.physicalStock || 0} | Sys: ${item.systemStock || 0})</span><br>` : ''}
+                        
+                        <span style="font-size: 11px; color: ${hqColor}; background: ${hqBgColor}; border: 1px dashed ${hqBorderColor}; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; font-weight: bold;">
+                            🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})
+                        </span><br>
+
+                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+                    </td>
+                    <td style="padding: 15px 10px; text-align: center; width: 35%; vertical-align: middle;">
+                        <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
+                            <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
+                                oninput="window.updateDispatchQty(${index}, this.value)" 
+                                style="width: 70px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px;">
+                            
+                            <select onchange="window.updateDispatchUom(${index}, this.value)" 
+                                style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none;">
+                                ${uomOptions}
+                            </select>
+                        </div>
+                    </td>
+                    <td style="padding: 15px 10px; text-align: right; width: 20%; vertical-align: middle;">
+                        <button onclick="window.removeFromDispatchCart(${index})" 
+                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
+                    </td>
+                </tr>
+            `;
+        } else {
+            // Fallback for non-table layouts
+            html += `
+                <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
+                    <div>
+                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
+                        ${item.requestType && item.requestType !== 'Request' ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Branch Report (Phys: ${item.physicalStock || 0} | Sys: ${item.systemStock || 0})</span><br>` : ''}
+                        <span style="font-size: 11px; color: ${hqColor}; font-weight: bold;">🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})</span><br>
+                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
+                    </div>
+                    <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
+                        <input type="number" step="any" value="${rawQty || ''}" oninput="window.updateDispatchQty(${index}, this.value)" style="width: 70px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
+                        <select onchange="window.updateDispatchUom(${index}, this.value)" style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; cursor: pointer; outline: none;">${uomOptions}</select>
+                    </div>
+                    <div style="text-align: right;">
+                        <button onclick="window.removeFromDispatchCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖ Remove</button>
+                    </div>
                 </div>
-                <div style="display:flex; justify-content:center; align-items:center; gap: 5px;">
-                    <input type="number" step="any" value="${rawQty || ''}" oninput="window.updateDispatchQty(${index}, this.value)" style="width: 70px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 15px;">
-                    <select onchange="window.updateDispatchUom(${index}, this.value)" style="padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none; max-width: 100px;">${uomOptions}</select>
-                </div>
-                <div style="text-align: right;">
-                    <button onclick="window.removeFromDispatchCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖ Remove</button>
-                </div>
-            </div>
-        `;
+            `;
+        }
     });
 
-    html += `<div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;"><button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></div>`;
+    if (isTable) {
+        html += `<tr><td colspan="3" style="padding: 15px; text-align: right; border-top: 2px dashed #e2e8f0;"><button onclick="window.clearDispatchCart()" style="background: #f8fafc; color: #475569; border: 1px dashed #cbd5e1; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></td></tr>`;
+    } else {
+        html += `<div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;"><button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></div>`;
+    }
+
     container.innerHTML = html;
 };
 
@@ -2737,7 +2782,7 @@ window.reviewStockRequest = async function(docId) {
                     <thead style="background: #1e293b; color: white; position: sticky; top: 0;">
                         <tr>
                             <th style="padding: 10px;">Item Description</th>
-                            <th style="padding: 10px; text-align: center;">Qty Requested</th>
+                            <th style="padding: 10px; text-align: center;">Stock Status / Req</th>
                             <th style="padding: 10px; text-align: center;">Alert Type</th>
                         </tr>
                     </thead>
@@ -2747,11 +2792,23 @@ window.reviewStockRequest = async function(docId) {
         if (data.items && data.items.length > 0) {
             data.items.forEach(item => {
                 let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : '#0284c7');
+                
+                // 🔥 THE FIX: Show Physical vs System if it's an auto-generated low stock alert!
+                let qtyDisplay = '';
+                if ((item.requestType === 'Low Stock' || item.requestType === 'Out of Stock') && item.physicalStock !== undefined) {
+                    qtyDisplay = `
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${item.physicalStock} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${item.systemStock} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                    `;
+                } else {
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
+                }
+
                 itemsHtml += `
                     <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
                         <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
-                        <td style="padding: 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
-                        <td style="padding: 10px; text-align: center;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
+                        <td style="padding: 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
+                        <td style="padding: 10px; text-align: center; vertical-align: middle;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50;">${item.requestType || 'Request'}</span></td>
                     </tr>
                 `;
             });
@@ -2815,7 +2872,6 @@ window.reviewStockRequest = async function(docId) {
 
             if (typeof window.switchView === 'function') window.switchView('dispatch'); 
             
-            // 🔥 THE DRAFTING FIX: Hides the card instantly when loaded to cart!
             await updateDoc(docRef, {
                 status: 'Drafting',
                 managerMessage: 'Approved and loaded into Dispatch Cart.',
