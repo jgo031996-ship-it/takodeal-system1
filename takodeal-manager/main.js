@@ -17197,8 +17197,8 @@ setTimeout(() => {
                 
                 setTimeout(async () => {
                     try {
-                        // Re-download the database to grab the new shift names
-                        const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
+                        // 🔥 THE FIX: Removed "window." from getDoc, doc, and db so it uses your local imports properly!
+                        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
                         if (schedSnap.exists()) {
                             let data = schedSnap.data();
                             
@@ -17206,11 +17206,9 @@ setTimeout(() => {
                             window.currentSchedule = data.currentSchedule || {};
                             window.branchConfig = data.branchConfig || {};
                             
-                            // Redraw the visual calendar seamlessly
-                            if (typeof window.renderScheduleGrid === 'function') {
-                                window.renderScheduleGrid();
-                            } else if (typeof window.navToHr === 'function') {
-                                window.navToHr('Schedule');
+                            // Redraw the visual calendar seamlessly using your specific render function!
+                            if (typeof window.renderTables === 'function') {
+                                window.renderTables();
                             }
                         }
                     } catch(e) { 
