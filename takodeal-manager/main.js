@@ -10534,7 +10534,8 @@ window.generateAutoPayslips = async function() {
                         manualPenalty: manualPenalty // Save the manual penalty to apply at Time Out
                     };
                 }
-            } else if (log.type === "TIME OUT" && activeShifts[name]) {
+            // 🔥 THE FIX: Changed from === "TIME OUT" to .includes("TIME OUT")
+            } else if (log.type.includes("TIME OUT") && activeShifts[name]) {
                 let timeIn = activeShifts[name].time;
                 let lMins = activeShifts[name].lateMinutes;
                 let lAmt = activeShifts[name].lateAmount;
