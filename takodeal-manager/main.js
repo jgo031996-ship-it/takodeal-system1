@@ -8111,23 +8111,29 @@ window.loadAttendanceLogs = async function () {
                         if (assignedShiftId && scheduleData.branchConfig[data.branch]) {
                             let shiftConfig = scheduleData.branchConfig[data.branch].find(s => s.id === assignedShiftId);
                             if (shiftConfig) {
-                                let match = shiftConfig.name.match(/\((.*?)-/);
-                                if (match && match[1]) {
-                                    let expectedStartHour = parseTimeStr(match[1]); 
-                                    if (expectedStartHour !== null) {
-                                        let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                        let diffHours = actualHour - expectedStartHour;
-                                        
-                                        // "ranging about 1 hr advance and 1 hr late..." 
-                                        if (diffHours > -1.5 && diffHours < 4) {
-                                            lateMinutes = Math.floor(diffHours * 60);
-                                            // STRICT PENALTY TRIGGER: 1 minute late = >0
-                                            if (lateMinutes > 0) {
-                                                if (data.lateExempted) {
-                                                    lateTag = `<br><span style="background: #f0fdf4; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(22, 163, 74, 0.5);">✅ Late Exempted</span>`;
-                                                } else {
-                                                    lateTag = `<br><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">⏰ LATE (${lateMinutes} mins)</span>`;
-                                                }
+                                
+                                let expectedStartHour = null;
+                                // 🔥 THE STRICT TIME PICKER CHECK
+                                if (shiftConfig.startTime) {
+                                    let parts = shiftConfig.startTime.split(':');
+                                    expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                } else {
+                                    // Fallback if they haven't saved the new settings yet
+                                    let match = shiftConfig.name.match(/\((.*?)-/);
+                                    if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                }
+
+                                if (expectedStartHour !== null) {
+                                    let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                    let diffHours = actualHour - expectedStartHour;
+                                    
+                                    if (diffHours > -1.5 && diffHours < 4) {
+                                        lateMinutes = Math.floor(diffHours * 60);
+                                        if (lateMinutes > 0) {
+                                            if (data.lateExempted) {
+                                                lateTag = `<br><span style="background: #f0fdf4; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(22, 163, 74, 0.5);">✅ Late Exempted</span>`;
+                                            } else {
+                                                lateTag = `<br><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">⏰ LATE (${lateMinutes} mins)</span>`;
                                             }
                                         }
                                     }
@@ -8143,12 +8149,10 @@ window.loadAttendanceLogs = async function () {
                 locationText += `<br><a href="https://www.google.com/maps/search/?api=1&query=${data.locationLat},${data.locationLng}" target="_blank" style="font-size: 10px; color: #3b82f6; text-decoration: none;">🗺️ View on Map</a>`;
             }
 
-            // 🔥 PENALTY BUTTON LOGIC
             let currentPenalty = parseFloat(data.penaltyAmount) || 0;
             let penaltyText = currentPenalty > 0 ? `-₱${currentPenalty}` : `💸 Penalty`;
             let penaltyStyle = currentPenalty > 0 ? `background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;` : `background: #fffbeb; color: #d97706; border: 1px solid #fcd34d;`;
 
-            // The Action Buttons!
             let actionHtml = `
                 <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
                     <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="View Selfie">📷</button>
@@ -8156,9 +8160,7 @@ window.loadAttendanceLogs = async function () {
                     <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
             `;
             
-            // 🔥 THE FIX: Inject the EXEMPT button if they are officially late and not yet exempted!
             if (lateMinutes > 0 && !data.lateExempted && data.type === "TIME IN") {
-                // Made the exempt button blue so it doesn't clash with the yellow/red penalty button
                 actionHtml += `<button onclick="window.exemptLatePunch('${data.id}', '${data.staffName}')" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" title="Exempt Late Penalty">⭐ Exempt Late</button>`;
             }
             actionHtml += `</div>`;
@@ -8346,22 +8348,60 @@ window.renderConfigUI = function() {
     if(!container) return;
     container.innerHTML = "";
     const dayNames = ['Su', 'M', 'T', 'W', 'Th', 'F', 'Sa'];
+    
+    let html = '';
     for (const branch in branchConfig) {
-        const box = document.createElement("div"); box.className = "shift-config-box";
-        box.innerHTML = `<h4 style="margin:0 0 10px 0; color:#334155;">${branch}</h4>`;
+        html += `<div class="shift-config-box" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                    <h4 style="margin:0 0 15px 0; color:#0f766e; text-transform:uppercase; font-size: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📍 ${branch} Shifts</h4>`;
+        
         branchConfig[branch].forEach((shift, index) => {
-            const row = document.createElement("div"); row.className = "shift-row";
-            row.innerHTML = `<input type="checkbox" ${shift.active ? 'checked' : ''} id="chk_${branch}_${index}">
-                             <input type="text" value="${shift.name}" id="inp_${branch}_${index}">`;
-            box.appendChild(row);
-            const daysDiv = document.createElement("div"); daysDiv.className = "shift-days";
+            // Backward compatibility: Extract time from name if they haven't saved it yet
+            let defaultStart = shift.startTime || ""; 
+            let defaultEnd = shift.endTime || "";
+            
+            if (!defaultStart && shift.name) {
+                let match = shift.name.match(/\((.*?)-/);
+                if (match && match[1]) {
+                    let t = match[1].toLowerCase().replace(/\s/g, '');
+                    let isPM = t.includes('pm'); let isNN = t.includes('nn');
+                    let parts = t.replace(/(am|pm|nn)/, '').split(':');
+                    let h = parseInt(parts[0]) || 0; let m = parts[1] ? parseInt(parts[1]) : 0;
+                    if ((isPM || isNN) && h < 12) h += 12;
+                    if (t.includes('am') && h === 12) h = 0;
+                    defaultStart = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                }
+            }
+
+            html += `
+                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                        <input type="checkbox" ${shift.active ? 'checked' : ''} id="chk_${branch}_${index}" style="width: 18px; height: 18px; cursor: pointer; accent-color: #0f766e;">
+                        <input type="text" value="${shift.name.replace(/"/g, '&quot;')}" id="inp_${branch}_${index}" placeholder="Shift Name (e.g. Opener)" style="flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
+                    </div>
+                    <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 12px; background: #f1f5f9; padding: 10px; border-radius: 6px; border: 1px dashed #cbd5e1;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🟢 Expected Time In</label>
+                            <input type="time" id="start_${branch}_${index}" value="${defaultStart}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold; outline: none; color: #16a34a; box-sizing: border-box; background: white;">
+                        </div>
+                        <div style="flex: 1;">
+                            <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🔴 Expected Time Out</label>
+                            <input type="time" id="end_${branch}_${index}" value="${defaultEnd}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold; outline: none; color: #dc2626; box-sizing: border-box; background: white;">
+                        </div>
+                    </div>
+                    <div class="shift-days" style="margin: 0; display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; padding: 0 5px;">
+            `;
+            
             dayNames.forEach((name, i) => {
-                daysDiv.innerHTML += `<label><input type="checkbox" value="${i}" class="day-chk-${branch}-${index}" ${shift.days.includes(i) ? 'checked' : ''}>${name}</label>`;
+                html += `<label style="font-size: 12px; font-weight: bold; color: #475569; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                            <input type="checkbox" value="${i}" class="day-chk-${branch}-${index}" ${shift.days.includes(i) ? 'checked' : ''} style="accent-color: #0f766e; width: 14px; height: 14px;">${name}
+                         </label>`;
             });
-            box.appendChild(daysDiv);
+            
+            html += `</div></div>`;
         });
-        container.appendChild(box);
+        html += `</div>`;
     }
+    container.innerHTML = html;
 };
 
 window.saveShiftConfigChanges = function() {
@@ -8369,6 +8409,11 @@ window.saveShiftConfigChanges = function() {
         branchConfig[branch].forEach((shift, index) => {
             shift.active = document.getElementById(`chk_${branch}_${index}`).checked;
             shift.name = document.getElementById(`inp_${branch}_${index}`).value.trim();
+            
+            // 🔥 THE FIX: Save the exact strict Time In and Time Out!
+            shift.startTime = document.getElementById(`start_${branch}_${index}`).value; 
+            shift.endTime = document.getElementById(`end_${branch}_${index}`).value;
+            
             const dChks = document.querySelectorAll(`.day-chk-${branch}-${index}`);
             shift.days = Array.from(dChks).filter(c => c.checked).map(c => parseInt(c.value));
         });
@@ -8392,7 +8437,7 @@ window.saveShiftConfigChanges = function() {
     }
     window.saveToCloud();
     const msg = document.getElementById("configSaveMsg");
-    msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000);
+    if(msg) { msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000); }
 };
 
 window.addEmployee = function() {
@@ -10418,7 +10463,6 @@ window.globalPayrollCache = {};
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
 
-// 2. The Master Pairing Engine (UPGRADED WITH STRICT LEDGER MATH & PENALTIES)
 window.generateAutoPayslips = async function() {
     let startInput = document.getElementById('payrollStart').value;
     let endInput = document.getElementById('payrollEnd').value;
@@ -10479,7 +10523,6 @@ window.generateAutoPayslips = async function() {
                 staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
 
-            // 🔥 GRAB THE MANUAL PENALTY FROM THE DATABASE!
             let manualPenalty = parseFloat(log.penaltyAmount) || 0;
 
             if (log.type === "TIME IN") {
@@ -10502,16 +10545,24 @@ window.generateAutoPayslips = async function() {
                                 if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
                                     let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
                                     if (shiftConfig) {
-                                        let match = shiftConfig.name.match(/\((.*?)-/);
-                                        if (match && match[1]) {
-                                            let expectedStartHour = parseTimeStr(match[1]); 
-                                            if (expectedStartHour !== null) {
-                                                let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                                let diffHours = actualHour - expectedStartHour;
-                                                if (diffHours > -1.5 && diffHours < 4) {
-                                                    lateMinutes = Math.floor(diffHours * 60);
-                                                    if (lateMinutes < 0) lateMinutes = 0;
-                                                }
+                                        
+                                        let expectedStartHour = null;
+                                        // 🔥 THE STRICT TIME PICKER CHECK
+                                        if (shiftConfig.startTime) {
+                                            let parts = shiftConfig.startTime.split(':');
+                                            expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                        } else {
+                                            // Fallback
+                                            let match = shiftConfig.name.match(/\((.*?)-/);
+                                            if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                        }
+
+                                        if (expectedStartHour !== null) {
+                                            let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                            let diffHours = actualHour - expectedStartHour;
+                                            if (diffHours > -1.5 && diffHours < 4) {
+                                                lateMinutes = Math.floor(diffHours * 60);
+                                                if (lateMinutes < 0) lateMinutes = 0;
                                             }
                                         }
                                     }
@@ -10531,10 +10582,9 @@ window.generateAutoPayslips = async function() {
                         lateAmount: lateAmount, 
                         lateExempted: log.lateExempted || false,
                         lateHoursToDeduct: lateHoursToDeduct,
-                        manualPenalty: manualPenalty // Save the manual penalty to apply at Time Out
+                        manualPenalty: manualPenalty 
                     };
                 }
-            // 🔥 THE FIX: Changed from === "TIME OUT" to .includes("TIME OUT") to catch Auto-Closes
             } else if (log.type.includes("TIME OUT") && activeShifts[name]) {
                 let timeIn = activeShifts[name].time;
                 let lMins = activeShifts[name].lateMinutes;
@@ -10542,7 +10592,6 @@ window.generateAutoPayslips = async function() {
                 let lExempt = activeShifts[name].lateExempted;
                 let lHrsDeduct = activeShifts[name].lateHoursToDeduct || 0;
                 
-                // Combine penalties if the user clicked the button on both Time In and Time Out!
                 let totalManualPenaltyForShift = (activeShifts[name].manualPenalty || 0) + manualPenalty;
                 
                 let timeOut = log.timestamp.toDate();
@@ -10553,7 +10602,6 @@ window.generateAutoPayslips = async function() {
                     delete activeShifts[name]; return; 
                 }
 
-                // If it was an auto-closed shift, label it differently in the remarks
                 let isAutoClosed = log.type === "TIME OUT (AUTO)";
                 let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed (Forgot to punch out)</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
                 
@@ -10579,7 +10627,6 @@ window.generateAutoPayslips = async function() {
                     }
                 }
 
-                // 🔥 INJECT THE MANUAL PENALTY INTO THE MATH AND PAYSLIP REMARKS
                 if (totalManualPenaltyForShift > 0) {
                     remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`;
                     staffData[name].lateDeduction += totalManualPenaltyForShift;
@@ -10607,7 +10654,6 @@ window.generateAutoPayslips = async function() {
                 staffData[name].totalHours += hoursWorked; staffData[name].shiftsWorked += shiftMultiplier; staffData[name].holidayPayTotal += hBonus;
                 delete activeShifts[name];
             } else if (manualPenalty > 0) {
-                // 🔥 IF THE LOG IS STANDALONE (Like a Manual Override), EXTRACT THE PENALTY DIRECTLY!
                 staffData[name].lateDeduction += manualPenalty;
                 let logTime = log.timestamp ? log.timestamp.toDate() : new Date();
                 staffData[name].logs.push({ 
