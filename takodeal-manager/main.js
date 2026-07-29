@@ -10534,7 +10534,7 @@ window.generateAutoPayslips = async function() {
                         manualPenalty: manualPenalty // Save the manual penalty to apply at Time Out
                     };
                 }
-            // 🔥 THE FIX: Changed from === "TIME OUT" to .includes("TIME OUT")
+            // 🔥 THE FIX: Changed from === "TIME OUT" to .includes("TIME OUT") to catch Auto-Closes
             } else if (log.type.includes("TIME OUT") && activeShifts[name]) {
                 let timeIn = activeShifts[name].time;
                 let lMins = activeShifts[name].lateMinutes;
@@ -10553,16 +10553,19 @@ window.generateAutoPayslips = async function() {
                     delete activeShifts[name]; return; 
                 }
 
-                let remark = `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                // If it was an auto-closed shift, label it differently in the remarks
+                let isAutoClosed = log.type === "TIME OUT (AUTO)";
+                let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed (Forgot to punch out)</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                
                 let shiftMultiplier = 1; let thisShiftStraightBonus = 0; 
         
-                if (hoursWorked < 1) {
+                if (hoursWorked < 1 && !isAutoClosed) {
                     shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
                 } else if (hoursWorked >= 13.5) {
                     shiftMultiplier = 2; thisShiftStraightBonus = 50; 
                     staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
-                } else if (hoursWorked < 8) {
+                } else if (hoursWorked < 8 && !isAutoClosed) {
                     let missingHours = (8 - hoursWorked).toFixed(1);
                     remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                 }
@@ -10641,7 +10644,7 @@ window.generateAutoPayslips = async function() {
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             staffData[name].logs.push({ date: bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: "---", out: "---", hrs: "0.00", remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>` });
         });
-       
+        
         let html = '';
         let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
         let masterPayrollTotal = 0; 
@@ -10669,7 +10672,7 @@ window.generateAutoPayslips = async function() {
                     d.sss = profile.sssAmount || 0; d.pagibig = profile.pagibigAmount || 0; d.philhealth = profile.philHealthAmount || 0;
                     let profileCustomDeducts = profile.customDeductions || [];
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
-                   
+                    
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
