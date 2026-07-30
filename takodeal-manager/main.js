@@ -8345,7 +8345,12 @@ window.loadFromCloud = async function() {
         if (monthInput) monthInput.value = `${currentYear}-${mm}`;
 
         // Ensure a tab is selected
-        if(!window.currentActiveTab) window.currentActiveTab = window.globalActiveBranches ? window.globalActiveBranches[0] : 'Cabantian';
+        // 🔥 THE FIX: Prevent defaulting to Main Office! Default to a real branch.
+        if(!window.currentActiveTab || window.currentActiveTab === "Main Office") {
+            let validBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ['Cabantian'];
+            window.currentActiveTab = validBranches.length > 0 ? validBranches[0] : 'Cabantian';
+        }
+        try { currentActiveTab = window.currentActiveTab; } catch(e) {} // Sync local memory
 
         window.renderConfigUI(); 
         window.switchTab(window.currentActiveTab); // This instantly syncs the UI filters!
@@ -8538,10 +8543,11 @@ window.updateStaffDisplay = function() {
     const wrapper = document.getElementById('staffListWrapper'); 
     if(!wrapper) return;
     
+    // Grab the precise branch you are looking at!
     let targetBranch = window.currentActiveTab || 'Cabantian';
     let branchStaff = employees.filter(e => e.branch === targetBranch);
     
-    // Auto-hide the old manual input elements since it's fully automated now!
+    // Auto-hide the old manual input elements since it's fully automated!
     let empNameInput = document.getElementById('empName');
     let empBranchSelect = document.getElementById('empBranch');
     let addStaffBtn = document.querySelector('button[onclick="addEmployee()"]');
@@ -8549,16 +8555,17 @@ window.updateStaffDisplay = function() {
     if(empBranchSelect) empBranchSelect.style.display = 'none';
     if(addStaffBtn) addStaffBtn.style.display = 'none';
 
-    // Rename the section title to make it clear it's automated
+    // 🔥 THE FIX: Dynamically rename the title so you know exactly who you are looking at!
     let poolTitle = wrapper.previousElementSibling;
-    if (poolTitle) poolTitle.innerHTML = `<span style="color:#0ea5e9;">1. Active Staff Pool</span> <span style="font-size:11px; color:#64748b; font-weight:normal;">(Auto-Synced from HR)</span>`;
+    if (poolTitle) {
+        poolTitle.innerHTML = `<span style="color:#0ea5e9; font-size: 16px; font-weight: bold;">1. Active Staff Pool</span> <span style="font-size:12px; color:#64748b; font-weight:normal;">(Auto-Synced from HR for <b>${targetBranch}</b>)</span>`;
+    }
 
     wrapper.innerHTML = "";
     
     if (branchStaff.length === 0) {
-        wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}. Go to 'Staff & Security' to add them.</div>`;
+        wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}.</div>`;
     } else {
-        // Sort alphabetically and display as unclickable clean chips
         branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
             const chip = document.createElement('div'); 
             chip.className = 'staff-chip';
@@ -8785,11 +8792,14 @@ window.executeSwap = function() {
 
 // 🔥 TAB MEMORY ENGINE
 window.switchTab = function(branch) {
-    currentActiveTab = branch; // Remembers your active tab!
+    // 🔥 THE FIX: Force BOTH memory tags to sync instantly!
+    window.currentActiveTab = branch; 
+    try { currentActiveTab = branch; } catch(e) {} 
+    
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${branch}`));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `content-${branch}`));
     
-    // 🔥 THE DYNAMIC UI FILTER: Re-render the Staff Pool and Leaves based on the tab you clicked!
+    // Update the top boxes to match the clicked branch!
     window.updateStaffDisplay(); 
     window.updateAvailDropdown(); 
     window.updateUnavailabilityList();
