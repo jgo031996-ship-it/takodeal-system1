@@ -369,6 +369,7 @@ window.switchView = function(viewId, btnElement) {
     if (viewId === 'timeclock') window.startCameraAndGPS();
     else window.stopCamera();
     if (viewId === 'payslip') window.loadPayslipVault();
+    if (viewId === 'schedule') window.loadStaffSchedule(); // 🔥 THE NEW HOOK
 };
 
 // ==========================================
@@ -1548,4 +1549,177 @@ window.viewPastPayslip = function(encodedData) {
         confirmButtonColor: '#0f172a',
         customClass: { popup: 'rounded-2xl shadow-2xl p-0' }
     });
+};
+
+// ==========================================
+// 🗓️ PERSONAL STAFF SCHEDULE ENGINE
+// ==========================================
+window.loadStaffSchedule = async function() {
+    let container = document.getElementById('scheduleContainer');
+    if (!container) return;
+    
+    let staffName = localStorage.getItem('takodeal_staff_name');
+    if (!staffName) {
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444; font-weight: bold;">Not logged in.</div>';
+        return;
+    }
+
+    container.innerHTML = '<div style="text-align:center; padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Downloading your schedule...</div>';
+
+    try {
+        // 1. Look up the staff member's profile to find their Nickname and Branch
+        const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
+        const staffSnap = await getDocs(staffQ);
+        
+        let nickname = staffName;
+        let myBranch = null;
+        
+        if (!staffSnap.empty) {
+            let data = staffSnap.docs[0].data();
+            nickname = data.scheduleNickname || staffName;
+            myBranch = data.branch;
+        }
+
+        // 2. Fetch the Master Global Schedule from HQ
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        if (!schedSnap.exists() || !schedSnap.data().currentSchedule) {
+            container.innerHTML = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published a schedule for this month yet.</div>';
+            return;
+        }
+
+        let schedData = schedSnap.data();
+        let year = schedData.currentYear;
+        let month = schedData.currentMonth;
+        let monthName = new Date(year, month - 1).toLocaleString('en-PH', { month: 'long' });
+        
+        let branchConfig = schedData.branchConfig || {};
+        let schedule = schedData.currentSchedule;
+        let holidays = schedData.holidays || {};
+
+        let html = `
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                <div style="background: #0f172a; color: white; padding: 15px; text-align: center;">
+                    <h3 style="margin: 0; font-size: 18px;">🗓️ ${monthName} ${year}</h3>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; font-weight: bold;">Assigned Branch: ${myBranch || 'Any'}</div>
+                </div>
+                <div style="max-height: 60vh; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                        <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                            <tr>
+                                <th style="padding: 12px 15px; color: #475569; border-bottom: 2px solid #cbd5e1; width: 35%;">Date</th>
+                                <th style="padding: 12px 15px; color: #475569; border-bottom: 2px solid #cbd5e1;">Shift Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+
+        let daysInMonth = new Date(year, month, 0).getDate();
+        let hasShifts = false;
+
+        // Loop through every day of the month
+        for (let day = 1; day <= daysInMonth; day++) {
+            let dStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            let dateObj = new Date(year, month - 1, day);
+            let displayDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            
+            let dayData = schedule[day];
+            if (!dayData) continue;
+
+            let shiftFound = null;
+            let isStandby = false;
+            let isLeave = false;
+            let leaveReason = "";
+
+            // Check if they are scheduled in their branch (or fallback to checking all branches)
+            let branchesToCheck = myBranch ? [myBranch] : Object.keys(dayData);
+
+            for (let b of branchesToCheck) {
+                if (!dayData[b]) continue;
+                
+                // 1st Check: Are they on Leave/Off?
+                let leaveRecord = (dayData[b].unavailable || []).find(u => u.name === nickname || u.name === staffName);
+                if (leaveRecord) {
+                    isLeave = true; leaveReason = leaveRecord.status; break;
+                }
+
+                // 2nd Check: Are they on Standby/Rest?
+                if ((dayData[b].rest || []).includes(nickname) || (dayData[b].rest || []).includes(staffName)) {
+                    isStandby = true; break;
+                }
+
+                // 3rd Check: Are they actively scheduled for a shift?
+                let scheduledKeys = Object.keys(dayData[b].scheduled || {});
+                for (let sId of scheduledKeys) {
+                    if (dayData[b].scheduled[sId] === nickname || dayData[b].scheduled[sId] === staffName) {
+                        // Find the exact shift details (time in/out) from the config
+                        if (branchConfig[b]) {
+                            let sConf = branchConfig[b].find(s => s.id === sId);
+                            if (sConf) { shiftFound = sConf; break; }
+                        }
+                    }
+                }
+                if (shiftFound) break;
+            }
+
+            // Check if it's a holiday
+            let holType = holidays[dStr];
+            let holBadge = holType ? `<div style="font-size: 10px; color: #ea580c; font-weight: bold; margin-top: 4px;">🎉 ${holType} Holiday</div>` : '';
+
+            // Color-code the rows based on their status!
+            let rowBg = "white";
+            let statusHtml = '<span style="color: #94a3b8; font-style: italic;">No Schedule</span>';
+
+            if (isLeave) {
+                rowBg = "#fef2f2";
+                statusHtml = `<span style="background: #fecaca; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🚫 ${leaveReason}</span>`;
+                hasShifts = true;
+            } else if (isStandby) {
+                rowBg = "#fffbeb";
+                statusHtml = `<span style="background: #fde68a; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🛋️ Standby / Day Off</span>`;
+                hasShifts = true;
+            } else if (shiftFound) {
+                rowBg = "#f0fdf4";
+                
+                let timeString = shiftFound.name;
+                // If HQ set up the exact Time Pickers, show them beautifully!
+                if (shiftFound.startTime && shiftFound.endTime) {
+                    let formatTime = (time24) => {
+                        let [h, m] = time24.split(':'); h = parseInt(h);
+                        let ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+                        return `${h}:${m} ${ampm}`;
+                    };
+                    timeString = `<div style="font-weight: 900; color: #0f172a;">${shiftFound.name}</div><div style="font-size: 11px; color: #0ea5e9; margin-top: 2px;">⏰ ${formatTime(shiftFound.startTime)} to ${formatTime(shiftFound.endTime)}</div>`;
+                } else {
+                    timeString = `<div style="font-weight: 900; color: #0f172a;">${shiftFound.name}</div>`;
+                }
+
+                statusHtml = timeString;
+                hasShifts = true;
+            }
+
+            // Highlight "Today" so they don't get lost
+            let isToday = (dStr === new Date().toISOString().split('T')[0]);
+            let todayBorder = isToday ? 'border-left: 4px solid #0ea5e9;' : '';
+            let todayBadge = isToday ? '<br><span style="background: #0ea5e9; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; display: inline-block; margin-top: 4px;">TODAY</span>' : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; background: ${rowBg};">
+                    <td style="padding: 12px 15px; color: #334155; font-weight: bold; ${todayBorder}">${displayDate} ${todayBadge}${holBadge}</td>
+                    <td style="padding: 12px 15px;">${statusHtml}</td>
+                </tr>
+            `;
+        }
+
+        html += `</tbody></table></div></div>`;
+        
+        if (!hasShifts) {
+            html = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">You have no assigned shifts for this month.</div>';
+        }
+
+        container.innerHTML = html;
+
+    } catch (error) {
+        console.error("Staff Schedule Error:", error);
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444; font-weight: bold;">❌ Failed to load schedule. Check internet connection.</div>';
+    }
 };
