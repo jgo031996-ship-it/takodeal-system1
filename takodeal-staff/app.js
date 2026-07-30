@@ -98,6 +98,7 @@ window.listenToDeviceStatus = function(deviceId) {
             if (status === 'Active') {
                 document.getElementById('deviceAuthOverlay').style.display = 'none';
                 window.checkNormalLogin();
+                window.listenToIncomingSwaps();
             } else {
                 document.getElementById('deviceAuthOverlay').style.display = 'flex';
                 document.getElementById('registerCard').style.display = 'none';
@@ -136,6 +137,7 @@ window.checkNormalLogin = function() {
         if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
         window.loadAnnouncements();
         window.startInboxListener();
+        window.listenToIncomingSwaps();
     } else {
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('appContainer').style.display = 'none';
@@ -1552,8 +1554,10 @@ window.viewPastPayslip = function(encodedData) {
 };
 
 // ==========================================
-// 🗓️ PERSONAL STAFF SCHEDULE ENGINE
+// 🗓️ PERSONAL STAFF SCHEDULE & SWAP ENGINE
 // ==========================================
+window.cachedSchedData = null; // Memory to make swaps lightning fast
+
 window.loadStaffSchedule = async function() {
     let container = document.getElementById('scheduleContainer');
     if (!container) return;
@@ -1567,7 +1571,6 @@ window.loadStaffSchedule = async function() {
     container.innerHTML = '<div style="text-align:center; padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Downloading your schedule...</div>';
 
     try {
-        // 1. Look up the staff member's profile to find their Nickname and Branch
         const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
         const staffSnap = await getDocs(staffQ);
         
@@ -1580,7 +1583,6 @@ window.loadStaffSchedule = async function() {
             myBranch = data.branch;
         }
 
-        // 2. Fetch the Master Global Schedule from HQ
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
         if (!schedSnap.exists() || !schedSnap.data().currentSchedule) {
             container.innerHTML = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published a schedule for this month yet.</div>';
@@ -1588,6 +1590,8 @@ window.loadStaffSchedule = async function() {
         }
 
         let schedData = schedSnap.data();
+        window.cachedSchedData = schedData; // Save to memory for swapping!
+
         let year = schedData.currentYear;
         let month = schedData.currentMonth;
         let monthName = new Date(year, month - 1).toLocaleString('en-PH', { month: 'long' });
@@ -1616,12 +1620,16 @@ window.loadStaffSchedule = async function() {
         let daysInMonth = new Date(year, month, 0).getDate();
         let hasShifts = false;
 
-        // Loop through every day of the month
+        let todayObj = new Date();
+        todayObj.setHours(0,0,0,0);
+
         for (let day = 1; day <= daysInMonth; day++) {
             let dStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             let dateObj = new Date(year, month - 1, day);
             let displayDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             
+            let isFutureOrToday = dateObj >= todayObj;
+
             let dayData = schedule[day];
             if (!dayData) continue;
 
@@ -1630,28 +1638,21 @@ window.loadStaffSchedule = async function() {
             let isLeave = false;
             let leaveReason = "";
 
-            // Check if they are scheduled in their branch (or fallback to checking all branches)
             let branchesToCheck = myBranch ? [myBranch] : Object.keys(dayData);
 
             for (let b of branchesToCheck) {
                 if (!dayData[b]) continue;
                 
-                // 1st Check: Are they on Leave/Off?
                 let leaveRecord = (dayData[b].unavailable || []).find(u => u.name === nickname || u.name === staffName);
-                if (leaveRecord) {
-                    isLeave = true; leaveReason = leaveRecord.status; break;
-                }
+                if (leaveRecord) { isLeave = true; leaveReason = leaveRecord.status; break; }
 
-                // 2nd Check: Are they on Standby/Rest?
                 if ((dayData[b].rest || []).includes(nickname) || (dayData[b].rest || []).includes(staffName)) {
                     isStandby = true; break;
                 }
 
-                // 3rd Check: Are they actively scheduled for a shift?
                 let scheduledKeys = Object.keys(dayData[b].scheduled || {});
                 for (let sId of scheduledKeys) {
                     if (dayData[b].scheduled[sId] === nickname || dayData[b].scheduled[sId] === staffName) {
-                        // Find the exact shift details (time in/out) from the config
                         if (branchConfig[b]) {
                             let sConf = branchConfig[b].find(s => s.id === sId);
                             if (sConf) { shiftFound = sConf; break; }
@@ -1661,11 +1662,9 @@ window.loadStaffSchedule = async function() {
                 if (shiftFound) break;
             }
 
-            // Check if it's a holiday
             let holType = holidays[dStr];
             let holBadge = holType ? `<div style="font-size: 10px; color: #ea580c; font-weight: bold; margin-top: 4px;">🎉 ${holType} Holiday</div>` : '';
 
-            // Color-code the rows based on their status!
             let rowBg = "white";
             let statusHtml = '<span style="color: #94a3b8; font-style: italic;">No Schedule</span>';
 
@@ -1681,7 +1680,6 @@ window.loadStaffSchedule = async function() {
                 rowBg = "#f0fdf4";
                 
                 let timeString = shiftFound.name;
-                // If HQ set up the exact Time Pickers, show them beautifully!
                 if (shiftFound.startTime && shiftFound.endTime) {
                     let formatTime = (time24) => {
                         let [h, m] = time24.split(':'); h = parseInt(h);
@@ -1693,12 +1691,14 @@ window.loadStaffSchedule = async function() {
                     timeString = `<div style="font-weight: 900; color: #0f172a;">${shiftFound.name}</div>`;
                 }
 
-                statusHtml = timeString;
+                // 🔥 THE NEW BUTTON: Only shows if the shift hasn't happened yet!
+                let swapBtn = isFutureOrToday ? `<button onclick="window.initiateSwapRequest(${day}, '${dStr}', '${myBranch}', '${shiftFound.id}', '${shiftFound.name.replace(/'/g, "\\'")}')" style="margin-top: 8px; background: white; color: #d97706; border: 1px solid #fcd34d; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); width: 100%;">🔄 Request Swap</button>` : '';
+
+                statusHtml = timeString + swapBtn;
                 hasShifts = true;
             }
 
-            // Highlight "Today" so they don't get lost
-            let isToday = (dStr === new Date().toISOString().split('T')[0]);
+            let isToday = (dStr === todayObj.toISOString().split('T')[0]);
             let todayBorder = isToday ? 'border-left: 4px solid #0ea5e9;' : '';
             let todayBadge = isToday ? '<br><span style="background: #0ea5e9; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; display: inline-block; margin-top: 4px;">TODAY</span>' : '';
 
@@ -1712,14 +1712,198 @@ window.loadStaffSchedule = async function() {
 
         html += `</tbody></table></div></div>`;
         
-        if (!hasShifts) {
-            html = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">You have no assigned shifts for this month.</div>';
-        }
-
+        if (!hasShifts) html = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">You have no assigned shifts for this month.</div>';
         container.innerHTML = html;
 
     } catch (error) {
         console.error("Staff Schedule Error:", error);
-        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444; font-weight: bold;">❌ Failed to load schedule. Check internet connection.</div>';
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444; font-weight: bold;">❌ Failed to load schedule. Check connection.</div>';
+    }
+};
+
+window.initiateSwapRequest = function(day, dateStr, branch, myShiftId, myShiftName) {
+    let schedData = window.cachedSchedData;
+    if(!schedData) return Swal.fire('Error', 'Schedule data is missing. Please refresh.', 'error');
+
+    let dayData = schedData.currentSchedule[day][branch];
+    if(!dayData) return Swal.fire('Error', 'Branch schedule missing for this day.', 'error');
+
+    let select = document.getElementById('swapCandidateSelect');
+    select.innerHTML = '<option value="">-- Choose Co-Worker --</option>';
+
+    let staffName = localStorage.getItem('takodeal_staff_name');
+    
+    // Find everyone else assigned a shift that day
+    for(let sId in dayData.scheduled) {
+        let assignee = dayData.scheduled[sId];
+        if(assignee !== "N/A" && assignee !== "UNFILLED" && assignee !== staffName) {
+            let sConf = schedData.branchConfig[branch].find(s => s.id === sId);
+            if (sConf) {
+                select.innerHTML += `<option value="${assignee}|${sId}|${sConf.name}">${assignee} (Currently: ${sConf.name})</option>`;
+            }
+        }
+    }
+    
+    // Find everyone on Standby
+    if(dayData.rest) {
+        dayData.rest.forEach(r => {
+            if(r !== staffName) {
+                select.innerHTML += `<option value="${r}|STANDBY|Standby">${r} (Currently: On Standby)</option>`;
+            }
+        });
+    }
+
+    if(select.options.length <= 1) {
+        return Swal.fire({title: 'No Candidates', text: 'No one is available to swap with you on this day.', icon: 'info', customClass: { popup: 'rounded-2xl' }});
+    }
+
+    document.getElementById('swapModalDetails').innerHTML = `You are requesting to trade your <b>${myShiftName}</b> shift on <b style="color: #0f172a;">${dateStr}</b>.`;
+    
+    // Save to memory so the submit button knows what's happening
+    window.pendingSwapData = { day, dateStr, branch, myShiftId, myShiftName };
+    document.getElementById('swapRequestModal').style.display = 'flex';
+};
+
+window.submitSwapRequest = async function() {
+    let candidateVal = document.getElementById('swapCandidateSelect').value;
+    if(!candidateVal) return Swal.fire('Required', 'Please select someone to swap with.', 'warning');
+
+    let [targetName, targetShiftId, targetShiftName] = candidateVal.split('|');
+    let requesterName = localStorage.getItem('takodeal_staff_name');
+    let d = window.pendingSwapData;
+
+    let btn = document.getElementById('btnSendSwap');
+    btn.innerText = "⏳ Sending..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "shift_swaps"), {
+            requesterName: requesterName,
+            targetName: targetName,
+            branch: d.branch,
+            dateStr: d.dateStr,
+            dayIndex: d.day,
+            requesterShiftId: d.myShiftId,
+            requesterShiftName: d.myShiftName,
+            targetShiftId: targetShiftId,
+            targetShiftName: targetShiftName,
+            status: "Pending",
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '✅ Request Sent!', 
+            text: `Swap request sent to ${targetName}. You will be notified when they respond.`, 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        document.getElementById('swapRequestModal').style.display = 'none';
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
+    } finally {
+        btn.innerText = "Send Request"; btn.disabled = false;
+    }
+};
+
+window.listenToIncomingSwaps = function() {
+    let staffName = localStorage.getItem('takodeal_staff_name');
+    if (!staffName) return;
+
+    // Listen for requests WHERE I AM THE TARGET
+    onSnapshot(query(collection(db, "shift_swaps"), where("targetName", "==", staffName), where("status", "==", "Pending")), (snap) => {
+        let container = document.getElementById('incomingSwapsContainer');
+        let badge = document.getElementById('navSchedBadge');
+        
+        if (snap.empty) {
+            if(container) container.style.display = 'none';
+            if(badge) badge.style.display = 'none';
+            return;
+        }
+
+        if(badge) badge.style.display = 'inline-block';
+        if(!container) return;
+
+        let html = '<h3 style="color: #ea580c; margin-top:0; font-size:15px; border-bottom: 2px dashed #fcd34d; padding-bottom: 8px;">🔄 Shift Swap Requests</h3>';
+        
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            html += `
+                <div style="background: #fffbeb; border: 1px solid #fcd34d; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="font-size: 13px; color: #b45309; margin-bottom: 12px; line-height: 1.5;">
+                        <strong style="color: #92400e; font-size: 14px;">${d.requesterName}</strong> wants to swap shifts on <strong style="color: #92400e;">${d.dateStr}</strong>.<br>
+                        They will take your <b>${d.targetShiftName}</b>, and you will take their <b>${d.requesterShiftName}</b>.
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="window.handleIncomingSwap('${docSnap.id}', 'Approved')" style="flex:1; background: #16a34a; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">✅ Accept</button>
+                        <button onclick="window.handleIncomingSwap('${docSnap.id}', 'Rejected')" style="flex:1; background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">❌ Reject</button>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        container.style.display = 'block';
+    });
+};
+
+window.handleIncomingSwap = async function(swapId, action) {
+    if (!confirm(`Are you sure you want to ${action.toUpperCase()} this swap?`)) return;
+
+    Swal.fire({title: 'Processing...', allowOutsideClick: false, didOpen: ()=>Swal.showLoading()});
+
+    try {
+        if (action === "Rejected") {
+            await updateDoc(doc(db, "shift_swaps", swapId), { status: "Rejected" });
+            Swal.fire({title: 'Rejected', text: 'The request was declined.', icon: 'info', customClass: { popup: 'rounded-2xl' }});
+            return;
+        }
+
+        // 🔥 IF APPROVED: WE DO THE COMPLEX CALENDAR MATH!
+        const swapSnap = await getDoc(doc(db, "shift_swaps", swapId));
+        let sData = swapSnap.data();
+
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        let globalSched = schedSnap.data();
+
+        let dayData = globalSched.currentSchedule[sData.dayIndex][sData.branch];
+
+        // 1. Safety check: ensure both people actually still have those shifts before we blindly swap!
+        let rActual = dayData.scheduled[sData.requesterShiftId];
+        let tActual = sData.targetShiftId === 'STANDBY' ? 
+                      (dayData.rest.includes(sData.targetName) ? sData.targetName : null) : 
+                      dayData.scheduled[sData.targetShiftId];
+
+        // If either one of them isn't where they said they were, the schedule changed. Abort!
+        if (rActual !== sData.requesterName || tActual !== sData.targetName) {
+            await updateDoc(doc(db, "shift_swaps", swapId), { status: "Failed - Schedule Changed" });
+            return Swal.fire('Error', 'The Master Schedule has changed since this request was made. Swap cancelled.', 'error');
+        }
+
+        // 2. Perform the Swap mathematically!
+        // A. Give Target's shift to Requester
+        if (sData.targetShiftId === 'STANDBY') {
+            dayData.rest = dayData.rest.filter(n => n !== sData.targetName); // Remove target from rest
+            dayData.rest.push(sData.requesterName); // Put requester in rest
+        } else {
+            dayData.scheduled[sData.targetShiftId] = sData.requesterName;
+        }
+
+        // B. Give Requester's shift to Target
+        dayData.scheduled[sData.requesterShiftId] = sData.targetName;
+
+        // 3. Save the new calendar back to Cloud
+        await updateDoc(doc(db, "settings", "global_schedule"), {
+            currentSchedule: globalSched.currentSchedule
+        });
+
+        // 4. Update the Swap Status
+        await updateDoc(doc(db, "shift_swaps", swapId), { status: "Approved" });
+
+        Swal.fire({title: '✅ Swapped!', text: 'Your schedule has been successfully updated.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        window.loadStaffSchedule(); // Visually refresh their screen!
+
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to process swap.', 'error');
     }
 };
