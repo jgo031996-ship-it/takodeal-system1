@@ -1847,16 +1847,45 @@ window.submitSwapRequest = async function() {
     }
 };
 
-window.listenToIncomingSwaps = function() {
+window.listenToIncomingSwaps = async function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
+    let staffId = localStorage.getItem('takodeal_staff_id');
     if (!staffName) return;
 
-    // Listen for requests WHERE I AM THE TARGET
-    onSnapshot(query(collection(db, "shift_swaps"), where("targetName", "==", staffName), where("status", "==", "Pending")), (snap) => {
+    // Grab the nickname from the cloud to make matching bulletproof
+    let nickname = staffName;
+    try {
+        const docSnap = await getDoc(doc(db, "cashiers", staffId));
+        if(docSnap.exists()) nickname = docSnap.data().scheduleNickname || staffName;
+    } catch(e) {}
+
+    // 🔥 THE SMART MATCHER
+    let isMatch = (assignedName) => {
+        if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
+        let aName = assignedName.toLowerCase().trim();
+        let sName = staffName.toLowerCase().trim();
+        let nName = nickname.toLowerCase().trim();
+        
+        if (aName === sName || aName === nName) return true;
+        if (sName.includes(aName) && aName.length >= 3) return true;
+        return false;
+    };
+
+    // 🔥 THE FIX: Listen for ALL pending swaps, then filter locally so name mismatches are bypassed!
+    onSnapshot(query(collection(db, "shift_swaps"), where("status", "==", "Pending")), (snap) => {
         let container = document.getElementById('incomingSwapsContainer');
         let badge = document.getElementById('navSchedBadge');
         
-        if (snap.empty) {
+        let myPendingSwaps = [];
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            // Did this request use my short name OR my full name?
+            if (isMatch(d.targetName)) {
+                myPendingSwaps.push({ id: docSnap.id, ...d });
+            }
+        });
+
+        if (myPendingSwaps.length === 0) {
             if(container) container.style.display = 'none';
             if(badge) badge.style.display = 'none';
             return;
@@ -1867,8 +1896,7 @@ window.listenToIncomingSwaps = function() {
 
         let html = '<h3 style="color: #ea580c; margin-top:0; font-size:15px; border-bottom: 2px dashed #fcd34d; padding-bottom: 8px;">🔄 Shift Swap Requests</h3>';
         
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
+        myPendingSwaps.forEach(d => {
             html += `
                 <div style="background: #fffbeb; border: 1px solid #fcd34d; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <div style="font-size: 13px; color: #b45309; margin-bottom: 12px; line-height: 1.5;">
@@ -1876,8 +1904,8 @@ window.listenToIncomingSwaps = function() {
                         They will take your <b>${d.targetShiftName}</b>, and you will take their <b>${d.requesterShiftName}</b>.
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button onclick="window.handleIncomingSwap('${docSnap.id}', 'Approved')" style="flex:1; background: #16a34a; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">✅ Accept</button>
-                        <button onclick="window.handleIncomingSwap('${docSnap.id}', 'Rejected')" style="flex:1; background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">❌ Reject</button>
+                        <button onclick="window.handleIncomingSwap('${d.id}', 'Approved')" style="flex:1; background: #16a34a; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">✅ Accept</button>
+                        <button onclick="window.handleIncomingSwap('${d.id}', 'Rejected')" style="flex:1; background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">❌ Reject</button>
                     </div>
                 </div>
             `;
