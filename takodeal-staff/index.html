@@ -225,6 +225,7 @@
                     <h2>🗓️ My Schedule</h2>
                     <p>Your assigned shifts for the current month.</p>
                 </div>
+                <div id="incomingSwapsContainer" style="display: none; margin-bottom: 15px; text-align: left;"></div>
                 <div id="scheduleContainer">
                     <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading schedule...</div>
                 </div>
@@ -338,7 +339,8 @@
                 <span>Reqs</span>
             </button>
             <button class="nav-item" onclick="window.switchView('schedule', this)">
-                <span class="icon">🗓️</span><span>Sched</span>
+                <span class="icon" style="position:relative;">🗓️<span id="navSchedBadge" style="display:none; position:absolute; top:-5px; right:-10px; background:#dc2626; color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">!</span></span>
+                <span>Sched</span>
             </button>
             <button class="nav-item" onclick="window.switchView('sop', this)">
                 <span class="icon">📋</span><span>SOP</span>
@@ -347,6 +349,22 @@
                 <span class="icon">💸</span><span>Pay</span>
             </button>
         </nav>
+    </div>
+
+    <!-- 🔄 SHIFT SWAP MODAL -->
+    <div id="swapRequestModal" class="overlay" style="display: none; z-index: 10005;">
+        <div class="modal-card" style="max-width: 400px;">
+            <h2 style="margin-top: 0; color: #d97706;">🔄 Request Shift Swap</h2>
+            <p id="swapModalDetails" style="font-size: 13px; color: #64748b; margin-bottom: 15px;"></p>
+            <div class="form-group" style="text-align: left;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Co-Worker to Swap With:</label>
+                <select id="swapCandidateSelect" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; margin-top: 5px; font-weight: bold; color: #0f172a; background: #f8fafc;"></select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn-primary" id="btnSendSwap" onclick="window.submitSwapRequest()" style="flex: 1; background: #d97706; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);">Send Request</button>
+                <button class="btn-cancel" onclick="document.getElementById('swapRequestModal').style.display='none'" style="flex: 1;">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="app.js?v=999"></script>
