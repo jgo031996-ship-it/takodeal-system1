@@ -1584,7 +1584,6 @@ window.loadStaffSchedule = async function() {
         }
 
         // 🔥 THE FIX: SMART NAME MATCHER! 
-        // This solves the "Bern" vs "Bern Paul Mangubat" bug forever.
         let isMatch = (assignedName) => {
             if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
             let aName = assignedName.toLowerCase().trim();
@@ -1592,7 +1591,6 @@ window.loadStaffSchedule = async function() {
             let nName = nickname.toLowerCase().trim();
             
             if (aName === sName || aName === nName) return true;
-            // If Manager just typed "Bern", it will find it inside "Bern Paul Mangubat"
             if (sName.includes(aName) && aName.length >= 3) return true;
             return false;
         };
@@ -1609,7 +1607,6 @@ window.loadStaffSchedule = async function() {
         let year = schedData.currentYear;
         let month = schedData.currentMonth;
         
-        // 🔥 THE MONTH PICKER LOGIC
         let picker = document.getElementById('staffMonthPicker');
         let selectedYear = year;
         let selectedMonth = month;
@@ -1619,11 +1616,9 @@ window.loadStaffSchedule = async function() {
             selectedYear = parseInt(parts[0]);
             selectedMonth = parseInt(parts[1]);
         } else if (picker) {
-            // Auto-fill the picker with whatever month is currently active in the cloud
             picker.value = `${year}-${String(month).padStart(2, '0')}`;
         }
 
-        // Check if the month they picked actually matches the published schedule
         if (selectedYear !== year || selectedMonth !== month) {
             let niceMonth = new Date(selectedYear, selectedMonth - 1).toLocaleString('en-PH', { month: 'long', year: 'numeric' });
             container.innerHTML = `<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published the schedule for ${niceMonth} yet.</div>`;
@@ -1640,7 +1635,7 @@ window.loadStaffSchedule = async function() {
             <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <div style="background: #0f172a; color: white; padding: 15px; text-align: center;">
                     <h3 style="margin: 0; font-size: 18px;">🗓️ ${monthName} ${year}</h3>
-                    <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; font-weight: bold;">Assigned Branch: ${myBranch || 'Any'}</div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; font-weight: bold;">Home Branch: ${myBranch || 'Unassigned'}</div>
                 </div>
                 <div style="max-height: 60vh; overflow-y: auto;">
                     <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
@@ -1673,17 +1668,22 @@ window.loadStaffSchedule = async function() {
             let isStandby = false;
             let isLeave = false;
             let leaveReason = "";
+            let assignedToBranch = "";
 
-            let branchesToCheck = myBranch ? [myBranch] : Object.keys(dayData);
+            // 🔥 THE GLOBAL SCANNER FIX: 
+            // Loop through EVERY SINGLE BRANCH in the company to find their name!
+            let allBranches = Object.keys(dayData);
 
-            for (let b of branchesToCheck) {
+            for (let b of allBranches) {
                 if (!dayData[b]) continue;
                 
                 let leaveRecord = (dayData[b].unavailable || []).find(u => isMatch(u.name));
-                if (leaveRecord) { isLeave = true; leaveReason = leaveRecord.status; break; }
+                if (leaveRecord) { 
+                    isLeave = true; leaveReason = leaveRecord.status; assignedToBranch = b; break; 
+                }
 
                 if ((dayData[b].rest || []).some(r => isMatch(r))) {
-                    isStandby = true; break;
+                    isStandby = true; assignedToBranch = b; break;
                 }
 
                 let scheduledKeys = Object.keys(dayData[b].scheduled || {});
@@ -1691,11 +1691,11 @@ window.loadStaffSchedule = async function() {
                     if (isMatch(dayData[b].scheduled[sId])) {
                         if (branchConfig[b]) {
                             let sConf = branchConfig[b].find(s => s.id === sId);
-                            if (sConf) { shiftFound = sConf; break; }
+                            if (sConf) { shiftFound = sConf; assignedToBranch = b; break; }
                         }
                     }
                 }
-                if (shiftFound) break;
+                if (shiftFound) break; // Stop scanning once we find them working!
             }
 
             let holType = holidays[dStr];
@@ -1704,13 +1704,19 @@ window.loadStaffSchedule = async function() {
             let rowBg = "white";
             let statusHtml = '<span style="color: #94a3b8; font-style: italic;">No Schedule</span>';
 
+            // Show a Relief Badge if they are working outside their home branch!
+            let reliefBadge = '';
+            if (assignedToBranch && assignedToBranch !== myBranch) {
+                reliefBadge = `<div style="font-size: 10px; color: #b45309; font-weight: bold; background: #fef3c7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px solid #fde68a;">🌍 Relief: ${assignedToBranch}</div>`;
+            }
+
             if (isLeave) {
                 rowBg = "#fef2f2";
-                statusHtml = `<span style="background: #fecaca; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🚫 ${leaveReason}</span>`;
+                statusHtml = `<span style="background: #fecaca; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🚫 ${leaveReason}</span>${reliefBadge}`;
                 hasShifts = true;
             } else if (isStandby) {
                 rowBg = "#fffbeb";
-                statusHtml = `<span style="background: #fde68a; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🛋️ Standby / Day Off</span>`;
+                statusHtml = `<span style="background: #fde68a; color: #b45309; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🛋️ Standby / Day Off</span>${reliefBadge}`;
                 hasShifts = true;
             } else if (shiftFound) {
                 rowBg = "#f0fdf4";
@@ -1727,10 +1733,10 @@ window.loadStaffSchedule = async function() {
                     timeString = `<div style="font-weight: 900; color: #0f172a;">${shiftFound.name}</div>`;
                 }
 
-                // 🔥 The Request Swap Button!
-                let swapBtn = isFutureOrToday ? `<button onclick="window.initiateSwapRequest(${day}, '${dStr}', '${myBranch}', '${shiftFound.id}', '${shiftFound.name.replace(/'/g, "\\'")}')" style="margin-top: 8px; background: white; color: #d97706; border: 1px solid #fcd34d; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); width: 100%;">🔄 Request Swap</button>` : '';
+                // The Request Swap Button!
+                let swapBtn = isFutureOrToday ? `<button onclick="window.initiateSwapRequest(${day}, '${dStr}', '${assignedToBranch}', '${shiftFound.id}', '${shiftFound.name.replace(/'/g, "\\'")}')" style="margin-top: 8px; background: white; color: #d97706; border: 1px solid #fcd34d; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); width: 100%;">🔄 Request Swap</button>` : '';
 
-                statusHtml = timeString + swapBtn;
+                statusHtml = timeString + reliefBadge + swapBtn;
                 hasShifts = true;
             }
 
