@@ -1583,9 +1583,23 @@ window.loadStaffSchedule = async function() {
             myBranch = data.branch;
         }
 
+        // 🔥 THE FIX: SMART NAME MATCHER! 
+        // This solves the "Bern" vs "Bern Paul Mangubat" bug forever.
+        let isMatch = (assignedName) => {
+            if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
+            let aName = assignedName.toLowerCase().trim();
+            let sName = staffName.toLowerCase().trim();
+            let nName = nickname.toLowerCase().trim();
+            
+            if (aName === sName || aName === nName) return true;
+            // If Manager just typed "Bern", it will find it inside "Bern Paul Mangubat"
+            if (sName.includes(aName) && aName.length >= 3) return true;
+            return false;
+        };
+
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
         if (!schedSnap.exists() || !schedSnap.data().currentSchedule) {
-            container.innerHTML = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published a schedule for this month yet.</div>';
+            container.innerHTML = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published a schedule yet.</div>';
             return;
         }
 
@@ -1594,6 +1608,28 @@ window.loadStaffSchedule = async function() {
 
         let year = schedData.currentYear;
         let month = schedData.currentMonth;
+        
+        // 🔥 THE MONTH PICKER LOGIC
+        let picker = document.getElementById('staffMonthPicker');
+        let selectedYear = year;
+        let selectedMonth = month;
+
+        if (picker && picker.value) {
+            let parts = picker.value.split('-');
+            selectedYear = parseInt(parts[0]);
+            selectedMonth = parseInt(parts[1]);
+        } else if (picker) {
+            // Auto-fill the picker with whatever month is currently active in the cloud
+            picker.value = `${year}-${String(month).padStart(2, '0')}`;
+        }
+
+        // Check if the month they picked actually matches the published schedule
+        if (selectedYear !== year || selectedMonth !== month) {
+            let niceMonth = new Date(selectedYear, selectedMonth - 1).toLocaleString('en-PH', { month: 'long', year: 'numeric' });
+            container.innerHTML = `<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published the schedule for ${niceMonth} yet.</div>`;
+            return;
+        }
+
         let monthName = new Date(year, month - 1).toLocaleString('en-PH', { month: 'long' });
         
         let branchConfig = schedData.branchConfig || {};
@@ -1643,16 +1679,16 @@ window.loadStaffSchedule = async function() {
             for (let b of branchesToCheck) {
                 if (!dayData[b]) continue;
                 
-                let leaveRecord = (dayData[b].unavailable || []).find(u => u.name === nickname || u.name === staffName);
+                let leaveRecord = (dayData[b].unavailable || []).find(u => isMatch(u.name));
                 if (leaveRecord) { isLeave = true; leaveReason = leaveRecord.status; break; }
 
-                if ((dayData[b].rest || []).includes(nickname) || (dayData[b].rest || []).includes(staffName)) {
+                if ((dayData[b].rest || []).some(r => isMatch(r))) {
                     isStandby = true; break;
                 }
 
                 let scheduledKeys = Object.keys(dayData[b].scheduled || {});
                 for (let sId of scheduledKeys) {
-                    if (dayData[b].scheduled[sId] === nickname || dayData[b].scheduled[sId] === staffName) {
+                    if (isMatch(dayData[b].scheduled[sId])) {
                         if (branchConfig[b]) {
                             let sConf = branchConfig[b].find(s => s.id === sId);
                             if (sConf) { shiftFound = sConf; break; }
@@ -1691,7 +1727,7 @@ window.loadStaffSchedule = async function() {
                     timeString = `<div style="font-weight: 900; color: #0f172a;">${shiftFound.name}</div>`;
                 }
 
-                // 🔥 THE NEW BUTTON: Only shows if the shift hasn't happened yet!
+                // 🔥 The Request Swap Button!
                 let swapBtn = isFutureOrToday ? `<button onclick="window.initiateSwapRequest(${day}, '${dStr}', '${myBranch}', '${shiftFound.id}', '${shiftFound.name.replace(/'/g, "\\'")}')" style="margin-top: 8px; background: white; color: #d97706; border: 1px solid #fcd34d; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); width: 100%;">🔄 Request Swap</button>` : '';
 
                 statusHtml = timeString + swapBtn;
