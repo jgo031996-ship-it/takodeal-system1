@@ -8108,17 +8108,16 @@ window.loadAttendanceLogs = async function () {
                         let nickname = staffProfiles[data.staffName] || data.staffName;
                         let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
                         
+                        // 🔥 THE FIX: If they have NO assigned shift ID, it skips the Late check entirely!
                         if (assignedShiftId && scheduleData.branchConfig[data.branch]) {
                             let shiftConfig = scheduleData.branchConfig[data.branch].find(s => s.id === assignedShiftId);
                             if (shiftConfig) {
                                 
                                 let expectedStartHour = null;
-                                // 🔥 THE STRICT TIME PICKER CHECK
                                 if (shiftConfig.startTime) {
                                     let parts = shiftConfig.startTime.split(':');
                                     expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
                                 } else {
-                                    // Fallback if they haven't saved the new settings yet
                                     let match = shiftConfig.name.match(/\((.*?)-/);
                                     if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
                                 }
@@ -8139,6 +8138,8 @@ window.loadAttendanceLogs = async function () {
                                     }
                                 }
                             }
+                        } else {
+                            lateTag = `<br><span style="background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block; margin-top: 4px;">(Unscheduled)</span>`;
                         }
                     }
                 }
@@ -8562,32 +8563,67 @@ window.generateSchedule = function() {
     if (!monthVal) return alert("Select month.");
     [currentYear, currentMonth] = monthVal.split('-').map(Number);
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-    currentSchedule = {};
     
+    // 🔥 THE FIX: Get the branch they are currently looking at!
+    let targetBranch = window.currentActiveTab || 'Cabantian';
+    
+    // If the calendar is totally empty, build the shell first so we don't crash
+    if (Object.keys(currentSchedule).length === 0) {
+        for (let day = 1; day <= daysInMonth; day++) {
+            currentSchedule[day] = {};
+            for (const b in branchConfig) {
+                currentSchedule[day][b] = { scheduled: {}, rest: [], unavailable: [] };
+            }
+        }
+    }
+    
+    // NOW, we ONLY loop through the target branch to reshuffle it!
     for (let day = 1; day <= daysInMonth; day++) {
-        currentSchedule[day] = {};
         const dStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
         
-        for (const branch in branchConfig) {
-            currentSchedule[day][branch] = { scheduled: {}, rest: [], unavailable: [] };
-            let pool = employees.filter(e => e.branch === branch).map(e => e.name);
-            let available = [];
-            
-            pool.forEach(name => {
-                if (unavailability[dStr] && unavailability[dStr][name]) currentSchedule[day][branch].unavailable.push({ name, status: unavailability[dStr][name] });
-                else available.push(name);
-            });
-            
-            let shuffled = available.sort(() => 0.5 - Math.random());
-            branchConfig[branch].filter(s => s.active).forEach(shift => {
-                if (!shift.days.includes(dOfWeek)) currentSchedule[day][branch].scheduled[shift.id] = "N/A";
-                else currentSchedule[day][branch].scheduled[shift.id] = shuffled.length > 0 ? shuffled.pop() : "UNFILLED";
-            });
-            currentSchedule[day][branch].rest = shuffled;
+        // Ensure the branch object exists for this day before trying to edit it
+        if (!currentSchedule[day][targetBranch]) {
+            currentSchedule[day][targetBranch] = { scheduled: {}, rest: [], unavailable: [] };
         }
+
+        let pool = employees.filter(e => e.branch === targetBranch).map(e => e.name);
+        let available = [];
+        
+        // Reset the unavailability list for this branch for this day
+        currentSchedule[day][targetBranch].unavailable = [];
+        
+        pool.forEach(name => {
+            if (unavailability[dStr] && unavailability[dStr][name]) {
+                currentSchedule[day][targetBranch].unavailable.push({ name, status: unavailability[dStr][name] });
+            } else {
+                available.push(name);
+            }
+        });
+        
+        let shuffled = available.sort(() => 0.5 - Math.random());
+        
+        // Wipe their old schedule for this day and rewrite it
+        currentSchedule[day][targetBranch].scheduled = {};
+        branchConfig[targetBranch].filter(s => s.active).forEach(shift => {
+            if (!shift.days.includes(dOfWeek)) {
+                currentSchedule[day][targetBranch].scheduled[shift.id] = "N/A";
+            } else {
+                currentSchedule[day][targetBranch].scheduled[shift.id] = shuffled.length > 0 ? shuffled.pop() : "UNFILLED";
+            }
+        });
+        
+        currentSchedule[day][targetBranch].rest = shuffled;
     }
-    window.renderTables(); window.saveToCloud();
+    
+    window.renderTables(); 
+    window.saveToCloud();
+    
+    Swal.fire({
+        toast: true, position: 'top-end', icon: 'success', 
+        title: `Reshuffled ${targetBranch}!`, 
+        showConfirmButton: false, timer: 2000
+    });
 };
 
 window.openSwapModal = function(day, branch, shiftId) {
@@ -10534,6 +10570,7 @@ window.generateAutoPayslips = async function() {
 
                     let logDate = log.timestamp.toDate();
                     let lateMinutes = 0;
+                    let wasScheduled = false; // 🔥 THE FIX: Track if they were actually on the schedule!
                     
                     if (scheduleData && scheduleData.currentSchedule) {
                         let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
@@ -10542,17 +10579,16 @@ window.generateAutoPayslips = async function() {
                             if (branchSched && branchSched.scheduled) {
                                 let nickname = staffDict[name] ? (staffDict[name].scheduleNickname || name) : name;
                                 let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
+                                
                                 if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
+                                    wasScheduled = true; // ✅ They are on the schedule! Apply rules.
                                     let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
                                     if (shiftConfig) {
-                                        
                                         let expectedStartHour = null;
-                                        // 🔥 THE STRICT TIME PICKER CHECK
                                         if (shiftConfig.startTime) {
                                             let parts = shiftConfig.startTime.split(':');
                                             expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
                                         } else {
-                                            // Fallback
                                             let match = shiftConfig.name.match(/\((.*?)-/);
                                             if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
                                         }
@@ -10582,7 +10618,8 @@ window.generateAutoPayslips = async function() {
                         lateAmount: lateAmount, 
                         lateExempted: log.lateExempted || false,
                         lateHoursToDeduct: lateHoursToDeduct,
-                        manualPenalty: manualPenalty 
+                        manualPenalty: manualPenalty,
+                        wasScheduled: wasScheduled // Pass this down to the Time Out math!
                     };
                 }
             } else if (log.type.includes("TIME OUT") && activeShifts[name]) {
@@ -10591,6 +10628,7 @@ window.generateAutoPayslips = async function() {
                 let lAmt = activeShifts[name].lateAmount;
                 let lExempt = activeShifts[name].lateExempted;
                 let lHrsDeduct = activeShifts[name].lateHoursToDeduct || 0;
+                let wasScheduled = activeShifts[name].wasScheduled; // 🔥 Retrieve schedule status!
                 
                 let totalManualPenaltyForShift = (activeShifts[name].manualPenalty || 0) + manualPenalty;
                 
@@ -10614,8 +10652,14 @@ window.generateAutoPayslips = async function() {
                     staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
                 } else if (hoursWorked < 8 && !isAutoClosed) {
-                    let missingHours = (8 - hoursWorked).toFixed(1);
-                    remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
+                    // 🔥 THE FIX: ONLY penalize for "Short" if they were actually on the schedule!
+                    if (wasScheduled) {
+                        let missingHours = (8 - hoursWorked).toFixed(1);
+                        remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
+                    } else {
+                        // If they weren't scheduled, just accept whatever hours they worked cleanly!
+                        remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`;
+                    }
                 }
 
                 if (lMins > 0) {
@@ -10743,8 +10787,8 @@ window.generateAutoPayslips = async function() {
                 let lateLabel = d.lateDeduction > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.lateDeduction.toFixed(2)} (Late)</span>` : '';
         
                 let buttonHtml = isPaid
-                    ? `<button onclick="window.openPayslipModal('${name}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
-                    : `<button onclick="window.openPayslipModal('${name}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
+                    ? `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
+                    : `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
 
                 html += `
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
