@@ -8303,9 +8303,26 @@ window.saveToCloud = async function() {
 
 window.loadFromCloud = async function() {
     try {
-        const snap = await getDoc(doc(db, "settings", "global_schedule"));
+        // 🔥 THE NEW AUTO-SYNC ENGINE: Pull active staff directly from HR profiles!
+        const staffSnap = await getDocs(collection(db, "cashiers"));
+        let fetchedEmployees = [];
         
-        // 🔥 THE FAILSAFE: Always grab today's actual date as a backup!
+        staffSnap.forEach(docSnap => {
+            let d = docSnap.data();
+            // Ignore resigned staff and revoked PINs!
+            if (d.status !== 'Resigned' && d.pin !== 'REVOKED') {
+                fetchedEmployees.push({
+                    name: d.scheduleNickname || d.cashierName, // Automatically uses their Nickname!
+                    fullName: d.cashierName,
+                    branch: d.branch || "Unassigned"
+                });
+            }
+        });
+        
+        // Override local memory with Live HR Data
+        employees = fetchedEmployees; 
+
+        const snap = await getDoc(doc(db, "settings", "global_schedule"));
         const today = new Date();
         let safeYear = today.getFullYear();
         let safeMonth = today.getMonth() + 1;
@@ -8313,31 +8330,25 @@ window.loadFromCloud = async function() {
         if (snap.exists()) {
             const appData = snap.data();
             branchConfig = appData.branchConfig || JSON.parse(JSON.stringify(defaultSchedConfig));
-            employees = appData.employees || [];
             unavailability = appData.unavailability || {};
             currentSchedule = appData.currentSchedule || {};
-            
-            // If the cloud has a date, use it. Otherwise, use the failsafe!
             currentYear = appData.currentYear || safeYear;
             currentMonth = appData.currentMonth || safeMonth;
-            
             window.scheduleHolidays = appData.holidays || {}; 
         } else {
-            // First time loading the app? Use the failsafe!
             currentYear = safeYear;
             currentMonth = safeMonth;
         }
 
-        // Lock the date into the HTML Date Picker
         const mm = String(currentMonth).padStart(2, '0');
         const monthInput = document.getElementById("monthSelector");
         if (monthInput) monthInput.value = `${currentYear}-${mm}`;
 
-        // Render the screen!
+        // Ensure a tab is selected
+        if(!window.currentActiveTab) window.currentActiveTab = window.globalActiveBranches ? window.globalActiveBranches[0] : 'Cabantian';
+
         window.renderConfigUI(); 
-        window.updateStaffDisplay(); 
-        window.updateAvailDropdown(); 
-        window.updateUnavailabilityList(); 
+        window.switchTab(window.currentActiveTab); // This instantly syncs the UI filters!
         window.updateHolidayList(); 
         window.renderTables();
         
@@ -8524,22 +8535,90 @@ window.removeEmployee = function(name) {
 };
 
 window.updateStaffDisplay = function() {
-    const wrapper = document.getElementById('staffListWrapper'); if(!wrapper) return;
+    const wrapper = document.getElementById('staffListWrapper'); 
+    if(!wrapper) return;
+    
+    let targetBranch = window.currentActiveTab || 'Cabantian';
+    let branchStaff = employees.filter(e => e.branch === targetBranch);
+    
+    // Auto-hide the old manual input elements since it's fully automated now!
+    let empNameInput = document.getElementById('empName');
+    let empBranchSelect = document.getElementById('empBranch');
+    let addStaffBtn = document.querySelector('button[onclick="addEmployee()"]');
+    if(empNameInput) empNameInput.style.display = 'none';
+    if(empBranchSelect) empBranchSelect.style.display = 'none';
+    if(addStaffBtn) addStaffBtn.style.display = 'none';
+
+    // Rename the section title to make it clear it's automated
+    let poolTitle = wrapper.previousElementSibling;
+    if (poolTitle) poolTitle.innerHTML = `<span style="color:#0ea5e9;">1. Active Staff Pool</span> <span style="font-size:11px; color:#64748b; font-weight:normal;">(Auto-Synced from HR)</span>`;
+
     wrapper.innerHTML = "";
-    employees.forEach(e => {
-        const chip = document.createElement('div'); chip.className = 'staff-chip';
-        chip.innerHTML = `${e.name} (${e.branch}) <span class="remove-staff" onclick="removeEmployee('${e.name}')">×</span>`;
-        wrapper.appendChild(chip);
-    });
+    
+    if (branchStaff.length === 0) {
+        wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}. Go to 'Staff & Security' to add them.</div>`;
+    } else {
+        // Sort alphabetically and display as unclickable clean chips
+        branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+            const chip = document.createElement('div'); 
+            chip.className = 'staff-chip';
+            chip.style.cssText = 'background:#f0fdf4; border:1px solid #bbf7d0; padding:8px 15px; border-radius:20px; display:inline-block; margin:4px; font-weight:bold; color:#16a34a; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
+            chip.innerHTML = `👤 ${e.name}`;
+            wrapper.appendChild(chip);
+        });
+    }
 };
 
 window.updateAvailDropdown = function() {
-    const select = document.getElementById('availEmp'); if(!select) return;
-    select.innerHTML = '<option value="">-- Select Staff --</option>';
-    employees.forEach(e => {
-        const opt = document.createElement('option'); opt.value = e.name; opt.innerText = `${e.name} (${e.branch})`;
+    const select = document.getElementById('availEmp'); 
+    if(!select) return;
+    
+    let targetBranch = window.currentActiveTab || 'Cabantian';
+    select.innerHTML = `<option value="">-- Select Staff (${targetBranch}) --</option>`;
+    
+    let branchStaff = employees.filter(e => e.branch === targetBranch);
+    
+    branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+        const opt = document.createElement('option'); 
+        opt.value = e.name; 
+        opt.innerText = e.name;
         select.appendChild(opt);
     });
+};
+
+window.updateUnavailabilityList = function() {
+    const list = document.getElementById('unavailabilityList'); 
+    if(!list) return;
+    
+    let targetBranch = window.currentActiveTab || 'Cabantian';
+    list.innerHTML = '';
+    
+    const dates = Object.keys(unavailability).sort();
+    let hasLeaves = false;
+
+    dates.forEach(date => {
+        for (const emp in unavailability[date]) {
+            // Only show leaves for the staff members in the currently viewed branch!
+            let eObj = employees.find(e => e.name === emp);
+            if (eObj && eObj.branch === targetBranch) {
+                hasLeaves = true;
+                const div = document.createElement('div'); 
+                div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px dashed #cbd5e1; background: #f8fafc; margin-bottom: 5px; border-radius: 6px;';
+                div.innerHTML = `
+                    <span style="font-size: 13px; color: #334155;">
+                        <strong style="color:#0ea5e9;">${date}</strong>: <b>${emp}</b> 
+                        <span style="color:#dc2626; font-weight: bold; font-size: 11px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">${unavailability[date][emp]}</span>
+                    </span>
+                    <button style="background: white; color:#ef4444; border: 1px solid #fecaca; padding: 4px 8px; border-radius: 4px; cursor:pointer; font-weight:bold; font-size: 12px; transition: 0.2s;" onclick="removeUnavailable('${date}', '${emp}')">✖</button>
+                `;
+                list.appendChild(div);
+            }
+        }
+    });
+    
+    if (!hasLeaves) {
+        list.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; text-align: center; padding: 15px;">No leaves recorded for ${targetBranch}.</div>`;
+    }
 };
 
 window.markUnavailable = function() {
@@ -8586,20 +8665,6 @@ window.removeUnavailable = function(date, emp) {
         }
     }
     window.saveToCloud();
-};
-
-window.updateUnavailabilityList = function() {
-    const list = document.getElementById('unavailabilityList'); if(!list) return;
-    list.innerHTML = '';
-    const dates = Object.keys(unavailability).sort();
-    if (dates.length === 0) { list.innerHTML = '<span style="color:#aaa;">No leaves recorded.</span>'; return; }
-    dates.forEach(date => {
-        for (const emp in unavailability[date]) {
-            const div = document.createElement('div'); div.style.cssText = 'display:flex; justify-content:space-between; padding:5px; border-bottom:1px solid #eee;';
-            div.innerHTML = `<span><strong>${date}</strong>: ${emp} [${unavailability[date][emp]}]</span><span style="color:red;cursor:pointer;" onclick="removeUnavailable('${date}', '${emp}')">❌</span>`;
-            list.appendChild(div);
-        }
-    });
 };
 
 window.generateSchedule = function() {
@@ -8723,6 +8788,11 @@ window.switchTab = function(branch) {
     currentActiveTab = branch; // Remembers your active tab!
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${branch}`));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `content-${branch}`));
+    
+    // 🔥 THE DYNAMIC UI FILTER: Re-render the Staff Pool and Leaves based on the tab you clicked!
+    window.updateStaffDisplay(); 
+    window.updateAvailDropdown(); 
+    window.updateUnavailabilityList();
 };
 
 window.renderTables = function() {
