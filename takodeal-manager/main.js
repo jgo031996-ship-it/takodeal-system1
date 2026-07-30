@@ -1726,7 +1726,6 @@ window.reviewPurchaseOrder = async function(poId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
-        // 🔥 THE FIX: The Delete button is now at the absolute TOP of the window!
         let html = `
             <div style="margin-bottom: 15px;">
                 <button onclick="window.deleteStockRequest('${poId}')" style="width: 100%; padding: 14px; background: #fef2f2; border: 2px solid #fca5a5; color: #b91c1c; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.15); text-transform: uppercase;">
@@ -1745,26 +1744,50 @@ window.reviewPurchaseOrder = async function(poId) {
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead style="background: #0f172a; color: white; position: sticky; top: 0; z-index: 10;">
                     <tr>
-                        <th style="padding: 10px; text-align: left;">Item Description</th>
-                        <th style="padding: 10px; text-align: center;">Phys Count</th>
-                        <th style="padding: 10px; text-align: center;">Alert Type</th>
+                        <th style="padding: 10px; text-align: left; width: 45%;">Item Description</th>
+                        <th style="padding: 10px; text-align: center; width: 35%;">Stock Status / Request</th>
+                        <th style="padding: 10px; text-align: center; width: 20%;">Alert Type</th>
                     </tr>
                 </thead>
                 <tbody>`;
         
         po.items.forEach(item => {
-            let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : (item.requestType === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
-            let alertStyle = item.requestType === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
-            let rowBg = item.requestType === 'Lost in Transit' ? '#fff1f2' : 'white';
+            let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
+            let badgeText = item.requestType || 'Request';
+            
+            // Rebuild corrupted Delayed badges!
+            if (badgeText === 'Delayed / Backlogged' && isAudit) {
+                let phys = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
+                badgeText = (phys <= 0) ? 'Out of Stock' : 'Low Stock';
+            }
+
+            let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
+            let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
+            let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
+
+            // 🔥 THE FIX: Extract Physical Count correctly!
+            let qtyDisplay = '';
+            if (isAudit) {
+                let physCount = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
+                let sysCount = item.systemStock !== undefined ? item.systemStock : '---';
+
+                qtyDisplay = `
+                    <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                `;
+            } else {
+                let reqQty = item.displayQty || item.qty || 0;
+                qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
+            }
 
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
                     <td style="padding: 12px 10px; font-weight: bold; color: #334155;">
-                        ${item.itemName}<br>
-                        <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${hqStock[item.itemName] || 0} ${item.uom}</span>
+                        ${item.itemName || item.name}<br>
+                        <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${hqStock[item.itemName || item.name] || 0} ${item.uom}</span>
                     </td>
-                    <td style="padding: 12px 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
-                    <td style="padding: 12px 10px; text-align: center;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
+                    <td style="padding: 12px 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
+                    <td style="padding: 12px 10px; text-align: center; vertical-align: middle;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; white-space: nowrap;">${badgeText}</span></td>
                 </tr>
             `;
         });
@@ -1805,26 +1828,52 @@ window.reviewPurchaseOrder = async function(poId) {
                     let bUom = hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units';
                     let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
 
+                    // 🔥 THE FIX: Extract Physical Math correctly BEFORE sending to cart
+                    let originalQty = parseFloat(newItem.displayQty || newItem.qty) || 0;
+                    let originalBaseQty = parseFloat(newItem.qty) || 0;
+                    
+                    let physStockToPass = newItem.physicalStock !== undefined ? newItem.physicalStock : originalQty;
+                    let sysStockToPass = newItem.systemStock !== undefined ? newItem.systemStock : 0;
+                    
+                    let isAudit = (newItem.requestType === 'Low Stock' || newItem.requestType === 'Out of Stock' || newItem.physicalStock !== undefined);
+                    let badgeText = newItem.requestType || 'Request';
+                    if (badgeText === 'Delayed / Backlogged' && isAudit) {
+                        badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
+                    }
+                    
+                    // Force the actual Cart quantity to 0 so we don't accidentally send what they counted!
+                    let rawReqQty = isAudit ? 0 : originalQty;
+                    let baseReqQty = isAudit ? 0 : originalBaseQty;
+
                     let mappedItem = {
                         ...newItem, 
-                        rawQty: parseFloat(newItem.displayQty || newItem.qty) || 0,
+                        rawQty: rawReqQty,
+                        qty: baseReqQty,
+                        origRawQty: rawReqQty, 
+                        origBaseQty: baseReqQty,
                         purchaseUom: pUom,
                         baseUom: bUom,
                         conversionRate: cRate,
                         selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                        hqStock: parseFloat(hqData.currentStock) || 0
+                        hqStock: parseFloat(hqData.currentStock) || 0,
+                        requestType: badgeText,
+                        physicalStock: physStockToPass, 
+                        systemStock: sysStockToPass
                     };
 
                     mappedItem.convRate = (mappedItem.selectedUom === 'purch') ? cRate : 1;
                     mappedItem.friendlyUom = (mappedItem.selectedUom === 'purch') ? pUom : bUom;
-                    mappedItem.qty = mappedItem.rawQty * mappedItem.convRate;
 
                     let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
                     
                     if (existing) {
-                        existing.requestType = newItem.requestType;
-                        existing.physicalStock = newItem.physicalStock;
-                        existing.systemStock = newItem.systemStock;
+                        existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
+                        existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
+                        existing.origRawQty = existing.rawQty;
+                        existing.origBaseQty = existing.qty;
+                        existing.requestType = badgeText;
+                        existing.physicalStock = physStockToPass;
+                        existing.systemStock = sysStockToPass;
                         existing.purchaseUom = mappedItem.purchaseUom;
                         existing.baseUom = mappedItem.baseUom;
                         existing.conversionRate = mappedItem.conversionRate;
@@ -1845,7 +1894,6 @@ window.reviewPurchaseOrder = async function(poId) {
                 localStorage.setItem('takodeal_dispatch_to', po.branch);
                 localStorage.setItem('takodeal_active_po', poArray.join(','));
                 
-                // 🔥 FLAG AS DRAFTING: This allows our new bulk-delete engine to find it!
                 await updateDoc(poRef, { status: "Drafting" });
                 
                 window.renderDispatchCart(); 
@@ -1867,11 +1915,7 @@ window.reviewPurchaseOrder = async function(poId) {
                 
                 if (rejectReason) {
                     Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-                    await updateDoc(poRef, {
-                        status: 'Delayed',
-                        managerMessage: rejectReason,
-                        processedAt: serverTimestamp()
-                    });
+                    await updateDoc(poRef, { status: 'Delayed', managerMessage: rejectReason, processedAt: serverTimestamp() });
                     Swal.fire('Postponed', 'The request was set aside.', 'info');
                     window.loadDispatchLogs(); 
                 }
@@ -18059,10 +18103,8 @@ window.switchLogisticsTimeFilter = function(filter) {
 window.reviewStockRequest = async function(docId) {
     try {
         Swal.fire({title: 'Loading Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        
         const docRef = doc(db, "purchase_orders", docId);
         const snap = await getDoc(docRef);
-        
         if (!snap.exists()) return Swal.fire('Error', 'This request could not be found.', 'error');
         
         let data = snap.data();
@@ -18079,9 +18121,9 @@ window.reviewStockRequest = async function(docId) {
                 <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
                     <thead style="background: #1e293b; color: white; position: sticky; top: 0;">
                         <tr>
-                            <th style="padding: 10px;">Item Description</th>
-                            <th style="padding: 10px; text-align: center;">Qty Requested</th>
-                            <th style="padding: 10px; text-align: center;">Alert Type</th>
+                            <th style="padding: 10px; width: 45%;">Item Description</th>
+                            <th style="padding: 10px; text-align: center; width: 35%;">Stock Status / Request</th>
+                            <th style="padding: 10px; text-align: center; width: 20%;">Alert Type</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -18089,12 +18131,36 @@ window.reviewStockRequest = async function(docId) {
         
         if (data.items && data.items.length > 0) {
             data.items.forEach(item => {
-                let alertColor = item.requestType === 'Out of Stock' ? '#dc2626' : (item.requestType === 'Low Stock' ? '#d97706' : '#0284c7');
+                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
+                let badgeText = item.requestType || 'Request';
+                
+                if (badgeText === 'Delayed / Backlogged' && isAudit) {
+                    let phys = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
+                    badgeText = (phys <= 0) ? 'Out of Stock' : 'Low Stock';
+                }
+
+                let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
+                
+                // 🔥 THE FIX: Display Physical Math correctly
+                let qtyDisplay = '';
+                if (isAudit) {
+                    let physCount = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
+                    let sysCount = item.systemStock !== undefined ? item.systemStock : '---';
+
+                    qtyDisplay = `
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                    `;
+                } else {
+                    let reqQty = item.displayQty || item.qty || 0;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
+                }
+
                 itemsHtml += `
                     <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
-                        <td style="padding: 10px; font-weight: bold; color: #334155;">${item.itemName}</td>
-                        <td style="padding: 10px; text-align: center; font-weight: 900; color: #0ea5e9;">${item.displayQty || item.qty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></td>
-                        <td style="padding: 10px; text-align: center;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${item.requestType || 'Request'}</span></td>
+                        <td style="padding: 10px; font-weight: bold; color: #334155; vertical-align: middle;">${item.itemName || item.name}</td>
+                        <td style="padding: 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
+                        <td style="padding: 10px; text-align: center; vertical-align: middle;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50; white-space: nowrap;">${badgeText}</span></td>
                     </tr>
                 `;
             });
@@ -18112,68 +18178,71 @@ window.reviewStockRequest = async function(docId) {
             confirmButtonColor: '#16a34a',
             denyButtonColor: '#dc2626',
             cancelButtonColor: '#64748b',
-            width: 600,
+            width: 650,
             customClass: { popup: 'rounded-2xl shadow-2xl' }
         });
 
         if (actionResult.isConfirmed) {
-            // 🔥 THE MEMORY FIX: Properly map fields and save to LocalStorage so it survives the tab switch!
             if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
             
             data.items.forEach(reqItem => {
-                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === reqItem.itemName);
-                let rawReqQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
-                let baseReqQty = parseFloat(reqItem.qty) || 0;
+                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === (reqItem.itemName || reqItem.name));
+                let isAudit = (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock' || reqItem.physicalStock !== undefined);
+
+                // 🔥 THE FIX: Extract correct physical and requested values safely
+                let originalQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
+                let originalBaseQty = parseFloat(reqItem.qty) || 0;
+                
+                let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : originalQty;
+                let sysStockToPass = reqItem.systemStock !== undefined ? reqItem.systemStock : 0;
+
+                let badgeText = reqItem.requestType || 'Request';
+                if (badgeText === 'Delayed / Backlogged' && isAudit) {
+                    badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
+                }
+
+                // Force the Dispatch Cart to 0 so we don't accidentally ship their counted inventory!
+                let rawReqQty = isAudit ? 0 : originalQty;
+                let baseReqQty = isAudit ? 0 : originalBaseQty;
                 
                 if (existing) {
-                    // 🔥 THE MERGE FIX: Sum the requested quantities!
                     existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
                     existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
-                    // Update original request memory so partial dispatches work!
-                    existing.origRawQty = existing.rawQty;
-                    existing.origBaseQty = existing.qty;
-                    existing.requestType = "Merged Request"; 
+                    existing.origRawQty = (parseFloat(existing.origRawQty) || 0) + rawReqQty;
+                    existing.origBaseQty = (parseFloat(existing.origBaseQty) || 0) + baseReqQty;
+                    existing.requestType = badgeText; 
+                    existing.physicalStock = physStockToPass;
+                    existing.systemStock = sysStockToPass;
                 } else {
                     window.dispatchCart.push({
-                        itemName: reqItem.itemName,
-                        name: reqItem.itemName,
-                        rawQty: rawReqQty, 
-                        qty: baseReqQty,
-                        origRawQty: rawReqQty, // 🔥 TRACK THE ORIGINAL REQUEST
-                        origBaseQty: baseReqQty, // 🔥 TRACK THE ORIGINAL REQUEST
-                        uom: reqItem.displayUom || reqItem.uom,
-                        baseUom: reqItem.uom,
+                        itemName: reqItem.itemName || reqItem.name, 
+                        name: reqItem.itemName || reqItem.name,
+                        rawQty: rawReqQty, qty: baseReqQty,
+                        origRawQty: rawReqQty, origBaseQty: baseReqQty,
+                        uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.baseUom || reqItem.uom,
                         friendlyUom: reqItem.displayUom || reqItem.uom,
                         selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
-                        convRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
-                        conversionRate: (baseReqQty > 0 && rawReqQty > 0) ? (baseReqQty / rawReqQty) : 1,
+                        convRate: reqItem.convRate || 1, conversionRate: reqItem.conversionRate || 1,
                         sourceId: reqItem.sourceId || reqItem.id,
-                        requestType: reqItem.requestType || 'Request',
-                        physicalStock: reqItem.physicalStock || 0,
-                        systemStock: reqItem.systemStock || 0
+                        requestType: badgeText,
+                        physicalStock: physStockToPass, systemStock: sysStockToPass
                     });
                 }
             });
 
-            // 💾 SAVE TO BROWSER MEMORY (This prevents the cart from wiping when the tab switches!)
             localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-            
-            // Auto-set the destination dropdown memory
             localStorage.setItem('takodeal_dispatch_to', data.branch);
 
-            // Link the PO ID so "Clear Cart" or "Send Dispatch" knows which request to update!
             let activePo = localStorage.getItem('takodeal_active_po') || "";
             if (!activePo.includes(docId)) {
                 activePo = activePo ? activePo + ',' + docId : docId;
                 localStorage.setItem('takodeal_active_po', activePo);
             }
 
-            // Jump to the Dispatch Tab
             if (typeof window.switchView === 'function') window.switchView('dispatch'); 
             
-            // Update the Database
             await updateDoc(docRef, {
-                status: 'Approved',
+                status: 'Drafting',
                 managerMessage: 'Approved and loaded into Dispatch Cart.',
                 processedAt: serverTimestamp()
             });
@@ -18181,7 +18250,6 @@ window.reviewStockRequest = async function(docId) {
             Swal.fire({title: 'Loaded to Cart! 🛒', text: `Items moved to Dispatch for ${data.branch}.`, icon: 'success', timer: 2000, showConfirmButton: false});
             
         } else if (actionResult.isDenied) {
-            // 🔥 SET ASIDE / DELAY
             const { value: rejectReason } = await Swal.fire({
                 title: 'Set Aside Request',
                 input: 'text',
@@ -18195,18 +18263,12 @@ window.reviewStockRequest = async function(docId) {
             
             if (rejectReason) {
                 Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-                await updateDoc(docRef, {
-                    status: 'Delayed',
-                    managerMessage: rejectReason,
-                    processedAt: serverTimestamp()
-                });
-                Swal.fire('Postponed', 'The request was set aside and the branch was notified.', 'info');
+                await updateDoc(docRef, { status: 'Delayed', managerMessage: rejectReason, processedAt: serverTimestamp() });
+                Swal.fire('Postponed', 'The request was set aside.', 'info');
+                window.loadDispatchLogs(); 
             }
         }
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to load request details.', 'error');
-    }
+    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to load request details.', 'error'); }
 };
 
 // ========================================================
