@@ -8543,11 +8543,9 @@ window.updateStaffDisplay = function() {
     const wrapper = document.getElementById('staffListWrapper'); 
     if(!wrapper) return;
     
-    // Grab the precise branch you are looking at!
     let targetBranch = window.currentActiveTab || 'Cabantian';
     let branchStaff = employees.filter(e => e.branch === targetBranch);
     
-    // Auto-hide the old manual input elements since it's fully automated!
     let empNameInput = document.getElementById('empName');
     let empBranchSelect = document.getElementById('empBranch');
     let addStaffBtn = document.querySelector('button[onclick="addEmployee()"]');
@@ -8555,7 +8553,6 @@ window.updateStaffDisplay = function() {
     if(empBranchSelect) empBranchSelect.style.display = 'none';
     if(addStaffBtn) addStaffBtn.style.display = 'none';
 
-    // 🔥 THE FIX: Dynamically rename the title so you know exactly who you are looking at!
     let poolTitle = wrapper.previousElementSibling;
     if (poolTitle) {
         poolTitle.innerHTML = `<span style="color:#0ea5e9; font-size: 16px; font-weight: bold;">1. Active Staff Pool</span> <span style="font-size:12px; color:#64748b; font-weight:normal;">(Auto-Synced from HR for <b>${targetBranch}</b>)</span>`;
@@ -8563,9 +8560,28 @@ window.updateStaffDisplay = function() {
 
     wrapper.innerHTML = "";
     
-    if (branchStaff.length === 0) {
+    // 🔥 THE FIX: Scan the current month's schedule to see if any outsiders are working Relief!
+    let reliefStaffNames = new Set();
+    if (currentSchedule && Object.keys(currentSchedule).length > 0) {
+        for (let day in currentSchedule) {
+            if (currentSchedule[day][targetBranch]) {
+                let dayData = currentSchedule[day][targetBranch];
+                Object.values(dayData.scheduled).forEach(name => {
+                    if (name !== "N/A" && name !== "UNFILLED") {
+                        // If this person is NOT natively in the target branch, they are relief!
+                        if (!branchStaff.some(e => e.name === name)) {
+                            reliefStaffNames.add(name);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    if (branchStaff.length === 0 && reliefStaffNames.size === 0) {
         wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}.</div>`;
     } else {
+        // 1. Render Core Staff (Green)
         branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
             const chip = document.createElement('div'); 
             chip.className = 'staff-chip';
@@ -8573,6 +8589,20 @@ window.updateStaffDisplay = function() {
             chip.innerHTML = `👤 ${e.name}`;
             wrapper.appendChild(chip);
         });
+
+        // 2. Render Relief Staff (Yellow)
+        if (reliefStaffNames.size > 0) {
+            Array.from(reliefStaffNames).sort().forEach(name => {
+                let realProfile = employees.find(e => e.name === name);
+                let originBranch = realProfile ? realProfile.branch : 'Unknown';
+
+                const chip = document.createElement('div'); 
+                chip.className = 'staff-chip';
+                chip.style.cssText = 'background:#fffbeb; border:1px solid #fcd34d; padding:8px 15px; border-radius:20px; display:inline-block; margin:4px; font-weight:bold; color:#d97706; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
+                chip.innerHTML = `🌍 ${name} <span style="font-size:10px; color:#b45309;">(Relief from ${originBranch})</span>`;
+                wrapper.appendChild(chip);
+            });
+        }
     }
 };
 
@@ -8581,16 +8611,28 @@ window.updateAvailDropdown = function() {
     if(!select) return;
     
     let targetBranch = window.currentActiveTab || 'Cabantian';
-    select.innerHTML = `<option value="">-- Select Staff (${targetBranch}) --</option>`;
+    select.innerHTML = `<option value="">-- Select Staff --</option>`;
     
     let branchStaff = employees.filter(e => e.branch === targetBranch);
-    
+    let otherStaff = employees.filter(e => e.branch !== targetBranch);
+
+    // Group 1: Home Branch
+    let optGroupMain = document.createElement('optgroup');
+    optGroupMain.label = `📍 ${targetBranch} Staff`;
     branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        const opt = document.createElement('option'); 
-        opt.value = e.name; 
-        opt.innerText = e.name;
-        select.appendChild(opt);
+        const opt = document.createElement('option'); opt.value = e.name; opt.innerText = e.name;
+        optGroupMain.appendChild(opt);
     });
+    select.appendChild(optGroupMain);
+
+    // Group 2: Relief Staff
+    let optGroupOther = document.createElement('optgroup');
+    optGroupOther.label = `🌍 Relief Staff (Other Branches)`;
+    otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+        const opt = document.createElement('option'); opt.value = e.name; opt.innerText = `${e.name} (${e.branch})`;
+        optGroupOther.appendChild(opt);
+    });
+    select.appendChild(optGroupOther);
 };
 
 window.updateUnavailabilityList = function() {
@@ -8599,21 +8641,34 @@ window.updateUnavailabilityList = function() {
     
     let targetBranch = window.currentActiveTab || 'Cabantian';
     list.innerHTML = '';
-    
     const dates = Object.keys(unavailability).sort();
     let hasLeaves = false;
 
+    // Detect if any outsiders are working relief this month
+    let reliefStaffNames = new Set();
+    if (currentSchedule && Object.keys(currentSchedule).length > 0) {
+        for (let day in currentSchedule) {
+            if (currentSchedule[day][targetBranch]) {
+                Object.values(currentSchedule[day][targetBranch].scheduled).forEach(n => {
+                    if (n !== "N/A" && n !== "UNFILLED") reliefStaffNames.add(n);
+                });
+            }
+        }
+    }
+
     dates.forEach(date => {
         for (const emp in unavailability[date]) {
-            // Only show leaves for the staff members in the currently viewed branch!
             let eObj = employees.find(e => e.name === emp);
-            if (eObj && eObj.branch === targetBranch) {
+            // Show the leave if they belong to this branch OR if they are working Relief here!
+            if ((eObj && eObj.branch === targetBranch) || reliefStaffNames.has(emp)) {
                 hasLeaves = true;
+                let reliefTag = (eObj && eObj.branch !== targetBranch) ? ` <span style="font-size:10px; color:#d97706;">(Relief)</span>` : '';
+                
                 const div = document.createElement('div'); 
                 div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px dashed #cbd5e1; background: #f8fafc; margin-bottom: 5px; border-radius: 6px;';
                 div.innerHTML = `
                     <span style="font-size: 13px; color: #334155;">
-                        <strong style="color:#0ea5e9;">${date}</strong>: <b>${emp}</b> 
+                        <strong style="color:#0ea5e9;">${date}</strong>: <b>${emp}</b>${reliefTag}
                         <span style="color:#dc2626; font-weight: bold; font-size: 11px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">${unavailability[date][emp]}</span>
                     </span>
                     <button style="background: white; color:#ef4444; border: 1px solid #fecaca; padding: 4px 8px; border-radius: 4px; cursor:pointer; font-weight:bold; font-size: 12px; transition: 0.2s;" onclick="removeUnavailable('${date}', '${emp}')">✖</button>
@@ -8754,21 +8809,49 @@ window.generateSchedule = function() {
 window.openSwapModal = function(day, branch, shiftId) {
     swapData = { day, branch, shiftId };
     const cur = currentSchedule[day][branch].scheduled[shiftId];
-    document.getElementById('swapMessage').innerText = cur === "UNFILLED" ? "Assigning empty shift:" : `Swapping: ${cur}`;
+    
+    document.getElementById('swapMessage').innerHTML = cur === "UNFILLED" 
+        ? `<strong style="color:#16a34a;">Assigning empty shift</strong>` 
+        : `Swapping: <strong style="color:#0ea5e9;">${cur}</strong>`;
+        
     const select = document.getElementById('swapTarget');
     select.innerHTML = '<option value="">-- Choose Staff --</option>';
-    
+
+    // 1. Co-workers currently scheduled today (Swap)
+    let optGroupShift = document.createElement('optgroup');
+    optGroupShift.label = "🔄 Swap with Scheduled Staff";
     for (let sId in currentSchedule[day][branch].scheduled) {
         if (sId !== shiftId && currentSchedule[day][branch].scheduled[sId] !== "N/A" && currentSchedule[day][branch].scheduled[sId] !== "UNFILLED") {
             const sName = branchConfig[branch].find(s => s.id === sId).name;
-            select.innerHTML += `<option value="shift_${sId}">${currentSchedule[day][branch].scheduled[sId]} (from ${sName})</option>`;
+            optGroupShift.innerHTML += `<option value="shift_${sId}">${currentSchedule[day][branch].scheduled[sId]} (from ${sName})</option>`;
         }
     }
-    currentSchedule[day][branch].rest.forEach((name, i) => select.innerHTML += `<option value="rest_${i}">${name} (from Standby)</option>`);
+    if (optGroupShift.children.length > 0) select.appendChild(optGroupShift);
+
+    // 2. Co-workers on Standby today
+    let optGroupStandby = document.createElement('optgroup');
+    optGroupStandby.label = "🛋️ Assign from Standby";
+    currentSchedule[day][branch].rest.forEach((name, i) => {
+        optGroupStandby.innerHTML += `<option value="rest_${i}">${name}</option>`;
+    });
+    if (optGroupStandby.children.length > 0) select.appendChild(optGroupStandby);
+
+    // 3. 🔥 GLOBAL RELIEF STAFF: Pull anyone else in the company!
+    let optGroupGlobal = document.createElement('optgroup');
+    optGroupGlobal.label = "🌍 Pull Relief Staff (Other Branches)";
+    
+    let activeToday = Object.values(currentSchedule[day][branch].scheduled).concat(currentSchedule[day][branch].rest);
+    
+    employees.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+        // Only show people who aren't already working in this branch today
+        if (!activeToday.includes(e.name)) {
+            optGroupGlobal.innerHTML += `<option value="global_${e.name}">${e.name} (from ${e.branch})</option>`;
+        }
+    });
+    if (optGroupGlobal.children.length > 0) select.appendChild(optGroupGlobal);
+
     document.getElementById('swapModal').style.display = 'flex';
 };
-
-window.closeModal = function() { document.getElementById('swapModal').style.display = 'none'; swapData = null; };
 
 window.executeSwap = function() {
     const target = document.getElementById('swapTarget').value;
@@ -8777,18 +8860,44 @@ window.executeSwap = function() {
     const curStaff = currentSchedule[day][branch].scheduled[shiftId];
     
     if (target.startsWith('shift_')) {
+        // Swap with another scheduled staff
         const tSId = target.replace('shift_', '');
         currentSchedule[day][branch].scheduled[shiftId] = currentSchedule[day][branch].scheduled[tSId];
         currentSchedule[day][branch].scheduled[tSId] = curStaff;
+    } else if (target.startsWith('global_')) {
+        // 🔥 Pulling an outsider from another branch!
+        const globalName = target.replace('global_', '');
+        currentSchedule[day][branch].scheduled[shiftId] = globalName;
+        
+        // If the current staff wasn't UNFILLED, put them on standby so they aren't deleted from existence
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !currentSchedule[day][branch].rest.includes(curStaff)) {
+            currentSchedule[day][branch].rest.push(curStaff);
+        }
     } else {
+        // Assign from standby
         const rIdx = parseInt(target.replace('rest_', ''));
         const tStaff = currentSchedule[day][branch].rest[rIdx];
         currentSchedule[day][branch].scheduled[shiftId] = tStaff;
-        if (curStaff !== "UNFILLED") currentSchedule[day][branch].rest[rIdx] = curStaff;
-        else currentSchedule[day][branch].rest.splice(rIdx, 1);
+        
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A") {
+            currentSchedule[day][branch].rest[rIdx] = curStaff;
+        } else {
+            currentSchedule[day][branch].rest.splice(rIdx, 1);
+        }
     }
-    window.closeModal(); window.renderTables(); window.saveToCloud();
+    
+    window.closeModal(); 
+    window.renderTables(); 
+    
+    // Automatically trigger the new smart active staff display to catch the Relief addition!
+    window.updateStaffDisplay();
+    window.updateAvailDropdown();
+    window.updateUnavailabilityList();
+    
+    window.saveToCloud();
 };
+
+window.closeModal = function() { document.getElementById('swapModal').style.display = 'none'; swapData = null; };
 
 // 🔥 TAB MEMORY ENGINE
 window.switchTab = function(branch) {
