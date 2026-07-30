@@ -8539,6 +8539,19 @@ window.removeEmployee = function(name) {
     window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables(); window.saveToCloud();
 };
 
+// 🔥 SMART HELPER: Finds the full HR profile even if you only give it a nickname!
+window.findEmployeeProfile = function(searchName) {
+    if (!searchName) return null;
+    let s = searchName.toLowerCase().trim();
+    return employees.find(e => {
+        let n = e.name.toLowerCase().trim();
+        let f = e.fullName.toLowerCase().trim();
+        if (n === s || f === s) return true;
+        if (f.includes(s) && s.length >= 3) return true;
+        return false;
+    });
+};
+
 window.updateStaffDisplay = function() {
     const wrapper = document.getElementById('staffListWrapper'); 
     if(!wrapper) return;
@@ -8560,19 +8573,24 @@ window.updateStaffDisplay = function() {
 
     wrapper.innerHTML = "";
     
-    // 🔥 THE FIX: Scan the current month's schedule to see if any outsiders are working Relief!
     let reliefStaffNames = new Set();
     if (currentSchedule && Object.keys(currentSchedule).length > 0) {
         for (let day in currentSchedule) {
             if (currentSchedule[day][targetBranch]) {
                 let dayData = currentSchedule[day][targetBranch];
+                
+                // Check working shifts
                 Object.values(dayData.scheduled).forEach(name => {
                     if (name !== "N/A" && name !== "UNFILLED") {
-                        // If this person is NOT natively in the target branch, they are relief!
-                        if (!branchStaff.some(e => e.name === name)) {
-                            reliefStaffNames.add(name);
-                        }
+                        let realProfile = window.findEmployeeProfile(name);
+                        if (!realProfile || realProfile.branch !== targetBranch) reliefStaffNames.add(name);
                     }
+                });
+                
+                // Check standby
+                (dayData.rest || []).forEach(name => {
+                    let realProfile = window.findEmployeeProfile(name);
+                    if (!realProfile || realProfile.branch !== targetBranch) reliefStaffNames.add(name);
                 });
             }
         }
@@ -8581,7 +8599,6 @@ window.updateStaffDisplay = function() {
     if (branchStaff.length === 0 && reliefStaffNames.size === 0) {
         wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}.</div>`;
     } else {
-        // 1. Render Core Staff (Green)
         branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
             const chip = document.createElement('div'); 
             chip.className = 'staff-chip';
@@ -8590,10 +8607,9 @@ window.updateStaffDisplay = function() {
             wrapper.appendChild(chip);
         });
 
-        // 2. Render Relief Staff (Yellow)
         if (reliefStaffNames.size > 0) {
             Array.from(reliefStaffNames).sort().forEach(name => {
-                let realProfile = employees.find(e => e.name === name);
+                let realProfile = window.findEmployeeProfile(name);
                 let originBranch = realProfile ? realProfile.branch : 'Unknown';
 
                 const chip = document.createElement('div'); 
@@ -8616,7 +8632,6 @@ window.updateAvailDropdown = function() {
     let branchStaff = employees.filter(e => e.branch === targetBranch);
     let otherStaff = employees.filter(e => e.branch !== targetBranch);
 
-    // Group 1: Home Branch
     let optGroupMain = document.createElement('optgroup');
     optGroupMain.label = `📍 ${targetBranch} Staff`;
     branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
@@ -8625,7 +8640,6 @@ window.updateAvailDropdown = function() {
     });
     select.appendChild(optGroupMain);
 
-    // Group 2: Relief Staff
     let optGroupOther = document.createElement('optgroup');
     optGroupOther.label = `🌍 Relief Staff (Other Branches)`;
     otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
@@ -8641,10 +8655,10 @@ window.updateUnavailabilityList = function() {
     
     let targetBranch = window.currentActiveTab || 'Cabantian';
     list.innerHTML = '';
+    
     const dates = Object.keys(unavailability).sort();
     let hasLeaves = false;
 
-    // Detect if any outsiders are working relief this month
     let reliefStaffNames = new Set();
     if (currentSchedule && Object.keys(currentSchedule).length > 0) {
         for (let day in currentSchedule) {
@@ -8652,14 +8666,14 @@ window.updateUnavailabilityList = function() {
                 Object.values(currentSchedule[day][targetBranch].scheduled).forEach(n => {
                     if (n !== "N/A" && n !== "UNFILLED") reliefStaffNames.add(n);
                 });
+                (currentSchedule[day][targetBranch].rest || []).forEach(n => reliefStaffNames.add(n));
             }
         }
     }
 
     dates.forEach(date => {
         for (const emp in unavailability[date]) {
-            let eObj = employees.find(e => e.name === emp);
-            // Show the leave if they belong to this branch OR if they are working Relief here!
+            let eObj = window.findEmployeeProfile(emp);
             if ((eObj && eObj.branch === targetBranch) || reliefStaffNames.has(emp)) {
                 hasLeaves = true;
                 let reliefTag = (eObj && eObj.branch !== targetBranch) ? ` <span style="font-size:10px; color:#d97706;">(Relief)</span>` : '';
