@@ -8303,23 +8303,23 @@ window.saveToCloud = async function() {
 
 window.loadFromCloud = async function() {
     try {
-        // 🔥 THE NEW AUTO-SYNC ENGINE: Pull active staff directly from HR profiles!
         const staffSnap = await getDocs(collection(db, "cashiers"));
         let fetchedEmployees = [];
         
         staffSnap.forEach(docSnap => {
             let d = docSnap.data();
-            // Ignore resigned staff and revoked PINs!
             if (d.status !== 'Resigned' && d.pin !== 'REVOKED') {
                 fetchedEmployees.push({
-                    name: d.scheduleNickname || d.cashierName, // Automatically uses their Nickname!
+                    name: d.scheduleNickname || d.cashierName,
                     fullName: d.cashierName,
+                    scheduleNickname: d.scheduleNickname || "",
                     branch: d.branch || "Unassigned"
                 });
             }
         });
         
-        // Override local memory with Live HR Data
+        // 🔥 THE FIX: Lock the HR list permanently into the window memory!
+        window.employees = fetchedEmployees; 
         employees = fetchedEmployees; 
 
         const snap = await getDoc(doc(db, "settings", "global_schedule"));
@@ -8344,16 +8344,14 @@ window.loadFromCloud = async function() {
         const monthInput = document.getElementById("monthSelector");
         if (monthInput) monthInput.value = `${currentYear}-${mm}`;
 
-        // Ensure a tab is selected
-        // 🔥 THE FIX: Prevent defaulting to Main Office! Default to a real branch.
         if(!window.currentActiveTab || window.currentActiveTab === "Main Office") {
             let validBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ['Cabantian'];
             window.currentActiveTab = validBranches.length > 0 ? validBranches[0] : 'Cabantian';
         }
-        try { currentActiveTab = window.currentActiveTab; } catch(e) {} // Sync local memory
+        try { currentActiveTab = window.currentActiveTab; } catch(e) {} 
 
         window.renderConfigUI(); 
-        window.switchTab(window.currentActiveTab); // This instantly syncs the UI filters!
+        window.switchTab(window.currentActiveTab); 
         window.updateHolidayList(); 
         window.renderTables();
         
@@ -8543,11 +8541,15 @@ window.removeEmployee = function(name) {
 window.findEmployeeProfile = function(searchName) {
     if (!searchName) return null;
     let s = searchName.toLowerCase().trim();
-    return employees.find(e => {
-        let n = e.name.toLowerCase().trim();
-        let f = e.fullName.toLowerCase().trim();
-        if (n === s || f === s) return true;
+    let empList = window.employees || employees || [];
+    return empList.find(e => {
+        let n = (e.name || "").toLowerCase().trim();
+        let f = (e.fullName || "").toLowerCase().trim();
+        let nick = (e.scheduleNickname || "").toLowerCase().trim();
+        
+        if (n === s || f === s || nick === s) return true;
         if (f.includes(s) && s.length >= 3) return true;
+        if (s.includes(n) && n.length >= 3) return true;
         return false;
     });
 };
@@ -8557,7 +8559,8 @@ window.updateStaffDisplay = function() {
     if(!wrapper) return;
     
     let targetBranch = window.currentActiveTab || 'Cabantian';
-    let branchStaff = employees.filter(e => e.branch === targetBranch);
+    let empList = window.employees || employees || [];
+    let branchStaff = empList.filter(e => e.branch === targetBranch);
     
     let empNameInput = document.getElementById('empName');
     let empBranchSelect = document.getElementById('empBranch');
@@ -8579,7 +8582,6 @@ window.updateStaffDisplay = function() {
             if (currentSchedule[day][targetBranch]) {
                 let dayData = currentSchedule[day][targetBranch];
                 
-                // Check working shifts
                 Object.values(dayData.scheduled).forEach(name => {
                     if (name !== "N/A" && name !== "UNFILLED") {
                         let realProfile = window.findEmployeeProfile(name);
@@ -8587,7 +8589,6 @@ window.updateStaffDisplay = function() {
                     }
                 });
                 
-                // Check standby
                 (dayData.rest || []).forEach(name => {
                     let realProfile = window.findEmployeeProfile(name);
                     if (!realProfile || realProfile.branch !== targetBranch) reliefStaffNames.add(name);
