@@ -8608,8 +8608,13 @@ window.generateSchedule = function() {
     [currentYear, currentMonth] = monthVal.split('-').map(Number);
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     
-    // 🔥 THE FIX: Get the branch they are currently looking at!
-    let targetBranch = window.currentActiveTab || 'Cabantian';
+    // 🔥 THE BULLETPROOF ACTIVE TAB FIX: Read the actual highlighted button on the screen!
+    let activeTabBtn = document.querySelector('.tab-container .tab-btn.active');
+    let targetBranch = 'Cabantian'; // Safe fallback
+    if (activeTabBtn) {
+        // The button text is "Maa Schedule", so we strip " Schedule" to get just the branch name!
+        targetBranch = activeTabBtn.innerText.replace(' Schedule', '').trim();
+    }
     
     // If the calendar is totally empty, build the shell first so we don't crash
     if (Object.keys(currentSchedule).length === 0) {
@@ -8649,13 +8654,17 @@ window.generateSchedule = function() {
         
         // Wipe their old schedule for this day and rewrite it
         currentSchedule[day][targetBranch].scheduled = {};
-        branchConfig[targetBranch].filter(s => s.active).forEach(shift => {
-            if (!shift.days.includes(dOfWeek)) {
-                currentSchedule[day][targetBranch].scheduled[shift.id] = "N/A";
-            } else {
-                currentSchedule[day][targetBranch].scheduled[shift.id] = shuffled.length > 0 ? shuffled.pop() : "UNFILLED";
-            }
-        });
+        
+        // Safety check to ensure the branch config exists
+        if (branchConfig[targetBranch]) {
+            branchConfig[targetBranch].filter(s => s.active).forEach(shift => {
+                if (!shift.days.includes(dOfWeek)) {
+                    currentSchedule[day][targetBranch].scheduled[shift.id] = "N/A";
+                } else {
+                    currentSchedule[day][targetBranch].scheduled[shift.id] = shuffled.length > 0 ? shuffled.pop() : "UNFILLED";
+                }
+            });
+        }
         
         currentSchedule[day][targetBranch].rest = shuffled;
     }
