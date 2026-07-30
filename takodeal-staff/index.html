@@ -223,9 +223,11 @@
             <div id="view-schedule" class="view">
                 <div class="view-header">
                     <h2>🗓️ My Schedule</h2>
-                    <p>Your assigned shifts for the current month.</p>
+                    <p>Select a month below to view your shifts.</p>
                 </div>
-                <div id="incomingSwapsContainer" style="display: none; margin-bottom: 15px; text-align: left;"></div>
+                <div style="padding: 0 15px; margin-bottom: 15px;">
+                    <input type="month" id="staffMonthPicker" onchange="window.loadStaffSchedule()" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid #0f766e; font-weight: bold; color: #0f172a; outline: none; background: #f0fdf4; box-sizing: border-box; font-size: 15px; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.1);">
+                </div>
                 <div id="scheduleContainer">
                     <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading schedule...</div>
                 </div>
