@@ -1775,33 +1775,47 @@ window.initiateSwapRequest = function(day, dateStr, branch, myShiftId, myShiftNa
 
     let staffName = localStorage.getItem('takodeal_staff_name');
     
-    // Find everyone else assigned a shift that day
+    // 🔥 THE FIX: The Smart Matcher prevents them from seeing themselves!
+    let isMatch = (assignedName) => {
+        if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
+        let aName = assignedName.toLowerCase().trim();
+        let sName = staffName.toLowerCase().trim();
+        if (aName === sName || sName.includes(aName)) return true;
+        return false;
+    };
+
+    // 1. Co-workers currently scheduled today
+    let optGroupShift = document.createElement('optgroup');
+    optGroupShift.label = "🔄 Swap with Scheduled Staff";
     for(let sId in dayData.scheduled) {
         let assignee = dayData.scheduled[sId];
-        if(assignee !== "N/A" && assignee !== "UNFILLED" && assignee !== staffName) {
+        // ONLY show if it's NOT them!
+        if(!isMatch(assignee) && assignee !== "N/A" && assignee !== "UNFILLED") {
             let sConf = schedData.branchConfig[branch].find(s => s.id === sId);
             if (sConf) {
-                select.innerHTML += `<option value="${assignee}|${sId}|${sConf.name}">${assignee} (Currently: ${sConf.name})</option>`;
+                optGroupShift.innerHTML += `<option value="${assignee}|${sId}|${sConf.name}">${assignee} (Currently: ${sConf.name})</option>`;
             }
         }
     }
-    
-    // Find everyone on Standby
+    if (optGroupShift.children.length > 0) select.appendChild(optGroupShift);
+
+    // 2. Co-workers on Standby today
+    let optGroupStandby = document.createElement('optgroup');
+    optGroupStandby.label = "🛋️ Ask Standby Staff to Cover";
     if(dayData.rest) {
         dayData.rest.forEach(r => {
-            if(r !== staffName) {
-                select.innerHTML += `<option value="${r}|STANDBY|Standby">${r} (Currently: On Standby)</option>`;
+            if(!isMatch(r)) {
+                optGroupStandby.innerHTML += `<option value="${r}|STANDBY|Standby">${r} (Currently: On Standby)</option>`;
             }
         });
     }
+    if (optGroupStandby.children.length > 0) select.appendChild(optGroupStandby);
 
     if(select.options.length <= 1) {
         return Swal.fire({title: 'No Candidates', text: 'No one is available to swap with you on this day.', icon: 'info', customClass: { popup: 'rounded-2xl' }});
     }
 
     document.getElementById('swapModalDetails').innerHTML = `You are requesting to trade your <b>${myShiftName}</b> shift on <b style="color: #0f172a;">${dateStr}</b>.`;
-    
-    // Save to memory so the submit button knows what's happening
     window.pendingSwapData = { day, dateStr, branch, myShiftId, myShiftName };
     document.getElementById('swapRequestModal').style.display = 'flex';
 };
@@ -1852,31 +1866,44 @@ window.listenToIncomingSwaps = async function() {
     let staffId = localStorage.getItem('takodeal_staff_id');
     if (!staffName) return;
 
-    // Grab the nickname from the cloud to make matching bulletproof
     let nickname = staffName;
     try {
         const docSnap = await getDoc(doc(db, "cashiers", staffId));
         if(docSnap.exists()) nickname = docSnap.data().scheduleNickname || staffName;
     } catch(e) {}
 
-    // 🔥 THE SMART MATCHER
     let isMatch = (assignedName) => {
         if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
         let aName = assignedName.toLowerCase().trim();
         let sName = staffName.toLowerCase().trim();
         let nName = nickname.toLowerCase().trim();
-        
         if (aName === sName || aName === nName) return true;
         if (sName.includes(aName) && aName.length >= 3) return true;
         return false;
     };
 
-    // 🔥 THE FIX: Listen for ALL pending swaps, then filter locally so name mismatches are bypassed!
     onSnapshot(query(collection(db, "shift_swaps"), where("status", "==", "Pending")), (snap) => {
-        let container = document.getElementById('incomingSwapsContainer');
-        let badge = document.getElementById('navSchedBadge');
         
+        // 🔥 DYNAMIC UI INJECTOR: Ensure the container exists and doesn't get wiped!
+        let container = document.getElementById('incomingSwapsContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'incomingSwapsContainer';
+            container.style.cssText = "display: none; padding: 0 15px; margin-bottom: 15px; text-align: left;";
+            
+            // Insert it safely outside the scheduleContainer so it survives refreshes!
+            let viewSched = document.getElementById('view-schedule');
+            let monthPicker = document.getElementById('staffMonthPicker');
+            if (monthPicker) {
+                monthPicker.parentElement.insertAdjacentElement('afterend', container);
+            } else if (viewSched) {
+                viewSched.insertBefore(container, document.getElementById('scheduleContainer'));
+            }
+        }
+
+        let badge = document.getElementById('navSchedBadge');
         let myPendingSwaps = [];
+        
         snap.forEach(docSnap => {
             let d = docSnap.data();
             // Did this request use my short name OR my full name?
@@ -1886,13 +1913,12 @@ window.listenToIncomingSwaps = async function() {
         });
 
         if (myPendingSwaps.length === 0) {
-            if(container) container.style.display = 'none';
+            container.style.display = 'none';
             if(badge) badge.style.display = 'none';
             return;
         }
 
         if(badge) badge.style.display = 'inline-block';
-        if(!container) return;
 
         let html = '<h3 style="color: #ea580c; margin-top:0; font-size:15px; border-bottom: 2px dashed #fcd34d; padding-bottom: 8px;">🔄 Shift Swap Requests</h3>';
         
