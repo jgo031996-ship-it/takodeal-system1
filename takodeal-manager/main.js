@@ -777,6 +777,29 @@ window.openEmployeeProfile = function(docId) {
     setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
 
     document.getElementById('employeeProfileModal').style.display = 'flex';
+
+    // 🔥 HR ENGINE: Render the Document Vault Buttons
+    let vaultContainer = document.getElementById('contractVaultContainer');
+    let vaultBtns = document.getElementById('contractVaultButtons');
+    if (vaultContainer && vaultBtns) {
+        vaultBtns.innerHTML = '';
+        if (data.signedContracts && Object.keys(data.signedContracts).length > 0) {
+            vaultContainer.style.display = 'block';
+            let safeData = encodeURIComponent(JSON.stringify(data));
+            
+            if (data.signedContracts.initial) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Initial', '${safeData}', '${data.signedContracts.initial}')" style="background:#0f766e; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Initial Employment</button>`;
+            }
+            if (data.signedContracts.extension) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Extension', '${safeData}', '${data.signedContracts.extension}')" style="background:#0ea5e9; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 6-Mo Extension</button>`;
+            }
+            if (data.signedContracts.regularization) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Regularization', '${safeData}', '${data.signedContracts.regularization}')" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Regularization</button>`;
+            }
+        } else {
+            vaultContainer.style.display = 'none';
+        }
+    }
     
     // Fetch History
     const tbody = document.getElementById('empProfileHistoryBody');
@@ -814,14 +837,11 @@ window.openEmployeeProfile = function(docId) {
 window.saveEmployeeProfile = async function() {
     let docId = document.getElementById('empProfileId').value;
     
-    // Core validation
     let name = document.getElementById('empFullName').value.trim();
     let branch = document.getElementById('empBranchAssign').value;
     let rate = parseFloat(document.getElementById('empHourlyRate').value);
-    
-    // 🎓 STUDENT FIX: Grab the checkbox value safely
+    let newRole = document.getElementById('empRole').value.trim();
     let isWorkingStudent = document.getElementById('staffWorkingStudent') ? document.getElementById('staffWorkingStudent').checked : false;
-    
     let pin = document.getElementById('empPin').value.trim();
 
     if (!name || isNaN(rate) || !pin || pin.length < 4) {
@@ -829,27 +849,36 @@ window.saveEmployeeProfile = async function() {
         return;
     }
 
-      // Gather all dynamic deduction rows!
-     let customDeductionsArray = [];
-     document.querySelectorAll('.custom-deduct-row').forEach(row => {
-         let n = row.querySelector('.cd-name').value.trim();
-         let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
-         if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
-     });
- 
+    let customDeductionsArray = [];
+    document.querySelectorAll('.custom-deduct-row').forEach(row => {
+        let n = row.querySelector('.cd-name').value.trim();
+        let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
+        if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
+    });
+
+    // 🔥 HR ENGINE: Track Promotions and Role History Automatically
+    let oldData = docId ? window.globalStaffData[docId] : null;
+    let currentHistory = (oldData && oldData.roleHistory) ? oldData.roleHistory : [];
+    
+    if (!oldData || oldData.role !== newRole) {
+        let dObj = new Date();
+        currentHistory.push({ 
+            role: newRole, 
+            date: dObj.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) 
+        });
+    }
+
     let payload = {
         cashierName: name,
         branch: branch,
-        role: document.getElementById('empRole').value.trim(),
+        role: newRole,
+        roleHistory: currentHistory, // Save the history array
         dateHired: document.getElementById('empDateHired').value,
         hourlyRate: rate,
         pin: pin,
         customDeductions: customDeductionsArray,
-        
-        // 🔥 NEW: Save the toggle state to the cloud!
         eligibleNightDiff: document.getElementById('empNightDiff') ? document.getElementById('empNightDiff').checked : true,
-        isWorkingStudent: isWorkingStudent, // 🎓 STUDENT FIX: Added to Payload!
-        
+        isWorkingStudent: isWorkingStudent, 
         phone: document.getElementById('empPhone').value.trim(),
         address: document.getElementById('empAddress').value.trim(),
         gcashName: document.getElementById('empGcashName').value.trim(),
@@ -868,26 +897,27 @@ window.saveEmployeeProfile = async function() {
         scheduleName: document.getElementById('empScheduleName').value.trim(),
     };
 
+    // 🔥 HR ENGINE: Flag brand new staff for their Initial Contract
+    if (!docId) {
+        payload.contractStatus = 'Pending Initial Contract';
+        payload.signedContracts = {};
+    }
+
     let btn = document.getElementById('btnSaveEmpProfile');
     btn.innerText = "⏳ Saving to Cloud..."; btn.disabled = true;
 
     try {
         if (docId) {
-            // Update existing
             await updateDoc(doc(db, "cashiers", docId), payload);
             alert(`✅ ${name}'s profile has been updated.`);
         } else {
-            // Create new
             await addDoc(collection(db, "cashiers"), payload);
             alert(`✅ ${name} has been added to the database.`);
         }
-        
         document.getElementById('employeeProfileModal').style.display = 'none';
-        window.loadHRModule(); // Refresh the table
-
+        window.loadHRModule(); 
     } catch (e) {
-        console.error(e);
-        alert("❌ Failed to save employee data.");
+        console.error(e); alert("❌ Failed to save employee data.");
     } finally {
         btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
     }
@@ -18965,3 +18995,123 @@ setInterval(() => {
         }
     });
 }, 15000); // Ticks every 15 seconds!
+
+// ==========================================
+// 🖨️ UNIVERSAL HR DOCUMENT PRINTER
+// ==========================================
+window.reprintContract = function(type, encodedData, signDate) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    let printWin = window.open('', '', 'width=850,height=900');
+    printWin.document.write(window.getContractPrintHTML(type, data, signDate));
+};
+
+window.getContractPrintHTML = function(type, data, signDate) {
+    let title = ""; let content = "";
+    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+    
+    if (type === 'Initial') {
+        title = "Employment Contract";
+        content = `
+            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role}</b>. Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months.</p>
+            <p><b>2. WORK SCHEDULE AND COMPENSATION</b><br>The Employee shall receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>. Entitled to one (1) day off per week.</p>
+            <p><b>3. ATTENDANCE AND ABSENCES POLICY</b><br>Unexcused absences and tardiness are subject to progressive disciplinary action (Verbal Warning, Written Warning, Suspension, Termination).</p>
+            <p><b>4. CONFIDENTIALITY AGREEMENT</b><br>Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
+            <p><b>5. HEALTH DECLARATION</b><br>Employee affirms physical fitness for a food-handling environment.</p>
+            <p><b>6. NOTICE OF RESIGNATION</b><br>Mandatory 30-day notice prior to voluntary resignation.</p>
+            <p><b>7. COMPANY UNIFORM AND PROPERTY</b><br>Obligation to care for and return provided items to avoid payroll deductions.</p>
+        `;
+    } else if (type === 'Extension') {
+        title = "Contract Renewal & Extension";
+        let contractEnd = new Date(signDate); contractEnd.setMonth(contractEnd.getMonth() + 6);
+        content = `
+            <p><b>1. EXTENSION OF EMPLOYMENT</b><br>Employment is extended as <b>${data.role}</b> for an additional six (6) months from <b>${signDate}</b> to <b>${contractEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</b>. This is the final probationary phase.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary remains <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. PATHWAY TO REGULARIZATION</b><br>Upon successful completion, the Employee may be offered a regularized contract.</p>
+        `;
+    } else if (type === 'Regularization') {
+        title = "Regularization of Employment";
+        content = `
+            <p><b>1. REGULARIZATION</b><br>Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. TERMINATION</b><br>Employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code.</p>
+        `;
+    }
+
+    return `
+        <html><head><title>${title} - ${data.cashierName}</title></head>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.6;">
+            <div style="position: relative; text-align: center; margin-bottom: 30px;">
+                <img src="${logoUrl}" style="position: absolute; left: 0; top: -10px; width: 100px; height: 100px; object-fit: contain;">
+                <h1 style="margin: 0; font-size: 38px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
+                <p style="margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
+            </div>
+            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 40px;">
+            <h2 style="text-align: center; color: #b45309; text-transform: uppercase;">${title}</h2>
+            <p>This Agreement is executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
+            ${content}
+            <div style="margin-top: 80px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${data.cashierName.toUpperCase()}</b></div>
+                    <span style="font-size: 14px; color: #64748b;">Employee Signature / Digitally Accepted</span>
+                </div>
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
+                    <span style="font-size: 14px; color: #64748b;">CEO and Founder of TAKODEÁL<br>General Manager</span>
+                </div>
+            </div>
+            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
+        </body></html>
+    `;
+};
+
+// Update Manager App COE generation to include Position History
+window.generateManagerCOE = function(data) {
+    let role = data.role || 'Staff Crew';
+    let dHiredRaw = data.dateHired ? new Date(data.dateHired) : new Date();
+    let dHired = dHiredRaw.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    let dEnded = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+
+    // 🔥 Inject Position Records
+    let historyHtml = "";
+    if (data.roleHistory && data.roleHistory.length > 1) {
+        historyHtml = `<div style="margin-top: 15px; padding: 15px; background: #f8fafc; border-left: 4px solid #0f172a;">
+            <p style="margin: 0 0 10px 0; font-size: 15px;"><b>Position & Promotion History:</b></p>
+            <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6;">`;
+        data.roleHistory.forEach(h => {
+            historyHtml += `<li>Promoted to <b>${h.role}</b> (Effective: ${h.date})</li>`;
+        });
+        historyHtml += `</ul></div>`;
+    }
+
+    let printWin = window.open('', '', 'width=850,height=900');
+    printWin.document.write(`
+        <html><head><title>COE - ${data.cashierName}</title></head>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 60px; color: #1e293b; max-width: 800px; margin: 0 auto; position: relative;">
+            <img src="${logoUrl}" style="position: absolute; left: 60px; top: 50px; width: 120px; height: 120px; object-fit: contain;">
+            <div style="text-align: center; margin-bottom: 25px; padding-top: 20px;">
+                <h1 style="margin: 0; color: #0f172a; font-size: 52px; font-weight: 900; letter-spacing: 4px;">TAKODEÁL</h1>
+                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">Davao City, Philippines</p>
+            </div>
+            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 50px;">
+            <div style="text-align: center; margin-bottom: 50px;">
+                <h2 style="margin: 0; color: #c2410c; font-size: 32px; font-weight: bold; text-transform: uppercase;">Certificate of Employment</h2>
+            </div>
+            <div style="font-size: 18px; line-height: 2.2; color: #1e293b; text-align: justify; margin-bottom: 40px;">
+                <p style="margin-bottom: 20px;">To Whom It May Concern,</p>
+                <p style="margin-bottom: 20px;">This is to certify that <b>${data.cashierName.toUpperCase()}</b> has been employed at TAKODEÁL.</p>
+                <p style="margin-bottom: 20px;">They served in the capacity of <b>${role}</b> from <b>${dHired}</b> up until <b>${dEnded}</b>.</p>
+                ${historyHtml}
+                <p style="margin-top: 20px;">This certification is being issued upon the request of the employee for whatever legal purpose it may serve them best.</p>
+            </div>
+            <div style="margin-top: 80px;">
+                <div style="width: 350px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
+                <strong style="font-size: 18px; color: #0f172a; display: block;">Chery Ann R. Fonda</strong>
+                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO and Founder of TAKODEÁL<br>General Manager</span>
+            </div>
+            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
+        </body></html>
+    `);
+};
