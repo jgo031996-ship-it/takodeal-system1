@@ -413,9 +413,11 @@ window.loadAnnouncements = async function() {
             let sigDateStr = sigData && sigData.timestamp ? sigData.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
 
             let safeData = {
-                id: ann.id, // We need this to save the signature!
+                id: ann.id,
                 title: ann.title || 'Announcement',
+                subHeadline: ann.subHeadline || '', // 🔥 Fetch new field
                 message: ann.message || '',
+                footerMessage: ann.footerMessage || '', // 🔥 Fetch new field
                 images: ann.images || [],
                 dateStr: dateStr,
                 hasSignature: !!sigData,
@@ -425,7 +427,6 @@ window.loadAnnouncements = async function() {
             
             let modalData = encodeURIComponent(JSON.stringify(safeData));
 
-            // Track unread announcements for the auto-popup!
             if (!sigData) unreadAnnouncements.push(modalData);
 
             html += `
@@ -434,6 +435,7 @@ window.loadAnnouncements = async function() {
                         <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
                         <div style="margin-left: 10px;">${statusBadge}</div>
                     </div>
+                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${ann.subHeadline}</div>` : ''}
                     <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
                     <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${shortMsg}</p>
                     <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; text-align: right;">View Full Details &rarr;</div>
@@ -443,13 +445,11 @@ window.loadAnnouncements = async function() {
         
         container.innerHTML = html || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No new announcements.</div>';
 
-        // 🔥 THE AUTO-POPUP ENGINE
-        // If there is an unread announcement and we haven't shown it this session, force it open!
         if (unreadAnnouncements.length > 0 && !window.hasAutoShownBulletin) {
             window.hasAutoShownBulletin = true;
             setTimeout(() => {
-                window.viewAnnouncement(unreadAnnouncements[0]); // Pops the most recent unread one!
-            }, 1000); // 1-second delay so the app UI has time to load smoothly behind it
+                window.viewAnnouncement(unreadAnnouncements[0]); 
+            }, 1000); 
         }
 
     } catch (e) { 
@@ -458,20 +458,38 @@ window.loadAnnouncements = async function() {
     }
 };
 
+// 🔥 THE NEW SPLASH SCREEN FUNCTION 🔥
+window.showExtraLargeImage = function(imgSrc) {
+    let existing = document.getElementById('announceImageOverlay');
+    if (existing) existing.remove();
+    
+    let overlay = document.createElement('div');
+    overlay.id = 'announceImageOverlay';
+    overlay.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 100000; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px);";
+    
+    overlay.innerHTML = `
+        <button onclick="document.getElementById('announceImageOverlay').remove()" style="position: absolute; top: 20px; right: 20px; background: #ef4444; color: white; border: 2px solid white; border-radius: 50%; width: 45px; height: 45px; font-size: 22px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: 0.2s;">✖</button>
+        <img src="${imgSrc}" style="max-width: 95%; max-height: 80vh; object-fit: contain; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
+        <div style="color: white; margin-top: 20px; font-size: 14px; font-weight: bold; background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.2);">Tap the ✖ in the top right to read details and sign</div>
+    `;
+    document.body.appendChild(overlay);
+};
+
 window.viewAnnouncement = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
-    let imagesHtml = '';
     
+    // Create wide, beautiful banner images inside the modal (with click-to-enlarge)
+    let imagesHtml = '';
     if (data.images && data.images.length > 0) {
-        imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
+        imagesHtml = `<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding-bottom: 5px;">`;
         data.images.forEach(img => {
-            imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="window.open('${img}', '_blank')">`;
+            imagesHtml += `<img src="${img}" style="width: 100%; max-height: 250px; border-radius: 8px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" onclick="window.showExtraLargeImage('${img}')">
+            <div style="text-align: center; font-size: 10px; color: #94a3b8; font-weight: bold;">Tap image to enlarge 🔍</div>`;
         });
         imagesHtml += `</div>`;
     }
 
     let sigHtml = '';
-
     if (data.hasSignature) {
         sigHtml = `
             <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px; border: 1px solid #bbf7d0;">
@@ -479,16 +497,13 @@ window.viewAnnouncement = function(encodedData) {
                 <img src="${data.signatureImg}" style="height: 60px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">
             </div>`;
     } else {
-        // 🔥 THE NEW SIGNATURE PAD UI 🔥
         sigHtml = `
             <div style="margin-top: 25px; padding: 20px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px;">
                 <h4 style="margin: 0 0 5px 0; color: #b45309; text-align: center; font-size: 15px;">Mandatory Acknowledgment</h4>
                 <p style="font-size: 11px; color: #92400e; text-align: center; margin-bottom: 15px;">Please sign your name inside the box below to confirm you have read and understood this update.</p>
-                
                 <div style="background: white; border: 2px dashed #d97706; border-radius: 8px; overflow: hidden; touch-action: none; position: relative;">
                     <canvas id="sigCanvas" width="300" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>
                 </div>
-                
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
                     <button onclick="window.clearSignature()" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear</button>
                     <button onclick="window.submitSignature('${data.id}')" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
@@ -496,22 +511,30 @@ window.viewAnnouncement = function(encodedData) {
             </div>`;
     }
 
+    // 🔥 Inject New Sub-Headline & Footer
+    let subHeadlineHtml = data.subHeadline ? `<div style="font-size: 16px; font-weight: 900; color: #0ea5e9; margin-bottom: 15px; line-height: 1.3;">${data.subHeadline}</div>` : '';
+    let footerHtml = data.footerMessage ? `<div style="font-size: 12px; color: #64748b; margin-top: 25px; padding-top: 15px; border-top: 2px dashed #e2e8f0; text-align: center; font-style: italic; font-weight: bold;">${data.footerMessage}</div>` : '';
+
     Swal.fire({
-        title: `<div style="text-align:left; font-size: 18px; color: #0f172a; margin-bottom: 10px;">${data.title}</div>`,
-        html: `<div style="text-align: left; max-height: 70vh; overflow-y: auto; padding-right: 5px;">
-                <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">📅 Published: ${data.dateStr}</div>
-                <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
+        title: `<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; margin-bottom: 5px; line-height: 1.2; text-transform: uppercase;">${data.title}</div>`,
+        html: `<div style="text-align: left; max-height: 75vh; overflow-y: auto; padding-right: 5px;">
+                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📅 Published: ${data.dateStr}</div>
+                ${subHeadlineHtml}
+                <div style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
                 ${imagesHtml}
                 ${sigHtml}
+                ${footerHtml}
                </div>`,
         showCloseButton: true, 
         showConfirmButton: false,
-        allowOutsideClick: data.hasSignature, // Forces them to sign it instead of clicking away!
-        customClass: { popup: 'rounded-2xl shadow-2xl' },
+        allowOutsideClick: data.hasSignature,
+        customClass: { popup: 'rounded-2xl shadow-2xl p-4' },
         didOpen: () => {
-            if (!data.hasSignature) {
-                // Initialize the drawing engine immediately after SweetAlert opens!
-                window.initSignaturePad();
+            if (!data.hasSignature) window.initSignaturePad();
+            
+            // 🔥 THE MAGIC SPLASH SCREEN TRIGGER: Auto-open the massive image!
+            if (data.images && data.images.length > 0) {
+                window.showExtraLargeImage(data.images[0]);
             }
         }
     });
