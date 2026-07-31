@@ -57,54 +57,89 @@ window.requestDeviceAccess = async function() {
     if (!name) return Swal.fire('Required', 'Please enter a device name (e.g. Aljhon Phone).', 'warning');
 
     let btn = document.querySelector('#registerCard .btn-primary');
-    btn.innerText = "⏳ Registering..."; btn.disabled = true;
+    if(btn) { btn.innerText = "⏳ Registering..."; btn.disabled = true; }
 
-    // Detect branch via GPS if set to Auto or default to chosen option
     let targetBranch = selectedBranch;
     if (selectedBranch === 'Auto') {
         targetBranch = window.getClosestBranch() || "Main Office";
     }
 
     try {
-        const newDeviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+        let deviceId = localStorage.getItem('takodeal_device_id');
+        if (!deviceId) {
+            deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+            localStorage.setItem('takodeal_device_id', deviceId);
+        }
 
-        await setDoc(doc(db, "pos_devices", newDeviceId), {
+        await setDoc(doc(db, "pos_devices", deviceId), {
+            deviceId: deviceId,
             deviceName: name + " (Staff)",
             branch: targetBranch,
-            status: "Blocked",
-            registeredAt: serverTimestamp()
+            status: "Pending", // Prevent "Blocked" from triggering aggressive manager alerts
+            registeredAt: serverTimestamp(),
+            lastActive: serverTimestamp()
         });
 
-        localStorage.setItem('takodeal_device_id', newDeviceId);
-        window.listenToDeviceStatus(newDeviceId);
+        window.listenToDeviceStatus(deviceId);
 
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to connect to HQ.', 'error');
-        btn.innerText = "Request Access"; btn.disabled = false;
+        if(btn) { btn.innerText = "Request Access"; btn.disabled = false; }
     }
 };
 
 window.listenToDeviceStatus = function(deviceId) {
-    document.getElementById('deviceAuthOverlay').style.display = 'flex';
-    document.getElementById('registerCard').style.display = 'none';
-    document.getElementById('pendingCard').style.display = 'block';
+    let regCard = document.getElementById('registerCard');
+    let penCard = document.getElementById('pendingCard');
+    let authOverlay = document.getElementById('deviceAuthOverlay');
+    
+    if(authOverlay) authOverlay.style.display = 'flex';
+    if(regCard) regCard.style.display = 'none';
+    if(penCard) penCard.style.display = 'none';
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('appContainer').style.display = 'none';
 
     onSnapshot(doc(db, "pos_devices", deviceId), (docSnap) => {
+        let blockScreen = document.getElementById('deviceBlockedOverlay');
+
         if (docSnap.exists()) {
             let status = docSnap.data().status;
-            if (status === 'Active') {
-                document.getElementById('deviceAuthOverlay').style.display = 'none';
+            
+            // 🔥 THE BUG FIX: The Manager app uses "Approved" but the Staff App expected "Active"!
+            // Now it accepts both!
+            if (status === 'Active' || status === 'Approved') {
+                if(authOverlay) authOverlay.style.display = 'none';
+                if(blockScreen) blockScreen.style.display = 'none';
                 window.checkNormalLogin();
                 window.listenToIncomingSwaps();
             } else {
-                document.getElementById('deviceAuthOverlay').style.display = 'flex';
-                document.getElementById('registerCard').style.display = 'none';
-                document.getElementById('pendingCard').style.display = 'block';
-                document.getElementById('loginOverlay').style.display = 'none';
+                if(authOverlay) authOverlay.style.display = 'none';
+                
+                if (!blockScreen) {
+                    blockScreen = document.createElement('div');
+                    blockScreen.id = 'deviceBlockedOverlay';
+                    blockScreen.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; backdrop-filter: blur(4px);";
+                    blockScreen.innerHTML = `
+                        <div style="background: white; padding: 30px; border-radius: 16px; max-width: 400px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                            <h2 style="color: #dc2626; margin-top: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                <span style="font-size: 24px;">🚫</span> Access Blocked
+                            </h2>
+                            <p style="color: #475569; font-size: 14px; margin-bottom: 20px; line-height: 1.5;">This device is locked. Please ask HQ to click <b>Approve</b> in the Fleet Management Dashboard to grant access.</p>
+                            <div style="font-size: 45px; margin-bottom: 20px;">🔒</div>
+                            <div style="font-size: 11px; color: #94a3b8; font-weight: bold; background: #f1f5f9; padding: 8px; border-radius: 6px; border: 1px dashed #cbd5e1;">Device ID: ${deviceId}</div>
+                        </div>
+                    `;
+                    document.body.appendChild(blockScreen);
+                }
+                blockScreen.style.display = 'flex';
             }
+        } else {
+            // 🔥 THE LOOP KILLER: If deleted by Manager, wipe local memory so it stops spamming HQ!
+            localStorage.removeItem('takodeal_device_id');
+            if(blockScreen) blockScreen.style.display = 'none';
+            if(authOverlay) authOverlay.style.display = 'flex';
+            if(regCard) regCard.style.display = 'block';
         }
     });
 };
@@ -376,7 +411,6 @@ window.checkContractLifecycle = async function(staffId) {
         let daysLeft = Math.ceil((contractEnd - today) / (1000 * 60 * 60 * 24));
 
         if (daysLeft <= 0) {
-            // 🔥 Save data to memory so the COE generator can access their exact role and dates!
             window.coePendingData = d; 
 
             document.getElementById('loginOverlay').style.display = 'none';
@@ -411,11 +445,10 @@ window.checkContractLifecycle = async function(staffId) {
 window.generateCOE = async function() {
     let staffName = document.getElementById('coeStaffName').innerText;
     
-    // Grab the data we saved in memory
     let dData = window.coePendingData || {};
     let role = dData.role || 'Staff Crew';
 
-    // Format dates to look like "February 17, 2026"
+    // Format dates to look like "April 27, 2025"
     const dateOptions = { month: 'long', day: 'numeric', year: 'numeric' };
     let dHiredRaw = dData.dateHired ? new Date(dData.dateHired) : new Date();
     let dHired = dHiredRaw.toLocaleDateString('en-US', dateOptions);
