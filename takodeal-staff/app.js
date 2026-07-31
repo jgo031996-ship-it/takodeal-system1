@@ -1289,9 +1289,11 @@ window.loadPayslipVault = async function() {
         let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
         let ratePerHour = dailyRate / 8;
         let nickname = staffProfile.scheduleNickname || staffName;
+        let isNightEligible = staffProfile.eligibleNightDiff !== false;
 
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
         let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
+        let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
         const parseTimeStr = (timeStr) => {
             let t = timeStr.toLowerCase().replace(/\s/g, '');
@@ -1318,6 +1320,7 @@ window.loadPayslipVault = async function() {
         });
 
         let totalHours = 0;
+        let shiftsWorked = 0; // 🔥 THE FIX: Calculate pay by shifts, not raw exact hours!
         let totalLatePenalty = 0;
         let activeShifts = {};
         let shiftPairs = [];
@@ -1331,7 +1334,6 @@ window.loadPayslipVault = async function() {
                 let lateMinutes = 0;
                 let wasScheduled = false;
 
-                // 🔥 SMART SCHEDULE CHECKER
                 if (scheduleData && scheduleData.currentSchedule) {
                     let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
                     if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
@@ -1399,9 +1401,14 @@ window.loadPayslipVault = async function() {
                 let isAutoClosed = log.type === "TIME OUT (AUTO)";
                 let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
                 
+                let shiftMultiplier = 1; 
+        
                 if (hoursWorked < 1 && !isAutoClosed) {
+                    shiftMultiplier = 0;
                     remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
                 } else if (hoursWorked >= 13.5) {
+                    shiftMultiplier = 2;
+                    totalBonuses += 50; // Straight Duty Bonus
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`;
                 } else if (hoursWorked < 8 && !isAutoClosed) {
                     if (wasScheduled) {
@@ -1410,6 +1417,33 @@ window.loadPayslipVault = async function() {
                     } else {
                         remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`;
                     }
+                }
+
+                // 🔥 THE FIX: Auto-calculate Night Diff & Holidays dynamically
+                let outHour = timeOut.getHours();
+                let thisShiftNightBonus = 0;
+
+                if (outHour >= 0 && outHour <= 4) {
+                    if (isNightEligible) { 
+                        thisShiftNightBonus = 50; 
+                        totalBonuses += thisShiftNightBonus; 
+                    }
+                }
+
+                let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
+                let hType = holidaysObj[logDateStr];
+                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+                let hBonus = 0;
+
+                if (hType === 'Regular') { 
+                    hBonus = baseForHoliday * 0.50; 
+                    totalBonuses += hBonus; 
+                    remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; 
+                } 
+                else if (hType === 'Special') { 
+                    hBonus = baseForHoliday * 0.10; 
+                    totalBonuses += hBonus; 
+                    remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Spl Hol: +₱${hBonus.toFixed(2)})</span>`; 
                 }
 
                 if (lMins > 0) {
@@ -1426,9 +1460,9 @@ window.loadPayslipVault = async function() {
                     totalLatePenalty += totalManualPenaltyForShift;
                 }
 
+                shiftsWorked += shiftMultiplier;
                 totalHours += hoursWorked;
                 
-                // 🔥 Push all metrics for the UI Renderer!
                 shiftPairs.push({ 
                     dateObj: timeIn, 
                     in: timeIn, 
@@ -1465,7 +1499,6 @@ window.loadPayslipVault = async function() {
             });
         }
 
-        // 🔥 THE OT MERGE FIX: Try to append the OT to the existing day!
         bonusesList.forEach(b => {
             let amt = parseFloat(b.amount) || 0;
             let bDate = b.dateAdded ? (b.dateAdded.toDate ? b.dateAdded.toDate() : new Date(b.dateAdded)) : new Date();
@@ -1490,7 +1523,8 @@ window.loadPayslipVault = async function() {
             }
         });
 
-        let estGross = totalHours * ratePerHour;
+        // 🔥 THE SYNC: Basic pay is calculated identically to the Manager App!
+        let estGross = shiftsWorked * dailyRate;
 
         const dedQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
         const dedSnap = await getDocs(dedQ);
@@ -1506,6 +1540,13 @@ window.loadPayslipVault = async function() {
         let estNet = (estGross + totalBonuses) - totalLatePenalty - unpaidVales;
 
         document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
+        
+        // Dynamically update the UI label to match the Manager App!
+        let grossLabel = document.getElementById('liveEstGross').previousElementSibling;
+        if(grossLabel) {
+            grossLabel.innerText = `Estimated Basic Pay (${shiftsWorked} shifts):`;
+        }
+
         document.getElementById('liveEstLates').innerText = '-₱' + totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -1521,7 +1562,6 @@ window.loadPayslipVault = async function() {
         }
         document.getElementById('liveEstOT').innerText = '+₱' + totalBonuses.toLocaleString(undefined, {minimumFractionDigits: 2});
 
-        // --- DETAILED ATTENDANCE & DEDUCTIONS TABLES ---
         let logsContainer = document.getElementById('liveCutoffDetailedLogs');
         if (!logsContainer) {
             let liveSection = document.getElementById('payslipLiveSection');
@@ -1530,7 +1570,6 @@ window.loadPayslipVault = async function() {
             liveSection.appendChild(logsContainer);
         }
 
-        // 🔥 THE FIX: Upgraded table with Remarks column
         let detailsHtml = `
             <div style="margin-top: 20px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">⏱️ Attendance Logs (This Cutoff)</h3>
@@ -1555,7 +1594,6 @@ window.loadPayslipVault = async function() {
                 let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---');
                 let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : `${parseFloat(p.hrs).toFixed(2)}h`;
                 
-                // 🔥 INJECT THE LATE SUBLINE INTO THE IN COLUMN!
                 if (p.lateMins && p.lateMins > 0) {
                     inStr += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${p.lateMins}m</span>`;
                 }
@@ -1600,7 +1638,6 @@ window.loadPayslipVault = async function() {
 
         logsContainer.innerHTML = detailsHtml;
 
-        // --- FETCH PAST PAYSLIPS VAULT ---
         const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName), orderBy("processedAt", "desc"));
         const prSnap = await getDocs(prQ);
 
