@@ -360,10 +360,8 @@ window.checkContractLifecycle = async function(staffId) {
         if (!docSnap.exists()) return;
         let d = docSnap.data();
 
-        // If Manager hasn't set a date hired yet, skip.
         if (!d.dateHired) return; 
 
-        // If Manager checked "Regular" or "Extended" in the Master Profile, stop the alarms!
         if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended') return;
 
         let hiredDate = new Date(d.dateHired);
@@ -374,7 +372,9 @@ window.checkContractLifecycle = async function(staffId) {
         let daysLeft = Math.ceil((contractEnd - today) / (1000 * 60 * 60 * 24));
 
         if (daysLeft <= 0) {
-            // THE CONTRACT HAS ENDED! Trap them in the COE Overlay.
+            // 🔥 Save data to memory so the COE generator can access their exact role and dates!
+            window.coePendingData = d; 
+
             document.getElementById('loginOverlay').style.display = 'none';
             document.getElementById('appContainer').style.display = 'none';
             document.getElementById('coeFarewellOverlay').style.display = 'flex';
@@ -383,7 +383,6 @@ window.checkContractLifecycle = async function(staffId) {
             document.getElementById('coeDateHired').innerText = hiredDate.toLocaleDateString();
             document.getElementById('coeDateEnded').innerText = today.toLocaleDateString();
         } else if (daysLeft <= 30) {
-            // COUNTDOWN ALARM! Fire every other day.
             let lastWarn = localStorage.getItem('takodeal_last_contract_warn');
             let todayStr = today.toDateString();
             
@@ -407,32 +406,59 @@ window.checkContractLifecycle = async function(staffId) {
 
 window.generateCOE = async function() {
     let staffName = document.getElementById('coeStaffName').innerText;
-    let dHired = document.getElementById('coeDateHired').innerText;
-    let dEnded = document.getElementById('coeDateEnded').innerText;
+    
+    // Grab the data we saved in memory
+    let dData = window.coePendingData || {};
+    let role = dData.role || 'Staff Crew';
 
-    // 🔥 This generates a printable document they can save as PDF on their phone
-    let printWin = window.open('', '', 'width=800,height=900');
+    // Format dates to look like "February 17, 2026"
+    const dateOptions = { month: 'long', day: 'numeric', year: 'numeric' };
+    let dHiredRaw = dData.dateHired ? new Date(dData.dateHired) : new Date();
+    let dHired = dHiredRaw.toLocaleDateString('en-US', dateOptions);
+    let dEnded = new Date().toLocaleDateString('en-US', dateOptions);
+
+    let printWin = window.open('', '', 'width=850,height=900');
     printWin.document.write(`
-        <html><head><title>Certificate of Employment - ${staffName}</title></head>
-        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center; color: #0f172a;">
-            <h1 style="margin-bottom: 5px; color: #d97706;">TAKODEÁL</h1>
-            <h3 style="margin-top: 0; color: #64748b; letter-spacing: 2px;">CERTIFICATE OF EMPLOYMENT</h3>
-            <br><br><br>
-            <div style="text-align: left; line-height: 1.8; font-size: 16px;">
-                <b>To Whom It May Concern:</b><br><br>
-                This is to certify that <b>${staffName.toUpperCase()}</b> has been employed at TAKODEÁL from <b>${dHired}</b> to <b>${dEnded}</b>.<br><br>
-                During their tenure, they successfully completed their 6-month provisionary contract, rendering service and training incoming staff.<br><br>
-                This certification is being issued via the Takodeál Digital HR System upon the request of the employee for whatever legal purpose it may serve.<br><br><br>
-                Issued on this day, ${new Date().toLocaleDateString()}.
+        <html><head>
+        <title>Certificate of Employment - ${staffName}</title>
+        <style>
+            @media print {
+                @page { margin: 1in; }
+                * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; print-color-adjust: exact !important; }
+            }
+        </style>
+        </head>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto;">
+            
+            <div style="position: relative; text-align: center; margin-bottom: 25px;">
+                <h1 style="margin: 0; color: #0f172a; font-size: 52px; font-weight: 900; letter-spacing: 4px;">TAKODEÁL</h1>
+                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">Davao City, Philippines</p>
+                <img src="payslip logo.jpg" alt="Logo" style="position: absolute; right: 0; top: 0; width: 100px; height: 100px; object-fit: contain;">
             </div>
-            <br><br><br>
-            <div style="text-align: left;">
-                ___________________________<br>
-                <b>Management / HR Dept.</b><br>
-                TAKODEÁL
+            
+            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 50px;">
+            
+            <div style="text-align: center; margin-bottom: 50px;">
+                <h2 style="margin: 0; color: #c2410c; font-size: 32px; font-weight: bold; text-transform: uppercase;">Certificate of Employment</h2>
             </div>
+            
+            <div style="font-size: 18px; line-height: 2.2; color: #1e293b; text-align: justify; margin-bottom: 80px;">
+                <p style="margin-bottom: 20px;">To Whom It May Concern,</p>
+                <p style="margin-bottom: 20px;">This is to certify that <b>${staffName.toUpperCase()}</b> has been employed at TAKODEÁL.</p>
+                <p style="margin-bottom: 20px;">They served in the capacity of <b>${role}</b> from <b>${dHired}</b> up until <b>${dEnded}</b>.</p>
+                <p>This certification is being issued upon the request of the employee for whatever legal purpose it may serve them best.</p>
+            </div>
+            
+            <div style="margin-top: 80px;">
+                <div style="width: 280px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
+                <strong style="font-size: 18px; color: #0f172a; display: block;">Jostuart Omangay</strong>
+                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">Owner / Management</span>
+                <span style="font-size: 15px; color: #64748b; display: block;">TAKODEÁL</span>
+            </div>
+            
             <script>
-                setTimeout(() => { window.print(); window.close(); }, 1000);
+                // Give the logo 1.5 seconds to load before triggering the print prompt
+                setTimeout(() => { window.print(); window.close(); }, 1500);
             </script>
         </body></html>
     `);
