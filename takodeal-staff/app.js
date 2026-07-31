@@ -137,6 +137,7 @@ window.checkNormalLogin = function() {
         if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
         window.loadAnnouncements();
         window.startInboxListener();
+        window.checkContractLifecycle(localStorage.getItem('takodeal_staff_id'));
         window.listenToIncomingSwaps();
     } else {
         document.getElementById('loginOverlay').style.display = 'flex';
@@ -195,6 +196,7 @@ window.loginStaff = async function() {
             if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
             window.loadAnnouncements();
             window.startInboxListener();
+            window.checkContractLifecycle(docId);
         } else {
             errorMsg.innerText = "❌ Incorrect PIN. Please try again."; errorMsg.style.display = 'block';
         }
@@ -240,13 +242,12 @@ window.openProfile = async function() {
     document.getElementById('profPin').value = ''; 
     
     try {
-        const docRef = doc(db, "cashiers", staffId);
-        const docSnap = await getDoc(docRef);
+        const docSnap = await getDoc(doc(db, "cashiers", staffId));
         
         if (docSnap.exists()) {
             let d = docSnap.data();
             document.getElementById('profFullName').value = d.cashierName || '';
-            document.getElementById('profNickname').value = d.scheduleName || '';
+            document.getElementById('profNickname').value = d.scheduleNickname || '';
             document.getElementById('profPhone').value = d.phone || '';
             document.getElementById('profAddress').value = d.address || '';
             document.getElementById('profEmergName').value = d.emergencyName || '';
@@ -259,6 +260,15 @@ window.openProfile = async function() {
             document.getElementById('profSss').value = d.sssNumber || '';
             document.getElementById('profPhilhealth').value = d.philhealthNumber || '';
             document.getElementById('profPagibig').value = d.pagibigNumber || '';
+
+            // Show uploaded ID links if they exist!
+            const setupIdLink = (linkId, url) => {
+                let el = document.getElementById(linkId);
+                if (el && url) { el.href = url; el.style.display = 'inline-block'; }
+            };
+            setupIdLink('linkSss', d.sssIdUrl);
+            setupIdLink('linkPhilhealth', d.philhealthIdUrl);
+            setupIdLink('linkPagibig', d.pagibigIdUrl);
             
             document.getElementById('viewSssDed').innerText = '₱' + (parseFloat(d.sssDeduction) || 0).toFixed(2);
             document.getElementById('viewPhDed').innerText = '₱' + (parseFloat(d.philhealthDeduction) || 0).toFixed(2);
@@ -273,6 +283,176 @@ window.openProfile = async function() {
     } catch(e) { console.error("Error fetching profile data:", e); }
 
     document.getElementById('profileModal').style.display = 'flex';
+};
+
+window.saveProfileData = async function() {
+    let staffId = localStorage.getItem('takodeal_staff_id');
+    let btn = document.getElementById('btnSaveProfileData');
+    
+    let payload = {
+        cashierName: document.getElementById('profFullName').value.trim(),
+        scheduleNickname: document.getElementById('profNickname').value.trim(),
+        phone: document.getElementById('profPhone').value.trim(),
+        address: document.getElementById('profAddress').value.trim(),
+        emergencyName: document.getElementById('profEmergName').value.trim(),
+        emergencyNumber: document.getElementById('profEmergNum').value.trim(),
+        email: document.getElementById('profEmail').value.trim(),
+        gcashName: document.getElementById('profGcashName').value.trim(),
+        gcashNumber: document.getElementById('profGcashNum').value.trim(),
+        gotymeName: document.getElementById('profGotymeName').value.trim(),
+        gotymeNumber: document.getElementById('profGotymeNum').value.trim(),
+        sssNumber: document.getElementById('profSss').value.trim(),
+        philhealthNumber: document.getElementById('profPhilhealth').value.trim(),
+        pagibigNumber: document.getElementById('profPagibig').value.trim()
+    };
+
+    let newPin = document.getElementById('profPin').value.trim();
+    if (newPin) payload.pin = newPin;
+
+    if (!payload.cashierName) return Swal.fire('Required', 'Full Name cannot be empty.', 'warning');
+
+    btn.innerText = "⏳ Saving Secure Files..."; btn.disabled = true;
+
+    try {
+        // 🔥 ID UPLOADER ENGINE
+        const uploadGovID = async (inputId, folderPath) => {
+            let fileEl = document.getElementById(inputId);
+            if (fileEl && fileEl.files.length > 0) {
+                let file = fileEl.files[0];
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${folderPath}/${staffId}_${Date.now()}.${fileExt}`;
+                const storageRef = ref(window.storage || getStorage(db.app), fileName);
+                const snapshot = await uploadBytes(storageRef, file);
+                return await getDownloadURL(snapshot.ref);
+            }
+            return null;
+        };
+
+        let sssUrl = await uploadGovID('imgSss', 'government_ids/sss');
+        if (sssUrl) payload.sssIdUrl = sssUrl;
+
+        let philUrl = await uploadGovID('imgPhilhealth', 'government_ids/philhealth');
+        if (philUrl) payload.philhealthIdUrl = philUrl;
+
+        let pagUrl = await uploadGovID('imgPagibig', 'government_ids/pagibig');
+        if (pagUrl) payload.pagibigIdUrl = pagUrl;
+
+        await updateDoc(doc(db, "cashiers", staffId), payload);
+        localStorage.setItem('takodeal_staff_name', payload.cashierName);
+        document.getElementById('loggedInName').innerText = payload.cashierName;
+
+        let successMsg = newPin ? 'Your profile, files, and PIN have been saved.' : 'Your HR profile and IDs have securely synced to HQ.';
+        Swal.fire('✅ Saved', successMsg, 'success');
+        document.getElementById('profileModal').style.display = 'none';
+        document.getElementById('profPin').value = ''; 
+    } catch (e) {
+        console.error("Save Profile Error:", e);
+        Swal.fire('Error', 'Failed to save data. Check internet connection.', 'error');
+    } finally {
+        btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
+    }
+};
+
+// 🔥 THE DOLE CONTRACT LIFECYCLE ENGINE
+window.checkContractLifecycle = async function(staffId) {
+    try {
+        const docSnap = await getDoc(doc(db, "cashiers", staffId));
+        if (!docSnap.exists()) return;
+        let d = docSnap.data();
+
+        // If Manager hasn't set a date hired yet, skip.
+        if (!d.dateHired) return; 
+
+        // If Manager checked "Regular" or "Extended" in the Master Profile, stop the alarms!
+        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended') return;
+
+        let hiredDate = new Date(d.dateHired);
+        let contractEnd = new Date(hiredDate);
+        contractEnd.setMonth(contractEnd.getMonth() + 6); // 6-month Provisionary Limit
+
+        let today = new Date();
+        let daysLeft = Math.ceil((contractEnd - today) / (1000 * 60 * 60 * 24));
+
+        if (daysLeft <= 0) {
+            // THE CONTRACT HAS ENDED! Trap them in the COE Overlay.
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'none';
+            document.getElementById('coeFarewellOverlay').style.display = 'flex';
+            
+            document.getElementById('coeStaffName').innerText = d.cashierName;
+            document.getElementById('coeDateHired').innerText = hiredDate.toLocaleDateString();
+            document.getElementById('coeDateEnded').innerText = today.toLocaleDateString();
+        } else if (daysLeft <= 30) {
+            // COUNTDOWN ALARM! Fire every other day.
+            let lastWarn = localStorage.getItem('takodeal_last_contract_warn');
+            let todayStr = today.toDateString();
+            
+            if (lastWarn !== todayStr) {
+                Swal.fire({
+                    title: '⏳ Contract Expiring Soon',
+                    text: `You have ${daysLeft} days remaining on your 6-month provisionary contract. Please coordinate with Management regarding regularization or COE release.`,
+                    icon: 'warning',
+                    toast: true,
+                    position: 'top',
+                    timer: 8000,
+                    showConfirmButton: false
+                });
+                localStorage.setItem('takodeal_last_contract_warn', todayStr);
+            }
+        }
+    } catch (e) {
+        console.error("Contract Engine Error:", e);
+    }
+};
+
+window.generateCOE = async function() {
+    let staffName = document.getElementById('coeStaffName').innerText;
+    let dHired = document.getElementById('coeDateHired').innerText;
+    let dEnded = document.getElementById('coeDateEnded').innerText;
+
+    // 🔥 This generates a printable document they can save as PDF on their phone
+    let printWin = window.open('', '', 'width=800,height=900');
+    printWin.document.write(`
+        <html><head><title>Certificate of Employment - ${staffName}</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center; color: #0f172a;">
+            <h1 style="margin-bottom: 5px; color: #d97706;">TAKODEÁL</h1>
+            <h3 style="margin-top: 0; color: #64748b; letter-spacing: 2px;">CERTIFICATE OF EMPLOYMENT</h3>
+            <br><br><br>
+            <div style="text-align: left; line-height: 1.8; font-size: 16px;">
+                <b>To Whom It May Concern:</b><br><br>
+                This is to certify that <b>${staffName.toUpperCase()}</b> has been employed at TAKODEÁL from <b>${dHired}</b> to <b>${dEnded}</b>.<br><br>
+                During their tenure, they successfully completed their 6-month provisionary contract, rendering service and training incoming staff.<br><br>
+                This certification is being issued via the Takodeál Digital HR System upon the request of the employee for whatever legal purpose it may serve.<br><br><br>
+                Issued on this day, ${new Date().toLocaleDateString()}.
+            </div>
+            <br><br><br>
+            <div style="text-align: left;">
+                ___________________________<br>
+                <b>Management / HR Dept.</b><br>
+                TAKODEÁL
+            </div>
+            <script>
+                setTimeout(() => { window.print(); window.close(); }, 1000);
+            </script>
+        </body></html>
+    `);
+
+    // 🔥 AUTO-BLOCK SECURITY PROTOCOL: Kill their PIN immediately!
+    let staffId = localStorage.getItem('takodeal_staff_id');
+    try {
+        await updateDoc(doc(db, "cashiers", staffId), { pin: 'REVOKED', contractStatus: 'Contract Ended' });
+        Swal.fire({
+            title: 'Account Locked 🔒',
+            text: 'Your COE has been generated and your portal is now securely closed. Thank you for your service!',
+            icon: 'success',
+            allowOutsideClick: false,
+            showConfirmButton: false
+        });
+        setTimeout(() => {
+            localStorage.clear();
+            location.reload();
+        }, 5000);
+    } catch(e) {}
 };
 
 window.previewProfileImage = async function(event) {
@@ -309,51 +489,6 @@ window.uploadProfilePicture = async function() {
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Photo Uploaded!', showConfirmButton: false, timer: 2000});
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to upload photo.', 'error');
-    }
-};
-
-window.saveProfileData = async function() {
-    let staffId = localStorage.getItem('takodeal_staff_id');
-    let btn = document.getElementById('btnSaveProfileData');
-    
-    let payload = {
-        cashierName: document.getElementById('profFullName').value.trim(),
-        scheduleName: document.getElementById('profNickname').value.trim(),
-        phone: document.getElementById('profPhone').value.trim(),
-        address: document.getElementById('profAddress').value.trim(),
-        emergencyName: document.getElementById('profEmergName').value.trim(),
-        emergencyNumber: document.getElementById('profEmergNum').value.trim(),
-        email: document.getElementById('profEmail').value.trim(),
-        gcashName: document.getElementById('profGcashName').value.trim(),
-        gcashNumber: document.getElementById('profGcashNum').value.trim(),
-        gotymeName: document.getElementById('profGotymeName').value.trim(),
-        gotymeNumber: document.getElementById('profGotymeNum').value.trim(),
-        sssNumber: document.getElementById('profSss').value.trim(),
-        philhealthNumber: document.getElementById('profPhilhealth').value.trim(),
-        pagibigNumber: document.getElementById('profPagibig').value.trim()
-    };
-
-    let newPin = document.getElementById('profPin').value.trim();
-    if (newPin) payload.pin = newPin;
-
-    if (!payload.cashierName) return Swal.fire('Required', 'Full Name cannot be empty.', 'warning');
-
-    btn.innerText = "⏳ Saving..."; btn.disabled = true;
-
-    try {
-        await updateDoc(doc(db, "cashiers", staffId), payload);
-        localStorage.setItem('takodeal_staff_name', payload.cashierName);
-        document.getElementById('loggedInName').innerText = payload.cashierName;
-
-        let successMsg = newPin ? 'Your profile and new PIN have been securely saved.' : 'Your HR profile has been securely synced to HQ.';
-        Swal.fire('✅ Saved', successMsg, 'success');
-        document.getElementById('profileModal').style.display = 'none';
-        document.getElementById('profPin').value = ''; 
-    } catch (e) {
-        console.error("Save Profile Error:", e);
-        Swal.fire('Error', 'Failed to save data. Check internet connection.', 'error');
-    } finally {
-        btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
     }
 };
 
