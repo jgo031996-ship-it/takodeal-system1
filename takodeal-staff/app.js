@@ -388,7 +388,7 @@ window.saveProfileData = async function() {
     }
 };
 
-// 🔥 THE DOLE CONTRACT LIFECYCLE ENGINE
+// 🔥 THE DOLE CONTRACT LIFECYCLE & RENEWAL ENGINE
 window.checkContractLifecycle = async function(staffId) {
     try {
         const docSnap = await getDoc(doc(db, "cashiers", staffId));
@@ -398,10 +398,18 @@ window.checkContractLifecycle = async function(staffId) {
         if (!d.dateHired) return; 
 
         // 🔥 RESIGNED & REVOKED IMMUNITY PATCH: Ignore staff who already left!
-        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended' || d.status === 'Resigned' || d.contractStatus === 'Resigned' || d.pin === 'REVOKED') return;
+        if (d.pin && String(d.pin).toUpperCase() === 'REVOKED') return;
+        if (d.status === 'Resigned' || d.contractStatus === 'Resigned') return;
+        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended') return;
         
-        // 🔥 BOSS IMMUNITY PATCH: Do not fire the Owner or Managers!
+        // 🔥 BOSS IMMUNITY PATCH
         if (d.role && (d.role.toLowerCase().includes('owner') || d.role.toLowerCase().includes('manager'))) return;
+
+        // 🔥 CONTRACT RENEWAL INTERCEPTOR: Show the contract if the Manager dispatched it!
+        if (d.contractStatus === 'Pending Renewal') {
+            window.showRenewalContract(staffId, d);
+            return;
+        }
 
         let hiredDate = new Date(d.dateHired);
         let contractEnd = new Date(hiredDate);
@@ -412,7 +420,6 @@ window.checkContractLifecycle = async function(staffId) {
 
         if (daysLeft <= 0) {
             window.coePendingData = d; 
-
             document.getElementById('loginOverlay').style.display = 'none';
             document.getElementById('appContainer').style.display = 'none';
             document.getElementById('coeFarewellOverlay').style.display = 'flex';
@@ -429,10 +436,7 @@ window.checkContractLifecycle = async function(staffId) {
                     title: '⏳ Contract Expiring Soon',
                     text: `You have ${daysLeft} days remaining on your 6-month provisionary contract. Please coordinate with Management regarding regularization or COE release.`,
                     icon: 'warning',
-                    toast: true,
-                    position: 'top',
-                    timer: 8000,
-                    showConfirmButton: false
+                    toast: true, position: 'top', timer: 8000, showConfirmButton: false
                 });
                 localStorage.setItem('takodeal_last_contract_warn', todayStr);
             }
@@ -442,23 +446,117 @@ window.checkContractLifecycle = async function(staffId) {
     }
 };
 
+// 📄 THE DIGITAL CONTRACT GENERATOR
+window.showRenewalContract = function(staffId, data) {
+    let today = new Date();
+    let options = { month: 'long', day: 'numeric', year: 'numeric' };
+    let dateToday = today.toLocaleDateString('en-US', options);
+    let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', options) : dateToday;
+    
+    let contractEnd = new Date(today);
+    contractEnd.setMonth(contractEnd.getMonth() + 6);
+    let endDate = contractEnd.toLocaleDateString('en-US', options);
+
+    let contractHtml = `
+        <h2 style="text-align: center; color: #b45309; text-transform: uppercase; margin-bottom: 20px;">Contract Renewal and Extension Agreement</h2>
+        <p>This Contract Renewal and Extension Agreement ("Renewal Agreement") is made and entered into this <b>${dateToday}</b>, in Davao City, Philippines, by and between:</p>
+        <p><b>TAKODEAL TAKOYAKI FOODCART</b>, a duly registered business engaged in food operations, with its principal place of business located at Blk 14, Lot6, Deca Homes Subdivision, Barangay Cabantian, Davao City, Philippines, herein referred to as the "Employer";</p>
+        <p>-and-</p>
+        <p><b>${data.cashierName.toUpperCase()}</b>, of legal age, residing at ${data.address || 'Davao City, Philippines'}, herein referred to as the "Employee".</p>
+        <p>Collectively referred to as the "Parties."</p>
+        
+        <h3 style="color: #0f172a; margin-top: 20px;">WITNESSETH:</h3>
+        <p><b>WHEREAS</b>, the Employer and the Employee originally entered into an Employment Contract on <b>${dateHired}</b>, for the position of Service Crew member;</p>
+        <p><b>WHEREAS</b>, the initial contract was stipulated to be valid for a period of six (6) months;</p>
+        <p><b>WHEREAS</b>, the Employer wishes to extend the Employee's contract for an additional six (6) months as a final evaluation period prior to permanent regularization, and the Employee agrees to this extension;</p>
+        
+        <p><b>NOW, THEREFORE</b>, in consideration of the mutual covenants herein contained, the Parties agree as follows:</p>
+        
+        <h4 style="color: #0f172a;">1. EXTENSION OF EMPLOYMENT</h4>
+        <p>The Employer hereby extends the employment of the Employee as a Service Crew member. This Renewal Agreement shall be valid for an additional period of six (6) months, commencing on <b>${dateToday}</b>, and expiring on <b>${endDate}</b>. This six-month extension serves as the final probationary phase to assess the Employee's overall performance, attendance, and eligibility for regularized status.</p>
+        
+        <h4 style="color: #0f172a;">2. WORK SCHEDULE AND COMPENSATION</h4>
+        <p>During this renewal period, the Employee's compensation and schedule will remain consistent with the original agreement:<br>
+        • The Employee shall continue to receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b> (Morning, Mid & Night Shift).<br>
+        • The Employee is entitled to one (1) day off per week, subject to scheduling and operational needs.</p>
+        
+        <h4 style="color: #0f172a;">3. REAFFIRMATION OF ORIGINAL TERMS</h4>
+        <p>All policies, terms, and conditions established in the original Employment Contract remain in full force and effect during this renewal period. This strictly includes, but is not limited to:<br>
+        • <b>Attendance and Absences Policy:</b> Continued adherence to rules regarding punctuality, excused and unexcused absences, and the progressive disciplinary actions for violations up to termination.<br>
+        • <b>Confidentiality Agreement:</b> The strict maintenance of proprietary information, including recipes, preparation processes, and branding materials, under the penalty of One Million Pesos (1,000,000.00) for breaches.<br>
+        • <b>Health Declaration:</b> The ongoing affirmation of physical fitness for a food-handling environment.<br>
+        • <b>Notice of Resignation:</b> The mandatory requirement to render a 30-day notice prior to voluntary resignation, with the Employer retaining the right to seek compensation for unserved notice periods.<br>
+        • <b>Company Uniform and Property:</b> The obligation to care for the provided uniform and return them immediately upon the cessation of employment to avoid payroll deductions.<br>
+        • <b>Other Terms:</b> The Employee agrees to abide by all lawful instructions, regulations, and policies issued by the Employer, who reserves the right to amend guidelines as necessary for business operations.</p>
+        
+        <h4 style="color: #0f172a;">4. PATHWAY TO REGULARIZATION</h4>
+        <p>Upon the successful completion of this six-month renewal period, the Employer will conduct a final performance evaluation. Subject to satisfactory performance, operational excellence, and strict adherence to company policies, the Employee may be offered a regularized employment contract.</p>
+        
+        <div style="background: #fffbeb; border: 2px dashed #f59e0b; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
+            <h3 style="margin: 0 0 10px 0; color: #b45309;">Digital Acceptance</h3>
+            <p style="font-size: 12px; color: #92400e; margin-bottom: 15px;">By clicking the button below, I, <b>${data.cashierName}</b>, digitally sign and accept the terms of this 6-Month Renewal Contract.</p>
+            <button onclick="window.acceptRenewalContract('${staffId}')" style="background: #0f766e; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">📝 Accept & Sign Extension</button>
+        </div>
+    `;
+
+    let overlay = document.getElementById('renewalContractOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'renewalContractOverlay';
+        overlay.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);";
+        document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = `
+        <div style="background: white; padding: 40px; border-radius: 12px; max-width: 800px; width: 100%; max-height: 85vh; overflow-y: auto; text-align: left; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+            ${contractHtml}
+        </div>
+    `;
+
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'none';
+    overlay.style.display = 'flex';
+};
+
+window.acceptRenewalContract = async function(staffId) {
+    Swal.fire({title: 'Saving Contract...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        // Update their status and reset their dateHired to today so the 6-month timer restarts!
+        let today = new Date();
+        let yyyy = today.getFullYear();
+        let mm = String(today.getMonth() + 1).padStart(2, '0');
+        let dd = String(today.getDate()).padStart(2, '0');
+        
+        await updateDoc(doc(db, "cashiers", staffId), {
+            contractStatus: 'Extended',
+            dateHired: `${yyyy}-${mm}-${dd}`
+        });
+        
+        document.getElementById('renewalContractOverlay').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'flex';
+        
+        Swal.fire('Congratulations! 🎉', 'Your contract has been officially extended for 6 months. Keep up the great work!', 'success');
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to sign contract. Check connection.', 'error');
+    }
+};
+
 window.generateCOE = async function() {
     let staffName = document.getElementById('coeStaffName').innerText;
-    
     let dData = window.coePendingData || {};
     let role = dData.role || 'Staff Crew';
 
-    // Format dates to look like "April 27, 2025"
+    // Format dates to spell out the Month (e.g. "April 27, 2025")
     const dateOptions = { month: 'long', day: 'numeric', year: 'numeric' };
     let dHiredRaw = dData.dateHired ? new Date(dData.dateHired) : new Date();
     let dHired = dHiredRaw.toLocaleDateString('en-US', dateOptions);
     let dEnded = new Date().toLocaleDateString('en-US', dateOptions);
 
     let printWin = window.open('', '', 'width=850,height=900');
-    
-    // 💡 THE IMAGE FIX: Use the absolute website URL so the printer doesn't lose the logo!
     let logoUrl = window.location.origin + '/payslip%20logo.jpg';
 
+    // 🔥 THE UPGRADED HTML: Logo Top-Left & CEO Signature 
     printWin.document.write(`
         <html><head>
         <title>Certificate of Employment - ${staffName}</title>
@@ -469,11 +567,12 @@ window.generateCOE = async function() {
             }
         </style>
         </head>
-        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto;">
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; padding-top: 60px; color: #1e293b; max-width: 800px; margin: 0 auto; position: relative;">
             
-            <div style="position: relative; text-align: center; margin-bottom: 25px;">
-                <!-- 🔥 LOGO MOVED TO TOP LEFT -->
-                <img src="${logoUrl}" alt="Logo" style="position: absolute; left: 0; top: -10px; width: 100px; height: 100px; object-fit: contain;">
+            <!-- 🔥 LOGO PINNED TO TOP LEFT -->
+            <img src="${logoUrl}" alt="Logo" style="position: absolute; left: 0px; top: 0px; width: 120px; height: 120px; object-fit: contain;">
+            
+            <div style="text-align: center; margin-bottom: 25px; padding-top: 20px;">
                 <h1 style="margin: 0; color: #0f172a; font-size: 52px; font-weight: 900; letter-spacing: 4px;">TAKODEÁL</h1>
                 <p style="margin: 5px 0 0 0; color: #64748b; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">Davao City, Philippines</p>
             </div>
@@ -492,35 +591,28 @@ window.generateCOE = async function() {
             </div>
             
             <div style="margin-top: 80px;">
-                <div style="width: 320px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
-                <!-- 🔥 NEW SIGNATURE BLOCK -->
+                <div style="width: 350px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
+                <!-- 🔥 CHERY'S NEW SIGNATURE BLOCK -->
                 <strong style="font-size: 18px; color: #0f172a; display: block;">Chery Ann R. Fonda</strong>
                 <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO and Founder of TAKODEÁL</span>
                 <span style="font-size: 15px; color: #64748b; display: block;">General Manager</span>
             </div>
             
             <script>
-                // Give the logo 1.5 seconds to load before triggering the print prompt
                 setTimeout(() => { window.print(); window.close(); }, 1500);
             </script>
         </body></html>
     `);
 
-    // 🔥 AUTO-BLOCK SECURITY PROTOCOL: Kill their PIN immediately!
     let staffId = localStorage.getItem('takodeal_staff_id');
     try {
         await updateDoc(doc(db, "cashiers", staffId), { pin: 'REVOKED', contractStatus: 'Contract Ended' });
         Swal.fire({
             title: 'Account Locked 🔒',
             text: 'Your COE has been generated and your portal is now securely closed. Thank you for your service!',
-            icon: 'success',
-            allowOutsideClick: false,
-            showConfirmButton: false
+            icon: 'success', allowOutsideClick: false, showConfirmButton: false
         });
-        setTimeout(() => {
-            localStorage.clear();
-            location.reload();
-        }, 5000);
+        setTimeout(() => { localStorage.clear(); location.reload(); }, 5000);
     } catch(e) {}
 };
 
