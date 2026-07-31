@@ -397,15 +397,18 @@ window.checkContractLifecycle = async function(staffId) {
 
         if (!d.dateHired) return; 
 
-        // 🔥 RESIGNED & REVOKED IMMUNITY PATCH: Ignore staff who already left!
         if (d.pin && String(d.pin).toUpperCase() === 'REVOKED') return;
         if (d.status === 'Resigned' || d.contractStatus === 'Resigned') return;
         if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended') return;
         
-        // 🔥 BOSS IMMUNITY PATCH
         if (d.role && (d.role.toLowerCase().includes('owner') || d.role.toLowerCase().includes('manager'))) return;
 
-        // 🔥 CONTRACT RENEWAL INTERCEPTOR: Show the contract if the Manager dispatched it!
+        // 🔥 NEW: Intercept Regularization Offers!
+        if (d.contractStatus === 'Pending Regularization') {
+            window.showRegularizationContract(staffId, d);
+            return;
+        }
+
         if (d.contractStatus === 'Pending Renewal') {
             window.showRenewalContract(staffId, d);
             return;
@@ -413,7 +416,7 @@ window.checkContractLifecycle = async function(staffId) {
 
         let hiredDate = new Date(d.dateHired);
         let contractEnd = new Date(hiredDate);
-        contractEnd.setMonth(contractEnd.getMonth() + 6); // 6-month Provisionary Limit
+        contractEnd.setMonth(contractEnd.getMonth() + 6);
 
         let today = new Date();
         let daysLeft = Math.ceil((contractEnd - today) / (1000 * 60 * 60 * 24));
@@ -422,8 +425,16 @@ window.checkContractLifecycle = async function(staffId) {
             window.coePendingData = d; 
             document.getElementById('loginOverlay').style.display = 'none';
             document.getElementById('appContainer').style.display = 'none';
-            document.getElementById('coeFarewellOverlay').style.display = 'flex';
             
+            let overlay = document.getElementById('coeFarewellOverlay');
+            overlay.style.display = 'flex';
+            
+            // 🔥 THE TEXT FIX: Make it sound like a "Pause" instead of a "Firing"
+            let msgEl = overlay.querySelector('p');
+            if (msgEl) {
+                msgEl.innerHTML = `Your probationary contract period with <b>TAKODEÁL</b> has officially concluded.<br><br><span style="color: #c2410c; font-weight: bold;">Please wait for Management to issue your Regularization, a Contract Extension, or your final Clearance.</span>`;
+            }
+
             document.getElementById('coeStaffName').innerText = d.cashierName;
             document.getElementById('coeDateHired').innerText = hiredDate.toLocaleDateString();
             document.getElementById('coeDateEnded').innerText = today.toLocaleDateString();
@@ -434,15 +445,94 @@ window.checkContractLifecycle = async function(staffId) {
             if (lastWarn !== todayStr) {
                 Swal.fire({
                     title: '⏳ Contract Expiring Soon',
-                    text: `You have ${daysLeft} days remaining on your 6-month provisionary contract. Please coordinate with Management regarding regularization or COE release.`,
-                    icon: 'warning',
-                    toast: true, position: 'top', timer: 8000, showConfirmButton: false
+                    text: `You have ${daysLeft} days remaining on your 6-month probationary contract. Please coordinate with Management.`,
+                    icon: 'warning', toast: true, position: 'top', timer: 8000, showConfirmButton: false
                 });
                 localStorage.setItem('takodeal_last_contract_warn', todayStr);
             }
         }
     } catch (e) {
         console.error("Contract Engine Error:", e);
+    }
+};
+
+// 🌟 THE DIGITAL REGULARIZATION CONTRACT
+window.showRegularizationContract = function(staffId, data) {
+    let today = new Date();
+    let options = { month: 'long', day: 'numeric', year: 'numeric' };
+    let dateToday = today.toLocaleDateString('en-US', options);
+    let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', options) : dateToday;
+
+    let contractHtml = `
+        <h2 style="text-align: center; color: #10b981; text-transform: uppercase; margin-bottom: 20px;">Regularization of Employment Agreement</h2>
+        <p>This Regularization Agreement is made and entered into this <b>${dateToday}</b>, in Davao City, Philippines, by and between:</p>
+        <p><b>TAKODEAL TAKOYAKI FOODCART</b>, a duly registered business engaged in food operations, herein referred to as the "Employer";</p>
+        <p>-and-</p>
+        <p><b>${data.cashierName.toUpperCase()}</b>, of legal age, residing at ${data.address || 'Davao City, Philippines'}, herein referred to as the "Employee".</p>
+        
+        <h3 style="color: #0f172a; margin-top: 20px;">WITNESSETH:</h3>
+        <p><b>WHEREAS</b>, the Employer and the Employee originally entered into an Employment Contract on <b>${dateHired}</b>, for the position of Service Crew member[cite: 1];</p>
+        <p><b>WHEREAS</b>, the Employee has successfully completed the probationary period and met the Employer's standards for permanent employment;</p>
+        
+        <p><b>NOW, THEREFORE</b>, the Parties agree as follows:</p>
+        
+        <h4 style="color: #0f172a;">1. REGULARIZATION OF EMPLOYMENT</h4>
+        <p>Effective <b>${dateToday}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
+        
+        <h4 style="color: #0f172a;">2. COMPENSATION & SCHEDULE</h4>
+        <p>The Employee shall continue to receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>[cite: 1]. The Employee is entitled to one (1) day off per week, subject to scheduling and operational needs[cite: 1].</p>
+        
+        <h4 style="color: #0f172a;">3. REAFFIRMATION OF ORIGINAL TERMS</h4>
+        <p>All policies, terms, and conditions established in the original Employment Contract remain in full force and effect[cite: 1]. This strictly includes, but is not limited to:<br>
+        • <b>Attendance and Absences Policy:</b> Strict adherence to rules regarding punctuality[cite: 1].<br>
+        • <b>Confidentiality Agreement:</b> The strict maintenance of proprietary information and recipes under the penalty of One Million Pesos (1,000,000.00) for breaches[cite: 1].<br>
+        • <b>Health Declaration:</b> Ongoing affirmation of physical fitness for food-handling[cite: 1].<br>
+        • <b>Notice of Resignation:</b> The mandatory requirement to render a 30-day notice prior to voluntary resignation[cite: 1].<br>
+        • <b>Company Uniform and Property:</b> The obligation to care for provided property to avoid payroll deductions[cite: 1].</p>
+        
+        <h4 style="color: #0f172a;">4. TERMINATION</h4>
+        <p>As a regular employee, employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code, or for gross violations of the company policies stated above.</p>
+        
+        <div style="background: #ecfdf5; border: 2px dashed #10b981; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
+            <h3 style="margin: 0 0 10px 0; color: #065f46;">Digital Acceptance</h3>
+            <p style="font-size: 12px; color: #166534; margin-bottom: 15px;">By clicking the button below, I, <b>${data.cashierName}</b>, digitally sign and accept the terms of this Regularization Contract.</p>
+            <button onclick="window.acceptRegularizationContract('${staffId}')" style="background: #10b981; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">🌟 Accept Regularization</button>
+        </div>
+    `;
+
+    let overlay = document.getElementById('renewalContractOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'renewalContractOverlay';
+        overlay.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);";
+        document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = `
+        <div style="background: white; padding: 40px; border-radius: 12px; max-width: 800px; width: 100%; max-height: 85vh; overflow-y: auto; text-align: left; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+            ${contractHtml}
+        </div>
+    `;
+
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'none';
+    overlay.style.display = 'flex';
+};
+
+window.acceptRegularizationContract = async function(staffId) {
+    Swal.fire({title: 'Saving Contract...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        await updateDoc(doc(db, "cashiers", staffId), {
+            contractStatus: 'Regular'
+        });
+        
+        document.getElementById('renewalContractOverlay').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'flex';
+        
+        Swal.fire('Congratulations! 🌟', 'You are officially a Regular Employee. Keep up the great work!', 'success');
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to sign contract. Check connection.', 'error');
     }
 };
 
