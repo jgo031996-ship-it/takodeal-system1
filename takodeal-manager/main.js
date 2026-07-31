@@ -15686,6 +15686,27 @@ window.offerRenewalContract = async function() {
     }
 };
 
+window.offerRegularizationContract = async function() {
+    let docId = document.getElementById('empProfileId').value;
+    let name = document.getElementById('empFullName').value;
+    if(!docId) return;
+
+    let confirm = await Swal.fire({
+        title: 'Offer Regularization? 🌟',
+        text: `This will send the Official Regularization Contract to ${name}'s tablet. They will legally become a permanent employee!`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#10b981',
+        confirmButtonText: 'Yes, regularize them!'
+    });
+
+    if(confirm.isConfirmed) {
+        await updateDoc(doc(db, "cashiers", docId), { contractStatus: 'Pending Regularization' });
+        Swal.fire('Dispatched!', `The Regularization contract is waiting on ${name}'s screen.`, 'success');
+        document.getElementById('employeeProfileModal').style.display = 'none';
+    }
+};
+
 // ==========================================
 // 📜 OFFBOARDING & COE GENERATOR ENGINE
 // ==========================================
