@@ -692,6 +692,19 @@ window.addNewStaff = function() {
     document.getElementById('empPhilhealth').value = '';
     document.getElementById('empPagibig').value = '';
     document.getElementById('empScheduleName').value = '';
+
+    // 🔥 NEW: Reset Profile Picture and Links for a blank form
+    let profilePicEl = document.getElementById('masterProfilePic');
+    if (profilePicEl) profilePicEl.src = "https://via.placeholder.com/100";
+    
+    let sssLink = document.getElementById('masterSssLink');
+    let philLink = document.getElementById('masterPhilLink');
+    let pagLink = document.getElementById('masterPagibigLink');
+    
+    if (sssLink) sssLink.style.display = 'none';
+    if (philLink) philLink.style.display = 'none';
+    if (pagLink) pagLink.style.display = 'none';
+
     document.getElementById('employeeProfileModal').style.display = 'flex';
 };
 
@@ -736,6 +749,33 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empEmergencyPhone').value = data.emergencyPhone || '';
     document.getElementById('empEmail').value = data.email || '';
     document.getElementById('empScheduleName').value = data.scheduleName || '';
+
+    // 🔥 NEW: LOAD PROFILE PICTURE AND GOV ID LINKS 🔥
+    let profilePicEl = document.getElementById('masterProfilePic');
+    if (profilePicEl) {
+        if (data.profilePicUrl) {
+            profilePicEl.src = data.profilePicUrl;
+        } else {
+            profilePicEl.src = "https://via.placeholder.com/100"; // Default blank avatar
+        }
+    }
+
+    const setupMasterLink = (linkId, url) => {
+        let el = document.getElementById(linkId);
+        if (el) {
+            if (url) {
+                el.href = url;
+                el.style.display = 'inline-block';
+            } else {
+                el.style.display = 'none'; // Hide the button if they haven't uploaded an ID
+            }
+        }
+    };
+    
+    setupMasterLink('masterSssLink', data.sssIdUrl);
+    setupMasterLink('masterPhilLink', data.philhealthIdUrl);
+    setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
+
     document.getElementById('employeeProfileModal').style.display = 'flex';
     
     // Fetch History
