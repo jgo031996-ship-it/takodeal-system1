@@ -314,6 +314,38 @@ window.openProfile = async function() {
                 customDedText = d.customDeductions.map(c => `${c.name}: ₱${parseFloat(c.amount).toFixed(2)}`).join('<br>');
             }
             document.getElementById('viewCustomDed').innerHTML = customDedText;
+            // 🔥 LOAD PROMOTION HISTORY
+            let historyHtml = "";
+            if (d.roleHistory && d.roleHistory.length > 0) {
+                historyHtml = `<ul style="margin: 0; padding-left: 20px; line-height: 1.6;">`;
+                d.roleHistory.forEach(h => {
+                    historyHtml += `<li>Promoted to <b>${h.role}</b> <br><span style="color: #94a3b8; font-size: 11px;">(Effective: ${h.date})</span></li>`;
+                });
+                historyHtml += `</ul>`;
+            } else {
+                historyHtml = `<span>Current Role: <b>${d.role || 'Crew'}</b></span>`;
+            }
+            let elRoleHist = document.getElementById('profRoleHistory');
+            if(elRoleHist) elRoleHist.innerHTML = historyHtml;
+
+            // 🔥 LOAD SIGNED CONTRACTS VAULT
+            let contractsHtml = "";
+            if (d.signedContracts && Object.keys(d.signedContracts).length > 0) {
+                let safeData = encodeURIComponent(JSON.stringify(d));
+                if (d.signedContracts.initial) {
+                    contractsHtml += `<button type="button" onclick="window.reprintContract('Initial', '${safeData}', '${d.signedContracts.initial}')" style="background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; text-align: left; display: flex; justify-content: space-between; align-items: center;"><span>📄 Initial Employment Contract</span> <span style="color: #16a34a; font-size: 11px;">Signed: ${d.signedContracts.initial}</span></button>`;
+                }
+                if (d.signedContracts.extension) {
+                    contractsHtml += `<button type="button" onclick="window.reprintContract('Extension', '${safeData}', '${d.signedContracts.extension}')" style="background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; text-align: left; display: flex; justify-content: space-between; align-items: center;"><span>📄 6-Month Extension</span> <span style="color: #16a34a; font-size: 11px;">Signed: ${d.signedContracts.extension}</span></button>`;
+                }
+                if (d.signedContracts.regularization) {
+                    contractsHtml += `<button type="button" onclick="window.reprintContract('Regularization', '${safeData}', '${d.signedContracts.regularization}')" style="background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; text-align: left; display: flex; justify-content: space-between; align-items: center;"><span>🌟 Regularization Contract</span> <span style="color: #16a34a; font-size: 11px;">Signed: ${d.signedContracts.regularization}</span></button>`;
+                }
+            } else {
+                contractsHtml = `<span style="color: #94a3b8; font-size: 13px;"><i>No signed contracts on file yet.</i></span>`;
+            }
+            let elContracts = document.getElementById('profContracts');
+            if(elContracts) elContracts.innerHTML = contractsHtml;
         }
     } catch(e) { console.error("Error fetching profile data:", e); }
 
@@ -2073,7 +2105,6 @@ window.loadPayslipVault = async function() {
 window.viewPastPayslip = function(encodedData) {
     let d = JSON.parse(decodeURIComponent(encodedData));
     
-    // Safely extract the date it was disbursed
     let disbursedDateStr = 'Pending';
     if (d.processedAt) {
         let pDate = d.processedAt.seconds ? new Date(d.processedAt.seconds * 1000) : new Date(d.processedAt);
@@ -2082,7 +2113,6 @@ window.viewPastPayslip = function(encodedData) {
         disbursedDateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
     }
 
-    // Use the actual data from the frozen snapshot (Manager App format)
     let basicPay = parseFloat(d.basicPay || 0).toFixed(2);
     let otPay = parseFloat(d.nightBonus || d.overtime || 0).toFixed(2);
     let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
@@ -2098,65 +2128,101 @@ window.viewPastPayslip = function(encodedData) {
     let meals = parseFloat(d.meals || 0).toFixed(2);
     let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
     
-    // Calculate total deductions properly
     let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts)).toFixed(2);
-    
-    // Ensure Net Pay is accurate
     let netPay = parseFloat(d.finalNetPay || (grossIncome - totalDeduct)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
+    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+
     let html = `
-        <div style="background: white; padding: 20px; border: 2px solid #0f172a; border-radius: 8px; font-family: 'Arial', sans-serif; color: #000; text-align: left; max-width: 100%; box-sizing: border-box;">
+        <div style="background: white; padding: 20px; font-family: 'Segoe UI', Arial, sans-serif; color: black; text-align: left; max-width: 100%; box-sizing: border-box;">
             
-            <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 15px;">
-                <h2 style="margin: 0; font-size: 28px; font-weight: 900; letter-spacing: 2px;">TAKODEÁL</h2>
-                <div style="font-size: 14px; color: #333;">Official Payslip</div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 13px; margin-bottom: 20px;">
-                <div>
-                    <div style="margin-bottom: 4px;"><strong>Employee:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${d.name || d.staffName}</span></div>
-                    <div style="margin-bottom: 4px;"><strong>Department:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${d.branch || 'N/A'}</span></div>
-                </div>
-                <div>
-                    <div style="margin-bottom: 4px;"><strong>Cutoff:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${d.start || d.startDate} to ${d.end || d.endDate}</span></div>
-                    <div style="margin-bottom: 4px;"><strong>Disbursed:</strong> <span style="border-bottom: 1px solid #000; padding-bottom: 2px;">${disbursedDateStr}</span></div>
-                </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; border: 2px solid #000; font-size: 12px; margin-bottom: 20px;">
-                <!-- INCOME COLUMN -->
-                <div style="border-right: 2px solid #000;">
-                    <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 2px solid #000; text-align: center; font-size: 13px;">INCOME</div>
-                    <div style="padding: 10px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Basic Pay (${d.shiftsWorked || 0} shifts)</span> <strong>${basicPay}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Overtime / Night Diff</span> <strong>${otPay}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Straight Duty Bonus</span> <strong>${straightPay}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Holiday Pay</span> <strong>${holPay}</strong></div>
+            <div style="border: 3px solid black; padding: 2px;">
+                <div style="border: 1px solid black; padding: 20px;">
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid black; padding-bottom: 15px; margin-bottom: 15px;">
+                        <div style="width: 140px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                            <img src="${logoUrl}" alt="Takodeal Logo" style="width: 90px; object-fit: contain; border-radius: 8px;">
+                        </div>
+                        <div style="text-align: center; flex: 1;">
+                            <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px;">TAKODEÁL</h1>
+                            <p style="margin: 5px 0 0 0; font-size: 16px;">Payslip</p>
+                        </div>
                     </div>
-                    <div style="border-top: 2px solid #000; padding: 10px; display: flex; justify-content: space-between; font-weight: 900; font-size: 13px;">
-                        <span>GROSS INCOME</span> <span>${grossIncome}</span>
-                    </div>
-                </div>
 
-                <!-- DEDUCTIONS COLUMN -->
-                <div>
-                    <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 2px solid #000; text-align: center; font-size: 13px;">DEDUCTIONS</div>
-                    <div style="padding: 10px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Late/Undertime</span> <strong>${lateDeduct}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>SSS / Phil / Pag-IBIG</span> <strong>${(parseFloat(sss)+parseFloat(phil)+parseFloat(pagibig)).toFixed(2)}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Cash Advance (Vale)</span> <strong>${vale}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Company Loans</span> <strong>${loans}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>Foods / Custom</span> <strong>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</strong></div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
+                        <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px;">
+                            <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span style="border-bottom: 1px solid black; font-weight: bold;">${d.name || d.staffName}</span>
+                            <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span style="border-bottom: 1px solid black;">${d.branch || 'N/A'}</span>
+                            <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span>${d.dateHired || '---'}</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px;">
+                            <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span style="border-bottom: 1px solid black;">${d.start || d.startDate}</span>
+                            <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span style="border-bottom: 1px solid black;">${d.end || d.endDate}</span>
+                            <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> <span style="border-bottom: 1px solid black;">${disbursedDateStr}</span>
+                        </div>
                     </div>
-                    <div style="border-top: 2px solid #000; padding: 10px; display: flex; justify-content: space-between; font-weight: 900; font-size: 13px;">
-                        <span>TOTAL DEDUCT</span> <span>${totalDeduct}</span>
-                    </div>
-                </div>
-            </div>
 
-            <div style="display: flex; align-items: stretch; margin-top: 10px; border: 2px solid #000;">
-                <div style="background: #e2e8f0; padding: 15px 20px; font-weight: 900; font-size: 18px; border-right: 2px solid #000; display: flex; align-items: center;">NET PAY</div>
-                <div style="flex: 1; padding: 15px 20px; font-weight: 900; font-size: 26px; text-align: center; color: #16a34a;">₱${netPay}</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
+                        
+                        <div style="border-right: 1px solid black;">
+                            <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">INCOME</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
+                                <span>Basic Pay (${d.shiftsWorked || 0} days)</span> <span style="font-weight: bold;">${basicPay}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
+                                <span>Overtime / Night Diff</span> <span>${otPay}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
+                                <span>Straight Duty Bonus</span> <span>${straightPay}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid black;">
+                                <span>Holiday Pay</span> <span>${holPay}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 12px 8px; font-weight: bold; font-size: 16px;">
+                                <span>GROSS INCOME</span> <span>${grossIncome}</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">DEDUCTIONS</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                <span>Late/Undertime</span> <span>${lateDeduct}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                <span>SSS</span> <span>${sss}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                <span>PhilHealth</span> <span>${phil}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                <span>Pag-IBIG</span> <span>${pagibig}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                <span>Cash Advance (Vale)</span> <span>${vale}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                <span>Company Loans</span> <span>${loans}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                <span>Foods / Custom</span> <span>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 8px; font-weight: bold; background: #f1f5f9; border-top: 1px solid black;">
+                                <span>TOTAL DEDUCTIONS</span> <span>${totalDeduct}</span>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-start; align-items: center; margin-top: 20px;">
+                        <div style="background: #cbd5e1; padding: 10px 20px; font-weight: bold; font-size: 18px; border: 1px solid black; width: 120px; text-align: center;">
+                            NET PAY
+                        </div>
+                        <div style="padding: 10px 20px; font-weight: bold; font-size: 22px; margin-left: 20px; border-bottom: 2px solid black;">
+                            ${netPay}
+                        </div>
+                    </div>
+
+                </div>
             </div>
             
             <div style="text-align: center; margin-top: 15px; font-size: 10px; color: #64748b; font-style: italic;">
@@ -2167,7 +2233,7 @@ window.viewPastPayslip = function(encodedData) {
 
     Swal.fire({
         html: html,
-        width: '600px',
+        width: '750px', // Wider to accommodate the new 2-column layout
         showConfirmButton: true,
         confirmButtonText: 'Close',
         confirmButtonColor: '#0f172a',
@@ -2642,4 +2708,74 @@ window.handleIncomingSwap = async function(swapId, action) {
         console.error(e);
         Swal.fire('Error', 'Failed to process swap.', 'error');
     }
+};
+
+// ==========================================
+// 🖨️ UNIVERSAL HR DOCUMENT PRINTER (STAFF APP)
+// ==========================================
+window.reprintContract = function(type, encodedData, signDate) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    let printWin = window.open('', '', 'width=850,height=900');
+    printWin.document.write(window.getContractPrintHTML(type, data, signDate));
+};
+
+window.getContractPrintHTML = function(type, data, signDate) {
+    let title = ""; let content = "";
+    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+    
+    if (type === 'Initial') {
+        title = "Employment Contract";
+        content = `
+            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role}</b>. Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months.</p>
+            <p><b>2. WORK SCHEDULE AND COMPENSATION</b><br>The Employee shall receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>. Entitled to one (1) day off per week.</p>
+            <p><b>3. ATTENDANCE AND ABSENCES POLICY</b><br>Unexcused absences and tardiness are subject to progressive disciplinary action (Verbal Warning, Written Warning, Suspension, Termination).</p>
+            <p><b>4. CONFIDENTIALITY AGREEMENT</b><br>Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
+            <p><b>5. HEALTH DECLARATION</b><br>Employee affirms physical fitness for a food-handling environment.</p>
+            <p><b>6. NOTICE OF RESIGNATION</b><br>Mandatory 30-day notice prior to voluntary resignation.</p>
+            <p><b>7. COMPANY UNIFORM AND PROPERTY</b><br>Obligation to care for and return provided items to avoid payroll deductions.</p>
+        `;
+    } else if (type === 'Extension') {
+        title = "Contract Renewal & Extension";
+        let contractEnd = new Date(signDate); contractEnd.setMonth(contractEnd.getMonth() + 6);
+        content = `
+            <p><b>1. EXTENSION OF EMPLOYMENT</b><br>Employment is extended as <b>${data.role}</b> for an additional six (6) months from <b>${signDate}</b> to <b>${contractEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</b>. This is the final probationary phase.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary remains <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. PATHWAY TO REGULARIZATION</b><br>Upon successful completion, the Employee may be offered a regularized contract.</p>
+        `;
+    } else if (type === 'Regularization') {
+        title = "Regularization of Employment";
+        content = `
+            <p><b>1. REGULARIZATION</b><br>Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. TERMINATION</b><br>Employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code.</p>
+        `;
+    }
+
+    return `
+        <html><head><title>${title} - ${data.cashierName}</title></head>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.6; position: relative;">
+            <img src="${logoUrl}" style="position: absolute; left: 40px; top: 30px; width: 100px; height: 100px; object-fit: contain;">
+            <div style="text-align: center; margin-bottom: 30px; padding-top: 10px;">
+                <h1 style="margin: 0; font-size: 38px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
+                <p style="margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
+            </div>
+            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 40px;">
+            <h2 style="text-align: center; color: #b45309; text-transform: uppercase;">${title}</h2>
+            <p>This Agreement is executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
+            ${content}
+            <div style="margin-top: 80px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${data.cashierName.toUpperCase()}</b></div>
+                    <span style="font-size: 14px; color: #64748b;">Employee Signature / Digitally Accepted</span>
+                </div>
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
+                    <span style="font-size: 14px; color: #64748b;">CEO, Founder & General Manager</span>
+                </div>
+            </div>
+            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
+        </body></html>
+    `;
 };
