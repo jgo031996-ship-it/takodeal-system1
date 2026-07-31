@@ -15663,6 +15663,30 @@ window.handleCategoryDropdown = function(selectElement) {
 };
 
 // ==========================================
+// 📝 DIGITAL CONTRACT DISPATCHER
+// ==========================================
+window.offerRenewalContract = async function() {
+    let docId = document.getElementById('empProfileId').value;
+    let name = document.getElementById('empFullName').value;
+    if(!docId) return;
+
+    let confirm = await Swal.fire({
+        title: 'Offer Extension?',
+        text: `This will instantly send the 6-Month Provisionary Renewal Contract to ${name}'s tablet for their digital signature.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#0ea5e9',
+        confirmButtonText: 'Yes, dispatch contract!'
+    });
+
+    if(confirm.isConfirmed) {
+        await updateDoc(doc(db, "cashiers", docId), { contractStatus: 'Pending Renewal' });
+        Swal.fire('Dispatched!', `The contract is waiting on ${name}'s screen.`, 'success');
+        document.getElementById('employeeProfileModal').style.display = 'none';
+    }
+};
+
+// ==========================================
 // 📜 OFFBOARDING & COE GENERATOR ENGINE
 // ==========================================
 window.processResignation = async function() {
