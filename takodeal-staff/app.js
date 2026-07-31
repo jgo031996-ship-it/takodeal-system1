@@ -594,8 +594,7 @@ window.generateCOE = async function() {
                 <div style="width: 350px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
                 <!-- 🔥 CHERY'S NEW SIGNATURE BLOCK -->
                 <strong style="font-size: 18px; color: #0f172a; display: block;">Chery Ann R. Fonda</strong>
-                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO and Founder of TAKODEÁL</span>
-                <span style="font-size: 15px; color: #64748b; display: block;">General Manager</span>
+                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO / Owner"</span>
             </div>
             
             <script>
