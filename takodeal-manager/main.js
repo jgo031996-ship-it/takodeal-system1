@@ -695,7 +695,7 @@ window.addNewStaff = function() {
 
     // 🔥 NEW: Reset Profile Picture and Links for a blank form
     let profilePicEl = document.getElementById('masterProfilePic');
-    if (profilePicEl) profilePicEl.src = "https://via.placeholder.com/100";
+    if (profilePicEl) profilePicEl.src = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
     
     let sssLink = document.getElementById('masterSssLink');
     let philLink = document.getElementById('masterPhilLink');
@@ -756,7 +756,7 @@ window.openEmployeeProfile = function(docId) {
         if (data.profilePicUrl) {
             profilePicEl.src = data.profilePicUrl;
         } else {
-            profilePicEl.src = "https://via.placeholder.com/100"; // Default blank avatar
+            profilePicEl.src = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E"; // Default blank avatar
         }
     }
 
