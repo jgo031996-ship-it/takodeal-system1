@@ -9792,7 +9792,6 @@ window.openPayslipModal = async function(staffName) {
         }
     }
 
-    // 🔥 THE FIX: Universal setter for both Inputs and Text elements
     const safeSet = (id, val) => { 
         let el = document.getElementById(id); 
         if (!el) return;
@@ -9811,7 +9810,6 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psDaysWorked', data.shiftsWorked || 0);
     safeSet('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
     
-    // 🔥 THE DATE FIX: Automatically inject today's date into the Pay Distributed field
     let today = new Date();
     let formattedDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
     safeSet('psPayDistributed', formattedDate);
@@ -9848,17 +9846,24 @@ window.openPayslipModal = async function(staffName) {
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
         data.logs.forEach(log => {
+            // 🔥 THE LATE SUBLINE FIX: Inject the late minutes securely under Time In!
+            let inTimeHtml = log.in || '';
+            if (log.lateMins && log.lateMins > 0) {
+                inTimeHtml += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${log.lateMins}m</span>`;
+            }
+
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 8px; text-align: center;">${log.date || ''}</td>
-                <td style="padding: 8px; font-weight: bold; color: #16a34a; text-align: center;">${log.in || ''}</td>
-                <td style="padding: 8px; font-weight: bold; color: #dc2626; text-align: center;">${log.out || ''}</td>
-                <td style="padding: 8px; font-weight: bold; text-align: center;">${log.hrs || 0}h</td>
-                <td style="padding: 8px; font-size:11px; text-align: center;">${log.remark || ''}</td>
+                <td style="padding: 8px; font-weight: bold; color: #16a34a; text-align: center; vertical-align: middle;">${inTimeHtml}</td>
+                <td style="padding: 8px; font-weight: bold; color: #dc2626; text-align: center; vertical-align: middle;">${log.out || ''}</td>
+                <td style="padding: 8px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
+                <td style="padding: 8px; font-size:11px; text-align: center; vertical-align: middle;">${log.remark || ''}</td>
             </tr>`;
         });
     } else {
         attHtml = '<tr><td colspan="5" style="text-align:center; padding: 15px; color: #94a3b8;">No attendance logs found.</td></tr>';
     }
+    
     let attBody = document.getElementById('psAttendanceBody');
     if (attBody) attBody.innerHTML = attHtml;
 
@@ -10827,7 +10832,7 @@ window.generateAutoPayslips = async function() {
 
                     let logDate = log.timestamp.toDate();
                     let lateMinutes = 0;
-                    let wasScheduled = false; // 🔥 THE FIX: Track if they were actually on the schedule!
+                    let wasScheduled = false; 
                     
                     if (scheduleData && scheduleData.currentSchedule) {
                         let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
@@ -10838,7 +10843,7 @@ window.generateAutoPayslips = async function() {
                                 let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
                                 
                                 if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
-                                    wasScheduled = true; // ✅ They are on the schedule! Apply rules.
+                                    wasScheduled = true; 
                                     let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
                                     if (shiftConfig) {
                                         let expectedStartHour = null;
@@ -10876,7 +10881,7 @@ window.generateAutoPayslips = async function() {
                         lateExempted: log.lateExempted || false,
                         lateHoursToDeduct: lateHoursToDeduct,
                         manualPenalty: manualPenalty,
-                        wasScheduled: wasScheduled // Pass this down to the Time Out math!
+                        wasScheduled: wasScheduled 
                     };
                 }
             } else if (log.type.includes("TIME OUT") && activeShifts[name]) {
@@ -10885,7 +10890,7 @@ window.generateAutoPayslips = async function() {
                 let lAmt = activeShifts[name].lateAmount;
                 let lExempt = activeShifts[name].lateExempted;
                 let lHrsDeduct = activeShifts[name].lateHoursToDeduct || 0;
-                let wasScheduled = activeShifts[name].wasScheduled; // 🔥 Retrieve schedule status!
+                let wasScheduled = activeShifts[name].wasScheduled; 
                 
                 let totalManualPenaltyForShift = (activeShifts[name].manualPenalty || 0) + manualPenalty;
                 
@@ -10909,12 +10914,10 @@ window.generateAutoPayslips = async function() {
                     staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
                 } else if (hoursWorked < 8 && !isAutoClosed) {
-                    // 🔥 THE FIX: ONLY penalize for "Short" if they were actually on the schedule!
                     if (wasScheduled) {
                         let missingHours = (8 - hoursWorked).toFixed(1);
                         remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
                     } else {
-                        // If they weren't scheduled, just accept whatever hours they worked cleanly!
                         remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`;
                     }
                 }
@@ -10951,7 +10954,15 @@ window.generateAutoPayslips = async function() {
                 if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
                 else if (hType === 'Special') { hBonus = baseForHoliday * 0.10; remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Hol: +₱${hBonus.toFixed(2)})</span>`; }
 
-                staffData[name].logs.push({ date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), hrs: hoursWorked.toFixed(2), remark: remark });
+                // 🔥 THE FIX: Push the late minutes into the array so the modal can read it!
+                staffData[name].logs.push({ 
+                    date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), 
+                    in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
+                    out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
+                    hrs: hoursWorked.toFixed(2), 
+                    remark: remark,
+                    lateMins: (!lExempt && lMins > 0) ? lMins : 0 
+                });
                 staffData[name].totalHours += hoursWorked; staffData[name].shiftsWorked += shiftMultiplier; staffData[name].holidayPayTotal += hBonus;
                 delete activeShifts[name];
             } else if (manualPenalty > 0) {
@@ -10962,7 +10973,8 @@ window.generateAutoPayslips = async function() {
                     in: logTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     out: "---", 
                     hrs: "0.00", 
-                    remark: `<span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${manualPenalty.toFixed(2)} Manual Penalty</span>` 
+                    remark: `<span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${manualPenalty.toFixed(2)} Manual Penalty</span>`,
+                    lateMins: 0 
                 });
             }
         });
@@ -10989,7 +11001,28 @@ window.generateAutoPayslips = async function() {
             let amt = parseFloat(b.amount) || 0;
             staffData[name].nightBonusTotal += amt; 
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
-            staffData[name].logs.push({ date: bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: "---", out: "---", hrs: "0.00", remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>` });
+            let dateStr = bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+            
+            // 🔥 THE OT MERGE FIX: Try to append the OT to the existing day!
+            let existingLog = staffData[name].logs.find(l => l.date === dateStr && l.in !== "---");
+            
+            if (existingLog) {
+                // If they have a Complete shift, beautifully change it to indicate OT
+                if (existingLog.remark.includes('Complete')) {
+                    existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
+                }
+                existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
+            } else {
+                // If they literally didn't work that day but still got an OT bonus (rare fallback)
+                staffData[name].logs.push({ 
+                    date: dateStr, 
+                    in: "---", 
+                    out: "---", 
+                    hrs: "0.00", 
+                    remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`,
+                    lateMins: 0 
+                });
+            }
         });
         
         let html = '';
