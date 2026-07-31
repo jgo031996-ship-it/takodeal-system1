@@ -1963,29 +1963,42 @@ window.handleIncomingSwap = async function(swapId, action) {
 
         let dayData = globalSched.currentSchedule[sData.dayIndex][sData.branch];
 
-        // 1. Safety check: ensure both people actually still have those shifts before we blindly swap!
+        // 🔥 THE FIX: Flexible name matcher because one uses Full Name and the other uses Short Name
+        let isMatch = (dbName, reqName) => {
+            if (!dbName || !reqName) return false;
+            let a = dbName.toLowerCase().trim();
+            let b = reqName.toLowerCase().trim();
+            if (a === b) return true;
+            if (a.includes(b) && b.length >= 3) return true;
+            if (b.includes(a) && a.length >= 3) return true;
+            return false;
+        };
+
+        // 1. Safety check: Find the EXACT names currently sitting in the schedule slots
         let rActual = dayData.scheduled[sData.requesterShiftId];
         let tActual = sData.targetShiftId === 'STANDBY' ? 
-                      (dayData.rest.includes(sData.targetName) ? sData.targetName : null) : 
+                      (dayData.rest.find(n => isMatch(n, sData.targetName)) || null) : 
                       dayData.scheduled[sData.targetShiftId];
 
         // If either one of them isn't where they said they were, the schedule changed. Abort!
-        if (rActual !== sData.requesterName || tActual !== sData.targetName) {
+        if (!isMatch(rActual, sData.requesterName) || !isMatch(tActual, sData.targetName)) {
             await updateDoc(doc(db, "shift_swaps", swapId), { status: "Failed - Schedule Changed" });
             return Swal.fire('Error', 'The Master Schedule has changed since this request was made. Swap cancelled.', 'error');
         }
 
         // 2. Perform the Swap mathematically!
+        // 🔥 THE FIX: Use rActual and tActual so we preserve the EXACT short names originally typed into the schedule!
+        
         // A. Give Target's shift to Requester
         if (sData.targetShiftId === 'STANDBY') {
-            dayData.rest = dayData.rest.filter(n => n !== sData.targetName); // Remove target from rest
-            dayData.rest.push(sData.requesterName); // Put requester in rest
+            dayData.rest = dayData.rest.filter(n => n !== tActual); // Remove target from rest
+            dayData.rest.push(rActual); // Put requester in rest
         } else {
-            dayData.scheduled[sData.targetShiftId] = sData.requesterName;
+            dayData.scheduled[sData.targetShiftId] = rActual;
         }
 
         // B. Give Requester's shift to Target
-        dayData.scheduled[sData.requesterShiftId] = sData.targetName;
+        dayData.scheduled[sData.requesterShiftId] = tActual;
 
         // 3. Save the new calendar back to Cloud
         await updateDoc(doc(db, "settings", "global_schedule"), {
@@ -1996,6 +2009,11 @@ window.handleIncomingSwap = async function(swapId, action) {
         await updateDoc(doc(db, "shift_swaps", swapId), { status: "Approved" });
 
         Swal.fire({title: '✅ Swapped!', text: 'Your schedule has been successfully updated.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        
+        // 🔥 Close the modal before reloading so it doesn't get stuck!
+        let swapModal = document.getElementById('swapRequestModal');
+        if (swapModal) swapModal.style.display = 'none';
+
         window.loadStaffSchedule(); // Visually refresh their screen!
 
     } catch(e) {
