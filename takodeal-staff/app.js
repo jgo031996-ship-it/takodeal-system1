@@ -362,7 +362,11 @@ window.checkContractLifecycle = async function(staffId) {
 
         if (!d.dateHired) return; 
 
-        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended') return;
+        // 🔥 RESIGNED & REVOKED IMMUNITY PATCH: Ignore staff who already left!
+        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended' || d.status === 'Resigned' || d.contractStatus === 'Resigned' || d.pin === 'REVOKED') return;
+        
+        // 🔥 BOSS IMMUNITY PATCH: Do not fire the Owner or Managers!
+        if (d.role && (d.role.toLowerCase().includes('owner') || d.role.toLowerCase().includes('manager'))) return;
 
         let hiredDate = new Date(d.dateHired);
         let contractEnd = new Date(hiredDate);
@@ -418,6 +422,10 @@ window.generateCOE = async function() {
     let dEnded = new Date().toLocaleDateString('en-US', dateOptions);
 
     let printWin = window.open('', '', 'width=850,height=900');
+    
+    // 💡 THE IMAGE FIX: Use the absolute website URL so the printer doesn't lose the logo!
+    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+
     printWin.document.write(`
         <html><head>
         <title>Certificate of Employment - ${staffName}</title>
@@ -431,9 +439,10 @@ window.generateCOE = async function() {
         <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto;">
             
             <div style="position: relative; text-align: center; margin-bottom: 25px;">
+                <!-- 🔥 LOGO MOVED TO TOP LEFT -->
+                <img src="${logoUrl}" alt="Logo" style="position: absolute; left: 0; top: -10px; width: 100px; height: 100px; object-fit: contain;">
                 <h1 style="margin: 0; color: #0f172a; font-size: 52px; font-weight: 900; letter-spacing: 4px;">TAKODEÁL</h1>
                 <p style="margin: 5px 0 0 0; color: #64748b; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">Davao City, Philippines</p>
-                <img src="payslip logo.jpg" alt="Logo" style="position: absolute; right: 0; top: 0; width: 100px; height: 100px; object-fit: contain;">
             </div>
             
             <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 50px;">
@@ -450,10 +459,11 @@ window.generateCOE = async function() {
             </div>
             
             <div style="margin-top: 80px;">
-                <div style="width: 280px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
-                <strong style="font-size: 18px; color: #0f172a; display: block;">Jostuart Omangay</strong>
-                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">Owner / Management</span>
-                <span style="font-size: 15px; color: #64748b; display: block;">TAKODEÁL</span>
+                <div style="width: 320px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
+                <!-- 🔥 NEW SIGNATURE BLOCK -->
+                <strong style="font-size: 18px; color: #0f172a; display: block;">Chery Ann R. Fonda</strong>
+                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO and Founder of TAKODEÁL</span>
+                <span style="font-size: 15px; color: #64748b; display: block;">General Manager</span>
             </div>
             
             <script>
