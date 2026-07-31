@@ -1285,50 +1285,210 @@ window.loadPayslipVault = async function() {
     try {
         // --- FETCH LIVE ESTIMATE DATA ---
         const staffRef = await getDoc(doc(db, "cashiers", staffId));
-        let dailyRate = staffRef.exists() ? (parseFloat(staffRef.data().hourlyRate) || 0) : 0;
+        let staffProfile = staffRef.exists() ? staffRef.data() : {};
+        let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
         let ratePerHour = dailyRate / 8;
+        let nickname = staffProfile.scheduleNickname || staffName;
 
-        const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp));
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
+
+        const parseTimeStr = (timeStr) => {
+            let t = timeStr.toLowerCase().replace(/\s/g, '');
+            let isPM = t.includes('pm'); let isNN = t.includes('nn');
+            let parts = t.replace(/(am|pm|nn)/, '').split(':');
+            let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+            if ((isPM || isNN) && hour < 12) hour += 12;
+            if (t.includes('am') && hour === 12) hour = 0;
+            return hour + (minute / 60);
+        };
+
+        const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp), orderBy("timestamp", "asc"));
         const attSnap = await getDocs(attQ);
 
-        // 🔥 THE FIX: Fetch Manual Overtime & Bonuses!
         const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName), where("dateAdded", ">=", startTimestamp), where("dateAdded", "<=", endTimestamp));
         const bonusSnap = await getDocs(bonusQ);
+
         let totalBonuses = 0;
-        bonusSnap.forEach(b => { totalBonuses += (parseFloat(b.data().amount) || 0); });
+        let bonusesList = [];
+        bonusSnap.forEach(b => { 
+            let amt = parseFloat(b.data().amount) || 0;
+            totalBonuses += amt; 
+            bonusesList.push(b.data()); 
+        });
 
         let totalHours = 0;
         let totalLatePenalty = 0;
         let activeShifts = {};
         let shiftPairs = [];
-        let tempIn = null;
-        let sortedAttLogs = [];
         
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
-            let penalty = parseFloat(log.penaltyAmount) || 0;
-            totalLatePenalty += penalty;
-            
-            sortedAttLogs.push(log);
+            let manualPenalty = parseFloat(log.penaltyAmount) || 0;
 
             if (log.type === "TIME IN") {
-                tempIn = log.timestamp.toDate();
-                activeShifts[staffName] = log.timestamp.toDate();
+                let logDate = log.timestamp.toDate();
+                let lateMinutes = 0;
+                let wasScheduled = false;
+
+                // 🔥 SMART SCHEDULE CHECKER
+                if (scheduleData && scheduleData.currentSchedule) {
+                    let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
+                    if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
+                        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][log.branch] : null;
+                        if (branchSched && branchSched.scheduled) {
+                            let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
+                            
+                            if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
+                                wasScheduled = true;
+                                let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
+                                if (shiftConfig) {
+                                    let expectedStartHour = null;
+                                    if (shiftConfig.startTime) {
+                                        let parts = shiftConfig.startTime.split(':');
+                                        expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                    } else {
+                                        let match = shiftConfig.name.match(/\((.*?)-/);
+                                        if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                    }
+
+                                    if (expectedStartHour !== null) {
+                                        let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                        let diffHours = actualHour - expectedStartHour;
+                                        if (diffHours > -1.5 && diffHours < 4) {
+                                            lateMinutes = Math.floor(diffHours * 60);
+                                            if (lateMinutes < 0) lateMinutes = 0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
+                let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
+
+                activeShifts[staffName] = { 
+                    time: logDate, 
+                    lateMinutes: lateMinutes, 
+                    lateAmount: lateAmount, 
+                    lateExempted: log.lateExempted || false,
+                    lateHoursToDeduct: lateHoursToDeduct,
+                    manualPenalty: manualPenalty,
+                    wasScheduled: wasScheduled 
+                };
+
             } else if (log.type.includes("TIME OUT") && activeShifts[staffName]) {
-                let timeIn = activeShifts[staffName];
+                let timeIn = activeShifts[staffName].time;
+                let lMins = activeShifts[staffName].lateMinutes;
+                let lAmt = activeShifts[staffName].lateAmount;
+                let lExempt = activeShifts[staffName].lateExempted;
+                let wasScheduled = activeShifts[staffName].wasScheduled; 
+                
+                let totalManualPenaltyForShift = (activeShifts[staffName].manualPenalty || 0) + manualPenalty;
+                
                 let timeOut = log.timestamp.toDate();
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
-                if (hoursWorked <= 18) totalHours += hoursWorked; 
                 
-                shiftPairs.push({ in: timeIn, out: timeOut, hrs: hoursWorked, penalty: log.penaltyApplied });
-                tempIn = null;
+                if (hoursWorked > 18) {
+                    shiftPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h)</span>` });
+                    delete activeShifts[staffName]; return; 
+                }
+
+                let isAutoClosed = log.type === "TIME OUT (AUTO)";
+                let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                
+                if (hoursWorked < 1 && !isAutoClosed) {
+                    remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
+                } else if (hoursWorked >= 13.5) {
+                    remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`;
+                } else if (hoursWorked < 8 && !isAutoClosed) {
+                    if (wasScheduled) {
+                        let missingHours = (8 - hoursWorked).toFixed(1);
+                        remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
+                    } else {
+                        remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`;
+                    }
+                }
+
+                if (lMins > 0) {
+                    if (lExempt) {
+                        remark += `<br><span style="color:#16a34a; font-weight:bold;">(Late Exempted)</span>`;
+                    } else {
+                        remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late ${lMins}m = -₱${lAmt.toFixed(2)})</span>`;
+                        totalLatePenalty += lAmt; 
+                    }
+                }
+
+                if (totalManualPenaltyForShift > 0) {
+                    remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`;
+                    totalLatePenalty += totalManualPenaltyForShift;
+                }
+
+                totalHours += hoursWorked;
+                
+                // 🔥 Push all metrics for the UI Renderer!
+                shiftPairs.push({ 
+                    dateObj: timeIn, 
+                    in: timeIn, 
+                    out: timeOut, 
+                    hrs: hoursWorked, 
+                    remark: remark,
+                    lateMins: (!lExempt && lMins > 0) ? lMins : 0 
+                });
+                
                 delete activeShifts[staffName];
+            } else if (manualPenalty > 0) {
+                totalLatePenalty += manualPenalty;
+                let logTime = log.timestamp ? log.timestamp.toDate() : new Date();
+                shiftPairs.push({ 
+                    dateObj: logTime, 
+                    in: logTime, 
+                    out: null, 
+                    hrs: 0, 
+                    remark: `<span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${manualPenalty.toFixed(2)} Manual Penalty</span>`,
+                    lateMins: 0 
+                });
             }
         });
 
-        if (tempIn) {
-            shiftPairs.push({ in: tempIn, out: "Active Shift", hrs: 0, penalty: false, isActive: true });
+        if (activeShifts[staffName]) {
+            shiftPairs.push({ 
+                dateObj: activeShifts[staffName].time, 
+                in: activeShifts[staffName].time, 
+                out: "Active Shift", 
+                hrs: 0, 
+                remark: `<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>`,
+                lateMins: (!activeShifts[staffName].lateExempted && activeShifts[staffName].lateMinutes > 0) ? activeShifts[staffName].lateMinutes : 0,
+                isActive: true
+            });
         }
+
+        // 🔥 THE OT MERGE FIX: Try to append the OT to the existing day!
+        bonusesList.forEach(b => {
+            let amt = parseFloat(b.amount) || 0;
+            let bDate = b.dateAdded ? (b.dateAdded.toDate ? b.dateAdded.toDate() : new Date(b.dateAdded)) : new Date();
+            let dateStr = bDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            
+            let existingLog = shiftPairs.find(l => l.in && l.in.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr);
+            
+            if (existingLog) {
+                if (existingLog.remark.includes('Complete')) {
+                    existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
+                }
+                existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
+            } else {
+                shiftPairs.push({ 
+                    dateObj: bDate, 
+                    in: null, 
+                    out: null, 
+                    hrs: 0, 
+                    remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`,
+                    lateMins: 0 
+                });
+            }
+        });
 
         let estGross = totalHours * ratePerHour;
 
@@ -1343,7 +1503,6 @@ window.loadPayslipVault = async function() {
             activeDeductions.push(d.data());
         });
 
-        // 🔥 THE FIX: Add Overtime to the Net Pay Math!
         let estNet = (estGross + totalBonuses) - totalLatePenalty - unpaidVales;
 
         document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -1351,7 +1510,6 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
 
-        // 🔥 THE FIX: Inject the Overtime row dynamically into the UI!
         let grossRow = document.getElementById('liveEstGross').parentElement;
         if (!document.getElementById('liveEstOTRow')) {
             grossRow.insertAdjacentHTML('afterend', `
@@ -1372,34 +1530,46 @@ window.loadPayslipVault = async function() {
             liveSection.appendChild(logsContainer);
         }
 
+        // 🔥 THE FIX: Upgraded table with Remarks column
         let detailsHtml = `
             <div style="margin-top: 20px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">⏱️ Attendance Logs (This Cutoff)</h3>
                 <div style="max-height: 250px; overflow-y: auto;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
                         <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 5;">
-                            <tr><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">In</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Out</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Hrs</th></tr>
+                            <tr>
+                                <th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Date</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">In</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Out</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Hrs</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Remarks</th>
+                            </tr>
                         </thead>
                         <tbody>
         `;
 
         if (shiftPairs.length > 0) {
-            shiftPairs.reverse().forEach(p => {
-                let dateStr = p.in.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-                let inStr = p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
-                let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
-                let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : `${p.hrs.toFixed(2)}h`;
-                let pAlert = p.penalty ? `<br><span style="color:#ef4444; font-size:9px; font-weight:bold;">PENALTY</span>` : '';
+            shiftPairs.sort((a,b) => b.dateObj - a.dateObj).forEach(p => {
+                let dateStr = p.dateObj.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                let inStr = p.in ? p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : '---';
+                let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---');
+                let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : `${parseFloat(p.hrs).toFixed(2)}h`;
                 
+                // 🔥 INJECT THE LATE SUBLINE INTO THE IN COLUMN!
+                if (p.lateMins && p.lateMins > 0) {
+                    inStr += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${p.lateMins}m</span>`;
+                }
+
                 detailsHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 10px 8px; color: #64748b;">${dateStr}</td>
-                    <td style="padding: 10px 8px; color: #16a34a; font-weight: bold;">${inStr}</td>
-                    <td style="padding: 10px 8px; color: #dc2626; font-weight: bold;">${outStr}${pAlert}</td>
-                    <td style="padding: 10px 8px; font-weight: bold; color: #334155;">${hrStr}</td>
+                    <td style="padding: 10px 8px; color: #16a34a; font-weight: bold; text-align: center; vertical-align: middle;">${inStr}</td>
+                    <td style="padding: 10px 8px; color: #dc2626; font-weight: bold; text-align: center; vertical-align: middle;">${outStr}</td>
+                    <td style="padding: 10px 8px; font-weight: bold; color: #334155; text-align: center; vertical-align: middle;">${hrStr}</td>
+                    <td style="padding: 10px 8px; font-size: 11px; text-align: center; vertical-align: middle;">${p.remark}</td>
                 </tr>`;
             });
         } else {
-            detailsHtml += `<tr><td colspan="4" style="padding: 15px; text-align: center; color: #94a3b8;">No valid Time In/Out pairs found.</td></tr>`;
+            detailsHtml += `<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">No valid Time In/Out pairs found.</td></tr>`;
         }
         detailsHtml += `</tbody></table></div></div>`;
 
@@ -1438,8 +1608,6 @@ window.loadPayslipVault = async function() {
         prSnap.forEach(docSnap => {
             let d = docSnap.data();
             let pd = d.frozenData || {};
-            
-            // 🔥 Inject the exact date the Manager approved the payroll into the data package!
             pd.processedAt = d.processedAt; 
             
             let dateStr = d.processedAt ? d.processedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
