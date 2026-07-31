@@ -399,16 +399,24 @@ window.checkContractLifecycle = async function(staffId) {
 
         if (d.pin && String(d.pin).toUpperCase() === 'REVOKED') return;
         if (d.status === 'Resigned' || d.contractStatus === 'Resigned') return;
-        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended') return;
         
         if (d.role && (d.role.toLowerCase().includes('owner') || d.role.toLowerCase().includes('manager'))) return;
 
-        // 🔥 NEW: Intercept Regularization Offers!
+        // 🔥 1. INTERCEPT NEW HIRES
+        if (d.contractStatus === 'Pending Initial Contract') {
+            window.showInitialContract(staffId, d);
+            return;
+        }
+
+        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended' || d.contractStatus === 'Active') return;
+
+        // 🔥 2. INTERCEPT REGULARIZATION OFFERS
         if (d.contractStatus === 'Pending Regularization') {
             window.showRegularizationContract(staffId, d);
             return;
         }
 
+        // 🔥 3. INTERCEPT 6-MONTH EXTENSION OFFERS
         if (d.contractStatus === 'Pending Renewal') {
             window.showRenewalContract(staffId, d);
             return;
@@ -429,7 +437,6 @@ window.checkContractLifecycle = async function(staffId) {
             let overlay = document.getElementById('coeFarewellOverlay');
             overlay.style.display = 'flex';
             
-            // 🔥 THE TEXT FIX: Make it sound like a "Pause" instead of a "Firing"
             let msgEl = overlay.querySelector('p');
             if (msgEl) {
                 msgEl.innerHTML = `Your probationary contract period with <b>TAKODEÁL</b> has officially concluded.<br><br><span style="color: #c2410c; font-weight: bold;">Please wait for Management to issue your Regularization, a Contract Extension, or your final Clearance.</span>`;
@@ -456,139 +463,92 @@ window.checkContractLifecycle = async function(staffId) {
     }
 };
 
-// 🌟 THE DIGITAL REGULARIZATION CONTRACT
-window.showRegularizationContract = function(staffId, data) {
-    let today = new Date();
-    let options = { month: 'long', day: 'numeric', year: 'numeric' };
-    let dateToday = today.toLocaleDateString('en-US', options);
-    let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', options) : dateToday;
+// 📄 1. INITIAL EMPLOYMENT CONTRACT UI
+window.showInitialContract = function(staffId, data) {
+    let dateToday = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : dateToday;
 
     let contractHtml = `
-        <h2 style="text-align: center; color: #10b981; text-transform: uppercase; margin-bottom: 20px;">Regularization of Employment Agreement</h2>
-        <p>This Regularization Agreement is made and entered into this <b>${dateToday}</b>, in Davao City, Philippines, by and between:</p>
-        <p><b>TAKODEAL TAKOYAKI FOODCART</b>, a duly registered business engaged in food operations, herein referred to as the "Employer";</p>
+        <h2 style="text-align: center; color: #0f766e; text-transform: uppercase; margin-bottom: 20px;">Employment Contract</h2>
+        <p>This Employment Contract ("Agreement") is made and entered into by and between:</p>
+        <p><b>TAKODEAL TAKOYAKI FOODCART</b>, a duly registered business engaged in food operations, with principal place of business located at Blk 14, Lot6, Deca Homes Subdivision, Barangay Cabantian, Davao City, Philippines, herein referred to as the "Employer";</p>
         <p>-and-</p>
         <p><b>${data.cashierName.toUpperCase()}</b>, of legal age, residing at ${data.address || 'Davao City, Philippines'}, herein referred to as the "Employee".</p>
         
-        <h3 style="color: #0f172a; margin-top: 20px;">WITNESSETH:</h3>
-        <p><b>WHEREAS</b>, the Employer and the Employee originally entered into an Employment Contract on <b>${dateHired}</b>, for the position of Service Crew member[cite: 1];</p>
-        <p><b>WHEREAS</b>, the Employee has successfully completed the probationary period and met the Employer's standards for permanent employment;</p>
-        
-        <p><b>NOW, THEREFORE</b>, the Parties agree as follows:</p>
-        
-        <h4 style="color: #0f172a;">1. REGULARIZATION OF EMPLOYMENT</h4>
-        <p>Effective <b>${dateToday}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
-        
-        <h4 style="color: #0f172a;">2. COMPENSATION & SCHEDULE</h4>
-        <p>The Employee shall continue to receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>[cite: 1]. The Employee is entitled to one (1) day off per week, subject to scheduling and operational needs[cite: 1].</p>
-        
-        <h4 style="color: #0f172a;">3. REAFFIRMATION OF ORIGINAL TERMS</h4>
-        <p>All policies, terms, and conditions established in the original Employment Contract remain in full force and effect[cite: 1]. This strictly includes, but is not limited to:<br>
-        • <b>Attendance and Absences Policy:</b> Strict adherence to rules regarding punctuality[cite: 1].<br>
-        • <b>Confidentiality Agreement:</b> The strict maintenance of proprietary information and recipes under the penalty of One Million Pesos (1,000,000.00) for breaches[cite: 1].<br>
-        • <b>Health Declaration:</b> Ongoing affirmation of physical fitness for food-handling[cite: 1].<br>
-        • <b>Notice of Resignation:</b> The mandatory requirement to render a 30-day notice prior to voluntary resignation[cite: 1].<br>
-        • <b>Company Uniform and Property:</b> The obligation to care for provided property to avoid payroll deductions[cite: 1].</p>
-        
-        <h4 style="color: #0f172a;">4. TERMINATION</h4>
-        <p>As a regular employee, employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code, or for gross violations of the company policies stated above.</p>
-        
-        <div style="background: #ecfdf5; border: 2px dashed #10b981; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
-            <h3 style="margin: 0 0 10px 0; color: #065f46;">Digital Acceptance</h3>
-            <p style="font-size: 12px; color: #166534; margin-bottom: 15px;">By clicking the button below, I, <b>${data.cashierName}</b>, digitally sign and accept the terms of this Regularization Contract.</p>
-            <button onclick="window.acceptRegularizationContract('${staffId}')" style="background: #10b981; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">🌟 Accept Regularization</button>
+        <h4 style="color: #0f172a;">1. POSITION AND COMMENCEMENT</h4>
+        <p>The Employer hereby employs the Employee as a <b>${data.role}</b> for Takodeal. The Employee agrees to faithfully and diligently perform duties and responsibilities assigned by the Employer. Employment shall commence on <b>${dateHired}</b> and shall be valid for a period of six (6) months.</p>
+
+        <h4 style="color: #0f172a;">2. WORK SCHEDULE AND COMPENSATION</h4>
+        <p>The Employee shall receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>. The Employee is entitled to one (1) day off per week. Working hours shall be determined by the Employer.</p>
+
+        <h4 style="color: #0f172a;">3. ATTENDANCE AND ABSENCES POLICY</h4>
+        <p><b>Absences:</b> An absence is defined as failure to report for work during a scheduled workday without prior approval or valid reason.<br>
+        <b>Tardiness:</b> Repeated tardiness shall be subject to disciplinary action.<br>
+        <b>Sanctions:</b> 1. Verbal Warning | 2. Written Warning | 3. Suspension | 4. Termination</p>
+
+        <h4 style="color: #0f172a;">4. CONFIDENTIALITY AGREEMENT</h4>
+        <p>The Employee agrees to keep all proprietary information strictly confidential (recipes, preparation processes). Disclosure to outside parties shall incur a <b>One Million Pesos (₱1,000,000.00)</b> penalty.</p>
+
+        <h4 style="color: #0f172a;">5. NOTICE OF RESIGNATION</h4>
+        <p>The Employee agrees to render a 30-day notice prior to voluntarily resigning to avoid financial damages equivalent to unserved days.</p>
+
+        <h4 style="color: #0f172a;">6. COMPANY UNIFORM</h4>
+        <p>Items provided on a borrowed basis must be returned upon resignation to avoid payroll deductions.</p>
+
+        <div style="background: #f0fdf4; border: 2px dashed #16a34a; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
+            <h3 style="margin: 0 0 10px 0; color: #15803d;">Digital Acceptance</h3>
+            <p style="font-size: 12px; color: #166534; margin-bottom: 15px;">By clicking the button below, I, <b>${data.cashierName}</b>, digitally sign and accept the terms of this Employment Contract.</p>
+            <button onclick="window.acceptContract('${staffId}', 'Initial')" style="background: #16a34a; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3);">📝 Accept & Download PDF</button>
         </div>
     `;
-
-    let overlay = document.getElementById('renewalContractOverlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'renewalContractOverlay';
-        overlay.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);";
-        document.body.appendChild(overlay);
-    }
-
-    overlay.innerHTML = `
-        <div style="background: white; padding: 40px; border-radius: 12px; max-width: 800px; width: 100%; max-height: 85vh; overflow-y: auto; text-align: left; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-            ${contractHtml}
-        </div>
-    `;
-
-    document.getElementById('loginOverlay').style.display = 'none';
-    document.getElementById('appContainer').style.display = 'none';
-    overlay.style.display = 'flex';
+    window.renderContractOverlay(contractHtml, data);
 };
 
-window.acceptRegularizationContract = async function(staffId) {
-    Swal.fire({title: 'Saving Contract...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-    try {
-        await updateDoc(doc(db, "cashiers", staffId), {
-            contractStatus: 'Regular'
-        });
-        
-        document.getElementById('renewalContractOverlay').style.display = 'none';
-        document.getElementById('appContainer').style.display = 'flex';
-        
-        Swal.fire('Congratulations! 🌟', 'You are officially a Regular Employee. Keep up the great work!', 'success');
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to sign contract. Check connection.', 'error');
-    }
-};
-
-// 📄 THE DIGITAL CONTRACT GENERATOR
+// 📄 2. 6-MONTH RENEWAL CONTRACT UI
 window.showRenewalContract = function(staffId, data) {
     let today = new Date();
     let options = { month: 'long', day: 'numeric', year: 'numeric' };
     let dateToday = today.toLocaleDateString('en-US', options);
     let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', options) : dateToday;
-    
-    let contractEnd = new Date(today);
-    contractEnd.setMonth(contractEnd.getMonth() + 6);
+    let contractEnd = new Date(today); contractEnd.setMonth(contractEnd.getMonth() + 6);
     let endDate = contractEnd.toLocaleDateString('en-US', options);
 
     let contractHtml = `
         <h2 style="text-align: center; color: #b45309; text-transform: uppercase; margin-bottom: 20px;">Contract Renewal and Extension Agreement</h2>
-        <p>This Contract Renewal and Extension Agreement ("Renewal Agreement") is made and entered into this <b>${dateToday}</b>, in Davao City, Philippines, by and between:</p>
-        <p><b>TAKODEAL TAKOYAKI FOODCART</b>, a duly registered business engaged in food operations, with its principal place of business located at Blk 14, Lot6, Deca Homes Subdivision, Barangay Cabantian, Davao City, Philippines, herein referred to as the "Employer";</p>
-        <p>-and-</p>
-        <p><b>${data.cashierName.toUpperCase()}</b>, of legal age, residing at ${data.address || 'Davao City, Philippines'}, herein referred to as the "Employee".</p>
-        <p>Collectively referred to as the "Parties."</p>
-        
-        <h3 style="color: #0f172a; margin-top: 20px;">WITNESSETH:</h3>
-        <p><b>WHEREAS</b>, the Employer and the Employee originally entered into an Employment Contract on <b>${dateHired}</b>, for the position of Service Crew member;</p>
-        <p><b>WHEREAS</b>, the initial contract was stipulated to be valid for a period of six (6) months;</p>
-        <p><b>WHEREAS</b>, the Employer wishes to extend the Employee's contract for an additional six (6) months as a final evaluation period prior to permanent regularization, and the Employee agrees to this extension;</p>
-        
-        <p><b>NOW, THEREFORE</b>, in consideration of the mutual covenants herein contained, the Parties agree as follows:</p>
-        
-        <h4 style="color: #0f172a;">1. EXTENSION OF EMPLOYMENT</h4>
-        <p>The Employer hereby extends the employment of the Employee as a Service Crew member. This Renewal Agreement shall be valid for an additional period of six (6) months, commencing on <b>${dateToday}</b>, and expiring on <b>${endDate}</b>. This six-month extension serves as the final probationary phase to assess the Employee's overall performance, attendance, and eligibility for regularized status.</p>
-        
-        <h4 style="color: #0f172a;">2. WORK SCHEDULE AND COMPENSATION</h4>
-        <p>During this renewal period, the Employee's compensation and schedule will remain consistent with the original agreement:<br>
-        • The Employee shall continue to receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b> (Morning, Mid & Night Shift).<br>
-        • The Employee is entitled to one (1) day off per week, subject to scheduling and operational needs.</p>
-        
-        <h4 style="color: #0f172a;">3. REAFFIRMATION OF ORIGINAL TERMS</h4>
-        <p>All policies, terms, and conditions established in the original Employment Contract remain in full force and effect during this renewal period. This strictly includes, but is not limited to:<br>
-        • <b>Attendance and Absences Policy:</b> Continued adherence to rules regarding punctuality, excused and unexcused absences, and the progressive disciplinary actions for violations up to termination.<br>
-        • <b>Confidentiality Agreement:</b> The strict maintenance of proprietary information, including recipes, preparation processes, and branding materials, under the penalty of One Million Pesos (1,000,000.00) for breaches.<br>
-        • <b>Health Declaration:</b> The ongoing affirmation of physical fitness for a food-handling environment.<br>
-        • <b>Notice of Resignation:</b> The mandatory requirement to render a 30-day notice prior to voluntary resignation, with the Employer retaining the right to seek compensation for unserved notice periods.<br>
-        • <b>Company Uniform and Property:</b> The obligation to care for the provided uniform and return them immediately upon the cessation of employment to avoid payroll deductions.<br>
-        • <b>Other Terms:</b> The Employee agrees to abide by all lawful instructions, regulations, and policies issued by the Employer, who reserves the right to amend guidelines as necessary for business operations.</p>
-        
-        <h4 style="color: #0f172a;">4. PATHWAY TO REGULARIZATION</h4>
-        <p>Upon the successful completion of this six-month renewal period, the Employer will conduct a final performance evaluation. Subject to satisfactory performance, operational excellence, and strict adherence to company policies, the Employee may be offered a regularized employment contract.</p>
-        
+        <p>This Renewal Agreement is made and entered into this <b>${dateToday}</b>, by and between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
+        <p><b>WHEREAS</b>, the initial contract entered on <b>${dateHired}</b> has expired, the Employer extends employment for an additional six (6) months (<b>${dateToday}</b> to <b>${endDate}</b>) as a final probationary phase.</p>
+        <h4 style="color: #0f172a;">COMPENSATION & REAFFIRMATION OF TERMS</h4>
+        <p>The daily basic salary remains <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>. All original policies (Attendance, ₱1,000,000.00 Confidentiality penalty, 30-Day Notice) remain in full force.</p>
         <div style="background: #fffbeb; border: 2px dashed #f59e0b; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
             <h3 style="margin: 0 0 10px 0; color: #b45309;">Digital Acceptance</h3>
-            <p style="font-size: 12px; color: #92400e; margin-bottom: 15px;">By clicking the button below, I, <b>${data.cashierName}</b>, digitally sign and accept the terms of this 6-Month Renewal Contract.</p>
-            <button onclick="window.acceptRenewalContract('${staffId}')" style="background: #0f766e; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">📝 Accept & Sign Extension</button>
+            <button onclick="window.acceptContract('${staffId}', 'Extension')" style="background: #0f766e; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">📝 Accept & Download PDF</button>
         </div>
     `;
+    window.renderContractOverlay(contractHtml, data);
+};
 
+// 🌟 3. REGULARIZATION CONTRACT UI
+window.showRegularizationContract = function(staffId, data) {
+    let dateToday = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+    let contractHtml = `
+        <h2 style="text-align: center; color: #10b981; text-transform: uppercase; margin-bottom: 20px;">Regularization of Employment Agreement</h2>
+        <p>This Regularization Agreement is executed on <b>${dateToday}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
+        <h4 style="color: #0f172a;">1. REGULARIZATION OF EMPLOYMENT</h4>
+        <p>Effective <b>${dateToday}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
+        <h4 style="color: #0f172a;">2. COMPENSATION & REAFFIRMATION</h4>
+        <p>The daily basic salary is <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>. All original policies (Attendance, ₱1,000,000.00 Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+        <div style="background: #ecfdf5; border: 2px dashed #10b981; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
+            <h3 style="margin: 0 0 10px 0; color: #065f46;">Digital Acceptance</h3>
+            <button onclick="window.acceptContract('${staffId}', 'Regularization')" style="background: #10b981; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">🌟 Accept Regularization & Download PDF</button>
+        </div>
+    `;
+    window.renderContractOverlay(contractHtml, data);
+};
+
+// ⚙️ OVERLAY RENDERER
+window.renderContractOverlay = function(contractHtml, data) {
+    window.coePendingData = data; 
     let overlay = document.getElementById('renewalContractOverlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -596,111 +556,160 @@ window.showRenewalContract = function(staffId, data) {
         overlay.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);";
         document.body.appendChild(overlay);
     }
-
-    overlay.innerHTML = `
-        <div style="background: white; padding: 40px; border-radius: 12px; max-width: 800px; width: 100%; max-height: 85vh; overflow-y: auto; text-align: left; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-            ${contractHtml}
-        </div>
-    `;
-
+    overlay.innerHTML = `<div style="background: white; padding: 40px; border-radius: 12px; max-width: 800px; width: 100%; max-height: 85vh; overflow-y: auto; text-align: left; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">${contractHtml}</div>`;
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('appContainer').style.display = 'none';
     overlay.style.display = 'flex';
 };
 
-window.acceptRenewalContract = async function(staffId) {
-    Swal.fire({title: 'Saving Contract...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+// ✅ UNIVERSAL CONTRACT ACCEPTOR & PRINTER
+window.acceptContract = async function(staffId, type) {
+    Swal.fire({title: 'Signing & Generating PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     try {
-        // Update their status and reset their dateHired to today so the 6-month timer restarts!
-        let today = new Date();
-        let yyyy = today.getFullYear();
-        let mm = String(today.getMonth() + 1).padStart(2, '0');
-        let dd = String(today.getDate()).padStart(2, '0');
+        let todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         
-        await updateDoc(doc(db, "cashiers", staffId), {
-            contractStatus: 'Extended',
-            dateHired: `${yyyy}-${mm}-${dd}`
-        });
+        let newStatus = 'Active';
+        let updatePayload = { contractStatus: newStatus };
+        
+        if (type === 'Initial') { updatePayload.contractStatus = 'Active'; updatePayload['signedContracts.initial'] = todayStr; }
+        if (type === 'Extension') { 
+            let today = new Date(); let yyyy = today.getFullYear(); let mm = String(today.getMonth() + 1).padStart(2, '0'); let dd = String(today.getDate()).padStart(2, '0');
+            updatePayload.contractStatus = 'Extended'; updatePayload.dateHired = `${yyyy}-${mm}-${dd}`; updatePayload['signedContracts.extension'] = todayStr; 
+        }
+        if (type === 'Regularization') { updatePayload.contractStatus = 'Regular'; updatePayload['signedContracts.regularization'] = todayStr; }
+
+        await updateDoc(doc(db, "cashiers", staffId), updatePayload);
         
         document.getElementById('renewalContractOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         
-        Swal.fire('Congratulations! 🎉', 'Your contract has been officially extended for 6 months. Keep up the great work!', 'success');
+        let printWin = window.open('', '', 'width=850,height=900');
+        printWin.document.write(window.getContractPrintHTML(type, window.coePendingData, todayStr));
+        
+        Swal.fire('Congratulations! 🎉', 'Your contract has been officially signed and saved.', 'success');
     } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to sign contract. Check connection.', 'error');
+        console.error(e); Swal.fire('Error', 'Failed to sign contract. Check connection.', 'error');
     }
 };
 
+window.getContractPrintHTML = function(type, data, signDate) {
+    let title = ""; let content = "";
+    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+    
+    if (type === 'Initial') {
+        title = "Employment Contract";
+        content = `
+            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role}</b>. Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months.</p>
+            <p><b>2. WORK SCHEDULE AND COMPENSATION</b><br>The Employee shall receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>. Entitled to one (1) day off per week.</p>
+            <p><b>3. ATTENDANCE AND ABSENCES POLICY</b><br>Unexcused absences and tardiness are subject to progressive disciplinary action (Verbal Warning, Written Warning, Suspension, Termination).</p>
+            <p><b>4. CONFIDENTIALITY AGREEMENT</b><br>Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
+            <p><b>5. HEALTH DECLARATION</b><br>Employee affirms physical fitness for a food-handling environment.</p>
+            <p><b>6. NOTICE OF RESIGNATION</b><br>Mandatory 30-day notice prior to voluntary resignation.</p>
+            <p><b>7. COMPANY UNIFORM AND PROPERTY</b><br>Obligation to care for and return provided items to avoid payroll deductions.</p>
+        `;
+    } else if (type === 'Extension') {
+        title = "Contract Renewal & Extension";
+        let contractEnd = new Date(signDate); contractEnd.setMonth(contractEnd.getMonth() + 6);
+        content = `
+            <p><b>1. EXTENSION OF EMPLOYMENT</b><br>Employment is extended as <b>${data.role}</b> for an additional six (6) months from <b>${signDate}</b> to <b>${contractEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</b>. This is the final probationary phase.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary remains <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. PATHWAY TO REGULARIZATION</b><br>Upon successful completion, the Employee may be offered a regularized contract.</p>
+        `;
+    } else if (type === 'Regularization') {
+        title = "Regularization of Employment";
+        content = `
+            <p><b>1. REGULARIZATION</b><br>Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. TERMINATION</b><br>Employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code.</p>
+        `;
+    }
+
+    return `
+        <html><head><title>${title} - ${data.cashierName}</title></head>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.6;">
+            <div style="position: relative; text-align: center; margin-bottom: 30px;">
+                <img src="${logoUrl}" style="position: absolute; left: 0; top: -10px; width: 100px; height: 100px; object-fit: contain;">
+                <h1 style="margin: 0; font-size: 38px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
+                <p style="margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
+            </div>
+            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 40px;">
+            <h2 style="text-align: center; color: #b45309; text-transform: uppercase;">${title}</h2>
+            <p>This Agreement is executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
+            ${content}
+            <div style="margin-top: 80px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${data.cashierName.toUpperCase()}</b></div>
+                    <span style="font-size: 12px; color: #64748b;">Employee Signature / Digitally Accepted</span>
+                </div>
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
+                    <span style="font-size: 12px; color: #64748b;">CEO, Founder & General Manager</span>
+                </div>
+            </div>
+            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
+        </body></html>
+    `;
+};
+
+// 🎓 COE GENERATOR (STAFF APP)
 window.generateCOE = async function() {
     let staffName = document.getElementById('coeStaffName').innerText;
     let dData = window.coePendingData || {};
     let role = dData.role || 'Staff Crew';
 
-    // Format dates to spell out the Month (e.g. "April 27, 2025")
     const dateOptions = { month: 'long', day: 'numeric', year: 'numeric' };
     let dHiredRaw = dData.dateHired ? new Date(dData.dateHired) : new Date();
     let dHired = dHiredRaw.toLocaleDateString('en-US', dateOptions);
     let dEnded = new Date().toLocaleDateString('en-US', dateOptions);
-
-    let printWin = window.open('', '', 'width=850,height=900');
     let logoUrl = window.location.origin + '/payslip%20logo.jpg';
 
-    // 🔥 THE UPGRADED HTML: Logo Top-Left & CEO Signature 
+    // 🔥 Inject Position Records
+    let historyHtml = "";
+    if (dData.roleHistory && dData.roleHistory.length > 1) {
+        historyHtml = `<div style="margin-top: 15px; padding: 15px; background: #f8fafc; border-left: 4px solid #0f172a;">
+            <p style="margin: 0 0 10px 0; font-size: 15px;"><b>Position & Promotion History:</b></p>
+            <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6;">`;
+        dData.roleHistory.forEach(h => {
+            historyHtml += `<li>Promoted to <b>${h.role}</b> (Effective: ${h.date})</li>`;
+        });
+        historyHtml += `</ul></div>`;
+    }
+
+    let printWin = window.open('', '', 'width=850,height=900');
     printWin.document.write(`
-        <html><head>
-        <title>Certificate of Employment - ${staffName}</title>
-        <style>
-            @media print {
-                @page { margin: 1in; }
-                * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; print-color-adjust: exact !important; }
-            }
-        </style>
-        </head>
-        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; padding-top: 60px; color: #1e293b; max-width: 800px; margin: 0 auto; position: relative;">
-            
-            <!-- 🔥 LOGO PINNED TO TOP LEFT -->
-            <img src="${logoUrl}" alt="Logo" style="position: absolute; left: 0px; top: 0px; width: 120px; height: 120px; object-fit: contain;">
-            
+        <html><head><title>COE - ${staffName}</title></head>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 60px; color: #1e293b; max-width: 800px; margin: 0 auto; position: relative;">
+            <img src="${logoUrl}" style="position: absolute; left: 60px; top: 50px; width: 120px; height: 120px; object-fit: contain;">
             <div style="text-align: center; margin-bottom: 25px; padding-top: 20px;">
                 <h1 style="margin: 0; color: #0f172a; font-size: 52px; font-weight: 900; letter-spacing: 4px;">TAKODEÁL</h1>
                 <p style="margin: 5px 0 0 0; color: #64748b; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">Davao City, Philippines</p>
             </div>
-            
             <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 50px;">
-            
             <div style="text-align: center; margin-bottom: 50px;">
                 <h2 style="margin: 0; color: #c2410c; font-size: 32px; font-weight: bold; text-transform: uppercase;">Certificate of Employment</h2>
             </div>
-            
-            <div style="font-size: 18px; line-height: 2.2; color: #1e293b; text-align: justify; margin-bottom: 80px;">
+            <div style="font-size: 18px; line-height: 2.2; color: #1e293b; text-align: justify; margin-bottom: 40px;">
                 <p style="margin-bottom: 20px;">To Whom It May Concern,</p>
                 <p style="margin-bottom: 20px;">This is to certify that <b>${staffName.toUpperCase()}</b> has been employed at TAKODEÁL.</p>
                 <p style="margin-bottom: 20px;">They served in the capacity of <b>${role}</b> from <b>${dHired}</b> up until <b>${dEnded}</b>.</p>
-                <p>This certification is being issued upon the request of the employee for whatever legal purpose it may serve them best.</p>
+                ${historyHtml}
+                <p style="margin-top: 20px;">This certification is being issued upon the request of the employee for whatever legal purpose it may serve them best.</p>
             </div>
-            
             <div style="margin-top: 80px;">
                 <div style="width: 350px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
-                <!-- 🔥 CHERY'S NEW SIGNATURE BLOCK -->
                 <strong style="font-size: 18px; color: #0f172a; display: block;">Chery Ann R. Fonda</strong>
-                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO / Owner"</span>
+                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO and Founder of TAKODEÁL<br>General Manager</span>
             </div>
-            
-            <script>
-                setTimeout(() => { window.print(); window.close(); }, 1500);
-            </script>
+            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
         </body></html>
     `);
 
     let staffId = localStorage.getItem('takodeal_staff_id');
     try {
         await updateDoc(doc(db, "cashiers", staffId), { pin: 'REVOKED', contractStatus: 'Contract Ended' });
-        Swal.fire({
-            title: 'Account Locked 🔒',
-            text: 'Your COE has been generated and your portal is now securely closed. Thank you for your service!',
-            icon: 'success', allowOutsideClick: false, showConfirmButton: false
-        });
+        Swal.fire({ title: 'Account Locked 🔒', text: 'COE generated.', icon: 'success', allowOutsideClick: false, showConfirmButton: false });
         setTimeout(() => { localStorage.clear(); location.reload(); }, 5000);
     } catch(e) {}
 };
