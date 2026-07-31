@@ -17299,7 +17299,11 @@ window.copyAIPrompt = function() {
 // --- PUBLISH TO TABLETS ---
 window.publishAnnouncement = async function() {
     let title = document.getElementById('announceTitle').value.trim();
+    // 🔥 Grab the new fields (with safety fallbacks if you haven't added the HTML yet)
+    let subHeadline = document.getElementById('announceSubHeadline') ? document.getElementById('announceSubHeadline').value.trim() : '';
     let message = document.getElementById('announceMessage').value.trim();
+    let footerMessage = document.getElementById('announceFooter') ? document.getElementById('announceFooter').value.trim() : '';
+    
     let fileInput = document.getElementById('announceImages');
 
     if (!title) return Swal.fire('Error', 'Title is required', 'error');
@@ -17322,7 +17326,9 @@ window.publishAnnouncement = async function() {
 
         await addDoc(collection(db, "announcements"), {
             title: title,
-            message: message, // 🔥 SAVES THE NEW MESSAGE FIELD
+            subHeadline: subHeadline, // 🔥 Save to Cloud
+            message: message, 
+            footerMessage: footerMessage, // 🔥 Save to Cloud
             images: imageUrls,
             active: true,
             timestamp: serverTimestamp(),
@@ -17331,9 +17337,13 @@ window.publishAnnouncement = async function() {
 
         Swal.fire({title: '🚀 Deployed!', text: 'Announcement blasted to all branches!', icon: 'success', customClass: { popup: 'rounded-2xl' }});
         
+        // Clear the boxes
         document.getElementById('announceTitle').value = '';
+        if (document.getElementById('announceSubHeadline')) document.getElementById('announceSubHeadline').value = '';
         document.getElementById('announceMessage').value = '';
+        if (document.getElementById('announceFooter')) document.getElementById('announceFooter').value = '';
         fileInput.value = '';
+        
         if (typeof window.loadAnnouncementHistory === 'function') window.loadAnnouncementHistory();
         
     } catch (e) {
