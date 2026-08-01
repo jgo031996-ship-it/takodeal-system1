@@ -1776,7 +1776,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (DELETE AT TOP)
+// 🔍 THE REVIEW REQUEST MODAL (MATH & REJECT FIX)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -1835,30 +1835,33 @@ window.reviewPurchaseOrder = async function(poId) {
                 let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
                 let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
 
-                // 🔥 THE FIX: Extract Physical Math correctly using displayQty, or divide base units by conversion rate!
+                // 🔥 THE MATH FIX: We calculate everything cleanly into the correct UOM!
+                let cRate = parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
+                let printUom = item.displayUom || item.uom;
+                let formatNum = (num) => (num % 1 === 0 ? num : parseFloat(num).toFixed(2));
+
                 let qtyDisplay = '';
                 if (isAudit) {
-                    let cRate = parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
-                    let physCount = item.displayQty !== undefined ? item.displayQty : (item.physicalStock !== undefined ? (item.physicalStock / cRate) : 0);
-                    let sysCount = item.systemStock !== undefined ? (item.systemStock / cRate) : '---';
-
-                    // Clean up decimals so it shows "13" instead of "13.000" but keeps "1.5"
-                    let formatNum = (num) => (num % 1 === 0 ? num : parseFloat(num).toFixed(2));
+                    // For Physical: Trust exactly what the cashier explicitly typed (displayQty)
+                    let physCount = item.displayQty !== undefined ? parseFloat(item.displayQty) : (item.physicalStock !== undefined ? (parseFloat(item.physicalStock) / cRate) : 0);
+                    
+                    // For System: Divide the backend base units by the conversion rate
+                    let sysCount = item.systemStock !== undefined ? (parseFloat(item.systemStock) / cRate) : '---';
 
                     qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${formatNum(physCount)} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${formatNum(physCount)} <span style="font-size:10px;">${printUom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${printUom}</span></div>
                     `;
                 } else {
                     let reqQty = item.displayQty || item.qty || 0;
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${formatNum(reqQty)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
                 }
 
                 html += `
                     <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
                         <td style="padding: 12px 10px; font-weight: bold; color: #334155;">
                             ${item.itemName || item.name}<br>
-                            <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${hqStock[item.itemName || item.name] || 0} ${item.uom}</span>
+                            <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${formatNum(hqStock[item.itemName || item.name] || 0)} ${item.uom}</span>
                         </td>
                         <td style="padding: 12px 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
                         <td style="padding: 12px 10px; text-align: center; vertical-align: middle;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; white-space: nowrap;">${badgeText}</span></td>
@@ -1882,7 +1885,7 @@ window.reviewPurchaseOrder = async function(poId) {
         Swal.fire({
             title: titleTxt, html: html, width: '600px',
             showCancelButton: true, showDenyButton: true,
-            confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#d97706', // Changed Deny to Orange so it doesn't clash with Red Reject
+            confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#d97706',
             confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏸️ Postpone / Set Aside', cancelButtonText: 'Close Window',
             customClass: { popup: 'rounded-2xl shadow-xl' }
         }).then(async (result) => {
@@ -2007,6 +2010,9 @@ window.reviewPurchaseOrder = async function(poId) {
     } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
 };
 
+// ==========================================
+// 🛑 THE REJECT ENGINE (MUST BE ADDED RIGHT BELOW IT)
+// ==========================================
 window.processRejectRequest = async function(docId) {
     if (!docId) return;
 
