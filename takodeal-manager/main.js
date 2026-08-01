@@ -8607,21 +8607,27 @@ window.removeEmployee = function(name) {
     window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables(); window.saveToCloud();
 };
 
-// 🔥 SMART HELPER: Finds the full HR profile even if you only give it a nickname!
+// 🔥 SMART PROFILE MATCHER: Connects Schedule Nicknames to HR Legal Names!
 window.findEmployeeProfile = function(searchName) {
-    if (!searchName) return null;
-    let s = searchName.toLowerCase().trim();
-    let empList = window.employees || employees || [];
-    return empList.find(e => {
-        let n = (e.name || "").toLowerCase().trim();
-        let f = (e.fullName || "").toLowerCase().trim();
-        let nick = (e.scheduleNickname || "").toLowerCase().trim();
-        
-        if (n === s || f === s || nick === s) return true;
-        if (f.includes(s) && s.length >= 3) return true;
-        if (s.includes(n) && n.length >= 3) return true;
-        return false;
+    if (!window.employees || !searchName) return null;
+    let s = String(searchName).toLowerCase().trim();
+    
+    // 1. Check for Exact Full Name Match
+    let exactMatch = window.employees.find(e => String(e.name || e.cashierName || "").toLowerCase().trim() === s);
+    if (exactMatch) return exactMatch;
+    
+    // 2. Check for Exact Nickname Match
+    let nickMatch = window.employees.find(e => String(e.scheduleNickname || e.scheduleName || "").toLowerCase().trim() === s);
+    if (nickMatch) return nickMatch;
+
+    // 3. Check for Partial First Name Match (e.g., "Ivan" matches "Ivan Jay Agad")
+    let partialMatch = window.employees.find(e => {
+        let fName = String(e.name || e.cashierName || "").toLowerCase().trim();
+        return fName.startsWith(s) && s.length >= 3; 
     });
+    if (partialMatch) return partialMatch;
+
+    return null;
 };
 
 window.updateStaffDisplay = function() {
@@ -8912,49 +8918,57 @@ window.generateSchedule = function() {
     });
 };
 
-window.openSwapModal = function(day, branch, shiftId) {
-    swapData = { day, branch, shiftId };
-    const cur = currentSchedule[day][branch].scheduled[shiftId];
+window.openSwapModal = function(day, branch, shiftId, currentStaff) {
+    window.swapData = { day, branch, shiftId, currentStaff };
     
-    document.getElementById('swapMessage').innerHTML = cur === "UNFILLED" 
-        ? `<strong style="color:#16a34a;">Assigning empty shift</strong>` 
-        : `Swapping: <strong style="color:#0ea5e9;">${cur}</strong>`;
-        
-    const select = document.getElementById('swapTarget');
+    // 🔥 Convert the current staff's name to their Nickname for the header!
+    let currentProfile = window.findEmployeeProfile(currentStaff) || { scheduleNickname: currentStaff };
+    let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || currentStaff;
+    document.getElementById('swapCurrentStaff').innerText = currentDisplayName;
+    
+    const select = document.getElementById('swapSelect');
     select.innerHTML = '<option value="">-- Choose Staff --</option>';
 
-    // 1. Co-workers currently scheduled today (Swap)
-    let optGroupShift = document.createElement('optgroup');
-    optGroupShift.label = "🔄 Swap with Scheduled Staff";
-    for (let sId in currentSchedule[day][branch].scheduled) {
-        if (sId !== shiftId && currentSchedule[day][branch].scheduled[sId] !== "N/A" && currentSchedule[day][branch].scheduled[sId] !== "UNFILLED") {
-            const sName = branchConfig[branch].find(s => s.id === sId).name;
-            optGroupShift.innerHTML += `<option value="shift_${sId}">${currentSchedule[day][branch].scheduled[sId]} (from ${sName})</option>`;
+    let dayData = currentSchedule[day][branch];
+    
+    let optGroupSched = document.createElement('optgroup');
+    optGroupSched.label = "🔄 Swap with Scheduled Staff";
+    
+    for (let sId in dayData.scheduled) {
+        let staff = dayData.scheduled[sId];
+        if (staff !== "N/A" && staff !== "UNFILLED" && staff !== currentStaff) {
+            let shiftName = window.branchConfig[branch].find(s => s.id === sId)?.name || sId;
+            
+            // 🔥 NICKNAME ENGINE
+            let realProfile = window.findEmployeeProfile(staff) || { scheduleNickname: staff };
+            let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || staff;
+
+            let opt = document.createElement('option');
+            opt.value = staff; 
+            opt.innerText = `${displayName} (from ${shiftName})`;
+            optGroupSched.appendChild(opt);
         }
     }
-    if (optGroupShift.children.length > 0) select.appendChild(optGroupShift);
+    if (optGroupSched.children.length > 0) select.appendChild(optGroupSched);
 
-    // 2. Co-workers on Standby today
-    let optGroupStandby = document.createElement('optgroup');
-    optGroupStandby.label = "🛋️ Assign from Standby";
-    currentSchedule[day][branch].rest.forEach((name, i) => {
-        optGroupStandby.innerHTML += `<option value="rest_${i}">${name}</option>`;
-    });
-    if (optGroupStandby.children.length > 0) select.appendChild(optGroupStandby);
+    let optGroupOther = document.createElement('optgroup');
+    optGroupOther.label = "🌍 Pull Relief Staff (Other Branches)";
+    
+    // Only pull staff that actually belong to OTHER branches
+    let otherStaff = window.employees.filter(e => e.branch !== branch);
+    
+    otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+        // 🔥 NICKNAME ENGINE
+        let realProfile = window.findEmployeeProfile(e.name) || e;
+        let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
 
-    // 3. 🔥 GLOBAL RELIEF STAFF: Pull anyone else in the company!
-    let optGroupGlobal = document.createElement('optgroup');
-    optGroupGlobal.label = "🌍 Pull Relief Staff (Other Branches)";
-    
-    let activeToday = Object.values(currentSchedule[day][branch].scheduled).concat(currentSchedule[day][branch].rest);
-    
-    employees.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        // Only show people who aren't already working in this branch today
-        if (!activeToday.includes(e.name)) {
-            optGroupGlobal.innerHTML += `<option value="global_${e.name}">${e.name} (from ${e.branch})</option>`;
-        }
+        let opt = document.createElement('option');
+        opt.value = e.name; // Use their real name for the backend to prevent bugs
+        opt.innerText = `${displayName} (from ${e.branch})`;
+        optGroupOther.appendChild(opt);
     });
-    if (optGroupGlobal.children.length > 0) select.appendChild(optGroupGlobal);
+    
+    if (optGroupOther.children.length > 0) select.appendChild(optGroupOther);
 
     document.getElementById('swapModal').style.display = 'flex';
 };
