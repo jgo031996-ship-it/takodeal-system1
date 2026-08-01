@@ -8925,19 +8925,20 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     let currentProfile = window.findEmployeeProfile(currentStaff) || { scheduleNickname: currentStaff };
     let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || currentStaff;
     
-    // 🔥 THE BULLETPROOF FIX: Check all possible HTML IDs so it never returns "null" and crashes!
+    // Check all possible HTML IDs for the title
     let titleEl = document.getElementById('swapCurrentStaff') || document.getElementById('swapStaffName') || document.getElementById('swapEmpName');
     if (titleEl) titleEl.innerText = currentDisplayName;
     
-    const select = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect');
+    // 🔥 Standardized select lookup to fix ID mismatch
+    const select = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect') || document.getElementById('swapTarget');
     if (!select) return; // Failsafe
     
     select.innerHTML = '<option value="">-- Choose Staff --</option>';
 
-    // Make sure we handle global variables safely
     let schedObj = window.currentSchedule || currentSchedule;
     let dayData = schedObj[day][branch];
     
+    // 1. 🔄 SCHEDULED STAFF
     let optGroupSched = document.createElement('optgroup');
     optGroupSched.label = "🔄 Swap with Scheduled Staff";
     
@@ -8946,32 +8947,51 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
         if (staff !== "N/A" && staff !== "UNFILLED" && staff !== currentStaff) {
             let shiftName = window.branchConfig[branch].find(s => s.id === sId)?.name || sId;
             
-            // 🔥 NICKNAME ENGINE
             let realProfile = window.findEmployeeProfile(staff) || { scheduleNickname: staff };
             let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || staff;
 
             let opt = document.createElement('option');
-            opt.value = staff; 
+            // 🔥 FIX: Added 'shift_' prefix for executeSwap to catch
+            opt.value = `shift_${sId}`;  
             opt.innerText = `${displayName} (from ${shiftName})`;
             optGroupSched.appendChild(opt);
         }
     }
     if (optGroupSched.children.length > 0) select.appendChild(optGroupSched);
 
+    // 2. ☕ STANDBY/REST STAFF (🔥 ADDED: Missing from your original code)
+    let optGroupRest = document.createElement('optgroup');
+    optGroupRest.label = "☕ Assign from Standby";
+    if (dayData.rest && dayData.rest.length > 0) {
+        dayData.rest.forEach((rStaff, index) => {
+            if (rStaff !== currentStaff) {
+                let realProfile = window.findEmployeeProfile(rStaff) || { scheduleNickname: rStaff };
+                let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || rStaff;
+                
+                let opt = document.createElement('option');
+                // 🔥 FIX: Added 'rest_' prefix
+                opt.value = `rest_${index}`; 
+                opt.innerText = `${displayName} (Standby)`;
+                optGroupRest.appendChild(opt);
+            }
+        });
+        if (optGroupRest.children.length > 0) select.appendChild(optGroupRest);
+    }
+
+    // 3. 🌍 RELIEF STAFF (Other Branches)
     let optGroupOther = document.createElement('optgroup');
     optGroupOther.label = "🌍 Pull Relief Staff (Other Branches)";
     
-    // Only pull staff that actually belong to OTHER branches
     let empList = window.employees || employees || [];
     let otherStaff = empList.filter(e => e.branch !== branch);
     
     otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        // 🔥 NICKNAME ENGINE
         let realProfile = window.findEmployeeProfile(e.name) || e;
         let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
 
         let opt = document.createElement('option');
-        opt.value = e.name; // Use their real name for the backend to prevent bugs
+        // 🔥 FIX: Added 'global_' prefix for executeSwap to catch
+        opt.value = `global_${e.name}`; 
         opt.innerText = `${displayName} (from ${e.branch})`;
         optGroupOther.appendChild(opt);
     });
@@ -8983,9 +9003,13 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
 };
 
 window.executeSwap = function() {
-    const target = document.getElementById('swapTarget').value;
+    // 🔥 Standardized select lookup to match openSwapModal
+    const selectEl = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect') || document.getElementById('swapTarget');
+    const target = selectEl ? selectEl.value : null;
+
     if (!target) return alert("Select someone.");
-    const { day, branch, shiftId } = swapData;
+    
+    const { day, branch, shiftId } = window.swapData;
     const curStaff = currentSchedule[day][branch].scheduled[shiftId];
     
     if (target.startsWith('shift_')) {
@@ -8993,16 +9017,18 @@ window.executeSwap = function() {
         const tSId = target.replace('shift_', '');
         currentSchedule[day][branch].scheduled[shiftId] = currentSchedule[day][branch].scheduled[tSId];
         currentSchedule[day][branch].scheduled[tSId] = curStaff;
+        
     } else if (target.startsWith('global_')) {
-        // 🔥 Pulling an outsider from another branch!
+        // Pulling an outsider from another branch
         const globalName = target.replace('global_', '');
         currentSchedule[day][branch].scheduled[shiftId] = globalName;
         
-        // If the current staff wasn't UNFILLED, put them on standby so they aren't deleted from existence
+        // If the current staff wasn't UNFILLED, put them on standby
         if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !currentSchedule[day][branch].rest.includes(curStaff)) {
             currentSchedule[day][branch].rest.push(curStaff);
         }
-    } else {
+        
+    } else if (target.startsWith('rest_')) {
         // Assign from standby
         const rIdx = parseInt(target.replace('rest_', ''));
         const tStaff = currentSchedule[day][branch].rest[rIdx];
@@ -9018,15 +9044,18 @@ window.executeSwap = function() {
     window.closeModal(); 
     window.renderTables(); 
     
-    // Automatically trigger the new smart active staff display to catch the Relief addition!
-    window.updateStaffDisplay();
-    window.updateAvailDropdown();
-    window.updateUnavailabilityList();
-    
-    window.saveToCloud();
+    // Trigger UI updates (using safe checks just in case they aren't loaded yet)
+    if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
+    if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
+    if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
+    if (typeof window.saveToCloud === 'function') window.saveToCloud();
 };
 
-window.closeModal = function() { document.getElementById('swapModal').style.display = 'none'; swapData = null; };
+window.closeModal = function() { 
+    let modal = document.getElementById('swapModal') || document.getElementById('swapShiftModal');
+    if (modal) modal.style.display = 'none'; 
+    window.swapData = null; 
+};
 
 // 🔥 TAB MEMORY ENGINE
 window.switchTab = function(branch) {
