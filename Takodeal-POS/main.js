@@ -4734,7 +4734,7 @@ window.saveReqDraft = function() {
     }
 };
 
-// 🛒 NEW: FLOATING MODAL CART UI
+// 🛒 FLOATING MODAL CART UI
 window.openStockReqCartModal = function() {
     let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft')) || {};
     let html = '';
@@ -4785,6 +4785,7 @@ window.openStockReqCartModal = function() {
         confirmButtonText: '🚀 Send to HQ',
         cancelButtonText: 'Keep Editing',
         confirmButtonColor: '#10b981',
+        cancelButtonColor: '#64748b',
         customClass: { popup: 'rounded-2xl shadow-xl' }
     }).then((result) => {
         if (result.isConfirmed) {
@@ -4793,49 +4794,110 @@ window.openStockReqCartModal = function() {
     });
 };
 
+// 🚨 NEW: PENDING/REJECTED MODAL UI ENGINES
+window.openPendingModal = function(encodedOrder) {
+    let pendingOrder = JSON.parse(decodeURIComponent(encodedOrder));
+    
+    // Sync names and UOMs locally
+    pendingOrder.items.forEach(i => {
+        let liveItem = window.stockReqItemsFlat.find(live => live.id === i.sourceId || live.name === i.itemName);
+        if (liveItem) {
+            i.itemName = liveItem.name;
+            if (i.selectedUom === 'purch' || i.displayUom === i.purchaseUom) {
+                i.displayUom = liveItem.purchaseUom || liveItem.uom;
+            } else {
+                i.displayUom = liveItem.uom;
+            }
+        }
+    });
+
+    let pItemsHtml = pendingOrder.items.map(i => `
+        <div style="display:flex; justify-content:space-between; padding: 10px 0; border-bottom: 1px dashed #cbd5e1;">
+            <span style="font-weight:bold; color:#334155; font-size:14px;">${i.itemName} <br><span style="color:#ef4444; font-size:11px;">(${i.requestType})</span></span>
+            <strong style="color:#d97706; font-size:15px;">${i.displayQty} <span style="font-size:12px; color:#64748b;">${i.displayUom}</span></strong>
+        </div>
+    `).join('');
+
+    let safeOrderStr = encodeURIComponent(JSON.stringify(pendingOrder));
+
+    let html = `
+        <p style="font-size: 13px; color: #64748b; margin-top: 0; text-align: left;">You have an active request pending review by the Manager. You can edit it below (new items will merge), or cancel it entirely.</p>
+        <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; max-height: 35vh; overflow-y: auto; text-align: left;">
+            ${pItemsHtml}
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="window.editPendingRequest('${safeOrderStr}')" style="flex:1; background: #0ea5e9; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px;">✏️ Edit / Add Items</button>
+            <button onclick="window.cancelPendingRequest('${pendingOrder.id}')" style="flex:1; background: #ef4444; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px;">✖ Cancel Request</button>
+        </div>
+    `;
+
+    Swal.fire({
+        title: '⏳ Awaiting HQ Approval',
+        html: html,
+        showConfirmButton: false,
+        showCloseButton: true,
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+};
+
+window.openRejectedModal = function(encodedOrder) {
+    let rejectedOrder = JSON.parse(decodeURIComponent(encodedOrder));
+    let html = `
+        <p style="font-size: 14px; color: #991b1b; margin-top: 0; margin-bottom: 20px; text-align: left; background: #fef2f2; padding: 15px; border-radius: 8px; border: 1px dashed #fca5a5;">
+            <strong>Manager's Note:</strong><br>
+            <span style="font-style: italic;">"${rejectedOrder.rejectReason || 'Incorrect Units of Measurement. Please recount and resubmit.'}"</span>
+        </p>
+        <button onclick="window.acknowledgeRejectedRequest('${rejectedOrder.id}')" style="width: 100%; background: #ef4444; color: white; border: none; padding: 14px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2);">
+            Acknowledge & Dismiss
+        </button>
+    `;
+
+    Swal.fire({
+        title: '❌ HQ Rejected Request',
+        html: html,
+        showConfirmButton: false,
+        showCloseButton: true,
+        customClass: { popup: 'rounded-2xl shadow-xl border border-red-200' }
+    });
+};
+
+// 🔥 THE RESTORED FUNCTIONS THAT CAUSED THE CRASH
+window.acknowledgeRejectedRequest = async function(docId) {
+    try {
+        await window.updateDoc(window.doc(window.db, "purchase_orders", docId), { cashierAcknowledged: true });
+        if (typeof Swal !== 'undefined') Swal.close();
+        window.loadStockRequestUI(); 
+    } catch(e) { console.error(e); }
+};
+
+window.cancelPendingRequest = async function(docId) {
+    if (!confirm("Are you sure you want to cancel this request?")) return;
+    try {
+        await window.deleteDoc(window.doc(window.db, "purchase_orders", docId));
+        Swal.fire({title: 'Cancelled', text: 'Request has been safely cancelled.', icon: 'success', timer: 1500, showConfirmButton: false});
+        if (typeof Swal !== 'undefined') Swal.close();
+        window.loadStockRequestUI();
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to cancel.', 'error');
+    }
+};
+
 window.loadStockRequestUI = async function() {
     let container = document.getElementById('stockReqList');
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
 
+    // Remove old conflicting CSS
     let oldCss = document.getElementById('historyOverflowFix');
     if (oldCss) oldCss.remove();
     document.head.insertAdjacentHTML('beforeend', `<style id="historyOverflowFix">td div[style*="color"], td ul { max-height: 150px; overflow-y: auto; padding-right: 5px; display: block; }</style>`);
 
-    // 🔥 Restoring the cleaner 1-column layout with the new Cart Button!
-    let tabNew = document.getElementById('stockReqTabNew');
-    if (tabNew) {
-        tabNew.innerHTML = `
-        <div style="display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 15px;">
-                <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="flex: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
-                <button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (0)</button>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
-              <div>Item & HQ Status</div>
-              <div style="text-align: center;">Branch Stock</div>
-              <div style="text-align: center; color: #d97706;">Report Status</div>
-              <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
-            </div>
-            
-            <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
-              <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
-            </div>
-        </div>
-        `;
-    }
-
-    container = document.getElementById('stockReqList');
-
-    if (!document.getElementById('mergedRequestUI')) {
-        document.getElementById('view-stockreq').firstElementChild.insertAdjacentHTML('afterbegin', `<div id="mergedRequestUI" style="margin-bottom: 20px;"></div>`);
-    }
+    // KILL THE OLD YELLOW BOX CONTAINER FOR GOOD
     let mergedUI = document.getElementById('mergedRequestUI');
-    mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Scanning HQ status...</div>';
-    
+    if (mergedUI) mergedUI.remove();
+
     try {
-        // 🔥 THE FIX: Removed 'window.' from the query to stop the crash!
+        // 🔥 THE FIX: Using the localized query tools perfectly to prevent 'window.orderBy is not a function'
         const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(10));
         const poSnap = await getDocs(poQ);
         
@@ -4848,69 +4910,46 @@ window.loadStockRequestUI = async function() {
             if (d.status === "Rejected" && !d.cashierAcknowledged && !rejectedOrder) rejectedOrder = {id: docSnap.id, ...d};
         });
 
-        let dynamicHtml = '';
-
+        // 🔘 DYNAMIC BUTTON GENERATOR
+        let pendingBtnHtml = '';
         if (rejectedOrder) {
-            dynamicHtml += `
-                <div style="background: #fef2f2; border: 2px solid #fca5a5; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                    <h3 style="margin: 0 0 10px 0; color: #b91c1c; font-size: 16px;">❌ HQ Rejected Your Stock Request</h3>
-                    <p style="font-size: 13px; color: #991b1b; margin-top: 0; margin-bottom: 15px;">
-                        <strong>Reason from HQ:</strong><br>
-                        <span style="font-style: italic;">"${rejectedOrder.rejectReason || 'Incorrect Units of Measurement. Please recount and resubmit.'}"</span>
-                    </p>
-                    <button onclick="window.acknowledgeRejectedRequest('${rejectedOrder.id}')" style="width: 100%; background: #ef4444; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 8px; cursor: pointer;">
-                        Acknowledge & Create New Request
-                    </button>
-                </div>
-            `;
-        }
-
-        if (pendingOrder) {
-            pendingOrder.items.forEach(i => {
-                let liveItem = window.stockReqItemsFlat.find(live => live.id === i.sourceId || live.name === i.itemName);
-                if (liveItem) {
-                    i.itemName = liveItem.name;
-                    if (i.selectedUom === 'purch' || i.displayUom === i.purchaseUom) {
-                        i.displayUom = liveItem.purchaseUom || liveItem.uom;
-                        i.purchaseUom = liveItem.purchaseUom || liveItem.uom;
-                    } else {
-                        i.displayUom = liveItem.uom;
-                        i.baseUom = liveItem.uom;
-                    }
-                }
-            });
-
-            let pItemsHtml = pendingOrder.items.map(i => `
-                <div style="display:flex; justify-content:space-between; padding: 8px 0; border-bottom: 1px dashed #cbd5e1;">
-                    <span style="font-weight:bold; color:#334155;">${i.itemName} <span style="color:#ef4444; font-size:11px;">(${i.requestType})</span></span>
-                    <strong style="color:#d97706;">${i.displayQty} ${i.displayUom}</strong>
-                </div>
-            `).join('');
-
+            let safeOrderStr = encodeURIComponent(JSON.stringify(rejectedOrder));
+            pendingBtnHtml = `<button onclick="window.openRejectedModal('${safeOrderStr}')" style="background: #ef4444; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); white-space: nowrap; animation: pulse 1.5s infinite;">❌ HQ Rejected (1)</button>`;
+        } else if (pendingOrder) {
             let safeOrderStr = encodeURIComponent(JSON.stringify(pendingOrder));
+            pendingBtnHtml = `<button onclick="window.openPendingModal('${safeOrderStr}')" style="background: #f59e0b; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3); white-space: nowrap;">⏳ Pending HQ (1)</button>`;
+        }
 
-            dynamicHtml += `
-                <div style="background: #fffbeb; border: 2px solid #fcd34d; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);">
-                    <h3 style="margin: 0 0 10px 0; color: #b45309; font-size: 16px; display:flex; align-items:center; justify-content:space-between;">
-                        <span>⏳ Pending Request Awaiting HQ</span>
-                        <span style="font-size: 12px; color: #92400e;">${pendingOrder.timestamp.toDate().toLocaleString()}</span>
-                    </h3>
-                    <p style="font-size: 13px; color: #92400e; margin-top: 0;">You have an active request pending review by the Manager. You can edit it below (new items will merge), or cancel it.</p>
-                    
-                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; margin-bottom: 15px; max-height: 250px; overflow-y: auto;">
-                        ${pItemsHtml}
-                    </div>
-
-                    <div style="display: flex; gap: 10px;">
-                        <button onclick="window.editPendingRequest('${safeOrderStr}')" style="flex:1; background: #0ea5e9; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 8px; cursor: pointer;">✏️ Edit / Add Items</button>
-                        <button onclick="window.cancelPendingRequest('${pendingOrder.id}')" style="flex:1; background: #ef4444; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 8px; cursor: pointer;">✖ Cancel Request</button>
+        // 🔥 INJECT THE NEW BUTTON UI 🔥
+        let tabNew = document.getElementById('stockReqTabNew');
+        if (tabNew) {
+            tabNew.innerHTML = `
+            <div style="display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="flex: 1; min-width: 200px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        ${pendingBtnHtml}
+                        <button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (0)</button>
                     </div>
                 </div>
+                
+                <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
+                  <div>Item & HQ Status</div>
+                  <div style="text-align: center;">Branch Stock</div>
+                  <div style="text-align: center; color: #d97706;">Report Status</div>
+                  <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
+                </div>
+                
+                <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
+                  <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
+                </div>
+            </div>
             `;
         }
 
-        mergedUI.innerHTML = dynamicHtml;
+        container = document.getElementById('stockReqList');
 
+        // Fetch Branch and HQ Stock
         const qBranch = query(collection(db, "inventory"), where("branch", "==", branch));
         const snapBranch = await getDocs(qBranch);
 
@@ -4989,7 +5028,7 @@ window.loadStockRequestUI = async function() {
                 </div>`;
             });
         });
-        container.innerHTML = html;
+        if (container) container.innerHTML = html;
 
         try {
             let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
@@ -5017,7 +5056,7 @@ window.loadStockRequestUI = async function() {
 
     } catch (e) {
         console.error(e); 
-        if(mergedUI) mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load request data. Check console.</div>';
+        if(container) container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load request data. Check console.</div>';
     }
 };
 
@@ -5098,7 +5137,6 @@ window.submitStockRequest = async function() {
     Swal.fire({ title: 'Sending...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
     try {
-        // 🔥 MERGE ENGINE: Check for existing Pending PO
         const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Pending"));
         const poSnap = await getDocs(poQ);
 
@@ -5110,9 +5148,9 @@ window.submitStockRequest = async function() {
             itemsToRequest.forEach(newItem => {
                 let existingItemIndex = mergedItems.findIndex(i => i.sourceId === newItem.sourceId);
                 if (existingItemIndex !== -1) {
-                    mergedItems[existingItemIndex] = newItem; // Update
+                    mergedItems[existingItemIndex] = newItem; 
                 } else {
-                    mergedItems.push(newItem); // Append
+                    mergedItems.push(newItem); 
                 }
             });
 
@@ -5165,6 +5203,7 @@ window.editPendingRequest = async function(encodedOrder) {
             }
         });
         localStorage.setItem('takodeal_stock_req_draft', JSON.stringify(draft));
+        if (typeof Swal !== 'undefined') Swal.close();
         window.loadStockRequestUI();
     } catch(e) {
         console.error(e); Swal.fire('Error', 'Failed to load request into cart.', 'error');
