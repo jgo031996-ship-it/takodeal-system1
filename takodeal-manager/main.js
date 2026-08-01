@@ -8924,12 +8924,19 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     // 🔥 Convert the current staff's name to their Nickname for the header!
     let currentProfile = window.findEmployeeProfile(currentStaff) || { scheduleNickname: currentStaff };
     let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || currentStaff;
-    document.getElementById('swapCurrentStaff').innerText = currentDisplayName;
     
-    const select = document.getElementById('swapSelect');
+    // 🔥 THE BULLETPROOF FIX: Check all possible HTML IDs so it never returns "null" and crashes!
+    let titleEl = document.getElementById('swapCurrentStaff') || document.getElementById('swapStaffName') || document.getElementById('swapEmpName');
+    if (titleEl) titleEl.innerText = currentDisplayName;
+    
+    const select = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect');
+    if (!select) return; // Failsafe
+    
     select.innerHTML = '<option value="">-- Choose Staff --</option>';
 
-    let dayData = currentSchedule[day][branch];
+    // Make sure we handle global variables safely
+    let schedObj = window.currentSchedule || currentSchedule;
+    let dayData = schedObj[day][branch];
     
     let optGroupSched = document.createElement('optgroup');
     optGroupSched.label = "🔄 Swap with Scheduled Staff";
@@ -8955,7 +8962,8 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     optGroupOther.label = "🌍 Pull Relief Staff (Other Branches)";
     
     // Only pull staff that actually belong to OTHER branches
-    let otherStaff = window.employees.filter(e => e.branch !== branch);
+    let empList = window.employees || employees || [];
+    let otherStaff = empList.filter(e => e.branch !== branch);
     
     otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
         // 🔥 NICKNAME ENGINE
@@ -8970,7 +8978,8 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     
     if (optGroupOther.children.length > 0) select.appendChild(optGroupOther);
 
-    document.getElementById('swapModal').style.display = 'flex';
+    let modal = document.getElementById('swapModal') || document.getElementById('swapShiftModal');
+    if (modal) modal.style.display = 'flex';
 };
 
 window.executeSwap = function() {
