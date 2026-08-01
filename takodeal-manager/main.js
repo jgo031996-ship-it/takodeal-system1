@@ -1776,7 +1776,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (MATH & REJECT FIX)
+// 🔍 THE REVIEW REQUEST MODAL (ULTIMATE MATH FIX)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -1835,33 +1835,44 @@ window.reviewPurchaseOrder = async function(poId) {
                 let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
                 let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
 
-                // 🔥 THE MATH FIX: We calculate everything cleanly into the correct UOM!
-                let cRate = parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
-                let printUom = item.displayUom || item.uom;
+                // 🔥 THE ULTIMATE MATH FIX: Ignore corrupted branch data and rely solely on HQ!
+                let itemName = item.itemName || item.name;
+                let hqData = hqDetails[itemName] || {};
+                
+                // Always pull the Master Conversion rate from HQ directly
+                let masterCRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
+                
+                // Find the best display word (e.g., Cans, Sacks, Bottles)
+                let printUom = hqData.purchaseUom || hqData.purchUom || item.purchaseUom || item.displayUom || item.uom;
+                let baseUom = hqData.uom || hqData.baseUom || item.uom || item.baseUom;
+
                 let formatNum = (num) => (num % 1 === 0 ? num : parseFloat(num).toFixed(2));
 
                 let qtyDisplay = '';
                 if (isAudit) {
-                    // For Physical: Trust exactly what the cashier explicitly typed (displayQty)
-                    let physCount = item.displayQty !== undefined ? parseFloat(item.displayQty) : (item.physicalStock !== undefined ? (parseFloat(item.physicalStock) / cRate) : 0);
-                    
-                    // For System: Divide the backend base units by the conversion rate
-                    let sysCount = item.systemStock !== undefined ? (parseFloat(item.systemStock) / cRate) : '---';
+                    // STRICTLY use the base unit physical stock, and force-divide it by the master conversion rate
+                    let physBase = item.physicalStock !== undefined ? parseFloat(item.physicalStock) : (parseFloat(item.qty) || 0);
+                    let sysBase = item.systemStock !== undefined ? parseFloat(item.systemStock) : '---';
+
+                    let physCount = physBase / masterCRate;
+                    let sysCount = sysBase !== '---' ? (sysBase / masterCRate) : '---';
 
                     qtyDisplay = `
                         <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${formatNum(physCount)} <span style="font-size:10px;">${printUom}</span></div>
                         <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${printUom}</span></div>
                     `;
                 } else {
-                    let reqQty = item.displayQty || item.qty || 0;
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${formatNum(reqQty)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
+                    // Standard Request Mode
+                    let reqBase = parseFloat(item.qty) || 0;
+                    let reqCount = reqBase / masterCRate;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${formatNum(reqCount)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
                 }
 
                 html += `
                     <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
                         <td style="padding: 12px 10px; font-weight: bold; color: #334155;">
-                            ${item.itemName || item.name}<br>
-                            <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${formatNum(hqStock[item.itemName || item.name] || 0)} ${item.uom}</span>
+                            ${itemName}<br>
+                            <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${formatNum(hqStock[itemName] || 0)} ${baseUom}</span>
                         </td>
                         <td style="padding: 12px 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
                         <td style="padding: 12px 10px; text-align: center; vertical-align: middle;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; white-space: nowrap;">${badgeText}</span></td>
@@ -1916,10 +1927,10 @@ window.reviewPurchaseOrder = async function(poId) {
                     let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
 
                     // Extract Physical Math correctly
-                    let originalQty = parseFloat(newItem.displayQty || newItem.qty) || 0;
                     let originalBaseQty = parseFloat(newItem.qty) || 0;
+                    let originalDisplayQty = originalBaseQty / cRate; // Auto-repairs corrupted data
                     
-                    let physStockToPass = newItem.physicalStock !== undefined ? newItem.physicalStock : originalQty;
+                    let physStockToPass = newItem.physicalStock !== undefined ? newItem.physicalStock : originalBaseQty;
                     let sysStockToPass = newItem.systemStock !== undefined ? newItem.systemStock : 0;
                     
                     let isAudit = (newItem.requestType === 'Low Stock' || newItem.requestType === 'Out of Stock' || newItem.physicalStock !== undefined);
@@ -1928,7 +1939,7 @@ window.reviewPurchaseOrder = async function(poId) {
                         badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
                     }
                     
-                    let rawReqQty = isAudit ? 0 : originalQty;
+                    let rawReqQty = isAudit ? 0 : originalDisplayQty;
                     let baseReqQty = isAudit ? 0 : originalBaseQty;
 
                     let mappedItem = {
