@@ -15110,9 +15110,12 @@ window.saveNewBranch = async function() {
             title: '🎉 Branch Online!',
             text: `${name} is now officially integrated into the TAKODEÁL system!`,
             icon: 'success',
-            confirmButtonColor: '#8b5cf6', // Matches your purple modal theme
+            confirmButtonColor: '#8b5cf6', 
             customClass: { popup: 'rounded-2xl shadow-xl' }
         });
+        
+        // 🔥 THE FIX: Passed the 'name' variable directly into the Automator!
+        window.autoSetupNewBranch(name); 
         
         document.getElementById('addBranchModal').style.display = 'none';
         window.loadBranchManager();
@@ -15131,6 +15134,10 @@ window.deleteBranch = async function(docId, name) {
     try {
         await deleteDoc(doc(db, "branches", docId));
         alert(`🗑️ ${name} has been taken offline.`);
+        
+        // 🔥 THE FIX: Passed the 'name' variable directly into the Automator!
+        window.autoCleanupDeletedBranch(name);
+        
         window.loadBranchManager();
     } catch (e) { console.error(e); alert("Failed to delete branch."); }
 };
@@ -15198,6 +15205,7 @@ window.deleteBranch = async function(docId, name) {
 
     try {
         await deleteDoc(doc(db, "branches", docId));
+        window.autoCleanupDeletedBranch(branchNameVariable);
         alert(`🗑️ ${name} has been taken offline.`);
         window.loadBranchManager();
     } catch (e) { console.error(e); alert("Failed to delete branch."); }
@@ -19170,4 +19178,77 @@ window.generateManagerCOE = function(data) {
             <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
         </body></html>
     `);
+};
+
+// ==========================================
+// 🌍 BRANCH ECOSYSTEM AUTOMATOR
+// ==========================================
+
+window.autoSetupNewBranch = async function(branchName) {
+    try {
+        // 1. Add Default Shifts to Schedule Manager
+        const schedRef = doc(db, "settings", "global_schedule");
+        const schedSnap = await getDoc(schedRef);
+        if (schedSnap.exists()) {
+            let data = schedSnap.data();
+            if (!data.branchConfig) data.branchConfig = {};
+            if (!data.branchConfig[branchName]) {
+                data.branchConfig[branchName] = [
+                    { id: 'shift_1', name: 'Morning (9am-5:30pm)' },
+                    { id: 'shift_2', name: 'Mid (4:30pm-12:30am)' },
+                    { id: 'shift_3', name: 'Night 1 (6:30pm-3am)' }
+                ];
+                await updateDoc(schedRef, { branchConfig: data.branchConfig });
+            }
+        }
+
+        // 2. Clone Cabantian's Live Inventory (with 0 stock)
+        const cabantianInv = collection(db, "inventory_Cabantian");
+        const newBranchInv = collection(db, "inventory_" + branchName);
+        const snap = await getDocs(cabantianInv);
+        
+        snap.forEach(async (docSnap) => {
+            let item = docSnap.data();
+            item.stock = 0; // Reset stock to 0 for the new branch
+            await setDoc(doc(newBranchInv, docSnap.id), item);
+        });
+
+        console.log("✅ Auto-Setup Complete for", branchName);
+    } catch(e) { console.error("Auto Setup Error:", e); }
+};
+
+window.autoCleanupDeletedBranch = async function(branchName) {
+    try {
+        // Remove from Schedule Manager
+        const schedRef = doc(db, "settings", "global_schedule");
+        const schedSnap = await getDoc(schedRef);
+        if (schedSnap.exists()) {
+            let data = schedSnap.data();
+            let needsUpdate = false;
+            
+            if (data.branchConfig && data.branchConfig[branchName]) {
+                delete data.branchConfig[branchName];
+                needsUpdate = true;
+            }
+            
+            if (data.currentSchedule) {
+                for (let day in data.currentSchedule) {
+                    if (data.currentSchedule[day][branchName]) {
+                        delete data.currentSchedule[day][branchName];
+                        needsUpdate = true;
+                    }
+                }
+            }
+            if (needsUpdate) await updateDoc(schedRef, { branchConfig: data.branchConfig, currentSchedule: data.currentSchedule });
+        }
+        console.log("🗑️ Auto-Cleanup Complete for", branchName);
+    } catch(e) { console.error("Auto Cleanup Error:", e); }
+};
+
+// 🔥 UNIVERSAL NICKNAME FORMATTER (For Step 3)
+window.formatDisplayName = function(realName) {
+    if (!realName || realName === "N/A" || realName === "UNFILLED" || realName === "-") return realName;
+    let profile = window.findEmployeeProfile(realName);
+    if (profile) return profile.scheduleNickname || profile.scheduleName || profile.cashierName || realName;
+    return realName;
 };
