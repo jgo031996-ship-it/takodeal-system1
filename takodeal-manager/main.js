@@ -1821,55 +1821,69 @@ window.reviewPurchaseOrder = async function(poId) {
                 </thead>
                 <tbody>`;
         
-        po.items.forEach(item => {
-            let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
-            let badgeText = item.requestType || 'Request';
-            
-            // Rebuild corrupted Delayed badges!
-            if (badgeText === 'Delayed / Backlogged' && isAudit) {
-                let phys = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
-                badgeText = (phys <= 0) ? 'Out of Stock' : 'Low Stock';
-            }
+        if (po.items && po.items.length > 0) {
+            po.items.forEach(item => {
+                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
+                let badgeText = item.requestType || 'Request';
+                
+                if (badgeText === 'Delayed / Backlogged' && isAudit) {
+                    let phys = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
+                    badgeText = (phys <= 0) ? 'Out of Stock' : 'Low Stock';
+                }
 
-            let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
-            let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
-            let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
+                let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
+                let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
+                let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
 
-            // 🔥 THE FIX: Extract Physical Count correctly!
-            let qtyDisplay = '';
-            if (isAudit) {
-                let physCount = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
-                let sysCount = item.systemStock !== undefined ? item.systemStock : '---';
+                // 🔥 THE FIX: Extract Physical Math correctly using displayQty, or divide base units by conversion rate!
+                let qtyDisplay = '';
+                if (isAudit) {
+                    let cRate = parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
+                    let physCount = item.displayQty !== undefined ? item.displayQty : (item.physicalStock !== undefined ? (item.physicalStock / cRate) : 0);
+                    let sysCount = item.systemStock !== undefined ? (item.systemStock / cRate) : '---';
 
-                qtyDisplay = `
-                    <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
-                    <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                    // Clean up decimals so it shows "13" instead of "13.000" but keeps "1.5"
+                    let formatNum = (num) => (num % 1 === 0 ? num : parseFloat(num).toFixed(2));
+
+                    qtyDisplay = `
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${formatNum(physCount)} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                    `;
+                } else {
+                    let reqQty = item.displayQty || item.qty || 0;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
+                }
+
+                html += `
+                    <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
+                        <td style="padding: 12px 10px; font-weight: bold; color: #334155;">
+                            ${item.itemName || item.name}<br>
+                            <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${hqStock[item.itemName || item.name] || 0} ${item.uom}</span>
+                        </td>
+                        <td style="padding: 12px 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
+                        <td style="padding: 12px 10px; text-align: center; vertical-align: middle;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; white-space: nowrap;">${badgeText}</span></td>
+                    </tr>
                 `;
-            } else {
-                let reqQty = item.displayQty || item.qty || 0;
-                qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
-            }
-
-            html += `
-                <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
-                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">
-                        ${item.itemName || item.name}<br>
-                        <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${hqStock[item.itemName || item.name] || 0} ${item.uom}</span>
-                    </td>
-                    <td style="padding: 12px 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
-                    <td style="padding: 12px 10px; text-align: center; vertical-align: middle;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; white-space: nowrap;">${badgeText}</span></td>
-                </tr>
-            `;
-        });
+            });
+        }
         html += `</tbody></table></div>`;
+        
+        // 🔥 INJECT THE REJECT BUTTON DIRECTLY INTO THE MODAL
+        html += `
+            <div style="margin-top: 15px;">
+                <button type="button" onclick="window.processRejectRequest('${poId}')" style="width: 100%; background: #dc2626; color: white; border: none; padding: 12px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2); transition: 0.2s;">
+                    🛑 Reject Request & Notify Branch
+                </button>
+            </div>
+        `;
         
         let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📦 Request from ${po.branch}`;
         
         Swal.fire({
             title: titleTxt, html: html, width: '600px',
             showCancelButton: true, showDenyButton: true,
-            confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#dc2626',
-            confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '✖ Postpone / Set Aside', cancelButtonText: 'Close Window',
+            confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#d97706', // Changed Deny to Orange so it doesn't clash with Red Reject
+            confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏸️ Postpone / Set Aside', cancelButtonText: 'Close Window',
             customClass: { popup: 'rounded-2xl shadow-xl' }
         }).then(async (result) => {
             if (result.isConfirmed) {
@@ -1898,7 +1912,7 @@ window.reviewPurchaseOrder = async function(poId) {
                     let bUom = hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units';
                     let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
 
-                    // 🔥 THE FIX: Extract Physical Math correctly BEFORE sending to cart
+                    // Extract Physical Math correctly
                     let originalQty = parseFloat(newItem.displayQty || newItem.qty) || 0;
                     let originalBaseQty = parseFloat(newItem.qty) || 0;
                     
@@ -1911,7 +1925,6 @@ window.reviewPurchaseOrder = async function(poId) {
                         badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
                     }
                     
-                    // Force the actual Cart quantity to 0 so we don't accidentally send what they counted!
                     let rawReqQty = isAudit ? 0 : originalQty;
                     let baseReqQty = isAudit ? 0 : originalBaseQty;
 
@@ -1978,7 +1991,7 @@ window.reviewPurchaseOrder = async function(poId) {
                     inputLabel: 'Reason for postponing',
                     inputPlaceholder: 'Out of stock at HQ...',
                     showCancelButton: true,
-                    confirmButtonColor: '#dc2626',
+                    confirmButtonColor: '#d97706',
                     confirmButtonText: 'Set Aside',
                     inputValidator: (value) => { if (!value) return 'You need to provide a reason!'; }
                 });
@@ -1992,6 +2005,37 @@ window.reviewPurchaseOrder = async function(poId) {
             }
         });
     } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
+};
+
+window.processRejectRequest = async function(docId) {
+    if (!docId) return;
+
+    let reason = prompt(
+        "🛑 REJECTING REQUEST\n\nEnter the reason for rejection (this will pop up on the Cashier's screen):",
+        "Incorrect Unit of Quantity (e.g., inputted Cans instead of Grams). Please recount physically and submit a new request."
+    );
+
+    if (reason === null || reason.trim() === "") return;
+
+    Swal.fire({title: 'Rejecting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        await updateDoc(doc(db, "purchase_orders", docId), { 
+            status: "Rejected",
+            rejectReason: reason,
+            cashierAcknowledged: false, // Forces the red box to appear for the cashier!
+            processedAt: serverTimestamp()
+        });
+        
+        Swal.fire('✅ Rejected!', 'The request was rejected and the branch has been notified.', 'success');
+        
+        // Refresh the lists
+        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+        if (typeof window.startPOListener === 'function') window.startPOListener();
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to reject request.', 'error');
+    }
 };
 
 // ==========================================
