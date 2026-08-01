@@ -19310,3 +19310,31 @@ window.formatDisplayName = function(realName) {
     if (profile) return profile.scheduleNickname || profile.scheduleName || profile.cashierName || realName;
     return realName;
 };
+
+window.deleteCurrentStaff = function() {
+    // Prompt the user to type the name manually to prevent accidental clicks
+    let staffName = prompt("⚠️ WARNING: This will permanently delete this staff member and all their data.\n\nTo confirm, type the exact Full Name of the staff member:");
+    
+    if (!staffName) return; // User clicked cancel or left it blank
+
+    // Check how many employees we have before filtering
+    let initialCount = window.employees.length;
+    
+    // Filter out the staff member
+    window.employees = window.employees.filter(emp => emp.name.toLowerCase() !== staffName.toLowerCase());
+
+    // If the count didn't change, the name was typed wrong
+    if (window.employees.length === initialCount) {
+        return alert("❌ Deletion Failed: Staff name not found. Make sure the spelling is exact.");
+    }
+
+    // Save the changes and update the UI
+    if (typeof window.saveToCloud === 'function') window.saveToCloud();
+    alert(`✅ Successfully deleted ${staffName}.`);
+    
+    // Close the modal and refresh the table
+    let modal = document.getElementById('employeeProfileModal'); // Change ID if yours is different
+    if (modal) modal.style.display = 'none';
+    
+    location.reload(); // Refresh the page to update all lists safely
+};
