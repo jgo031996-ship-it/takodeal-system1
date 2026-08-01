@@ -19399,3 +19399,6 @@ window.deleteCurrentStaff = function() {
     
     location.reload(); // Refresh the page to update all lists safely
 };
+
+// Link the new Logistics Feed buttons to the Review Modal
+window.reviewStockRequest = window.reviewPurchaseOrder;
