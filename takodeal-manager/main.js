@@ -8921,55 +8921,85 @@ window.generateSchedule = function() {
 window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     window.swapData = { day, branch, shiftId, currentStaff };
     
-    // 🔥 Convert the current staff's name to their Nickname for the header!
-    let currentProfile = window.findEmployeeProfile(currentStaff) || { scheduleNickname: currentStaff };
+    // 🔥 Safe profile check
+    let profileFunc = window.findEmployeeProfile || function() { return null; };
+    let currentProfile = profileFunc(currentStaff) || { scheduleNickname: currentStaff };
     let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || currentStaff;
     
-    // Check all possible HTML IDs for the title
+    // Title check
     let titleEl = document.getElementById('swapCurrentStaff') || document.getElementById('swapStaffName') || document.getElementById('swapEmpName');
     if (titleEl) titleEl.innerText = currentDisplayName;
     
-    // 🔥 Standardized select lookup to fix ID mismatch
     const select = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect') || document.getElementById('swapTarget');
     if (!select) return; // Failsafe
     
     select.innerHTML = '<option value="">-- Choose Staff --</option>';
 
-    let schedObj = window.currentSchedule || currentSchedule;
-    let dayData = schedObj[day][branch];
+    // 🚑 SAFELY GRAB THE SCHEDULE OBJECT
+    let schedObj = window.currentSchedule || (typeof currentSchedule !== 'undefined' ? currentSchedule : null);
     
+    if (!schedObj) {
+        console.error("🚨 CRASH PREVENTED: currentSchedule data is missing globally.");
+        return alert("Error: Schedule data not loaded yet.");
+    }
+
+    let dayData;
+    
+    // 🚑 SELF-HEALING FIREWALL: Check the structure before trying to read it!
+    if (schedObj[day] && schedObj[day][branch]) {
+        // Structure A: currentSchedule[day][branch] (Expected behavior)
+        dayData = schedObj[day][branch];
+    } else if (schedObj[branch]) {
+        // Structure B: currentSchedule[branch] (Self-healing if 'day' isn't used as the top layer)
+        console.warn(`⚠️ Warning: 'day' (${day}) not found, but found '${branch}'. Adjusting path automatically.`);
+        dayData = schedObj[branch];
+    } else {
+        // CRITICAL FAILURE: It's broken, so we log the variables to show you exactly why.
+        console.error("🚨 DATA MISMATCH IN openSwapModal!");
+        console.error("-> Day Passed:", day);
+        console.error("-> Branch Passed:", branch);
+        console.error("-> Inside Schedule Object:", schedObj);
+        return alert(`Error pulling data for Day: ${day}, Branch: ${branch}. Check F12 Console.`);
+    }
+
     // 1. 🔄 SCHEDULED STAFF
     let optGroupSched = document.createElement('optgroup');
     optGroupSched.label = "🔄 Swap with Scheduled Staff";
     
-    for (let sId in dayData.scheduled) {
-        let staff = dayData.scheduled[sId];
-        if (staff !== "N/A" && staff !== "UNFILLED" && staff !== currentStaff) {
-            let shiftName = window.branchConfig[branch].find(s => s.id === sId)?.name || sId;
-            
-            let realProfile = window.findEmployeeProfile(staff) || { scheduleNickname: staff };
-            let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || staff;
+    if (dayData.scheduled) {
+        for (let sId in dayData.scheduled) {
+            let staff = dayData.scheduled[sId];
+            if (staff !== "N/A" && staff !== "UNFILLED" && staff !== currentStaff) {
+                let shiftName = sId;
+                // Safe check for branch configurations
+                if (window.branchConfig && window.branchConfig[branch]) {
+                    let foundShift = window.branchConfig[branch].find(s => s.id === sId);
+                    if (foundShift) shiftName = foundShift.name;
+                }
+                
+                let realProfile = profileFunc(staff) || { scheduleNickname: staff };
+                let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || staff;
 
-            let opt = document.createElement('option');
-            // 🔥 FIX: Added 'shift_' prefix for executeSwap to catch
-            opt.value = `shift_${sId}`;  
-            opt.innerText = `${displayName} (from ${shiftName})`;
-            optGroupSched.appendChild(opt);
+                let opt = document.createElement('option');
+                opt.value = `shift_${sId}`;  
+                opt.innerText = `${displayName} (from ${shiftName})`;
+                optGroupSched.appendChild(opt);
+            }
         }
+        if (optGroupSched.children.length > 0) select.appendChild(optGroupSched);
     }
-    if (optGroupSched.children.length > 0) select.appendChild(optGroupSched);
 
-    // 2. ☕ STANDBY/REST STAFF (🔥 ADDED: Missing from your original code)
+    // 2. ☕ STANDBY/REST STAFF
     let optGroupRest = document.createElement('optgroup');
     optGroupRest.label = "☕ Assign from Standby";
+    
     if (dayData.rest && dayData.rest.length > 0) {
         dayData.rest.forEach((rStaff, index) => {
             if (rStaff !== currentStaff) {
-                let realProfile = window.findEmployeeProfile(rStaff) || { scheduleNickname: rStaff };
+                let realProfile = profileFunc(rStaff) || { scheduleNickname: rStaff };
                 let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || rStaff;
                 
                 let opt = document.createElement('option');
-                // 🔥 FIX: Added 'rest_' prefix
                 opt.value = `rest_${index}`; 
                 opt.innerText = `${displayName} (Standby)`;
                 optGroupRest.appendChild(opt);
@@ -8982,15 +9012,14 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     let optGroupOther = document.createElement('optgroup');
     optGroupOther.label = "🌍 Pull Relief Staff (Other Branches)";
     
-    let empList = window.employees || employees || [];
+    let empList = window.employees || (typeof employees !== 'undefined' ? employees : []);
     let otherStaff = empList.filter(e => e.branch !== branch);
     
     otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        let realProfile = window.findEmployeeProfile(e.name) || e;
+        let realProfile = profileFunc(e.name) || e;
         let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
 
         let opt = document.createElement('option');
-        // 🔥 FIX: Added 'global_' prefix for executeSwap to catch
         opt.value = `global_${e.name}`; 
         opt.innerText = `${displayName} (from ${e.branch})`;
         optGroupOther.appendChild(opt);
