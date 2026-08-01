@@ -4696,16 +4696,17 @@ window.processStoreUse = async function() {
 };
 
 // ========================================================
-// 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES & AUTO-SAVE)
+// 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES & MODAL CART)
 // ========================================================
 window.stockReqItemsFlat = [];
 
-// 🔥 THE FIX: Upgraded Auto-Save Engine (Now triggers Live Cart)
+// 🔥 THE FIX: Auto-Saves and updates the Cart Button Badge!
 window.saveReqDraft = function() {
     let selects = document.querySelectorAll('.req-type-select');
     if (selects.length === 0) return; 
 
     let draft = {};
+    let count = 0;
     selects.forEach(select => {
         if (select.value && select.value !== "None") {
             let id = select.getAttribute('data-id');
@@ -4717,17 +4718,24 @@ window.saveReqDraft = function() {
                 count: countEl ? countEl.value : "",
                 uom: uomEl ? uomEl.value : "base"
             };
+            count++;
         }
     });
     localStorage.setItem('takodeal_stock_req_draft', JSON.stringify(draft));
-    window.renderStockReqCart(); // Instantly update the cart UI!
+    
+    // Animate the button to show it updated!
+    let btnCart = document.getElementById('btnViewStockCart');
+    if (btnCart) {
+        btnCart.innerText = `🛒 View Cart (${count})`;
+        if (count > 0) {
+            btnCart.style.animation = "pulse 0.5s";
+            setTimeout(() => btnCart.style.animation = "", 500);
+        }
+    }
 };
 
-// 🛒 NEW: LIVE CART RENDERER
-window.renderStockReqCart = function() {
-    let cartBody = document.getElementById('stockReqCartBody');
-    if (!cartBody) return;
-
+// 🛒 NEW: FLOATING MODAL CART UI
+window.openStockReqCartModal = function() {
     let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft')) || {};
     let html = '';
     let hasItems = false;
@@ -4740,7 +4748,7 @@ window.renderStockReqCart = function() {
             
             hasItems = true;
             let itemName = itemData.name;
-            let qtyText = req.type === "Out of Stock" ? "0" : (req.count !== "" ? req.count : "?");
+            let qtyText = req.type === "Out of Stock" ? "0" : (req.count !== "" ? req.count : "<i style='color:#ef4444;'>Missing Count</i>");
             
             let pUom = itemData.purchaseUom || itemData.uom || 'units';
             let bUom = itemData.uom || 'units';
@@ -4751,14 +4759,14 @@ window.renderStockReqCart = function() {
             let alertBorder = req.type === "Out of Stock" ? "#fca5a5" : "#fcd34d";
 
             html += `
-                <div style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: white;">
+                <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: white; text-align: left;">
                     <div>
                         <strong style="color: #1e293b; font-size: 14px;">${itemName}</strong>
                         <div style="margin-top: 4px;">
                             <span style="background: ${alertBg}; color: ${alertColor}; border: 1px solid ${alertBorder}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;">${req.type}</span>
                         </div>
                     </div>
-                    <div style="text-align: right; color: #0284c7; font-weight: 900; font-size: 14px;">
+                    <div style="text-align: right; color: #0284c7; font-weight: 900; font-size: 15px;">
                         ${qtyText} <span style="font-size: 11px; color: #64748b; font-weight: normal;">${uomText}</span>
                     </div>
                 </div>
@@ -4767,10 +4775,22 @@ window.renderStockReqCart = function() {
     }
 
     if (!hasItems) {
-        cartBody.innerHTML = '<div style="padding: 30px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 14px;">Cart is empty.<br><span style="font-size: 11px; font-weight: normal;">Select items on the left.</span></div>';
-    } else {
-        cartBody.innerHTML = html;
+        return Swal.fire('Cart is Empty', 'Please mark items as Low Stock or Out of Stock from the list first.', 'info');
     }
+
+    Swal.fire({
+        title: '🛒 Request Cart',
+        html: `<div style="max-height: 45vh; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px;">${html}</div>`,
+        showCancelButton: true,
+        confirmButtonText: '🚀 Send to HQ',
+        cancelButtonText: 'Keep Editing',
+        confirmButtonColor: '#10b981',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.submitStockRequest();
+        }
+    });
 };
 
 window.loadStockRequestUI = async function() {
@@ -4778,48 +4798,34 @@ window.loadStockRequestUI = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
 
-    // 🔥 THE FIX: Strip out the CSS that was hiding the Deliveries Tab
     let oldCss = document.getElementById('historyOverflowFix');
     if (oldCss) oldCss.remove();
     document.head.insertAdjacentHTML('beforeend', `<style id="historyOverflowFix">td div[style*="color"], td ul { max-height: 150px; overflow-y: auto; padding-right: 5px; display: block; }</style>`);
 
-    // 🔥 THE FIX: Inject the 2-Column Cart Layout!
+    // 🔥 Restoring the cleaner 1-column layout with the new Cart Button!
     let tabNew = document.getElementById('stockReqTabNew');
-    if (tabNew && !document.getElementById('stockReqCartBody')) {
+    if (tabNew) {
         tabNew.innerHTML = `
-        <div style="display: flex; gap: 20px; align-items: flex-start;">
-            <div style="flex: 1; display: flex; flex-direction: column;">
-                <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold; margin-bottom: 15px;">
-                
-                <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
-                  <div>Item & HQ Status</div>
-                  <div style="text-align: center;">Branch Stock</div>
-                  <div style="text-align: center; color: #d97706;">Report Status</div>
-                  <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
-                </div>
-                
-                <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
-                  <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
-                </div>
+        <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 15px;">
+                <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="flex: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
+                <button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (0)</button>
             </div>
-
-            <!-- THE NEW LIVE CART PANEL -->
-            <div style="width: 350px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; position: sticky; top: 0; display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-                 <div style="padding: 15px; border-bottom: 2px solid #e2e8f0; background: white; border-radius: 12px 12px 0 0;">
-                     <h3 style="margin: 0; color: #0f172a; font-size: 16px; display: flex; align-items: center; gap: 8px;">🛒 Request Cart</h3>
-                 </div>
-                 <div id="stockReqCartBody" style="min-height: 250px; max-height: 50vh; overflow-y: auto; background: white;">
-                     <div style="padding: 30px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 14px;">Cart is empty.<br><span style="font-size: 11px; font-weight: normal;">Select items on the left.</span></div>
-                 </div>
-                 <div style="padding: 15px; border-top: 1px solid #e2e8f0; background: white; border-radius: 0 0 12px 12px;">
-                     <button onclick="window.submitStockRequest()" id="btnSubmitStockReq" style="width: 100%; background: #10b981; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); transition: 0.2s;">🚀 Send Request to HQ</button>
-                 </div>
+            
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
+              <div>Item & HQ Status</div>
+              <div style="text-align: center;">Branch Stock</div>
+              <div style="text-align: center; color: #d97706;">Report Status</div>
+              <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
+            </div>
+            
+            <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
+              <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
             </div>
         </div>
         `;
     }
 
-    // Re-grab container after rewriting HTML
     container = document.getElementById('stockReqList');
 
     if (!document.getElementById('mergedRequestUI')) {
@@ -4829,9 +4835,9 @@ window.loadStockRequestUI = async function() {
     mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Scanning HQ status...</div>';
     
     try {
-        // 🔥 THE FIX: Removed Deliveries Logic! Deliveries ONLY live in the 🚚 tab now.
-        const poQ = window.query(window.collection(window.db, "purchase_orders"), window.where("branch", "==", branch), window.orderBy("timestamp", "desc"), window.limit(10));
-        const poSnap = await window.getDocs(poQ);
+        // 🔥 THE FIX: Removed 'window.' from the query to stop the crash!
+        const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(10));
+        const poSnap = await getDocs(poQ);
         
         let pendingOrder = null;
         let rejectedOrder = null;
@@ -4860,7 +4866,6 @@ window.loadStockRequestUI = async function() {
         }
 
         if (pendingOrder) {
-            // Live Sync Injector
             pendingOrder.items.forEach(i => {
                 let liveItem = window.stockReqItemsFlat.find(live => live.id === i.sourceId || live.name === i.itemName);
                 if (liveItem) {
@@ -4906,12 +4911,11 @@ window.loadStockRequestUI = async function() {
 
         mergedUI.innerHTML = dynamicHtml;
 
-        // Render Item Grid
-        const qBranch = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
-        const snapBranch = await window.getDocs(qBranch);
+        const qBranch = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snapBranch = await getDocs(qBranch);
 
-        const qHQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office"));
-        const snapHQ = await window.getDocs(qHQ);
+        const qHQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const snapHQ = await getDocs(qHQ);
         let hqStockMap = {};
         snapHQ.forEach(doc => { hqStockMap[doc.data().name] = parseFloat(doc.data().currentStock || 0); });
 
@@ -4938,7 +4942,6 @@ window.loadStockRequestUI = async function() {
                 window.stockReqItemsFlat.push(item);
                 let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
                 
-                // 🔥 THE MATH FIX: Calculate system stock cleanly into PURCHASED UOM!
                 let purchStock = parseFloat(item.currentStock || 0) / conv;
                 let safeStockDisplay = purchStock.toFixed(2);
                 let displayUomLabel = item.purchaseUom || item.purchUom || item.uom || 'units';
@@ -4988,9 +4991,9 @@ window.loadStockRequestUI = async function() {
         });
         container.innerHTML = html;
 
-        // Restore memory
         try {
             let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
+            let draftCount = 0;
             if (savedDraft) {
                 for (let id in savedDraft) {
                     let select = document.getElementById(`reqType_${id}`);
@@ -5000,18 +5003,21 @@ window.loadStockRequestUI = async function() {
                     if (select && savedDraft[id].type && savedDraft[id].type !== "None") {
                         select.value = savedDraft[id].type;
                         if (typeof window.toggleActualCount === 'function') window.toggleActualCount(id);
+                        draftCount++;
                     }
                     if (countEl && savedDraft[id].count !== "") countEl.value = savedDraft[id].count;
                     if (uomEl && savedDraft[id].uom) uomEl.value = savedDraft[id].uom;
                 }
             }
-        } catch(e) {}
+            
+            let btnCart = document.getElementById('btnViewStockCart');
+            if (btnCart) btnCart.innerText = `🛒 View Cart (${draftCount})`;
 
-        window.renderStockReqCart();
+        } catch(e) {}
 
     } catch (e) {
         console.error(e); 
-        if(mergedUI) mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load request data.</div>';
+        if(mergedUI) mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load request data. Check console.</div>';
     }
 };
 
@@ -5089,17 +5095,14 @@ window.submitStockRequest = async function() {
         return Swal.fire('Empty Request', 'Please mark at least one item as Low Stock or Out of Stock.', 'warning');
     }
 
-    let btn = document.getElementById('btnSubmitStockReq');
-    let origText = btn ? btn.innerText : "🚀 Send Request to HQ";
-    if (btn) { btn.innerText = "⏳ Sending..."; btn.disabled = true; }
+    Swal.fire({ title: 'Sending...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
     try {
         // 🔥 MERGE ENGINE: Check for existing Pending PO
-        const poQ = window.query(window.collection(window.db, "purchase_orders"), window.where("branch", "==", branch), window.where("status", "==", "Pending"));
-        const poSnap = await window.getDocs(poQ);
+        const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Pending"));
+        const poSnap = await getDocs(poQ);
 
         if (!poSnap.empty) {
-            // Update existing (Merge them seamlessly!)
             let existingPO = poSnap.docs[0];
             let existingData = existingPO.data();
             let mergedItems = existingData.items || [];
@@ -5107,49 +5110,42 @@ window.submitStockRequest = async function() {
             itemsToRequest.forEach(newItem => {
                 let existingItemIndex = mergedItems.findIndex(i => i.sourceId === newItem.sourceId);
                 if (existingItemIndex !== -1) {
-                    // Replace the old item data with the new updated count
-                    mergedItems[existingItemIndex] = newItem;
+                    mergedItems[existingItemIndex] = newItem; // Update
                 } else {
-                    // Add new item to the request
-                    mergedItems.push(newItem);
+                    mergedItems.push(newItem); // Append
                 }
             });
 
             let newRequestedBy = existingData.requestedBy || "";
             if (!newRequestedBy.includes(cashier)) {
-                newRequestedBy += ` & ${cashier}`; // Append name if not already there!
+                newRequestedBy += ` & ${cashier}`;
             }
 
-            await window.updateDoc(existingPO.ref, {
+            await updateDoc(existingPO.ref, {
                 items: mergedItems,
                 requestedBy: newRequestedBy,
-                timestamp: new Date() // Reset timestamp to now so it bumps to the top
+                timestamp: new Date()
             });
 
         } else {
-            // Create New
-            await window.addDoc(window.collection(window.db, "purchase_orders"), {
+            await addDoc(collection(db, "purchase_orders"), {
                 branch: branch, type: "Internal Request", items: itemsToRequest, status: "Pending", requestedBy: cashier, timestamp: new Date() 
             });
         }
 
         for (let alert of fraudAlerts) {
-            await window.addDoc(window.collection(window.db, "manager_alerts"), {
+            await addDoc(collection(db, "manager_alerts"), {
                 type: "STOCK_REQUEST_FRAUD", branch: branch, cashier: cashier,
                 message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(2)} ${alert.uom}. Possible missing stock!`,
                 timestamp: new Date(), isRead: false
             });
         }
 
-        // Wipe memory
         localStorage.removeItem('takodeal_stock_req_draft');
-        
         Swal.fire('✅ Sent to HQ!', 'Your stock request has been successfully submitted.', 'success');
         window.loadStockRequestUI(); 
     } catch(e) {
         console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
-    } finally {
-        if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
 
