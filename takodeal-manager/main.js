@@ -748,7 +748,7 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empEmergencyName').value = data.emergencyName || '';
     document.getElementById('empEmergencyPhone').value = data.emergencyPhone || '';
     document.getElementById('empEmail').value = data.email || '';
-    document.getElementById('empScheduleName').value = data.scheduleName || '';
+    document.getElementById('empScheduleName').value = data.scheduleNickname || data.scheduleName || '';
 
     // 🔥 NEW: LOAD PROFILE PICTURE AND GOV ID LINKS 🔥
     let profilePicEl = document.getElementById('masterProfilePic');
@@ -894,7 +894,7 @@ window.saveEmployeeProfile = async function() {
         emergencyName: document.getElementById('empEmergencyName').value.trim(),
         emergencyPhone: document.getElementById('empEmergencyPhone').value.trim(),
         email: document.getElementById('empEmail').value.trim(),
-        scheduleName: document.getElementById('empScheduleName').value.trim(),
+        scheduleNickname: document.getElementById('empScheduleName').value.trim(),
     };
 
     // 🔥 HR ENGINE: Flag brand new staff for their Initial Contract
@@ -8671,22 +8671,28 @@ window.updateStaffDisplay = function() {
         wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}.</div>`;
     } else {
         branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+            // 🔥 NICKNAME ENGINE: Look up their profile to find the Nickname
+            let realProfile = window.findEmployeeProfile(e.name) || e;
+            let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
+
             const chip = document.createElement('div'); 
             chip.className = 'staff-chip';
             chip.style.cssText = 'background:#f0fdf4; border:1px solid #bbf7d0; padding:8px 15px; border-radius:20px; display:inline-block; margin:4px; font-weight:bold; color:#16a34a; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
-            chip.innerHTML = `👤 ${e.name}`;
+            chip.innerHTML = `👤 ${displayName}`;
             wrapper.appendChild(chip);
         });
 
         if (reliefStaffNames.size > 0) {
             Array.from(reliefStaffNames).sort().forEach(name => {
+                // 🔥 NICKNAME ENGINE: Look up their profile to find the Nickname
                 let realProfile = window.findEmployeeProfile(name);
                 let originBranch = realProfile ? realProfile.branch : 'Unknown';
+                let displayName = realProfile ? (realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || name) : name;
 
                 const chip = document.createElement('div'); 
                 chip.className = 'staff-chip';
                 chip.style.cssText = 'background:#fffbeb; border:1px solid #fcd34d; padding:8px 15px; border-radius:20px; display:inline-block; margin:4px; font-weight:bold; color:#d97706; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
-                chip.innerHTML = `🌍 ${name} <span style="font-size:10px; color:#b45309;">(Relief from ${originBranch})</span>`;
+                chip.innerHTML = `🌍 ${displayName} <span style="font-size:10px; color:#b45309;">(Relief from ${originBranch})</span>`;
                 wrapper.appendChild(chip);
             });
         }
@@ -8706,7 +8712,13 @@ window.updateAvailDropdown = function() {
     let optGroupMain = document.createElement('optgroup');
     optGroupMain.label = `📍 ${targetBranch} Staff`;
     branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        const opt = document.createElement('option'); opt.value = e.name; opt.innerText = e.name;
+        // 🔥 NICKNAME ENGINE: Change the UI label, but keep the Value the same for the database
+        let realProfile = window.findEmployeeProfile(e.name) || e;
+        let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
+        
+        const opt = document.createElement('option'); 
+        opt.value = e.name; 
+        opt.innerText = displayName;
         optGroupMain.appendChild(opt);
     });
     select.appendChild(optGroupMain);
@@ -8714,7 +8726,13 @@ window.updateAvailDropdown = function() {
     let optGroupOther = document.createElement('optgroup');
     optGroupOther.label = `🌍 Relief Staff (Other Branches)`;
     otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        const opt = document.createElement('option'); opt.value = e.name; opt.innerText = `${e.name} (${e.branch})`;
+        // 🔥 NICKNAME ENGINE: Change the UI label, but keep the Value the same for the database
+        let realProfile = window.findEmployeeProfile(e.name) || e;
+        let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
+
+        const opt = document.createElement('option'); 
+        opt.value = e.name; 
+        opt.innerText = `${displayName} (${e.branch})`;
         optGroupOther.appendChild(opt);
     });
     select.appendChild(optGroupOther);
@@ -8749,11 +8767,14 @@ window.updateUnavailabilityList = function() {
                 hasLeaves = true;
                 let reliefTag = (eObj && eObj.branch !== targetBranch) ? ` <span style="font-size:10px; color:#d97706;">(Relief)</span>` : '';
                 
+                // 🔥 NICKNAME ENGINE: Grab the Nickname for the Leaves Display
+                let displayName = eObj ? (eObj.scheduleNickname || eObj.scheduleName || eObj.cashierName || emp) : emp;
+                
                 const div = document.createElement('div'); 
                 div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px dashed #cbd5e1; background: #f8fafc; margin-bottom: 5px; border-radius: 6px;';
                 div.innerHTML = `
                     <span style="font-size: 13px; color: #334155;">
-                        <strong style="color:#0ea5e9;">${date}</strong>: <b>${emp}</b>${reliefTag}
+                        <strong style="color:#0ea5e9;">${date}</strong>: <b>${displayName}</b>${reliefTag}
                         <span style="color:#dc2626; font-weight: bold; font-size: 11px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">${unavailability[date][emp]}</span>
                     </span>
                     <button style="background: white; color:#ef4444; border: 1px solid #fecaca; padding: 4px 8px; border-radius: 4px; cursor:pointer; font-weight:bold; font-size: 12px; transition: 0.2s;" onclick="removeUnavailable('${date}', '${emp}')">✖</button>
