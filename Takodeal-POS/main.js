@@ -4730,34 +4730,30 @@ window.loadStockRequestUI = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!container || !branch) return;
 
-    // 🔥 THE UI MERGE INJECTOR: Creates a dynamic section above the normal list!
     if (!document.getElementById('mergedRequestUI')) {
         container.insertAdjacentHTML('beforebegin', `<div id="mergedRequestUI" style="margin-bottom: 20px;"></div>`);
     }
     let mergedUI = document.getElementById('mergedRequestUI');
     mergedUI.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Scanning HQ status & incoming deliveries...</div>';
     
-    // Hide standard elements while scanning
     container.style.display = 'none'; 
     if (searchBox) searchBox.style.display = 'none';
     if (sendBtn) sendBtn.style.display = 'none';
 
-    // CSS Injection for History Overflow
     if (!document.getElementById('historyOverflowFix')) {
         document.head.insertAdjacentHTML('beforeend', `
             <style id="historyOverflowFix">
                 td div[style*="color"], td ul { max-height: 150px; overflow-y: auto; padding-right: 5px; display: block; }
-                #nav-deliveries { display: none !important; } /* Hide the old redundant sidebar tab! */
+                #nav-deliveries { display: none !important; }
             </style>
         `);
     }
 
     try {
-        // 1. Check for Pending Requests (Awaiting HQ Approval)
-        const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "==", "Pending"));
+        // 🔥 THE FIX: Look for both Pending AND Rejected requests!
+        const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(10));
         const poSnap = await getDocs(poQ);
         
-        // 2. 🔥 THE FIX: Check for Incoming Deliveries (Both In Transit & Arrived)
         const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("status", "in", ["In Transit", "Arrived"]));
         const delSnap = await getDocs(delQ);
             
@@ -4765,12 +4761,32 @@ window.loadStockRequestUI = async function() {
         delSnap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
         let pendingOrder = null;
-        if (!poSnap.empty) {
-            let docs = poSnap.docs.map(d => ({id: d.id, ...d.data()}));
-            docs.sort((a,b) => b.timestamp - a.timestamp);
-            pendingOrder = docs[0];
-        }
+        let rejectedOrder = null;
+        
+        // Sort out the orders
+        poSnap.forEach(docSnap => {
+            let d = docSnap.data();
+            if (d.status === "Pending" && !pendingOrder) pendingOrder = {id: docSnap.id, ...d};
+            if (d.status === "Rejected" && !d.cashierAcknowledged && !rejectedOrder) rejectedOrder = {id: docSnap.id, ...d};
+        });
+
         let dynamicHtml = '';
+
+        // 🚨 NEW: REJECTED ORDER WARNING BOX
+        if (rejectedOrder) {
+            dynamicHtml += `
+                <div style="background: #fef2f2; border: 2px solid #fca5a5; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                    <h3 style="margin: 0 0 10px 0; color: #b91c1c; font-size: 16px;">❌ HQ Rejected Your Stock Request</h3>
+                    <p style="font-size: 13px; color: #991b1b; margin-top: 0; margin-bottom: 15px;">
+                        <strong>Reason from HQ:</strong><br>
+                        <span style="font-style: italic;">"${rejectedOrder.rejectReason || 'Incorrect Units of Measurement. Please recount and resubmit.'}"</span>
+                    </p>
+                    <button onclick="window.acknowledgeRejectedRequest('${rejectedOrder.id}')" style="width: 100%; background: #ef4444; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 8px; cursor: pointer;">
+                        Acknowledge & Create New Request
+                    </button>
+                </div>
+            `;
+        }
 
         // ==========================================
         // 🚚 A. INCOMING DELIVERIES BLOCK (THE MERGE!)
@@ -5004,6 +5020,13 @@ window.loadStockRequestUI = async function() {
     }
 };
 
+window.acknowledgeRejectedRequest = async function(docId) {
+    try {
+        await updateDoc(doc(db, "purchase_orders", docId), { cashierAcknowledged: true });
+        window.loadStockRequestUI(); // Refresh the screen
+    } catch(e) { console.error(e); }
+};
+
 window.cancelPendingRequest = async function(docId) {
     if (!confirm("Are you sure you want to cancel this request?")) return;
     try {
@@ -5163,6 +5186,7 @@ window.loadStockRequestHistory = async function() {
             
             let statusBg = '#f1f5f9'; let statusColor = '#475569';
             if (d.status === 'Pending') { statusBg = '#fef3c7'; statusColor = '#d97706'; }
+            else if (d.status === 'Rejected') { statusBg = '#fee2e2'; statusColor = '#dc2626'; d.status = '❌ Rejected by HQ'; }
             else if (d.status === 'Drafting') { statusBg = '#bae6fd'; statusColor = '#0284c7'; d.status = 'Preparing (HQ)'; }
             else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; d.status = 'Dispatch on the way 🚚'; }
             else if (d.status === 'Completed') { statusBg = '#f1f5f9'; statusColor = '#64748b'; }
@@ -5176,6 +5200,8 @@ window.loadStockRequestHistory = async function() {
                     itemStatus = 'Processed';
                 } else if (d.status === 'Delayed (Out of Stock)' || d.status === 'Delayed') {
                     itemStatus = 'Out of Stock';
+                } else if (d.status === '❌ Rejected by HQ') {
+                    itemStatus = 'Rejected'; // 🔥 ADDED THIS
                 }
                 
                 return {
