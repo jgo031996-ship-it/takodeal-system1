@@ -12353,182 +12353,182 @@ window.submitManualOvertime = async function() {
     }
 };
 
-// ========================================================
-// 📈 ADVANCED CHART.JS ANALYTICS ENGINE (DATE SYNC UPGRADE)
-// ========================================================
-window.revenueChartInstance = null;
-window.categoryChartInstance = null;
-
 window.renderDashboardCharts = async function() {
+    const lineCanvas = document.getElementById('revenueTrendChart');
+    const pieCanvas = document.getElementById('categoryMixChart');
+    if (!lineCanvas) return;
+
     try {
-        // 1. Grab the Branch Filter value
-        let dashFilter = document.getElementById('dashBranchFilter');
-        let selectedBranch = dashFilter ? dashFilter.value : "All";
-        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-        if (isFranchisee) selectedBranch = window.sessionUser.branch;
+        // --- 1. 7-DAY REVENUE TREND SETUP ---
+        let labels = [];
+        let dateKeys = [];
+        let today = new Date();
 
-        // 2. Grab Dates directly from the Date Picker at the top of the dashboard!
-        let startInput = document.getElementById('dashStartDate').value;
-        let endInput = document.getElementById('dashEndDate').value;
+        for (let i = 6; i >= 0; i--) {
+            let d = new Date();
+            d.setDate(today.getDate() - i);
+            let dateStr = d.toISOString().split('T')[0];
+            let labelStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            labels.push(labelStr);
+            dateKeys.push(dateStr);
+        }
+
+        let startDate = new Date();
+        startDate.setDate(today.getDate() - 6);
+        startDate.setHours(0, 0, 0, 0);
+
+        // Fetch Transactions from the last 7 days
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
+        const snap = await getDocs(q);
+
+        const branchColors = {
+            "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
+            "Citygate":  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" },
+            "Maa":       { border: "#0284c7", bg: "rgba(2, 132, 199, 0.1)" },
+            "Main Office": { border: "#10b981", bg: "rgba(16, 185, 129, 0.1)" }
+        };
+
+        let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
         
-        let startDay = new Date(startInput + 'T00:00:00');
-        let endDay = new Date(endInput + 'T23:59:59');
+        let branchSalesData = {};
+        activeBranches.forEach(b => {
+            branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 };
+        });
 
-        // Calculate how many days they selected
-        let diffDays = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24));
-        
-        // 🔥 SMART DEFAULT: If they only pick ONE day (like today), a line chart looks broken with only 1 dot.
-        // So we automatically stretch the chart 7 days backwards to give them a trend!
-        if (diffDays <= 1) {
-            startDay = new Date(endDay);
-            startDay.setDate(endDay.getDate() - 6);
-            startDay.setHours(0,0,0,0);
-        }
+        // --- 2. TODAY'S SALES MIX SETUP ---
+        let todayStr = today.toISOString().split('T')[0];
+        let categorySales = {}; // Tracks sales per category for today
 
-        // 3. Setup Date Labels for the X-Axis dynamically based on their selection
-        let dateLabels = [];
-        let currentDate = new Date(startDay);
-        while (currentDate <= endDay) {
-            dateLabels.push(currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            currentDate.setDate(currentDate.getDate() + 1);
-        }
-
-        // 4. Fetch the Data from Firebase
-        let txQ = query(collection(db, "transactions"), where("timestamp", ">=", startDay), where("timestamp", "<=", endDay));
-        if (selectedBranch !== "All") {
-            txQ = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startDay), where("timestamp", "<=", endDay));
-        }
-        const txSnap = await getDocs(txQ);
-
-        // --- DATA BUCKETS ---
-        let branchDailyTrend = {}; 
-        let periodBranchMix = {}; 
-
-        // 5. Crunch the numbers dynamically (BULLETPROOF SALES ONLY FILTER)
-        txSnap.forEach(doc => {
-            let tx = doc.data();
-            
-            // 🚫 STRICT ACCOUNTING LOCK: Ignore voids, remittances, and expenses!
+        // --- 3. PROCESS ALL TRANSACTIONS ---
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
             if (tx.status === "Voided") return;
-            if (tx.type === "Remittance" || tx.type === "Cash Drop" || tx.type === "Expense" || tx.isRemittance === true) return;
 
-            let txDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            let dateLabel = txDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            let branch = tx.branch || "Unknown";
+            let txBranch = tx.branch || "Unknown";
+            let txDateObj = tx.timestamp ? tx.timestamp.toDate() : null;
+            let txDate = txDateObj ? txDateObj.toISOString().split('T')[0] : null;
 
-            let grossTx = 0;
-            if (tx.cart && Array.isArray(tx.cart)) { 
-                tx.cart.forEach(item => { 
-                    let qty = parseFloat(item.qty) || 1;
-                    let basePrice = parseFloat(item.variantPrice) || parseFloat(item.basePrice) || 0;
-                    
-                    // 🔥 THE FIX: Accurately calculate all Add-on prices!
-                    let addonTotal = 0;
-                    if (item.addons) {
-                        for (let k in item.addons) {
-                            addonTotal += (parseFloat(item.addons[k].price) || 0) * (parseFloat(item.addons[k].qty) || 0);
+            // A. Crunch data for the 7-Day Line Chart
+            if (branchSalesData[txBranch]) {
+                let dayIndex = dateKeys.indexOf(txDate);
+                if (dayIndex !== -1) {
+                    if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
+                        tx.splitDetails.forEach(split => {
+                            let method = (split.method || '').toLowerCase();
+                            let isCash = method === 'cash' && window.chartFilters.cash;
+                            let isGcash = method.includes('gcash') && window.chartFilters.gcash;
+                            let isGrab = method.includes('grab') && window.chartFilters.grab;
+
+                            if (isCash || isGcash || isGrab) {
+                                branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
+                            }
+                        });
+                    } else {
+                        let method = (tx.paymentMethod || 'cash').toLowerCase();
+                        let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
+                        let isGcash = method.includes('gcash') && window.chartFilters.gcash;
+                        let isGrab = method.includes('grab') && window.chartFilters.grab;
+                        let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; 
+
+                        if (isCash || isGcash || isGrab || isOtherDigital) {
+                            branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
                         }
                     }
-                    
-                    grossTx += (basePrice + addonTotal) * qty; 
-                }); 
-            } else { 
-                // Fallback for older transactions
-                grossTx = parseFloat(tx.subTotalBeforeDiscount) || parseFloat(tx.netTotal) || 0; 
+                }
             }
 
-            // 🚫 FINAL SAFETY CHECK: Real sales cannot be negative. Ignore cash-outs!
-            if (grossTx <= 0) return;
-
-            // 🚫 FINAL SAFETY CHECK: Real sales cannot be negative. Ignore cash-outs!
-            if (grossTx <= 0) return;
-
-            // A. Populate the Line Chart Data 
-            if (!branchDailyTrend[branch]) {
-                branchDailyTrend[branch] = new Array(dateLabels.length).fill(0); 
+            // B. Crunch data for Today's Sales Mix
+            if (txDate === todayStr && pieCanvas) {
+                if (tx.cart && Array.isArray(tx.cart)) {
+                    tx.cart.forEach(item => {
+                        let cat = item.category || "Uncategorized";
+                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
+                        
+                        if (!categorySales[cat]) categorySales[cat] = 0;
+                        categorySales[cat] += lineTotal;
+                    });
+                }
             }
-            let dayIndex = dateLabels.indexOf(dateLabel);
-            if (dayIndex !== -1) {
-                branchDailyTrend[branch][dayIndex] += grossTx;
-            }
-
-            // B. Populate the Doughnut Chart Data 
-            if (!periodBranchMix[branch]) periodBranchMix[branch] = 0;
-            periodBranchMix[branch] += grossTx;
         });
 
-        // 🎨 Beautiful Auto-Assigned Colors for the Branches
-        const themeColors = ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#f43f5e', '#64748b'];
-
-        // ==========================================
-        // 📉 DRAW THE DYNAMIC LINE CHART 
-        // ==========================================
-        const revCtx = document.getElementById('revenueTrendChart');
-        if (window.revenueChartInstance) window.revenueChartInstance.destroy(); 
-
+        // --- 4. RENDER 7-DAY TREND CHART ---
         let lineDatasets = [];
-        let colorIndex = 0;
-        
-        for (let branch in branchDailyTrend) {
-            let c = themeColors[colorIndex % themeColors.length];
-            lineDatasets.push({
-                label: branch,
-                data: branchDailyTrend[branch],
-                borderColor: c, backgroundColor: c, borderWidth: 3,
-                pointBackgroundColor: 'white', pointBorderColor: c,
-                pointBorderWidth: 2, pointRadius: 4, fill: false, tension: 0.4
-            });
-            colorIndex++;
-        }
+        activeBranches.forEach(branch => {
+            let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
+            let dataPoints = dateKeys.map((_, idx) => branchSalesData[branch][idx]);
 
-        window.revenueChartInstance = new Chart(revCtx, {
+            lineDatasets.push({
+                label: branch, data: dataPoints,
+                borderColor: color.border, backgroundColor: color.bg,
+                borderWidth: 3, tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6
+            });
+        });
+
+        if (window.revenueChartInstance) window.revenueChartInstance.destroy();
+        const ctxLine = lineCanvas.getContext('2d');
+        window.revenueChartInstance = new Chart(ctxLine, {
             type: 'line',
-            data: { labels: dateLabels, datasets: lineDatasets },
+            data: { labels: labels, datasets: lineDatasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } } },
-                scales: { y: { beginAtZero: true, grid: { color: '#f8fafc' } }, x: { grid: { display: false } } },
-                interaction: { mode: 'index', intersect: false } 
+                plugins: {
+                    legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } },
+                    tooltip: { callbacks: { label: function(context) { return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } }
+                },
+                scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return '₱' + value.toLocaleString(); } } } }
             }
         });
 
-        // ==========================================
-        // 🐙 DYNAMIC PIE CHART (SELECTED PERIOD)
-        // ==========================================
-        const catCtx = document.getElementById('categoryMixChart');
-        if (window.categoryChartInstance) window.categoryChartInstance.destroy();
+        // --- 5. RENDER TOP 5 SALES MIX CHART ---
+        if (pieCanvas) {
+            // Sort categories by highest sales
+            let sortedCats = Object.keys(categorySales)
+                .map(cat => ({ name: cat, sales: categorySales[cat] }))
+                .sort((a, b) => b.sales - a.sales);
+            
+            // Slice the top 5!
+            let top5 = sortedCats.slice(0, 5);
+            let pieLabels = top5.map(c => c.name);
+            let pieData = top5.map(c => c.sales);
 
-        let mixLabels = Object.keys(periodBranchMix);
-        let mixData = Object.values(periodBranchMix);
-        
-        let doughnutColors = themeColors.slice(0, mixLabels.length);
-        if (mixLabels.length === 0) { 
-            mixLabels = ["No Sales in Period"]; mixData = [1]; doughnutColors = ['#e2e8f0']; 
+            const pieColors = ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444'];
+
+            if (window.categoryMixChartInstance) window.categoryMixChartInstance.destroy();
+            const ctxPie = pieCanvas.getContext('2d');
+            
+            if (top5.length === 0) {
+                // Empty state if no sales yet today
+                window.categoryMixChartInstance = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: { labels: ["No Sales Today"], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } } }
+                });
+            } else {
+                window.categoryMixChartInstance = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: {
+                        labels: pieLabels,
+                        datasets: [{
+                            data: pieData,
+                            backgroundColor: pieColors.slice(0, top5.length),
+                            borderWidth: 2,
+                            borderColor: '#ffffff'
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { font: { weight: 'bold', size: 11 } } },
+                            tooltip: { callbacks: { label: function(context) { return ` ${context.label}: ₱${context.parsed.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } }
+                        },
+                        cutout: '65%' // Gives it that modern "Doughnut" look
+                    }
+                });
+            }
         }
 
-        window.categoryChartInstance = new Chart(catCtx, {
-            type: 'doughnut',
-            data: {
-                labels: mixLabels,
-                datasets: [{
-                    data: mixData, backgroundColor: doughnutColors,
-                    borderWidth: 2, borderColor: 'white', hoverOffset: 6
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false, cutout: '75%', 
-                plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { size: 11, weight: 'bold' } } } }
-            }
-        });
-
-        // 🔥 SNEAKY UI RENAME: Update the static HTML text dynamically so it makes sense!
-        document.querySelectorAll('div, h3, span').forEach(el => {
-            if (el.innerText === "7-Day Gross Revenue Trend") el.innerText = "📈 Dynamic Gross Revenue Trend";
-            if (el.innerText === "Today's Sales Mix") el.innerText = "🍕 Sales Mix (Selected Period)";
-        });
-
-    } catch (e) {
-        console.error("Chart Rendering Error:", e);
+    } catch(e) {
+        console.error("Error rendering dashboard charts:", e);
     }
 };
 
