@@ -2928,7 +2928,7 @@ window.submitAttendance = async function(type) {
                         locationLat: lastLog.locationLat || 0, 
                         locationLng: lastLog.locationLng || 0, 
                         distanceMeters: lastLog.distanceMeters || 0, 
-                        photoBase64: lastLog.photoBase64 || "",
+                        photoBase64: "", // 🔥 THE FIX: Blank photo so it is explicitly obvious they missed it!
                         penaltyApplied: true,
                         notes: "Forced Auto-Out. Paid next cut-off."
                     });
