@@ -804,17 +804,20 @@ window.openEmployeeProfile = function(docId) {
     // Fetch History
     const tbody = document.getElementById('empProfileHistoryBody');
     if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 15px;">Loading...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
         getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
         .then(snap => {
             let histHtml = '';
             snap.forEach(dDoc => {
                 let d = dDoc.data();
-                let dateStr = d.dateAdded ? d.dateAdded.toDate().toLocaleDateString() : '';
+                let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
                 let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
                 
                 let actionHtml = d.status === 'Unpaid' 
-                    ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>` 
+                    ? `<div style="display: flex; gap: 5px; justify-content: center;">
+                         <button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>
+                         <button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>
+                       </div>` 
                     : `<span style="font-size:11px; color:#94a3b8; font-weight:bold;">Cleared</span>`;
 
                 histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
@@ -829,8 +832,8 @@ window.openEmployeeProfile = function(docId) {
                     </td>
                 </tr>`;
             });
-            tbody.innerHTML = histHtml || '<tr><td colspan="4" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
-        }).catch(e => { console.error(e); tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading history</td></tr>'; });
+            tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
+        }).catch(e => { console.error(e); tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>'; });
     }
 };
 
@@ -19507,3 +19510,16 @@ window.generateAiDispatchList = function() {
 };
 
 window.loadSmartSupplyChain = window.loadForecasterEngine;
+
+window.deleteStaffDeduction = async function(docId) {
+    if(!confirm("Are you sure you want to permanently delete this deduction? This will remove it from their next payslip.")) return;
+    try {
+        await deleteDoc(doc(db, "staff_deductions", docId));
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Deduction deleted!', showConfirmButton: false, timer: 2000});
+        
+        let currentProfileId = document.getElementById('empProfileId').value;
+        if (currentProfileId) window.openEmployeeProfile(currentProfileId);
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to delete deduction.', 'error');
+    }
+};
