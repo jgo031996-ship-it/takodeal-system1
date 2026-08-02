@@ -2086,7 +2086,7 @@ window.loadPayslipVault = async function() {
                     <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0;">
                         <div>
                             <strong style="color: #334155;">${d.type}</strong><br>
-                            <span style="font-size: 11px; color: #64748b;">${dateStr} - ${d.remarks || d.item || 'Pending'}</span>
+                            <span style="font-size: 11px; color: #64748b;">${dateStr} - <span style="color:#ef4444; font-weight:bold;">Unpaid</span> (${d.remarks || d.item || 'Salary Deduction'})</span>
                         </div>
                         <strong style="color: #dc2626;">-₱${parseFloat(d.amount).toFixed(2)}</strong>
                     </div>
