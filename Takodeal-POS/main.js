@@ -4760,15 +4760,16 @@ window.openStockReqCartModal = function() {
 
             html += `
                 <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: white; text-align: left;">
-                    <div>
+                    <div style="flex: 1;">
                         <strong style="color: #1e293b; font-size: 14px;">${itemName}</strong>
                         <div style="margin-top: 4px;">
                             <span style="background: ${alertBg}; color: ${alertColor}; border: 1px solid ${alertBorder}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;">${req.type}</span>
                         </div>
                     </div>
-                    <div style="text-align: right; color: #0284c7; font-weight: 900; font-size: 15px;">
+                    <div style="text-align: right; color: #0284c7; font-weight: 900; font-size: 15px; margin-right: 15px;">
                         ${qtyText} <span style="font-size: 11px; color: #64748b; font-weight: normal;">${uomText}</span>
                     </div>
+                    <button onclick="window.removeStockReqItem('${id}')" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.2s;" title="Remove Item">✖</button>
                 </div>
             `;
         }
@@ -4792,6 +4793,42 @@ window.openStockReqCartModal = function() {
             window.submitStockRequest();
         }
     });
+};
+
+// 🗑️ REMOVE ITEM FROM REQUEST CART
+window.removeStockReqItem = function(id) {
+    let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft')) || {};
+    
+    // 1. Remove from local memory
+    if (savedDraft[id]) {
+        delete savedDraft[id];
+        localStorage.setItem('takodeal_stock_req_draft', JSON.stringify(savedDraft));
+    }
+
+    // 2. Reset the background UI dropdown so it visually matches
+    let selectEl = document.getElementById('reqType_' + id);
+    if (selectEl) {
+        selectEl.value = "None";
+        if (typeof window.toggleActualCount === 'function') {
+            window.toggleActualCount(id);
+        }
+    }
+
+    // 3. Update the Cart Badge Number
+    let count = 0;
+    for (let key in savedDraft) {
+        if (savedDraft[key].type && savedDraft[key].type !== "None") count++;
+    }
+    let btnCart = document.getElementById('btnViewStockCart');
+    if (btnCart) btnCart.innerText = `🛒 View Cart (${count})`;
+
+    // 4. Reload the Modal or close if empty
+    if (count > 0) {
+        window.openStockReqCartModal();
+    } else {
+        Swal.close();
+        Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Cart cleared', showConfirmButton: false, timer: 1500 });
+    }
 };
 
 // 🚨 NEW: PENDING/REJECTED MODAL UI ENGINES
