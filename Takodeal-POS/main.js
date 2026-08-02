@@ -4881,24 +4881,30 @@ window.cancelPendingRequest = async function(docId) {
     }
 };
 
-// 📡 REAL-TIME SYNC ENGINE: Instantly reacts to Manager actions (Approvals, Delays, Deletes)
+// ==========================================
+// 📡 REAL-TIME SYNC ENGINE (CRASH & VANISH FIX)
+// ==========================================
 window.stockReqPoUnsubscribe = null;
 
 window.listenToStockRequests = function(branch) {
     if (window.stockReqPoUnsubscribe) window.stockReqPoUnsubscribe();
 
-    // 🔥 THE CRASH FIX: Removed the "window." prefix from the Firebase query modifiers
-    const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(10));
+    // 🔥 CRASH FIX: Removed orderBy and limit from query to prevent composite index crashes!
+    const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch));
     
     window.stockReqPoUnsubscribe = onSnapshot(poQ, (poSnap) => {
-        let pendingOrder = null;
-        let rejectedOrder = null;
+        let allOrders = [];
+        poSnap.forEach(docSnap => { allOrders.push({id: docSnap.id, ...docSnap.data()}); });
         
-        poSnap.forEach(docSnap => {
-            let d = docSnap.data();
-            if (d.status === "Pending" && !pendingOrder) pendingOrder = {id: docSnap.id, ...d};
-            if (d.status === "Rejected" && !d.cashierAcknowledged && !rejectedOrder) rejectedOrder = {id: docSnap.id, ...d};
+        // Sort in memory to guarantee newest items are at the top
+        allOrders.sort((a, b) => {
+            let tA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+            let tB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+            return tB - tA;
         });
+
+        let pendingOrder = allOrders.find(o => o.status === "Pending" || o.status === "Drafting");
+        let rejectedOrder = allOrders.find(o => o.status === "Rejected" && !o.cashierAcknowledged);
 
         // 🔘 Update the UI Buttons instantly!
         let btnContainer = document.getElementById('stockReqDynamicBtns');
@@ -4912,30 +4918,31 @@ window.listenToStockRequests = function(branch) {
                 pendingBtnHtml = `<button onclick="window.openPendingModal('${safeOrderStr}')" style="background: #f59e0b; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3); white-space: nowrap;">⏳ Pending HQ (1)</button>`;
             }
             
-            let cartBtnHtml = `<button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (0)</button>`;
-
-            btnContainer.innerHTML = pendingBtnHtml + cartBtnHtml;
-
-            // Recalculate Cart Count
+            let draftCount = 0;
             try {
                 let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
-                let draftCount = 0;
                 if (savedDraft) {
                     for (let id in savedDraft) {
                         if (savedDraft[id].type && savedDraft[id].type !== "None") draftCount++;
                     }
                 }
-                let btnCart = document.getElementById('btnViewStockCart');
-                if (btnCart) btnCart.innerText = `🛒 View Cart (${draftCount})`;
             } catch(e) {}
+
+            let cartBtnHtml = `<button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (${draftCount})</button>`;
+            btnContainer.innerHTML = pendingBtnHtml + cartBtnHtml;
         }
         
         // 👻 VANISH FIX: If the Manager deletes or delays the order while the Cashier is viewing it, force close the modal!
         let swalTitle = document.getElementById('swal2-title');
-        if (swalTitle && swalTitle.innerText.includes('Awaiting HQ Approval') && !pendingOrder) {
-            if (typeof Swal !== 'undefined') {
-                Swal.close();
-                Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Request status updated by HQ', showConfirmButton: false, timer: 3000 });
+        if (swalTitle) {
+            if (swalTitle.innerText.includes('Awaiting HQ Approval') && !pendingOrder) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.close();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Request status updated by HQ', showConfirmButton: false, timer: 3000 });
+                }
+            }
+            if (swalTitle.innerText.includes('HQ Rejected') && !rejectedOrder) {
+                if (typeof Swal !== 'undefined') Swal.close();
             }
         }
     });
