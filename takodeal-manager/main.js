@@ -12320,185 +12320,6 @@ window.submitManualOvertime = async function() {
     }
 };
 
-window.renderDashboardCharts = async function() {
-    const lineCanvas = document.getElementById('revenueTrendChart');
-    const pieCanvas = document.getElementById('categoryMixChart');
-    if (!lineCanvas) return;
-
-    try {
-        // --- 1. 7-DAY REVENUE TREND SETUP ---
-        let labels = [];
-        let dateKeys = [];
-        let today = new Date();
-
-        for (let i = 6; i >= 0; i--) {
-            let d = new Date();
-            d.setDate(today.getDate() - i);
-            let dateStr = d.toISOString().split('T')[0];
-            let labelStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            labels.push(labelStr);
-            dateKeys.push(dateStr);
-        }
-
-        let startDate = new Date();
-        startDate.setDate(today.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
-
-        // Fetch Transactions from the last 7 days
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
-        const snap = await getDocs(q);
-
-        const branchColors = {
-            "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
-            "Citygate":  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" },
-            "Maa":       { border: "#0284c7", bg: "rgba(2, 132, 199, 0.1)" },
-            "Main Office": { border: "#10b981", bg: "rgba(16, 185, 129, 0.1)" }
-        };
-
-        let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
-        
-        let branchSalesData = {};
-        activeBranches.forEach(b => {
-            branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 };
-        });
-
-        // --- 2. TODAY'S SALES MIX SETUP ---
-        let todayStr = today.toISOString().split('T')[0];
-        let categorySales = {}; // Tracks sales per category for today
-
-        // --- 3. PROCESS ALL TRANSACTIONS ---
-        snap.forEach(docSnap => {
-            let tx = docSnap.data();
-            if (tx.status === "Voided") return;
-
-            let txBranch = tx.branch || "Unknown";
-            let txDateObj = tx.timestamp ? tx.timestamp.toDate() : null;
-            let txDate = txDateObj ? txDateObj.toISOString().split('T')[0] : null;
-
-            // A. Crunch data for the 7-Day Line Chart
-            if (branchSalesData[txBranch]) {
-                let dayIndex = dateKeys.indexOf(txDate);
-                if (dayIndex !== -1) {
-                    if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
-                        tx.splitDetails.forEach(split => {
-                            let method = (split.method || '').toLowerCase();
-                            let isCash = method === 'cash' && window.chartFilters.cash;
-                            let isGcash = method.includes('gcash') && window.chartFilters.gcash;
-                            let isGrab = method.includes('grab') && window.chartFilters.grab;
-
-                            if (isCash || isGcash || isGrab) {
-                                branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
-                            }
-                        });
-                    } else {
-                        let method = (tx.paymentMethod || 'cash').toLowerCase();
-                        let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
-                        let isGcash = method.includes('gcash') && window.chartFilters.gcash;
-                        let isGrab = method.includes('grab') && window.chartFilters.grab;
-                        let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; 
-
-                        if (isCash || isGcash || isGrab || isOtherDigital) {
-                            branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
-                        }
-                    }
-                }
-            }
-
-            // B. Crunch data for Today's Sales Mix
-            if (txDate === todayStr && pieCanvas) {
-                if (tx.cart && Array.isArray(tx.cart)) {
-                    tx.cart.forEach(item => {
-                        let cat = item.category || "Uncategorized";
-                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
-                        
-                        if (!categorySales[cat]) categorySales[cat] = 0;
-                        categorySales[cat] += lineTotal;
-                    });
-                }
-            }
-        });
-
-        // --- 4. RENDER 7-DAY TREND CHART ---
-        let lineDatasets = [];
-        activeBranches.forEach(branch => {
-            let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
-            let dataPoints = dateKeys.map((_, idx) => branchSalesData[branch][idx]);
-
-            lineDatasets.push({
-                label: branch, data: dataPoints,
-                borderColor: color.border, backgroundColor: color.bg,
-                borderWidth: 3, tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6
-            });
-        });
-
-        if (window.revenueChartInstance) window.revenueChartInstance.destroy();
-        const ctxLine = lineCanvas.getContext('2d');
-        window.revenueChartInstance = new Chart(ctxLine, {
-            type: 'line',
-            data: { labels: labels, datasets: lineDatasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } },
-                    tooltip: { callbacks: { label: function(context) { return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } }
-                },
-                scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return '₱' + value.toLocaleString(); } } } }
-            }
-        });
-
-        // --- 5. RENDER TOP 5 SALES MIX CHART ---
-        if (pieCanvas) {
-            // Sort categories by highest sales
-            let sortedCats = Object.keys(categorySales)
-                .map(cat => ({ name: cat, sales: categorySales[cat] }))
-                .sort((a, b) => b.sales - a.sales);
-            
-            // Slice the top 5!
-            let top5 = sortedCats.slice(0, 5);
-            let pieLabels = top5.map(c => c.name);
-            let pieData = top5.map(c => c.sales);
-
-            const pieColors = ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444'];
-
-            if (window.categoryMixChartInstance) window.categoryMixChartInstance.destroy();
-            const ctxPie = pieCanvas.getContext('2d');
-            
-            if (top5.length === 0) {
-                // Empty state if no sales yet today
-                window.categoryMixChartInstance = new Chart(ctxPie, {
-                    type: 'doughnut',
-                    data: { labels: ["No Sales Today"], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } } }
-                });
-            } else {
-                window.categoryMixChartInstance = new Chart(ctxPie, {
-                    type: 'doughnut',
-                    data: {
-                        labels: pieLabels,
-                        datasets: [{
-                            data: pieData,
-                            backgroundColor: pieColors.slice(0, top5.length),
-                            borderWidth: 2,
-                            borderColor: '#ffffff'
-                        }]
-                    },
-                    options: {
-                        responsive: true, maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'right', labels: { font: { weight: 'bold', size: 11 } } },
-                            tooltip: { callbacks: { label: function(context) { return ` ${context.label}: ₱${context.parsed.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } }
-                        },
-                        cutout: '65%' // Gives it that modern "Doughnut" look
-                    }
-                });
-            }
-        }
-
-    } catch(e) {
-        console.error("Error rendering dashboard charts:", e);
-    }
-};
-
 // ==========================================
 // 🧮 MODAL NET SALES RECALCULATOR
 // ==========================================
@@ -19527,8 +19348,17 @@ window.renderDashboardCharts = async function() {
         startDate.setDate(today.getDate() - 6);
         startDate.setHours(0, 0, 0, 0);
 
+        // 1. Fetch Transactions from the last 7 days
         const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
         const snap = await getDocs(q);
+
+        // 2. 🔥 FETCH TRUE MENU CATEGORIES (To fix "Uncategorized" bug)
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let menuCategories = {};
+        menuSnap.forEach(doc => {
+            // Maps the exact item name to its actual category
+            menuCategories[doc.data().name] = doc.data().category || 'Uncategorized';
+        });
 
         const branchColors = {
             "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
@@ -19548,7 +19378,7 @@ window.renderDashboardCharts = async function() {
             if (tx.status === "Voided") return;
 
             let txBranch = tx.branch || "Unknown";
-            let txDateObj = tx.timestamp ? tx.timestamp.toDate() : null;
+            let txDateObj = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : null;
             let txDate = txDateObj ? toLocalISODate(txDateObj) : null;
 
             // Trend Chart Logic
@@ -19579,7 +19409,10 @@ window.renderDashboardCharts = async function() {
             // Today's Sales Mix Logic
             if (txDate === todayStr && pieCanvas && tx.cart) {
                 tx.cart.forEach(item => {
-                    let cat = item.category || "Uncategorized";
+                    let itemName = item.name || item.itemName;
+                    // 🔥 USE THE TRUE MENU MAP TO IDENTIFY CATEGORY!
+                    let cat = menuCategories[itemName] || item.category || "Uncategorized";
+                    
                     let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
                     if (!categorySales[cat]) categorySales[cat] = 0;
                     categorySales[cat] += lineTotal;
