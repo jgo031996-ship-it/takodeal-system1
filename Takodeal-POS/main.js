@@ -8186,7 +8186,7 @@ setTimeout(() => {
 // ========================================================
 window.processStoreUse = async function() {
     if (typeof cart === 'undefined' || cart.length === 0) {
-        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+        Swal.fire('Empty Cart', 'Please add items to the cart first before logging as Store Use.', 'warning');
         return;
     }
 
@@ -8202,12 +8202,10 @@ window.processStoreUse = async function() {
         let totalCostHit = 0;
         let usedItems = [];
         
-        // 1. Loop through the cart to calculate cost and log the stock variance for the Forecaster!
         for (let item of cart) {
             totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
             usedItems.push({ name: item.name, qty: item.qty });
             
-            // Fetch the current stock to write an accurate Stock Log
             const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", item.name));
             const invSnap = await getDocs(invQ);
             
@@ -8217,48 +8215,42 @@ window.processStoreUse = async function() {
                 let currentStock = parseFloat(invData.currentStock) || 0;
                 let uom = invData.uom || 'units';
                 
-                // 🔥 Write to stock_logs so the TAKODEAL Forecaster catches it!
                 await addDoc(collection(db, "stock_logs"), {
                     branch: branch, item: item.name, uom: uom,
                     oldQty: currentStock, newQty: currentStock - item.qty, variance: -item.qty,
                     type: "Store Use", note: `Internal Consumables used by staff`,
-                    user: cashier, timestamp: new Date() // CRASH FIX: Removed window.serverTimestamp()
+                    user: cashier, timestamp: serverTimestamp() // 🔥 CRASH FIX: Removed window.
                 });
                 
-                // Update the actual inventory database
                 await updateDoc(invDoc.ref, { currentStock: currentStock - item.qty });
             }
         }
 
-        // 2. Send it through the master checkout engine as 0 Revenue so recipes are also deducted!
         let payload = {
             branch: branch, cashier: cashier,
             shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
             orderType: "Store Use", paymentMethod: "Store Use",
             subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
             netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use",
-            paymentVerified: true // 🔥 FIX: Pre-verify it so no red alarms trigger!
+            paymentVerified: true 
         };
 
         let receiptId = await window.processCheckout(payload);
 
-        // 3. Log to the dedicated Store Use Feed for the Manager App
         if (receiptId) {
             await addDoc(collection(db, "store_use_logs"), {
-                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: new Date() // CRASH FIX
+                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: serverTimestamp() // 🔥 CRASH FIX
             });
         }
 
-        // 4. Hit the P&L! Send the cost directly to the Expenses Database so you see it in the Manager App
         if (totalCostHit > 0) {
             await addDoc(collection(db, "expenses"), {
                 branch: branch, amount: totalCostHit, 
                 category: "Store Consumables", description: `Internal Use: ${usedItems.map(i => i.qty + 'x ' + i.name).join(', ')}`,
-                loggedBy: cashier, timestamp: new Date(), shiftId: payload.shiftId
+                loggedBy: cashier, timestamp: serverTimestamp(), shiftId: payload.shiftId // 🔥 CRASH FIX
             });
         }
 
-        // 5. Clean up the UI
         cart = []; 
         if (typeof renderCart === 'function') renderCart(); 
         if (typeof closeModal === 'function') closeModal('checkoutModal');
