@@ -3383,44 +3383,31 @@ window.loadForecasterEngine = async function() {
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning 14 days of stock history...</div>';
 
     try {
-        // Set the 14-Day Lookback timestamp
         let today = new Date();
         let fourteenDaysAgo = new Date();
         fourteenDaysAgo.setDate(today.getDate() - 14);
         let fourteenDaysMs = fourteenDaysAgo.getTime();
 
-        // 1. Fetch Live Inventory & Extract Categories
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
         const invSnap = await getDocs(invQ);
         
         let inventoryItems = [];
         let categories = new Set();
         invSnap.forEach(doc => {
-            let data = doc.data();
-            data.id = doc.id;
-            inventoryItems.push(data);
-            if (data.category && data.category.trim() !== "" && data.category !== "All Categories") {
-                categories.add(data.category.trim());
-            }
+            let data = doc.data(); data.id = doc.id; inventoryItems.push(data);
+            if (data.category && data.category.trim() !== "" && data.category !== "All Categories") categories.add(data.category.trim());
         });
 
-        // Populate Category Dropdown dynamically (and prevent duplicates)
         let catDrop = document.getElementById('fcCategory');
         if (catDrop) {
             let currentVal = catDrop.value;
             let catHtml = '<option value="All">All Categories</option>';
             Array.from(categories).sort().forEach(c => catHtml += `<option value="${c}">${c}</option>`);
             catDrop.innerHTML = catHtml;
-            // Only re-select if the previously selected category still exists
-            if (currentVal !== "All" && Array.from(categories).includes(currentVal)) {
-                catDrop.value = currentVal;
-            } else {
-                catDrop.value = "All";
-            }
+            if (currentVal !== "All" && Array.from(categories).includes(currentVal)) catDrop.value = currentVal; else catDrop.value = "All";
         }
 
-        // 2. 🔥 THE BULLETPROOF MATH FIX: Fetch all branch logs and filter dates in JS!
-        // This prevents Firebase Index errors from silently blocking your data.
+        // 🔥 FIREBASE COMPOSITE INDEX FIX: Scan all logs for this branch, and filter by date using JavaScript!
         const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch));
         const logsSnap = await getDocs(logsQ);
 
@@ -3428,49 +3415,32 @@ window.loadForecasterEngine = async function() {
         
         logsSnap.forEach(doc => {
             let log = doc.data();
+            let logTimeMs = log.timestamp ? (log.timestamp.toDate ? log.timestamp.toDate().getTime() : new Date(log.timestamp).getTime()) : 0;
             
-            // Safely parse the timestamp regardless of how it was saved (Date object or Firebase Timestamp)
-            let logTimeMs = 0;
-            if (log.timestamp) {
-                if (log.timestamp.toDate) logTimeMs = log.timestamp.toDate().getTime();
-                else logTimeMs = new Date(log.timestamp).getTime();
-            }
-            
-            // Only process logs that happened in the last 14 days
             if (logTimeMs >= fourteenDaysMs) {
                 let v = parseFloat(log.variance) || 0;
                 let t = (log.type || "").toLowerCase();
-                let itemName = (log.item || "").trim().toLowerCase(); // Normalize string to prevent spelling mismatches
+                let itemName = (log.item || "").trim().toLowerCase(); 
                 
-                // If variance is negative, and it's a valid burn event:
-                if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment"))) {
+                // Matches Sales, Waste, Prep, and Adjustments!
+                if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("penalty"))) {
                     if (!burnData[itemName]) burnData[itemName] = 0;
                     burnData[itemName] += Math.abs(v);
                 }
             }
         });
 
-        // 3. Process Burn Rate Data
         window.globalForecasterData = inventoryItems.map(item => {
             let normalizedItemName = (item.name || "").trim().toLowerCase();
             let totalBurn = burnData[normalizedItemName] || 0;
             let dailyBurn = totalBurn / 14;
             let stock = parseFloat(item.currentStock) || 0;
             let daysLeft = dailyBurn > 0 ? (stock / dailyBurn) : Infinity;
-
-            return {
-                ...item,
-                totalBurn: totalBurn,
-                dailyBurn: dailyBurn,
-                daysLeft: daysLeft
-            };
+            return { ...item, totalBurn: totalBurn, dailyBurn: dailyBurn, daysLeft: daysLeft };
         });
 
-        // Sort by most critical (lowest days left)
         window.globalForecasterData.sort((a, b) => a.daysLeft - b.daysLeft);
-
-        // Trigger the visual renderer
-        window.filterForecaster();
+        window.filterForecaster(); 
 
     } catch(e) {
         console.error("Forecaster Error:", e);
@@ -3494,14 +3464,12 @@ window.filterForecaster = function() {
     let html = '';
     let catsObj = {};
     
-    // Group by category to make it clean!
     filtered.forEach(item => {
         let c = item.category || "Uncategorized";
         if (!catsObj[c]) catsObj[c] = [];
         catsObj[c].push(item);
     });
 
-    // 🎨 RENDER THE CARDS WITH CATEGORY DIVIDERS
     Object.keys(catsObj).sort().forEach(category => {
         html += `<div style="grid-column: 1/-1; background: #e2e8f0; padding: 12px 20px; font-weight: 900; color: #334155; border-radius: 8px; text-transform: uppercase; margin-top: 10px; font-size: 15px; border-left: 4px solid #94a3b8;">📁 ${category}</div>`;
         
@@ -3514,7 +3482,6 @@ window.filterForecaster = function() {
             let daysBoxBorder = item.daysLeft <= 0 ? "#fca5a5" : (item.daysLeft <= 3 ? "#fcd34d" : "#bbf7d0");
             
             let daysText = item.daysLeft === Infinity ? "∞" : item.daysLeft.toFixed(1);
-            
             let statusText = item.currentStock < 0 ? "NEGATIVE STOCK (Audit Needed)" : (item.daysLeft <= 0 ? "Out of Stock Now" : (item.daysLeft <= 3 ? "Critical (Reorder Immediately)" : "Sufficient Stock"));
             let statusColor = item.currentStock < 0 ? "#dc2626" : (item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#16a34a"));
 
@@ -3527,7 +3494,6 @@ window.filterForecaster = function() {
                         <div style="font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">${item.branch}</div>
                     </div>
                 </div>
-                
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div>
                         <div style="font-size: 13px; color: #64748b; margin-bottom: 5px;">Current Stock: <strong style="color: ${stockColor}; font-size: 15px;">${item.currentStock.toFixed(1)} <span style="font-size: 11px;">${item.uom}</span></strong></div>
@@ -3538,12 +3504,10 @@ window.filterForecaster = function() {
                         <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; margin-top: 4px;">Days Left</div>
                     </div>
                 </div>
-                
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
                     <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
                 </div>
-            </div>
-            `;
+            </div>`;
         });
     });
 
@@ -3551,35 +3515,26 @@ window.filterForecaster = function() {
     grid.innerHTML = html;
 };
 
-// ========================================================
-// ⚡ THE AI DELIVERY DISPATCH SCHEDULER
-// ========================================================
 window.generateAiDispatchList = function() {
     let targetDateStr = document.getElementById('fcTargetDate').value;
     let bufferDays = parseInt(document.getElementById('fcBuffer').value) || 0;
     let branchSelect = document.getElementById('forecasterBranchSelect');
     let branch = branchSelect ? branchSelect.value : 'Cabantian';
 
-    if (!targetDateStr) {
-        return Swal.fire('Missing Date', 'Please select your target Next Delivery Date.', 'warning');
-    }
+    if (!targetDateStr) return Swal.fire('Missing Date', 'Please select your target Next Delivery Date.', 'warning');
 
     let targetDate = new Date(targetDateStr);
     let today = new Date();
-    today.setHours(0,0,0,0);
-    targetDate.setHours(0,0,0,0);
+    today.setHours(0,0,0,0); targetDate.setHours(0,0,0,0);
     
     let timeDiff = targetDate.getTime() - today.getTime();
     let daysUntilDelivery = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
-    if (daysUntilDelivery < 0) {
-        return Swal.fire('Invalid Date', 'The delivery date cannot be in the past.', 'error');
-    }
+    if (daysUntilDelivery < 0) return Swal.fire('Invalid Date', 'The delivery date cannot be in the past.', 'error');
 
     let totalDaysToCover = daysUntilDelivery + bufferDays;
     let itemsToDispatch = [];
 
-    // The AI Engine calculation!
     window.globalForecasterData.forEach(item => {
         if (item.dailyBurn > 0) {
             let requiredStockForPeriod = item.dailyBurn * totalDaysToCover;
@@ -3588,50 +3543,32 @@ window.generateAiDispatchList = function() {
             if (deficit > 0) {
                 let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
                 let purchQtyNeeded = Math.ceil(deficit / convRate); 
-                
                 let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
                 let bUom = item.uom || 'units';
                 
                 itemsToDispatch.push({
-                    itemName: item.name, name: item.name, sourceId: item.id,
-                    qty: purchQtyNeeded * convRate,
-                    rawQty: purchQtyNeeded,
-                    origRawQty: purchQtyNeeded,
-                    origBaseQty: purchQtyNeeded * convRate,
-                    uom: bUom, baseUom: bUom,
-                    purchaseUom: pUom, friendlyUom: pUom,
-                    selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                    convRate: convRate, conversionRate: convRate,
-                    category: item.category || 'Ingredients',
-                    hqStock: 0, 
-                    requestType: 'AI Schedule Draft'
+                    itemName: item.name, name: item.name, sourceId: item.id, qty: purchQtyNeeded * convRate, rawQty: purchQtyNeeded,
+                    origRawQty: purchQtyNeeded, origBaseQty: purchQtyNeeded * convRate, uom: bUom, baseUom: bUom,
+                    purchaseUom: pUom, friendlyUom: pUom, selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
+                    convRate: convRate, conversionRate: convRate, category: item.category || 'Ingredients', hqStock: 0, requestType: 'AI Schedule Draft'
                 });
             }
         }
     });
 
-    if (itemsToDispatch.length === 0) {
-        return Swal.fire('Sufficient Stock', `Based on current burn rates, ${branch} has enough stock to comfortably survive until ${targetDateStr}. No dispatch needed.`, 'success');
-    }
+    if (itemsToDispatch.length === 0) return Swal.fire('Sufficient Stock', `Based on current burn rates, ${branch} has enough stock to comfortably survive until ${targetDateStr}. No dispatch needed.`, 'success');
 
-    // 🚀 Send data to the Manager's Dispatch Cart
     if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
     window.dispatchCart = itemsToDispatch;
-    
     localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
     localStorage.setItem('takodeal_dispatch_to', branch);
     
     Swal.fire({
-        title: '⚡ AI Schedule Complete!',
-        html: `Generated a smart dispatch list of <b style="color: #0ea5e9;">${itemsToDispatch.length} items</b> to sustain ${branch} for ${totalDaysToCover} days.<br><br>They have been loaded into your Dispatch Cart.`,
-        icon: 'success',
-        confirmButtonText: 'Go to Dispatch Cart',
-        confirmButtonColor: '#0ea5e9',
-        customClass: { popup: 'rounded-2xl' }
+        title: '⚡ AI Schedule Complete!', html: `Generated a smart dispatch list of <b style="color: #0ea5e9;">${itemsToDispatch.length} items</b> to sustain ${branch} for ${totalDaysToCover} days.<br><br>They have been loaded into your Dispatch Cart.`,
+        icon: 'success', confirmButtonText: 'Go to Dispatch Cart', confirmButtonColor: '#0ea5e9', customClass: { popup: 'rounded-2xl' }
     }).then(() => {
         let dispatchTab = document.getElementById('nav-dispatch');
         if (dispatchTab) dispatchTab.click();
-        
         setTimeout(() => {
             let toDrop = document.getElementById('dispTo');
             if (toDrop) toDrop.value = branch;
@@ -3640,8 +3577,7 @@ window.generateAiDispatchList = function() {
     });
 };
 
-window.loadSmartSupplyChain = window.loadForecasterEngine; // To ensure backwards compatibility with older HTML tags
-
+window.loadSmartSupplyChain = window.loadForecasterEngine;
 // 🟢 NEW: Updates the dropdown to show "Packs" vs "grams" based on the item
 window.updateDispatchUomLabel = function() {
     let itemName = document.getElementById('dispItem').value;
@@ -19548,68 +19484,52 @@ window.deleteCurrentStaff = function() {
 window.reviewStockRequest = window.reviewPurchaseOrder;
 
 // ========================================================
-// 📈 7-DAY REVENUE TREND CHART ENGINE (WITH PAYMENT TOGGLES)
+// 📈 7-DAY REVENUE TREND & TOP 5 CATEGORY CHART ENGINE
 // ========================================================
 window.chartFilters = { cash: true, gcash: true, grab: true };
 window.revenueChartInstance = null;
+window.categoryMixChartInstance = null;
 
 window.toggleChartFilter = function(filterType) {
-    // Toggle the filter state
     window.chartFilters[filterType] = !window.chartFilters[filterType];
-
-    // Update button visual styles
     const cashBtn = document.getElementById('btnFilterCash');
     const gcashBtn = document.getElementById('btnFilterGcash');
     const grabBtn = document.getElementById('btnFilterGrab');
 
-    if (cashBtn) {
-        cashBtn.style.background = window.chartFilters.cash ? '#334155' : '#e2e8f0';
-        cashBtn.style.color = window.chartFilters.cash ? '#ffffff' : '#94a3b8';
-        cashBtn.style.opacity = window.chartFilters.cash ? '1' : '0.6';
-    }
-    if (gcashBtn) {
-        gcashBtn.style.background = window.chartFilters.gcash ? '#0284c7' : '#e2e8f0';
-        gcashBtn.style.color = window.chartFilters.gcash ? '#ffffff' : '#94a3b8';
-        gcashBtn.style.opacity = window.chartFilters.gcash ? '1' : '0.6';
-    }
-    if (grabBtn) {
-        grabBtn.style.background = window.chartFilters.grab ? '#00b14f' : '#e2e8f0';
-        grabBtn.style.color = window.chartFilters.grab ? '#ffffff' : '#94a3b8';
-        grabBtn.style.opacity = window.chartFilters.grab ? '1' : '0.6';
-    }
+    if (cashBtn) { cashBtn.style.background = window.chartFilters.cash ? '#334155' : '#e2e8f0'; cashBtn.style.color = window.chartFilters.cash ? '#ffffff' : '#94a3b8'; }
+    if (gcashBtn) { gcashBtn.style.background = window.chartFilters.gcash ? '#0284c7' : '#e2e8f0'; gcashBtn.style.color = window.chartFilters.gcash ? '#ffffff' : '#94a3b8'; }
+    if (grabBtn) { grabBtn.style.background = window.chartFilters.grab ? '#00b14f' : '#e2e8f0'; grabBtn.style.color = window.chartFilters.grab ? '#ffffff' : '#94a3b8'; }
 
-    // Re-render chart with new filter preferences
     window.renderDashboardCharts();
 };
 
 window.renderDashboardCharts = async function() {
-    const canvas = document.getElementById('revenueTrendChart');
-    if (!canvas) return;
+    const lineCanvas = document.getElementById('revenueTrendChart');
+    const pieCanvas = document.getElementById('categoryMixChart');
+    if (!lineCanvas) return;
 
     try {
-        // 1. Build Date Range (Last 7 Days)
+        // 🔥 THE TIMEZONE FIX: Forces exact Philippine Local Time Dates
+        const toLocalISODate = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+        
         let labels = [];
         let dateKeys = [];
         let today = new Date();
+        let todayStr = toLocalISODate(today);
 
         for (let i = 6; i >= 0; i--) {
-            let d = new Date();
-            d.setDate(today.getDate() - i);
-            let dateStr = d.toISOString().split('T')[0];
-            let labelStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            labels.push(labelStr);
-            dateKeys.push(dateStr);
+            let d = new Date(); d.setDate(today.getDate() - i);
+            dateKeys.push(toLocalISODate(d));
+            labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
         }
 
         let startDate = new Date();
         startDate.setDate(today.getDate() - 6);
         startDate.setHours(0, 0, 0, 0);
 
-        // 2. Fetch Transactions from the last 7 days
         const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
         const snap = await getDocs(q);
 
-        // 3. Define Branch Datasets
         const branchColors = {
             "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
             "Citygate":  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" },
@@ -19618,103 +19538,88 @@ window.renderDashboardCharts = async function() {
         };
 
         let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
-        
         let branchSalesData = {};
-        activeBranches.forEach(b => {
-            branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 };
-        });
+        activeBranches.forEach(b => { branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 }; });
 
-        // 4. Process Transactions against Active Toggles
+        let categorySales = {}; 
+
         snap.forEach(docSnap => {
             let tx = docSnap.data();
             if (tx.status === "Voided") return;
 
             let txBranch = tx.branch || "Unknown";
-            if (!branchSalesData[txBranch]) return;
+            let txDateObj = tx.timestamp ? tx.timestamp.toDate() : null;
+            let txDate = txDateObj ? toLocalISODate(txDateObj) : null;
 
-            let txDate = tx.timestamp ? tx.timestamp.toDate().toISOString().split('T')[0] : null;
-            let dayIndex = dateKeys.indexOf(txDate);
-            if (dayIndex === -1) return;
+            // Trend Chart Logic
+            if (branchSalesData[txBranch]) {
+                let dayIndex = dateKeys.indexOf(txDate);
+                if (dayIndex !== -1) {
+                    if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
+                        tx.splitDetails.forEach(split => {
+                            let method = (split.method || '').toLowerCase();
+                            if ((method === 'cash' && window.chartFilters.cash) || (method.includes('gcash') && window.chartFilters.gcash) || (method.includes('grab') && window.chartFilters.grab)) {
+                                branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
+                            }
+                        });
+                    } else {
+                        let method = (tx.paymentMethod || 'cash').toLowerCase();
+                        let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
+                        let isGcash = method.includes('gcash') && window.chartFilters.gcash;
+                        let isGrab = method.includes('grab') && window.chartFilters.grab;
+                        let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; 
 
-            // Handle Split Payments vs Standard Payments
-            if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
-                tx.splitDetails.forEach(split => {
-                    let method = (split.method || '').toLowerCase();
-                    let isCash = method === 'cash' && window.chartFilters.cash;
-                    let isGcash = method.includes('gcash') && window.chartFilters.gcash;
-                    let isGrab = method.includes('grab') && window.chartFilters.grab;
-
-                    if (isCash || isGcash || isGrab) {
-                        branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
+                        if (isCash || isGcash || isGrab || isOtherDigital) {
+                            branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
+                        }
                     }
-                });
-            } else {
-                let method = (tx.paymentMethod || 'cash').toLowerCase();
-                let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
-                let isGcash = method.includes('gcash') && window.chartFilters.gcash;
-                let isGrab = method.includes('grab') && window.chartFilters.grab;
-                let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; // Group other digital with gcash toggle
-
-                if (isCash || isGcash || isGrab || isOtherDigital) {
-                    branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
                 }
+            }
+
+            // Today's Sales Mix Logic
+            if (txDate === todayStr && pieCanvas && tx.cart) {
+                tx.cart.forEach(item => {
+                    let cat = item.category || "Uncategorized";
+                    let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
+                    if (!categorySales[cat]) categorySales[cat] = 0;
+                    categorySales[cat] += lineTotal;
+                });
             }
         });
 
-        // 5. Construct Chart.js Datasets
-        let datasets = [];
+        // Draw Line Chart
+        let lineDatasets = [];
         activeBranches.forEach(branch => {
             let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
-            let dataPoints = dateKeys.map((_, idx) => branchSalesData[branch][idx]);
-
-            datasets.push({
-                label: branch,
-                data: dataPoints,
-                borderColor: color.border,
-                backgroundColor: color.bg,
-                borderWidth: 3,
-                tension: 0.4,
-                fill: true,
-                pointRadius: 4,
-                pointHoverRadius: 6
+            lineDatasets.push({
+                label: branch, data: dateKeys.map((_, idx) => branchSalesData[branch][idx]),
+                borderColor: color.border, backgroundColor: color.bg, borderWidth: 3, tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6
             });
         });
 
-        // 6. Destroy existing chart instance to avoid overlap glitches
-        if (window.revenueChartInstance) {
-            window.revenueChartInstance.destroy();
-        }
-
-        // 7. Render Chart
-        const ctx = canvas.getContext('2d');
-        window.revenueChartInstance = new Chart(ctx, {
-            type: 'line',
-            data: { labels: labels, datasets: datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) { return '₱' + value.toLocaleString(); }
-                        }
-                    }
-                }
-            }
+        if (window.revenueChartInstance) window.revenueChartInstance.destroy();
+        window.revenueChartInstance = new Chart(lineCanvas.getContext('2d'), {
+            type: 'line', data: { labels: labels, datasets: lineDatasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } }, scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return '₱' + value.toLocaleString(); } } } } }
         });
 
-    } catch(e) {
-        console.error("Error rendering revenue trend chart:", e);
-    }
+        // Draw Top 5 Sales Mix
+        if (pieCanvas) {
+            let sortedCats = Object.keys(categorySales).map(cat => ({ name: cat, sales: categorySales[cat] })).sort((a, b) => b.sales - a.sales);
+            let top5 = sortedCats.slice(0, 5); // Takes only the Top 5!
+            
+            if (window.categoryMixChartInstance) window.categoryMixChartInstance.destroy();
+            const ctxPie = pieCanvas.getContext('2d');
+            
+            if (top5.length === 0) {
+                window.categoryMixChartInstance = new Chart(ctxPie, { type: 'doughnut', data: { labels: ["No Sales Today"], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } } } });
+            } else {
+                window.categoryMixChartInstance = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: { labels: top5.map(c => c.name), datasets: [{ data: top5.map(c => c.sales), backgroundColor: ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444'], borderWidth: 2, borderColor: '#ffffff' }] },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { font: { weight: 'bold', size: 11 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.label}: ₱${context.parsed.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } } }
+                });
+            }
+        }
+    } catch(e) { console.error("Chart Error:", e); }
 };
