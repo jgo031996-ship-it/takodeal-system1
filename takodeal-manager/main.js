@@ -3370,133 +3370,295 @@ window.deleteDeliveryGroup = async function(encodedGroup) {
 setTimeout(() => { if (typeof window.startPOListener === 'function') window.startPOListener(); }, 1500);
 
 // ========================================================
-// 🧠 PHASE 5: SMART BURN RATE & SUPPLY CHAIN ENGINE
+// 🧠 PHASE 5: SMART BURN RATE & AI DELIVERY SCHEDULER
 // ========================================================
-window.latestSupplyChainData = []; // Add this to track the AI's math
+window.globalForecasterData = []; 
 
-window.loadSmartSupplyChain = async function() {
-    let branch = document.getElementById('burnRateBranch').value;
-    let tbody = document.getElementById('burnRateTableBody');
+window.loadForecasterEngine = async function() {
+    let branchSelect = document.getElementById('forecasterBranchSelect');
+    let branch = branchSelect ? branchSelect.value : 'Cabantian';
+    let grid = document.getElementById('forecasterGrid');
+    if (!grid) return;
+    
+    // 1. 🎨 INJECT THE UPGRADED AI SCHEDULER UI
+    let headerDiv = document.getElementById('forecasterHeaderControls');
+    if (!headerDiv) {
+        let parentContainer = grid.parentElement;
+        let controlsHtml = `
+            <div id="forecasterHeaderControls" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-between; align-items: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 15px; margin-bottom: 15px;">
+                    <div style="display: flex; gap: 10px; flex: 1; min-width: 300px;">
+                        <span style="font-size: 20px; align-self: center;">🔍</span>
+                        <input type="text" id="fcSearch" placeholder="Search item..." onkeyup="window.filterForecaster()" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold;">
+                        <select id="fcCategory" onchange="window.filterForecaster()" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; cursor: pointer; color: #334155;">
+                            <option value="All">All Categories</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <div>
+                        <h3 style="margin: 0; color: #8b5cf6; font-size: 16px;">🤖 AI Delivery Auto-Scheduler</h3>
+                        <span style="font-size: 12px; color: #64748b;">Set your target delivery date. The AI will calculate exact dispatch quantities to survive until then + safety buffer.</span>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">Next Delivery Date</span>
+                            <input type="date" id="fcTargetDate" style="padding: 10px; border-radius: 6px; border: 1px solid #8b5cf6; color: #6d28d9; font-weight: bold; outline: none;">
+                        </div>
+                        <div style="display: flex; flex-direction: column;">
+                            <span style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">Buffer Days</span>
+                            <input type="number" id="fcBuffer" value="2" style="width: 70px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; outline: none; color: #334155;">
+                        </div>
+                        <button onclick="window.generateAiDispatchList()" style="background: #8b5cf6; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-top: 14px; font-size: 14px; transition: 0.2s;">⚡ Generate Dispatch List</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        parentContainer.insertBefore(document.createRange().createContextualFragment(controlsHtml), grid);
+    }
 
-    if (!branch) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px; font-weight: bold; color: #8b5cf6;">⏳ Crunching 7 days of sales & recipes...</td></tr>';
-
-    window.latestSupplyChainData = []; // Clear old memory on every new calculation
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning 14 days of stock history...</div>';
 
     try {
-        let endDate = new Date();
-        let startDate = new Date();
-        startDate.setDate(startDate.getDate() - 7);
+        // 2. Determine Lookback Dates (14 Days)
+        let today = new Date();
+        let fourteenDaysAgo = new Date();
+        fourteenDaysAgo.setDate(today.getDate() - 14);
 
-        const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startDate));
-        const txSnap = await getDocs(txQ);
-
-        let itemSalesCount = {};
-        let rawBurnData = {};
-
-        txSnap.forEach(doc => {
-            let tx = doc.data();
-            if (tx.status !== 'Voided' && tx.cart && Array.isArray(tx.cart)) {
-                tx.cart.forEach(item => {
-                    let name = item.name || item.itemName;
-                    if (!name) return;
-                    
-                    let qtySold = item.qty || 1;
-                    itemSalesCount[name] = (itemSalesCount[name] || 0) + qtySold;
-
-                    if (item.addons) {
-                        for (let key in item.addons) {
-                            let addon = item.addons[key];
-                            if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                                let addonBurn = addon.deductQty * addon.qty * qtySold;
-                                rawBurnData[addon.linkedIngredient] = (rawBurnData[addon.linkedIngredient] || 0) + addonBurn;
-                            }
-                        }
-                    }
-                });
-            }
-        });
-
-        const bomSnap = await getDocs(collection(db, "bom"));
-        bomSnap.forEach(doc => {
-            let recipe = doc.data();
-            if (recipe.menuItem && recipe.ingredientName && itemSalesCount[recipe.menuItem]) {
-                let amountBurned = (recipe.qty || 0) * itemSalesCount[recipe.menuItem];
-                rawBurnData[recipe.ingredientName] = (rawBurnData[recipe.ingredientName] || 0) + amountBurned;
-            }
-        });
-
+        // 3. Fetch Live Inventory
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
         const invSnap = await getDocs(invQ);
         
-        let html = '';
-        let itemsAnalyzed = 0;
-
-        let sortedInventory = [];
-        invSnap.forEach(doc => sortedInventory.push(doc.data()));
-        sortedInventory.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-
-        sortedInventory.forEach(invItem => {
-            let itemName = invItem.name;
-            if (!itemName) return; 
-            
-            // 🔥 NEW: Category Filter for Consumables & Packaging!
-            let catFilter = document.getElementById('burnRateCategory') ? document.getElementById('burnRateCategory').value : "All";
-            let itemCat = invItem.category || "Ingredients";
-            
-            if (catFilter === "Packaging" && itemCat !== "Packaging" && itemCat !== "Consumables") return;
-            if (catFilter === "Ingredients" && (itemCat === "Packaging" || itemCat === "Consumables")) return;
-            
-            let currentStock = parseFloat(invItem.currentStock) || 0;
-            let uom = invItem.uom || 'units';
-            let totalBurn7Days = rawBurnData[itemName] || 0;
-            
-            itemsAnalyzed++;
-            
-            let dailyBurn = totalBurn7Days / 7;
-            let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : 999;
-            
-            let daysColor = "#16a34a"; 
-            let daysText = Math.floor(daysLeft) + " days";
-            
-            if (currentStock <= 0) { daysColor = "#dc2626"; daysText = "OUT OF STOCK!"; }
-            else if (daysLeft < 3) { daysColor = "#ea580c"; daysText = Math.floor(daysLeft) + " days (CRITICAL)"; }
-            else if (daysLeft === 999) { daysColor = "#94a3b8"; daysText = "No Burn Data"; }
-
-            let suggestedRestock = Math.ceil(totalBurn7Days); 
-            
-            window.latestSupplyChainData.push({
-                itemName: itemName,
-                suggestedRestock: suggestedRestock,
-                currentStock: currentStock,
-                uom: uom
-            });
-
-            html += `
-                <tr style="border-bottom: 1px dashed #e2e8f0;">
-                    <td style="font-weight: bold; color: #334155;">${itemName} <br><span style="font-size:10px; color:#94a3b8;">(${itemCat})</span></td>
-                    <td style="font-weight: bold; font-size: 15px;">${currentStock.toFixed(1)} <span style="font-size:11px; color:#64748b; font-weight:normal;">${uom}</span></td>
-                    <td>${totalBurn7Days.toFixed(1)} ${uom}</td>
-                    <td style="color: #ea580c; font-weight: bold;">${dailyBurn.toFixed(2)} ${uom}/day</td>
-                    <td style="color: ${daysColor}; font-weight: bold; font-size: 15px;">${daysText}</td>
-                    <td>
-                        <button onclick="let sel=document.getElementById('dispItem'); sel.value='${itemName}'; if(sel.value===''){alert('❌ Out of Stock at Main Office! You cannot dispatch this yet.');}else{window.updateDispatchUomLabel(); document.getElementById('dispQty').focus(); document.getElementById('dispQty').style.border='2px solid #8b5cf6';}" style="background: white; border: 1px solid #8b5cf6; color: #8b5cf6; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">📦 Send Stock</button>
-                    </td>
-                </tr>
-            `;
+        let inventoryItems = [];
+        let categories = new Set();
+        invSnap.forEach(doc => {
+            let data = doc.data();
+            data.id = doc.id;
+            inventoryItems.push(data);
+            if (data.category) categories.add(data.category);
         });
 
-        if (itemsAnalyzed === 0) {
-            html = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No inventory items found in this branch yet. Add items first!</td></tr>';
+        // Populate Category Dropdown dynamically
+        let catDrop = document.getElementById('fcCategory');
+        if (catDrop && catDrop.options.length <= 1) {
+            let catHtml = '<option value="All">All Categories</option>';
+            Array.from(categories).sort().forEach(c => catHtml += `<option value="${c}">${c}</option>`);
+            catDrop.innerHTML = catHtml;
         }
 
-        tbody.innerHTML = html;
+        // 4. 🔥 THE MATH FIX: Scan ACTUAL Stock Logs for exact variance!
+        const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", fourteenDaysAgo));
+        const logsSnap = await getDocs(logsQ);
 
-    } catch (e) {
-        console.error("Supply Chain Engine Error:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 20px; font-weight: bold;">⚠️ Error fetching data. Open F12 Console to see if a Firebase Index is missing.</td></tr>';
+        let burnData = {};
+        
+        logsSnap.forEach(doc => {
+            let log = doc.data();
+            // Filter to ONLY deductions (Sales, Waste, Preps, Store Use) to find the True Burn!
+            let isDeduction = log.variance < 0;
+            let isValidType = log.type === "Shift Sales Deduction" || log.type === "Waste / Spoilage" || log.type === "Store Use" || log.type === "End-of-Shift Kitchen Prep" || log.type === "Manual Adjustment" || log.type === "Transaction Voided (Addon)";
+            
+            if (isDeduction && isValidType) {
+                if (!burnData[log.item]) burnData[log.item] = 0;
+                burnData[log.item] += Math.abs(log.variance);
+            }
+        });
+
+        // 5. Calculate Metrics
+        window.globalForecasterData = inventoryItems.map(item => {
+            let totalBurn = burnData[item.name] || 0;
+            let dailyBurn = totalBurn / 14;
+            let stock = parseFloat(item.currentStock) || 0;
+            let daysLeft = dailyBurn > 0 ? (stock / dailyBurn) : Infinity;
+
+            return {
+                ...item,
+                totalBurn: totalBurn,
+                dailyBurn: dailyBurn,
+                daysLeft: daysLeft
+            };
+        });
+
+        // Sort by most critical (lowest days left)
+        window.globalForecasterData.sort((a, b) => a.daysLeft - b.daysLeft);
+
+        // Trigger the visual renderer
+        window.filterForecaster();
+
+    } catch(e) {
+        console.error("Forecaster Error:", e);
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Error running calculation. Check connection.</div>';
     }
 };
+
+window.filterForecaster = function() {
+    let grid = document.getElementById('forecasterGrid');
+    if (!grid) return;
+
+    let search = document.getElementById('fcSearch').value.toLowerCase();
+    let cat = document.getElementById('fcCategory').value;
+
+    let filtered = window.globalForecasterData.filter(item => {
+        let matchSearch = item.name.toLowerCase().includes(search);
+        let matchCat = cat === "All" || item.category === cat;
+        return matchSearch && matchCat;
+    });
+
+    let html = '';
+    let catsObj = {};
+    
+    // Group by category to make it clean!
+    filtered.forEach(item => {
+        let c = item.category || "Uncategorized";
+        if (!catsObj[c]) catsObj[c] = [];
+        catsObj[c].push(item);
+    });
+
+    // 🎨 RENDER THE CARDS WITH CATEGORY DIVIDERS
+    Object.keys(catsObj).sort().forEach(category => {
+        html += `<div style="grid-column: 1/-1; background: #e2e8f0; padding: 12px 20px; font-weight: 900; color: #334155; border-radius: 8px; text-transform: uppercase; margin-top: 10px; font-size: 15px; border-left: 4px solid #94a3b8;">📁 ${category}</div>`;
+        
+        catsObj[category].forEach(item => {
+            let stockColor = item.currentStock <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#334155");
+            let burnColor = item.dailyBurn > 0 ? "#16a34a" : "#94a3b8";
+            
+            let daysBoxBg = item.daysLeft <= 0 ? "#fef2f2" : (item.daysLeft <= 3 ? "#fffbeb" : "#f0fdf4");
+            let daysBoxCol = item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#d97706" : "#16a34a");
+            let daysBoxBorder = item.daysLeft <= 0 ? "#fca5a5" : (item.daysLeft <= 3 ? "#fcd34d" : "#bbf7d0");
+            
+            let daysText = item.daysLeft === Infinity ? "∞" : item.daysLeft.toFixed(1);
+            
+            let statusText = item.currentStock < 0 ? "NEGATIVE STOCK (Audit Needed)" : (item.daysLeft <= 0 ? "Out of Stock Now" : (item.daysLeft <= 3 ? "Critical (Reorder Immediately)" : "Sufficient Stock"));
+            let statusColor = item.currentStock < 0 ? "#dc2626" : (item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#16a34a"));
+
+            html += `
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 10px 15px -3px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
+                <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                    <div style="width: 45px; height: 45px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;">📦</div>
+                    <div>
+                        <div style="font-weight: 900; color: #0f172a; font-size: 15px;">${item.name}</div>
+                        <div style="font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">${item.branch}</div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
+                    <div>
+                        <div style="font-size: 13px; color: #64748b; margin-bottom: 5px;">Current Stock: <strong style="color: ${stockColor}; font-size: 15px;">${item.currentStock.toFixed(1)} <span style="font-size: 11px;">${item.uom}</span></strong></div>
+                        <div style="font-size: 13px; color: #64748b;">Daily Burn Rate: <strong style="color: ${burnColor}; font-size: 14px;">${item.dailyBurn.toFixed(2)} <span style="font-size: 11px;">${item.uom} / day</span></strong></div>
+                    </div>
+                    <div style="background: ${daysBoxBg}; border: 2px dashed ${daysBoxBorder}; color: ${daysBoxCol}; padding: 10px; border-radius: 8px; text-align: center; min-width: 70px;">
+                        <div style="font-size: 20px; font-weight: 900; line-height: 1;">${daysText}</div>
+                        <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; margin-top: 4px;">Days Left</div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
+                    <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
+                </div>
+            </div>
+            `;
+        });
+    });
+
+    if (html === '') html = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b; font-weight: bold; font-size: 15px;">No items match your filter.</div>';
+    grid.innerHTML = html;
+};
+
+// ========================================================
+// ⚡ THE AI DELIVERY DISPATCH SCHEDULER
+// ========================================================
+window.generateAiDispatchList = function() {
+    let targetDateStr = document.getElementById('fcTargetDate').value;
+    let bufferDays = parseInt(document.getElementById('fcBuffer').value) || 0;
+    let branchSelect = document.getElementById('forecasterBranchSelect');
+    let branch = branchSelect ? branchSelect.value : 'Cabantian';
+
+    if (!targetDateStr) {
+        return Swal.fire('Missing Date', 'Please select your target Next Delivery Date.', 'warning');
+    }
+
+    let targetDate = new Date(targetDateStr);
+    let today = new Date();
+    today.setHours(0,0,0,0);
+    targetDate.setHours(0,0,0,0);
+    
+    let timeDiff = targetDate.getTime() - today.getTime();
+    let daysUntilDelivery = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+    if (daysUntilDelivery < 0) {
+        return Swal.fire('Invalid Date', 'The delivery date cannot be in the past.', 'error');
+    }
+
+    let totalDaysToCover = daysUntilDelivery + bufferDays;
+    let itemsToDispatch = [];
+
+    // The AI Engine calculation!
+    window.globalForecasterData.forEach(item => {
+        if (item.dailyBurn > 0) {
+            let requiredStockForPeriod = item.dailyBurn * totalDaysToCover;
+            let deficit = requiredStockForPeriod - item.currentStock;
+
+            if (deficit > 0) {
+                // Determine how many bulk units to send
+                let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+                // AI strictly rounds UP so branches never fall short of safety buffer
+                let purchQtyNeeded = Math.ceil(deficit / convRate); 
+                
+                let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+                let bUom = item.uom || 'units';
+                
+                itemsToDispatch.push({
+                    itemName: item.name, name: item.name, sourceId: item.id,
+                    qty: purchQtyNeeded * convRate,
+                    rawQty: purchQtyNeeded,
+                    origRawQty: purchQtyNeeded,
+                    origBaseQty: purchQtyNeeded * convRate,
+                    uom: bUom, baseUom: bUom,
+                    purchaseUom: pUom, friendlyUom: pUom,
+                    selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
+                    convRate: convRate, conversionRate: convRate,
+                    category: item.category || 'Ingredients',
+                    hqStock: 0, 
+                    requestType: 'AI Schedule Draft'
+                });
+            }
+        }
+    });
+
+    if (itemsToDispatch.length === 0) {
+        return Swal.fire('Sufficient Stock', `Based on current burn rates, ${branch} has enough stock to comfortably survive until ${targetDateStr}. No dispatch needed.`, 'success');
+    }
+
+    // 🚀 Send data to the Manager's Dispatch Cart
+    if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+    window.dispatchCart = itemsToDispatch;
+    
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+    localStorage.setItem('takodeal_dispatch_to', branch);
+    
+    Swal.fire({
+        title: '⚡ AI Schedule Complete!',
+        html: `Generated a smart dispatch list of <b style="color: #0ea5e9;">${itemsToDispatch.length} items</b> to sustain ${branch} for ${totalDaysToCover} days.<br><br>They have been loaded into your Dispatch Cart.`,
+        icon: 'success',
+        confirmButtonText: 'Go to Dispatch Cart',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl' }
+    }).then(() => {
+        // Auto-navigate to Dispatch tab and trigger UI rendering!
+        let dispatchTab = document.getElementById('nav-dispatch');
+        if (dispatchTab) dispatchTab.click();
+        
+        setTimeout(() => {
+            let toDrop = document.getElementById('dispTo');
+            if (toDrop) toDrop.value = branch;
+            if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
+        }, 500);
+    });
+};
+
+// To ensure it runs when called from HTML
+window.loadSmartSupplyChain = window.loadForecasterEngine;
 
 // 🟢 NEW: Updates the dropdown to show "Packs" vs "grams" based on the item
 window.updateDispatchUomLabel = function() {
