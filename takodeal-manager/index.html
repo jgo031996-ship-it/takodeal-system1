@@ -1645,6 +1645,7 @@
           </div>
         </div>
         
+        <!-- 🧠 SECTION 6: TAKODEAL FORECASTER & AI SCHEDULER -->
         <div id="invSectionForecaster" style="display: none; padding-top: 20px;">
             <div style="background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
@@ -1652,7 +1653,7 @@
                         <h2 style="margin: 0; color: #0f766e; display: flex; align-items: center; gap: 10px;">
                             <span style="font-size: 24px;">📦</span> TAKODEAL Forecaster
                         </h2>
-                        <p style="margin: 5px 0 0 0; color: #64748b; font-size: 14px;">Analyzing the last 14 days of sales and waste to predict stock run-out dates.</p>
+                        <p style="margin: 5px 0 0 0; color: #64748b; font-size: 14px;">Analyzing the last 14 days of stock logs to predict run-out dates.</p>
                     </div>
                     <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
                           <select id="forecasterBranchSelect" onchange="window.loadForecasterEngine()" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; cursor: pointer;">
@@ -1664,6 +1665,38 @@
                         <button onclick="window.loadForecasterEngine()" style="background: var(--primary); border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">🔄 Run Calculation</button>
                     </div>
                 </div>
+                
+                <!-- 🤖 NEW: AI SCHEDULER CONTROLS -->
+                <div id="forecasterHeaderControls" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-between; align-items: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 15px; margin-bottom: 15px;">
+                        <div style="display: flex; gap: 10px; flex: 1; min-width: 300px;">
+                            <span style="font-size: 20px; align-self: center;">🔍</span>
+                            <input type="text" id="fcSearch" placeholder="Search item..." onkeyup="window.filterForecaster()" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold;">
+                            <select id="fcCategory" onchange="window.filterForecaster()" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; cursor: pointer; color: #334155;">
+                                <option value="All">All Categories</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                        <div>
+                            <h3 style="margin: 0; color: #8b5cf6; font-size: 16px;">🤖 AI Delivery Auto-Scheduler</h3>
+                            <span style="font-size: 12px; color: #64748b;">Set your target delivery date. The AI calculates dispatch quantities to survive until then + safety buffer.</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap;">
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">Next Delivery Date</span>
+                                <input type="date" id="fcTargetDate" style="padding: 10px; border-radius: 6px; border: 1px solid #8b5cf6; color: #6d28d9; font-weight: bold; outline: none;">
+                            </div>
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">Buffer Days</span>
+                                <input type="number" id="fcBuffer" value="2" style="width: 70px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; outline: none; color: #334155;">
+                            </div>
+                            <button onclick="window.generateAiDispatchList()" style="background: #8b5cf6; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-top: 14px; font-size: 14px; transition: 0.2s;">⚡ Generate Dispatch List</button>
+                        </div>
+                    </div>
+                </div>
+        
                 <div id="forecasterGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
                     <div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #94a3b8; font-size: 16px;">
                         Click "Run Calculation" to scan your inventory burn rate.
