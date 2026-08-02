@@ -3373,7 +3373,7 @@ setTimeout(() => { if (typeof window.startPOListener === 'function') window.star
 // 🧠 PHASE 5: SMART BURN RATE & AI DELIVERY SCHEDULER
 // ========================================================
 window.globalForecasterData = []; 
-window.isForecasterLoading = false; // 🔥 NEW: Prevents search bar from crashing the loading screen
+window.isForecasterLoading = false; 
 
 window.loadForecasterEngine = async function() {
     let branchSelect = document.getElementById('forecasterBranchSelect');
@@ -3381,19 +3381,18 @@ window.loadForecasterEngine = async function() {
     let grid = document.getElementById('forecasterGrid');
     if (!grid) return;
 
-    window.isForecasterLoading = true; // Lock the UI
+    window.isForecasterLoading = true; // Lock the search bar to prevent crashes
 
-    let btnRun = document.getElementById('btnRunForecaster');
-    if (!btnRun) btnRun = document.querySelector('button[onclick="window.loadForecasterEngine()"]');
-    
+    let btnRun = document.getElementById('btnRunForecaster') || document.querySelector('button[onclick="window.loadForecasterEngine()"]');
     if (btnRun) { btnRun.innerText = "⏳ Scanning..."; btnRun.disabled = true; }
 
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning 14 days of stock history...</div>';
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning stock history... Please wait.</div>';
 
     try {
         let today = new Date();
         let fourteenDaysAgo = new Date();
         fourteenDaysAgo.setDate(today.getDate() - 14);
+        let fourteenDaysMs = fourteenDaysAgo.getTime();
 
         // 1. Fetch Live Inventory & Extract Categories
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
@@ -3415,37 +3414,39 @@ window.loadForecasterEngine = async function() {
         if (catDrop) {
             let currentVal = catDrop.value;
             let catHtml = '<option value="All">All Categories</option>';
-            Array.from(categories).sort().forEach(c => {
-                catHtml += `<option value="${c}">${c}</option>`;
-            });
+            Array.from(categories).sort().forEach(c => { catHtml += `<option value="${c}">${c}</option>`; });
             catDrop.innerHTML = catHtml;
-            // Retain selection if possible
-            if (currentVal !== "All" && Array.from(categories).includes(currentVal)) {
-                catDrop.value = currentVal;
-            } else {
-                catDrop.value = "All";
-            }
+            if (currentVal !== "All" && Array.from(categories).includes(currentVal)) catDrop.value = currentVal; 
+            else catDrop.value = "All";
         }
 
-        // 2. 🔥 THE BULLETPROOF MATH FIX: Query ONLY by date, filter branch locally!
-        // This completely prevents Firebase Index Crashes.
-        const logsQ = query(collection(db, "stock_logs"), where("timestamp", ">=", fourteenDaysAgo));
+        // 2. 🔥 THE BULLETPROOF MATH FIX: Fetch recent logs using Limit and OrderBy to prevent Firebase hangs!
+        const logsQ = query(collection(db, "stock_logs"), orderBy("timestamp", "desc"), limit(3000));
         const logsSnap = await getDocs(logsQ);
 
         let burnData = {};
         
         logsSnap.forEach(doc => {
             let log = doc.data();
-            if (log.branch !== branch) return; // Filter branch instantly in memory!
+            if (log.branch !== branch) return; // Filter branch instantly in local memory
             
-            let v = parseFloat(log.variance) || 0;
-            let t = (log.type || "").toLowerCase();
-            let itemName = (log.item || "").trim().toLowerCase(); 
+            let logTimeMs = 0;
+            if (log.timestamp) {
+                if (log.timestamp.toDate) logTimeMs = log.timestamp.toDate().getTime();
+                else logTimeMs = new Date(log.timestamp).getTime();
+            }
             
-            // Matches Sales, Waste, Prep, and Adjustments
-            if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
-                if (!burnData[itemName]) burnData[itemName] = 0;
-                burnData[itemName] += Math.abs(v);
+            // Only process logs that happened in the last 14 days
+            if (logTimeMs >= fourteenDaysMs) {
+                let v = parseFloat(log.variance) || 0;
+                let t = (log.type || "").toLowerCase();
+                let itemName = (log.item || "").trim().toLowerCase(); 
+                
+                // Matches Sales, Waste, Prep, and Adjustments!
+                if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                    if (!burnData[itemName]) burnData[itemName] = 0;
+                    burnData[itemName] += Math.abs(v);
+                }
             }
         });
 
@@ -3457,23 +3458,18 @@ window.loadForecasterEngine = async function() {
             let stock = parseFloat(item.currentStock) || 0;
             let daysLeft = dailyBurn > 0 ? (stock / dailyBurn) : Infinity;
 
-            return {
-                ...item,
-                totalBurn: totalBurn,
-                dailyBurn: dailyBurn,
-                daysLeft: daysLeft
-            };
+            return { ...item, totalBurn, dailyBurn, daysLeft };
         });
 
         // Sort by most critical (lowest days left)
         window.globalForecasterData.sort((a, b) => a.daysLeft - b.daysLeft);
-
-        window.isForecasterLoading = false; // Release the lock
-        window.filterForecaster(); // Trigger the visual renderer
+        
+        window.isForecasterLoading = false; // Unlock the UI
+        window.filterForecaster(); // Trigger visual renderer
 
     } catch(e) {
         console.error("Forecaster Error:", e);
-        window.isForecasterLoading = false; // Release the lock
+        window.isForecasterLoading = false;
         grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Error running calculation. Check console.</div>';
     } finally {
         if (btnRun) { btnRun.innerText = "🔄 Run Calculation"; btnRun.disabled = false; }
@@ -3481,7 +3477,7 @@ window.loadForecasterEngine = async function() {
 };
 
 window.filterForecaster = function() {
-    if (window.isForecasterLoading) return; // 🔥 Prevents typing from interrupting the loading screen!
+    if (window.isForecasterLoading) return; // 🔥 SAFETY LOCK: Prevents typing from interrupting loading!
 
     let grid = document.getElementById('forecasterGrid');
     if (!grid) return;
@@ -3512,7 +3508,6 @@ window.filterForecaster = function() {
         catsObj[c].push(item);
     });
 
-    // 🎨 RENDER THE CARDS WITH CATEGORY DIVIDERS
     Object.keys(catsObj).sort().forEach(category => {
         html += `<div style="grid-column: 1/-1; background: #e2e8f0; padding: 12px 20px; font-weight: 900; color: #334155; border-radius: 8px; text-transform: uppercase; margin-top: 10px; font-size: 15px; border-left: 4px solid #94a3b8;">📁 ${category}</div>`;
         
@@ -3550,8 +3545,7 @@ window.filterForecaster = function() {
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
                     <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
                 </div>
-            </div>
-            `;
+            </div>`;
         });
     });
 
@@ -3633,7 +3627,6 @@ window.generateAiDispatchList = function() {
 
 window.loadSmartSupplyChain = window.loadForecasterEngine;
 
-window.loadSmartSupplyChain = window.loadForecasterEngine;
 // 🟢 NEW: Updates the dropdown to show "Packs" vs "grams" based on the item
 window.updateDispatchUomLabel = function() {
     let itemName = document.getElementById('dispItem').value;
