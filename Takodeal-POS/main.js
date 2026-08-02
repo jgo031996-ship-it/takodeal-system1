@@ -4861,10 +4861,9 @@ window.openRejectedModal = function(encodedOrder) {
     });
 };
 
-// 🔥 THE RESTORED FUNCTIONS THAT CAUSED THE CRASH
 window.acknowledgeRejectedRequest = async function(docId) {
     try {
-        await window.updateDoc(window.doc(window.db, "purchase_orders", docId), { cashierAcknowledged: true });
+        await updateDoc(doc(db, "purchase_orders", docId), { cashierAcknowledged: true });
         if (typeof Swal !== 'undefined') Swal.close();
         window.loadStockRequestUI(); 
     } catch(e) { console.error(e); }
@@ -4873,7 +4872,7 @@ window.acknowledgeRejectedRequest = async function(docId) {
 window.cancelPendingRequest = async function(docId) {
     if (!confirm("Are you sure you want to cancel this request?")) return;
     try {
-        await window.deleteDoc(window.doc(window.db, "purchase_orders", docId));
+        await deleteDoc(doc(db, "purchase_orders", docId));
         Swal.fire({title: 'Cancelled', text: 'Request has been safely cancelled.', icon: 'success', timer: 1500, showConfirmButton: false});
         if (typeof Swal !== 'undefined') Swal.close();
         window.loadStockRequestUI();
@@ -4882,25 +4881,16 @@ window.cancelPendingRequest = async function(docId) {
     }
 };
 
-window.loadStockRequestUI = async function() {
-    let container = document.getElementById('stockReqList');
-    let branch = localStorage.getItem('takodeal_device_branch');
-    if (!branch) return;
+// 📡 REAL-TIME SYNC ENGINE: Instantly reacts to Manager actions (Approvals, Delays, Deletes)
+window.stockReqPoUnsubscribe = null;
 
-    // Remove old conflicting CSS
-    let oldCss = document.getElementById('historyOverflowFix');
-    if (oldCss) oldCss.remove();
-    document.head.insertAdjacentHTML('beforeend', `<style id="historyOverflowFix">td div[style*="color"], td ul { max-height: 150px; overflow-y: auto; padding-right: 5px; display: block; }</style>`);
+window.listenToStockRequests = function(branch) {
+    if (window.stockReqPoUnsubscribe) window.stockReqPoUnsubscribe();
 
-    // KILL THE OLD YELLOW BOX CONTAINER FOR GOOD
-    let mergedUI = document.getElementById('mergedRequestUI');
-    if (mergedUI) mergedUI.remove();
-
-    try {
-        // 🔥 THE FIX: Using the localized query tools perfectly to prevent 'window.orderBy is not a function'
-        const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(10));
-        const poSnap = await getDocs(poQ);
-        
+    // 🔥 THE CRASH FIX: Removed the "window." prefix from the Firebase query modifiers
+    const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), orderBy("timestamp", "desc"), limit(10));
+    
+    window.stockReqPoUnsubscribe = onSnapshot(poQ, (poSnap) => {
         let pendingOrder = null;
         let rejectedOrder = null;
         
@@ -4910,46 +4900,93 @@ window.loadStockRequestUI = async function() {
             if (d.status === "Rejected" && !d.cashierAcknowledged && !rejectedOrder) rejectedOrder = {id: docSnap.id, ...d};
         });
 
-        // 🔘 DYNAMIC BUTTON GENERATOR
-        let pendingBtnHtml = '';
-        if (rejectedOrder) {
-            let safeOrderStr = encodeURIComponent(JSON.stringify(rejectedOrder));
-            pendingBtnHtml = `<button onclick="window.openRejectedModal('${safeOrderStr}')" style="background: #ef4444; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); white-space: nowrap; animation: pulse 1.5s infinite;">❌ HQ Rejected (1)</button>`;
-        } else if (pendingOrder) {
-            let safeOrderStr = encodeURIComponent(JSON.stringify(pendingOrder));
-            pendingBtnHtml = `<button onclick="window.openPendingModal('${safeOrderStr}')" style="background: #f59e0b; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3); white-space: nowrap;">⏳ Pending HQ (1)</button>`;
-        }
+        // 🔘 Update the UI Buttons instantly!
+        let btnContainer = document.getElementById('stockReqDynamicBtns');
+        if (btnContainer) {
+            let pendingBtnHtml = '';
+            if (rejectedOrder) {
+                let safeOrderStr = encodeURIComponent(JSON.stringify(rejectedOrder));
+                pendingBtnHtml = `<button onclick="window.openRejectedModal('${safeOrderStr}')" style="background: #ef4444; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); white-space: nowrap; animation: pulse 1.5s infinite;">❌ HQ Rejected (1)</button>`;
+            } else if (pendingOrder) {
+                let safeOrderStr = encodeURIComponent(JSON.stringify(pendingOrder));
+                pendingBtnHtml = `<button onclick="window.openPendingModal('${safeOrderStr}')" style="background: #f59e0b; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3); white-space: nowrap;">⏳ Pending HQ (1)</button>`;
+            }
+            
+            let cartBtnHtml = `<button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (0)</button>`;
 
-        // 🔥 INJECT THE NEW BUTTON UI 🔥
-        let tabNew = document.getElementById('stockReqTabNew');
-        if (tabNew) {
-            tabNew.innerHTML = `
-            <div style="display: flex; flex-direction: column;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 10px; flex-wrap: wrap; align-items: center;">
-                    <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="flex: 1; min-width: 200px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
-                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                        ${pendingBtnHtml}
-                        <button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (0)</button>
-                    </div>
-                </div>
+            btnContainer.innerHTML = pendingBtnHtml + cartBtnHtml;
+
+            // Recalculate Cart Count
+            try {
+                let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
+                let draftCount = 0;
+                if (savedDraft) {
+                    for (let id in savedDraft) {
+                        if (savedDraft[id].type && savedDraft[id].type !== "None") draftCount++;
+                    }
+                }
+                let btnCart = document.getElementById('btnViewStockCart');
+                if (btnCart) btnCart.innerText = `🛒 View Cart (${draftCount})`;
+            } catch(e) {}
+        }
+        
+        // 👻 VANISH FIX: If the Manager deletes or delays the order while the Cashier is viewing it, force close the modal!
+        let swalTitle = document.getElementById('swal2-title');
+        if (swalTitle && swalTitle.innerText.includes('Awaiting HQ Approval') && !pendingOrder) {
+            if (typeof Swal !== 'undefined') {
+                Swal.close();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Request status updated by HQ', showConfirmButton: false, timer: 3000 });
+            }
+        }
+    });
+};
+
+window.loadStockRequestUI = async function() {
+    let container = document.getElementById('stockReqList');
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    let oldCss = document.getElementById('historyOverflowFix');
+    if (oldCss) oldCss.remove();
+    document.head.insertAdjacentHTML('beforeend', `<style id="historyOverflowFix">td div[style*="color"], td ul { max-height: 150px; overflow-y: auto; padding-right: 5px; display: block; }</style>`);
+
+    // Clean up old UI artifacts
+    let mergedUI = document.getElementById('mergedRequestUI');
+    if (mergedUI) mergedUI.remove();
+
+    let tabNew = document.getElementById('stockReqTabNew');
+    if (tabNew) {
+        tabNew.innerHTML = `
+        <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="flex: 1; min-width: 200px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
                 
-                <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
-                  <div>Item & HQ Status</div>
-                  <div style="text-align: center;">Branch Stock</div>
-                  <div style="text-align: center; color: #d97706;">Report Status</div>
-                  <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
-                </div>
-                
-                <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
-                  <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
+                <!-- DYNAMIC REAL-TIME BUTTONS INJECT HERE -->
+                <div id="stockReqDynamicBtns" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <button onclick="window.openStockReqCartModal()" id="btnViewStockCart" style="background: #10b981; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3); white-space: nowrap;">🛒 View Cart (0)</button>
                 </div>
             </div>
-            `;
-        }
+            
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
+              <div>Item & HQ Status</div>
+              <div style="text-align: center;">Branch Stock</div>
+              <div style="text-align: center; color: #d97706;">Report Status</div>
+              <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
+            </div>
+            
+            <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
+              <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
+            </div>
+        </div>
+        `;
+    }
 
-        container = document.getElementById('stockReqList');
+    // Initialize Real-Time Sync!
+    window.listenToStockRequests(branch);
 
-        // Fetch Branch and HQ Stock
+    container = document.getElementById('stockReqList');
+
+    try {
         const qBranch = query(collection(db, "inventory"), where("branch", "==", branch));
         const snapBranch = await getDocs(qBranch);
 
@@ -5028,11 +5065,11 @@ window.loadStockRequestUI = async function() {
                 </div>`;
             });
         });
+        
         if (container) container.innerHTML = html;
 
         try {
             let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
-            let draftCount = 0;
             if (savedDraft) {
                 for (let id in savedDraft) {
                     let select = document.getElementById(`reqType_${id}`);
@@ -5042,16 +5079,11 @@ window.loadStockRequestUI = async function() {
                     if (select && savedDraft[id].type && savedDraft[id].type !== "None") {
                         select.value = savedDraft[id].type;
                         if (typeof window.toggleActualCount === 'function') window.toggleActualCount(id);
-                        draftCount++;
                     }
                     if (countEl && savedDraft[id].count !== "") countEl.value = savedDraft[id].count;
                     if (uomEl && savedDraft[id].uom) uomEl.value = savedDraft[id].uom;
                 }
             }
-            
-            let btnCart = document.getElementById('btnViewStockCart');
-            if (btnCart) btnCart.innerText = `🛒 View Cart (${draftCount})`;
-
         } catch(e) {}
 
     } catch (e) {
