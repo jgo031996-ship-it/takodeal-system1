@@ -813,6 +813,7 @@ window.openEmployeeProfile = function(docId) {
                 let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
                 let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
                 
+                // 🔥 HERE IS THE NEW ACTION HTML WITH THE DELETE BUTTON
                 let actionHtml = d.status === 'Unpaid' 
                     ? `<div style="display: flex; gap: 5px; justify-content: center;">
                          <button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>
