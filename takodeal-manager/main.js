@@ -3383,11 +3383,13 @@ window.loadForecasterEngine = async function() {
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning 14 days of stock history...</div>';
 
     try {
+        // Set the 14-Day Lookback timestamp
         let today = new Date();
         let fourteenDaysAgo = new Date();
         fourteenDaysAgo.setDate(today.getDate() - 14);
+        let fourteenDaysMs = fourteenDaysAgo.getTime();
 
-        // 1. Load Inventory Items & Build Categories
+        // 1. Fetch Live Inventory & Extract Categories
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
         const invSnap = await getDocs(invQ);
         
@@ -3397,39 +3399,61 @@ window.loadForecasterEngine = async function() {
             let data = doc.data();
             data.id = doc.id;
             inventoryItems.push(data);
-            if (data.category) categories.add(data.category);
+            if (data.category && data.category.trim() !== "" && data.category !== "All Categories") {
+                categories.add(data.category.trim());
+            }
         });
 
+        // Populate Category Dropdown dynamically (and prevent duplicates)
         let catDrop = document.getElementById('fcCategory');
         if (catDrop) {
             let currentVal = catDrop.value;
             let catHtml = '<option value="All">All Categories</option>';
             Array.from(categories).sort().forEach(c => catHtml += `<option value="${c}">${c}</option>`);
             catDrop.innerHTML = catHtml;
-            if (Array.from(categories).includes(currentVal)) catDrop.value = currentVal;
+            // Only re-select if the previously selected category still exists
+            if (currentVal !== "All" && Array.from(categories).includes(currentVal)) {
+                catDrop.value = currentVal;
+            } else {
+                catDrop.value = "All";
+            }
         }
 
-        // 2. 🔥 BULLETPROOF MATH FIX: Scan ACTUAL Stock Logs and parse floats securely!
-        const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", fourteenDaysAgo));
+        // 2. 🔥 THE BULLETPROOF MATH FIX: Fetch all branch logs and filter dates in JS!
+        // This prevents Firebase Index errors from silently blocking your data.
+        const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch));
         const logsSnap = await getDocs(logsQ);
 
         let burnData = {};
         
         logsSnap.forEach(doc => {
             let log = doc.data();
-            let v = parseFloat(log.variance) || 0;
-            let t = (log.type || "").toLowerCase();
             
-            // If variance is negative, and it's a valid burn event:
-            if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided"))) {
-                if (!burnData[log.item]) burnData[log.item] = 0;
-                burnData[log.item] += Math.abs(v);
+            // Safely parse the timestamp regardless of how it was saved (Date object or Firebase Timestamp)
+            let logTimeMs = 0;
+            if (log.timestamp) {
+                if (log.timestamp.toDate) logTimeMs = log.timestamp.toDate().getTime();
+                else logTimeMs = new Date(log.timestamp).getTime();
+            }
+            
+            // Only process logs that happened in the last 14 days
+            if (logTimeMs >= fourteenDaysMs) {
+                let v = parseFloat(log.variance) || 0;
+                let t = (log.type || "").toLowerCase();
+                let itemName = (log.item || "").trim().toLowerCase(); // Normalize string to prevent spelling mismatches
+                
+                // If variance is negative, and it's a valid burn event:
+                if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment"))) {
+                    if (!burnData[itemName]) burnData[itemName] = 0;
+                    burnData[itemName] += Math.abs(v);
+                }
             }
         });
 
         // 3. Process Burn Rate Data
         window.globalForecasterData = inventoryItems.map(item => {
-            let totalBurn = burnData[item.name] || 0;
+            let normalizedItemName = (item.name || "").trim().toLowerCase();
+            let totalBurn = burnData[normalizedItemName] || 0;
             let dailyBurn = totalBurn / 14;
             let stock = parseFloat(item.currentStock) || 0;
             let daysLeft = dailyBurn > 0 ? (stock / dailyBurn) : Infinity;
@@ -3442,12 +3466,15 @@ window.loadForecasterEngine = async function() {
             };
         });
 
+        // Sort by most critical (lowest days left)
         window.globalForecasterData.sort((a, b) => a.daysLeft - b.daysLeft);
-        window.filterForecaster(); // Trigger the visual renderer
+
+        // Trigger the visual renderer
+        window.filterForecaster();
 
     } catch(e) {
         console.error("Forecaster Error:", e);
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Error running calculation. Check connection.</div>';
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Error running calculation. Check console.</div>';
     }
 };
 
@@ -3467,13 +3494,14 @@ window.filterForecaster = function() {
     let html = '';
     let catsObj = {};
     
-    // Group items beautifully by category
+    // Group by category to make it clean!
     filtered.forEach(item => {
         let c = item.category || "Uncategorized";
         if (!catsObj[c]) catsObj[c] = [];
         catsObj[c].push(item);
     });
 
+    // 🎨 RENDER THE CARDS WITH CATEGORY DIVIDERS
     Object.keys(catsObj).sort().forEach(category => {
         html += `<div style="grid-column: 1/-1; background: #e2e8f0; padding: 12px 20px; font-weight: 900; color: #334155; border-radius: 8px; text-transform: uppercase; margin-top: 10px; font-size: 15px; border-left: 4px solid #94a3b8;">📁 ${category}</div>`;
         
@@ -3486,6 +3514,7 @@ window.filterForecaster = function() {
             let daysBoxBorder = item.daysLeft <= 0 ? "#fca5a5" : (item.daysLeft <= 3 ? "#fcd34d" : "#bbf7d0");
             
             let daysText = item.daysLeft === Infinity ? "∞" : item.daysLeft.toFixed(1);
+            
             let statusText = item.currentStock < 0 ? "NEGATIVE STOCK (Audit Needed)" : (item.daysLeft <= 0 ? "Out of Stock Now" : (item.daysLeft <= 3 ? "Critical (Reorder Immediately)" : "Sufficient Stock"));
             let statusColor = item.currentStock < 0 ? "#dc2626" : (item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#16a34a"));
 
@@ -3498,6 +3527,7 @@ window.filterForecaster = function() {
                         <div style="font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">${item.branch}</div>
                     </div>
                 </div>
+                
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div>
                         <div style="font-size: 13px; color: #64748b; margin-bottom: 5px;">Current Stock: <strong style="color: ${stockColor}; font-size: 15px;">${item.currentStock.toFixed(1)} <span style="font-size: 11px;">${item.uom}</span></strong></div>
@@ -3508,6 +3538,7 @@ window.filterForecaster = function() {
                         <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; margin-top: 4px;">Days Left</div>
                     </div>
                 </div>
+                
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
                     <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
                 </div>
