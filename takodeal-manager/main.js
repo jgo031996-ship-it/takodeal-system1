@@ -3379,54 +3379,15 @@ window.loadForecasterEngine = async function() {
     let branch = branchSelect ? branchSelect.value : 'Cabantian';
     let grid = document.getElementById('forecasterGrid');
     if (!grid) return;
-    
-    // 1. 🎨 INJECT THE UPGRADED AI SCHEDULER UI
-    let headerDiv = document.getElementById('forecasterHeaderControls');
-    if (!headerDiv) {
-        let parentContainer = grid.parentElement;
-        let controlsHtml = `
-            <div id="forecasterHeaderControls" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-between; align-items: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 15px; margin-bottom: 15px;">
-                    <div style="display: flex; gap: 10px; flex: 1; min-width: 300px;">
-                        <span style="font-size: 20px; align-self: center;">🔍</span>
-                        <input type="text" id="fcSearch" placeholder="Search item..." onkeyup="window.filterForecaster()" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold;">
-                        <select id="fcCategory" onchange="window.filterForecaster()" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; cursor: pointer; color: #334155;">
-                            <option value="All">All Categories</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                    <div>
-                        <h3 style="margin: 0; color: #8b5cf6; font-size: 16px;">🤖 AI Delivery Auto-Scheduler</h3>
-                        <span style="font-size: 12px; color: #64748b;">Set your target delivery date. The AI will calculate exact dispatch quantities to survive until then + safety buffer.</span>
-                    </div>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap;">
-                        <div style="display: flex; flex-direction: column;">
-                            <span style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">Next Delivery Date</span>
-                            <input type="date" id="fcTargetDate" style="padding: 10px; border-radius: 6px; border: 1px solid #8b5cf6; color: #6d28d9; font-weight: bold; outline: none;">
-                        </div>
-                        <div style="display: flex; flex-direction: column;">
-                            <span style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">Buffer Days</span>
-                            <input type="number" id="fcBuffer" value="2" style="width: 70px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; outline: none; color: #334155;">
-                        </div>
-                        <button onclick="window.generateAiDispatchList()" style="background: #8b5cf6; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-top: 14px; font-size: 14px; transition: 0.2s;">⚡ Generate Dispatch List</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        parentContainer.insertBefore(document.createRange().createContextualFragment(controlsHtml), grid);
-    }
 
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning 14 days of stock history...</div>';
 
     try {
-        // 2. Determine Lookback Dates (14 Days)
         let today = new Date();
         let fourteenDaysAgo = new Date();
         fourteenDaysAgo.setDate(today.getDate() - 14);
 
-        // 3. Fetch Live Inventory
+        // 1. Load Inventory Items & Build Categories
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
         const invSnap = await getDocs(invQ);
         
@@ -3439,15 +3400,16 @@ window.loadForecasterEngine = async function() {
             if (data.category) categories.add(data.category);
         });
 
-        // Populate Category Dropdown dynamically
         let catDrop = document.getElementById('fcCategory');
-        if (catDrop && catDrop.options.length <= 1) {
+        if (catDrop) {
+            let currentVal = catDrop.value;
             let catHtml = '<option value="All">All Categories</option>';
             Array.from(categories).sort().forEach(c => catHtml += `<option value="${c}">${c}</option>`);
             catDrop.innerHTML = catHtml;
+            if (Array.from(categories).includes(currentVal)) catDrop.value = currentVal;
         }
 
-        // 4. 🔥 THE MATH FIX: Scan ACTUAL Stock Logs for exact variance!
+        // 2. 🔥 BULLETPROOF MATH FIX: Scan ACTUAL Stock Logs and parse floats securely!
         const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", fourteenDaysAgo));
         const logsSnap = await getDocs(logsQ);
 
@@ -3455,17 +3417,17 @@ window.loadForecasterEngine = async function() {
         
         logsSnap.forEach(doc => {
             let log = doc.data();
-            // Filter to ONLY deductions (Sales, Waste, Preps, Store Use) to find the True Burn!
-            let isDeduction = log.variance < 0;
-            let isValidType = log.type === "Shift Sales Deduction" || log.type === "Waste / Spoilage" || log.type === "Store Use" || log.type === "End-of-Shift Kitchen Prep" || log.type === "Manual Adjustment" || log.type === "Transaction Voided (Addon)";
+            let v = parseFloat(log.variance) || 0;
+            let t = (log.type || "").toLowerCase();
             
-            if (isDeduction && isValidType) {
+            // If variance is negative, and it's a valid burn event:
+            if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided"))) {
                 if (!burnData[log.item]) burnData[log.item] = 0;
-                burnData[log.item] += Math.abs(log.variance);
+                burnData[log.item] += Math.abs(v);
             }
         });
 
-        // 5. Calculate Metrics
+        // 3. Process Burn Rate Data
         window.globalForecasterData = inventoryItems.map(item => {
             let totalBurn = burnData[item.name] || 0;
             let dailyBurn = totalBurn / 14;
@@ -3480,11 +3442,8 @@ window.loadForecasterEngine = async function() {
             };
         });
 
-        // Sort by most critical (lowest days left)
         window.globalForecasterData.sort((a, b) => a.daysLeft - b.daysLeft);
-
-        // Trigger the visual renderer
-        window.filterForecaster();
+        window.filterForecaster(); // Trigger the visual renderer
 
     } catch(e) {
         console.error("Forecaster Error:", e);
@@ -3508,14 +3467,13 @@ window.filterForecaster = function() {
     let html = '';
     let catsObj = {};
     
-    // Group by category to make it clean!
+    // Group items beautifully by category
     filtered.forEach(item => {
         let c = item.category || "Uncategorized";
         if (!catsObj[c]) catsObj[c] = [];
         catsObj[c].push(item);
     });
 
-    // 🎨 RENDER THE CARDS WITH CATEGORY DIVIDERS
     Object.keys(catsObj).sort().forEach(category => {
         html += `<div style="grid-column: 1/-1; background: #e2e8f0; padding: 12px 20px; font-weight: 900; color: #334155; border-radius: 8px; text-transform: uppercase; margin-top: 10px; font-size: 15px; border-left: 4px solid #94a3b8;">📁 ${category}</div>`;
         
@@ -3528,7 +3486,6 @@ window.filterForecaster = function() {
             let daysBoxBorder = item.daysLeft <= 0 ? "#fca5a5" : (item.daysLeft <= 3 ? "#fcd34d" : "#bbf7d0");
             
             let daysText = item.daysLeft === Infinity ? "∞" : item.daysLeft.toFixed(1);
-            
             let statusText = item.currentStock < 0 ? "NEGATIVE STOCK (Audit Needed)" : (item.daysLeft <= 0 ? "Out of Stock Now" : (item.daysLeft <= 3 ? "Critical (Reorder Immediately)" : "Sufficient Stock"));
             let statusColor = item.currentStock < 0 ? "#dc2626" : (item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#16a34a"));
 
@@ -3541,7 +3498,6 @@ window.filterForecaster = function() {
                         <div style="font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">${item.branch}</div>
                     </div>
                 </div>
-                
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div>
                         <div style="font-size: 13px; color: #64748b; margin-bottom: 5px;">Current Stock: <strong style="color: ${stockColor}; font-size: 15px;">${item.currentStock.toFixed(1)} <span style="font-size: 11px;">${item.uom}</span></strong></div>
@@ -3552,7 +3508,6 @@ window.filterForecaster = function() {
                         <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; margin-top: 4px;">Days Left</div>
                     </div>
                 </div>
-                
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
                     <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
                 </div>
@@ -3600,9 +3555,7 @@ window.generateAiDispatchList = function() {
             let deficit = requiredStockForPeriod - item.currentStock;
 
             if (deficit > 0) {
-                // Determine how many bulk units to send
                 let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-                // AI strictly rounds UP so branches never fall short of safety buffer
                 let purchQtyNeeded = Math.ceil(deficit / convRate); 
                 
                 let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
@@ -3645,7 +3598,6 @@ window.generateAiDispatchList = function() {
         confirmButtonColor: '#0ea5e9',
         customClass: { popup: 'rounded-2xl' }
     }).then(() => {
-        // Auto-navigate to Dispatch tab and trigger UI rendering!
         let dispatchTab = document.getElementById('nav-dispatch');
         if (dispatchTab) dispatchTab.click();
         
@@ -3657,8 +3609,7 @@ window.generateAiDispatchList = function() {
     });
 };
 
-// To ensure it runs when called from HTML
-window.loadSmartSupplyChain = window.loadForecasterEngine;
+window.loadSmartSupplyChain = window.loadForecasterEngine; // To ensure backwards compatibility with older HTML tags
 
 // 🟢 NEW: Updates the dropdown to show "Packs" vs "grams" based on the item
 window.updateDispatchUomLabel = function() {
