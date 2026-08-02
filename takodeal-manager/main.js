@@ -3373,6 +3373,7 @@ setTimeout(() => { if (typeof window.startPOListener === 'function') window.star
 // 🧠 PHASE 5: SMART BURN RATE & AI DELIVERY SCHEDULER
 // ========================================================
 window.globalForecasterData = []; 
+window.isForecasterLoading = false; // 🔥 NEW: Prevents search bar from crashing the loading screen
 
 window.loadForecasterEngine = async function() {
     let branchSelect = document.getElementById('forecasterBranchSelect');
@@ -3380,7 +3381,11 @@ window.loadForecasterEngine = async function() {
     let grid = document.getElementById('forecasterGrid');
     if (!grid) return;
 
+    window.isForecasterLoading = true; // Lock the UI
+
     let btnRun = document.getElementById('btnRunForecaster');
+    if (!btnRun) btnRun = document.querySelector('button[onclick="window.loadForecasterEngine()"]');
+    
     if (btnRun) { btnRun.innerText = "⏳ Scanning..."; btnRun.disabled = true; }
 
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning 14 days of stock history...</div>';
@@ -3389,7 +3394,6 @@ window.loadForecasterEngine = async function() {
         let today = new Date();
         let fourteenDaysAgo = new Date();
         fourteenDaysAgo.setDate(today.getDate() - 14);
-        let fourteenDaysMs = fourteenDaysAgo.getTime();
 
         // 1. Fetch Live Inventory & Extract Categories
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
@@ -3406,7 +3410,7 @@ window.loadForecasterEngine = async function() {
             }
         });
 
-        // Populate Category Dropdown dynamically (and prevent duplicates)
+        // Populate Category Dropdown dynamically
         let catDrop = document.getElementById('fcCategory');
         if (catDrop) {
             let currentVal = catDrop.value;
@@ -3415,7 +3419,7 @@ window.loadForecasterEngine = async function() {
                 catHtml += `<option value="${c}">${c}</option>`;
             });
             catDrop.innerHTML = catHtml;
-            // Only re-select if the previously selected category still exists
+            // Retain selection if possible
             if (currentVal !== "All" && Array.from(categories).includes(currentVal)) {
                 catDrop.value = currentVal;
             } else {
@@ -3423,30 +3427,25 @@ window.loadForecasterEngine = async function() {
             }
         }
 
-        // 2. 🔥 THE BULLETPROOF MATH FIX: Fetch all branch logs and filter dates in JS!
-        const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch));
+        // 2. 🔥 THE BULLETPROOF MATH FIX: Query ONLY by date, filter branch locally!
+        // This completely prevents Firebase Index Crashes.
+        const logsQ = query(collection(db, "stock_logs"), where("timestamp", ">=", fourteenDaysAgo));
         const logsSnap = await getDocs(logsQ);
 
         let burnData = {};
         
         logsSnap.forEach(doc => {
             let log = doc.data();
-            let logTimeMs = 0;
-            if (log.timestamp) {
-                if (log.timestamp.toDate) logTimeMs = log.timestamp.toDate().getTime();
-                else logTimeMs = new Date(log.timestamp).getTime();
-            }
+            if (log.branch !== branch) return; // Filter branch instantly in memory!
             
-            if (logTimeMs >= fourteenDaysMs) {
-                let v = parseFloat(log.variance) || 0;
-                let t = (log.type || "").toLowerCase();
-                let itemName = (log.item || "").trim().toLowerCase(); 
-                
-                // Matches Sales, Waste, Prep, and Adjustments!
-                if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment"))) {
-                    if (!burnData[itemName]) burnData[itemName] = 0;
-                    burnData[itemName] += Math.abs(v);
-                }
+            let v = parseFloat(log.variance) || 0;
+            let t = (log.type || "").toLowerCase();
+            let itemName = (log.item || "").trim().toLowerCase(); 
+            
+            // Matches Sales, Waste, Prep, and Adjustments
+            if (v < 0 && (t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                if (!burnData[itemName]) burnData[itemName] = 0;
+                burnData[itemName] += Math.abs(v);
             }
         });
 
@@ -3469,11 +3468,12 @@ window.loadForecasterEngine = async function() {
         // Sort by most critical (lowest days left)
         window.globalForecasterData.sort((a, b) => a.daysLeft - b.daysLeft);
 
-        // Trigger the visual renderer
-        window.filterForecaster();
+        window.isForecasterLoading = false; // Release the lock
+        window.filterForecaster(); // Trigger the visual renderer
 
     } catch(e) {
         console.error("Forecaster Error:", e);
+        window.isForecasterLoading = false; // Release the lock
         grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Error running calculation. Check console.</div>';
     } finally {
         if (btnRun) { btnRun.innerText = "🔄 Run Calculation"; btnRun.disabled = false; }
@@ -3481,20 +3481,20 @@ window.loadForecasterEngine = async function() {
 };
 
 window.filterForecaster = function() {
+    if (window.isForecasterLoading) return; // 🔥 Prevents typing from interrupting the loading screen!
+
     let grid = document.getElementById('forecasterGrid');
     if (!grid) return;
 
-    // 🔥 SAFETY CHECK: Prevent crash if they type before data is loaded!
+    let searchInput = document.getElementById('fcSearch');
+    let search = searchInput ? searchInput.value.toLowerCase() : "";
+    let catDrop = document.getElementById('fcCategory');
+    let cat = catDrop ? catDrop.value : "All";
+
     if (!window.globalForecasterData || window.globalForecasterData.length === 0) {
         grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 16px;">Data not loaded. Please click "Run Calculation".</div>';
         return;
     }
-
-    let searchInput = document.getElementById('fcSearch');
-    let search = searchInput ? searchInput.value.toLowerCase() : "";
-    
-    let catDrop = document.getElementById('fcCategory');
-    let cat = catDrop ? catDrop.value : "All";
 
     let filtered = window.globalForecasterData.filter(item => {
         let matchSearch = (item.name || "").toLowerCase().includes(search);
@@ -3525,7 +3525,6 @@ window.filterForecaster = function() {
             let daysBoxBorder = item.daysLeft <= 0 ? "#fca5a5" : (item.daysLeft <= 3 ? "#fcd34d" : "#bbf7d0");
             
             let daysText = item.daysLeft === Infinity ? "∞" : item.daysLeft.toFixed(1);
-            
             let statusText = item.currentStock < 0 ? "NEGATIVE STOCK (Audit Needed)" : (item.daysLeft <= 0 ? "Out of Stock Now" : (item.daysLeft <= 3 ? "Critical (Reorder Immediately)" : "Sufficient Stock"));
             let statusColor = item.currentStock < 0 ? "#dc2626" : (item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#16a34a"));
 
@@ -3538,7 +3537,6 @@ window.filterForecaster = function() {
                         <div style="font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">${item.branch}</div>
                     </div>
                 </div>
-                
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div>
                         <div style="font-size: 13px; color: #64748b; margin-bottom: 5px;">Current Stock: <strong style="color: ${stockColor}; font-size: 15px;">${item.currentStock.toFixed(1)} <span style="font-size: 11px;">${item.uom}</span></strong></div>
@@ -3549,7 +3547,6 @@ window.filterForecaster = function() {
                         <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; margin-top: 4px;">Days Left</div>
                     </div>
                 </div>
-                
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
                     <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
                 </div>
@@ -3566,101 +3563,72 @@ window.filterForecaster = function() {
 // ⚡ THE AI DELIVERY DISPATCH SCHEDULER
 // ========================================================
 window.generateAiDispatchList = function() {
-    try {
-        // 🔥 SAFETY CHECK: Don't let them click this if data isn't loaded!
-        if (!window.globalForecasterData || window.globalForecasterData.length === 0) {
-            return Swal.fire('No Data', 'Please click "Run Calculation" first to scan the inventory.', 'warning');
-        }
-
-        let targetDateStr = document.getElementById('fcTargetDate').value;
-        let bufferDays = parseInt(document.getElementById('fcBuffer').value) || 0;
-        let branchSelect = document.getElementById('forecasterBranchSelect');
-        let branch = branchSelect ? branchSelect.value : 'Cabantian';
-
-        if (!targetDateStr) {
-            return Swal.fire('Missing Date', 'Please select your target Next Delivery Date.', 'warning');
-        }
-
-        let targetDate = new Date(targetDateStr);
-        let today = new Date();
-        today.setHours(0,0,0,0);
-        targetDate.setHours(0,0,0,0);
-        
-        let timeDiff = targetDate.getTime() - today.getTime();
-        let daysUntilDelivery = Math.ceil(timeDiff / (1000 * 3600 * 24));
-
-        if (daysUntilDelivery < 0) {
-            return Swal.fire('Invalid Date', 'The delivery date cannot be in the past.', 'error');
-        }
-
-        let totalDaysToCover = daysUntilDelivery + bufferDays;
-        let itemsToDispatch = [];
-
-        // The AI Engine calculation!
-        window.globalForecasterData.forEach(item => {
-            if (item.dailyBurn > 0) {
-                let requiredStockForPeriod = item.dailyBurn * totalDaysToCover;
-                let deficit = requiredStockForPeriod - item.currentStock;
-
-                if (deficit > 0) {
-                    let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-                    let purchQtyNeeded = Math.ceil(deficit / convRate); 
-                    
-                    let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-                    let bUom = item.uom || 'units';
-                    
-                    itemsToDispatch.push({
-                        itemName: item.name, name: item.name, sourceId: item.id,
-                        qty: purchQtyNeeded * convRate,
-                        rawQty: purchQtyNeeded,
-                        origRawQty: purchQtyNeeded,
-                        origBaseQty: purchQtyNeeded * convRate,
-                        uom: bUom, baseUom: bUom,
-                        purchaseUom: pUom, friendlyUom: pUom,
-                        selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                        convRate: convRate, conversionRate: convRate,
-                        category: item.category || 'Ingredients',
-                        hqStock: 0, 
-                        requestType: 'AI Schedule Draft'
-                    });
-                }
-            }
-        });
-
-        if (itemsToDispatch.length === 0) {
-            return Swal.fire('Sufficient Stock', `Based on current burn rates, ${branch} has enough stock to comfortably survive until ${targetDateStr}. No dispatch needed.`, 'success');
-        }
-
-        // 🚀 Send data to the Manager's Dispatch Cart
-        if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-        window.dispatchCart = itemsToDispatch;
-        
-        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-        localStorage.setItem('takodeal_dispatch_to', branch);
-        
-        Swal.fire({
-            title: '⚡ AI Schedule Complete!',
-            html: `Generated a smart dispatch list of <b style="color: #0ea5e9;">${itemsToDispatch.length} items</b> to sustain ${branch} for ${totalDaysToCover} days.<br><br>They have been loaded into your Dispatch Cart.`,
-            icon: 'success',
-            confirmButtonText: 'Go to Dispatch Cart',
-            confirmButtonColor: '#0ea5e9',
-            customClass: { popup: 'rounded-2xl' }
-        }).then(() => {
-            // Auto-navigate to Dispatch tab and trigger UI rendering!
-            let dispatchTab = document.getElementById('nav-dispatch');
-            if (dispatchTab) dispatchTab.click();
-            
-            setTimeout(() => {
-                let toDrop = document.getElementById('dispTo');
-                if (toDrop) toDrop.value = branch;
-                if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
-            }, 500);
-        });
-
-    } catch (e) {
-        console.error("AI Dispatch Error:", e);
-        Swal.fire('Error', 'An unexpected error occurred while generating the dispatch list.', 'error');
+    if (window.isForecasterLoading) return Swal.fire('Loading', 'Please wait for the calculation to finish scanning before generating a list.', 'info');
+    
+    if (!window.globalForecasterData || window.globalForecasterData.length === 0) {
+        return Swal.fire('No Data', 'Please click "Run Calculation" first to scan the inventory.', 'warning');
     }
+
+    let targetDateStr = document.getElementById('fcTargetDate').value;
+    let bufferDays = parseInt(document.getElementById('fcBuffer').value) || 0;
+    let branchSelect = document.getElementById('forecasterBranchSelect');
+    let branch = branchSelect ? branchSelect.value : 'Cabantian';
+
+    if (!targetDateStr) return Swal.fire('Missing Date', 'Please select your target Next Delivery Date.', 'warning');
+
+    let targetDate = new Date(targetDateStr);
+    let today = new Date();
+    today.setHours(0,0,0,0); targetDate.setHours(0,0,0,0);
+    
+    let timeDiff = targetDate.getTime() - today.getTime();
+    let daysUntilDelivery = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+    if (daysUntilDelivery < 0) return Swal.fire('Invalid Date', 'The delivery date cannot be in the past.', 'error');
+
+    let totalDaysToCover = daysUntilDelivery + bufferDays;
+    let itemsToDispatch = [];
+
+    window.globalForecasterData.forEach(item => {
+        if (item.dailyBurn > 0) {
+            let requiredStockForPeriod = item.dailyBurn * totalDaysToCover;
+            let deficit = requiredStockForPeriod - item.currentStock;
+
+            if (deficit > 0) {
+                let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+                let purchQtyNeeded = Math.ceil(deficit / convRate); 
+                let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+                let bUom = item.uom || 'units';
+                
+                itemsToDispatch.push({
+                    itemName: item.name, name: item.name, sourceId: item.id, qty: purchQtyNeeded * convRate, rawQty: purchQtyNeeded,
+                    origRawQty: purchQtyNeeded, origBaseQty: purchQtyNeeded * convRate, uom: bUom, baseUom: bUom,
+                    purchaseUom: pUom, friendlyUom: pUom, selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
+                    convRate: convRate, conversionRate: convRate, category: item.category || 'Ingredients', hqStock: 0, requestType: 'AI Schedule Draft'
+                });
+            }
+        }
+    });
+
+    if (itemsToDispatch.length === 0) return Swal.fire('Sufficient Stock', `Based on current burn rates, ${branch} has enough stock to comfortably survive until ${targetDateStr}. No dispatch needed.`, 'success');
+
+    if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+    window.dispatchCart = itemsToDispatch;
+    
+    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
+    localStorage.setItem('takodeal_dispatch_to', branch);
+    
+    Swal.fire({
+        title: '⚡ AI Schedule Complete!', html: `Generated a smart dispatch list of <b style="color: #0ea5e9;">${itemsToDispatch.length} items</b> to sustain ${branch} for ${totalDaysToCover} days.<br><br>They have been loaded into your Dispatch Cart.`,
+        icon: 'success', confirmButtonText: 'Go to Dispatch Cart', confirmButtonColor: '#0ea5e9', customClass: { popup: 'rounded-2xl' }
+    }).then(() => {
+        let dispatchTab = document.getElementById('nav-dispatch');
+        if (dispatchTab) dispatchTab.click();
+        setTimeout(() => {
+            let toDrop = document.getElementById('dispTo');
+            if (toDrop) toDrop.value = branch;
+            if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
+        }, 500);
+    });
 };
 
 window.loadSmartSupplyChain = window.loadForecasterEngine;
