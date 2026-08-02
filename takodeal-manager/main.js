@@ -19564,3 +19564,175 @@ window.deleteCurrentStaff = function() {
 
 // Link the new Logistics Feed buttons to the Review Modal
 window.reviewStockRequest = window.reviewPurchaseOrder;
+
+// ========================================================
+// 📈 7-DAY REVENUE TREND CHART ENGINE (WITH PAYMENT TOGGLES)
+// ========================================================
+window.chartFilters = { cash: true, gcash: true, grab: true };
+window.revenueChartInstance = null;
+
+window.toggleChartFilter = function(filterType) {
+    // Toggle the filter state
+    window.chartFilters[filterType] = !window.chartFilters[filterType];
+
+    // Update button visual styles
+    const cashBtn = document.getElementById('btnFilterCash');
+    const gcashBtn = document.getElementById('btnFilterGcash');
+    const grabBtn = document.getElementById('btnFilterGrab');
+
+    if (cashBtn) {
+        cashBtn.style.background = window.chartFilters.cash ? '#334155' : '#e2e8f0';
+        cashBtn.style.color = window.chartFilters.cash ? '#ffffff' : '#94a3b8';
+        cashBtn.style.opacity = window.chartFilters.cash ? '1' : '0.6';
+    }
+    if (gcashBtn) {
+        gcashBtn.style.background = window.chartFilters.gcash ? '#0284c7' : '#e2e8f0';
+        gcashBtn.style.color = window.chartFilters.gcash ? '#ffffff' : '#94a3b8';
+        gcashBtn.style.opacity = window.chartFilters.gcash ? '1' : '0.6';
+    }
+    if (grabBtn) {
+        grabBtn.style.background = window.chartFilters.grab ? '#00b14f' : '#e2e8f0';
+        grabBtn.style.color = window.chartFilters.grab ? '#ffffff' : '#94a3b8';
+        grabBtn.style.opacity = window.chartFilters.grab ? '1' : '0.6';
+    }
+
+    // Re-render chart with new filter preferences
+    window.renderDashboardCharts();
+};
+
+window.renderDashboardCharts = async function() {
+    const canvas = document.getElementById('revenueTrendChart');
+    if (!canvas) return;
+
+    try {
+        // 1. Build Date Range (Last 7 Days)
+        let labels = [];
+        let dateKeys = [];
+        let today = new Date();
+
+        for (let i = 6; i >= 0; i--) {
+            let d = new Date();
+            d.setDate(today.getDate() - i);
+            let dateStr = d.toISOString().split('T')[0];
+            let labelStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            labels.push(labelStr);
+            dateKeys.push(dateStr);
+        }
+
+        let startDate = new Date();
+        startDate.setDate(today.getDate() - 6);
+        startDate.setHours(0, 0, 0, 0);
+
+        // 2. Fetch Transactions from the last 7 days
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
+        const snap = await getDocs(q);
+
+        // 3. Define Branch Datasets
+        const branchColors = {
+            "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
+            "Citygate":  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" },
+            "Maa":       { border: "#0284c7", bg: "rgba(2, 132, 199, 0.1)" },
+            "Main Office": { border: "#10b981", bg: "rgba(16, 185, 129, 0.1)" }
+        };
+
+        let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
+        
+        let branchSalesData = {};
+        activeBranches.forEach(b => {
+            branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 };
+        });
+
+        // 4. Process Transactions against Active Toggles
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status === "Voided") return;
+
+            let txBranch = tx.branch || "Unknown";
+            if (!branchSalesData[txBranch]) return;
+
+            let txDate = tx.timestamp ? tx.timestamp.toDate().toISOString().split('T')[0] : null;
+            let dayIndex = dateKeys.indexOf(txDate);
+            if (dayIndex === -1) return;
+
+            // Handle Split Payments vs Standard Payments
+            if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
+                tx.splitDetails.forEach(split => {
+                    let method = (split.method || '').toLowerCase();
+                    let isCash = method === 'cash' && window.chartFilters.cash;
+                    let isGcash = method.includes('gcash') && window.chartFilters.gcash;
+                    let isGrab = method.includes('grab') && window.chartFilters.grab;
+
+                    if (isCash || isGcash || isGrab) {
+                        branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
+                    }
+                });
+            } else {
+                let method = (tx.paymentMethod || 'cash').toLowerCase();
+                let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
+                let isGcash = method.includes('gcash') && window.chartFilters.gcash;
+                let isGrab = method.includes('grab') && window.chartFilters.grab;
+                let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; // Group other digital with gcash toggle
+
+                if (isCash || isGcash || isGrab || isOtherDigital) {
+                    branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
+                }
+            }
+        });
+
+        // 5. Construct Chart.js Datasets
+        let datasets = [];
+        activeBranches.forEach(branch => {
+            let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
+            let dataPoints = dateKeys.map((_, idx) => branchSalesData[branch][idx]);
+
+            datasets.push({
+                label: branch,
+                data: dataPoints,
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: 3,
+                tension: 0.4,
+                fill: true,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            });
+        });
+
+        // 6. Destroy existing chart instance to avoid overlap glitches
+        if (window.revenueChartInstance) {
+            window.revenueChartInstance.destroy();
+        }
+
+        // 7. Render Chart
+        const ctx = canvas.getContext('2d');
+        window.revenueChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels: labels, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) { return '₱' + value.toLocaleString(); }
+                        }
+                    }
+                }
+            }
+        });
+
+    } catch(e) {
+        console.error("Error rendering revenue trend chart:", e);
+    }
+};
