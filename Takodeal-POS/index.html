@@ -2998,6 +2998,9 @@ window.loadSalesDashboard = async function () {
       tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
   } else {
     transactions.forEach((tx, idx) => {
+      let payMethod = (tx.paymentMethod || '').toLowerCase();
+      // 🚫 THE FIX: Completely hide "Store Use" from the Sales Dashboard!
+      if (payMethod === 'store use' || tx.orderType === 'Store Use') return;
       let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
       let txDate = "Today"; let txTime = "--:--";
       if (tx.timestamp && tx.timestamp.toDate) { 
@@ -4260,7 +4263,7 @@ window.rejectMobileOrder = async function(docId) {
             });
         };
     </script>
-    <script type="module" src="main.js?v=5.15"></script>
+    <script type="module" src="main.js?v=5.18"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
