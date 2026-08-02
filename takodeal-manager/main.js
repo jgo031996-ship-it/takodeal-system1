@@ -19524,3 +19524,134 @@ window.deleteStaffDeduction = async function(docId) {
         console.error(e); Swal.fire('Error', 'Failed to delete deduction.', 'error');
     }
 };
+
+// ========================================================
+// 🛡️ MASTER OVERRIDE: EMPLOYEE PROFILE & DEDUCTION FIX
+// ========================================================
+window.deleteStaffDeduction = async function(docId) {
+    if(!confirm("Are you sure you want to permanently delete this deduction? This will remove it from their next payslip.")) return;
+    try {
+        await window.deleteDoc(window.doc(window.db, "staff_deductions", docId));
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Deduction deleted!', showConfirmButton: false, timer: 2000});
+
+        // Find the active profile ID across any duplicate HTML elements
+        let profileIdInputs = document.querySelectorAll('[id="empProfileId"]');
+        let currentProfileId = null;
+        profileIdInputs.forEach(inp => { if (inp.value) currentProfileId = inp.value; });
+
+        if (currentProfileId) window.openEmployeeProfile(currentProfileId);
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to delete deduction.', 'error');
+    }
+};
+
+window.forceMarkDeductionPaid = async function(docId, staffName, profileId) {
+     try {
+         await window.updateDoc(window.doc(window.db, "staff_deductions", docId), { status: 'Paid' });
+         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Marked as Paid!', showConfirmButton: false, timer: 2000});
+         window.openEmployeeProfile(profileId);
+     } catch(e) { console.error(e); }
+};
+
+window.openEmployeeProfile = function(docId) {
+    let data = window.globalStaffData[docId];
+    if (!data) return;
+
+    // Force update ALL duplicate HTML elements on the page instantly!
+    const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
+    const setAllText = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.innerText = val);
+    const setAllHtml = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.innerHTML = val);
+
+    setAllVals('empProfileId', docId);
+    setAllVals('empFullName', data.cashierName || '');
+    setAllVals('empBranchAssign', data.branch || 'Cabantian');
+    setAllVals('empRole', data.role || 'Crew');
+    setAllVals('empDateHired', data.dateHired || '');
+    setAllVals('empHourlyRate', data.hourlyRate || '');
+    setAllVals('empPin', data.pin || '');
+
+    document.querySelectorAll('[id="empNightDiff"]').forEach(el => el.checked = (data.eligibleNightDiff !== false));
+    document.querySelectorAll('[id="staffWorkingStudent"]').forEach(el => el.checked = data.isWorkingStudent || false);
+
+    setAllVals('empPhone', data.phone || '');
+    setAllVals('empAddress', data.address || '');
+    setAllVals('empGcashName', data.gcashName || '');
+    setAllVals('empGcashNum', data.gcashNum || '');
+    setAllVals('empGotymeName', data.gotymeName || '');
+    setAllVals('empGotymeNum', data.gotymeNum || '');
+    setAllVals('empSSS', data.sss || '');
+    setAllVals('empPhilhealth', data.philhealth || '');
+    setAllVals('empPagibig', data.pagibig || '');
+
+    setAllHtml('customDeductionsContainer', '');
+    if (data.customDeductions && data.customDeductions.length > 0) {
+        data.customDeductions.forEach(d => {
+            if(typeof window.addCustomDeductionRow === 'function') window.addCustomDeductionRow(d.name, d.amount);
+        });
+    }
+
+    setAllVals('empSSSAmount', data.sssAmount || '');
+    setAllVals('empPhilAmount', data.philHealthAmount || '');
+    setAllVals('empPagibigAmount', data.pagibigAmount || '');
+    setAllVals('empEmergencyName', data.emergencyName || '');
+    setAllVals('empEmergencyPhone', data.emergencyPhone || '');
+    setAllVals('empEmail', data.email || '');
+    setAllVals('empScheduleName', data.scheduleNickname || data.scheduleName || '');
+
+    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    document.querySelectorAll('[id="masterProfilePic"]').forEach(el => {
+        el.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
+    });
+
+    const setupMasterLink = (linkId, url) => {
+        document.querySelectorAll(`[id="${linkId}"]`).forEach(el => {
+            if (url) { el.href = url; el.style.display = 'inline-block'; }
+            else { el.style.display = 'none'; }
+        });
+    };
+    setupMasterLink('masterSssLink', data.sssIdUrl);
+    setupMasterLink('masterPhilLink', data.philhealthIdUrl);
+    setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
+
+    // Open ALL duplicate modals so the screen never blanks out
+    document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
+
+    // 🔥 FETCH HISTORY (WITH THE DELETE BUTTONS!)
+    document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
+    });
+
+    window.getDocs(window.query(window.collection(window.db, "staff_deductions"), window.where("staffName", "==", data.cashierName), window.orderBy("dateAdded", "desc"), window.limit(30)))
+    .then(snap => {
+        let histHtml = '';
+        snap.forEach(dDoc => {
+            let d = dDoc.data();
+            let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
+            let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
+
+            let actionHtml = d.status === 'Unpaid'
+                ? `<div style="display: flex; gap: 5px; justify-content: center;">
+                     <button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>
+                     <button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>
+                   </div>`
+                : `<span style="font-size:11px; color:#94a3b8; font-weight:bold;">Cleared</span>`;
+
+            histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                <td style="padding:10px 8px; color: #64748b;">${dateStr}</td>
+                <td style="padding:10px 8px; font-weight: bold; color: #334155;">${d.type}</td>
+                <td style="padding:10px 8px; font-weight:bold; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="padding:10px 8px; color:${color}; font-weight:bold;">${d.status}</td>
+                <td style="padding:10px 8px; text-align: center;">${actionHtml}</td>
+            </tr>`;
+        });
+
+        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
+            tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
+        });
+    }).catch(e => {
+        console.error(e);
+        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
+        });
+    });
+};
