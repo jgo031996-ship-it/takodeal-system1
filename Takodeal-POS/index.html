@@ -43,14 +43,14 @@
         overflow-y: hidden !important;
     }
 
-    /* ðŸ”¥ FIX: Forces SweetAlert to the absolute front */
+    /* 🔥 FIX: Forces SweetAlert to the absolute front */
     .swal2-container { z-index: 30000 !important; }
         
-    /* ðŸ”¥ FIX: Hides bottom tabs when on-screen keyboard pops up */
+    /* 🔥 FIX: Hides bottom tabs when on-screen keyboard pops up */
     @media screen and (max-height: 600px) {
         #dynamicBottomTabs { display: none !important; }
     }    
-    /* ðŸ”¥ BEAUTIFUL SIZE BUTTONS */
+    /* 🔥 BEAUTIFUL SIZE BUTTONS */
     .size-btn {
         flex: 1;
         min-width: 80px;
@@ -78,7 +78,7 @@
       background-color: var(--bg-color);
       display: flex;
       height: 100vh; /* Fallback for old devices */
-      height: 100dvh; /* ðŸ”¥ THE FIX: Adapts automatically to mobile browser bars! */
+      height: 100dvh; /* 🔥 THE FIX: Adapts automatically to mobile browser bars! */
       overflow: hidden;
       color: var(--text-main);
       user-select: none;
@@ -90,7 +90,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      /* ðŸ”¥ THE NEW LOGO BACKGROUND WITH A DARK TINT SO THE BOX POPS */
+      /* 🔥 THE NEW LOGO BACKGROUND WITH A DARK TINT SO THE BOX POPS */
       background: linear-gradient(rgba(44, 36, 33, 0.85), rgba(44, 36, 33, 0.85)), url('logo.jpg') no-repeat center center;
       background-size: cover;
       z-index: 10000;
@@ -309,7 +309,7 @@
       display: none;
       width: 100%;
       height: calc(100vh - 88px); /* Fallback */
-      height: calc(100dvh - 88px); /* ðŸ”¥ THE FIX */
+      height: calc(100dvh - 88px); /* 🔥 THE FIX */
       flex: 1;
       overflow: hidden; 
       background: var(--bg-color);
@@ -340,17 +340,17 @@
 
     .category-header {
       display: flex;
-      flex-wrap: nowrap !important; /* ðŸ”¥ Forces them to stay on ONE single line */
+      flex-wrap: nowrap !important; /* 🔥 Forces them to stay on ONE single line */
       gap: 10px;
       padding: 12px 15px;
       border-bottom: 1px solid var(--border);
       background: var(--card-bg);
-      overflow-x: auto !important; /* ðŸ”¥ Allows you to swipe left and right! */
+      overflow-x: auto !important; /* 🔥 Allows you to swipe left and right! */
       -webkit-overflow-scrolling: touch; /* Silky smooth swiping on tablets */
       scrollbar-width: none; /* Hides the scrollbar on Firefox */
     }
 
-    /* ðŸ”¥ Hides the ugly scrollbar on Chrome/Safari but keeps it swipeable */
+    /* 🔥 Hides the ugly scrollbar on Chrome/Safari but keeps it swipeable */
     .category-header::-webkit-scrollbar { 
       display: none; 
     }
@@ -365,11 +365,11 @@
       cursor: pointer;
       white-space: nowrap; /* Keeps the text inside the button from breaking */
       font-size: 13px;
-      flex-shrink: 0; /* ðŸ”¥ Prevents the buttons from squishing together when you swipe */
+      flex-shrink: 0; /* 🔥 Prevents the buttons from squishing together when you swipe */
       transition: all 0.2s;
     }
 
-    /* ðŸ‘ˆ Hides the horizontal scrollbar for a clean look */
+    /* 👈 Hides the horizontal scrollbar for a clean look */
     .category-header::-webkit-scrollbar {
       display: none; 
     }
@@ -396,7 +396,7 @@
       flex: 1;
       padding: 20px;
       overflow-y: auto;
-      min-height: 0; /* ðŸ‘ˆ Prevents stretching */
+      min-height: 0; /* 👈 Prevents stretching */
     }
 
     .item-grid {
@@ -416,7 +416,7 @@
       position: relative;
       padding: 0;
       text-align: center;
-      height: 160px; /* ðŸ‘ˆ Made slightly taller to fit the picture */
+      height: 160px; /* 👈 Made slightly taller to fit the picture */
       justify-content: space-between;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
       overflow: hidden; /* Keeps the image inside the rounded corners */
@@ -515,7 +515,7 @@
       margin: 0;
       padding: 0;
       list-style: none;
-      min-height: 0; /* ðŸ‘ˆ Forces the cart to scroll, saving your Place Order button! */
+      min-height: 0; /* 👈 Forces the cart to scroll, saving your Place Order button! */
     }
 
     .cart-item {
@@ -1059,7 +1059,7 @@
       border-color: var(--primary);
     }
 
-    /* ðŸ”¥ FIX: Automatically shrinks the top right buttons on smaller tablets so they don't squish! */
+    /* 🔥 FIX: Automatically shrinks the top right buttons on smaller tablets so they don't squish! */
     @media screen and (max-width: 1250px) {
         .top-bar-right div { gap: 5px !important; }
         .top-bar-right button { 
@@ -1079,10 +1079,10 @@
         .item-card, .menu-toggle-card { padding: 10px; min-height: 100px; height: 130px; }
         .item-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
         
-        /* ðŸ”¥ Shrink the cart slightly to give the menu more room */
+        /* 🔥 Shrink the cart slightly to give the menu more room */
         .ticket-panel { min-width: 320px; max-width: 350px; }
         
-        /* ðŸ”¥ Fix the bottom spacing so the Place Order button is always safe! */
+        /* 🔥 Fix the bottom spacing so the Place Order button is always safe! */
         .ticket-footer { padding: 10px 15px; }
         .total-line.grand { margin-top: 10px; margin-bottom: 10px; padding-top: 10px; font-size: 18px; }
         .btn-place { padding: 12px; font-size: 16px; }
@@ -1233,13 +1233,13 @@
   <div style="background-color: #1A1513; color: #ffffff; width: 100%; height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; font-size: 12px; font-family: 'Segoe UI', Tahoma, sans-serif; z-index: 9999; position: absolute; top: 0; left: 0;">
       <div id="liveClock" style="font-weight: 500; letter-spacing: 0.5px;">Loading time...</div>
       <div style="display: flex; align-items: center; gap: 8px; color: #a0a0a0;">
-          <span>ðŸ“¶ Takodeal POS V1.0</span>
+          <span>📶 Takodeal POS V1.0</span>
       </div>
   </div>
 
   <div id="deviceSetupOverlay"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 99999; justify-content: center; align-items: center; flex-direction: column; color: white;">
-    <h1 style="color: #f59e0b; margin-bottom: 10px;">âš™ï¸ Device Setup</h1>
+    <h1 style="color: #f59e0b; margin-bottom: 10px;">⚙️ Device Setup</h1>
     <p style="margin-bottom: 30px; color: #94a3b8;">Which branch is this tablet physically located at?</p>
 
     <select id="setupBranchSelect"
@@ -1250,14 +1250,14 @@
     </select>
 
     <button onclick="lockDeviceToBranch()"
-      style="padding: 15px 30px; background: #10b981; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; width: 300px;">ðŸ”’
+      style="padding: 15px 30px; background: #10b981; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; width: 300px;">🔒
       Lock Device</button>
   </div>
 
   <div id="hrSanctionModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);">
         <div style="background: white; width: 550px; max-width: 90%; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 2px solid #b91c1c;">
             <div style="background: #b91c1c; padding: 25px; color: white; text-align: center;">
-                <h2 style="margin: 0; font-size: 24px;">ðŸš¨ OFFICIAL HR NOTICE ðŸš¨</h2>
+                <h2 style="margin: 0; font-size: 24px;">🚨 OFFICIAL HR NOTICE 🚨</h2>
                 <p style="margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;">Your POS access has been temporarily suspended.</p>
             </div>
             
@@ -1330,11 +1330,11 @@
           if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
 
           localStorage.setItem('cashierName', identity.cashierName);
-          document.getElementById('displayBranch').innerText = "ðŸ“ " + sessionUser.branch;
-          document.getElementById('displayCashier').innerText = "ðŸ‘¤ " + identity.cashierName;
+          document.getElementById('displayBranch').innerText = "📍 " + sessionUser.branch;
+          document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
           document.getElementById('loginOverlay').style.display = 'none';
 
-          // ðŸ”¥ NEW: Check for Shortages on Login!
+          // 🔥 NEW: Check for Shortages on Login!
           if (typeof window.checkLoginShortage === 'function') {
               window.checkLoginShortage(identity.cashierName);
           }
@@ -1346,10 +1346,10 @@
       }
   </script>
   <div class="login-overlay" id="loginOverlay">
-    <!-- ðŸ† LIVE LEADERBOARD WIDGET -->
+    <!-- 🏆 LIVE LEADERBOARD WIDGET -->
     <div id="loginRankingWidget" style="position: absolute; top: 20px; left: 20px; background: rgba(15, 23, 42, 0.85); padding: 15px 20px; border-radius: 12px; color: white; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px); z-index: 10; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
         <div style="font-size: 11px; font-weight: 900; color: #fcd34d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-            <span style="font-size: 16px; animation: pulse 2s infinite;">ðŸ”¥</span> Live Daily Ranking
+            <span style="font-size: 16px; animation: pulse 2s infinite;">🔥</span> Live Daily Ranking
         </div>
         <div id="loginRankingList" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
             <div style="font-size: 12px; color: #94a3b8;">Loading leaderboard...</div>
@@ -1359,8 +1359,8 @@
         </div>
     </div>
     <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="margin: 0; color: #ffffff; font-size: 56px; font-weight: 900; letter-spacing: 3px; text-shadow: 2px 4px 15px rgba(0,0,0,0.6);">TAKODEÃL</h1>
-        <h3 id="loginBranchDisplay" style="margin: 5px 0 0 0; color: #fcd34d; font-size: 22px; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 2px 8px rgba(0,0,0,0.6);">ðŸ“ Loading Location...</h3>
+        <h1 style="margin: 0; color: #ffffff; font-size: 56px; font-weight: 900; letter-spacing: 3px; text-shadow: 2px 4px 15px rgba(0,0,0,0.6);">TAKODEÁL</h1>
+        <h3 id="loginBranchDisplay" style="margin: 5px 0 0 0; color: #fcd34d; font-size: 22px; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 2px 8px rgba(0,0,0,0.6);">📍 Loading Location...</h3>
     </div>
     <div class="login-box">
       <h2 style="margin: 0 0 10px 0; color: #555;">Cashier Login</h2>
@@ -1380,7 +1380,7 @@
   <div class="sidebar" id="mainSidebar">
     <div class="sidebar-header">
       <style>
-        /* ðŸ›‘ KILL UNWANTED TABLET ZOOMING AND BOUNCING */
+        /* 🛑 KILL UNWANTED TABLET ZOOMING AND BOUNCING */
         button, input, select, textarea, .nav-item, .item-card, .cat-btn, .size-btn {
             touch-action: manipulation !important;
         }
@@ -1397,118 +1397,118 @@
       <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; overflow: hidden; white-space: nowrap; width: 100%;">
           <div style="display: flex; align-items: center; gap: 10px;">
               <img src="logo.jpg" alt="Logo" style="width: 32px; border-radius: 6px; flex-shrink: 0;">
-              <span class="brand-text" style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÃL</span>
+              <span class="brand-text" style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
           </div>
-          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer; flex-shrink: 0;">â—€</div>
+          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer; flex-shrink: 0;">◀</div>
       </div>
     </div>
     <div class="nav-menu">
-      <div class="nav-item active" id="nav-pos" onclick="switchView('pos')"><span>ðŸ–¥ï¸</span>
+      <div class="nav-item active" id="nav-pos" onclick="switchView('pos')"><span>🖥️</span>
         <div class="nav-item-text">Point of Sale</div>
       </div>
-      <div class="nav-item" id="nav-sales" onclick="switchView('sales')"><span>ðŸ§¾</span>
+      <div class="nav-item" id="nav-sales" onclick="switchView('sales')"><span>🧾</span>
         <div class="nav-item-text">Shift Sales</div>
       </div>
       <div class="nav-item" id="nav-remit" onclick="openRemittanceModal()">
-          <span style="font-size: 18px;">ðŸ’¸</span>
+          <span style="font-size: 18px;">💸</span>
           <div class="nav-item-text">Remit Cash to HQ</div>
       </div>  
       <div class="nav-item" id="nav-staffreq" onclick="openStaffRequestsModal()">
-          <span style="font-size: 18px;">ðŸ“</span>
+          <span style="font-size: 18px;">📝</span>
           <div class="nav-item-text">Staff Requests</div>
       </div>  
       <div class="nav-item" id="nav-sop" onclick="switchView('sop'); window.loadSopView();">
-          <span style="font-size: 18px;">ðŸ“‹</span>
+          <span style="font-size: 18px;">📋</span>
         <div class="nav-item-text">Daily SOPs</div>
       </div>
       <div class="nav-item" id="nav-prep" onclick="switchView('prep'); window.loadKitchenPrep();">
-        <span style="font-size: 18px;">ðŸ”ª</span>
+        <span style="font-size: 18px;">🔪</span>
         <div class="nav-item-text">Kitchen Prep</div>
       </div>
       <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries'); window.renderDeliveriesTab();">
-        <span style="font-size: 18px;">ðŸšš</span>
+        <span style="font-size: 18px;">🚚</span>
         <div class="nav-item-text">
             Incoming Stock <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
         </div>
       </div>
       <div class="nav-item" id="nav-menumgr" onclick="switchView('menumgr'); window.loadMenuManager();">
-        <span style="font-size: 18px;">ðŸ”</span>
+        <span style="font-size: 18px;">🍔</span>
         <div class="nav-item-text">Menu Toggle</div>
       </div>
       <div class="nav-item" id="nav-stockreq" onclick="switchView('stockreq'); window.loadStockRequestUI();">
-        <span style="font-size: 18px;">ðŸ“¦</span>
+        <span style="font-size: 18px;">📦</span>
         <div class="nav-item-text">Request Stock</div>
       </div>
       <div class="nav-item" id="nav-waste" onclick="switchView('waste'); window.loadWasteItems(); window.loadWasteHistory();">
-        <span style="font-size: 18px;">ðŸ—‘ï¸</span>
+        <span style="font-size: 18px;">🗑️</span>
         <div class="nav-item-text">Log Waste</div>
       </div>
       <div class="nav-item" id="nav-timeclock" onclick="openTimeClockModal()">
-          <span style="font-size: 18px;">ðŸ“¸</span>
+          <span style="font-size: 18px;">📸</span>
           <div class="nav-item-text">Time Clock</div>
       </div>
       <div class="nav-item" id="nav-schedule" onclick="switchView('schedule')">
-          <span style="font-size: 18px;">ðŸ“…</span>
+          <span style="font-size: 18px;">📅</span>
           <div class="nav-item-text">My Schedule</div>
       </div>
       <div class="nav-item" id="nav-grab" onclick="window.openGrabEarningsModal()" style="color: #00b14f;">
-          <span style="font-size: 18px;">ðŸŸ¢</span>
+          <span style="font-size: 18px;">🟢</span>
           <div class="nav-item-text" style="font-weight: bold;">Log Grab Earnings</div>
       </div>
       <div class="nav-item" id="nav-bulletin" onclick="switchView('bulletin'); window.loadBulletinHistory();">
-          <span style="font-size: 18px;">ðŸ“¢</span>
+          <span style="font-size: 18px;">📢</span>
           <div class="nav-item-text">Bulletin Board</div>
       </div>
       <div class="nav-item" id="nav-printer"
-        onclick="alert('ðŸ–¨ï¸ PRINTER SETUP\n\n1. Go to your Tablet Settings and pair the Bluetooth Printer.\n2. Open your Print Service App (e.g., RawBT) and ensure it is active.\n\nThe POS will automatically route all tickets through your Print Service!')">
-        <span>ðŸ–¨ï¸</span>
+        onclick="alert('🖨️ PRINTER SETUP\n\n1. Go to your Tablet Settings and pair the Bluetooth Printer.\n2. Open your Print Service App (e.g., RawBT) and ensure it is active.\n\nThe POS will automatically route all tickets through your Print Service!')">
+        <span>🖨️</span>
         <div class="nav-item-text">Printer Setup</div>
       </div>
     </div>
     <div class="sidebar-footer">
-      <div id="displayCashier">ðŸ‘¤ Loading...</div>
-      <div id="displayBranch" style="margin-top: 5px; margin-bottom: 15px;">ðŸ“ Loading...</div>
-      <button onclick="window.logoutCashier()" style="width: 100%; background: #dc2626; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">ðŸšª Sign Out</button>
+      <div id="displayCashier">👤 Loading...</div>
+      <div id="displayBranch" style="margin-top: 5px; margin-bottom: 15px;">📍 Loading...</div>
+      <button onclick="window.logoutCashier()" style="width: 100%; background: #dc2626; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚪 Sign Out</button>
     </div>
   </div>
 
   <div class="content-area">
     <div class="top-bar">
       
-      <div class="top-title" id="topBarTitle">ðŸ–¥ï¸ Point of Sale</div>
+      <div class="top-title" id="topBarTitle">🖥️ Point of Sale</div>
       <div class="top-bar-right">
         <div style="display: flex; gap: 10px; align-items: center;">
 
           <div style="position: relative;">
               <button onclick="let d = document.getElementById('posSettingsDropdown'); d.style.display = (d.style.display === 'none' || d.style.display === '') ? 'flex' : 'none';" 
                   style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                  âš™ï¸ POS Settings â–¼
+                  ⚙️ POS Settings ▼
               </button>
               
               <div id="posSettingsDropdown" style="display: none; position: absolute; top: 45px; right: 0; min-width: 240px; padding: 15px; gap: 12px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 1000; flex-direction: column;">
                   
                   <button onclick="window.showMobileOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #e74c3c; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                    ðŸ“± Mobile Orders
+                    📱 Mobile Orders
                     <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #f1c40f; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
                   </button>
                   
-                  <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">ðŸŸ¢ App Accepting</button>
+                  <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 App Accepting</button>
                   
-                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #8b5cf6; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">ðŸšš Delivery: <span id="deliveryStatusText">ON</span></button>
+                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #8b5cf6; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🚚 Delivery: <span id="deliveryStatusText">ON</span></button>
 
                   <button onclick="window.showParkedOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #34495e; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                    ðŸ•’ Parked Orders
+                    🕒 Parked Orders
                     <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #e74c3c; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
                   </button>
 
-                  <button id="btnToggleBusy" onclick="window.toggleBusyMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">ðŸŸ¢ Normal Prep (15m)</button>
+                  <button id="btnToggleBusy" onclick="window.toggleBusyMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 Normal Prep (15m)</button>
 
                   <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                       <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center;">
                           <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;">
                           Auto-Open Drawer
                       </label>
-                      <button onclick="window.kickCashDrawer(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; font-weight: bold;">ðŸ’µ Kick Drawer</button>
+                      <button onclick="window.kickCashDrawer(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; font-weight: bold;">💵 Kick Drawer</button>
                   </div>
               </div>
           </div>
@@ -1525,7 +1525,7 @@
 
           <button id="btnTopShift" onclick="openShiftModal()"
             style="background: white; color: #333; border: 1px solid #ddd; border-radius: 20px; padding: 8px 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-family: inherit; font-size: 14px; font-weight: 600;">
-            ðŸ”´ Shift Closed
+            🔴 Shift Closed
           </button>
         </div>
       </div>
@@ -1552,7 +1552,7 @@
           
           <!-- SEARCH BAR -->
           <div style="padding: 10px; background: #fff; border-top: 1px solid var(--border); box-sizing: border-box; width: 100%;">
-            <input type="text" id="posSearchInput" placeholder="ðŸ” Search menu items..." onkeyup="searchMenuItems()"
+            <input type="text" id="posSearchInput" placeholder="🔍 Search menu items..." onkeyup="searchMenuItems()"
               style="width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box;">
           </div>
 
@@ -1571,27 +1571,27 @@
             <li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>
           </ul>
           <div class="ticket-footer">
-            <div class="total-line"><span>Total Amount:</span><span id="displaySubTotal">â‚±0.00</span></div>
-            <div class="total-line grand"><span>Grand Total:</span><span id="displayGrandTotal">â‚±0.00</span></div>
+            <div class="total-line"><span>Total Amount:</span><span id="displaySubTotal">₱0.00</span></div>
+            <div class="total-line grand"><span>Grand Total:</span><span id="displayGrandTotal">₱0.00</span></div>
             <div class="action-row" style="margin-bottom: 10px; display: flex; gap: 10px;">
               <button class="btn-clear" onclick="clearCart()">Clear</button>
               <button onclick="window.parkOrder()"
-                style="flex-grow: 1; background: #f39c12; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px;">â¸ï¸
+                style="flex-grow: 1; background: #f39c12; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px;">⏸️
                 Park Order</button>
             </div>
             <button class="btn-place" id="btnMainPlaceOrder" onclick="openCheckoutModal()" disabled
               style="width: 100%; padding: 18px; font-size: 20px; border-radius: 5px;">Place Order</button>
             <button id="btnPrintReceipt" onclick="window.printReceipt('receipt')" style="display: none; background: #334155; color: white; padding: 15px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; margin-top: 10px; transition: all 0.2s;">
-                ðŸ–¨ï¸ Print Receipt
+                🖨️ Print Receipt
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ðŸš¨ UNVERIFIED DIGITAL PAYMENT BANNER -->
+    <!-- 🚨 UNVERIFIED DIGITAL PAYMENT BANNER -->
     <div id="unverifiedWarningBanner" style="display: none; background: #fff1f2; color: #dc2626; border-bottom: 2px dashed #fca5a5; padding: 12px 25px; align-items: center; justify-content: center; gap: 15px; box-shadow: 0 4px 10px rgba(220, 38, 38, 0.15); z-index: 50; width: 100%; cursor: pointer;" onclick="alert('The Manager must verify these digital payments in the HQ App before you can end your shift.')">
-        <span style="font-size: 24px; animation: pulse 1s infinite;">ðŸš¨</span>
+        <span style="font-size: 24px; animation: pulse 1s infinite;">🚨</span>
         <div>
             <div style="font-size: 15px; font-weight: 900;">ACTION REQUIRED: <span id="unverifiedCountText">0</span> Unverified Digital Payment(s)!</div>
             <div style="font-size: 12px; color: #9f1239;">A manager must approve GCash/Grab transfers in HQ before you can close the register.</div>
@@ -1605,7 +1605,7 @@
             <div class="st-btn active" style="background: var(--sidebar-bg); color: white;">Current Shift Transactions
             </div>
             <button class="btn-clear" style="margin-left: auto; padding: 5px 15px; font-size: 12px;"
-              onclick="loadSalesDashboard()">ðŸ”„ Refresh</button>
+              onclick="loadSalesDashboard()">🔄 Refresh</button>
           </div>
           <div style="overflow-y: auto; flex: 1;">
             <table class="stable">
@@ -1637,19 +1637,19 @@
 
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
           <div>
-            <h2 style="margin: 0; color: #1e293b; font-size: 1.5rem;">ðŸ“¦ Request Stock from HQ</h2>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.5rem;">📦 Request Stock from HQ</h2>
             <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Report your physical count. HQ will see the variance and dispatch new stock.</p>
           </div>
           <div style="display: flex; gap: 10px;">
-             <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">ðŸ“œ View History</button>
-             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.3); transition: 0.2s;">âž• New Request</button>
+             <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">📜 View History</button>
+             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.3); transition: 0.2s;">➕ New Request</button>
           </div>
         </div>
 
         <div id="stockReqTabNew" style="display: block;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-              <input type="text" id="stockReqSearch" placeholder="ðŸ” Search item to request..." onkeyup="window.filterStockReq()" style="width: 100%; max-width: 400px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
-              <button onclick="window.submitStockRequest()" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);">ðŸš€ Send Request to HQ</button>
+              <input type="text" id="stockReqSearch" placeholder="🔍 Search item to request..." onkeyup="window.filterStockReq()" style="width: 100%; max-width: 400px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; font-weight: bold;">
+              <button onclick="window.submitStockRequest()" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);">🚀 Send Request to HQ</button>
             </div>
 
             <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
@@ -1688,13 +1688,13 @@
         
         <div style="background: white; border-radius: 12px; border: 1px solid #fecaca; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
             <div style="background: #fef2f2; border-bottom: 1px solid #fecaca; padding: 20px;">
-                <h2 style="margin: 0; color: #b91c1c; font-size: 20px;">ðŸ—‘ï¸ Log Waste & Spoilage</h2>
+                <h2 style="margin: 0; color: #b91c1c; font-size: 20px;">🗑️ Log Waste & Spoilage</h2>
                 <span style="font-size: 12px; color: #ef4444;">Record dropped, burnt, or expired items to keep your inventory variance accurate. Management will be notified.</span>
             </div>
             <div style="padding: 25px;">
                 <label style="font-weight: bold; font-size: 12px; color: #64748b; margin-bottom: 5px; display: block;">1. Search & Select Damaged Item</label>
                 <div style="position: relative; margin-bottom: 20px;">
-                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">ðŸ”</span>
+                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8;">🔍</span>
                     <input type="text" id="wasteSearchInput" onkeyup="window.filterWasteSearch()" placeholder="Type item name to search..." style="width: 100%; padding: 12px 12px 12px 40px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; font-weight: bold; outline: none; box-sizing: border-box; background: #f8fafc;">
                     <div id="wasteSearchResults" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #cbd5e1; border-top: none; border-radius: 0 0 8px 8px; box-shadow: 0 10px 15px rgba(0,0,0,0.1); z-index: 100; max-height: 200px; overflow-y: auto;"></div>
                 </div>
@@ -1707,12 +1707,12 @@
                     <div style="flex: 2; min-width: 200px;">
                         <label style="font-weight: 900; font-size: 12px; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">3. Reason for Loss</label>
                         <select id="wasteReason" style="width: 100%; box-sizing: border-box; padding: 16px; border-radius: 8px; border: 2px solid #fcd34d; background: white; outline: none; font-weight: bold; font-size: 16px; color: #92400e; cursor: pointer; transition: 0.2s;">
-                            <option value="Dropped / Spilled">â¬‡ï¸ Dropped / Spilled</option>
-                            <option value="Burnt / Overcooked">ðŸ”¥ Burnt / Overcooked</option>
-                            <option value="Spoiled / Expired">ðŸ¤¢ Spoiled / Expired</option>
-                            <option value="Customer Replacement">ðŸ”„ Customer Replacement</option>
-                            <option value="Pest Damage">ðŸ€ Pest Damage</option>
-                            <option value="Other">ðŸ“ Other</option>
+                            <option value="Dropped / Spilled">⬇️ Dropped / Spilled</option>
+                            <option value="Burnt / Overcooked">🔥 Burnt / Overcooked</option>
+                            <option value="Spoiled / Expired">🤢 Spoiled / Expired</option>
+                            <option value="Customer Replacement">🔄 Customer Replacement</option>
+                            <option value="Pest Damage">🐀 Pest Damage</option>
+                            <option value="Other">📝 Other</option>
                         </select>
                       <div style="flex: 1.5; min-width: 150px;">
                         <label style="font-weight: 900; font-size: 12px; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">4. Upload Photo</label>
@@ -1721,7 +1721,7 @@
                     </div>
                 </div>
 
-                <button onclick="window.addWasteToCart()" style="width: 100%; background: #475569; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">âž• Add to Waste List</button>
+                <button onclick="window.addWasteToCart()" style="width: 100%; background: #475569; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">➕ Add to Waste List</button>
 
                 <div id="wasteCartContainer" style="display: none; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
                     <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Items Pending Deduction:</h4>
@@ -1731,14 +1731,14 @@
                 </div>
 
                 <button id="btnSubmitWasteCart" onclick="window.submitWasteCart()" style="width: 100%; background: #ef4444; color: white; padding: 16px; border-radius: 8px; font-weight: 900; font-size: 16px; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2); transition: 0.2s;">
-                    ðŸ—‘ï¸ Submit Waste to HQ for Approval
+                    🗑️ Submit Waste to HQ for Approval
                 </button>
             </div>
         </div>
 
         <div style="background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
             <div style="padding: 20px; border-bottom: 1px solid var(--border);">
-                <h2 style="margin: 0; color: #1e293b; font-size: 18px;">ðŸ“œ Today's Waste Logs</h2>
+                <h2 style="margin: 0; color: #1e293b; font-size: 18px;">📜 Today's Waste Logs</h2>
             </div>
             <div class="table-responsive">
                 <table class="data-table" style="width: 100%; text-align: left; border-collapse: collapse;">
@@ -1765,7 +1765,7 @@
             <div style="background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
                 
                 <div style="background: #0f766e; border-bottom: 1px solid #0d9488; padding: 20px 25px;">
-                    <h2 style="margin: 0; color: white; font-size: 22px;">ðŸ“‹ Daily SOP Checklist</h2>
+                    <h2 style="margin: 0; color: white; font-size: 22px;">📋 Daily SOP Checklist</h2>
                     <span style="font-size: 13px; color: #ccfbf1;" id="sopViewBranchText">Branch Name</span>
                 </div>
                 
@@ -1775,7 +1775,7 @@
                         <option value="">Loading roles...</option>
                     </select>
                     <div style="margin-top: 10px; font-size: 12px; color: #64748b; font-style: italic; display: flex; gap: 8px; align-items: center;">
-                        <span style="font-size: 16px;">ðŸ’¾</span> Your progress is automatically saved to this tablet. You can leave this tab and come back later to finish your tasks.
+                        <span style="font-size: 16px;">💾</span> Your progress is automatically saved to this tablet. You can leave this tab and come back later to finish your tasks.
                     </div>
                 </div>
 
@@ -1785,7 +1785,7 @@
 
                 <div style="padding: 20px 25px; background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
                     <div style="font-size: 13px; color: #dc2626; font-weight: bold;">All tasks must be marked Done or Missed (with reason).</div>
-                    <button id="btnSubmitSop" onclick="window.submitSopChecklist()" style="padding: 14px 30px; border-radius: 8px; border: none; background: #0f766e; color: white; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">ðŸ“¤ Submit Checklist</button>
+                    <button id="btnSubmitSop" onclick="window.submitSopChecklist()" style="padding: 14px 30px; border-radius: 8px; border: none; background: #0f766e; color: white; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">📤 Submit Checklist</button>
                 </div>
 
             </div>
@@ -1797,16 +1797,16 @@
          
          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
             <div>
-                <h2 style="margin-top: 0; color: #1e293b; margin-bottom: 5px;">ðŸ”ª Kitchen Prep Station</h2>
+                <h2 style="margin-top: 0; color: #1e293b; margin-bottom: 5px;">🔪 Kitchen Prep Station</h2>
                 <p style="color: #64748b; font-size: 13px; margin: 0;">Log the batches you prepare here. This will update our Live Inventory instantly.</p>
             </div>
             <div style="display: flex; gap: 10px;">
-               <button id="btnTabPrepHist" onclick="window.switchPrepTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">ðŸ“œ View History</button>
-               <button id="btnTabPrepNew" onclick="window.switchPrepTab('New')" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3); transition: 0.2s;">âž• New Prep</button>
+               <button id="btnTabPrepHist" onclick="window.switchPrepTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">📜 View History</button>
+               <button id="btnTabPrepNew" onclick="window.switchPrepTab('New')" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3); transition: 0.2s;">➕ New Prep</button>
             </div>
          </div>
 
-         <!-- ðŸ”¥ UPGRADED TWO-COLUMN KITCHEN PREP LAYOUT -->
+         <!-- 🔥 UPGRADED TWO-COLUMN KITCHEN PREP LAYOUT -->
          <div id="prepTabNew" style="display: flex; gap: 20px; align-items: flex-start;">
              
              <!-- LEFT COLUMN: The Prep Grid -->
@@ -1817,13 +1817,13 @@
              <!-- RIGHT COLUMN: The Staging Cart -->
              <div style="width: 320px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; position: sticky; top: 0; display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                  <div style="padding: 15px; border-bottom: 2px solid #e2e8f0; background: white; border-radius: 12px 12px 0 0;">
-                     <h3 style="margin: 0; color: #0f172a; font-size: 16px; display: flex; align-items: center; gap: 8px;">ðŸ›’ Prep Cart</h3>
+                     <h3 style="margin: 0; color: #0f172a; font-size: 16px; display: flex; align-items: center; gap: 8px;">🛒 Prep Cart</h3>
                  </div>
                  <div id="prepCartBody" style="min-height: 250px; max-height: 400px; overflow-y: auto;">
                      <div style="padding: 30px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 14px;">Cart is empty.<br><span style="font-size: 11px; font-weight: normal;">Tap an item on the left to begin.</span></div>
                  </div>
                  <div style="padding: 15px; border-top: 1px solid #e2e8f0; background: white; border-radius: 0 0 12px 12px;">
-                     <button onclick="window.confirmPrepCart()" style="width: 100%; background: #059669; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(5, 150, 105, 0.3); transition: 0.2s;">âœ… Confirm & Log Prep</button>
+                     <button onclick="window.confirmPrepCart()" style="width: 100%; background: #059669; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(5, 150, 105, 0.3); transition: 0.2s;">✅ Confirm & Log Prep</button>
                  </div>
              </div>
              
@@ -1849,22 +1849,22 @@
     </div>
     <div class="view-container" id="view-deliveries" style="padding: 20px; width: 100%; overflow-y: auto; background: var(--bg-color);">
         <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
-              <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">ðŸšš Incoming Deliveries</h2>
+              <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🚚 Incoming Deliveries</h2>
               <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Verify and receive stock dispatched from the Main Office.</p>
               
               <div id="deliveriesContainer"></div>
         </div>
     </div>
-    <!-- ðŸ“¢ CORPORATE BULLETIN BOARD VIEW -->
+    <!-- 📢 CORPORATE BULLETIN BOARD VIEW -->
     <div class="view-container" id="view-bulletin" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1000px; margin: 0 auto; border: 1px solid var(--border);">
           
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
               <div>
-                  <h2 style="margin: 0; color: #0f766e; font-size: 1.5rem;">ðŸ“¢ Corporate Bulletin Board</h2>
+                  <h2 style="margin: 0; color: #0f766e; font-size: 1.5rem;">📢 Corporate Bulletin Board</h2>
                   <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Review past company announcements and verify your signature records.</p>
               </div>
-              <button class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);" onclick="window.loadBulletinHistory()">ðŸ”„ Refresh</button>
+              <button class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);" onclick="window.loadBulletinHistory()">🔄 Refresh</button>
           </div>
 
           <div id="bulletinHistoryList" style="display: flex; flex-direction: column; gap: 15px;">
@@ -1879,7 +1879,7 @@
           
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
               <div style="display: flex; align-items: center; gap: 10px;">
-                  <span style="font-size: 22px;">ðŸ”</span>
+                  <span style="font-size: 22px;">🍔</span>
                   <h2 style="margin: 0; color: #1e293b; font-size: 1.5rem;">Menu Toggle</h2>
               </div>
               <p style="color: #64748b; font-size: 13px; margin: 0;">Turn items Sold Out here to instantly hide them from the Customer App.</p>
@@ -1888,7 +1888,7 @@
           <!-- NEW: SEARCH & DROPDOWN FILTER BAR -->
           <div id="menuToggleHeader" style="display: flex; justify-content: center; align-items: center; gap: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 20px;">
               <div style="position: relative; width: 100%; max-width: 300px;">
-                  <span style="position: absolute; left: 12px; top: 12px; color: #94a3b8;">ðŸ”</span>
+                  <span style="position: absolute; left: 12px; top: 12px; color: #94a3b8;">🔍</span>
                   <input type="text" id="menuToggleSearch" onkeyup="filterMenuToggle()" placeholder="Search items..." style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; transition: border 0.3s; box-sizing: border-box;">
               </div>
               
@@ -1911,7 +1911,7 @@
         <div style="width: 100%; height: 100%; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px 20px; box-sizing: border-box; background: var(--bg-color);">
             <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 900px; border: 1px solid var(--border);">
                 <div id="cashierScheduleContainer">
-                    <div style="text-align: center; color: #64748b; padding: 40px; font-size: 16px;">â³ Loading your schedule...</div>
+                    <div style="text-align: center; color: #64748b; padding: 40px; font-size: 16px;">⏳ Loading your schedule...</div>
                 </div>
             </div>
         </div>
@@ -1920,13 +1920,13 @@
   </div> <div class="overlay" id="variantModal">
     <div class="modal variant-modal">
       <div class="modal-head"><span>Add Order</span><span class="close-modal"
-          onclick="closeModal('variantModal')">âœ–</span></div>
+          onclick="closeModal('variantModal')">✖</span></div>
       <div class="modal-body">
         <div style="font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom:15px;">
           <div style="display:flex;"><span style="width:100px; color:#666;">Description:</span> <strong
               id="modalItemName">Cheesy Takoyaki</strong></div>
           <div style="display:flex;"><span style="width:100px; color:#666;">Base Price:</span> <strong
-              id="modalItemPrice" style="color:var(--primary);">â‚± 0.00</strong></div>
+              id="modalItemPrice" style="color:var(--primary);">₱ 0.00</strong></div>
         </div>
         <div style="display: none;">
           <div class="section-title">Select Variant</div>
@@ -1943,8 +1943,8 @@
         </div>
         <div id="takoyakiCustomizationArea" style="display: none; margin-bottom: 15px;">
           <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-              <span>ðŸ™ Customize Fillings (Mix & Match)</span>
-              <span id="mixMatchToggleIcon">â–¼</span>
+              <span>🐙 Customize Fillings (Mix & Match)</span>
+              <span id="mixMatchToggleIcon">▼</span>
           </button>
           
           <div id="mixMatchPanel" style="display: none; background: #fffcf0; border: 1px solid #fde68a; border-top: none; padding: 15px; border-radius: 0 0 8px 8px;">
@@ -1960,7 +1960,7 @@
           <div class="discount-grid">
             <button class="var-btn active" id="btnDiscNone" onclick="setDiscountType('none')">None</button>
             <button class="var-btn" id="btnDiscPerc" onclick="setDiscountType('percentage')">%</button>
-            <button class="var-btn" id="btnDiscFixed" onclick="setDiscountType('fixed')">Fixed (â‚±)</button>
+            <button class="var-btn" id="btnDiscFixed" onclick="setDiscountType('fixed')">Fixed (₱)</button>
           </div>
           <input type="number" id="discountValueInput" class="input-box" placeholder="Enter discount amount..."
             style="display:none; margin-top:10px;" oninput="updateModalTotals()">
@@ -1974,7 +1974,7 @@
           <div id="activeAddonsContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"></div>
         </div>
         <div style="margin-top: 15px;">
-          <div class="section-title" style="margin-bottom: 8px;">âœŽ Notes</div><input type="text" id="orderNotesInput"
+          <div class="section-title" style="margin-bottom: 8px;">✎ Notes</div><input type="text" id="orderNotesInput"
             class="input-box" placeholder="e.g., Spicy, No Mayo">
         </div>
       </div>
@@ -1983,7 +1983,7 @@
           style="padding:15px; flex:1; order: 2;">Cancel</button>
         <button class="btn-place" style="flex:2; order: 1;" onclick="confirmAddOrUpdateToCart()">
           <span id="confirmAddToCartText" style="float:left">Add to Order</span>
-          <span id="modalLiveTotal" style="float:right">â‚± 0.00</span>
+          <span id="modalLiveTotal" style="float:right">₱ 0.00</span>
         </button>
       </div>
     </div>
@@ -1993,16 +1993,16 @@
       <div style="background: white; width: 600px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
           
           <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 18px;">ðŸ“ Staff Request Hub</h2>
+              <h2 style="margin: 0; font-size: 18px;">📝 Staff Request Hub</h2>
               <span onclick="document.getElementById('staffRequestsModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
           </div>
 
           <div style="display: flex; background: #f1f5f9; border-bottom: 2px solid #e2e8f0; overflow-x: auto;">
-              <button id="tabReqAdvance" onclick="switchRequestTab('Advance')" style="flex: 1; padding: 12px; background: white; border: none; border-bottom: 3px solid #3b82f6; font-weight: bold; cursor: pointer; color: #0f172a; white-space: nowrap;">ðŸ’¸ Cash Advance</button>
-              <button id="tabReqLeave" onclick="switchRequestTab('Leave')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">ðŸ“… Leave Request</button>
-              <button id="tabReqMeal" onclick="switchRequestTab('Meal')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">ðŸ” Staff Meal</button>
-              <button id="tabReqReason" onclick="switchRequestTab('Reason')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">âœ‰ï¸ Reason Letter</button>
-              <button id="tabReqInbox" onclick="switchRequestTab('Inbox')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #16a34a; cursor: pointer; white-space: nowrap;">ðŸ“¥ My Inbox</button>
+              <button id="tabReqAdvance" onclick="switchRequestTab('Advance')" style="flex: 1; padding: 12px; background: white; border: none; border-bottom: 3px solid #3b82f6; font-weight: bold; cursor: pointer; color: #0f172a; white-space: nowrap;">💸 Cash Advance</button>
+              <button id="tabReqLeave" onclick="switchRequestTab('Leave')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">📅 Leave Request</button>
+              <button id="tabReqMeal" onclick="switchRequestTab('Meal')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">🍔 Staff Meal</button>
+              <button id="tabReqReason" onclick="switchRequestTab('Reason')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #64748b; cursor: pointer; white-space: nowrap;">✉️ Reason Letter</button>
+              <button id="tabReqInbox" onclick="switchRequestTab('Inbox')" style="flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent; font-weight: bold; color: #16a34a; cursor: pointer; white-space: nowrap;">📥 My Inbox</button>
           </div>
 
           <div style="padding: 20px; max-height: 60vh; overflow-y: auto; background: #f8fafc;">
@@ -2016,7 +2016,7 @@
                   <h3 style="margin-top: 0; color: #334155; font-size: 15px;">Request a Cash Advance (Vale)</h3>
                   <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">This will be routed to the Owner for approval and deducted from your next payroll.</p>
                   
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount Requested (â‚±)</label>
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount Requested (₱)</label>
                   <input type="number" id="reqAdvAmount" placeholder="e.g. 500" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #3b82f6; outline: none;">
                   
                   <label style="font-size: 12px; font-weight: bold; color: #334155;">Reason for Advance</label>
@@ -2060,10 +2060,10 @@
                   <label style="font-size: 12px; font-weight: bold; color: #334155;">Food/Drink Item Consumed</label>
                   <input type="text" id="reqMealItem" placeholder="e.g. 1pc Cheesy Takoyaki" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none;">
 
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount to Deduct (â‚±)</label>
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Amount to Deduct (₱)</label>
                   <input type="number" id="reqMealCost" placeholder="Staff discounted price..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #f59e0b; outline: none;">
 
-                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt/POS Proof ðŸ“¸</label>
+                  <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt/POS Proof 📸</label>
                   <input type="file" id="reqMealProof" accept="image/*" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; background: white;">
 
                   <button onclick="submitStaffRequest('Staff Meal')" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Log Staff Meal</button>
@@ -2100,7 +2100,7 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- ðŸ“¢ FORCED ANNOUNCEMENT CAROUSEL MODAL -->
+  <!-- 📢 FORCED ANNOUNCEMENT CAROUSEL MODAL -->
   <!-- ========================================== -->
   <div id="bulletinModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 25000; justify-content: center; align-items: center; backdrop-filter: blur(5px);">
       <div style="background: white; width: 95%; max-width: 800px; max-height: 95vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
@@ -2123,7 +2123,7 @@
               <!-- THE SIGNATURE PAD (Hidden until last slide) -->
               <div id="bulletinSignatureArea" style="display: none; width: 100%; margin-top: 20px;">
                   <div style="background: #fffbeb; border: 1px dashed #d97706; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size: 13px; color: #92400e; font-weight: bold; text-align: center;">
-                      âš ï¸ By signing below, you acknowledge that you have read and understood this announcement.
+                      ⚠️ By signing below, you acknowledge that you have read and understood this announcement.
                   </div>
                   <div style="border: 2px solid #cbd5e1; border-radius: 8px; background: white; overflow: hidden;">
                       <canvas id="bulletinCanvas" width="500" height="180" style="width: 100%; touch-action: none; background: #f1f5f9;"></canvas>
@@ -2135,9 +2135,9 @@
           </div>
 
           <div style="padding: 20px; background: white; border-top: 1px solid #e2e8f0; display: flex; gap: 10px; justify-content: space-between;">
-              <button id="btnBulletinDownload" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; flex: 1;">ðŸ“¥ Download for Reference</button>
-              <button id="btnBulletinNext" onclick="window.nextBulletinSlide()" style="background: #0f766e; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; flex: 1; box-shadow: 0 4px 6px rgba(15,118,110,0.3);">Next Slide âž¡</button>
-              <button id="btnBulletinAcknowledge" onclick="window.submitBulletinAcknowledgment()" style="display: none; background: #16a34a; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; flex: 1; box-shadow: 0 4px 6px rgba(22,163,74,0.3);">âœ… Sign & Acknowledge</button>
+              <button id="btnBulletinDownload" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; flex: 1;">📥 Download for Reference</button>
+              <button id="btnBulletinNext" onclick="window.nextBulletinSlide()" style="background: #0f766e; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; flex: 1; box-shadow: 0 4px 6px rgba(15,118,110,0.3);">Next Slide ➡</button>
+              <button id="btnBulletinAcknowledge" onclick="window.submitBulletinAcknowledgment()" style="display: none; background: #16a34a; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; flex: 1; box-shadow: 0 4px 6px rgba(22,163,74,0.3);">✅ Sign & Acknowledge</button>
           </div>
 
       </div>
@@ -2146,24 +2146,24 @@
   <div class="overlay" id="checkoutModal">
     <div class="modal checkout-modal">
       <div class="modal-head"><span>Secure Payment</span><span class="close-modal"
-          onclick="closeModal('checkoutModal')">âœ–</span></div>
+          onclick="closeModal('checkoutModal')">✖</span></div>
       <div class="modal-body" style="padding: 25px;">
         <div class="checkout-yellow-box">
           <div style="color: var(--primary); font-size: 14px; margin-bottom: 5px;">Total Payable</div>
-          <div id="checkoutTotalPayable" style="font-size: 32px; font-weight: bold; color: #333;">â‚±0.00</div>
+          <div id="checkoutTotalPayable" style="font-size: 32px; font-weight: bold; color: #333;">₱0.00</div>
         </div>
         <div class="checkout-grey-box">
           <div>
             <div style="color: var(--primary); font-size: 13px; margin-bottom: 5px;">Received</div>
-            <div id="checkoutReceived" style="font-size: 26px; font-weight: bold; color: #333;">â‚±0</div>
+            <div id="checkoutReceived" style="font-size: 26px; font-weight: bold; color: #333;">₱0</div>
           </div>
           <div style="text-align: right;">
             <div id="checkoutChangeLabel" style="color: #666; font-size: 13px;">Change</div>
-            <div id="checkoutChange" style="font-size: 22px; font-weight: bold; color: #dc3545;">â‚±0.00</div>
+            <div id="checkoutChange" style="font-size: 22px; font-weight: bold; color: #dc3545;">₱0.00</div>
           </div>
         </div>
         <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed #cbd5e1;">
-            <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; text-transform: uppercase;">ðŸŽ Apply Order Discount</h4>
+            <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; text-transform: uppercase;">🎁 Apply Order Discount</h4>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                 <div>
@@ -2171,7 +2171,7 @@
                     <select id="checkoutDiscountType" class="input-box" style="width: 100%; box-sizing: border-box; padding: 10px;" onchange="window.updateNumpadDisplay()">
                         <option value="none">No Discount</option>
                         <option value="percentage">Percentage (%)</option>
-                        <option value="fixed">Fixed Amount (â‚±)</option>
+                        <option value="fixed">Fixed Amount (₱)</option>
                     </select>
                 </div>
                 <div>
@@ -2186,7 +2186,7 @@
             </div>
 
             <div style="margin-top: 10px; font-size: 14px; font-weight: bold; color: #dc2626; text-align: right; display: none;" id="checkoutDiscountPreviewRow">
-                Discount Applied: - â‚±<span id="checkoutDiscountAmountPreview">0.00</span>
+                Discount Applied: - ₱<span id="checkoutDiscountAmountPreview">0.00</span>
             </div>
         </div>
         <div id="standardPaymentArea">
@@ -2200,7 +2200,7 @@
               onclick="appendNumpad('8')">8</button><button class="num-btn"
               onclick="appendNumpad('9')">9</button><button class="num-btn"
               onclick="appendNumpad('.')">.</button><button class="num-btn"
-              onclick="appendNumpad('0')">0</button><button class="num-btn" onclick="clearNumpadOne()">âŒ«</button><button
+              onclick="appendNumpad('0')">0</button><button class="num-btn" onclick="clearNumpadOne()">⌫</button><button
               class="num-btn" style="grid-column: span 2;" onclick="setExactAmount()">Exact Amount</button><button
               class="num-btn" onclick="clearNumpadAll()">Clear</button></div>
           <div class="section-title">Payment Method</div>
@@ -2210,7 +2210,7 @@
             class="input-box" placeholder="Customer Name (Optional)"></div>
       </div>
       <div class="modal-foot" style="display: flex; gap: 10px;">
-        <button class="btn-place" style="flex: 1; background: #f59e0b; font-size: 16px;" onclick="window.processStoreUse()">ðŸ“¦ Log as Store Use</button>
+        <button class="btn-place" style="flex: 1; background: #f59e0b; font-size: 16px;" onclick="window.processStoreUse()">📦 Log as Store Use</button>
         <button class="btn-place" style="flex: 2;" id="btnSubmitFinal" onclick="submitFinalOrder()">Complete checkout</button>
       </div>
     </div>
@@ -2219,12 +2219,12 @@
   <div class="overlay" id="receiptModal">
     <div class="modal receipt-modal">
       <div class="modal-head"><span>Transaction Complete</span><span class="close-modal"
-          onclick="closeModal('receiptModal')">âœ–</span></div>
+          onclick="closeModal('receiptModal')">✖</span></div>
       <div class="modal-body" style="padding: 25px; display: flex; flex-direction: column; gap: 15px;">
         <div style="text-align: center;">
           <div
             style="width: 50px; height: 50px; border-radius: 50%; border: 3px solid #198754; color: #198754; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 0 auto 10px auto;">
-            âœ“</div>
+            ✓</div>
           <div style="color: #198754; font-weight: bold; font-size: 18px;">Payment Completed</div>
         </div>
         <div style="border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; padding: 15px 0;">
@@ -2232,20 +2232,20 @@
           <div class="shift-row"><span>Date</span><span class="receipt-value" id="rcptDate">: 2026-04-01</span></div>
           <div class="shift-row"><span>Time</span><span class="receipt-value" id="rcptTime">: 10:18 PM</span></div>
           <div class="shift-row"><span class="shift-val" style="font-size:16px;">Net Total</span><span
-              class="receipt-value shift-val" id="rcptTotal" style="font-size:16px;">: â‚±0.00</span></div>
+              class="receipt-value shift-val" id="rcptTotal" style="font-size:16px;">: ₱0.00</span></div>
         </div>
       </div>
       <div class="modal-foot"
         style="background: white; flex-direction: column; gap: 10px; border-top: 1px solid #eee; padding: 20px;">
         <button class="btn-place" onclick="window.printReceipt('receipt')"
-          style="width:100%; padding:16px; font-size:16px; border-radius:8px; box-shadow: 0 4px 6px rgba(255,159,67,0.2);">ðŸ–¨ï¸
+          style="width:100%; padding:16px; font-size:16px; border-radius:8px; box-shadow: 0 4px 6px rgba(255,159,67,0.2);">🖨️
           Print Customer Receipt</button>
         <div style="display: flex; gap: 10px;">
           <button class="btn-clear" onclick="window.printReceipt('food')"
-            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">ðŸ³
+            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🍳
             Print Kitchen</button>
           <button class="btn-clear" onclick="window.printReceipt('drinks')"
-            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">ðŸ¥¤
+            style="flex:1; padding:12px; background:#f8f9fa; border:1px solid #dce0e4; color:#333; border-radius:8px; font-weight:600;">🥤
             Print Bar</button>
         </div>
         <button class="btn-clear" onclick="window.closeAndNextOrder()"
@@ -2258,7 +2258,7 @@
   <div class="overlay" id="shiftModal">
     <div class="modal shift-modal">
       <div class="modal-head"><span id="shiftModalTitle">Shift Management</span><span class="close-modal"
-          onclick="closeModal('shiftModal')">âœ–</span></div>
+          onclick="closeModal('shiftModal')">✖</span></div>
 
       <div class="modal-body" id="shiftViewOpen" style="display: none;">
         <div
@@ -2269,7 +2269,7 @@
         <div style="display: none;"><label style="font-size: 12px; font-weight: bold; color: #666;">Cashier
             Name</label><input type="text" id="inputShiftCashier" class="input-box" placeholder="e.g. Bern, Jen"
             style="margin-bottom: 10px;"></div>
-        <div><label style="font-size: 12px; font-weight: bold; color: #666;">Starting Cash Amount (â‚±)</label><input
+        <div><label style="font-size: 12px; font-weight: bold; color: #666;">Starting Cash Amount (₱)</label><input
             type="number" id="inputStartingCash" class="input-box" placeholder="e.g. 1500" value="0"></div>
         <button class="btn-place" style="width: 100%; margin-top: 10px; box-shadow: none;" id="btnOpenShiftSubmit"
           onclick="submitOpenShift()">Open Shift</button>
@@ -2281,24 +2281,24 @@
           id="shiftActiveDetails"></div>
         <div class="shift-section" style="border-bottom: none;">
           <div class="shift-section-title" onclick="toggleShiftSection('scDrawer', 'arrDrawer')"><span id="arrDrawer"
-              class="shift-arrow">â–¼</span> Cash Drawer</div>
+              class="shift-arrow">▼</span> Cash Drawer</div>
           <div id="scDrawer">
-            <div class="shift-row"><span>Starting Cash</span><span class="shift-val" id="scStartingCash">â‚±0.00</span>
+            <div class="shift-row"><span>Starting Cash</span><span class="shift-val" id="scStartingCash">₱0.00</span>
             </div>
             <div class="shift-row"><span>Cash Out (Expenses)</span><span class="shift-val" id="scCashOut"
-                style="color: #e74c3c;">-â‚±0.00</span></div>
+                style="color: #e74c3c;">-₱0.00</span></div>
           </div>
         </div>
         <div style="display:flex; gap:10px; margin-top:20px;">
           <button class="btn-clear" onclick="closeModal('shiftModal')" style="flex:1;">Cancel</button>
 
           <button class="btn-place" id="btnCloseShiftSubmit" onclick="openEndShiftClearance()"
-            style="flex: 2; background: #f97316; color: white; border: none; border-radius: 6px; font-weight: bold; padding: 10px;">ðŸ“
+            style="flex: 2; background: #f97316; color: white; border: none; border-radius: 6px; font-weight: bold; padding: 10px;">📝
             Begin Z-Reading</button>
 
           <button class="btn-clear"
             style="border: 1px solid #dc3545; color: #dc3545; font-weight: bold; padding: 10px 15px;"
-            onclick="openExpenseModal()">ðŸ’¸ Pay Expense</button>
+            onclick="openExpenseModal()">💸 Pay Expense</button>
         </div>
       </div>
     </div>
@@ -2309,24 +2309,24 @@
       
       <div class="modal-head">
         <span id="endShiftTitle">End of Shift Clearance</span>
-        <span class="close-modal" onclick="closeModal('endShiftModal')">âœ–</span>
+        <span class="close-modal" onclick="closeModal('endShiftModal')">✖</span>
       </div>
 
       <div class="modal-body" style="display: flex; flex-direction: row; gap: 20px; align-items: flex-start; padding: 20px; overflow-y: auto; flex: 1;">
         
         <div style="flex: 1; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; min-width: 250px;">
-          <h3 style="margin-top: 0; color: var(--primary); border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; font-size: 16px;">ðŸ’µ Cash Drawer Count</h3>
+          <h3 style="margin-top: 0; color: var(--primary); border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; font-size: 16px;">💵 Cash Drawer Count</h3>
           <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
             <thead><tr style="border-bottom: 1px solid #ccc;"><th style="padding: 5px 0;">Bill/Coin</th><th style="padding: 5px 0; width: 80px;">Pieces</th><th style="padding: 5px 0; text-align: right;">Total</th></tr></thead>
             <tbody id="denominationTable"></tbody>
             <tfoot>
-              <tr style="font-weight: bold; font-size: 16px; background: #e2e8f0;"><td colspan="2" style="padding: 10px;">GRAND TOTAL:</td><td id="grandTotalCash" style="text-align: right; padding: 10px; color: var(--primary);">â‚±0.00</td></tr>
+              <tr style="font-weight: bold; font-size: 16px; background: #e2e8f0;"><td colspan="2" style="padding: 10px;">GRAND TOTAL:</td><td id="grandTotalCash" style="text-align: right; padding: 10px; color: var(--primary);">₱0.00</td></tr>
             </tfoot>
           </table>
         </div>
 
         <div style="flex: 1; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; min-width: 250px; max-height: 60vh; overflow-y: auto;">
-          <h3 style="margin-top: 0; color: #d97706; border-bottom: 2px solid #fcd34d; padding-bottom: 5px; font-size: 16px;">ðŸ”ª Kitchen Prep Logs</h3>
+          <h3 style="margin-top: 0; color: #d97706; border-bottom: 2px solid #fcd34d; padding-bottom: 5px; font-size: 16px;">🔪 Kitchen Prep Logs</h3>
           <p style="font-size: 12px; color: #92400e; margin-bottom: 15px;">Batches prepared during this specific shift.</p>
           <div id="dynamicShiftPrepLogs" style="display: flex; flex-direction: column; gap: 10px;">
               <div style="text-align:center; font-size: 13px; color: #888;">Loading prep logs...</div>
@@ -2336,7 +2336,7 @@
 
       <div style="padding: 15px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #eee; background: #fff;">
         <button class="btn-clear" onclick="closeModal('endShiftModal')" style="padding: 12px 25px;">Cancel</button>
-        <button onclick="window.MASTER_CloseShift()" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; flex: 1;">ðŸ”´ Confirm & End Shift</button>
+        <button onclick="window.MASTER_CloseShift()" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; flex: 1;">🔴 Confirm & End Shift</button>
       </div>
 
     </div>
@@ -2346,13 +2346,13 @@
   <div class="overlay" id="expenseModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
     <div class="modal" style="background: white; width: 600px; max-width: 95%; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden; display: flex; flex-direction: column; max-height: 90vh;">
       <div style="background: #dc2626; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-weight: bold; font-size: 16px;">ðŸ’¸ Multi-Item Branch Expense</span>
-        <span onclick="document.getElementById('expenseModal').style.display='none'" style="cursor: pointer; font-size: 20px;">âœ–</span>
+        <span style="font-weight: bold; font-size: 16px;">💸 Multi-Item Branch Expense</span>
+        <span onclick="document.getElementById('expenseModal').style.display='none'" style="cursor: pointer; font-size: 20px;">✖</span>
       </div>
       
       <div style="padding: 20px; overflow-y: auto; flex: 1; background: #f8fafc;">
         <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px;">
-            <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 5px; display: block;">ðŸ” Search Item to Restock (or type custom General Expense)</label>
+            <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 5px; display: block;">🔍 Search Item to Restock (or type custom General Expense)</label>
             <div style="position: relative;">
                 <input type="text" id="expSearchInput" class="input-box" placeholder="Type here..." onkeyup="window.filterExpenseSearch()" style="width: 100%; font-weight: bold; border: 2px solid #cbd5e1;">
                 <div id="expSearchResults" style="display: none; position: absolute; width: 100%; max-height: 150px; overflow-y: auto; background: white; border: 1px solid #cbd5e1; border-top: none; z-index: 100; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 0 0 8px 8px;"></div>
@@ -2368,7 +2368,7 @@
                     <select id="expUomSelect" class="input-box" style="padding: 14px; font-weight: bold; cursor: pointer;"></select>
                 </div>
                 <div style="flex: 1;">
-                    <label style="font-size: 11px; font-weight: bold; color: #dc2626;">Cost (â‚±)</label>
+                    <label style="font-size: 11px; font-weight: bold; color: #dc2626;">Cost (₱)</label>
                     <input type="number" id="expAmtInput" class="input-box" placeholder="0.00" style="color: #dc2626; font-weight: bold;">
                 </div>
                 <div>
@@ -2380,7 +2380,7 @@
         <div style="background: white; border-radius: 8px; border: 1px solid #cbd5e1; overflow: hidden; margin-bottom: 15px;">
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead style="background: #1e293b; color: white;">
-                    <tr><th style="padding: 10px; text-align: left;">Item / Description</th><th style="padding: 10px;">Cost (â‚±)</th><th style="padding: 10px;"></th></tr>
+                    <tr><th style="padding: 10px; text-align: left;">Item / Description</th><th style="padding: 10px;">Cost (₱)</th><th style="padding: 10px;"></th></tr>
                 </thead>
                 <tbody id="expenseCartBody">
                     <tr><td colspan="3" style="text-align: center; padding: 15px; color: #94a3b8;">Cart is empty.</td></tr>
@@ -2388,13 +2388,13 @@
                 <tfoot>
                     <tr style="background: #fef2f2; font-weight: bold; font-size: 16px;">
                         <td style="padding: 10px; text-align: right; color: #dc2626;">TOTAL:</td>
-                        <td colspan="2" id="expenseCartTotal" style="padding: 10px; color: #dc2626;">â‚±0.00</td>
+                        <td colspan="2" id="expenseCartTotal" style="padding: 10px; color: #dc2626;">₱0.00</td>
                     </tr>
                 </tfoot>
             </table>
         </div>
 
-        <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt Photo ðŸ“¸ (Optional)</label>
+        <label style="font-size: 12px; font-weight: bold; color: #334155;">Upload Receipt Photo 📸 (Optional)</label>
         <input type="file" id="expenseReceiptPhoto" accept="image/*" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white;">
       </div>
 
@@ -2407,11 +2407,11 @@
 
   <div class="overlay" id="inventoryCheckModal" style="display: none;">
     <div class="modal" style="width: 650px; max-height: 85vh;">
-      <div class="modal-head"><span>ðŸ“‹ End of Shift Stock Count</span><span class="close-modal" onclick="closeModal('inventoryCheckModal')">âœ–</span></div>
+      <div class="modal-head"><span>📋 End of Shift Stock Count</span><span class="close-modal" onclick="closeModal('inventoryCheckModal')">✖</span></div>
       <div class="modal-body" style="padding: 0; display: flex; flex-direction: column;">
         <div style="background: #fffcf0; padding: 15px 25px; border-bottom: 1px solid #ffeeba; font-size: 13px; color: #856404; flex-shrink: 0;">
           <strong>Instructions:</strong> Enter the physical quantity you currently see. Leave blank if not counting.
-          <input type="text" id="cashierStockSearch" onkeyup="window.filterCashierStock()" placeholder="ðŸ” Quick search item..." style="width: 100%; padding: 10px; margin-top: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
+          <input type="text" id="cashierStockSearch" onkeyup="window.filterCashierStock()" placeholder="🔍 Quick search item..." style="width: 100%; padding: 10px; margin-top: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
         </div>
         <div style="padding: 20px 25px; flex: 1; overflow-y: auto;" id="invCheckListContainer">
           <div style="text-align:center; padding:20px; color:#888;">Fetching inventory list...</div>
@@ -2426,16 +2426,16 @@
 
   <div class="overlay" id="parkedModal">
     <div class="modal" style="width: 500px; max-height: 85vh;">
-      <div class="modal-head"><span>ðŸ•’ Parked Orders (Pay Later)</span><span class="close-modal"
-          onclick="closeModal('parkedModal')">âœ–</span></div>
+      <div class="modal-head"><span>🕒 Parked Orders (Pay Later)</span><span class="close-modal"
+          onclick="closeModal('parkedModal')">✖</span></div>
       <div class="modal-body" id="parkedListContainer" style="padding: 15px; background: #f9f9f9;">Loading...</div>
     </div>
   </div>
 
   <div class="overlay" id="mobileOrdersModal">
     <div class="modal" style="width: 500px; max-height: 85vh;">
-      <div class="modal-head"><span>ðŸ“± Incoming Mobile Orders</span><span class="close-modal"
-          onclick="closeModal('mobileOrdersModal')">âœ–</span></div>
+      <div class="modal-head"><span>📱 Incoming Mobile Orders</span><span class="close-modal"
+          onclick="closeModal('mobileOrdersModal')">✖</span></div>
       <div class="modal-body" id="mobileListContainer" style="padding: 15px; background: #f9f9f9;">Waiting for orders...</div>
     </div>
   </div>
@@ -2443,7 +2443,7 @@
   <div class="overlay" id="txDetailModal">
     <div class="modal product-modal" style="width: 500px;">
       <div class="modal-head"><span id="txDetailTitle">Receipt Details</span><span class="close-modal"
-          onclick="closeModal('txDetailModal')">âœ–</span></div>
+          onclick="closeModal('txDetailModal')">✖</span></div>
       <div class="modal-body" id="txDetailBody" style="padding: 20px;"></div>
     </div>
   </div>
@@ -2451,12 +2451,12 @@
   <div id="timeClockModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
       <div style="background: white; width: 400px; border-radius: 12px; overflow: hidden; text-align: center;">
           <div style="background: #1e293b; padding: 20px; color: white; display: flex; justify-content: space-between;">
-              <h2 style="margin: 0; font-size: 18px;">ðŸ“¸ AI Time Clock</h2>
+              <h2 style="margin: 0; font-size: 18px;">📸 AI Time Clock</h2>
               <span onclick="closeTimeClock()" style="cursor: pointer; font-size: 24px;">&times;</span>
           </div>
           <div style="padding: 20px;">
               <div id="faceAiStatus" style="font-size: 13px; font-weight: bold; color: #3b82f6; margin-bottom: 8px; background: #eff6ff; padding: 6px; border-radius: 6px; border: 1px dashed #bfdbfe;">
-                  ðŸ¤– Initializing AI Engine...
+                  🤖 Initializing AI Engine...
               </div>
               
               <div style="width: 100%; height: 250px; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 15px; position: relative;">
@@ -2483,7 +2483,7 @@
       <div style="background: var(--bg-color); width: 600px; max-width: 90%; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
           
           <div style="background: #047857; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 20px;">ðŸ’¸ Cash Remittance</h2>
+              <h2 style="margin: 0; font-size: 20px;">💸 Cash Remittance</h2>
               <span onclick="document.getElementById('remittanceModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
           </div>
   
@@ -2496,7 +2496,7 @@
               
               <div id="remitFormSection">
                   <div id="remitCountdownAlert" style="background: #eff6ff; border: 1px dashed #3b82f6; color: #1d4ed8; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 13px; font-weight: bold; text-align: center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                      â³ Calculating next remittance schedule...
+                      ⏳ Calculating next remittance schedule...
                   </div>
                   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                       <div>
@@ -2515,7 +2515,7 @@
                       <input type="text" id="remitCashier" class="input-box" style="width: 100%; padding: 8px; margin-top: 5px; background: #f8fafc; font-weight: bold; color: #475569;" readonly>
                     </div>
                     <div style="flex: 1;">
-                      <label style="font-size: 12px; font-weight: bold; color: #666;">Total Amount Remitted (â‚±)</label>
+                      <label style="font-size: 12px; font-weight: bold; color: #666;">Total Amount Remitted (₱)</label>
                       <input type="number" id="remitAmount" class="input-box"
                         style="width: 100%; font-size: 18px; font-weight: bold; color: #16a34a; padding: 8px; margin-top: 5px;"
                         placeholder="0.00">
@@ -2561,18 +2561,18 @@
 
   <div id="grabEarningsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
       <div style="background: white; width: 400px; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-          <h2 style="margin-top: 0; color: #00b14f;">ðŸŸ¢ Log Grab Payout</h2>
+          <h2 style="margin-top: 0; color: #00b14f;">🟢 Log Grab Payout</h2>
           <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Check the Grab Merchant App and enter the Daily Net Earnings.</p>
           
           <label style="font-size: 12px; font-weight: bold; color: #334155;">Select Date</label>
           <input type="date" id="grabEarnDate" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
           
-          <label style="font-size: 12px; font-weight: bold; color: #334155;">Net Earnings (â‚±)</label>
+          <label style="font-size: 12px; font-weight: bold; color: #334155;">Net Earnings (₱)</label>
           <input type="number" id="grabEarnAmount" placeholder="e.g. 2500.50" style="width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; font-weight: bold; color: #00b14f; outline: none;">
           
           <div style="display: flex; gap: 10px; justify-content: flex-end;">
               <button onclick="document.getElementById('grabEarningsModal').style.display='none'" style="padding: 10px 15px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
-              <button id="btnSaveGrabEarn" onclick="window.submitGrabEarnings()" style="padding: 10px 15px; background: #00b14f; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">ðŸ’¾ Save Earnings</button>
+              <button id="btnSaveGrabEarn" onclick="window.submitGrabEarnings()" style="padding: 10px 15px; background: #00b14f; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save Earnings</button>
           </div>
       </div>
   </div>
@@ -2598,29 +2598,29 @@
     });
 
     // --- 1. UI HELPERS ---
-    function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); document.getElementById('sidebarIcon').innerText = sidebar.classList.contains('collapsed') ? 'â–¶' : 'â—€'; }
+    function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); document.getElementById('sidebarIcon').innerText = sidebar.classList.contains('collapsed') ? '▶' : '◀'; }
     function switchView(viewName) {
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
       let navEl = document.getElementById('nav-' + viewName); if (navEl) navEl.classList.add('active');
       let viewEl = document.getElementById('view-' + viewName); if (viewEl) viewEl.classList.add('active');
       let topBar = document.getElementById('topBarTitle');
-      if (viewName === 'pos') topBar.innerText = "ðŸ–¥ï¸ Point of Sale";
-      else if (viewName === 'sales') { topBar.innerText = "ðŸ§¾ Shift Sales"; loadSalesDashboard(); }
-      else if (viewName === 'prep') { topBar.innerText = "ðŸ”ª Kitchen Prep"; } 
-      else if (viewName === 'deliveries') { topBar.innerText = "ðŸšš Incoming Stock"; }
-      else if (viewName === 'menumgr') { topBar.innerText = "ðŸ” Menu Toggle"; }
-      else if (viewName === 'stockreq') { topBar.innerText = "ðŸ“¦ Request Stock"; }
-      else if (viewName === 'waste') { topBar.innerText = "ðŸ—‘ï¸ Log Waste & Spoilage"; }
-      else if (viewName === 'sop') { topBar.innerText = "ðŸ“‹ Daily SOPs"; }
+      if (viewName === 'pos') topBar.innerText = "🖥️ Point of Sale";
+      else if (viewName === 'sales') { topBar.innerText = "🧾 Shift Sales"; loadSalesDashboard(); }
+      else if (viewName === 'prep') { topBar.innerText = "🔪 Kitchen Prep"; } 
+      else if (viewName === 'deliveries') { topBar.innerText = "🚚 Incoming Stock"; }
+      else if (viewName === 'menumgr') { topBar.innerText = "🍔 Menu Toggle"; }
+      else if (viewName === 'stockreq') { topBar.innerText = "📦 Request Stock"; }
+      else if (viewName === 'waste') { topBar.innerText = "🗑️ Log Waste & Spoilage"; }
+      else if (viewName === 'sop') { topBar.innerText = "📋 Daily SOPs"; }
       else if (viewName === 'schedule') { 
-          topBar.innerText = "ðŸ“… My Schedule"; 
+          topBar.innerText = "📅 My Schedule"; 
           if (typeof window.loadPersonalSchedule === 'function') window.loadPersonalSchedule(); 
       }
-      else if (viewName === 'bulletin') { topBar.innerText = "ðŸ“¢ Bulletin Board"; }
+      else if (viewName === 'bulletin') { topBar.innerText = "📢 Bulletin Board"; }
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-    function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = 'â–¼'; } else { el.style.display = 'none'; arrow.innerText = 'â–¶'; } }
+    function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
 
     // --- 3. MENU BUILDER ---
     async function loadPOSData() {
@@ -2632,7 +2632,7 @@
       masterPOSData.categories = cats.length > 0 ? cats : ["Takoyaki", "Milk Tea", "Coffee"];
       masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], payMethods: ["Cash", "GCash", "GoTyme", "Bank", "Grab"] };
 
-      // ðŸ”¥ NEW: SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
+      // 🔥 NEW: SILENTLY FETCH STOCK & RECIPES FOR THE BADGES
       masterPOSData.stockLevels = {};
       const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
       invSnap.forEach(doc => masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
@@ -2653,7 +2653,7 @@
     // 1. Items allowed in the 2nd tab (Things you actually sell to customers)
     const premixCategories = ["Consumables", "Premix"];
     
-    // 2. ðŸ›¡ï¸ THE VAULT: Categories completely HIDDEN from the POS screen!
+    // 2. 🛡️ THE VAULT: Categories completely HIDDEN from the POS screen!
     const hiddenCategories = ["Prepared Batch", "Prep Batch", "Raw Materials", "Packaging"];
     
     function buildCategories() {
@@ -2688,7 +2688,7 @@
             if (layoutSnap.exists()) {
                 layoutOrder = layoutSnap.data().categories || [];
             }
-            // ðŸ”¥ NEW: Fetch Custom Item Order!
+            // 🔥 NEW: Fetch Custom Item Order!
             const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
             if (itemLayoutSnap.exists()) {
                 window.globalItemLayout = itemLayoutSnap.data().items || [];
@@ -2731,7 +2731,7 @@
         if(!grid) return;
         grid.innerHTML = '';
         
-        // ðŸ›¡ï¸ Remove backend items from the main center grid
+        // 🛡️ Remove backend items from the main center grid
         let safeItems = masterPOSData.items.filter(item => !hiddenCategories.includes(item.category));
         let filteredItems = safeItems;
     
@@ -2745,7 +2745,7 @@
         } else {
             // Otherwise, filter strictly by the top category clicked
             filteredItems = safeItems.filter(item => item.category === category);
-            // ðŸ”¥ THE CUSTOM SORTER FIX: Follows the Manager's Layout first, falls back to A-Z
+            // 🔥 THE CUSTOM SORTER FIX: Follows the Manager's Layout first, falls back to A-Z
             filteredItems.sort((a, b) => {
                 let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
                 let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
@@ -2762,7 +2762,7 @@
         filteredItems.forEach((item, index) => {
             let safePrice = parseFloat(item.price) || 0;
             
-            // ðŸ”¥ CALCULATE LOW STOCK BADGE
+            // 🔥 CALCULATE LOW STOCK BADGE
             let possibleOrders = Infinity;
             
             if (masterPOSData.bom && masterPOSData.stockLevels) {
@@ -2786,11 +2786,11 @@
                 badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
             }
             
-            // ðŸ”¥ THE FIX: bgStyle is safely locked INSIDE the loop!
+            // 🔥 THE FIX: bgStyle is safely locked INSIDE the loop!
             let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
             
-            // ðŸ”¥ THE NEW PRICE LABEL LOGIC
-            let priceLabel = item.isGrouped ? `<span style="color: #10b981; font-weight: bold;">Select Size âž¡</span>` : `â‚±${safePrice.toFixed(2)}`;
+            // 🔥 THE NEW PRICE LABEL LOGIC
+            let priceLabel = item.isGrouped ? `<span style="color: #10b981; font-weight: bold;">Select Size ➡</span>` : `₱${safePrice.toFixed(2)}`;
     
             grid.innerHTML += `
                 <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})" style="height: 140px; border: none;">
@@ -2820,18 +2820,18 @@
     function updateShiftUI(status) {
       let btn = document.getElementById('btnTopShift'); let lock = document.getElementById('shiftLockout'); let placeBtn = document.getElementById('btnMainPlaceOrder');
       if (status && status.active) { 
-          currentShift = status; btn.innerText = "ðŸŸ¢ Active Shift"; lock.style.display = "none"; placeBtn.disabled = false; 
+          currentShift = status; btn.innerText = "🟢 Active Shift"; lock.style.display = "none"; placeBtn.disabled = false; 
       }
       else { 
-          currentShift = null; btn.innerText = "ðŸ”´ Shift Closed"; lock.style.display = "flex"; placeBtn.disabled = true; 
+          currentShift = null; btn.innerText = "🔴 Shift Closed"; lock.style.display = "flex"; placeBtn.disabled = true; 
           
           const quotes = [
-              "Great job today! Rest up and see you tomorrow. ðŸŒŸ",
-              "Hard work pays off. Thank you for your dedication! ðŸ™Œ",
-              "You crushed it today! Enjoy your well-deserved rest. ðŸ•",
-              "Another day, another peso! Thanks for being awesome. ðŸ™",
-              "Time to clock out and chill out. You earned it! ðŸ›‹ï¸",
-              "Take a deep breath, you did amazing today! â˜•"
+              "Great job today! Rest up and see you tomorrow. 🌟",
+              "Hard work pays off. Thank you for your dedication! 🙌",
+              "You crushed it today! Enjoy your well-deserved rest. 🍕",
+              "Another day, another peso! Thanks for being awesome. 🐙",
+              "Time to clock out and chill out. You earned it! 🛋️",
+              "Take a deep breath, you did amazing today! ☕"
           ];
           let randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
           
@@ -2839,7 +2839,7 @@
           let lockoutDesc = lock.querySelector('p');
           if (lockoutTitle) lockoutTitle.innerText = "Register is Closed";
           
-          // ðŸ”¥ THE ALIGNMENT FIX: Perfectly centers the text and spacing!
+          // 🔥 THE ALIGNMENT FIX: Perfectly centers the text and spacing!
           if (lockoutDesc) {
               lockoutDesc.innerHTML = `
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; margin-top: 10px; margin-bottom: 20px; width: 100%;">
@@ -2857,14 +2857,14 @@
         let nameEl = document.getElementById('inputShiftCashier'); if (nameEl) nameEl.value = ""; document.getElementById('inputStartingCash').value = "";
         document.getElementById('shiftModal').style.display = "flex";
       } else {
-        let btn = document.getElementById('btnTopShift'); let oldText = btn.innerText; btn.innerText = "â³ Data..."; btn.disabled = true;
+        let btn = document.getElementById('btnTopShift'); let oldText = btn.innerText; btn.innerText = "⏳ Data..."; btn.disabled = true;
         window.getLiveShiftDetails(sessionUser.branch).then(details => {
           if (!details) return; activeShiftDetails = details;
           document.getElementById('shiftViewOpen').style.display = "none"; document.getElementById('shiftViewClose').style.display = "block";
           document.getElementById('shiftActiveDetails').innerText = `Started By: ${details.startedBy}  |  Start Time: ${new Date(details.startTime).toLocaleString()}`;
 
-          document.getElementById('scStartingCash').innerText = 'â‚±' + details.startingCash.toFixed(2);
-          document.getElementById('scCashOut').innerText = '- â‚±' + details.cashOut.toFixed(2);
+          document.getElementById('scStartingCash').innerText = '₱' + details.startingCash.toFixed(2);
+          document.getElementById('scCashOut').innerText = '- ₱' + details.cashOut.toFixed(2);
 
           document.getElementById('shiftModal').style.display = "flex"; btn.innerText = oldText; btn.disabled = false;
         });
@@ -2912,7 +2912,7 @@
       try {
         let parked = await window.getParkedOrders(sessionUser.branch);
         if (parked && parked.length > 0) {
-          alert("âš ï¸ CANNOT CLOSE SHIFT!\n\nThere are still " + parked.length + " unpaid parked orders.\nPlease go to Parked Orders and resume/pay them, or cancel them first.");
+          alert("⚠️ CANNOT CLOSE SHIFT!\n\nThere are still " + parked.length + " unpaid parked orders.\nPlease go to Parked Orders and resume/pay them, or cancel them first.");
           btn.innerText = originalText;
           btn.disabled = false;
           return; 
@@ -2937,7 +2937,7 @@
       let parked = await window.getParkedOrders(sessionUser.branch);
       
       if (parked && parked.length > 0) {
-        alert("âš ï¸ STRICT SYSTEM LOCK!\n\nYou have " + parked.length + " parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.");
+        alert("⚠️ STRICT SYSTEM LOCK!\n\nYou have " + parked.length + " parked order(s) still open. You must pay or cancel them before the system will accept this Z-Reading.");
         closeModal('endShiftModal'); 
         return; 
       }
@@ -2957,7 +2957,7 @@
       if (items.length === 0) { 
           html = '<div style="text-align:center; padding:20px; color:#888;">No inventory items setup yet.</div>'; 
       } else { 
-          // ðŸ”¥ Hide secret recipes and prep batches from the cashiers!
+          // 🔥 Hide secret recipes and prep batches from the cashiers!
           let filteredItems = items.filter(i => {
               let cat = (i.category || "").toLowerCase();
               return !cat.includes("prepared batch") && !cat.includes("prep batch") && !cat.includes("raw material");
@@ -2991,16 +2991,13 @@ window.loadSalesDashboard = async function () {
   let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
   let tBody = '';
   
-  // ðŸ”¥ ONLY TRACK DIGITAL FUNDS FOR THE CASHIER
+  // 🔥 ONLY TRACK DIGITAL FUNDS FOR THE CASHIER
   let totalGrab = 0; let totalGCash = 0;
 
   if (!transactions || transactions.length === 0) { 
       tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
   } else {
     transactions.forEach((tx, idx) => {
-      let payMethod = (tx.paymentMethod || '').toLowerCase();
-      // ðŸš« THE FIX: Completely hide "Store Use" from the Sales Dashboard!
-      if (payMethod === 'store use' || tx.orderType === 'Store Use') return;
       let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
       let txDate = "Today"; let txTime = "--:--";
       if (tx.timestamp && tx.timestamp.toDate) { 
@@ -3009,24 +3006,24 @@ window.loadSalesDashboard = async function () {
           txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
       }
 
-      // ðŸ”¥ TALLY ONLY DIGITAL TOTALS FOR VERIFICATION (CASE-INSENSITIVE)
+      // 🔥 TALLY ONLY DIGITAL TOTALS FOR VERIFICATION (CASE-INSENSITIVE)
       if (tx.status !== 'Voided') {
           let payMethod = (tx.paymentMethod || '').toLowerCase();
           if (payMethod === 'grab') totalGrab += (tx.netTotal || 0);
           else if (payMethod === 'gcash') totalGCash += (tx.netTotal || 0);
       }
 
-      // ðŸš¨ THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
+      // 🚨 THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
       let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
-      let displayAmount = isCashTx ? `<span style="color:#94a3b8; font-family: monospace; letter-spacing: 2px;">â‚±***</span>` : `â‚±${(tx.netTotal || 0).toFixed(2)}`;
+      let displayAmount = isCashTx ? `<span style="color:#94a3b8; font-family: monospace; letter-spacing: 2px;">₱***</span>` : `₱${(tx.netTotal || 0).toFixed(2)}`;
 
-      // ðŸ”¥ THE NEW VERIFIED/UNVERIFIED LABELS ðŸ”¥
+      // 🔥 THE NEW VERIFIED/UNVERIFIED LABELS 🔥
       let verifyLabel = '';
       if (!isCashTx && tx.status !== 'Voided') {
           if (tx.paymentVerified) {
-              verifyLabel = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">âœ… Verified</span>`;
+              verifyLabel = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified</span>`;
           } else {
-              verifyLabel = `<br><span style="color: #dc2626; font-size: 10px; font-weight: bold; animation: pulse 1s infinite;">â³ Unverified</span>`;
+              verifyLabel = `<br><span style="color: #dc2626; font-size: 10px; font-weight: bold; animation: pulse 1s infinite;">⏳ Unverified</span>`;
           }
       }
 
@@ -3039,10 +3036,10 @@ window.loadSalesDashboard = async function () {
         <td>${txTime}</td>
         <td style="font-weight:bold; color: var(--primary);">${displayAmount}</td>
         <td style="text-align:right;">
-          <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">â‹®
+          <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
             <div class="action-dropdown" id="txMenu-${idx}">
               <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')">View Details</div>
-              <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">ðŸ–¨ï¸ Print Receipt</div>
+              <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">🖨️ Print Receipt</div>
               <div class="action-item danger" onclick="voidTx('${tx.receiptId}')">Void Transaction</div>
             </div>
           </div>
@@ -3051,13 +3048,13 @@ window.loadSalesDashboard = async function () {
     });
   }
   
-  // ðŸ”¥ ðŸš¨ ANTI-THEFT: "BLIND COUNT" UI.
+  // 🔥 🚨 ANTI-THEFT: "BLIND COUNT" UI.
   let auditHeader = `
       <tr style="background: #f8fafc; font-size: 16px;">
         <td colspan="8" style="padding: 15px; text-align: center; border-bottom: 3px solid #cbd5e1;">
-            <span style="color: #64748b; font-size: 15px; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 6px;">ðŸ”’ Cash Drawer: Blind Count</span> &nbsp;&nbsp; | &nbsp;&nbsp;
-            <strong style="color: #00b14f; font-size: 18px;">ðŸŸ¢ Grab: â‚±${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
-            <strong style="color: #3b82f6; font-size: 18px;">ðŸ”µ GCash: â‚±${totalGCash.toFixed(2)}</strong>
+            <span style="color: #64748b; font-size: 15px; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 6px;">🔒 Cash Drawer: Blind Count</span> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <strong style="color: #00b14f; font-size: 18px;">🟢 Grab: ₱${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <strong style="color: #3b82f6; font-size: 18px;">🔵 GCash: ₱${totalGCash.toFixed(2)}</strong>
         </td>
       </tr>
   `;
@@ -3069,7 +3066,7 @@ window.loadSalesDashboard = async function () {
     document.addEventListener('click', function (e) { if (!e.target.classList.contains('dot-menu')) { document.querySelectorAll('.action-dropdown').forEach(el => el.classList.remove('show')); } });
 
     async function voidTx(receiptId) {
-      if (confirm(`Are you sure you want to VOID transaction ${receiptId}?\n\nâš ï¸ WARNING: This action will be reported immediately to the Manager.`)) {
+      if (confirm(`Are you sure you want to VOID transaction ${receiptId}?\n\n⚠️ WARNING: This action will be reported immediately to the Manager.`)) {
         try { await window.voidTransaction(receiptId, sessionUser.cashierName, sessionUser.branch); alert(`Transaction voided. The Manager has been notified.`); loadSalesDashboard(); }
         catch (e) { alert("Error voiding transaction: " + e.message); }
       }
@@ -3112,7 +3109,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
         priceHeader.style.display = 'none'; 
     } else {
         priceHeader.style.display = 'flex';
-        document.getElementById('modalItemPrice').innerText = 'â‚± ' + window.pendingItem.basePrice.toFixed(2);
+        document.getElementById('modalItemPrice').innerText = '₱ ' + window.pendingItem.basePrice.toFixed(2);
     }
 
     document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
@@ -3138,7 +3135,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 sizeHtml += `
                     <div class="size-btn ${isActive}" onclick="if(typeof window.selectRealVariant==='function') window.selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this); else selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this);" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
                         <div class="sz-name" style="margin-bottom: 5px;">${sizeObj.sizeLabel}</div>
-                        <div class="sz-price">â‚±${sizeObj.price.toFixed(2)}</div>
+                        <div class="sz-price">₱${sizeObj.price.toFixed(2)}</div>
                     </div>
                 `;
             });
@@ -3225,7 +3222,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                         newUiHtml += `
                             <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
                                 <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
-                                <span style="color: #0f766e;">+â‚±${a.price.toFixed(2)}</span>
+                                <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
                             </label>
                         `;
                     });
@@ -3244,7 +3241,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             }
             dynamicAddonDiv.innerHTML = newUiHtml;
 
-            // ðŸ”¥ 3. ITEM-SPECIFIC MIX & MATCH BUILDER ðŸ”¥
+            // 🔥 3. ITEM-SPECIFIC MIX & MATCH BUILDER 🔥
             window.mixMatchState = {};
             let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
             let customArea = document.getElementById('takoyakiCustomizationArea');
@@ -3257,7 +3254,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     
                     customArea.style.display = 'block';
                     document.getElementById('mixMatchPanel').style.display = 'none';
-                    document.getElementById('mixMatchToggleIcon').innerText = 'â–¼';
+                    document.getElementById('mixMatchToggleIcon').innerText = '▼';
                     
                     let sizeMatch = window.pendingItem.realName ? window.pendingItem.realName.match(/(\d+)\s*Pcs/i) : window.pendingItem.name.match(/(\d+)\s*Pcs/i);
                     window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
@@ -3278,7 +3275,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     else if (typeof updateModalTotals === 'function') updateModalTotals();
 }; // <-- THIS CLOSES THE ENTIRE `openAddOrderModal` FUNCTION SAFELY!
 
-// --- ðŸ›’ MISSING BUTTON & CART FUNCTIONS RESTORED ---
+// --- 🛒 MISSING BUTTON & CART FUNCTIONS RESTORED ---
 
 window.adjustModalMainQty = function(delta) {
     let cur = parseInt(document.getElementById('modalMainQty').innerText) || 1;
@@ -3329,7 +3326,7 @@ window.updateModalTotals = function() {
 
     let finalTotal = lineTotal - calcDisc;
 
-    document.getElementById('modalLiveTotal').innerText = 'â‚± ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
+    document.getElementById('modalLiveTotal').innerText = '₱ ' + (finalTotal < 0 ? 0 : finalTotal).toFixed(2);
     document.getElementById('confirmAddToCartText').innerText = window.editIndex > -1 ? 'Update Order' : 'Add to Order';
 };
 
@@ -3347,7 +3344,7 @@ window.confirmAddOrUpdateToCart = function() {
                 let count = window.mixMatchState[flavor];
                 if (count > 0) {
                     
-                    // ðŸ”¥ SMART RECIPE LINKER: Check Global Add-Ons for this flavor's specific recipe!
+                    // 🔥 SMART RECIPE LINKER: Check Global Add-Ons for this flavor's specific recipe!
                     let linkedIng = flavor;
                     let deductQty = 1; // Default fallback
                     
@@ -3412,8 +3409,8 @@ window.renderCart = function() {
     const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
     if (!window.cart || window.cart.length === 0) { 
         list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
-        document.getElementById('displaySubTotal').innerText = 'â‚±0.00'; 
-        document.getElementById('displayGrandTotal').innerText = 'â‚±0.00'; 
+        document.getElementById('displaySubTotal').innerText = '₱0.00'; 
+        document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
         window.currentGrandTotal = 0; 
     } else {
         window.cart.forEach((item, index) => {
@@ -3425,7 +3422,7 @@ window.renderCart = function() {
                 for (let key in item.addons) {
                     let addon = item.addons[key];
                     if (addon.qty > 0) {
-                        let priceText = (addon.price && addon.price > 0) ? `(â‚±${(addon.price * addon.qty).toFixed(2)})` : '';
+                        let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
                         addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
                     }
                 }
@@ -3436,15 +3433,15 @@ window.renderCart = function() {
                     <span class="cart-item-name">${item.name}</span>
                     <div class="cart-item-subtext">${addonsText}${notesText}</div>
                 </div>
-                <div class="cart-item-price">â‚±${item.variantPrice.toFixed(2)}</div>
+                <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
                 <div class="cart-item-qty">x ${item.qty}</div>
-                <div class="cart-item-sub">â‚±${item.lineTotalFinal.toFixed(2)}</div>
-                <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">âœ–</button>
+                <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
+                <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">✖</button>
             </li>`;
         });
         window.currentGrandTotal = grandTotal; 
-        document.getElementById('displaySubTotal').innerText = 'â‚± ' + grandTotal.toFixed(2); 
-        document.getElementById('displayGrandTotal').innerText = 'â‚± ' + grandTotal.toFixed(2);
+        document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
+        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
     }
 };
 
@@ -3456,14 +3453,14 @@ window.clearCart = function() {
     } 
 };
 
-// ðŸ”¥ EMERGENCY BRIDGES: This connects the HTML buttons directly to the functions!
+// 🔥 EMERGENCY BRIDGES: This connects the HTML buttons directly to the functions!
 function adjustModalMainQty(delta) { window.adjustModalMainQty(delta); }
 function setDiscountType(type) { window.setDiscountType(type); }
 function confirmAddOrUpdateToCart() { window.confirmAddOrUpdateToCart(); }
 function clearCart() { window.clearCart(); }
 
 
-    // --- ðŸ”˜ SIZE VARIANT SELECTOR RESTORED ---
+    // --- 🔘 SIZE VARIANT SELECTOR RESTORED ---
 window.selectRealVariant = function(realName, price, clickedBtn) {
     // 1. Update the Data
     window.pendingItem.realName = realName;
@@ -3498,16 +3495,16 @@ window.selectRealVariant = function(realName, price, clickedBtn) {
     window.updateModalTotals();
 };
 
-// --- ðŸ™ MIX & MATCH ENGINE RESTORED ---
+// --- 🐙 MIX & MATCH ENGINE RESTORED ---
 window.toggleMixMatchUI = function() {
     let panel = document.getElementById('mixMatchPanel');
     let icon = document.getElementById('mixMatchToggleIcon');
     if (panel.style.display === 'none' || panel.style.display === '') {
         panel.style.display = 'block';
-        icon.innerText = 'â–²';
+        icon.innerText = '▲';
     } else {
         panel.style.display = 'none';
-        icon.innerText = 'â–¼';
+        icon.innerText = '▼';
     }
 };
 
@@ -3559,7 +3556,7 @@ window.adjustMixMatchQty = function(flavor, delta) {
 function selectRealVariant(realName, price, btn) { window.selectRealVariant(realName, price, btn); }
 
     // --- 8. CHECKOUT SYSTEM ---
-    function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = 'â‚± ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
+    function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
   if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
   if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';}
     function appendNumpad(num) { if (amountReceivedStr === "0" && num !== ".") amountReceivedStr = num; else if (num === "." && amountReceivedStr.includes(".")) return; else amountReceivedStr += num; updateNumpadDisplay(); }
@@ -3588,7 +3585,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         window.finalCheckoutDiscount = discountAmount;
         
         let totalDisplay = document.getElementById('checkoutTotalPayable');
-        if (totalDisplay) totalDisplay.innerText = 'â‚±' + window.finalCheckoutAmount.toFixed(2);
+        if (totalDisplay) totalDisplay.innerText = '₱' + window.finalCheckoutAmount.toFixed(2);
         
         let previewRow = document.getElementById('checkoutDiscountPreviewRow');
         if (previewRow) {
@@ -3602,13 +3599,13 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         // 3. Calculate Change based on the NEW total!
         let received = parseFloat(amountReceivedStr) || 0; 
-        document.getElementById('checkoutReceived').innerText = 'â‚±' + amountReceivedStr; 
+        document.getElementById('checkoutReceived').innerText = '₱' + amountReceivedStr; 
         
         let change = received - window.finalCheckoutAmount; 
         let changeDisplay = document.getElementById('checkoutChange');
-        if (changeDisplay) changeDisplay.innerText = 'â‚±' + (change > 0 ? change.toFixed(2) : '0.00'); 
+        if (changeDisplay) changeDisplay.innerText = '₱' + (change > 0 ? change.toFixed(2) : '0.00'); 
 
-        // ðŸ”¥ THE NEW SECURITY LOCK
+        // 🔥 THE NEW SECURITY LOCK
         let btn = document.getElementById('btnSubmitFinal');
         if (btn) {
             if (received >= window.finalCheckoutAmount) {
@@ -3632,7 +3629,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         btn.classList.add('active'); 
         selectedPaymentMethod = method; 
 
-        // ðŸ”¥ SMART FEATURE: If they select a digital payment, auto-fill the exact amount!
+        // 🔥 SMART FEATURE: If they select a digital payment, auto-fill the exact amount!
         if (method !== "Cash") {
             setExactAmount();
         }
@@ -3643,28 +3640,28 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       btn.innerText = "Processing Payment..."; 
       btn.disabled = true;
 
-      // ðŸš¨ ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
+      // 🚨 ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
       let custName = document.getElementById('finalCustomerName').value.trim();
       if ((selectedPaymentMethod === 'Grab' || selectedPaymentMethod === 'GCash') && custName === "") {
-          alert(`ðŸš¨ SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact Grab Order ID or GCash Ref Number in the Customer Name box to prevent phantom orders.`);
+          alert(`🚨 SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact Grab Order ID or GCash Ref Number in the Customer Name box to prevent phantom orders.`);
           btn.innerText = "Complete checkout"; 
           btn.disabled = false;
           return;
       }
 
-      // ðŸ”¥ THE FIX: Securely pull the Shift ID from the active memory
+      // 🔥 THE FIX: Securely pull the Shift ID from the active memory
       let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) 
                          ? currentShift.shiftId 
                          : "UNKNOWN";
 
-      // ðŸš¨ GRAB DISCOUNT DATA (THIS IS WHAT WAS MISSING!)
+      // 🚨 GRAB DISCOUNT DATA (THIS IS WHAT WAS MISSING!)
       let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
       let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
       let dReason = document.getElementById('checkoutDiscountReason') ? document.getElementById('checkoutDiscountReason').value.trim() : '';
       let dAmount = window.finalCheckoutDiscount || 0;
 
       if (dAmount > 0 && dReason === "") {
-          alert("âš ï¸ A Discount Reason or ID Number is REQUIRED when applying a total order discount!");
+          alert("⚠️ A Discount Reason or ID Number is REQUIRED when applying a total order discount!");
           btn.innerText = "Complete checkout"; 
           btn.disabled = false;
           return;
@@ -3677,7 +3674,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         orderType: document.getElementById('mainOrderType').value,
         paymentMethod: selectedPaymentMethod,
         
-        // ðŸ”¥ SAVING THE DISCOUNT DETAILS
+        // 🔥 SAVING THE DISCOUNT DETAILS
         subTotalBeforeDiscount: window.currentGrandTotal,
         globalDiscountType: dType,
         globalDiscountValue: dVal,
@@ -3698,13 +3695,13 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
         lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
-        let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: â‚±${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
+        let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
         cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete checkout"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
       } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete checkout"; btn.disabled = false; }
     }
 
 // ==========================================
-// ðŸ–¨ï¸ ULTIMATE STANDALONE PRINTER ENGINE
+// 🖨️ ULTIMATE STANDALONE PRINTER ENGINE
 // ==========================================
 window.printReceipt = async function(type) {
     let d = lastTransactionData; if (!d || !d.cart) return;
@@ -3735,12 +3732,12 @@ window.printReceipt = async function(type) {
         return " ".repeat(leftPad) + cleanText;
     }
 
-    // ðŸ”¥ FORCE GRAB ORDER TYPE
+    // 🔥 FORCE GRAB ORDER TYPE
     let orderType = d.orderType || (document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : "DINE-IN");
     orderType = orderType.toUpperCase();
 
     // ------------------------------------------
-    // ðŸ”ª KITCHEN & BAR TICKETS 
+    // 🔪 KITCHEN & BAR TICKETS 
     // ------------------------------------------
     if (type === 'food' || type === 'drinks') {
         let cartHtml = '';
@@ -3755,13 +3752,13 @@ window.printReceipt = async function(type) {
               }
             }
           }
-          if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">â†˜ ${item.notes}</div>`; 
+          if (item.notes) cartHtml += `<div style="font-size: 12px; font-weight: bold; color: #000; padding-left: 5px; margin-left: 15px; margin-bottom: 5px; border-left: 2px solid #000;">↘ ${item.notes}</div>`; 
         });
 
         let headerTxt = type === 'food' ? 'KITCHEN TICKET' : 'BAR TICKET'; 
         let crossRefNote = '';
-        if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">âš ï¸ ORDER CONTAINS DRINKS</div>`;
-        if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">âš ï¸ ORDER CONTAINS FOOD</div>`;
+        if (type === 'food' && hasDrinks) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS DRINKS</div>`;
+        if (type === 'drinks' && hasFood) crossRefNote = `<div class="center bold" style="border: 2px dashed #000; padding: 5px; margin-bottom: 10px; font-size: 11px;">⚠️ ORDER CONTAINS FOOD</div>`;
 
         let html = `<div><div class="center bold" style="font-size: 22px; margin-bottom: 5px;">${headerTxt}</div><div class="center bold" style="font-size: 20px; margin-bottom: 10px;">>> ${orderType} <<</div>${crossRefNote}<div style="margin-top: 10px; margin-bottom: 10px;">${cartHtml}</div><div class="line"></div><div class="center bold" style="margin-top: 15px; font-size: 13px;">-- END OF TICKET --</div></div>`;
         
@@ -3770,7 +3767,7 @@ window.printReceipt = async function(type) {
         // \x1B\x40 RESETS THE PRINTER
         let plainTextReceipt = "\x1B\x40\n\n" + tempDiv.innerText.replace(/^\s*[\r\n]/gm, "") + "\n\n\n\n";
         
-        // ðŸ”¥ Send directly to the hardware!
+        // 🔥 Send directly to the hardware!
         if (typeof window.sendToBluetoothPrinter === 'function') {
             await window.sendToBluetoothPrinter(plainTextReceipt, false);
         } else {
@@ -3780,7 +3777,7 @@ window.printReceipt = async function(type) {
     }
 
     // ------------------------------------------
-    // ðŸ§¾ CUSTOMER RECEIPT
+    // 🧾 CUSTOMER RECEIPT
     // ------------------------------------------
     let proReceipt = "\x1B\x40\n"; 
     // Only fire the electrical pulse if the Auto-Drawer switch is ON!
@@ -3848,7 +3845,7 @@ window.printReceipt = async function(type) {
             }
         }
 
-        if (item.notes) proReceipt += `  âœŽ ${item.notes}\n`;
+        if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
 
         let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
         let diff = itemGrossTotal - actualFinal;
@@ -3860,13 +3857,13 @@ window.printReceipt = async function(type) {
     let amountRec = parseFloat(d.amountReceived) || 0;
     let paymentMethod = d.paymentMethod || "Cash";
     
-    // ðŸ”¥ GRAB THE GLOBAL DISCOUNT & REASON
+    // 🔥 GRAB THE GLOBAL DISCOUNT & REASON
     let globalDiscount = parseFloat(d.globalDiscountAmount) || 0;
     let globalReason = d.globalDiscountReason || "Order Discount";
     
     let subtotalVal = grandTotal.toFixed(2);
     
-    // ðŸ”¥ EXACT MATH RE-CALCULATION
+    // 🔥 EXACT MATH RE-CALCULATION
     let finalTotalDue = parseFloat(d.netTotal) || (grandTotal - totalDiscount - globalDiscount);
     let totalVal = finalTotalDue.toFixed(2);
     
@@ -3910,7 +3907,7 @@ window.printReceipt = async function(type) {
     let footerLines = footerMsg.split('\n');
     footerLines.forEach(l => proReceipt += centerTxt(l) + "\n");
     
-    // ðŸ”¥ Send directly to the hardware!
+    // 🔥 Send directly to the hardware!
     if (typeof window.sendToBluetoothPrinter === 'function') {
         await window.sendToBluetoothPrinter(proReceipt, false);
     } else {
@@ -3919,7 +3916,7 @@ window.printReceipt = async function(type) {
 };
 
 // ==========================================
-// ðŸ•’ ULTIMATE PARKED ORDERS & PRINTER ENGINE
+// 🕒 ULTIMATE PARKED ORDERS & PRINTER ENGINE
 // ==========================================
 window.currentParkedOrdersList = []; 
 
@@ -3942,9 +3939,9 @@ window.parkOrder = async function() {
         if (typeof renderCart === 'function') renderCart(); 
         window.updateParkedBadge(); 
         window.printParkedReceipt(parkedId); 
-        alert("âœ… Order Parked Securely!"); 
+        alert("✅ Order Parked Securely!"); 
     } else { 
-        alert("âŒ Failed to park order. Check connection."); 
+        alert("❌ Failed to park order. Check connection."); 
     }
 };
 
@@ -3973,14 +3970,14 @@ window.showParkedOrders = async function() {
           let itemsHtml = o.items.map(i => {
             let addonsText = '';
             if (i.addons) { for (let key in i.addons) { if (i.addons[key].qty > 0) addonsText += `<div style="color:#d97706; font-size:11px; margin-left:10px;">+ ${i.addons[key].qty}x ${key}</div>`; } }
-            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">âœŽ "${i.notes}"</div>` : '';
-            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">â‚±${(i.lineTotalFinal || 0).toFixed(2)}</div></div>`;
+            let notesText = i.notes ? `<div style="color:#222; font-style:italic; font-size:11px; margin-top:2px;">✎ "${i.notes}"</div>` : '';
+            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;"><div><strong>${i.qty}x ${i.name}</strong><br><span style="font-size:11px; color:#666;">${i.variantName !== 'Standard' ? '- ' + i.variantName : ''}</span>${addonsText}${notesText}</div><div style="font-weight:bold;">₱${(i.lineTotalFinal || 0).toFixed(2)}</div></div>`;
           }).join('');
 
-          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">ðŸ‘¤ ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">â‚±${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;">
-          <button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="window.printParkedReceipt('${o.id}')">ðŸ–¨ï¸ Re-print</button>
-          <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.resumeOrder('${o.id}')">â–¶ï¸ Resume & Pay</button>
-          <button style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;" onclick="window.deleteParkedOrderManually('${o.id}')">ðŸ—‘ï¸</button>
+          html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;"><strong style="font-size:16px;">👤 ${o.name}</strong><strong style="color:var(--primary); font-size:16px;">₱${o.total.toFixed(2)}</strong></div><div style="margin-bottom:15px;">${itemsHtml}</div><div style="display:flex; gap:10px;">
+          <button class="btn-clear" style="flex:1; padding:10px; font-size:13px;" onclick="window.printParkedReceipt('${o.id}')">🖨️ Re-print</button>
+          <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.resumeOrder('${o.id}')">▶️ Resume & Pay</button>
+          <button style="background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;" onclick="window.deleteParkedOrderManually('${o.id}')">🗑️</button>
           </div></div>`;
         });
       }
@@ -4019,7 +4016,7 @@ window.printParkedReceipt = async function(docId) {
           return " ".repeat(leftPad) + cleanText;
       }
 
-      // ðŸ”¥ Added the initialization command \x1B\x40 to wake up the printer!
+      // 🔥 Added the initialization command \x1B\x40 to wake up the printer!
       let proReceipt = "\x1B\x40\n";
       proReceipt += centerTxt("*** " + storeName.toUpperCase() + " ***") + "\n";
       proReceipt += centerTxt("** PAY LATER (PARKED) **") + "\n";
@@ -4066,7 +4063,7 @@ window.printParkedReceipt = async function(docId) {
                   }
               }
           }
-          if (item.notes) proReceipt += `  âœŽ ${item.notes}\n`;
+          if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
   
           let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
           let diff = itemGrossTotal - actualFinal;
@@ -4089,7 +4086,7 @@ window.printParkedReceipt = async function(docId) {
       proReceipt += "--------------------------------\n";
       proReceipt += centerTxt("** PLEASE PAY AT COUNTER **") + "\n";
       
-      // ðŸ”¥ THE FIX: Removed RawBT Intent and replaced it with the direct Bluetooth Engine!
+      // 🔥 THE FIX: Removed RawBT Intent and replaced it with the direct Bluetooth Engine!
       if (typeof window.sendToBluetoothPrinter === 'function') {
           await window.sendToBluetoothPrinter(proReceipt, false);
       } else {
@@ -4099,7 +4096,7 @@ window.printParkedReceipt = async function(docId) {
 
 
 // ==========================================
-// ðŸ“± MOBILE ORDERS ENGINE & LISTENER (RESCUED)
+// 📱 MOBILE ORDERS ENGINE & LISTENER (RESCUED)
 // ==========================================
 window.mobileOrdersList = [];
 window.mobileOrdersUnsubscribe = null;
@@ -4182,7 +4179,7 @@ window.showMobileOrders = function() {
         let itemsHtml = o.items.map(i => {
             return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;">
                       <div><strong>${i.quantity}x ${i.name}</strong></div>
-                      <div style="font-weight:bold;">â‚±${(i.price * i.quantity).toFixed(2)}</div>
+                      <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
                     </div>`;
         }).join('');
 
@@ -4191,16 +4188,16 @@ window.showMobileOrders = function() {
 
         html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
-                        <strong style="font-size:16px;">ðŸ‘¤ ${o.customerName}</strong>
-                        <strong style="color:var(--primary); font-size:16px;">â‚±${(o.totalAmount || 0).toFixed(2)}</strong>
+                        <strong style="font-size:16px;">👤 ${o.customerName}</strong>
+                        <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
                     </div>
                     <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; margin-bottom: 10px; text-align: center;">
                         ${paymentLabel}
                     </div>
                     <div style="margin-bottom:15px;">${itemsHtml}</div>
                     <div style="display:flex; gap:10px;">
-                        <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">âœ– Reject</button>
-                        <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">ðŸ“¥ Send to Cart</button>
+                        <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
+                        <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
                     </div>
                  </div>`;
     });
@@ -4227,7 +4224,7 @@ window.acceptMobileOrder = async function(docId) {
         discountType: 'none',
         discountVal: 0,
         addons: {},
-        notes: 'ðŸ“± Mobile App Order'
+        notes: '📱 Mobile App Order'
     }));
 
     // Auto-fill customer name for the receipt
@@ -4250,30 +4247,30 @@ window.rejectMobileOrder = async function(docId) {
     <script>
         window.nativeAlert = window.alert;
         window.alert = function(message) {
-            let isError = String(message).includes('âŒ') || String(message).includes('â›”') || String(message).includes('WARNING') || String(message).includes('ðŸš¨');
+            let isError = String(message).includes('❌') || String(message).includes('⛔') || String(message).includes('WARNING') || String(message).includes('🚨');
             Swal.fire({
                 html: `<div style="font-size: 15px; font-weight: 600; color: #334155; line-height: 1.5;">${String(message).replace(/\n/g, '<br>')}</div>`,
-                icon: isError ? 'error' : (String(message).includes('âœ…') ? 'success' : 'info'),
+                icon: isError ? 'error' : (String(message).includes('✅') ? 'success' : 'info'),
                 confirmButtonColor: isError ? '#ef4444' : '#10b981',
                 confirmButtonText: 'Understood',
                 background: '#ffffff',
                 backdrop: `rgba(0,0,0,0.5)`,
-                scrollbarPadding: false, // ðŸ”¥ THE FIX: Stops the background from jumping!
+                scrollbarPadding: false, // 🔥 THE FIX: Stops the background from jumping!
                 customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' }
             });
         };
     </script>
-    <script type="module" src="main.js?v=5.27"></script>
+    <script type="module" src="main.js?v=5.8"></script>
     <script>
-    // ðŸ›¡ï¸ PROGRESSIVE WEB APP (PWA) INSTALLER
+    // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js')
           .then(registration => {
-            console.log('âœ… App securely installed to tablet hard drive.', registration.scope);
+            console.log('✅ App securely installed to tablet hard drive.', registration.scope);
           })
           .catch(err => {
-            console.error('âŒ Hard drive installation failed: ', err);
+            console.error('❌ Hard drive installation failed: ', err);
           });
       });
     }
