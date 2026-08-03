@@ -1297,6 +1297,12 @@
 
   <script>
       async function submitLoginPin() {
+          // 🔥 THE CRASH PREVENTER: Stops the red console error!
+          if (typeof window.verifyPin !== 'function') {
+              alert("⏳ Please wait a moment. The POS engine is still starting up...");
+              return;
+          }
+          
           let passInput = document.getElementById('loginPasswordInput');
           let password = passInput.value.trim();
           
