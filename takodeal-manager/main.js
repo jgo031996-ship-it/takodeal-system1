@@ -14968,7 +14968,9 @@ window.openBranchSettings = function(docId) {
     document.getElementById('settingContact').value = d.contact || '';
     document.getElementById('settingWifi').value = d.wifi || '';
     document.getElementById('settingPrinterSize').value = d.printerSize || '58mm';
-    
+    // 🔥 NEW: LOAD HEADER AND FOOTER
+    document.getElementById('settingHeaderName').value = d.headerName || 'TAKODEAL';
+    document.getElementById('settingFooterMsg').value = d.footerMessage || 'Acknowledgement Receipt\nThank you!';
     // 🔥 NEW: Inject the Royalty Setting dynamically if it doesn't exist yet!
     let formContainer = document.getElementById('settingPrinterSize').parentElement.parentElement;
     if (!document.getElementById('settingRoyalty')) {
@@ -14992,6 +14994,8 @@ window.saveBranchSettings = async function() {
         contact: document.getElementById('settingContact').value.trim(),
         wifi: document.getElementById('settingWifi').value.trim(),
         printerSize: document.getElementById('settingPrinterSize').value,
+        headerName: document.getElementById('settingHeaderName').value.trim(), // 🔥 NEW
+        footerMessage: document.getElementById('settingFooterMsg').value.trim(), // 🔥 NEW
         royaltyPercent: parseFloat(document.getElementById('settingRoyalty').value) || 0
     };
 
