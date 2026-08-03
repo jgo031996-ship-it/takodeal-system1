@@ -362,6 +362,7 @@ window.saveProfileData = async function() {
     let pagVal = document.getElementById('profPagibig').value.trim();
     let gotymeNameVal = document.getElementById('profGotymeName').value.trim();
     let gotymeNumVal = document.getElementById('profGotymeNum').value.trim();
+    let emergNumVal = document.getElementById('profEmergNum').value.trim();
 
     let payload = {
         cashierName: document.getElementById('profFullName').value.trim(),
@@ -369,17 +370,30 @@ window.saveProfileData = async function() {
         phone: document.getElementById('profPhone').value.trim(),
         address: document.getElementById('profAddress').value.trim(),
         emergencyName: document.getElementById('profEmergName').value.trim(),
-        emergencyNumber: document.getElementById('profEmergNum').value.trim(),
+        
+        // 🚨 EMERGENCY NUMBER Y-SPLITTER (Covers all possible Manager App names)
+        emergencyNumber: emergNumVal,
+        emergencyPhone: emergNumVal,
+        emergencyContact: emergNumVal,
+        emergencyContactNumber: emergNumVal,
+        emergNum: emergNumVal,
+        
         email: document.getElementById('profEmail').value.trim(),
         gcashName: document.getElementById('profGcashName').value.trim(),
         gcashNumber: document.getElementById('profGcashNum').value.trim(),
         
-        // 🔥 THE Y-SPLITTER FIX: Sending data down all possible Manager App pipe names!
+        // 💳 GOTYME Y-SPLITTER (Covers all case-sensitive variations)
         gotymeName: gotymeNameVal,
         gotyme: gotymeNameVal,
+        goTymeName: gotymeNameVal,
+        
         gotymeNumber: gotymeNumVal,
+        gotymeNum: gotymeNumVal,
         gotymeAcc: gotymeNumVal,
         gotymeAccount: gotymeNumVal,
+        goTymeNumber: gotymeNumVal,
+        goTymeAccount: gotymeNumVal,
+        gotymeAccountNumber: gotymeNumVal,
         
         sss: sssVal,
         sssNumber: sssVal,
