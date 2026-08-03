@@ -1,8 +1,7 @@
-// Bumped to v3 to force the tablet to replace the broken engine!
-const CACHE_NAME = 'takodeal-pos-core-v3'; 
+// Bumped to v4 to force the tablet to replace the engine!
+const CACHE_NAME = 'takodeal-pos-core-v4'; 
 const IMAGE_CACHE = 'takodeal-image-storage-v1';
- 
-// The core files needed to boot the UI instantly
+
 const CORE_ASSETS = [
     '/',
     '/index.html',
@@ -18,11 +17,10 @@ self.addEventListener('install', (event) => {
             return cache.addAll(CORE_ASSETS);
         })
     );
-    self.skipWaiting(); // Forces the tablet to install immediately
+    self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-    // Clean out the old broken caches
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
@@ -31,26 +29,22 @@ self.addEventListener('activate', (event) => {
             );
         })
     );
-    event.waitUntil(clients.claim()); // Takes control of the app instantly
+    event.waitUntil(clients.claim()); 
 });
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // 📸 1. AGGRESSIVE IMAGE CACHING
+    // 1. IMAGES
     if (event.request.destination === 'image' || url.hostname.includes('firebasestorage.googleapis.com')) {
         event.respondWith(
-            caches.match(event.request).then((cachedResponse) => {
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
+            // 🔥 THE FIX: ignoreSearch: true forces it to ignore URL tags!
+            caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
+                if (cachedResponse) return cachedResponse;
                 
                 return fetch(event.request).then((networkResponse) => {
-                    // 🔥 THE FIX: Clone the data INSTANTLY before it goes anywhere else!
                     const responseToCache = networkResponse.clone();
-                    caches.open(IMAGE_CACHE).then((cache) => {
-                        cache.put(event.request, responseToCache);
-                    });
+                    caches.open(IMAGE_CACHE).then((cache) => cache.put(event.request, responseToCache));
                     return networkResponse;
                 }).catch(() => {
                     return new Response('<svg width="150" height="150" xmlns="http://www.w3.org/2000/svg"><rect width="150" height="150" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="20" fill="#94a3b8">No Image</text></svg>', { headers: { 'Content-Type': 'image/svg+xml' } });
@@ -60,19 +54,15 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // ⚡ 2. CORE APP FILES (Stale-While-Revalidate Engine)
+    // 2. CORE FILES
     event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
+        // 🔥 THE FIX: ignoreSearch: true forces it to load main.js instantly!
+        caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
             const fetchPromise = fetch(event.request).then((networkResponse) => {
-                // 🔥 THE FIX: Clone the data INSTANTLY before the browser consumes it!
                 const responseToCache = networkResponse.clone();
-                caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, responseToCache);
-                });
+                caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
                 return networkResponse;
-            }).catch(() => {
-                // Ignore network errors on bad Wi-Fi
-            });
+            }).catch(() => {});
 
             return cachedResponse || fetchPromise;
         })
