@@ -3720,9 +3720,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 // ==========================================
 // 🖨️ ULTIMATE STANDALONE PRINTER ENGINE
 // ==========================================
-// ==========================================
-// 🖨️ ULTIMATE STANDALONE PRINTER ENGINE (BEAUTIFIED)
-// ==========================================
 window.printReceipt = async function(type) {
     let d = window.lastTransactionData; 
     if (!d || !d.cart) return;
@@ -3754,7 +3751,6 @@ window.printReceipt = async function(type) {
         }
     } catch(e) { console.log("Failed to fetch branch settings", e); }
 
-    // 2. PAPER SIZE AUTO-SCALER (58mm = 32 chars, 80mm = 48 chars)
     let width = paperSize === '80mm' ? 48 : 32;
 
     function drawLine() { return "-".repeat(width) + "\n"; }
@@ -3764,7 +3760,7 @@ window.printReceipt = async function(type) {
     orderType = orderType.toUpperCase();
 
     // ------------------------------------------
-    // 🔪 KITCHEN & BAR TICKETS (Pure Hex Code - Crash Proof!)
+    // 🔪 KITCHEN & BAR TICKETS (Crash Proof)
     // ------------------------------------------
     if (type === 'food' || type === 'drinks') {
         let tReceipt = "\x1B\x40\n";
@@ -3786,16 +3782,14 @@ window.printReceipt = async function(type) {
             if (type === 'food' && isDrink) return; 
             if (type === 'drinks' && !isDrink) return;
             
-            tReceipt += "\x1B\x21\x10"; // Double Height for visibility
+            tReceipt += "\x1B\x21\x10"; // Double Height
             let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
             tReceipt += `${item.qty}x ${item.name}${variantName}\n`;
             tReceipt += "\x1B\x21\x00"; // Normal Size
             
             if (item.addons) {
                 for (let key in item.addons) {
-                    if (item.addons[key].qty > 0) {
-                        tReceipt += `  + ${item.addons[key].qty}x ${key}\n`;
-                    }
+                    if (item.addons[key].qty > 0) tReceipt += `  + ${item.addons[key].qty}x ${key}\n`;
                 }
             }
             if (item.notes) tReceipt += `  ✎ NOTE: ${item.notes}\n`;
@@ -3803,10 +3797,7 @@ window.printReceipt = async function(type) {
         });
         
         tReceipt += "\n\n\n\n\x1D\x56\x41\x10"; // Cut Paper
-        
-        if (typeof window.sendToBluetoothPrinter === 'function') {
-            await window.sendToBluetoothPrinter(tReceipt, false, type);
-        }
+        if (typeof window.sendToBluetoothPrinter === 'function') await window.sendToBluetoothPrinter(tReceipt, false, type);
         return;
     }
 
@@ -3815,19 +3806,19 @@ window.printReceipt = async function(type) {
     // ------------------------------------------
     let proReceipt = "\x1B\x40\n"; 
     
-    // Kick Drawer if enabled
-    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') {
-        proReceipt += "\x1B\x70\x00\x19\x96\n"; 
-    }
+    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') proReceipt += "\x1B\x70\x00\x19\x96\n"; 
     
+    // 🔥 ENCODING FIX: Strip accents (Á) so it doesn't print Û
+    let safeHeaderName = headerName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
     // --- 🌟 THE NEW TYPOGRAPHICAL LOGO HEADER ---
     proReceipt += "\x1B\x61\x01"; // Center Align
-    proReceipt += "\x1B\x21\x30"; // Double Width & Double Height!
-    proReceipt += headerName.toUpperCase() + "\n";
+    proReceipt += "\x1B\x21\x30"; // Double Width & Double Height
+    proReceipt += safeHeaderName + "\n";
     proReceipt += "\x1B\x21\x00"; // Reset to Normal Size
     
     if (storeAddress) proReceipt += storeAddress + "\n";
-    if (storeContact) proReceipt += "Tel: " + storeContact + "\n";
+    if (storeContact) proReceipt += "Contact: " + storeContact + "\n"; // 🔥 Fixed Label
     
     proReceipt += "\x1B\x61\x00"; // Left Align
     proReceipt += drawDoubleLine();
@@ -3835,18 +3826,16 @@ window.printReceipt = async function(type) {
     const now = new Date();
     let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
-    const timeStr = hours + ':' + minutes + ' ' + ampm;
 
-    // 🔥 SHORTEN CASHIER NAME & FORMAT CUSTOMER
+    // 🔥 SHORTEN CASHIER NAME & KEEP CUSTOMER NORMAL SIZE
     let fullCashierName = d.cashierName || localStorage.getItem('cashierName') || "Staff";
     let cashierFirstName = fullCashierName.split(' ')[0]; // Grabs just the first name
     let customer = d.customerName || "Guest";
 
     proReceipt += "Date: " + now.toLocaleDateString() + "\n";
-    proReceipt += "Time: " + timeStr + "\n";
+    proReceipt += "Time: " + hours + ':' + minutes + ' ' + ampm + "\n";
     proReceipt += drawDoubleLine();
     
-    // 🔥 PROMINENT ORDER TYPE
     proReceipt += "\x1B\x61\x01"; // Center
     proReceipt += "\x1B\x21\x10"; // Double Height
     proReceipt += ">> " + orderType + " <<\n"; 
@@ -3854,10 +3843,7 @@ window.printReceipt = async function(type) {
     proReceipt += "\x1B\x61\x00"; // Left Align
     proReceipt += drawDoubleLine();
 
-    // 🔥 PROMINENT CUSTOMER NAME
-    proReceipt += "\x1B\x21\x10"; // Double Height
     proReceipt += "Customer: " + customer + "\n";
-    proReceipt += "\x1B\x21\x00"; // Normal
     proReceipt += "Cashier:  " + cashierFirstName + "\n";
     proReceipt += drawDoubleLine();
     
@@ -3875,10 +3861,8 @@ window.printReceipt = async function(type) {
         let baseLineTotal = qty * basePrice;
         let itemGrossTotal = baseLineTotal;
 
-        // Print Item Name
         proReceipt += name + variantName + "\n";
         
-        // Print Qty, Price, and Total perfectly aligned!
         let qtyStr = qty.toFixed(1) + "  x " + basePrice.toFixed(2);
         let totalStr = baseLineTotal.toFixed(2);
         let padding = width - qtyStr.length - totalStr.length;
@@ -3910,25 +3894,13 @@ window.printReceipt = async function(type) {
         let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
         let diff = itemGrossTotal - actualFinal;
         if (diff > 0.01) totalDiscount += diff;
-        
         grandTotal += itemGrossTotal; 
     });
 
     let amountRec = parseFloat(d.amountReceived) || 0;
-    let paymentMethod = d.paymentMethod || "Cash";
-    let globalDiscount = parseFloat(d.globalDiscountAmount) || 0;
-    let globalReason = d.globalDiscountReason || "Order Discount";
-    
     let subtotalVal = grandTotal.toFixed(2);
-    let finalTotalDue = parseFloat(d.netTotal) || (grandTotal - totalDiscount - globalDiscount);
-    let totalVal = finalTotalDue.toFixed(2);
+    let finalTotalDue = parseFloat(d.netTotal) || (grandTotal - totalDiscount - (parseFloat(d.globalDiscountAmount) || 0));
     
-    let changeVal = 0;
-    if (amountRec > 0) {
-        changeVal = amountRec - finalTotalDue;
-        if (changeVal < 0) changeVal = 0;
-    }
-
     proReceipt += drawDoubleLine();
     
     function formatLine(label, value) {
@@ -3938,24 +3910,28 @@ window.printReceipt = async function(type) {
     }
     
     proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-    
     if (totalDiscount > 0.01) proReceipt += formatLine("Item Discounts:", -parseFloat(totalDiscount));
-    
-    if (globalDiscount > 0.01) {
-        proReceipt += formatLine("Order Discount:", -parseFloat(globalDiscount));
-        proReceipt += `  Note: ${globalReason}\n`;
+    if (parseFloat(d.globalDiscountAmount) > 0.01) {
+        proReceipt += formatLine("Order Discount:", -parseFloat(d.globalDiscountAmount));
+        proReceipt += `  Note: ${d.globalDiscountReason || "Discount"}\n`;
     }
+    proReceipt += drawDoubleLine();
     
-    proReceipt += "\x1B\x21\x10"; // Double height for Total
-    proReceipt += formatLine("TOTAL DUE:", parseFloat(totalVal));
+    // --- 🔥 FIX: MASSIVE CENTERED TOTAL DUE ---
+    proReceipt += "\x1B\x61\x01"; // Center Align
+    proReceipt += "TOTAL DUE\n";
+    proReceipt += "\x1B\x21\x30"; // Double Width & Height
+    proReceipt += finalTotalDue.toFixed(2) + "\n";
     proReceipt += "\x1B\x21\x00"; // Normal Size
+    proReceipt += "\x1B\x61\x00"; // Left Align
     
     proReceipt += drawDoubleLine();
     
     if (amountRec > 0) {
         proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
-        proReceipt += "Method: " + paymentMethod + "\n";
-        proReceipt += formatLine("Change Amount:", parseFloat(changeVal));
+        proReceipt += "Method: " + (d.paymentMethod || "Cash") + "\n";
+        let changeVal = amountRec - finalTotalDue;
+        proReceipt += formatLine("Change Amount:", changeVal > 0 ? changeVal : 0);
     } else {
         proReceipt += "\x1B\x61\x01"; // Center Align
         proReceipt += "** PLEASE PAY AT COUNTER **\n";
@@ -3969,10 +3945,8 @@ window.printReceipt = async function(type) {
     let footerLines = footerMsg.split('\n');
     footerLines.forEach(l => proReceipt += l.trim() + "\n");
     
-    // Add space and CUT
     proReceipt += "\n\n\n\n\x1D\x56\x41\x10"; 
     
-    // Send to hardware!
     if (typeof window.sendToBluetoothPrinter === 'function') {
         await window.sendToBluetoothPrinter(proReceipt, false);
     }
