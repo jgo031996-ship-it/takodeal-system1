@@ -8172,33 +8172,71 @@ window.openPrinterManager = function() {
                     <span>⚙️ Printer Engine Mode:</span>
                     <select id="printerModeSelect" onchange="window.switchPrinterMode(this.value)" style="padding: 10px; border-radius: 6px; border: 1px solid #94a3b8; font-weight: bold; width: 100%; outline: none; background: white; cursor: pointer;">
                         <option value="ble" ${isBle ? 'selected' : ''}>⚡ Fast Direct Bluetooth (New)</option>
-                        <option value="rawbt" ${!isBle ? 'selected' : ''}>🐢 Legacy App (RawBT - For Old Printers)</option>
+                        <option value="rawbt" ${!isBle ? 'selected' : ''}>🐢 Legacy App (RawBT)</option>
                     </select>
                 </label>
             </div>
 
             <div id="blePrinterSetup" style="display:${isBle ? 'flex' : 'none'}; flex-direction:column; gap:12px; text-align: left;">
-                <p style="font-size: 12px; color: #64748b; margin-top: 0; text-align: center;">Tap below to pair modern printers. Unpaired categories automatically route to the Main Printer.</p>
-                <button onclick="window.connectSpecificPrinter('main')" style="padding:15px; background:${window.mainPrinterChar ? '#16a34a' : '#f8fafc'}; color:${window.mainPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">
-                    ${window.mainPrinterChar ? '✅ Main Printer Paired' : '🧾 Pair Main Printer'}
-                </button>
-                <button onclick="window.connectSpecificPrinter('kitchen')" style="padding:15px; background:${window.kitchenPrinterChar ? '#d97706' : '#f8fafc'}; color:${window.kitchenPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">
-                    ${window.kitchenPrinterChar ? '✅ Kitchen Printer Paired' : '🍳 Pair Kitchen Printer'}
-                </button>
-                <button onclick="window.connectSpecificPrinter('bar')" style="padding:15px; background:${window.barPrinterChar ? '#0284c7' : '#f8fafc'}; color:${window.barPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">
-                    ${window.barPrinterChar ? '✅ Bar Printer Paired' : '🥤 Pair Bar Printer'}
-                </button>
+                <p style="font-size: 12px; color: #64748b; margin-top: 0; text-align: center;">Pair modern printers and test connections.</p>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="window.connectSpecificPrinter('main')" style="flex:2; padding:12px; background:${window.mainPrinterChar ? '#16a34a' : '#f8fafc'}; color:${window.mainPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;">
+                        ${window.mainPrinterChar ? '✅ Main Paired' : '🧾 Pair Main'}
+                    </button>
+                    <button onclick="window.testPrint('main', event)" style="flex:1; padding:12px; background:#0ea5e9; color:white; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">Test 🖨️</button>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="window.connectSpecificPrinter('kitchen')" style="flex:2; padding:12px; background:${window.kitchenPrinterChar ? '#d97706' : '#f8fafc'}; color:${window.kitchenPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;">
+                        ${window.kitchenPrinterChar ? '✅ Kitchen Paired' : '🍳 Pair Kitchen'}
+                    </button>
+                    <button onclick="window.testPrint('kitchen', event)" style="flex:1; padding:12px; background:#0ea5e9; color:white; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">Test 🖨️</button>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="window.connectSpecificPrinter('bar')" style="flex:2; padding:12px; background:${window.barPrinterChar ? '#0284c7' : '#f8fafc'}; color:${window.barPrinterChar ? 'white' : '#334155'}; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;">
+                        ${window.barPrinterChar ? '✅ Bar Paired' : '🥤 Pair Bar'}
+                    </button>
+                    <button onclick="window.testPrint('bar', event)" style="flex:1; padding:12px; background:#0ea5e9; color:white; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">Test 🖨️</button>
+                </div>
             </div>
             
             <div id="rawbtPrinterSetup" style="display:${!isBle ? 'block' : 'none'}; padding: 15px; background: #fffbeb; border: 1px dashed #d97706; border-radius: 8px; color: #b45309; font-size: 13px; font-weight: bold; text-align: left;">
-                ⚠️ Legacy Mode is Active.<br><br>The POS will bypass the browser and route all tickets to the RawBT Android App. Ensure Printer 001 is paired in your Android Bluetooth settings.
+                ⚠️ Legacy Mode Active.<br><br>The POS will bypass the browser and route tickets to the RawBT Android App. Ensure Printer 001 is paired in your Android Bluetooth settings.
             </div>
         `,
         showConfirmButton: true,
         confirmButtonText: 'Done',
         confirmButtonColor: '#64748b',
-        customClass: { popup: 'rounded-2xl shadow-2xl' }
+        customClass: { popup: 'rounded-2xl shadow-xl' }
     });
+};
+
+// 🔥 NEW: Test Print Engine
+window.testPrint = async function(target, event) {
+    let escpos = "\x1B\x40\n";
+    escpos += "\x1B\x61\x01"; // Center Align
+    escpos += "\x1B\x21\x30"; // Double Width & Height
+    escpos += "TEST PRINT\n";
+    escpos += "\x1B\x21\x00"; // Normal Size
+    escpos += "--------------------------------\n";
+    escpos += "Printer is connected successfully!\n";
+    escpos += "Target: " + target.toUpperCase() + "\n";
+    escpos += "--------------------------------\n\n\n\n";
+    escpos += "\x1D\x56\x41\x10"; // Cut Paper
+    
+    let btn = event.target;
+    let oldText = btn.innerText;
+    btn.innerText = "⏳...";
+    btn.disabled = true;
+
+    try {
+        await window.sendToBluetoothPrinter(escpos, false, target);
+    } catch(e) {}
+    
+    btn.innerText = oldText;
+    btn.disabled = false;
 };
 
 window.connectSpecificPrinter = async function(target) {
