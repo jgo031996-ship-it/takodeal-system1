@@ -320,21 +320,32 @@ window.loadPOSData = async function() {
 
     try {
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+        let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+        
         if (configSnap.exists()) {
             let configData = configSnap.data();
             window.masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
-            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
         } else {
-            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
             window.masterPOSData.settings = { 
                 orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
                 payMethods: ["Cash", "GCash", "Bank"] 
             };
+        }
+
+        // 🔥 THE FIX: ONLY USE THE NEW MANAGER DRAG-AND-DROP LAYOUT!
+        const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
+        if (catLayoutSnap.exists() && catLayoutSnap.data().categories) {
+            window.masterPOSData.categories = catLayoutSnap.data().categories;
+        } else {
+            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
+        }
+        
+        // 🛡️ ANTI-DUPLICATE SHIELD: Physically destroys duplicate categories in memory!
+        if (Array.isArray(window.masterPOSData.categories)) {
+            window.masterPOSData.categories = [...new Set(window.masterPOSData.categories.map(c => c.trim()))];
         }
 
         window.masterPOSData.addonLayoutNames = [];
