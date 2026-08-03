@@ -8357,12 +8357,11 @@ window.concatBuffers = function(buffers) {
 };
 
 // ==========================================
-// 🖼️ ESC/POS BINARY IMAGE PROCESSOR (CORS FIX)
+// 🖼️ ESC/POS BINARY IMAGE PROCESSOR
 // ==========================================
 window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeight) {
     return new Promise((resolve) => {
         let img = new Image();
-        // 🔥 THE FIX: Removed crossOrigin="Anonymous" so Data URIs load safely on tablets!
         
         img.onload = function() {
             try {
@@ -8374,7 +8373,8 @@ window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeig
                 targetWidth = Math.floor(targetWidth / 8) * 8; // Must be multiple of 8
                 let targetHeight = Math.floor((img.height / img.width) * targetWidth);
                 
-                canvas.width = targetWidth; canvas.height = targetHeight;
+                canvas.width = targetWidth; 
+                canvas.height = targetHeight;
                 
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -8465,65 +8465,6 @@ setTimeout(() => {
         printerBtn.innerHTML = `<span style="font-size: 18px;">🖨️</span><div class="nav-item-text">Printer Hub</div>`;
     }
 }, 2000);
-
-// ==========================================
-// 🖼️ ESC/POS BINARY IMAGE PROCESSOR
-// ==========================================
-window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeight) {
-    return new Promise((resolve) => {
-        let img = new Image();
-        img.onload = function() {
-            let canvas = document.createElement('canvas');
-            let ctx = canvas.getContext('2d');
-            
-            // 58mm paper fits max 384 pixels width. Let's make the logo max 250px so it fits nicely.
-            let baseWidth = 200; 
-            let targetWidth = baseWidth * (scaleWidth || 1);
-            let targetHeight = (img.height / img.width) * targetWidth * (scaleHeight || 1);
-            
-            // ESC/POS raster images MUST be a multiple of 8 in width
-            targetWidth = Math.floor(targetWidth / 8) * 8;
-            
-            canvas.width = targetWidth;
-            canvas.height = targetHeight;
-            
-            // Fill white background (crucial for transparent PNGs!)
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            
-            let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            let bytesWidth = canvas.width / 8;
-            let bytesHeight = canvas.height;
-            
-            // Create Binary Array Buffer
-            let buffer = new Uint8Array(8 + (bytesWidth * bytesHeight));
-            
-            // ESC/POS GS v 0 Command (Print Raster Bit Image)
-            buffer.set([0x1D, 0x76, 0x30, 0x00, bytesWidth & 0xFF, (bytesWidth >> 8) & 0xFF, bytesHeight & 0xFF, (bytesHeight >> 8) & 0xFF], 0);
-            
-            let offset = 8;
-            // The Dithering/Threshold Engine
-            for (let y = 0; y < canvas.height; y++) {
-                for (let x = 0; x < bytesWidth; x++) {
-                    let byte = 0;
-                    for (let bit = 0; bit < 8; bit++) {
-                        let px = (y * canvas.width + (x * 8 + bit)) * 4;
-                        // Calculate Darkness (Luminance)
-                        let luminance = 0.2126 * imgData[px] + 0.7152 * imgData[px+1] + 0.0722 * imgData[px+2];
-                        // If pixel is dark and NOT fully transparent, turn on the thermal dot!
-                        if (imgData[px+3] > 128 && luminance < 128) {
-                            byte |= (1 << (7 - bit));
-                        }
-                    }
-                    buffer[offset++] = byte;
-                }
-            }
-            resolve(buffer);
-        };
-        img.src = base64Image;
-    });
-};
 
 // Helper function to stitch Binary Buffers together
 window.concatBuffers = function(buffers) {
