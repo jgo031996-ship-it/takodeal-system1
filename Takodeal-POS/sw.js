@@ -1,7 +1,7 @@
 // Bumped to v3 to force the tablet to replace the broken engine!
 const CACHE_NAME = 'takodeal-pos-core-v3'; 
 const IMAGE_CACHE = 'takodeal-image-storage-v1';
-
+ 
 // The core files needed to boot the UI instantly
 const CORE_ASSETS = [
     '/',
