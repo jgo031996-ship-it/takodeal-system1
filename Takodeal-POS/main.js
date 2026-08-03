@@ -8337,7 +8337,7 @@ window.connectSpecificPrinter = async function(target) {
 };
 
 // ==========================================
-// 🛡️ RAW BYTE ENCODER (PREVENTS Û GLITCH & DROPPED TEXT)
+// 🛡️ RAW BYTE ENGINE & BULLETPROOF IMAGE PROCESSOR
 // ==========================================
 window.stringToBuffer = function(str) {
     let buffer = new Uint8Array(str.length);
@@ -8345,8 +8345,86 @@ window.stringToBuffer = function(str) {
     return buffer;
 };
 
+window.concatBuffers = function(buffers) {
+    let totalLength = buffers.reduce((acc, b) => acc + b.length, 0);
+    let result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (let b of buffers) {
+        result.set(b, offset);
+        offset += b.length;
+    }
+    return result;
+};
+
+// Converts your web image into raw Thermal Printer electrical dots!
+window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeight) {
+    return new Promise((resolve) => {
+        let img = new Image();
+        img.crossOrigin = "Anonymous"; 
+        
+        img.onload = function() {
+            try {
+                let canvas = document.createElement('canvas');
+                let ctx = canvas.getContext('2d', { willReadFrequently: true });
+                
+                let baseWidth = 200; 
+                let targetWidth = baseWidth * (scaleWidth || 1);
+                
+                // CRITICAL FIX: Width must be a multiple of 8
+                targetWidth = Math.floor(targetWidth / 8) * 8; 
+                let targetHeight = Math.floor((img.height / img.width) * targetWidth);
+                
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+                
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                let bytesWidth = canvas.width / 8;
+                let bytesHeight = canvas.height;
+                
+                let buffer = new Uint8Array(8 + (bytesWidth * bytesHeight));
+                buffer.set([0x1D, 0x76, 0x30, 0x00, bytesWidth & 0xFF, (bytesWidth >> 8) & 0xFF, bytesHeight & 0xFF, (bytesHeight >> 8) & 0xFF], 0);
+                
+                let offset = 8;
+                for (let y = 0; y < canvas.height; y++) {
+                    for (let x = 0; x < bytesWidth; x++) {
+                        let byte = 0;
+                        for (let bit = 0; bit < 8; bit++) {
+                            let px = (y * canvas.width + (x * 8 + bit)) * 4;
+                            let r = imgData[px], g = imgData[px+1], b = imgData[px+2], a = imgData[px+3];
+                            if (a < 128) { r = 255; g = 255; b = 255; } 
+                            let luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b);
+                            if (luminance < 128) byte |= (1 << (7 - bit));
+                        }
+                        buffer[offset++] = byte;
+                    }
+                }
+                
+                let finalBuffer = new Uint8Array(buffer.length + 6);
+                finalBuffer.set([0x1B, 0x61, 0x01], 0); // Center Align
+                finalBuffer.set(buffer, 3);
+                finalBuffer.set([0x1B, 0x61, 0x00], 3 + buffer.length); // Left Align
+                
+                resolve(finalBuffer);
+            } catch (e) {
+                console.warn("Logo processing failed, skipping logo...", e);
+                resolve(null); 
+            }
+        };
+        
+        img.onerror = function() {
+            console.warn("Logo failed to load into canvas.");
+            resolve(null); 
+        };
+        img.src = base64Image;
+    });
+};
+
 // ==========================================
-// ⚡ DIRECT BLUETOOTH SENDER (IMAGE & CHUNK SUPPORT)
+// ⚡ DIRECT BLUETOOTH SENDER 
 // ==========================================
 window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
     let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
@@ -8367,10 +8445,7 @@ window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, targe
     if (!activeChar) return; 
 
     try {
-        // 🔥 THE FIX: Use our custom stringToBuffer instead of the browser's TextEncoder
         let buffer = (data instanceof Uint8Array) ? data : window.stringToBuffer(data);
-
-        // 📦 THE GOLDILOCKS CHUNKER: 128 bytes + 20ms pause guarantees zero dropped text!
         const CHUNK_SIZE = 128;
         for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
             await activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
