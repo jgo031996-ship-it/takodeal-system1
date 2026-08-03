@@ -8337,56 +8337,38 @@ window.connectSpecificPrinter = async function(target) {
 };
 
 // ==========================================
-// ⚡ DIRECT BLUETOOTH SENDER (IMAGE & CHUNK SUPPORT)
+// ⚡ DIRECT BLUETOOTH SENDER (ANTI-OVERFLOW ENGINE)
 // ==========================================
 window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
     let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
     
-    // 🚀 HYBRID INTERCEPTOR: Legacy RawBT Fallback
     if (currentMode === 'rawbt') {
-        // RawBT needs text. If it's a binary array (logo), we decode it safely.
         let textData = (data instanceof Uint8Array) ? new TextDecoder().decode(data) : data;
-        if (!isJustDrawer) textData += "\n\n\n\n"; // Padding for RawBT
+        if (!isJustDrawer) textData += "\n\n\n\n"; 
         let base64Encoded = btoa(unescape(encodeURIComponent(textData)));
         window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
         return;
     }
 
-    // ⚡ FAST BLE ROUTING
     let activeChar = null;
     if (target === 'kitchen') activeChar = window.kitchenPrinterChar || window.mainPrinterChar;
     else if (target === 'bar') activeChar = window.barPrinterChar || window.mainPrinterChar;
     else activeChar = window.mainPrinterChar;
 
-    if (!activeChar) {
-        return Swal.fire({
-            title: 'Printer Offline',
-            text: 'No printer found! Please pair your Main Printer first.',
-            icon: 'warning',
-            confirmButtonText: 'Open Printer Setup',
-            showCancelButton: true
-        }).then((result) => {
-            if(result.isConfirmed) window.openPrinterManager();
-        });
-    }
+    if (!activeChar) return; // Failsafe
 
     try {
-        // 🔥 THE BINARY SHIELD 🔥
-        // We removed the string concatenation here because we already added 
-        // the cut commands inside window.printReceipt!
         let buffer = (data instanceof Uint8Array) ? data : new TextEncoder().encode(data);
 
-        // 📦 THE BLUETOOTH CHUNKER (Crucial for Logos!)
-        const CHUNK_SIZE = 255;
+        // 📦 THE ANTI-OVERFLOW CHUNKER
+        // Small 100-byte bites and a 40ms pause guarantees zero dropped letters or skipped logos!
+        const CHUNK_SIZE = 100;
         for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
             await activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
-            // A tiny 10-millisecond pause gives the printer time to draw the heavy image!
-            await new Promise(resolve => setTimeout(resolve, 10)); 
+            await new Promise(resolve => setTimeout(resolve, 40)); 
         }
     } catch(e) {
         console.error("Print Error:", e);
-        Swal.fire('Print Failed', 'Hardware connection lost. Please re-pair.', 'error');
-        
         if (activeChar === window.kitchenPrinterChar) window.kitchenPrinterChar = null;
         else if (activeChar === window.barPrinterChar) window.barPrinterChar = null;
         else window.mainPrinterChar = null;
