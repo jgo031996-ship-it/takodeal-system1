@@ -14958,6 +14958,26 @@ window.deleteBranch = async function(docId, name) {
 };
 
 // ⚙️ CENTRAL SETTINGS CONTROLLER (WITH ROYALTY ENGINE)
+window.updateReceiptPreview = function() {
+    let header = document.getElementById('settingHeaderName').value || 'TAKODEAL';
+    let addr = document.getElementById('settingAddress').value || 'Branch Address';
+    let contact = document.getElementById('settingContact').value || '09xx';
+    let footer = document.getElementById('settingFooterMsg').value || 'Acknowledgement Receipt\nThank you!';
+    let pSize = document.getElementById('settingPrinterSize').value;
+
+    // Simulate what the thermal printer does (strip accents)
+    let cleanHeader = header.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    // Widen paper for 80mm preview
+    let width = pSize === '80mm' ? '360px' : '280px';
+    document.getElementById('receiptPreviewBox').style.width = width;
+
+    document.getElementById('prevHeader').innerText = cleanHeader;
+    document.getElementById('prevAddress').innerText = addr;
+    document.getElementById('prevContact').innerText = `Contact: ${contact}`;
+    document.getElementById('prevFooter').innerHTML = footer.split('\n').join('<br>');
+};
+
 window.openBranchSettings = function(docId) {
     let d = window.globalBranchData[docId];
     if (!d) return;
@@ -14968,23 +14988,16 @@ window.openBranchSettings = function(docId) {
     document.getElementById('settingContact').value = d.contact || '';
     document.getElementById('settingWifi').value = d.wifi || '';
     document.getElementById('settingPrinterSize').value = d.printerSize || '58mm';
-    // 🔥 NEW: LOAD HEADER AND FOOTER
+    
+    // Load new settings
     document.getElementById('settingHeaderName').value = d.headerName || 'TAKODEAL';
     document.getElementById('settingFooterMsg').value = d.footerMessage || 'Acknowledgement Receipt\nThank you!';
-    // 🔥 NEW: Inject the Royalty Setting dynamically if it doesn't exist yet!
-    let formContainer = document.getElementById('settingPrinterSize').parentElement.parentElement;
-    if (!document.getElementById('settingRoyalty')) {
-        formContainer.insertAdjacentHTML('beforeend', `
-            <div style="margin-top: 15px; background: #fffbeb; padding: 15px; border: 1px dashed #fcd34d; border-radius: 8px;">
-                <label style="font-size: 12px; font-weight: bold; color: #b45309; display: block; margin-bottom: 5px;">👑 Franchise Royalty Percentage (%)</label>
-                <div style="font-size: 10px; color: #d97706; margin-bottom: 8px;">Enter 0 for company-owned branches. The system will auto-deduct this % from Gross Sales at shift close.</div>
-                <input type="number" id="settingRoyalty" class="input-box" placeholder="e.g. 5" style="width: 100%; border-color: #fcd34d; font-weight: bold; color: #92400e;">
-            </div>
-        `);
-    }
-    document.getElementById('settingRoyalty').value = d.royaltyPercent || 0;
+    
+    let royaltyEl = document.getElementById('settingRoyalty');
+    if (royaltyEl) royaltyEl.value = d.royaltyPercent || 0;
 
     document.getElementById('branchSettingsModal').style.display = 'flex';
+    window.updateReceiptPreview(); // Trigger the live preview!
 };
 
 window.saveBranchSettings = async function() {
@@ -14994,14 +15007,14 @@ window.saveBranchSettings = async function() {
         contact: document.getElementById('settingContact').value.trim(),
         wifi: document.getElementById('settingWifi').value.trim(),
         printerSize: document.getElementById('settingPrinterSize').value,
-        headerName: document.getElementById('settingHeaderName').value.trim(), // 🔥 NEW
-        footerMessage: document.getElementById('settingFooterMsg').value.trim(), // 🔥 NEW
+        headerName: document.getElementById('settingHeaderName').value.trim(),
+        footerMessage: document.getElementById('settingFooterMsg').value.trim(),
         royaltyPercent: parseFloat(document.getElementById('settingRoyalty').value) || 0
     };
 
     try {
         await updateDoc(doc(db, "branches", docId), payload);
-        alert(`✅ Settings & Royalties pushed globally!`);
+        alert(`✅ Settings & Receipt Layout pushed globally!`);
         document.getElementById('branchSettingsModal').style.display = 'none';
         window.loadBranchManager();
     } catch (e) { console.error(e); alert("Failed to push settings."); }
