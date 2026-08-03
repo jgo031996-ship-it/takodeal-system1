@@ -1,7 +1,7 @@
 // Bumped to v4 to force the tablet to replace the engine!
 const CACHE_NAME = 'takodeal-pos-core-v4'; 
 const IMAGE_CACHE = 'takodeal-image-storage-v1';
-
+ 
 const CORE_ASSETS = [
     '/',
     '/index.html',
