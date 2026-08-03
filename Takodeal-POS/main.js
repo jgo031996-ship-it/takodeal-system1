@@ -299,8 +299,47 @@ window.processRawItemsIntoMenu = function(rawItems) {
 };
 
 // ========================================================
-// 🍔 MASTER POS DATA LOADER (WITH ANTI-DUPLICATE SHIELD)
+// 🍔 BULLETPROOF CATEGORY BUILDER & POS INITIALIZER
 // ========================================================
+window.buildCategories = function() {
+    // 🔥 THE FIX: Find the correct HTML container, no matter what it is named!
+    let catContainer = document.getElementById('posCategories') || document.getElementById('categoryTabs') || document.querySelector('.category-tabs');
+    
+    if (!catContainer) {
+        console.error("Category container not found in HTML!");
+        return;
+    }
+    
+    // 1. FORCE WIPE THE HTML: This destroys the infinite repeating loop!
+    catContainer.innerHTML = '';
+    
+    let html = `<button class="cat-btn active" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('All', this) : filterCategory('All', this)">All in MAIN MENU</button>`;
+    
+    // 2. USE THE POS CONFIG HUB SETTINGS & REMOVE GHOST DUPLICATES
+    if (window.masterPOSData && window.masterPOSData.categories) {
+        let uniqueCategories = new Set(window.masterPOSData.categories);
+        
+        uniqueCategories.forEach(cat => {
+            if (cat && cat.trim() !== '') {
+                let safeCat = cat.trim();
+                // Inject them exactly in the order the Manager set them!
+                html += `<button class="cat-btn" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('${safeCat}', this) : filterCategory('${safeCat}', this)">${safeCat}</button>`;
+            }
+        });
+    }
+    
+    // 3. INJECT THE PERFECTLY CLEAN LIST
+    catContainer.innerHTML = html;
+
+    // 4. 🔥 AUTO-TRIGGER THE MENU RENDER TO CLEAR "LOADING MENU..." 🔥
+    setTimeout(() => {
+        if (typeof window.filterCategory === 'function') {
+            let firstBtn = catContainer.querySelector('.cat-btn');
+            window.filterCategory('All', firstBtn);
+        }
+    }, 200);
+};
+
 window.loadPOSData = async function() {
     if (typeof window.applySidebarLayout === 'function') window.applySidebarLayout(); 
     let products = await window.fetchMenu();
@@ -344,11 +383,6 @@ window.loadPOSData = async function() {
             window.masterPOSData.categories = catLayoutSnap.data().tabs;
         }
 
-        // 🔥 ANTI-DUPLICATE SHIELD: Force categories to be absolutely unique!
-        if (Array.isArray(window.masterPOSData.categories)) {
-            window.masterPOSData.categories = [...new Set(window.masterPOSData.categories.map(c => c.trim()))];
-        }
-
         // Pull Add-on Arrangements
         window.masterPOSData.addonLayoutNames = [];
         const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
@@ -369,12 +403,8 @@ window.loadPOSData = async function() {
     const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
     bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
 
-    // 🚀 Trigger UI Builders (Safely targets your custom index.html functions!)
-    if (typeof buildCategories === 'function') {
-        buildCategories();
-    } else if (typeof window.buildCategories === 'function') {
-        window.buildCategories();
-    }
+    // 🚀 Trigger UI Builders
+    window.buildCategories();
 
     // Safely inject Order Types
     let otHtml = ''; 
