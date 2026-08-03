@@ -7,7 +7,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
  
 window.onSnapshot = onSnapshot;
-  
+
 const firebaseConfig = {
   apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
   authDomain: "takodeal-pos.firebaseapp.com",
