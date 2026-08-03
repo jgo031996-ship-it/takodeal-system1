@@ -2680,15 +2680,12 @@
         const catContainer = document.querySelector('.category-header');
         if (!catContainer) return;
     
-        catContainer.innerHTML = `<button class="cat-btn active" onclick="filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
-    
         let layoutOrder = [];
         try {
             const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
-            if (layoutSnap.exists()) {
+            if (layoutSnap.exists() && layoutSnap.data().categories) {
                 layoutOrder = layoutSnap.data().categories || [];
             }
-            // 🔥 NEW: Fetch Custom Item Order!
             const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
             if (itemLayoutSnap.exists()) {
                 window.globalItemLayout = itemLayoutSnap.data().items || [];
@@ -2697,7 +2694,15 @@
             }
         } catch(e) { console.error("Error fetching POS layout:", e); }
     
-        let safeCategories = masterPOSData.categories.filter(c => !hiddenCategories.includes(c));
+        let rawCategories = window.masterPOSData.categories || [];
+        let safeCategories = [...new Set(rawCategories)].filter(c => !hiddenCategories.includes(c));
+        
+        layoutOrder.forEach(lo => {
+            if (!safeCategories.includes(lo) && !hiddenCategories.includes(lo)) {
+                safeCategories.push(lo);
+            }
+        });
+
         let catsToRender = safeCategories;
     
         if (window.currentDepartment === "CONSUMABLES") {
@@ -2714,10 +2719,16 @@
             return idxA - idxB;
         });
     
+        // 🔥 THE WIPER BLADE FIX: Build all HTML first, then stamp it down ONCE!
+        let html = `<button class="cat-btn active" onclick="filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
+        
         catsToRender.forEach(cat => {
-            catContainer.innerHTML += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`;
+            html += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`;
         });
     
+        // Instantly overwrites anything on the screen to prevent duplicates
+        catContainer.innerHTML = html; 
+        
         filterMenu('All', catContainer.firstElementChild);
     };
     
