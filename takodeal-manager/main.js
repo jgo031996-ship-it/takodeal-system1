@@ -19597,20 +19597,20 @@ window.openEmployeeProfile = function(docId) {
             let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
             let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
 
-            // Action HTML logic: Delete button ALWAYS shows up!
+            // 🔥 CLEAN UI FIX: Perfectly aligned buttons and badges!
             let actionHtml = d.status === 'Unpaid' 
-                ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; margin-right: 5px;">Mark Paid</button>`
-                : `<span style="font-size:11px; color:#16a34a; font-weight:bold; margin-right: 5px;">Paid</span>`;
+                ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>`
+                : `<div style="background:#f0fdf4; color:#15803d; border: 1px solid #bbf7d0; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; width: 85px; text-align: center; box-sizing: border-box;">✔️ Paid</div>`;
                 
-            actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>`;
+            actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>`;
 
             histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                <td style="padding:10px 8px; color: #64748b;">${dateStr}</td>
-                <td style="padding:10px 8px; font-weight: bold; color: #334155;">${d.type}</td>
-                <td style="padding:10px 8px; font-weight:bold; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                <td style="padding:10px 8px; color:${color}; font-weight:bold;">${d.status}</td>
-                <td style="padding:10px 8px; text-align: center;">
-                    <div style="display: flex; gap: 5px; justify-content: center;">${actionHtml}</div>
+                <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
+                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${d.type}</td>
+                <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
+                <td style="padding:12px 8px;">
+                    <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">${actionHtml}</div>
                 </td>
             </tr>`;
         });
