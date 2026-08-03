@@ -3718,7 +3718,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
     }
 
 // ==========================================
-// 🖨️ ULTIMATE STANDALONE PRINTER ENGINE
+// 🖨️ ULTIMATE STANDALONE PRINTER ENGINE (WITH LOGOS)
 // ==========================================
 window.printReceipt = async function(type) {
     let d = window.lastTransactionData; 
@@ -3733,23 +3733,20 @@ window.printReceipt = async function(type) {
     
     // 1. DYNAMIC BRANCH DATA FETCHER
     let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Main Office';
-    let storeAddress = "";
-    let storeContact = "";
-    let headerName = "TAKODEAL";
-    let footerMsg = "Acknowledgement Receipt\nThank you!";
-    let paperSize = "58mm";
+    let storeAddress = ""; let storeContact = ""; let headerName = "TAKODEAL"; let footerMsg = "Thank you!"; let paperSize = "58mm";
+    let logoBase64 = null; let logoW = 1; let logoH = 1;
 
     try {
         const bSnap = await window.getDocs(window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch)));
         if (!bSnap.empty) {
             let bData = bSnap.docs[0].data();
-            storeAddress = bData.address || storeAddress;
-            storeContact = bData.contact || storeContact;
-            headerName = bData.headerName || headerName;
-            footerMsg = bData.footerMessage || footerMsg;
+            storeAddress = bData.address || storeAddress; storeContact = bData.contact || storeContact;
+            headerName = bData.headerName || headerName; footerMsg = bData.footerMessage || footerMsg;
             paperSize = bData.printerSize || paperSize;
+            logoBase64 = bData.receiptLogoBase64 || null;
+            logoW = bData.logoWidthScale || 1; logoH = bData.logoHeightScale || 1;
         }
-    } catch(e) { console.log("Failed to fetch branch settings", e); }
+    } catch(e) {}
 
     let width = paperSize === '80mm' ? 48 : 32;
 
@@ -3760,21 +3757,15 @@ window.printReceipt = async function(type) {
     orderType = orderType.toUpperCase();
 
     // ------------------------------------------
-    // 🔪 KITCHEN & BAR TICKETS (Crash Proof)
+    // 🔪 KITCHEN & BAR TICKETS
     // ------------------------------------------
     if (type === 'food' || type === 'drinks') {
-        let tReceipt = "\x1B\x40\n";
-        tReceipt += "\x1B\x61\x01"; // Center Align
-        tReceipt += "\x1B\x21\x20"; // Double Width
+        let tReceipt = "\x1B\x40\n\x1B\x61\x01\x1B\x21\x20"; 
         tReceipt += (type === 'food' ? "KITCHEN TICKET" : "BAR TICKET") + "\n";
-        tReceipt += "\x1B\x21\x00"; // Normal Size
-        tReceipt += ">> " + orderType + " <<\n";
-        
+        tReceipt += "\x1B\x21\x00>> " + orderType + " <<\n";
         if (type === 'food' && hasDrinks) tReceipt += "\n⚠️ CONTAINS DRINKS ⚠️\n";
         if (type === 'drinks' && hasFood) tReceipt += "\n⚠️ CONTAINS FOOD ⚠️\n";
-        
-        tReceipt += "\x1B\x61\x00"; // Left Align
-        tReceipt += drawDoubleLine();
+        tReceipt += "\x1B\x61\x00" + drawDoubleLine();
         
         d.cart.forEach(item => {
             let cat = (item.category || "").toLowerCase(); 
@@ -3786,11 +3777,8 @@ window.printReceipt = async function(type) {
             let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
             tReceipt += `${item.qty}x ${item.name}${variantName}\n`;
             tReceipt += "\x1B\x21\x00"; // Normal Size
-            
             if (item.addons) {
-                for (let key in item.addons) {
-                    if (item.addons[key].qty > 0) tReceipt += `  + ${item.addons[key].qty}x ${key}\n`;
-                }
+                for (let key in item.addons) if (item.addons[key].qty > 0) tReceipt += `  + ${item.addons[key].qty}x ${key}\n`;
             }
             if (item.notes) tReceipt += `  ✎ NOTE: ${item.notes}\n`;
             tReceipt += drawLine();
@@ -3802,79 +3790,77 @@ window.printReceipt = async function(type) {
     }
 
     // ------------------------------------------
-    // 🧾 CUSTOMER RECEIPT (Beautiful Typography)
+    // 🧾 CUSTOMER RECEIPT
     // ------------------------------------------
-    let proReceipt = "\x1B\x40\n"; 
+    let receiptTop = "\x1B\x40\n"; 
+    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') receiptTop += "\x1B\x70\x00\x19\x96\n"; 
+    receiptTop += "\x1B\x61\x01"; // Center Align
     
-    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') proReceipt += "\x1B\x70\x00\x19\x96\n"; 
-    
-    // 🔥 ENCODING FIX: Strip accents (Á) so it doesn't print Û
-    let safeHeaderName = headerName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    let textEncoder = new TextEncoder();
+    let payloadBuffers = [];
 
-    // --- 🌟 THE NEW TYPOGRAPHICAL LOGO HEADER ---
-    proReceipt += "\x1B\x61\x01"; // Center Align
-    proReceipt += "\x1B\x21\x30"; // Double Width & Double Height
-    proReceipt += safeHeaderName + "\n";
-    proReceipt += "\x1B\x21\x00"; // Reset to Normal Size
+    // 🔥 IF LOGO EXISTS, CONVERT IT TO BINARY AND STITCH IT IN!
+    if (logoBase64) {
+        let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH);
+        payloadBuffers.push(textEncoder.encode(receiptTop)); // Add setup commands
+        payloadBuffers.push(imageBytes); // Add the actual image!
+        receiptTop = "\n"; // Reset string builder for the rest of the text
+    }
+
+    // 🔥 STRICT ASCII FILTER: Strips out Accents so "Û" never prints again!
+    let safeHeaderName = headerName.toUpperCase().replace(/[^\x20-\x7E]/g, "");
+
+    // Text Header
+    receiptTop += "\x1B\x21\x30" + safeHeaderName + "\n\x1B\x21\x00";
+    if (storeAddress) receiptTop += storeAddress + "\n";
+    if (storeContact) receiptTop += "Contact: " + storeContact + "\n";
     
-    if (storeAddress) proReceipt += storeAddress + "\n";
-    if (storeContact) proReceipt += "Contact: " + storeContact + "\n"; // 🔥 Fixed Label
-    
-    proReceipt += "\x1B\x61\x00"; // Left Align
-    proReceipt += drawDoubleLine();
+    receiptTop += "\x1B\x61\x00" + drawDoubleLine();
 
     const now = new Date();
     let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12; hours = hours ? hours : 12; minutes = minutes < 10 ? '0' + minutes : minutes;
+    hours = hours % 12 || 12; minutes = minutes < 10 ? '0' + minutes : minutes;
 
-    // 🔥 SHORTEN CASHIER NAME & KEEP CUSTOMER NORMAL SIZE
+    // 🔥 FIX: Cashier Short Name
     let fullCashierName = d.cashierName || localStorage.getItem('cashierName') || "Staff";
-    let cashierFirstName = fullCashierName.split(' ')[0]; // Grabs just the first name
+    let cashierFirstName = fullCashierName.split(' ')[0]; 
     let customer = d.customerName || "Guest";
 
-    proReceipt += "Date: " + now.toLocaleDateString() + "\n";
-    proReceipt += "Time: " + hours + ':' + minutes + ' ' + ampm + "\n";
-    proReceipt += drawDoubleLine();
+    receiptTop += "Date: " + now.toLocaleDateString() + "\n";
+    receiptTop += "Time: " + hours + ':' + minutes + ' ' + ampm + "\n";
+    receiptTop += drawDoubleLine();
     
-    proReceipt += "\x1B\x61\x01"; // Center
-    proReceipt += "\x1B\x21\x10"; // Double Height
-    proReceipt += ">> " + orderType + " <<\n"; 
-    proReceipt += "\x1B\x21\x00"; // Normal
-    proReceipt += "\x1B\x61\x00"; // Left Align
-    proReceipt += drawDoubleLine();
+    receiptTop += "\x1B\x61\x01\x1B\x21\x10>> " + orderType + " <<\n\x1B\x21\x00\x1B\x61\x00\n"; 
+    receiptTop += drawDoubleLine();
 
-    proReceipt += "Customer: " + customer + "\n";
-    proReceipt += "Cashier:  " + cashierFirstName + "\n";
-    proReceipt += drawDoubleLine();
+    // 🔥 FIX: Keep normal size so names don't wrap and crash into the borders!
+    receiptTop += "Customer: " + customer + "\n";
+    receiptTop += "Cashier:  " + cashierFirstName + "\n";
+    receiptTop += drawDoubleLine();
     
-    proReceipt += "ITEM/S PURCHASED\n";
-    proReceipt += drawLine();
+    receiptTop += "ITEM/S PURCHASED\n" + drawLine();
 
-    let grandTotal = 0;
-    let totalDiscount = 0;
+    let grandTotal = 0; let totalDiscount = 0;
 
     d.cart.forEach(item => {
-        let name = item.name || "Item";
-        let qty = parseFloat(item.qty || 1);
+        let name = item.name || "Item"; let qty = parseFloat(item.qty || 1);
         let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
         let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
-        let baseLineTotal = qty * basePrice;
-        let itemGrossTotal = baseLineTotal;
+        let baseLineTotal = qty * basePrice; let itemGrossTotal = baseLineTotal;
 
-        proReceipt += name + variantName + "\n";
+        receiptTop += name + variantName + "\n";
         
         let qtyStr = qty.toFixed(1) + "  x " + basePrice.toFixed(2);
         let totalStr = baseLineTotal.toFixed(2);
         let padding = width - qtyStr.length - totalStr.length;
-        proReceipt += qtyStr + " ".repeat(Math.max(1, padding)) + totalStr + "\n";
+        receiptTop += qtyStr + " ".repeat(Math.max(1, padding)) + totalStr + "\n";
 
         if (item.addons) {
             for (let key in item.addons) {
                 let addon = item.addons[key];
                 if (addon.qty > 0) {
                     let addonPrice = parseFloat(addon.price || 0);
-                    let addonTotalQty = qty * addon.qty; 
-                    let addonLineTotal = addonTotalQty * addonPrice;
+                    let addonTotalQty = qty * addon.qty; let addonLineTotal = addonTotalQty * addonPrice;
                     itemGrossTotal += addonLineTotal;
                     
                     let aName = `  + ${addon.qty}x ${key}`;
@@ -3882,14 +3868,12 @@ window.printReceipt = async function(type) {
                         let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
                         let aTotalStr = addonLineTotal.toFixed(2);
                         let aPad = width - aQtyStr.length - aTotalStr.length;
-                        proReceipt += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, aPad)) + aTotalStr + "\n";
-                    } else {
-                        proReceipt += aName + "\n";
-                    }
+                        receiptTop += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, aPad)) + aTotalStr + "\n";
+                    } else { receiptTop += aName + "\n"; }
                 }
             }
         }
-        if (item.notes) proReceipt += `  ✎ ${item.notes}\n`;
+        if (item.notes) receiptTop += `  ✎ ${item.notes}\n`;
 
         let actualFinal = parseFloat(item.lineTotalFinal || itemGrossTotal);
         let diff = itemGrossTotal - actualFinal;
@@ -3901,7 +3885,7 @@ window.printReceipt = async function(type) {
     let subtotalVal = grandTotal.toFixed(2);
     let finalTotalDue = parseFloat(d.netTotal) || (grandTotal - totalDiscount - (parseFloat(d.globalDiscountAmount) || 0));
     
-    proReceipt += drawDoubleLine();
+    receiptTop += drawDoubleLine();
     
     function formatLine(label, value) {
         let valStr = value.toFixed(2); 
@@ -3909,46 +3893,48 @@ window.printReceipt = async function(type) {
         return label + " ".repeat(Math.max(1, padding)) + valStr + "\n";
     }
     
-    proReceipt += formatLine("Subtotal:", parseFloat(subtotalVal));
-    if (totalDiscount > 0.01) proReceipt += formatLine("Item Discounts:", -parseFloat(totalDiscount));
+    receiptTop += formatLine("Subtotal:", parseFloat(subtotalVal));
+    if (totalDiscount > 0.01) receiptTop += formatLine("Item Discounts:", -parseFloat(totalDiscount));
     if (parseFloat(d.globalDiscountAmount) > 0.01) {
-        proReceipt += formatLine("Order Discount:", -parseFloat(d.globalDiscountAmount));
-        proReceipt += `  Note: ${d.globalDiscountReason || "Discount"}\n`;
+        receiptTop += formatLine("Order Discount:", -parseFloat(d.globalDiscountAmount));
+        receiptTop += `  Note: ${d.globalDiscountReason || "Discount"}\n`;
     }
-    proReceipt += drawDoubleLine();
+    receiptTop += drawDoubleLine();
     
-    // --- 🔥 FIX: MASSIVE CENTERED TOTAL DUE ---
-    proReceipt += "\x1B\x61\x01"; // Center Align
-    proReceipt += "TOTAL DUE\n";
-    proReceipt += "\x1B\x21\x30"; // Double Width & Height
-    proReceipt += finalTotalDue.toFixed(2) + "\n";
-    proReceipt += "\x1B\x21\x00"; // Normal Size
-    proReceipt += "\x1B\x61\x00"; // Left Align
+    // 🔥 NEW: DEDICATED TOTAL DUE BLOCK
+    receiptTop += "\x1B\x61\x01"; // Center Align
+    receiptTop += "TOTAL DUE\n";
+    receiptTop += "\x1B\x21\x30"; // Double Width & Height
+    receiptTop += finalTotalDue.toFixed(2) + "\n";
+    receiptTop += "\x1B\x21\x00\n"; // Normal Size & Line Break
+    receiptTop += "\x1B\x61\x00"; // Left Align
     
-    proReceipt += drawDoubleLine();
+    receiptTop += drawDoubleLine();
     
     if (amountRec > 0) {
-        proReceipt += formatLine("Amount Received:", parseFloat(amountRec));
-        proReceipt += "Method: " + (d.paymentMethod || "Cash") + "\n";
+        receiptTop += formatLine("Cash Given:", parseFloat(amountRec)); // "Cash Given" fits perfectly!
+        receiptTop += "Method: " + (d.paymentMethod || "Cash") + "\n";
         let changeVal = amountRec - finalTotalDue;
-        proReceipt += formatLine("Change Amount:", changeVal > 0 ? changeVal : 0);
+        receiptTop += formatLine("Change Amount:", changeVal > 0 ? changeVal : 0);
     } else {
-        proReceipt += "\x1B\x61\x01"; // Center Align
-        proReceipt += "** PLEASE PAY AT COUNTER **\n";
-        proReceipt += "\x1B\x61\x00"; // Left Align
+        receiptTop += "\x1B\x61\x01** PLEASE PAY AT COUNTER **\n\x1B\x61\x00";
     }
     
-    proReceipt += drawLine();
+    receiptTop += drawLine();
     
-    // --- 🔥 DYNAMIC FOOTER ---
-    proReceipt += "\x1B\x61\x01"; // Center Align Footer
+    // Footer
+    receiptTop += "\x1B\x61\x01"; // Center Align Footer
     let footerLines = footerMsg.split('\n');
-    footerLines.forEach(l => proReceipt += l.trim() + "\n");
+    footerLines.forEach(l => receiptTop += l.trim() + "\n");
+    receiptTop += "\n\n\n\n\x1D\x56\x41\x10"; 
     
-    proReceipt += "\n\n\n\n\x1D\x56\x41\x10"; 
-    
+    // STITCH EVERYTHING TOGETHER
+    payloadBuffers.push(textEncoder.encode(receiptTop));
+    let finalBinaryPayload = window.concatBuffers(payloadBuffers);
+
     if (typeof window.sendToBluetoothPrinter === 'function') {
-        await window.sendToBluetoothPrinter(proReceipt, false);
+        // We pass the RAW BINARY ARRAY directly to Bluetooth so it doesn't get corrupted!
+        await window.sendToBluetoothPrinter(finalBinaryPayload, false);
     }
 }; // <-- PROPERLY CLOSED PRINT FUNCTION!
 
