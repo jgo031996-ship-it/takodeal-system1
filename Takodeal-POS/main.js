@@ -298,100 +298,45 @@ window.processRawItemsIntoMenu = function(rawItems) {
     return groupedMenu;
 };
 
-// ========================================================
-// 🍔 BULLETPROOF CATEGORY BUILDER & POS INITIALIZER
-// ========================================================
-window.buildCategories = function() {
-    // 🔥 THE FIX: Find the correct HTML container, no matter what it is named!
-    let catContainer = document.getElementById('posCategories') || document.getElementById('categoryTabs') || document.querySelector('.category-tabs');
-    
-    if (!catContainer) {
-        console.error("Category container not found in HTML!");
-        return;
-    }
-    
-    // 1. FORCE WIPE THE HTML: This destroys the infinite repeating loop!
-    catContainer.innerHTML = '';
-    
-    let html = `<button class="cat-btn active" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('All', this) : filterCategory('All', this)">All in MAIN MENU</button>`;
-    
-    // 2. USE THE POS CONFIG HUB SETTINGS & REMOVE GHOST DUPLICATES
-    if (window.masterPOSData && window.masterPOSData.categories) {
-        let uniqueCategories = new Set(window.masterPOSData.categories);
-        
-        uniqueCategories.forEach(cat => {
-            if (cat && cat.trim() !== '') {
-                let safeCat = cat.trim();
-                // Inject them exactly in the order the Manager set them!
-                html += `<button class="cat-btn" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('${safeCat}', this) : filterCategory('${safeCat}', this)">${safeCat}</button>`;
-            }
-        });
-    }
-    
-    // 3. INJECT THE PERFECTLY CLEAN LIST
-    catContainer.innerHTML = html;
-
-    // 4. 🔥 AUTO-TRIGGER THE MENU RENDER TO CLEAR "LOADING MENU..." 🔥
-    setTimeout(() => {
-        if (typeof window.filterCategory === 'function') {
-            let firstBtn = catContainer.querySelector('.cat-btn');
-            window.filterCategory('All', firstBtn);
-        }
-    }, 200);
-};
-
-// ========================================================
-// 🍔 MASTER POS DATA LOADER (WITH ANTI-DUPLICATE SHIELD)
-// ========================================================
 window.loadPOSData = async function() {
-    if (typeof window.applySidebarLayout === 'function') window.applySidebarLayout(); 
+    window.applySidebarLayout(); 
     let products = await window.fetchMenu();
     window.masterPOSData.items = products;
     window.masterPOSData.variants = {}; 
     window.masterPOSData.addons = [];
     
-    // Fetch Mix & Match
+    // 🐙 NEW: Fetch Global Mix & Match configuration!
     window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
     try {
         const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
         if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
     } catch(e) {}
 
-    // Fetch Addons
+    // 🔥 SMART RECIPE LINKER: Downloads Global Add-ons
     try {
         const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
         addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
     } catch(e) { console.log("Failed to load addons", e); }
 
-    // 🔥 THE POS CONFIG HUB LINKER 🔥
     try {
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
-        let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-        
         if (configSnap.exists()) {
             let configData = configSnap.data();
             window.masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
-            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"]);
+            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
         } else {
-            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"];
-            window.masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery"], payMethods: ["Cash", "GCash"] };
+            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
+            window.masterPOSData.settings = { 
+                orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
+                payMethods: ["Cash", "GCash", "Bank"] 
+            };
         }
 
-        // OVERRIDE WITH THE MANAGER'S DRAG & DROP ARRANGER
-        const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_category_layout"));
-        if (catLayoutSnap.exists() && catLayoutSnap.data().tabs) {
-            window.masterPOSData.categories = catLayoutSnap.data().tabs;
-        }
-
-        // 🔥 ANTI-DUPLICATE SHIELD: Force categories to be absolutely unique!
-        if (Array.isArray(window.masterPOSData.categories)) {
-            window.masterPOSData.categories = [...new Set(window.masterPOSData.categories.map(c => c.trim()))];
-        }
-
-        // Pull Add-on Arrangements
         window.masterPOSData.addonLayoutNames = [];
         const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
         if (layoutSnap.exists() && layoutSnap.data().itemNames) {
@@ -399,10 +344,9 @@ window.loadPOSData = async function() {
         }
 
     } catch (e) {
-        console.warn("Could not load global config", e);
+        console.warn("Could not load global config, using defaults", e);
     }
 
-    // Load stock levels & BOM
     window.masterPOSData.stockLevels = {};
     const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
     invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
@@ -411,25 +355,19 @@ window.loadPOSData = async function() {
     const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
     bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
 
-    // 🚀 Trigger UI Builders (Safely targets your custom index.html functions!)
-    if (typeof buildCategories === 'function') {
-        buildCategories();
-    } else if (typeof window.buildCategories === 'function') {
-        window.buildCategories();
-    }
+    if (typeof buildCategories === 'function') buildCategories();
+    else if (typeof window.buildCategories === 'function') window.buildCategories();
 
-    // Safely inject Order Types
     let otHtml = ''; 
     window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
-    let mainOrderTypeEl = document.getElementById('mainOrderType');
-    if (mainOrderTypeEl) mainOrderTypeEl.innerHTML = otHtml;
+    document.getElementById('mainOrderType').innerHTML = otHtml;
     
-    // Safely inject Payment Methods
-    let pmHtml = ''; let optHtml = ''; 
+    let pmHtml = ''; 
+    let optHtml = ''; 
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; 
         if (idx === 0) window.selectedPaymentMethod = m; 
-        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); let spc = document.getElementById('splitPaymentContainer'); if(spc) spc.style.display='none';">${m}</button>`; 
+        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
         optHtml += `<option value="${m}">${m}</option>`;
     }); 
     pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
@@ -443,11 +381,11 @@ window.loadPOSData = async function() {
                     <div style="font-size:12px; font-weight:bold; color:#8b5cf6; margin-bottom:10px;">SPLIT PAYMENT DETAILS</div>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
                         <select id="splitMethod1" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()" onchange="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()">
+                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
                     </div>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
                         <select id="splitMethod2" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()" onchange="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()">
+                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
                     </div>
                     <div style="text-align: right; font-size: 14px; font-weight: 900; color: #ef4444;" id="splitRemainingAlert">Total Split Entered: ₱0.00</div>
                 </div>
@@ -4679,6 +4617,85 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ========================================================
+// 📦 INTERNAL STORE USE ENGINE (EXPENSE & P&L TRACKER)
+// ========================================================
+window.processStoreUse = async function() {
+    if (!window.cart || window.cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+        return;
+    }
+
+    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
+    if (btn) { btn.innerText = "⏳ Logging..."; btn.disabled = true; }
+
+    try {
+        let totalCost = 0;
+        let itemsLogged = [];
+
+        for (let item of window.cart) {
+            // 1. Find the item in the Live Inventory to get its TRUE COST and CURRENT STOCK
+            const invQ = query(collection(db, "inventory"), where("branch", "==", window.currentBranch), where("name", "==", item.name));
+            const invSnap = await getDocs(invQ);
+
+            if (!invSnap.empty) {
+                let invDoc = invSnap.docs[0];
+                let invData = invDoc.data();
+                let currentStock = invData.currentStock || 0;
+                
+                // 🔥 Calculate the actual cost to the business, not the "Selling Price"
+                let trueCostPerUnit = parseFloat(invData.baseCost) || parseFloat(invData.cost) || 0;
+                totalCost += (trueCostPerUnit * item.qty);
+
+                // 2. Deduct from Live Stock
+                await updateDoc(invDoc.ref, { currentStock: currentStock - item.qty });
+
+                // 3. Log to the Trace Ledger
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: window.currentBranch, item: item.name,
+                    oldQty: currentStock, newQty: currentStock - item.qty, variance: -item.qty,
+                    type: "Store Use", note: `Internal Consumables used by staff`,
+                    user: window.cashierName || "Staff", timestamp: serverTimestamp()
+                });
+            }
+            itemsLogged.push(`${item.qty}x ${item.name}`);
+        }
+
+        // 4. Hit the P&L! Send the cost directly to the Expenses Database
+        if (totalCost > 0) {
+            await addDoc(collection(db, "expenses"), {
+                branch: window.currentBranch, amount: totalCost, 
+                category: "Store Consumables", description: `Internal Use: ${itemsLogged.join(', ')}`,
+                loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
+            });
+        }
+
+        // 5. Send to the Manager's Dedicated History Log
+        await addDoc(collection(db, "store_use_logs"), {
+            branch: window.currentBranch, items: window.cart, totalCost: totalCost,
+            loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '📦 Logged for Store Use!',
+            text: 'Items deducted from stock and recorded as an operating expense.',
+            icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }
+        });
+
+        // Close the modal and clear the cart!
+        let modal = document.getElementById('paymentModal') || document.getElementById('checkoutModal');
+        if (modal) modal.style.display = 'none';
+        
+        window.cart = [];
+        if (typeof renderCart === 'function') renderCart();
+
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to log consumables.', 'error');
+    } finally {
+        if (btn) { btn.innerText = "📦 Consumables"; btn.disabled = false; }
+    }
+};
+
+// ========================================================
 // 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES & MODAL CART)
 // ========================================================
 window.stockReqItemsFlat = [];
@@ -6289,6 +6306,74 @@ window.toggleActualCount = function(id) {
 };
 
 // ========================================================
+// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE (PATCHED)
+// ========================================================
+window.processStoreUse = async function() {
+    if (typeof cart === 'undefined' || cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please add items to the cart first before logging as Store Use.', 'warning');
+        return;
+    }
+
+    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
+
+    // 🔥 THE BUG FIX: Safely grab the button using a flexible selector so it never crashes!
+    let btn = document.querySelector('button[onclick*="processStoreUse"]');
+    let origText = btn ? btn.innerText : "Log as Store Use";
+    if (btn) { btn.innerText = "⏳ Processing..."; btn.disabled = true; }
+
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashier = localStorage.getItem('cashierName') || 'Unknown';
+        let totalCostHit = 0;
+        let usedItems = [];
+        
+        cart.forEach(item => {
+            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
+            usedItems.push({ name: item.name, qty: item.qty });
+        });
+
+        // 1. Send it through the master checkout engine as 0 Revenue so Inventory still deducts the recipes!
+        let payload = {
+            branch: branch, cashier: cashier,
+            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
+            orderType: "Store Use", paymentMethod: "Store Use",
+            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
+            netTotal: 0, amountReceived: 0, cart: cart, status: "Store Use" 
+        };
+
+        // This triggers your main POS logic!
+        let receiptId = await window.processCheckout(payload);
+
+        // 2. Log to the dedicated Store Use Feed for the Manager App
+        if (receiptId) {
+            await addDoc(collection(db, "store_use_logs"), {
+                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: serverTimestamp()
+            });
+        }
+
+        // 3. Clean up the UI
+        cart = []; 
+        if (typeof renderCart === 'function') renderCart(); 
+        if (typeof closeModal === 'function') closeModal('checkoutModal');
+        let paymentModal = document.getElementById('paymentModal');
+        if (paymentModal) paymentModal.style.display = 'none';
+
+        Swal.fire({
+            title: '✅ Logged!',
+            text: 'Items marked for store use and inventory safely deducted.',
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+    } catch(e) { 
+        console.error("Store Use Error:", e); 
+        Swal.fire('Error', 'Failed to log store use. ' + e.message, 'error'); 
+    } finally { 
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
+    }
+};
+
+// ========================================================
 // 🔪 KITCHEN PREP TAB & HISTORY ENGINE
 // ========================================================
 window.switchPrepTab = function(tab) {
@@ -6431,6 +6516,59 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to undo prep batch. Check connection.', 'error');
+    }
+};
+
+// ========================================================
+// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE
+// ========================================================
+window.processStoreUse = async function() {
+    if (typeof cart === 'undefined' || cart.length === 0) {
+        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+        return;
+    }
+
+    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
+
+    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashier = localStorage.getItem('cashierName') || 'Unknown';
+        let totalCostHit = 0;
+        let usedItems = [];
+        
+        cart.forEach(item => {
+            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
+            usedItems.push({ name: item.name, qty: item.qty });
+        });
+
+        let payload = {
+            branch: branch, cashier: cashier,
+            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
+            orderType: "Store Use", paymentMethod: "Store Use",
+            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
+            netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use" 
+        };
+
+        let receiptId = await window.processCheckout(payload);
+
+        if (receiptId) {
+            await window.addDoc(window.collection(window.db, "store_use_logs"), {
+                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: window.serverTimestamp()
+            });
+        }
+
+        cart = []; if (typeof renderCart === 'function') renderCart(); 
+        if (typeof closeModal === 'function') closeModal('checkoutModal');
+        Swal.fire('✅ Logged!', 'Items marked for store use and inventory safely deducted.', 'success');
+        
+    } catch(e) { 
+        console.error(e); Swal.fire('Error', 'Failed to log store use.', 'error'); 
+    } finally { 
+        btn.innerText = origText; btn.disabled = false; 
     }
 };
 
@@ -8242,94 +8380,3 @@ setTimeout(() => {
         printerBtn.innerHTML = `<span style="font-size: 18px;">🖨️</span><div class="nav-item-text">Printer Hub</div>`;
     }
 }, 2000);
-
-// ========================================================
-// 📦 INTERNAL STORE USE / CONSUMABLES ENGINE
-// ========================================================
-window.processStoreUse = async function() {
-    if (typeof cart === 'undefined' || cart.length === 0) {
-        Swal.fire('Empty Cart', 'Please add items to the cart first before logging as Store Use.', 'warning');
-        return;
-    }
-
-    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
-
-    let btn = document.querySelector('button[onclick*="processStoreUse"]');
-    let origText = btn ? btn.innerText : "Log as Store Use";
-    if (btn) { btn.innerText = "⏳ Processing..."; btn.disabled = true; }
-
-    try {
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashier = localStorage.getItem('cashierName') || 'Unknown';
-        let totalCostHit = 0;
-        let usedItems = [];
-        
-        for (let item of cart) {
-            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
-            usedItems.push({ name: item.name, qty: item.qty });
-            
-            const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", item.name));
-            const invSnap = await getDocs(invQ);
-            
-            if (!invSnap.empty) {
-                let invDoc = invSnap.docs[0];
-                let invData = invDoc.data();
-                let currentStock = parseFloat(invData.currentStock) || 0;
-                let uom = invData.uom || 'units';
-                
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: branch, item: item.name, uom: uom,
-                    oldQty: currentStock, newQty: currentStock - item.qty, variance: -item.qty,
-                    type: "Store Use", note: `Internal Consumables used by staff`,
-                    user: cashier, timestamp: serverTimestamp() // 🔥 CRASH FIX: Removed window.
-                });
-                
-                await updateDoc(invDoc.ref, { currentStock: currentStock - item.qty });
-            }
-        }
-
-        let payload = {
-            branch: branch, cashier: cashier,
-            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
-            orderType: "Store Use", paymentMethod: "Store Use",
-            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
-            netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use",
-            paymentVerified: true 
-        };
-
-        let receiptId = await window.processCheckout(payload);
-
-        if (receiptId) {
-            await addDoc(collection(db, "store_use_logs"), {
-                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: serverTimestamp() // 🔥 CRASH FIX
-            });
-        }
-
-        if (totalCostHit > 0) {
-            await addDoc(collection(db, "expenses"), {
-                branch: branch, amount: totalCostHit, 
-                category: "Store Consumables", description: `Internal Use: ${usedItems.map(i => i.qty + 'x ' + i.name).join(', ')}`,
-                loggedBy: cashier, timestamp: serverTimestamp(), shiftId: payload.shiftId // 🔥 CRASH FIX
-            });
-        }
-
-        cart = []; 
-        if (typeof renderCart === 'function') renderCart(); 
-        if (typeof closeModal === 'function') closeModal('checkoutModal');
-        let paymentModal = document.getElementById('paymentModal');
-        if (paymentModal) paymentModal.style.display = 'none';
-
-        Swal.fire({
-            title: '✅ Logged!',
-            text: 'Items marked for store use and safely deducted from inventory.',
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-    } catch(e) { 
-        console.error("Store Use Error:", e); 
-        Swal.fire('Error', 'Failed to log store use. ' + e.message, 'error'); 
-    } finally { 
-        if (btn) { btn.innerText = origText; btn.disabled = false; }
-    }
-};
