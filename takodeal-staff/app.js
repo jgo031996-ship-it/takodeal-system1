@@ -356,6 +356,13 @@ window.saveProfileData = async function() {
     let staffId = localStorage.getItem('takodeal_staff_id');
     let btn = document.getElementById('btnSaveProfileData');
     
+    // Grab the values from the boxes first
+    let sssVal = document.getElementById('profSss').value.trim();
+    let philVal = document.getElementById('profPhilhealth').value.trim();
+    let pagVal = document.getElementById('profPagibig').value.trim();
+    let gotymeNameVal = document.getElementById('profGotymeName').value.trim();
+    let gotymeNumVal = document.getElementById('profGotymeNum').value.trim();
+
     let payload = {
         cashierName: document.getElementById('profFullName').value.trim(),
         scheduleNickname: document.getElementById('profNickname').value.trim(),
@@ -366,11 +373,22 @@ window.saveProfileData = async function() {
         email: document.getElementById('profEmail').value.trim(),
         gcashName: document.getElementById('profGcashName').value.trim(),
         gcashNumber: document.getElementById('profGcashNum').value.trim(),
-        gotymeName: document.getElementById('profGotymeName').value.trim(),
-        gotymeNumber: document.getElementById('profGotymeNum').value.trim(),
-        sssNumber: document.getElementById('profSss').value.trim(),
-        philhealthNumber: document.getElementById('profPhilhealth').value.trim(),
-        pagibigNumber: document.getElementById('profPagibig').value.trim()
+        
+        // 🔥 THE Y-SPLITTER FIX: Sending data down all possible Manager App pipe names!
+        gotymeName: gotymeNameVal,
+        gotyme: gotymeNameVal,
+        gotymeNumber: gotymeNumVal,
+        gotymeAcc: gotymeNumVal,
+        gotymeAccount: gotymeNumVal,
+        
+        sss: sssVal,
+        sssNumber: sssVal,
+        
+        philhealth: philVal,
+        philhealthNumber: philVal,
+        
+        pagibig: pagVal,
+        pagibigNumber: pagVal
     };
 
     let newPin = document.getElementById('profPin').value.trim();
