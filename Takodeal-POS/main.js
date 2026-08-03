@@ -8277,3 +8277,34 @@ window.processStoreUse = async function() {
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
+
+// ========================================================
+// 🍔 BULLETPROOF CATEGORY BUILDER (ANTI-DUPLICATE & HUB SYNC)
+// ========================================================
+window.buildCategories = function() {
+    let catContainer = document.getElementById('categoryTabs');
+    if (!catContainer) return;
+    
+    // 1. FORCE WIPE THE HTML: This completely destroys the infinite repeating loop!
+    catContainer.innerHTML = '';
+    
+    // Create the "All" button first
+    let html = `<button class="cat-btn active" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('All', this) : filterCategory('All', this)">All in MAIN MENU</button>`;
+    
+    // 2. USE THE POS CONFIG HUB SETTINGS & REMOVE GHOST DUPLICATES
+    if (window.masterPOSData && window.masterPOSData.categories) {
+        // The 'Set' mathematically destroys any duplicates in memory
+        let uniqueCategories = new Set(window.masterPOSData.categories);
+        
+        uniqueCategories.forEach(cat => {
+            if (cat && cat.trim() !== '') {
+                let safeCat = cat.trim();
+                // Inject them exactly in the order the Manager set them in the POS Config Hub!
+                html += `<button class="cat-btn" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('${safeCat}', this) : filterCategory('${safeCat}', this)">${safeCat}</button>`;
+            }
+        });
+    }
+    
+    // 3. INJECT THE PERFECTLY CLEAN LIST
+    catContainer.innerHTML = html;
+};
