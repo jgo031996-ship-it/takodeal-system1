@@ -305,38 +305,44 @@ window.loadPOSData = async function() {
     window.masterPOSData.variants = {}; 
     window.masterPOSData.addons = [];
     
-    // 🐙 NEW: Fetch Global Mix & Match configuration!
+    // 🐙 Fetch Global Mix & Match configuration!
     window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
     try {
         const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
         if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
     } catch(e) {}
 
-    // 🔥 SMART RECIPE LINKER: Downloads Global Add-ons
     try {
         const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
         addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
     } catch(e) { console.log("Failed to load addons", e); }
 
+    // 🔥 THE POS CONFIG HUB LINKER 🔥
     try {
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+        let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+        
         if (configSnap.exists()) {
             let configData = configSnap.data();
             window.masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
-            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
+            
+            // 1. Pull from the Comma-Separated Text Box in POS Config Hub
+            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"]);
         } else {
-            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
-            window.masterPOSData.settings = { 
-                orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
-                payMethods: ["Cash", "GCash", "Bank"] 
-            };
+            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"];
+            window.masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery"], payMethods: ["Cash", "GCash"] };
         }
 
+        // 2. OVERRIDE WITH THE DRAG & DROP ARRANGER IF IT EXISTS!
+        const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_category_layout"));
+        if (catLayoutSnap.exists() && catLayoutSnap.data().tabs) {
+            window.masterPOSData.categories = catLayoutSnap.data().tabs;
+        }
+
+        // 3. Pull Add-on Arrangements
         window.masterPOSData.addonLayoutNames = [];
         const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
         if (layoutSnap.exists() && layoutSnap.data().itemNames) {
