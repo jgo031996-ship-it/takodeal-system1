@@ -2718,7 +2718,6 @@ window.handleIncomingSwap = async function(swapId, action) {
 
         let dayData = globalSched.currentSchedule[sData.dayIndex][sData.branch];
 
-        // 🔥 THE FIX: Flexible name matcher because one uses Full Name and the other uses Short Name
         let isMatch = (dbName, reqName) => {
             if (!dbName || !reqName) return false;
             let a = dbName.toLowerCase().trim();
@@ -2741,19 +2740,24 @@ window.handleIncomingSwap = async function(swapId, action) {
             return Swal.fire('Error', 'The Master Schedule has changed since this request was made. Swap cancelled.', 'error');
         }
 
+        // 🔥 THE FIX: Create the paper trail object so the Cashier App knows a trade happened!
+        if (!dayData.swaps) dayData.swaps = {};
+
         // 2. Perform the Swap mathematically!
-        // 🔥 THE FIX: Use rActual and tActual so we preserve the EXACT short names originally typed into the schedule!
-        
         // A. Give Target's shift to Requester
         if (sData.targetShiftId === 'STANDBY') {
             dayData.rest = dayData.rest.filter(n => n !== tActual); // Remove target from rest
             dayData.rest.push(rActual); // Put requester in rest
         } else {
             dayData.scheduled[sData.targetShiftId] = rActual;
+            // Log the trade!
+            dayData.swaps[sData.targetShiftId] = { originalStaff: tActual, newStaff: rActual };
         }
 
         // B. Give Requester's shift to Target
         dayData.scheduled[sData.requesterShiftId] = tActual;
+        // Log the trade!
+        dayData.swaps[sData.requesterShiftId] = { originalStaff: rActual, newStaff: tActual };
 
         // 3. Save the new calendar back to Cloud
         await updateDoc(doc(db, "settings", "global_schedule"), {
@@ -2765,7 +2769,7 @@ window.handleIncomingSwap = async function(swapId, action) {
 
         Swal.fire({title: '✅ Swapped!', text: 'Your schedule has been successfully updated.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
         
-        // 🔥 Close the modal before reloading so it doesn't get stuck!
+        // Close the modal before reloading so it doesn't get stuck!
         let swapModal = document.getElementById('swapRequestModal');
         if (swapModal) swapModal.style.display = 'none';
 
