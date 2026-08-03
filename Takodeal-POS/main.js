@@ -298,43 +298,87 @@ window.processRawItemsIntoMenu = function(rawItems) {
     return groupedMenu;
 };
 
+// ========================================================
+// 🍔 MASTER POS DATA LOADER (WITH ANTI-DUPLICATE SHIELD)
+// ========================================================
+window.buildCategories = function() {
+    // Finds your exact HTML container
+    let catContainer = document.querySelector('.category-header') || document.getElementById('topCategoryHeader');
+    if (!catContainer) return;
+
+    // 1. WIPE CLEAN: Destroys the infinite repeating loop!
+    catContainer.innerHTML = '';
+
+    // 🔥 THE FIX: Correctly calls filterMenu to match your Cashier HTML!
+    let html = `<button class="cat-btn active" onclick="if(typeof filterMenu === 'function') filterMenu('All', this); else window.filterMenu('All', this);">All in MAIN MENU</button>`;
+
+    // 2. ANTI-DUPLICATE SHIELD
+    if (window.masterPOSData && window.masterPOSData.categories) {
+        let uniqueCategories = new Set(window.masterPOSData.categories);
+        uniqueCategories.forEach(cat => {
+            if (cat && cat.trim() !== '') {
+                let safeCat = cat.trim();
+                html += `<button class="cat-btn" onclick="if(typeof filterMenu === 'function') filterMenu('${safeCat}', this); else window.filterMenu('${safeCat}', this);">${safeCat}</button>`;
+            }
+        });
+    }
+
+    catContainer.innerHTML = html;
+
+    // 3. Auto-load the items to clear "Loading Menu..."
+    setTimeout(() => {
+        let firstBtn = catContainer.querySelector('.cat-btn');
+        if (typeof filterMenu === 'function' && firstBtn) {
+            filterMenu('All', firstBtn);
+        }
+    }, 100);
+};
+
 window.loadPOSData = async function() {
-    window.applySidebarLayout(); 
+    if (typeof window.applySidebarLayout === 'function') window.applySidebarLayout(); 
     let products = await window.fetchMenu();
     window.masterPOSData.items = products;
     window.masterPOSData.variants = {}; 
     window.masterPOSData.addons = [];
     
-    // 🐙 NEW: Fetch Global Mix & Match configuration!
+    // Fetch Mix & Match
     window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
     try {
         const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
         if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
     } catch(e) {}
 
-    // 🔥 SMART RECIPE LINKER: Downloads Global Add-ons
+    // Fetch Addons
     try {
         const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
         addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
     } catch(e) { console.log("Failed to load addons", e); }
 
+    // 🔥 THE POS CONFIG HUB LINKER 🔥
     try {
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+        let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
+        
         if (configSnap.exists()) {
             let configData = configSnap.data();
             window.masterPOSData.settings = {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
-            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"]);
+            window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"]);
         } else {
-            let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
-            window.masterPOSData.settings = { 
-                orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
-                payMethods: ["Cash", "GCash", "Bank"] 
-            };
+            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"];
+            window.masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery"], payMethods: ["Cash", "GCash"] };
+        }
+
+        const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_category_layout"));
+        if (catLayoutSnap.exists() && catLayoutSnap.data().tabs) {
+            window.masterPOSData.categories = catLayoutSnap.data().tabs;
+        }
+
+        // Force uniqueness
+        if (Array.isArray(window.masterPOSData.categories)) {
+            window.masterPOSData.categories = [...new Set(window.masterPOSData.categories.map(c => c.trim()))];
         }
 
         window.masterPOSData.addonLayoutNames = [];
@@ -342,11 +386,11 @@ window.loadPOSData = async function() {
         if (layoutSnap.exists() && layoutSnap.data().itemNames) {
             window.masterPOSData.addonLayoutNames = layoutSnap.data().itemNames;
         }
-
     } catch (e) {
-        console.warn("Could not load global config, using defaults", e);
+        console.warn("Could not load global config", e);
     }
 
+    // Load stock levels & BOM
     window.masterPOSData.stockLevels = {};
     const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
     invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
@@ -355,19 +399,21 @@ window.loadPOSData = async function() {
     const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
     bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
 
-    if (typeof buildCategories === 'function') buildCategories();
-    else if (typeof window.buildCategories === 'function') window.buildCategories();
+    // 🚀 Trigger UI Builder
+    window.buildCategories();
 
+    // Safely inject Order Types
     let otHtml = ''; 
     window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
-    document.getElementById('mainOrderType').innerHTML = otHtml;
+    let mainOrderTypeEl = document.getElementById('mainOrderType');
+    if (mainOrderTypeEl) mainOrderTypeEl.innerHTML = otHtml;
     
-    let pmHtml = ''; 
-    let optHtml = ''; 
+    // Safely inject Payment Methods
+    let pmHtml = ''; let optHtml = ''; 
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; 
         if (idx === 0) window.selectedPaymentMethod = m; 
-        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
+        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); let spc = document.getElementById('splitPaymentContainer'); if(spc) spc.style.display='none';">${m}</button>`; 
         optHtml += `<option value="${m}">${m}</option>`;
     }); 
     pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
@@ -381,11 +427,11 @@ window.loadPOSData = async function() {
                     <div style="font-size:12px; font-weight:bold; color:#8b5cf6; margin-bottom:10px;">SPLIT PAYMENT DETAILS</div>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
                         <select id="splitMethod1" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()" onchange="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()">
                     </div>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
                         <select id="splitMethod2" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()" onchange="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()">
                     </div>
                     <div style="text-align: right; font-size: 14px; font-weight: 900; color: #ef4444;" id="splitRemainingAlert">Total Split Entered: ₱0.00</div>
                 </div>
