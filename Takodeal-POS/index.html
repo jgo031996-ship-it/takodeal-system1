@@ -3754,13 +3754,10 @@ window.printReceipt = async function(type) {
     let orderType = d.orderType || (document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : "DINE-IN");
     orderType = orderType.toUpperCase();
 
-    // ------------------------------------------
-    // 🔪 KITCHEN & BAR TICKETS
-    // ------------------------------------------
     if (type === 'food' || type === 'drinks') {
-        let tReceipt = "\x1B\x40\n\x1B\x61\x01\x1D\x21\x10"; // GS ! 10h (Double Width)
+        let tReceipt = "\x1B\x40\n\x1B\x61\x01\x1D\x21\x10"; 
         tReceipt += (type === 'food' ? "KITCHEN TICKET" : "BAR TICKET") + "\n";
-        tReceipt += "\x1D\x21\x00>> " + orderType + " <<\n"; // GS ! 00h (Normal)
+        tReceipt += "\x1D\x21\x00>> " + orderType + " <<\n"; 
         if (type === 'food' && hasDrinks) tReceipt += "\n⚠️ CONTAINS DRINKS ⚠️\n";
         if (type === 'drinks' && hasFood) tReceipt += "\n⚠️ CONTAINS FOOD ⚠️\n";
         tReceipt += "\x1B\x61\x00" + drawDoubleLine();
@@ -3771,47 +3768,38 @@ window.printReceipt = async function(type) {
             if (type === 'food' && isDrink) return; 
             if (type === 'drinks' && !isDrink) return;
             
-            tReceipt += "\x1D\x21\x01"; // GS ! 01h (Double Height)
+            tReceipt += "\x1D\x21\x01"; 
             let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
             tReceipt += `${item.qty}x ${item.name}${variantName}\n`;
-            tReceipt += "\x1D\x21\x00"; // Normal Size
+            tReceipt += "\x1D\x21\x00"; 
             if (item.addons) {
                 for (let key in item.addons) if (item.addons[key].qty > 0) tReceipt += `  + ${item.addons[key].qty}x ${key}\n`;
             }
             if (item.notes) tReceipt += `  ✎ NOTE: ${item.notes}\n`;
             tReceipt += drawLine();
         });
-        
-        tReceipt += "\n\n\n\n\x1D\x56\x41\x10"; // Cut Paper
+        tReceipt += "\n\n\n\n\x1D\x56\x41\x10"; 
         if (typeof window.sendToBluetoothPrinter === 'function') await window.sendToBluetoothPrinter(tReceipt, false, type);
         return;
     }
 
-    // ------------------------------------------
-    // 🧾 CUSTOMER RECEIPT
-    // ------------------------------------------
-    let textEncoder = new TextEncoder();
     let payloadBuffers = [];
 
-    // 1. Initialize Printer and Kick Drawer
+    // 1. Init & Drawer Kick
     let initCmd = "\x1B\x40\n";
     if (localStorage.getItem('takodeal_auto_drawer') !== 'false') initCmd += "\x1B\x70\x00\x19\x96\n";
     initCmd += "\x1B\x61\x01"; // Center Align
-    payloadBuffers.push(textEncoder.encode(initCmd));
+    payloadBuffers.push(window.stringToBuffer(initCmd)); // 🔥 Uses Safe Buffer
 
-    // 2. 🔥 PRINT THE LOGO!
+    // 2. 🔥 PRINT THE LOGO (Safely!)
     if (logoBase64) {
         let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH);
         payloadBuffers.push(imageBytes);
     }
 
-    // 3. START THE TEXT BUILDER
     let receiptTop = "\n"; 
+    let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, ""); // 🔥 Strips Accents
 
-    // 🔥 HYPER-STRICT ASCII FILTER: Eliminates ALL weird symbols!
-    let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, "");
-
-    // Text Header (GS ! 11h = Double Width + Double Height)
     receiptTop += "\x1D\x21\x11" + safeHeaderName + "\n\x1D\x21\x00";
     if (storeAddress) receiptTop += storeAddress + "\n";
     if (storeContact) receiptTop += "Contact: " + storeContact + "\n";
@@ -3900,14 +3888,8 @@ window.printReceipt = async function(type) {
     }
     receiptTop += drawDoubleLine();
     
-    // 🔥 DEDICATED TOTAL DUE BLOCK
-    receiptTop += "\x1B\x61\x01"; // Center Align
-    receiptTop += "TOTAL DUE\n";
-    receiptTop += "\x1D\x21\x11"; // GS ! 11h = Double Width & Height
-    receiptTop += finalTotalDue.toFixed(2) + "\n";
-    receiptTop += "\x1D\x21\x00\n"; // Normal Size & Line Break
-    receiptTop += "\x1B\x61\x00"; // Left Align
-    
+    receiptTop += "\x1B\x61\x01TOTAL DUE\n\x1D\x21\x11"; 
+    receiptTop += finalTotalDue.toFixed(2) + "\n\x1D\x21\x00\n\x1B\x61\x00"; 
     receiptTop += drawDoubleLine();
     
     if (amountRec > 0) {
@@ -3916,25 +3898,24 @@ window.printReceipt = async function(type) {
         let changeVal = amountRec - finalTotalDue;
         receiptTop += formatLine("Change Amount:", changeVal > 0 ? changeVal : 0);
     } else {
-        receiptTop += "\x1B\x61\x01** PLEASE PAY AT COUNTER **\n\x1B\x61\x00";
+        // 🔥 THE FIX: Beautiful "UNPAID ORDER" instead of ugly asterisks
+        receiptTop += "\x1B\x61\x01\x1D\x21\x01>> UNPAID ORDER <<\n\x1D\x21\x00\x1B\x61\x00\n";
     }
     
     receiptTop += drawLine();
     
-    // Footer
-    receiptTop += "\x1B\x61\x01"; // Center Align Footer
+    receiptTop += "\x1B\x61\x01"; 
     let footerLines = footerMsg.split('\n');
     footerLines.forEach(l => receiptTop += l.trim() + "\n");
     receiptTop += "\n\n\n\n\x1D\x56\x41\x10"; 
     
-    // STITCH EVERYTHING TOGETHER
-    payloadBuffers.push(textEncoder.encode(receiptTop));
+    payloadBuffers.push(window.stringToBuffer(receiptTop)); // 🔥 Uses Safe Buffer
     let finalBinaryPayload = window.concatBuffers(payloadBuffers);
 
     if (typeof window.sendToBluetoothPrinter === 'function') {
         await window.sendToBluetoothPrinter(finalBinaryPayload, false);
     }
-}; // <-- PROPERLY CLOSED PRINT FUNCTION!
+};
 
 // ==========================================
 // 🕒 ULTIMATE PARKED ORDERS & PRINTER ENGINE
