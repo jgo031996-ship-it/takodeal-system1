@@ -8336,14 +8336,18 @@ window.connectSpecificPrinter = async function(target) {
     }
 };
 
-window.sendToBluetoothPrinter = async function(escposString, isJustDrawer = false, target = 'main') {
+// ==========================================
+// ⚡ DIRECT BLUETOOTH SENDER (IMAGE & CHUNK SUPPORT)
+// ==========================================
+window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
     let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
     
-    // 🚀 HYBRID INTERCEPTOR: If branch is using Legacy Mode, bypass BLE and send to RawBT!
+    // 🚀 HYBRID INTERCEPTOR: Legacy RawBT Fallback
     if (currentMode === 'rawbt') {
-        let finalCommand = escposString;
-        if (!isJustDrawer) finalCommand += "\n\n\n\n"; // Adding padding for RawBT
-        let base64Encoded = btoa(unescape(encodeURIComponent(finalCommand)));
+        // RawBT needs text. If it's a binary array (logo), we decode it safely.
+        let textData = (data instanceof Uint8Array) ? new TextDecoder().decode(data) : data;
+        if (!isJustDrawer) textData += "\n\n\n\n"; // Padding for RawBT
+        let base64Encoded = btoa(unescape(encodeURIComponent(textData)));
         window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
         return;
     }
@@ -8367,13 +8371,17 @@ window.sendToBluetoothPrinter = async function(escposString, isJustDrawer = fals
     }
 
     try {
-        let finalCommand = escposString;
-        if (!isJustDrawer) finalCommand += "\n\n\n\x1D\x56\x41\x10"; 
-        
-        const data = new TextEncoder().encode(finalCommand);
-        const CHUNK_SIZE = 256;
-        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-            await activeChar.writeValue(data.slice(i, i + CHUNK_SIZE));
+        // 🔥 THE BINARY SHIELD 🔥
+        // We removed the string concatenation here because we already added 
+        // the cut commands inside window.printReceipt!
+        let buffer = (data instanceof Uint8Array) ? data : new TextEncoder().encode(data);
+
+        // 📦 THE BLUETOOTH CHUNKER (Crucial for Logos!)
+        const CHUNK_SIZE = 255;
+        for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
+            await activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
+            // A tiny 10-millisecond pause gives the printer time to draw the heavy image!
+            await new Promise(resolve => setTimeout(resolve, 10)); 
         }
     } catch(e) {
         console.error("Print Error:", e);
