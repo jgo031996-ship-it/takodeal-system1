@@ -16,7 +16,7 @@ const firebaseConfig = {
   messagingSenderId: "248826111383",
   appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
 };
-
+ 
 const app = initializeApp(firebaseConfig);
 // ========================================================
 // 🌍 GLOBAL GPS GEOFENCING CONFIGURATION
