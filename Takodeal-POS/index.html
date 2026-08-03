@@ -3779,7 +3779,7 @@ window.printReceipt = async function(type) {
             tReceipt += drawLine();
         });
         tReceipt += "\n\n\n\n\x1D\x56\x41\x10"; 
-        if (typeof window.sendToBluetoothPrinter === 'function') await window.sendToBluetoothPrinter(tReceipt, false, type);
+        if (typeof window.sendToBluetoothPrinter === 'function') await window.sendToBluetoothPrinter(window.stringToBuffer(tReceipt), false, type);
         return;
     }
 
@@ -3789,16 +3789,16 @@ window.printReceipt = async function(type) {
     let initCmd = "\x1B\x40\n";
     if (localStorage.getItem('takodeal_auto_drawer') !== 'false') initCmd += "\x1B\x70\x00\x19\x96\n";
     initCmd += "\x1B\x61\x01"; // Center Align
-    payloadBuffers.push(window.stringToBuffer(initCmd)); // 🔥 Uses Safe Buffer
+    payloadBuffers.push(window.stringToBuffer(initCmd)); 
 
-    // 2. 🔥 PRINT THE LOGO (Safely!)
-    if (logoBase64) {
+    // 2. 🔥 PRINT THE LOGO
+    if (logoBase64 && typeof window.encodeImageForPrinter === 'function') {
         let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH);
-        payloadBuffers.push(imageBytes);
+        if (imageBytes) payloadBuffers.push(imageBytes); 
     }
 
     let receiptTop = "\n"; 
-    let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, ""); // 🔥 Strips Accents
+    let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, "");
 
     receiptTop += "\x1D\x21\x11" + safeHeaderName + "\n\x1D\x21\x00";
     if (storeAddress) receiptTop += storeAddress + "\n";
@@ -3898,7 +3898,6 @@ window.printReceipt = async function(type) {
         let changeVal = amountRec - finalTotalDue;
         receiptTop += formatLine("Change Amount:", changeVal > 0 ? changeVal : 0);
     } else {
-        // 🔥 THE FIX: Beautiful "UNPAID ORDER" instead of ugly asterisks
         receiptTop += "\x1B\x61\x01\x1D\x21\x01>> UNPAID ORDER <<\n\x1D\x21\x00\x1B\x61\x00\n";
     }
     
@@ -3909,7 +3908,7 @@ window.printReceipt = async function(type) {
     footerLines.forEach(l => receiptTop += l.trim() + "\n");
     receiptTop += "\n\n\n\n\x1D\x56\x41\x10"; 
     
-    payloadBuffers.push(window.stringToBuffer(receiptTop)); // 🔥 Uses Safe Buffer
+    payloadBuffers.push(window.stringToBuffer(receiptTop)); 
     let finalBinaryPayload = window.concatBuffers(payloadBuffers);
 
     if (typeof window.sendToBluetoothPrinter === 'function') {
