@@ -299,45 +299,61 @@ window.processRawItemsIntoMenu = function(rawItems) {
 };
 
 // ========================================================
-// 🍔 BULLETPROOF CATEGORY BUILDER & POS INITIALIZER
+// 🚨 EMERGENCY AUTO-RECOVERY CATEGORY BUILDER
 // ========================================================
 window.buildCategories = function() {
-    // 🔥 THE FIX: Find the correct HTML container, no matter what it is named!
-    let catContainer = document.getElementById('posCategories') || document.getElementById('categoryTabs') || document.querySelector('.category-tabs');
+    // 1. Try to find the container by known IDs/classes
+    let catContainer = document.getElementById('posCategories') 
+                    || document.getElementById('categoryTabs') 
+                    || document.getElementById('categoriesContainer')
+                    || document.querySelector('.category-tabs');
     
+    // 2. 🚑 EMERGENCY FALLBACK: If missing, find "Loading Menu..." and create the container on the fly!
     if (!catContainer) {
-        console.error("Category container not found in HTML!");
+        console.warn("⚠️ Container ID missing. Activating Auto-Recovery Engine...");
+        let loadingEl = Array.from(document.querySelectorAll('div, p, span, h3')).find(el => el.innerText && el.innerText.includes('Loading Menu...'));
+        
+        if (loadingEl && loadingEl.parentNode) {
+            catContainer = document.createElement('div');
+            catContainer.id = 'posCategories';
+            catContainer.style.cssText = 'display: flex; gap: 8px; overflow-x: auto; padding: 10px 0; margin-bottom: 15px; width: 100%; border-bottom: 1px solid #e2e8f0;';
+            loadingEl.parentNode.insertBefore(catContainer, loadingEl);
+        }
+    }
+
+    if (!catContainer) {
+        console.error("Critical: Could not locate menu parent container.");
         return;
     }
-    
-    // 1. FORCE WIPE THE HTML: This destroys the infinite repeating loop!
+
+    // 3. Wipe clean to prevent duplicates
     catContainer.innerHTML = '';
     
     let html = `<button class="cat-btn active" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('All', this) : filterCategory('All', this)">All in MAIN MENU</button>`;
     
-    // 2. USE THE POS CONFIG HUB SETTINGS & REMOVE GHOST DUPLICATES
+    // 4. Build unique categories
     if (window.masterPOSData && window.masterPOSData.categories) {
         let uniqueCategories = new Set(window.masterPOSData.categories);
         
         uniqueCategories.forEach(cat => {
             if (cat && cat.trim() !== '') {
                 let safeCat = cat.trim();
-                // Inject them exactly in the order the Manager set them!
                 html += `<button class="cat-btn" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('${safeCat}', this) : filterCategory('${safeCat}', this)">${safeCat}</button>`;
             }
         });
     }
     
-    // 3. INJECT THE PERFECTLY CLEAN LIST
     catContainer.innerHTML = html;
 
-    // 4. 🔥 AUTO-TRIGGER THE MENU RENDER TO CLEAR "LOADING MENU..." 🔥
+    // 5. Force render the menu items to clear "Loading Menu..."
     setTimeout(() => {
+        let firstBtn = catContainer.querySelector('.cat-btn');
         if (typeof window.filterCategory === 'function') {
-            let firstBtn = catContainer.querySelector('.cat-btn');
             window.filterCategory('All', firstBtn);
+        } else if (typeof filterCategory === 'function') {
+            filterCategory('All', firstBtn);
         }
-    }, 200);
+    }, 100);
 };
 
 window.loadPOSData = async function() {
