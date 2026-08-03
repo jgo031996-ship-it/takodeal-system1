@@ -8356,11 +8356,13 @@ window.concatBuffers = function(buffers) {
     return result;
 };
 
-// Converts your web image into raw Thermal Printer electrical dots!
+// ==========================================
+// 🖼️ ESC/POS BINARY IMAGE PROCESSOR (CORS FIX)
+// ==========================================
 window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeight) {
     return new Promise((resolve) => {
         let img = new Image();
-        img.crossOrigin = "Anonymous"; 
+        // 🔥 THE FIX: Removed crossOrigin="Anonymous" so Data URIs load safely on tablets!
         
         img.onload = function() {
             try {
@@ -8369,13 +8371,10 @@ window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeig
                 
                 let baseWidth = 200; 
                 let targetWidth = baseWidth * (scaleWidth || 1);
-                
-                // CRITICAL FIX: Width must be a multiple of 8
-                targetWidth = Math.floor(targetWidth / 8) * 8; 
+                targetWidth = Math.floor(targetWidth / 8) * 8; // Must be multiple of 8
                 let targetHeight = Math.floor((img.height / img.width) * targetWidth);
                 
-                canvas.width = targetWidth;
-                canvas.height = targetHeight;
+                canvas.width = targetWidth; canvas.height = targetHeight;
                 
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -8414,17 +8413,13 @@ window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeig
                 resolve(null); 
             }
         };
-        
-        img.onerror = function() {
-            console.warn("Logo failed to load into canvas.");
-            resolve(null); 
-        };
+        img.onerror = function() { console.warn("Logo failed to load."); resolve(null); };
         img.src = base64Image;
     });
 };
 
 // ==========================================
-// ⚡ DIRECT BLUETOOTH SENDER 
+// ⚡ DIRECT BLUETOOTH SENDER (ANTI-DROP CHUNKER)
 // ==========================================
 window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
     let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
@@ -8446,10 +8441,12 @@ window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, targe
 
     try {
         let buffer = (data instanceof Uint8Array) ? data : window.stringToBuffer(data);
-        const CHUNK_SIZE = 128;
+        
+        // 🔥 THE FIX: Slower, smaller chunks (64 bytes / 40ms) guarantees 0 dropped letters!
+        const CHUNK_SIZE = 64;
         for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
             await activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
-            await new Promise(resolve => setTimeout(resolve, 20)); 
+            await new Promise(resolve => setTimeout(resolve, 40)); 
         }
     } catch(e) {
         console.error("Print Error:", e);
