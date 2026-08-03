@@ -19518,7 +19518,8 @@ window.loadSmartSupplyChain = window.loadForecasterEngine;
 window.deleteStaffDeduction = async function(docId) {
     if(!confirm("Are you sure you want to permanently delete this deduction?")) return;
     try {
-        await window.deleteDoc(window.doc(window.db, "staff_deductions", docId));
+        // 🔥 CRASH FIX: Removed "window." from Firebase commands
+        await deleteDoc(doc(db, "staff_deductions", docId));
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Deleted!', showConfirmButton: false, timer: 2000});
         let currentProfileId = document.getElementById('empProfileId').value;
         if (currentProfileId) window.openEmployeeProfile(currentProfileId);
@@ -19527,7 +19528,8 @@ window.deleteStaffDeduction = async function(docId) {
 
 window.forceMarkDeductionPaid = async function(docId, staffName, profileId) {
      try {
-         await window.updateDoc(window.doc(window.db, "staff_deductions", docId), { status: 'Paid' });
+         // 🔥 CRASH FIX: Removed "window." from Firebase commands
+         await updateDoc(doc(db, "staff_deductions", docId), { status: 'Paid' });
          Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Marked as Paid!', showConfirmButton: false, timer: 2000});
          window.openEmployeeProfile(profileId);
      } catch(e) { console.error(e); }
@@ -19586,7 +19588,8 @@ window.openEmployeeProfile = function(docId) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
     });
 
-    window.getDocs(window.query(window.collection(window.db, "staff_deductions"), window.where("staffName", "==", data.cashierName), window.orderBy("dateAdded", "desc"), window.limit(30)))
+    // 🔥 CRASH FIX: Removed "window." from query, collection, where, orderBy, and limit!
+    getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
     .then(snap => {
         let histHtml = '';
         snap.forEach(dDoc => {
@@ -19594,7 +19597,7 @@ window.openEmployeeProfile = function(docId) {
             let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
             let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
 
-            // 🔥 FIX: ALWAYS SHOW DELETE BUTTON, EVEN IF IT HAS BEEN MARKED AS PAID!
+            // Action HTML logic: Delete button ALWAYS shows up!
             let actionHtml = d.status === 'Unpaid' 
                 ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; margin-right: 5px;">Mark Paid</button>`
                 : `<span style="font-size:11px; color:#16a34a; font-weight:bold; margin-right: 5px;">Paid</span>`;
@@ -19615,5 +19618,10 @@ window.openEmployeeProfile = function(docId) {
         document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
             tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
         });
-    }).catch(e => console.error(e));
+    }).catch(e => {
+        console.error(e);
+        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
+        });
+    });
 };
