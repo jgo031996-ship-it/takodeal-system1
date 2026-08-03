@@ -14978,6 +14978,29 @@ window.updateReceiptPreview = function() {
     document.getElementById('prevFooter').innerHTML = footer.split('\n').join('<br>');
 };
 
+window.uploadedLogoBase64 = "";
+
+window.handleLogoUpload = function(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            window.uploadedLogoBase64 = e.target.result;
+            document.getElementById('logoPreviewImg').src = window.uploadedLogoBase64;
+            document.getElementById('logoPreviewContainer').style.display = 'inline-block';
+            document.getElementById('logoUploadPrompt').style.display = 'none';
+        }
+        reader.readAsDataURL(file);
+    }
+};
+
+window.removeLogo = function() {
+    window.uploadedLogoBase64 = "";
+    document.getElementById('logoPreviewContainer').style.display = 'none';
+    document.getElementById('logoUploadPrompt').style.display = 'block';
+    document.getElementById('logoUploader').value = "";
+};
+
 window.openBranchSettings = function(docId) {
     let d = window.globalBranchData[docId];
     if (!d) return;
@@ -14987,17 +15010,27 @@ window.openBranchSettings = function(docId) {
     document.getElementById('settingAddress').value = d.address || '';
     document.getElementById('settingContact').value = d.contact || '';
     document.getElementById('settingWifi').value = d.wifi || '';
+    
+    // Default to 58mm to fix the squished text bug!
     document.getElementById('settingPrinterSize').value = d.printerSize || '58mm';
     
-    // Load new settings
     document.getElementById('settingHeaderName').value = d.headerName || 'TAKODEAL';
     document.getElementById('settingFooterMsg').value = d.footerMessage || 'Acknowledgement Receipt\nThank you!';
+    document.getElementById('settingRoyalty').value = d.royaltyPercent || 0;
     
-    let royaltyEl = document.getElementById('settingRoyalty');
-    if (royaltyEl) royaltyEl.value = d.royaltyPercent || 0;
+    document.getElementById('logoWidthScale').value = d.logoWidthScale || "1";
+    document.getElementById('logoHeightScale').value = d.logoHeightScale || "1";
+
+    if (d.receiptLogoBase64) {
+        window.uploadedLogoBase64 = d.receiptLogoBase64;
+        document.getElementById('logoPreviewImg').src = d.receiptLogoBase64;
+        document.getElementById('logoPreviewContainer').style.display = 'inline-block';
+        document.getElementById('logoUploadPrompt').style.display = 'none';
+    } else {
+        window.removeLogo();
+    }
 
     document.getElementById('branchSettingsModal').style.display = 'flex';
-    window.updateReceiptPreview(); // Trigger the live preview!
 };
 
 window.saveBranchSettings = async function() {
@@ -15009,12 +15042,15 @@ window.saveBranchSettings = async function() {
         printerSize: document.getElementById('settingPrinterSize').value,
         headerName: document.getElementById('settingHeaderName').value.trim(),
         footerMessage: document.getElementById('settingFooterMsg').value.trim(),
-        royaltyPercent: parseFloat(document.getElementById('settingRoyalty').value) || 0
+        royaltyPercent: parseFloat(document.getElementById('settingRoyalty').value) || 0,
+        receiptLogoBase64: window.uploadedLogoBase64, // 🔥 SAVE THE LOGO TO CLOUD
+        logoWidthScale: parseFloat(document.getElementById('logoWidthScale').value) || 1,
+        logoHeightScale: parseFloat(document.getElementById('logoHeightScale').value) || 1
     };
 
     try {
         await updateDoc(doc(db, "branches", docId), payload);
-        alert(`✅ Settings & Receipt Layout pushed globally!`);
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Settings Pushed to Cashier!', showConfirmButton: false, timer: 2000});
         document.getElementById('branchSettingsModal').style.display = 'none';
         window.loadBranchManager();
     } catch (e) { console.error(e); alert("Failed to push settings."); }
