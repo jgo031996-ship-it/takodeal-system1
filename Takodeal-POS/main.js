@@ -298,20 +298,63 @@ window.processRawItemsIntoMenu = function(rawItems) {
     return groupedMenu;
 };
 
+// ========================================================
+// 🍔 BULLETPROOF CATEGORY BUILDER & POS INITIALIZER
+// ========================================================
+window.buildCategories = function() {
+    // 🔥 THE FIX: Find the correct HTML container, no matter what it is named!
+    let catContainer = document.getElementById('posCategories') || document.getElementById('categoryTabs') || document.querySelector('.category-tabs');
+    
+    if (!catContainer) {
+        console.error("Category container not found in HTML!");
+        return;
+    }
+    
+    // 1. FORCE WIPE THE HTML: This destroys the infinite repeating loop!
+    catContainer.innerHTML = '';
+    
+    let html = `<button class="cat-btn active" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('All', this) : filterCategory('All', this)">All in MAIN MENU</button>`;
+    
+    // 2. USE THE POS CONFIG HUB SETTINGS & REMOVE GHOST DUPLICATES
+    if (window.masterPOSData && window.masterPOSData.categories) {
+        let uniqueCategories = new Set(window.masterPOSData.categories);
+        
+        uniqueCategories.forEach(cat => {
+            if (cat && cat.trim() !== '') {
+                let safeCat = cat.trim();
+                // Inject them exactly in the order the Manager set them!
+                html += `<button class="cat-btn" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('${safeCat}', this) : filterCategory('${safeCat}', this)">${safeCat}</button>`;
+            }
+        });
+    }
+    
+    // 3. INJECT THE PERFECTLY CLEAN LIST
+    catContainer.innerHTML = html;
+
+    // 4. 🔥 AUTO-TRIGGER THE MENU RENDER TO CLEAR "LOADING MENU..." 🔥
+    setTimeout(() => {
+        if (typeof window.filterCategory === 'function') {
+            let firstBtn = catContainer.querySelector('.cat-btn');
+            window.filterCategory('All', firstBtn);
+        }
+    }, 200);
+};
+
 window.loadPOSData = async function() {
-    window.applySidebarLayout(); 
+    if (typeof window.applySidebarLayout === 'function') window.applySidebarLayout(); 
     let products = await window.fetchMenu();
     window.masterPOSData.items = products;
     window.masterPOSData.variants = {}; 
     window.masterPOSData.addons = [];
     
-    // 🐙 Fetch Global Mix & Match configuration!
+    // Fetch Mix & Match
     window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
     try {
         const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
         if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
     } catch(e) {}
 
+    // Fetch Addons
     try {
         const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
         addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
@@ -328,21 +371,19 @@ window.loadPOSData = async function() {
                 orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
-            
-            // 1. Pull from the Comma-Separated Text Box in POS Config Hub
             window.masterPOSData.categories = configData.posTabs && configData.posTabs.length > 0 ? configData.posTabs : (dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"]);
         } else {
             window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea"];
             window.masterPOSData.settings = { orderTypes: ["Dine-In", "Take-Out", "Delivery"], payMethods: ["Cash", "GCash"] };
         }
 
-        // 2. OVERRIDE WITH THE DRAG & DROP ARRANGER IF IT EXISTS!
+        // OVERRIDE WITH THE MANAGER'S DRAG & DROP ARRANGER
         const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_category_layout"));
         if (catLayoutSnap.exists() && catLayoutSnap.data().tabs) {
             window.masterPOSData.categories = catLayoutSnap.data().tabs;
         }
 
-        // 3. Pull Add-on Arrangements
+        // Pull Add-on Arrangements
         window.masterPOSData.addonLayoutNames = [];
         const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
         if (layoutSnap.exists() && layoutSnap.data().itemNames) {
@@ -350,9 +391,10 @@ window.loadPOSData = async function() {
         }
 
     } catch (e) {
-        console.warn("Could not load global config, using defaults", e);
+        console.warn("Could not load global config", e);
     }
 
+    // Load stock levels & BOM
     window.masterPOSData.stockLevels = {};
     const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
     invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
@@ -361,19 +403,21 @@ window.loadPOSData = async function() {
     const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
     bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
 
-    if (typeof buildCategories === 'function') buildCategories();
-    else if (typeof window.buildCategories === 'function') window.buildCategories();
+    // 🚀 Trigger UI Builders
+    window.buildCategories();
 
+    // Safely inject Order Types
     let otHtml = ''; 
     window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
-    document.getElementById('mainOrderType').innerHTML = otHtml;
+    let mainOrderTypeEl = document.getElementById('mainOrderType');
+    if (mainOrderTypeEl) mainOrderTypeEl.innerHTML = otHtml;
     
-    let pmHtml = ''; 
-    let optHtml = ''; 
+    // Safely inject Payment Methods
+    let pmHtml = ''; let optHtml = ''; 
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; 
         if (idx === 0) window.selectedPaymentMethod = m; 
-        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
+        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); let spc = document.getElementById('splitPaymentContainer'); if(spc) spc.style.display='none';">${m}</button>`; 
         optHtml += `<option value="${m}">${m}</option>`;
     }); 
     pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
@@ -387,11 +431,11 @@ window.loadPOSData = async function() {
                     <div style="font-size:12px; font-weight:bold; color:#8b5cf6; margin-bottom:10px;">SPLIT PAYMENT DETAILS</div>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
                         <select id="splitMethod1" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()" onchange="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()">
                     </div>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
                         <select id="splitMethod2" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
+                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()" onchange="if(typeof window.calcSplitRemaining==='function') window.calcSplitRemaining()">
                     </div>
                     <div style="text-align: right; font-size: 14px; font-weight: 900; color: #ef4444;" id="splitRemainingAlert">Total Split Entered: ₱0.00</div>
                 </div>
@@ -8276,35 +8320,4 @@ window.processStoreUse = async function() {
     } finally { 
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
-};
-
-// ========================================================
-// 🍔 BULLETPROOF CATEGORY BUILDER (ANTI-DUPLICATE & HUB SYNC)
-// ========================================================
-window.buildCategories = function() {
-    let catContainer = document.getElementById('categoryTabs');
-    if (!catContainer) return;
-    
-    // 1. FORCE WIPE THE HTML: This completely destroys the infinite repeating loop!
-    catContainer.innerHTML = '';
-    
-    // Create the "All" button first
-    let html = `<button class="cat-btn active" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('All', this) : filterCategory('All', this)">All in MAIN MENU</button>`;
-    
-    // 2. USE THE POS CONFIG HUB SETTINGS & REMOVE GHOST DUPLICATES
-    if (window.masterPOSData && window.masterPOSData.categories) {
-        // The 'Set' mathematically destroys any duplicates in memory
-        let uniqueCategories = new Set(window.masterPOSData.categories);
-        
-        uniqueCategories.forEach(cat => {
-            if (cat && cat.trim() !== '') {
-                let safeCat = cat.trim();
-                // Inject them exactly in the order the Manager set them in the POS Config Hub!
-                html += `<button class="cat-btn" onclick="typeof window.filterCategory === 'function' ? window.filterCategory('${safeCat}', this) : filterCategory('${safeCat}', this)">${safeCat}</button>`;
-            }
-        });
-    }
-    
-    // 3. INJECT THE PERFECTLY CLEAN LIST
-    catContainer.innerHTML = html;
 };
