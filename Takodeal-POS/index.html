@@ -2620,8 +2620,8 @@
       else if (viewName === 'waste') { topBar.innerText = "🗑️ Log Waste & Spoilage"; }
       else if (viewName === 'sop') { topBar.innerText = "📋 Daily SOPs"; }
       else if (viewName === 'schedule') { 
-          topBar.innerText = "📅 My Schedule"; 
-          if (typeof window.loadPersonalSchedule === 'function') window.loadPersonalSchedule(); 
+          topBar.innerText = "📅 Branch Schedule"; 
+          if (typeof window.loadBranchSchedule === 'function') window.loadBranchSchedule(); 
       }
       else if (viewName === 'bulletin') { topBar.innerText = "📢 Bulletin Board"; }
     }
