@@ -3731,7 +3731,6 @@ window.printReceipt = async function(type) {
         else hasFood = true; 
     });
     
-    // 1. DYNAMIC BRANCH DATA FETCHER
     let currentBranch = localStorage.getItem('takodeal_device_branch') || 'Main Office';
     let storeAddress = ""; let storeContact = ""; let headerName = "TAKODEAL"; let footerMsg = "Thank you!"; let paperSize = "58mm";
     let logoBase64 = null; let logoW = 1; let logoH = 1;
@@ -3749,7 +3748,6 @@ window.printReceipt = async function(type) {
     } catch(e) {}
 
     let width = paperSize === '80mm' ? 48 : 32;
-
     function drawLine() { return "-".repeat(width) + "\n"; }
     function drawDoubleLine() { return "=".repeat(width) + "\n"; }
 
@@ -3760,9 +3758,9 @@ window.printReceipt = async function(type) {
     // 🔪 KITCHEN & BAR TICKETS
     // ------------------------------------------
     if (type === 'food' || type === 'drinks') {
-        let tReceipt = "\x1B\x40\n\x1B\x61\x01\x1B\x21\x20"; 
+        let tReceipt = "\x1B\x40\n\x1B\x61\x01\x1D\x21\x10"; // GS ! 10h (Double Width)
         tReceipt += (type === 'food' ? "KITCHEN TICKET" : "BAR TICKET") + "\n";
-        tReceipt += "\x1B\x21\x00>> " + orderType + " <<\n";
+        tReceipt += "\x1D\x21\x00>> " + orderType + " <<\n"; // GS ! 00h (Normal)
         if (type === 'food' && hasDrinks) tReceipt += "\n⚠️ CONTAINS DRINKS ⚠️\n";
         if (type === 'drinks' && hasFood) tReceipt += "\n⚠️ CONTAINS FOOD ⚠️\n";
         tReceipt += "\x1B\x61\x00" + drawDoubleLine();
@@ -3773,10 +3771,10 @@ window.printReceipt = async function(type) {
             if (type === 'food' && isDrink) return; 
             if (type === 'drinks' && !isDrink) return;
             
-            tReceipt += "\x1B\x21\x10"; // Double Height
+            tReceipt += "\x1D\x21\x01"; // GS ! 01h (Double Height)
             let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
             tReceipt += `${item.qty}x ${item.name}${variantName}\n`;
-            tReceipt += "\x1B\x21\x00"; // Normal Size
+            tReceipt += "\x1D\x21\x00"; // Normal Size
             if (item.addons) {
                 for (let key in item.addons) if (item.addons[key].qty > 0) tReceipt += `  + ${item.addons[key].qty}x ${key}\n`;
             }
@@ -3792,26 +3790,29 @@ window.printReceipt = async function(type) {
     // ------------------------------------------
     // 🧾 CUSTOMER RECEIPT
     // ------------------------------------------
-    let receiptTop = "\x1B\x40\n"; 
-    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') receiptTop += "\x1B\x70\x00\x19\x96\n"; 
-    receiptTop += "\x1B\x61\x01"; // Center Align
-    
     let textEncoder = new TextEncoder();
     let payloadBuffers = [];
 
-    // 🔥 IF LOGO EXISTS, CONVERT IT TO BINARY AND STITCH IT IN!
+    // 1. Initialize Printer and Kick Drawer
+    let initCmd = "\x1B\x40\n";
+    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') initCmd += "\x1B\x70\x00\x19\x96\n";
+    initCmd += "\x1B\x61\x01"; // Center Align
+    payloadBuffers.push(textEncoder.encode(initCmd));
+
+    // 2. 🔥 PRINT THE LOGO!
     if (logoBase64) {
         let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH);
-        payloadBuffers.push(textEncoder.encode(receiptTop)); // Add setup commands
-        payloadBuffers.push(imageBytes); // Add the actual image!
-        receiptTop = "\n"; // Reset string builder for the rest of the text
+        payloadBuffers.push(imageBytes);
     }
 
-    // 🔥 STRICT ASCII FILTER: Strips out Accents so "Û" never prints again!
-    let safeHeaderName = headerName.toUpperCase().replace(/[^\x20-\x7E]/g, "");
+    // 3. START THE TEXT BUILDER
+    let receiptTop = "\n"; 
 
-    // Text Header
-    receiptTop += "\x1B\x21\x30" + safeHeaderName + "\n\x1B\x21\x00";
+    // 🔥 HYPER-STRICT ASCII FILTER: Eliminates ALL weird symbols!
+    let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, "");
+
+    // Text Header (GS ! 11h = Double Width + Double Height)
+    receiptTop += "\x1D\x21\x11" + safeHeaderName + "\n\x1D\x21\x00";
     if (storeAddress) receiptTop += storeAddress + "\n";
     if (storeContact) receiptTop += "Contact: " + storeContact + "\n";
     
@@ -3821,7 +3822,6 @@ window.printReceipt = async function(type) {
     let hours = now.getHours(); let minutes = now.getMinutes(); const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12 || 12; minutes = minutes < 10 ? '0' + minutes : minutes;
 
-    // 🔥 FIX: Cashier Short Name
     let fullCashierName = d.cashierName || localStorage.getItem('cashierName') || "Staff";
     let cashierFirstName = fullCashierName.split(' ')[0]; 
     let customer = d.customerName || "Guest";
@@ -3830,10 +3830,9 @@ window.printReceipt = async function(type) {
     receiptTop += "Time: " + hours + ':' + minutes + ' ' + ampm + "\n";
     receiptTop += drawDoubleLine();
     
-    receiptTop += "\x1B\x61\x01\x1B\x21\x10>> " + orderType + " <<\n\x1B\x21\x00\x1B\x61\x00\n"; 
+    receiptTop += "\x1B\x61\x01\x1D\x21\x01>> " + orderType + " <<\n\x1D\x21\x00\x1B\x61\x00\n"; 
     receiptTop += drawDoubleLine();
 
-    // 🔥 FIX: Keep normal size so names don't wrap and crash into the borders!
     receiptTop += "Customer: " + customer + "\n";
     receiptTop += "Cashier:  " + cashierFirstName + "\n";
     receiptTop += drawDoubleLine();
@@ -3901,18 +3900,18 @@ window.printReceipt = async function(type) {
     }
     receiptTop += drawDoubleLine();
     
-    // 🔥 NEW: DEDICATED TOTAL DUE BLOCK
+    // 🔥 DEDICATED TOTAL DUE BLOCK
     receiptTop += "\x1B\x61\x01"; // Center Align
     receiptTop += "TOTAL DUE\n";
-    receiptTop += "\x1B\x21\x30"; // Double Width & Height
+    receiptTop += "\x1D\x21\x11"; // GS ! 11h = Double Width & Height
     receiptTop += finalTotalDue.toFixed(2) + "\n";
-    receiptTop += "\x1B\x21\x00\n"; // Normal Size & Line Break
+    receiptTop += "\x1D\x21\x00\n"; // Normal Size & Line Break
     receiptTop += "\x1B\x61\x00"; // Left Align
     
     receiptTop += drawDoubleLine();
     
     if (amountRec > 0) {
-        receiptTop += formatLine("Cash Given:", parseFloat(amountRec)); // "Cash Given" fits perfectly!
+        receiptTop += formatLine("Cash Given:", parseFloat(amountRec));
         receiptTop += "Method: " + (d.paymentMethod || "Cash") + "\n";
         let changeVal = amountRec - finalTotalDue;
         receiptTop += formatLine("Change Amount:", changeVal > 0 ? changeVal : 0);
@@ -3933,7 +3932,6 @@ window.printReceipt = async function(type) {
     let finalBinaryPayload = window.concatBuffers(payloadBuffers);
 
     if (typeof window.sendToBluetoothPrinter === 'function') {
-        // We pass the RAW BINARY ARRAY directly to Bluetooth so it doesn't get corrupted!
         await window.sendToBluetoothPrinter(finalBinaryPayload, false);
     }
 }; // <-- PROPERLY CLOSED PRINT FUNCTION!
