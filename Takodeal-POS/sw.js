@@ -1,5 +1,5 @@
 // Bumped to v5 to force the tablet to replace the crashing engine!
-const CACHE_NAME = 'takodeal-pos-core-v5'; 
+const CACHE_NAME = 'takodeal-pos-core-v10'; 
 const IMAGE_CACHE = 'takodeal-image-storage-v1';
 
 const CORE_ASSETS = [
