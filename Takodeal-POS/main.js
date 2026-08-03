@@ -4890,14 +4890,21 @@ window.openPendingModal = function(encodedOrder) {
 
 window.openRejectedModal = function(encodedOrder) {
     let rejectedOrder = JSON.parse(decodeURIComponent(encodedOrder));
+    let safeOrderStr = encodeURIComponent(JSON.stringify(rejectedOrder)); // Needed to pass to the edit function
+    
     let html = `
         <p style="font-size: 14px; color: #991b1b; margin-top: 0; margin-bottom: 20px; text-align: left; background: #fef2f2; padding: 15px; border-radius: 8px; border: 1px dashed #fca5a5;">
             <strong>Manager's Note:</strong><br>
             <span style="font-style: italic;">"${rejectedOrder.rejectReason || 'Incorrect Units of Measurement. Please recount and resubmit.'}"</span>
         </p>
-        <button onclick="window.acknowledgeRejectedRequest('${rejectedOrder.id}')" style="width: 100%; background: #ef4444; color: white; border: none; padding: 14px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2);">
-            Acknowledge & Dismiss
-        </button>
+        <div style="display: flex; gap: 10px; flex-direction: column;">
+            <button onclick="window.editRejectedRequest('${safeOrderStr}')" style="width: 100%; background: #0ea5e9; color: white; border: none; padding: 14px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.2);">
+                ✏️ Load Back to Cart & Fix
+            </button>
+            <button onclick="window.acknowledgeRejectedRequest('${rejectedOrder.id}')" style="width: 100%; background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; padding: 12px; font-weight: bold; font-size: 14px; border-radius: 8px; cursor: pointer;">
+                Dismiss & Clear
+            </button>
+        </div>
     `;
 
     Swal.fire({
@@ -4907,6 +4914,43 @@ window.openRejectedModal = function(encodedOrder) {
         showCloseButton: true,
         customClass: { popup: 'rounded-2xl shadow-xl border border-red-200' }
     });
+};
+
+// 🔥 NEW: Pulls rejected items back into the draft cart so they don't vanish!
+window.editRejectedRequest = async function(encodedOrder) {
+    let order = JSON.parse(decodeURIComponent(encodedOrder));
+    
+    try {
+        let draft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft')) || {};
+        
+        order.items.forEach(i => {
+            if (i.sourceId) {
+                draft[i.sourceId] = {
+                    type: i.requestType,
+                    count: i.displayQty,
+                    uom: i.selectedUom || (i.displayUom === i.purchaseUom ? "purch" : "base")
+                };
+            }
+        });
+        
+        localStorage.setItem('takodeal_stock_req_draft', JSON.stringify(draft));
+        
+        // Acknowledge the old rejected order so the red warning goes away
+        await updateDoc(doc(db, "purchase_orders", order.id), { cashierAcknowledged: true });
+        
+        if (typeof Swal !== 'undefined') Swal.close();
+        
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Items loaded back into your cart!', 
+            showConfirmButton: false, timer: 3000,
+            customClass: { popup: 'rounded-xl' }
+        });
+        
+        window.loadStockRequestUI();
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to load request into cart.', 'error');
+    }
 };
 
 window.acknowledgeRejectedRequest = async function(docId) {
@@ -5279,7 +5323,9 @@ window.editPendingRequest = async function(encodedOrder) {
     if (!confirm("This will pull your request back into draft mode so you can edit the quantities. Continue?")) return;
 
     try {
-        let draft = {};
+        // 🔥 MERGE FIX: Safely merge into the existing cart instead of wiping it!
+        let draft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft')) || {};
+        
         order.items.forEach(i => {
             if (i.sourceId) {
                 draft[i.sourceId] = {
@@ -5289,8 +5335,16 @@ window.editPendingRequest = async function(encodedOrder) {
                 };
             }
         });
+        
         localStorage.setItem('takodeal_stock_req_draft', JSON.stringify(draft));
         if (typeof Swal !== 'undefined') Swal.close();
+        
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Loaded back into your cart!', 
+            showConfirmButton: false, timer: 3000
+        });
+        
         window.loadStockRequestUI();
     } catch(e) {
         console.error(e); Swal.fire('Error', 'Failed to load request into cart.', 'error');
