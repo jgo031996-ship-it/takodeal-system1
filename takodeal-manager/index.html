@@ -4578,41 +4578,95 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- ⚙️ CENTRALIZED BRANCH SETTINGS HUB -->
+  <!-- ⚙️ CENTRALIZED BRANCH SETTINGS HUB WITH PREVIEW -->
   <!-- ========================================== -->
   <div id="branchSettingsModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
-      <div style="background: white; width: 500px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+      <div style="background: white; width: 850px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); display: flex; flex-direction: column;">
           <div style="background: #0f172a; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
               <h2 style="margin: 0; font-size: 18px;" id="branchSettingsTitle">⚙️ Settings</h2>
               <span onclick="document.getElementById('branchSettingsModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
           </div>
-          <div style="padding: 25px; background: #f8fafc; max-height: 75vh; overflow-y: auto;">
-              <input type="hidden" id="settingBranchId">
+          <div style="display: flex; flex-wrap: wrap; background: #f8fafc; max-height: 75vh; overflow-y: auto;">
               
-              <h3 style="margin-top: 0; font-size: 14px; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">🖨️ Receipt & Cashier Settings</h3>
-              
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Store Address (Prints on Receipt)</label>
-              <input type="text" id="settingAddress" placeholder="e.g. Door 1, Cabantian Road..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;">
-              
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number</label>
-              <input type="text" id="settingContact" placeholder="09xxxxxxxxx" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;">
-              
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">WiFi Password (For Staff/Customers)</label>
-              <input type="text" id="settingWifi" placeholder="Leave blank if none" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; color: #0284c7; font-weight: bold;">
+              <!-- Form Controls -->
+              <div style="flex: 1; padding: 25px; min-width: 300px;">
+                  <input type="hidden" id="settingBranchId">
+                  <h3 style="margin-top: 0; font-size: 14px; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">🖨️ Receipt & Cashier Settings</h3>
+                  
+                  <label style="font-size: 12px; font-weight: bold; color: #475569;">Receipt Header (Store Name)</label>
+                  <input type="text" id="settingHeaderName" placeholder="e.g. TAKODEÁL" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; font-weight: bold; color: #0ea5e9;" oninput="window.updateReceiptPreview()">
 
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Receipt Header (Store Name)</label>
-              <input type="text" id="settingHeaderName" placeholder="e.g. TAKODEÁL ECOLAND" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; font-weight: bold; color: #0ea5e9;">
+                  <label style="font-size: 12px; font-weight: bold; color: #475569;">Store Address</label>
+                  <input type="text" id="settingAddress" placeholder="e.g. Door 1, Cabantian Road..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;" oninput="window.updateReceiptPreview()">
+                  
+                  <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number</label>
+                  <input type="text" id="settingContact" placeholder="09xxxxxxxxx" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;" oninput="window.updateReceiptPreview()">
+                  
+                  <label style="font-size: 12px; font-weight: bold; color: #475569;">Receipt Footer Message</label>
+                  <textarea id="settingFooterMsg" placeholder="e.g. Thank you for your purchase!" style="width: 100%; height: 60px; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; font-family: inherit; resize: none;" oninput="window.updateReceiptPreview()"></textarea>
 
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Receipt Footer Message</label>
-              <textarea id="settingFooterMsg" placeholder="e.g. Thank you for your purchase!" style="width: 100%; height: 60px; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; font-family: inherit; resize: none;"></textarea>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #475569;">WiFi Password</label>
+                          <input type="text" id="settingWifi" placeholder="Leave blank if none" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; color: #0284c7; font-weight: bold;">
+                      </div>
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #475569;">Paper Size</label>
+                          <select id="settingPrinterSize" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155; box-sizing: border-box;" onchange="window.updateReceiptPreview()">
+                              <option value="58mm">58mm (Small Thermal)</option>
+                              <option value="80mm">80mm (Large Thermal)</option>
+                          </select>
+                      </div>
+                  </div>
 
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Printer Paper Size</label>
-              <select id="settingPrinterSize" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155; box-sizing: border-box;">
-                  <option value="58mm">58mm (Small Thermal)</option>
-                  <option value="80mm">80mm (Large Thermal)</option>
-              </select>
+                  <div style="margin-top: 5px; background: #fffbeb; padding: 15px; border: 1px dashed #fcd34d; border-radius: 8px; margin-bottom: 20px;">
+                      <label style="font-size: 12px; font-weight: bold; color: #b45309; display: block; margin-bottom: 5px;">👑 Franchise Royalty Percentage (%)</label>
+                      <div style="font-size: 10px; color: #d97706; margin-bottom: 8px;">Enter 0 for company-owned branches.</div>
+                      <input type="number" id="settingRoyalty" class="input-box" placeholder="e.g. 5" style="width: 100%; border-color: #fcd34d; font-weight: bold; color: #92400e;">
+                  </div>
 
-              <button onclick="window.saveBranchSettings()" style="width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Push Settings to Cashier App</button>
+                  <button onclick="window.saveBranchSettings()" style="width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Push Settings to Cashier App</button>
+              </div>
+
+              <!-- Live Thermal Paper Preview -->
+              <div style="width: 350px; background: #e2e8f0; padding: 25px; display: flex; flex-direction: column; align-items: center; border-left: 1px solid #cbd5e1;">
+                  <span style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Live Receipt Preview</span>
+                  <div id="receiptPreviewBox" style="background: white; width: 280px; min-height: 400px; padding: 20px 15px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); font-family: monospace; font-size: 12px; color: black; position: relative;">
+                      <!-- CSS for jagged thermal paper bottom -->
+                      <div style="position: absolute; bottom: -10px; left: 0; right: 0; height: 10px; background: linear-gradient(-45deg, transparent 33.33%, white 33.33%, white 66.66%, transparent 66.66%), linear-gradient(45deg, transparent 33.33%, white 33.33%, white 66.66%, transparent 66.66%); background-size: 10px 20px; background-position: 0 -10px;"></div>
+                      
+                      <div id="prevHeader" style="text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 5px;">TAKODEAL</div>
+                      <div id="prevAddress" style="text-align: center; margin-bottom: 2px;">Branch Address</div>
+                      <div id="prevContact" style="text-align: center; margin-bottom: 10px;">Contact: 09xx</div>
+                      <div style="text-align: left; border-top: 1px dashed black; border-bottom: 1px dashed black; padding: 5px 0; margin-bottom: 10px;">
+                          Date: Today<br>Time: 12:00 PM
+                      </div>
+                      <div style="text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 10px;">>> DINE-IN <<</div>
+                      <div style="text-align: left; border-bottom: 1px dashed black; padding-bottom: 5px; margin-bottom: 10px;">
+                          Customer: Jostuart<br>Cashier:  Chery
+                      </div>
+                      <div style="text-align: left;">
+                          ITEM/S PURCHASED<br>
+                          --------------------------------<br>
+                          Bonito Takoyaki 6 Pcs<br>
+                          1.0  x 125.00            125.00<br>
+                          --------------------------------<br>
+                          Subtotal:                125.00<br>
+                          ================================<br>
+                          <div style="text-align: center; margin-top: 10px;">TOTAL DUE</div>
+                          <div style="text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 10px;">125.00</div>
+                          ================================<br>
+                          Amount Received:         125.00<br>
+                          Method: Gcash<br>
+                          Change Amount:             0.00<br>
+                          --------------------------------<br>
+                      </div>
+                      <div id="prevFooter" style="text-align: center; margin-top: 10px;">
+                          Acknowledgement Receipt<br>Thank you!
+                      </div>
+                  </div>
+              </div>
+
           </div>
       </div>
   </div>
