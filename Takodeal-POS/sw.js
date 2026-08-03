@@ -1,7 +1,7 @@
-// Bumped to v4 to force the tablet to replace the engine!
-const CACHE_NAME = 'takodeal-pos-core-v4'; 
+// Bumped to v5 to force the tablet to replace the crashing engine!
+const CACHE_NAME = 'takodeal-pos-core-v5'; 
 const IMAGE_CACHE = 'takodeal-image-storage-v1';
- 
+
 const CORE_ASSETS = [
     '/',
     '/index.html',
@@ -13,21 +13,16 @@ const CORE_ASSETS = [
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(CORE_ASSETS);
-        })
+        caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
     );
     self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then(keys => {
-            return Promise.all(
-                keys.filter(key => key !== CACHE_NAME && key !== IMAGE_CACHE)
-                    .map(key => caches.delete(key))
-            );
-        })
+        caches.keys().then(keys => Promise.all(
+            keys.filter(key => key !== CACHE_NAME && key !== IMAGE_CACHE).map(key => caches.delete(key))
+        ))
     );
     event.waitUntil(clients.claim()); 
 });
@@ -35,13 +30,17 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // 1. IMAGES
-    if (event.request.destination === 'image' || url.hostname.includes('firebasestorage.googleapis.com')) {
+    // 🚨 THE CRASH FIX: FIREBASE DATABASE BYPASS
+    // If the request is going to the live database or auth servers, do NOT touch it!
+    if (event.request.method !== 'GET' || url.hostname.includes('googleapis.com') || url.hostname.includes('firebase')) {
+        return; // Let the live database talk to the cloud normally!
+    }
+
+    // 📸 1. IMAGES
+    if (event.request.destination === 'image' || url.hostname.includes('firebasestorage')) {
         event.respondWith(
-            // 🔥 THE FIX: ignoreSearch: true forces it to ignore URL tags!
             caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
                 if (cachedResponse) return cachedResponse;
-                
                 return fetch(event.request).then((networkResponse) => {
                     const responseToCache = networkResponse.clone();
                     caches.open(IMAGE_CACHE).then((cache) => cache.put(event.request, responseToCache));
@@ -54,9 +53,8 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 2. CORE FILES
+    // ⚡ 2. CORE FILES
     event.respondWith(
-        // 🔥 THE FIX: ignoreSearch: true forces it to load main.js instantly!
         caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
             const fetchPromise = fetch(event.request).then((networkResponse) => {
                 const responseToCache = networkResponse.clone();
