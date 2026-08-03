@@ -4424,7 +4424,18 @@ window.loadBranchSchedule = async function() {
         const month = schedData.currentMonth;
         const holidays = schedData.holidays || {};
 
-        if (!year || !month || Object.keys(schedule).length === 0 || !branchConfig[deviceBranch]) {
+        // 🔥 THE FIX: Beautiful fallback for test branches without shifts!
+        if (!branchConfig[deviceBranch]) {
+            container.innerHTML = `
+                <div style="background: #f8fafc; padding: 40px; border-radius: 12px; border: 2px dashed #cbd5e1; text-align: center; margin-top: 20px;">
+                    <span style="font-size: 45px; display: block; margin-bottom: 15px;">🏢</span>
+                    <h3 style="margin: 0 0 10px 0; color: #334155; font-size: 20px;">No Shifts Configured</h3>
+                    <p style="color: #64748b; font-size: 15px; margin: 0;">The Manager has not set up the schedule for <b>${deviceBranch}</b> yet.</p>
+                </div>`;
+            return;
+        }
+
+        if (!year || !month || Object.keys(schedule).length === 0) {
             container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;">The schedule for this month is currently empty.</div>';
             return;
         }
@@ -4480,7 +4491,7 @@ window.loadBranchSchedule = async function() {
             activeShifts.forEach(shift => {
                 let assignedStaff = bData.scheduled[shift.id];
                 
-                // SWAP LOGIC HOOK: Ready for the Staff App integration
+                // SWAP LOGIC HOOK
                 let isSwapped = bData.swaps && bData.swaps[shift.id]; 
                 let swapBadge = isSwapped ? `<span style="background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px;" title="Swapped with ${isSwapped.originalStaff}">🔄 Swap</span>` : '';
 
