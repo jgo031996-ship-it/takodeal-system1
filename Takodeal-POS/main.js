@@ -340,6 +340,9 @@ window.buildCategories = function() {
     }, 200);
 };
 
+// ========================================================
+// 🍔 MASTER POS DATA LOADER (WITH ANTI-DUPLICATE SHIELD)
+// ========================================================
 window.loadPOSData = async function() {
     if (typeof window.applySidebarLayout === 'function') window.applySidebarLayout(); 
     let products = await window.fetchMenu();
@@ -383,6 +386,11 @@ window.loadPOSData = async function() {
             window.masterPOSData.categories = catLayoutSnap.data().tabs;
         }
 
+        // 🔥 ANTI-DUPLICATE SHIELD: Force categories to be absolutely unique!
+        if (Array.isArray(window.masterPOSData.categories)) {
+            window.masterPOSData.categories = [...new Set(window.masterPOSData.categories.map(c => c.trim()))];
+        }
+
         // Pull Add-on Arrangements
         window.masterPOSData.addonLayoutNames = [];
         const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
@@ -403,8 +411,12 @@ window.loadPOSData = async function() {
     const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
     bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
 
-    // 🚀 Trigger UI Builders
-    window.buildCategories();
+    // 🚀 Trigger UI Builders (Safely targets your custom index.html functions!)
+    if (typeof buildCategories === 'function') {
+        buildCategories();
+    } else if (typeof window.buildCategories === 'function') {
+        window.buildCategories();
+    }
 
     // Safely inject Order Types
     let otHtml = ''; 
