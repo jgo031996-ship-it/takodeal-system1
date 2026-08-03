@@ -8464,3 +8464,31 @@ window.concatBuffers = function(buffers) {
     }
     return result;
 };
+
+// ==========================================
+// 🔗 REPRINT & PARKED ORDERS ROUTING HUB
+// ==========================================
+window.reprintReceipt = async function(encodedOrder) {
+    let order = JSON.parse(decodeURIComponent(encodedOrder));
+    window.lastTransactionData = order; // Feed it into the engine
+    await window.printReceipt('customer');
+};
+
+window.printParkedOrder = async function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    
+    // Morph the parked data to look exactly like a live transaction
+    window.lastTransactionData = {
+        cart: d.cart || d.items || [],
+        orderType: (d.orderType || "DINE-IN") + " (PARKED)",
+        customerName: d.customerName || d.customer || "Guest",
+        cashierName: d.cashierName || localStorage.getItem('cashierName') || "Staff",
+        netTotal: d.totalDue || d.netTotal || 0,
+        amountReceived: 0, // Forces the beautiful ">> UNPAID ORDER <<" badge!
+        paymentMethod: "UNPAID",
+        globalDiscountAmount: d.globalDiscountAmount || 0,
+        globalDiscountReason: d.globalDiscountReason || ""
+    };
+    
+    await window.printReceipt('customer');
+};
