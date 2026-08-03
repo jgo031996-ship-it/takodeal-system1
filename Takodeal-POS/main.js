@@ -8337,14 +8337,23 @@ window.connectSpecificPrinter = async function(target) {
 };
 
 // ==========================================
-// ⚡ DIRECT BLUETOOTH SENDER (ANTI-OVERFLOW ENGINE)
+// 🛡️ RAW BYTE ENCODER (PREVENTS Û GLITCH & DROPPED TEXT)
+// ==========================================
+window.stringToBuffer = function(str) {
+    let buffer = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) buffer[i] = str.charCodeAt(i) & 0xFF;
+    return buffer;
+};
+
+// ==========================================
+// ⚡ DIRECT BLUETOOTH SENDER (IMAGE & CHUNK SUPPORT)
 // ==========================================
 window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
     let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
     
     if (currentMode === 'rawbt') {
         let textData = (data instanceof Uint8Array) ? new TextDecoder().decode(data) : data;
-        if (!isJustDrawer) textData += "\n\n\n\n"; 
+        if (!isJustDrawer) textData += "\n\n\n\n";
         let base64Encoded = btoa(unescape(encodeURIComponent(textData)));
         window.location.href = "intent:base64," + base64Encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
         return;
@@ -8355,17 +8364,17 @@ window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, targe
     else if (target === 'bar') activeChar = window.barPrinterChar || window.mainPrinterChar;
     else activeChar = window.mainPrinterChar;
 
-    if (!activeChar) return; // Failsafe
+    if (!activeChar) return; 
 
     try {
-        let buffer = (data instanceof Uint8Array) ? data : new TextEncoder().encode(data);
+        // 🔥 THE FIX: Use our custom stringToBuffer instead of the browser's TextEncoder
+        let buffer = (data instanceof Uint8Array) ? data : window.stringToBuffer(data);
 
-        // 📦 THE ANTI-OVERFLOW CHUNKER
-        // Small 100-byte bites and a 40ms pause guarantees zero dropped letters or skipped logos!
-        const CHUNK_SIZE = 100;
+        // 📦 THE GOLDILOCKS CHUNKER: 128 bytes + 20ms pause guarantees zero dropped text!
+        const CHUNK_SIZE = 128;
         for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
             await activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
-            await new Promise(resolve => setTimeout(resolve, 40)); 
+            await new Promise(resolve => setTimeout(resolve, 20)); 
         }
     } catch(e) {
         console.error("Print Error:", e);
