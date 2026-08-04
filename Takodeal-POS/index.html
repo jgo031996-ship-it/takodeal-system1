@@ -3798,13 +3798,20 @@ window.printReceipt = async function(type) {
     }
 
     let receiptTop = "\n"; 
-    let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, "");
-
-    // 🔥 THE Û FIX: Using \x1B\x21\x30 (ASCII '0') bypasses Bluetooth control blockages!
-    receiptTop += "\x1B\x21\x30" + safeHeaderName + "\n\x1B\x21\x00";
-    if (storeAddress) receiptTop += storeAddress + "\n";
-    if (storeContact) receiptTop += "Contact: " + storeContact + "\n";
     
+    // 🔥 THE FIX: Turn ON Center Align FIRST!
+    receiptTop += "\x1B\x61\x01"; 
+
+    // 🔥 THE FIX: Only print the Header if it actually exists!
+    if (headerName && headerName.trim() !== "") {
+        let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, "");
+        receiptTop += "\x1B\x21\x30" + safeHeaderName + "\n\x1B\x21\x00";
+    }
+    
+    if (storeAddress) receiptTop += storeAddress + "\n";
+    if (storeContact) receiptTop += storeContact + "\n"; // 🔥 THE FIX: Removed "Contact:"
+    
+    // Turn OFF Center Align, go back to Left Align
     receiptTop += "\x1B\x61\x00" + drawDoubleLine();
 
     const now = new Date();
@@ -3814,11 +3821,12 @@ window.printReceipt = async function(type) {
     let fullCashierName = d.cashierName || localStorage.getItem('cashierName') || "Staff";
     let cashierFirstName = fullCashierName.split(' ')[0]; 
     let customer = d.customerName || "Guest";
-    // Safeguard names from wrapping to a new line
     customer = customer.length > 20 ? customer.substring(0, 20) : customer;
 
-    receiptTop += "Date: " + now.toLocaleDateString() + "\n";
-    receiptTop += "Time: " + hours + ':' + minutes + ' ' + ampm + "\n";
+    // 🔥 THE FIX: Added Receipt Number and aligned everything!
+    receiptTop += "OR#:      " + (d.receiptId || "N/A") + "\n";
+    receiptTop += "Date:     " + now.toLocaleDateString() + "\n";
+    receiptTop += "Time:     " + hours + ':' + minutes + ' ' + ampm + "\n";
     receiptTop += drawDoubleLine();
     
     receiptTop += "\x1B\x61\x01\x1B\x21\x10>> " + orderType + " <<\n\x1B\x21\x00\x1B\x61\x00\n"; 
