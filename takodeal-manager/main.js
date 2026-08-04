@@ -19717,3 +19717,64 @@ window.openEmployeeProfile = function(docId) {
         });
     });
 };
+
+// ==========================================
+// 🚨 FLEET MANAGEMENT VERSION WATCHDOG
+// ==========================================
+window.initVersionWatchdog = function() {
+    let topBar = document.querySelector('.top-bar');
+    if (!topBar) return;
+    
+    // Create the red banner UI
+    let banner = document.createElement('div');
+    banner.id = "managerUpdateBanner";
+    banner.style.cssText = "display: none; background: #dc2626; color: white; padding: 12px 25px; font-size: 14px; font-weight: bold; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(220,38,38,0.3); z-index: 50; border-bottom: 2px solid #991b1b;";
+    
+    // Inject it right under the Top Navigation Bar
+    topBar.parentNode.insertBefore(banner, topBar.nextSibling);
+
+    let highestCodeVersion = 10.0;
+    let branchData = {};
+
+    function checkDiscrepancy() {
+        let outdated = [];
+        // Loop through all branches and see who is behind the Highest Code Version
+        for (let id in branchData) {
+            if (branchData[id].approved < highestCodeVersion) {
+                outdated.push(branchData[id].name);
+            }
+        }
+        
+        if (outdated.length > 0) {
+            banner.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 22px; animation: pulse 1s infinite;">🚨</span>
+                    <span><b>⚠️ UPDATE FORGOTTEN:</b> New Cashier Code (v${highestCodeVersion}) is ready, but <b>${outdated.join(', ')}</b> are still on old versions! Go to POS Config to turn their dials up!</span>
+                </div>
+            `;
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none'; // Hide if everyone is updated!
+        }
+    }
+
+    // 1. Watch Firebase for the Highest Version reported by the Cashier App
+    window.onSnapshot(window.doc(window.db, "settings", "live_cashier_version"), (docSnap) => {
+        if (docSnap.exists()) highestCodeVersion = parseFloat(docSnap.data().version) || 10.0;
+        checkDiscrepancy();
+    });
+
+    // 2. Watch Firebase for changes to the Branch Approved Versions
+    window.onSnapshot(window.collection(window.db, "branches"), (snap) => {
+        snap.forEach(d => {
+            branchData[d.id] = {
+                name: d.data().name || d.id,
+                approved: parseFloat(d.data().approvedVersion) || 10.0
+            };
+        });
+        checkDiscrepancy();
+    });
+};
+
+// Start the watchdog 3 seconds after the Manager App loads!
+setTimeout(window.initVersionWatchdog, 3000);
