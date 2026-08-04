@@ -14989,16 +14989,21 @@ window.handleLogoUpload = function(event) {
             document.getElementById('logoPreviewImg').src = window.uploadedLogoBase64;
             document.getElementById('logoPreviewContainer').style.display = 'inline-block';
             document.getElementById('logoUploadPrompt').style.display = 'none';
+            // 🔥 THE FIX: Hide the file picker so it stops blocking the X button!
+            document.getElementById('logoUploader').style.display = 'none'; 
         }
         reader.readAsDataURL(file);
     }
 };
 
-window.removeLogo = function() {
+window.removeLogo = function(event) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
     window.uploadedLogoBase64 = "";
     document.getElementById('logoPreviewContainer').style.display = 'none';
     document.getElementById('logoUploadPrompt').style.display = 'block';
     document.getElementById('logoUploader').value = "";
+    // 🔥 THE FIX: Bring the file picker back!
+    document.getElementById('logoUploader').style.display = 'block'; 
 };
 
 window.openBranchSettings = function(docId) {
