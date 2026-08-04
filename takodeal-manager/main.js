@@ -6626,7 +6626,7 @@ window.loadCashFlowHub = async function() {
         document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         
-        if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'none';
+        if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'flex';
         
         document.querySelectorAll('div, span, h3').forEach(el => {
             if (el.innerText === "FLOATING CASH (AT BRANCHES)") el.innerText = "LIVE CASH IN DRAWERS";
@@ -17745,17 +17745,17 @@ setTimeout(() => {
 // ==========================================
 // 📈 LIFETIME REMITTANCE & TREND ENGINE (FIXED)
 // ==========================================
-
 window.loadRemittanceAnalytics = async function() {
     const lifetimeContainer = document.getElementById('lifetimeRemittanceTabs');
     const ctx = document.getElementById('remittanceTrendChart');
     if (!lifetimeContainer) return;
 
+    lifetimeContainer.style.display = 'flex'; // Guarantee visibility
     lifetimeContainer.innerHTML = '<div style="color:#64748b; font-weight:bold; padding: 15px;">⏳ Calculating entire network history...</div>';
 
     try {
-        // 1. Fetch ALL transfers (Completely ignores the top date/branch filters!)
-        const snap = await getDocs(collection(db, "cash_transfers"));
+        // 1. Fetch ALL transfers from the CORRECT collection
+        const snap = await getDocs(collection(db, "remittances"));
         
         let branchLifetime = {};
         let branchMonthly = {}; 
