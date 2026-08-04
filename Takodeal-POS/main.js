@@ -8529,23 +8529,31 @@ window.printParkedOrder = async function(encodedData) {
 };
 
 // ==========================================
-// 🚀 PER-BRANCH UPDATE & VERSION CONTROL ENGINE
+// 🚀 SMART UPDATE & VERSION CONTROL ENGINE
 // ==========================================
 setTimeout(() => {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
 
+    // Initialize local version memory if it doesn't exist
+    if (!localStorage.getItem('takodeal_local_version')) {
+        localStorage.setItem('takodeal_local_version', '0');
+    }
+
     // Silently listen to this branch's document in Firebase
     window.onSnapshot(window.doc(window.db, "branches", branch), (docSnap) => {
         if (docSnap.exists()) {
-            let approvedVersion = parseFloat(docSnap.data().approvedVersion) || 10.0;
-            let localVersion = window.LOCAL_APP_VERSION || 10.0;
+            // It reads the Timestamp of the latest update!
+            let cloudVersion = parseFloat(docSnap.data().approvedVersion) || 0;
+            let localVersion = parseFloat(localStorage.getItem('takodeal_local_version')) || 0;
             
             let updateBanner = document.getElementById('updateAppBanner');
             if (updateBanner) {
-                // If the Manager turned the dial UP, show the button!
-                if (approvedVersion > localVersion) {
+                // If the Manager pushed a newer timestamp, show the button!
+                if (cloudVersion > localVersion) {
                     updateBanner.style.display = 'flex';
+                    // Save the target timestamp so the button knows what to upgrade to
+                    window.TARGET_UPDATE_VERSION = cloudVersion;
                 } else {
                     updateBanner.style.display = 'none';
                 }
@@ -8563,13 +8571,18 @@ window.forceAppUpdate = function() {
         didOpen: () => Swal.showLoading()
     });
 
-    // 💣 NUKE THE CACHE AND FORCE A HARD RELOAD
+    // 1. Save the new timestamp to memory so the banner hides after reload
+    if (window.TARGET_UPDATE_VERSION) {
+        localStorage.setItem('takodeal_local_version', window.TARGET_UPDATE_VERSION.toString());
+    }
+
+    // 2. 💣 NUKE THE CACHE AND FORCE A HARD RELOAD
     caches.keys().then(names => { 
         for (let name of names) caches.delete(name); 
     }).then(() => {
         setTimeout(() => {
             window.location.reload(true);
-        }, 1500); // Small delay to ensure cache is wiped
+        }, 1500); 
     });
 };
 
