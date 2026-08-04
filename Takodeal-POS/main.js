@@ -8419,8 +8419,37 @@ window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeig
 };
 
 // ==========================================
-// ⚡ DIRECT BLUETOOTH SENDER (ANTI-DROP CHUNKER)
+// ⚡ DIRECT BLUETOOTH SENDER & QUEUE SYSTEM
 // ==========================================
+window.bluetoothPrintQueue = [];
+window.isBluetoothPrinting = false;
+
+window.processBluetoothQueue = async function() {
+    // If it's already printing, or the line is empty, do nothing!
+    if (window.isBluetoothPrinting || window.bluetoothPrintQueue.length === 0) return;
+    
+    window.isBluetoothPrinting = true; // Lock the door!
+    let job = window.bluetoothPrintQueue.shift(); // Grab the first receipt in line
+    
+    try {
+        let buffer = (job.data instanceof Uint8Array) ? job.data : window.stringToBuffer(job.data);
+        const CHUNK_SIZE = 64;
+        for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
+            await job.activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
+            await new Promise(resolve => setTimeout(resolve, 40)); 
+        }
+    } catch(e) {
+        console.error("Print Error:", e);
+        if (job.activeChar === window.kitchenPrinterChar) window.kitchenPrinterChar = null;
+        else if (job.activeChar === window.barPrinterChar) window.barPrinterChar = null;
+        else window.mainPrinterChar = null;
+    } finally {
+        window.isBluetoothPrinting = false; // Unlock the door!
+        // Wait half a second for the printer hardware to breathe, then process the next one!
+        setTimeout(window.processBluetoothQueue, 500); 
+    }
+};
+
 window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
     let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
     
@@ -8439,21 +8468,9 @@ window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, targe
 
     if (!activeChar) return; 
 
-    try {
-        let buffer = (data instanceof Uint8Array) ? data : window.stringToBuffer(data);
-        
-        // 🔥 THE FIX: Slower, smaller chunks (64 bytes / 40ms) guarantees 0 dropped letters!
-        const CHUNK_SIZE = 64;
-        for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
-            await activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
-            await new Promise(resolve => setTimeout(resolve, 40)); 
-        }
-    } catch(e) {
-        console.error("Print Error:", e);
-        if (activeChar === window.kitchenPrinterChar) window.kitchenPrinterChar = null;
-        else if (activeChar === window.barPrinterChar) window.barPrinterChar = null;
-        else window.mainPrinterChar = null;
-    }
+    // 🔥 THE FIX: Send the receipt to the waiting line instead of attacking the printer!
+    window.bluetoothPrintQueue.push({ data: data, activeChar: activeChar });
+    window.processBluetoothQueue();
 };
 
 // Auto-override the sidebar button
