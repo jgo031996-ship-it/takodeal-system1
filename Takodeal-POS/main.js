@@ -6134,7 +6134,7 @@ window.kickCashDrawer = function() {
 };
 
 // ========================================================
-// 📱 SIDEBAR AUTO-ARRANGEMENT & VISIBILITY ENGINE
+// 📱 SIDEBAR AUTO-ARRANGEMENT ENGINE (SYNC & HIDE)
 // ========================================================
 window.applySidebarLayout = async function() {
     try {
@@ -6151,7 +6151,7 @@ window.applySidebarLayout = async function() {
                     // 1. Move it into the correct order
                     navMenu.appendChild(el); 
                     
-                    // 2. 🔥 THE FIX: Hide it if the Manager turned it off!
+                    // 2. Hide it if the Manager turned it off!
                     if (tabData.isHidden) {
                         el.style.display = 'none';
                     } else {
