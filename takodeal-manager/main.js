@@ -1130,7 +1130,7 @@ window.switchView = function (viewId) {
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
   if (viewId === 'equipment') window.loadEquipmentDashboard();
-  if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); window.loadSidebarLayout(); }
+  if (viewId === 'posconfig') { window.c(); window.loadPosLayout(); window.loadSidebarLayout(); }
   if (viewId === 'admin') { 
       window.loadAdminDashboard(); 
       if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
@@ -13451,7 +13451,7 @@ window.loadPosConfigHub = async function() {
     let originalText = btn ? btn.innerText : "💾 Save Changes to Cloud";
     if (btn) btn.innerText = "⏳ Loading Data...";
 
-    // 🔥 DYNAMICALLY INJECT MIX & MATCH BOX AND WASTE REASONS
+    // 🔥 DYNAMICALLY INJECT MIX & MATCH, WASTE REASONS, AND CONSUMABLES
     if (!document.getElementById('configMixMatch')) {
         let container = document.getElementById('configPosTabs').parentElement.parentElement;
         container.insertAdjacentHTML('beforeend', `
@@ -13466,6 +13466,13 @@ window.loadPosConfigHub = async function() {
                 <p style="font-size: 11px; color: #9f1239; margin-bottom: 10px;">Comma-separated list of reasons for the Waste & Spoilage log.</p>
                 <textarea id="configWasteReasons" rows="3" style="width: 100%; padding: 10px; border: 1px solid #fca5a5; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
                 <div style="font-size: 10px; color: #fda4af; margin-top: 5px;">Example: Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Pest Damage</div>
+            </div>
+            <!-- 🔥 NEW: CONSUMABLES CATEGORY BOX -->
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 15px; margin-top: 15px;">
+                <h3 style="margin-top: 0; color: #15803d; font-size: 16px; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🧹 Consumables Tab Categories</h3>
+                <p style="font-size: 11px; color: #16a34a; margin-bottom: 10px;">Comma-separated list of inventory categories that should appear in the Cashier Consumables Tab.</p>
+                <textarea id="configConsumables" rows="3" style="width: 100%; padding: 10px; border: 1px solid #86efac; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
+                <div style="font-size: 10px; color: #22c55e; margin-top: 5px;">Example: Consumables, Cleaning Supplies, Packaging</div>
             </div>
         `);
     }
@@ -13482,9 +13489,10 @@ window.loadPosConfigHub = async function() {
             document.getElementById('configKitchenPrep').value = (data.kitchenPrepCats || ["Prepared Batch"]).join(', ');
             document.getElementById('configAuditList').value = (data.auditItems || []).join(', ');
             document.getElementById('configMixMatch').value = (data.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]).join(', ');
-            
-            // 🔥 LOAD SAVED WASTE REASONS
             document.getElementById('configWasteReasons').value = (data.wasteReasons || ["Dropped / Spilled", "Burnt / Overcooked", "Spoiled / Expired", "Customer Replacement", "Pest Damage", "Other"]).join(', ');
+            
+            // 🔥 LOAD SAVED CONSUMABLES
+            document.getElementById('configConsumables').value = (data.consumableCats || ["Consumables", "Cleaning Supplies", "Packaging"]).join(', ');
         } else {
             // Defaults
             document.getElementById('configPayMethods').value = "Cash, GCash, Bank, Grab";
@@ -13494,6 +13502,7 @@ window.loadPosConfigHub = async function() {
             document.getElementById('configAuditList').value = "320cc Paper Bowl, 520cc Paper Bowl, LB1 Box, Burger Box";
             document.getElementById('configMixMatch').value = "Pork, Shrimp, Octopus, Ham & Cheese, Bacon & Cheese";
             document.getElementById('configWasteReasons').value = "Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Customer Replacement, Pest Damage, Other";
+            document.getElementById('configConsumables').value = "Consumables, Cleaning Supplies, Packaging";
         }
     } catch (error) {
         console.error("Error loading config:", error);
@@ -13505,8 +13514,8 @@ window.loadPosConfigHub = async function() {
 
 window.saveGlobalPosConfig = async function() {
     let btn = document.querySelector("#view-posconfig .btn-refresh");
-    btn.innerText = "⏳ Saving...";
-    btn.disabled = true;
+    let originalText = btn ? btn.innerText : "💾 Save Changes to Cloud";
+    if (btn) { btn.innerText = "⏳ Saving..."; btn.disabled = true; }
 
     try {
         let payMethods = document.getElementById('configPayMethods').value.split(',').map(s => s.trim()).filter(Boolean);
@@ -13516,6 +13525,7 @@ window.saveGlobalPosConfig = async function() {
         let auditList = document.getElementById('configAuditList').value.split(',').map(s => s.trim()).filter(Boolean);
         let mixFlavors = document.getElementById('configMixMatch').value.split(',').map(s => s.trim()).filter(Boolean);
         let wasteReasons = document.getElementById('configWasteReasons').value.split(',').map(s => s.trim()).filter(Boolean);
+        let consumableCats = document.getElementById('configConsumables').value.split(',').map(s => s.trim()).filter(Boolean); // 🔥 GRAB CONSUMABLES DATA
 
         await setDoc(doc(db, "settings", "global_pos_config"), {
             paymentMethods: payMethods,
@@ -13524,16 +13534,18 @@ window.saveGlobalPosConfig = async function() {
             kitchenPrepCats: prepCats,
             auditItems: auditList,
             mixMatchFlavors: mixFlavors,
-            wasteReasons: wasteReasons, // 🔥 SAVES THE CUSTOM REASONS TO CLOUD
+            wasteReasons: wasteReasons, 
+            consumableCats: consumableCats, // 🔥 SAVES THE CONSUMABLES TO CLOUD
             lastUpdatedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
         }, { merge: true });
 
         Swal.fire({ title: '✅ Success!', text: 'POS Settings saved to Cloud.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
     } catch (error) {
-        console.error("Error saving config:", error); alert("❌ Failed to save.");
+        console.error("Error saving config:", error); 
+        Swal.fire('Error', '❌ Failed to save.', 'error');
     } finally {
-        btn.innerText = "💾 Save Changes to Cloud"; btn.disabled = false;
+        if (btn) { btn.innerText = originalText; btn.disabled = false; }
     }
 };
 
