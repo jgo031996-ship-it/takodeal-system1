@@ -4353,8 +4353,9 @@ window.submitWasteCart = async function() {
         }
 
         // 2. Submit to the Manager's Staff Request Inbox
-        // 🔥 THE BULLETPROOF FIX: We bypass addDoc and use setDoc to auto-generate the ID!
-        let newRequestRef = window.doc(window.collection(window.db, "staff_requests"));
+        // 🔥 THE ULTIMATE FIX: We create our own custom ID and use setDoc! NO ADDDOC ALLOWED!
+        let customDocId = "waste_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+        let newRequestRef = window.doc(window.db, "staff_requests", customDocId);
         
         await window.setDoc(newRequestRef, {
             type: "Waste Report",
@@ -4363,7 +4364,7 @@ window.submitWasteCart = async function() {
             items: uploadedItems,
             totalValueLost: totalValueLost,
             status: "Pending",
-            timestamp: new Date() // Native JS Date works perfectly in Firebase!
+            timestamp: window.serverTimestamp ? window.serverTimestamp() : new Date()
         });
 
         Swal.fire({
