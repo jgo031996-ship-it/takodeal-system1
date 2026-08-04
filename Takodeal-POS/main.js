@@ -51,7 +51,7 @@ const db = initializeFirestore(app, {
   localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 
-window.storage = storage; // Export it for the staff meal function!
+window.storage = storage; 
 window.db = db;
 window.query = query;
 window.where = where;
@@ -62,6 +62,16 @@ window.doc = doc;
 window.updateDoc = updateDoc;
 window.getDoc = getDoc;
 window.setDoc = setDoc;
+
+// 🔥 THE MISSING FIREBASE BRIDGE 🔥
+window.addDoc = addDoc;
+window.serverTimestamp = serverTimestamp;
+window.increment = increment;
+window.limit = limit;
+window.orderBy = orderBy;
+window.ref = ref;
+window.uploadBytes = uploadBytes;
+window.getDownloadURL = getDownloadURL;
 
 console.log("🚀 TAKODEÁL Cashier Offline Mode is ACTIVE!");
 
