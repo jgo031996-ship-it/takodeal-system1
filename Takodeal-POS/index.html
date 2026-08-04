@@ -1666,6 +1666,8 @@
   </div>
 
   <script>
+    // 🔥 THE LOCAL VERSION NUMBER (Change this when you want to match the Manager App)
+    window.LOCAL_APP_VERSION = 10.0;
     window.sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
     window.cart = []; 
     window.masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
@@ -3265,6 +3267,8 @@ window.rejectMobileOrder = async function(docId) {
     if (!confirm("Are you sure you want to delete this order from the queue?")) return;
     await window.deleteDoc(window.doc(window.db, "incoming_orders", docId));
 };
+
+
   </script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -3299,5 +3303,13 @@ window.rejectMobileOrder = async function(docId) {
       });
     }
   </script>
+<!-- 🚀 DYNAMIC UPDATE BANNER -->
+<div id="updateAppBanner" style="display:none; position:fixed; bottom:20px; right:20px; background:#dc2626; color:white; padding:15px 25px; border-radius:30px; font-weight:900; box-shadow:0 10px 25px rgba(220,38,38,0.5); z-index:999999; cursor:pointer; align-items:center; gap:12px; transition: transform 0.2s;" onclick="window.forceAppUpdate()" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+    <span style="font-size:24px; animation: pulse 1s infinite;">🚀</span> 
+    <div style="display: flex; flex-direction: column;">
+        <span style="font-size: 15px;">NEW UPDATE AVAILABLE</span>
+        <span style="font-size: 11px; font-weight: 500; opacity: 0.9;">Tap here to install new features</span>
+    </div>
+</div>
 </body>
 </html>
