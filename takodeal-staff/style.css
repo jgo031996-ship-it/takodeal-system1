@@ -177,12 +177,75 @@ input[type="password"]:focus { border-color: var(--primary); box-shadow: 0 0 0 4
     border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
 
-/* --- PROFILE GRID SYSTEM --- */
+/* ========================================== */
+/* 📱 ULTIMATE MOBILE & TOUCH OPTIMIZATIONS   */
+/* ========================================== */
+
+/* 1. Profile Grid Base */
 .profile-grid { 
     display: grid; 
     grid-template-columns: 1fr 1fr; 
     gap: 10px; 
 }
-@media (max-width: 500px) {
-    .profile-grid { grid-template-columns: 1fr; } /* Stacks nicely on very small phones */
+
+/* 2. Prevent Double-Tap Zoom & 300ms Tap Delay (Lightning Fast Buttons) */
+button, input, select, textarea, .req-card, .nav-item {
+    touch-action: manipulation !important;
+}
+
+/* 3. Hide Bulky Web Scrollbars for a Native App Feel */
+::-webkit-scrollbar { width: 0px; height: 0px; background: transparent; }
+* { scrollbar-width: none; }
+
+/* 4. Fix Bottom Content Spacing for iPhone Notches */
+.content-area {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom)) !important;
+}
+
+/* 5. Modal Overflow Protection */
+.modal-card {
+    max-height: 85vh !important; /* Prevents the modal from getting stuck under the bottom nav */
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch; /* Smooth iOS scrolling */
+}
+
+/* 6. Phone Optimizations (iOS Auto-Zoom Fix & Layout Shifting) */
+@media screen and (max-width: 768px) {
+    /* Forces 16px to prevent iPhones from auto-zooming when tapping text boxes */
+    input[type="text"], input[type="password"], input[type="number"], input[type="email"], input[type="date"], select, textarea {
+        font-size: 16px !important; 
+    }
+    
+    .modal-card {
+        width: 92%;
+        padding: 20px;
+    }
+    
+    .request-grid { 
+        gap: 10px; 
+    }
+    
+    .req-card {
+        padding: 15px 10px;
+        font-size: 13px;
+    }
+}
+
+/* 7. Extra Small Phones (iPhone SE / Older Androids) */
+@media screen and (max-width: 400px) {
+    .profile-grid { grid-template-columns: 1fr; }
+    
+    /* Truncate long names so they don't push the logout button off screen */
+    .header-text { 
+        max-width: 140px; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        white-space: nowrap; 
+    }
+    
+    .clock-card h1 { font-size: 32px; }
+    .btn-primary, .btn-cancel, .btn-secondary { padding: 12px; font-size: 14px; }
+    
+    /* Make the bottom nav text slightly smaller so it doesn't wrap awkwardly */
+    .nav-item span:not(.icon) { font-size: 9px; }
 }
