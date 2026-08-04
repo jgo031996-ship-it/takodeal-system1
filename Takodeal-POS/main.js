@@ -4636,85 +4636,6 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ========================================================
-// 📦 INTERNAL STORE USE ENGINE (EXPENSE & P&L TRACKER)
-// ========================================================
-window.processStoreUse = async function() {
-    if (!window.cart || window.cart.length === 0) {
-        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
-        return;
-    }
-
-    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
-    if (btn) { btn.innerText = "⏳ Logging..."; btn.disabled = true; }
-
-    try {
-        let totalCost = 0;
-        let itemsLogged = [];
-
-        for (let item of window.cart) {
-            // 1. Find the item in the Live Inventory to get its TRUE COST and CURRENT STOCK
-            const invQ = query(collection(db, "inventory"), where("branch", "==", window.currentBranch), where("name", "==", item.name));
-            const invSnap = await getDocs(invQ);
-
-            if (!invSnap.empty) {
-                let invDoc = invSnap.docs[0];
-                let invData = invDoc.data();
-                let currentStock = invData.currentStock || 0;
-                
-                // 🔥 Calculate the actual cost to the business, not the "Selling Price"
-                let trueCostPerUnit = parseFloat(invData.baseCost) || parseFloat(invData.cost) || 0;
-                totalCost += (trueCostPerUnit * item.qty);
-
-                // 2. Deduct from Live Stock
-                await updateDoc(invDoc.ref, { currentStock: currentStock - item.qty });
-
-                // 3. Log to the Trace Ledger
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: window.currentBranch, item: item.name,
-                    oldQty: currentStock, newQty: currentStock - item.qty, variance: -item.qty,
-                    type: "Store Use", note: `Internal Consumables used by staff`,
-                    user: window.cashierName || "Staff", timestamp: serverTimestamp()
-                });
-            }
-            itemsLogged.push(`${item.qty}x ${item.name}`);
-        }
-
-        // 4. Hit the P&L! Send the cost directly to the Expenses Database
-        if (totalCost > 0) {
-            await addDoc(collection(db, "expenses"), {
-                branch: window.currentBranch, amount: totalCost, 
-                category: "Store Consumables", description: `Internal Use: ${itemsLogged.join(', ')}`,
-                loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
-            });
-        }
-
-        // 5. Send to the Manager's Dedicated History Log
-        await addDoc(collection(db, "store_use_logs"), {
-            branch: window.currentBranch, items: window.cart, totalCost: totalCost,
-            loggedBy: window.cashierName || "Staff", timestamp: serverTimestamp()
-        });
-
-        Swal.fire({
-            title: '📦 Logged for Store Use!',
-            text: 'Items deducted from stock and recorded as an operating expense.',
-            icon: 'success', timer: 2000, showConfirmButton: false, customClass: { popup: 'rounded-2xl' }
-        });
-
-        // Close the modal and clear the cart!
-        let modal = document.getElementById('paymentModal') || document.getElementById('checkoutModal');
-        if (modal) modal.style.display = 'none';
-        
-        window.cart = [];
-        if (typeof renderCart === 'function') renderCart();
-
-    } catch (e) {
-        console.error(e); Swal.fire('Error', 'Failed to log consumables.', 'error');
-    } finally {
-        if (btn) { btn.innerText = "📦 Consumables"; btn.disabled = false; }
-    }
-};
-
-// ========================================================
 // 📦 INTERNAL STOCK REQUEST ENGINE (SMART VARIANCES & MODAL CART)
 // ========================================================
 window.stockReqItemsFlat = [];
@@ -6282,74 +6203,6 @@ window.toggleActualCount = function(id) {
 };
 
 // ========================================================
-// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE (PATCHED)
-// ========================================================
-window.processStoreUse = async function() {
-    if (typeof cart === 'undefined' || cart.length === 0) {
-        Swal.fire('Empty Cart', 'Please add items to the cart first before logging as Store Use.', 'warning');
-        return;
-    }
-
-    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
-
-    // 🔥 THE BUG FIX: Safely grab the button using a flexible selector so it never crashes!
-    let btn = document.querySelector('button[onclick*="processStoreUse"]');
-    let origText = btn ? btn.innerText : "Log as Store Use";
-    if (btn) { btn.innerText = "⏳ Processing..."; btn.disabled = true; }
-
-    try {
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashier = localStorage.getItem('cashierName') || 'Unknown';
-        let totalCostHit = 0;
-        let usedItems = [];
-        
-        cart.forEach(item => {
-            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
-            usedItems.push({ name: item.name, qty: item.qty });
-        });
-
-        // 1. Send it through the master checkout engine as 0 Revenue so Inventory still deducts the recipes!
-        let payload = {
-            branch: branch, cashier: cashier,
-            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
-            orderType: "Store Use", paymentMethod: "Store Use",
-            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
-            netTotal: 0, amountReceived: 0, cart: cart, status: "Store Use" 
-        };
-
-        // This triggers your main POS logic!
-        let receiptId = await window.processCheckout(payload);
-
-        // 2. Log to the dedicated Store Use Feed for the Manager App
-        if (receiptId) {
-            await addDoc(collection(db, "store_use_logs"), {
-                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: serverTimestamp()
-            });
-        }
-
-        // 3. Clean up the UI
-        cart = []; 
-        if (typeof renderCart === 'function') renderCart(); 
-        if (typeof closeModal === 'function') closeModal('checkoutModal');
-        let paymentModal = document.getElementById('paymentModal');
-        if (paymentModal) paymentModal.style.display = 'none';
-
-        Swal.fire({
-            title: '✅ Logged!',
-            text: 'Items marked for store use and inventory safely deducted.',
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-    } catch(e) { 
-        console.error("Store Use Error:", e); 
-        Swal.fire('Error', 'Failed to log store use. ' + e.message, 'error'); 
-    } finally { 
-        if (btn) { btn.innerText = origText; btn.disabled = false; }
-    }
-};
-
-// ========================================================
 // 🔪 KITCHEN PREP TAB & HISTORY ENGINE
 // ========================================================
 window.switchPrepTab = function(tab) {
@@ -6496,55 +6349,198 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
 };
 
 // ========================================================
-// 📦 STORE USE / CONSUMABLES CHECKOUT ENGINE
+// 🧹 DEDICATED CONSUMABLES & STORE USE ENGINE
 // ========================================================
-window.processStoreUse = async function() {
-    if (typeof cart === 'undefined' || cart.length === 0) {
-        Swal.fire('Empty Cart', 'Please select the consumable items first.', 'warning');
+window.consumablesCart = [];
+window.consumableCategories = ["Consumables", "Cleaning Supplies", "Packaging"]; 
+
+window.loadConsumablesView = async function() {
+    let grid = document.getElementById('consumablesItemGrid');
+    let header = document.getElementById('consumablesCategoryHeader');
+    if(!grid) return;
+    
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b; font-weight:bold;">Fetching Store Supplies...</div>';
+
+    try {
+        // Fetch config from Manager App (Allows dynamic category adding!)
+        const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+        if (configSnap.exists() && configSnap.data().consumableCats) {
+            window.consumableCategories = configSnap.data().consumableCats.map(c => c.trim().toLowerCase());
+        } else {
+            // Lowercase mapping for safety
+            window.consumableCategories = window.consumableCategories.map(c => c.toLowerCase());
+        }
+
+        let branch = localStorage.getItem('takodeal_device_branch');
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
+        const snap = await window.getDocs(q);
+
+        let items = [];
+        snap.forEach(doc => {
+            let d = doc.data();
+            let cat = (d.category || "").trim().toLowerCase();
+            if (window.consumableCategories.includes(cat)) {
+                items.push({ id: doc.id, ...d });
+            }
+        });
+
+        items.sort((a,b) => a.name.localeCompare(b.name));
+
+        // Render Categories
+        let activeCats = [...new Set(items.map(i => i.category || 'Uncategorized'))];
+        let catHtml = `<button class="cat-btn active" onclick="window.filterConsumables('All', this)">All Supplies</button>`;
+        activeCats.forEach(c => {
+            catHtml += `<button class="cat-btn" onclick="window.filterConsumables('${c}', this)">${c.toUpperCase()}</button>`;
+        });
+        header.innerHTML = catHtml;
+
+        window.consumablesData = items;
+        window.filterConsumables('All', header.firstElementChild);
+
+    } catch (e) {
+        console.error("Consumables Load Error:", e);
+        grid.innerHTML = '<div style="grid-column: 1/-1; color: red; text-align: center;">Error loading consumables. Check connection.</div>';
+    }
+};
+
+window.filterConsumables = function(category, btn) {
+    if (btn) {
+        document.querySelectorAll('#consumablesCategoryHeader .cat-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+    
+    let grid = document.getElementById('consumablesItemGrid');
+    grid.innerHTML = '';
+    
+    let filtered = category === 'All' ? window.consumablesData : window.consumablesData.filter(i => i.category === category);
+    
+    if (filtered.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #94a3b8;">No items found.</div>';
         return;
     }
 
-    if (!confirm("Log these items as Store Use/Consumables? This will instantly deduct them from inventory with ₱0 Revenue.")) return;
+    filtered.forEach(item => {
+        let stock = parseFloat(item.currentStock) || 0;
+        let uom = item.uom || 'units';
+        let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
 
-    let btn = document.querySelector('button[onclick="window.processStoreUse()"]');
-    let origText = btn.innerText;
+        grid.innerHTML += `
+            <div class="item-card" onclick="window.addToConsumablesCart('${item.id}', '${item.name.replace(/'/g, "\\'")}', '${uom}')">
+                <div class="item-card-bg" style="${bgStyle}"></div>
+                <div class="item-name-overlay">${item.name}<br><span style="color:#10b981; font-size: 11px;">Stock: ${stock.toFixed(1)} ${uom}</span></div>
+            </div>
+        `;
+    });
+};
+
+window.addToConsumablesCart = async function(id, name, uom) {
+    const { value: qtyRaw } = await Swal.fire({
+        title: 'Add to Cart',
+        html: `<div style="color: #475569; font-size: 14px;">How many <strong>${uom}s</strong> of <strong style="color: #0f172a;">${name}</strong> are you taking for Store Use?</div>`,
+        input: 'number',
+        inputAttributes: { min: 0.1, step: 'any' },
+        showCancelButton: true,
+        confirmButtonText: 'Add to Cart',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!qtyRaw) return;
+    let qty = parseFloat(qtyRaw);
+
+    let existing = window.consumablesCart.find(i => i.id === id);
+    if (existing) {
+        existing.qty += qty;
+    } else {
+        window.consumablesCart.push({ id, name, uom, qty });
+    }
+    window.renderConsumablesCart();
+};
+
+window.renderConsumablesCart = function() {
+    let list = document.getElementById('consumablesCartList');
+    if (window.consumablesCart.length === 0) {
+        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Cart is empty.</li>';
+        return;
+    }
+    let html = '';
+    window.consumablesCart.forEach((item, index) => {
+        html += `
+            <li class="cart-item" style="border-bottom: 1px solid #f1f5f9;">
+                <div class="cart-item-desc"><span class="cart-item-name" style="color:#0f172a;">${item.name}</span></div>
+                <div class="cart-item-qty" style="color: #0ea5e9; font-weight: 900;">${item.qty} <span style="font-size: 10px; color:#64748b;">${item.uom}</span></div>
+                <div class="cart-item-sub"><button class="btn-remove" onclick="window.consumablesCart.splice(${index}, 1); window.renderConsumablesCart();" style="background: #fee2e2; color:#dc2626; border:1px solid #fca5a5; padding: 4px 8px; border-radius: 4px; font-size: 11px;">✖</button></div>
+            </li>
+        `;
+    });
+    list.innerHTML = html;
+};
+
+window.submitConsumablesCart = async function() {
+    if (window.consumablesCart.length === 0) {
+        return Swal.fire('Empty', 'Cart is empty.', 'info');
+    }
+
+    const confirmResult = await Swal.fire({
+        title: 'Confirm Store Use',
+        text: 'This will directly deduct these items from Live Inventory. It will NOT be recorded as a sale.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Log it!',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    let btn = document.getElementById('btnSubmitConsumables');
     btn.innerText = "⏳ Processing..."; btn.disabled = true;
 
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let cashier = localStorage.getItem('cashierName') || 'Staff';
+
     try {
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashier = localStorage.getItem('cashierName') || 'Unknown';
-        let totalCostHit = 0;
-        let usedItems = [];
-        
-        cart.forEach(item => {
-            totalCostHit += (item.variantPrice || item.basePrice || 0) * item.qty;
-            usedItems.push({ name: item.name, qty: item.qty });
-        });
+        for (let item of window.consumablesCart) {
+            const invRef = window.doc(window.db, "inventory", item.id);
+            const invSnap = await window.getDoc(invRef);
+            if (invSnap.exists()) {
+                let stock = parseFloat(invSnap.data().currentStock) || 0;
+                await window.updateDoc(invRef, { currentStock: stock - item.qty });
 
-        let payload = {
-            branch: branch, cashier: cashier,
-            shiftId: (typeof currentShift !== 'undefined' && currentShift) ? currentShift.shiftId : "UNKNOWN",
-            orderType: "Store Use", paymentMethod: "Store Use",
-            subTotalBeforeDiscount: 0, globalDiscountType: 'none', globalDiscountValue: 0, globalDiscountAmount: 0,
-            netTotal: 0, amountReceived: "0", cart: cart, status: "Store Use" 
-        };
-
-        let receiptId = await window.processCheckout(payload);
-
-        if (receiptId) {
-            await window.addDoc(window.collection(window.db, "store_use_logs"), {
-                branch: branch, loggedBy: cashier, items: usedItems, totalCost: totalCostHit, timestamp: window.serverTimestamp()
-            });
+                // 🔥 Fix: Using JS Date to avoid the Firebase serverTimestamp glitch!
+                await window.addDoc(window.collection(window.db, "stock_logs"), {
+                    branch: branch,
+                    item: item.name,
+                    uom: item.uom,
+                    oldQty: stock,
+                    newQty: stock - item.qty,
+                    variance: -item.qty,
+                    type: "Store Use",
+                    note: "Consumables taken for branch use",
+                    user: cashier,
+                    timestamp: new Date() 
+                });
+            }
         }
 
-        cart = []; if (typeof renderCart === 'function') renderCart(); 
-        if (typeof closeModal === 'function') closeModal('checkoutModal');
-        Swal.fire('✅ Logged!', 'Items marked for store use and inventory safely deducted.', 'success');
+        await window.addDoc(window.collection(window.db, "store_use_logs"), {
+            branch: branch,
+            loggedBy: cashier,
+            items: window.consumablesCart,
+            timestamp: new Date()
+        });
+
+        window.consumablesCart = [];
+        window.renderConsumablesCart();
+        window.loadConsumablesView(); // Refreshes grid stock instantly
         
-    } catch(e) { 
-        console.error(e); Swal.fire('Error', 'Failed to log store use.', 'error'); 
-    } finally { 
-        btn.innerText = origText; btn.disabled = false; 
+        Swal.fire({ title: '✅ Success', text: 'Items successfully logged and deducted from inventory.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to log consumables.', 'error');
+    } finally {
+        btn.innerHTML = "📦 Log & Deduct Inventory"; btn.disabled = false;
     }
 };
 
