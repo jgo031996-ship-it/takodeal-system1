@@ -6378,6 +6378,11 @@ window.saveInventoryEdit = async function() {
                     conversion: conversion, conversionRate: conversion,
                     purchaseCost: purchCost, purchCost: purchCost, cost: purchCost,
                     baseCost: (purchCost / conversion),
+                    
+                    // 🔥 THE FIX: Now globally syncs the Reorder Levels and Checkboxes!
+                    lowStockAlert: lowStock, 
+                    reorderLevel: lowStock,
+                    allowRequest: allowReqVal,
                     showInPrep: showPrepVal 
                 };
                 
