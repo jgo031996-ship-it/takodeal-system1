@@ -9547,7 +9547,8 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
                             branch: reqData.branch, item: item.name, uom: item.uom,
                             oldQty: currentStock, newQty: newStock, variance: -item.qty,
                             type: "Waste / Spoilage (HQ Approved)", note: `Reason: ${item.reason} | Appv. by: ${window.sessionUser ? window.sessionUser.cashierName : 'HQ'}`,
-                            user: reqData.staffName, timestamp: serverTimestamp()
+                            user: reqData.staffName, timestamp: serverTimestamp(),
+                            photoUrl: item.photoUrl // 🔥 PASS THE PHOTO TO THE FINAL LOG!
                         });
                     }
                 }
@@ -14041,17 +14042,43 @@ window.forceMarkDeductionPaid = async function(docId, staffName, staffDocId) {
 };
 
 // ========================================================
-// 🗑️ MANAGER APP WASTE LOG DASHBOARD
+// 🗑️ MANAGER APP WASTE LOG DASHBOARD (UPGRADED TABS & PHOTOS)
 // ========================================================
+window.activeWasteBranch = 'All';
+
+window.switchWasteBranch = function(branch) {
+    window.activeWasteBranch = branch;
+    window.loadWasteTabLogs();
+};
+
 window.loadWasteTabLogs = async function() {
     const tbody = document.getElementById('wasteTabBody');
-    if (!tbody) return;
+    const branchContainer = document.getElementById('wasteBranchTabs');
+    if (!tbody || !branchContainer) return;
+
+    // 1. Build the Branch Boxes!
+    let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee) branches = [window.sessionUser.branch];
+
+    let allActive = window.activeWasteBranch === 'All';
+    let bHtml = `<div onclick="window.switchWasteBranch('All')" style="min-width: 150px; background: ${allActive ? '#fef2f2' : 'white'}; border: 2px solid ${allActive ? '#ef4444' : '#e2e8f0'}; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; color: ${allActive ? '#b91c1c' : '#64748b'}; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">🌐 All Branches</div>`;
+    
+    if (isFranchisee) {
+        bHtml = ''; 
+        window.activeWasteBranch = window.sessionUser.branch;
+    }
+
+    branches.forEach(b => {
+        let isAct = window.activeWasteBranch === b;
+        bHtml += `<div onclick="window.switchWasteBranch('${b}')" style="min-width: 150px; background: ${isAct ? '#fef2f2' : 'white'}; border: 2px solid ${isAct ? '#ef4444' : '#e2e8f0'}; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; color: ${isAct ? '#b91c1c' : '#64748b'}; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">📍 ${b}</div>`;
+    });
+    branchContainer.innerHTML = bHtml;
+
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Fetching waste logs...</td></tr>';
     
-    let branchFilter = document.getElementById('invBranchFilter').value;
-    
     try {
-        // Fetch inventory base costs to calculate waste value
+        // Fetch inventory base costs to calculate accurate waste value
         const invSnap = await getDocs(collection(db, "inventory"));
         let invCosts = {};
         invSnap.forEach(d => {
@@ -14059,7 +14086,8 @@ window.loadWasteTabLogs = async function() {
             invCosts[`${item.branch}_${item.name}`] = parseFloat(item.baseCost) || 0;
         });
         
-        const q = query(collection(db, "stock_logs"), where("type", "==", "Waste / Spoilage"), orderBy("timestamp", "desc"), limit(100));
+        // 🔥 Grabs ANY log labeled Waste, Spoilage, or HQ Approved
+        const q = query(collection(db, "stock_logs"), orderBy("timestamp", "desc"), limit(100));
         const snap = await getDocs(q);
         
         let html = '';
@@ -14068,7 +14096,13 @@ window.loadWasteTabLogs = async function() {
         
         snap.forEach(docSnap => {
             let data = docSnap.data();
-            if (branchFilter !== "All" && data.branch !== branchFilter) return;
+            let type = (data.type || "").toLowerCase();
+            
+            // Filter strictly for Waste logs
+            if (!type.includes("waste") && !type.includes("spoilage")) return;
+            
+            // Filter by the Branch Tab they clicked
+            if (window.activeWasteBranch !== "All" && data.branch !== window.activeWasteBranch) return;
             
             let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             let qtyLost = Math.abs(data.variance || 0);
@@ -14079,20 +14113,26 @@ window.loadWasteTabLogs = async function() {
             
             totalWasteCount++;
             totalValueLost += valueLost;
+
+            // 🔥 PHOTO VIEWER BUTTON
+            let photoBtn = data.photoUrl ? `<br><button onclick="window.viewSelfie('${data.photoUrl}', 'Waste Proof: ${data.item.replace(/'/g, "\\'")}')" style="margin-top: 8px; background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📸 View Photo Proof</button>` : '';
             
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 12px;"><span class="badge badge-open">${data.branch}</span></td>
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.user || 'System'}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #b91c1c;">${data.item}</td>
-                    <td style="padding: 12px; font-weight: 900; color: #ef4444; font-size: 15px;">-${qtyLost} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${data.uom || ''}</span><br><span style="font-size: 10px; color: #64748b;">(₱${valueLost.toFixed(2)})</span></td>
-                    <td style="padding: 12px; color: #475569; font-style: italic;">${data.note || 'No reason provided'}</td>
+                    <td style="padding: 15px 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 15px 12px;"><span class="badge badge-open">${data.branch}</span></td>
+                    <td style="padding: 15px 12px; font-weight: bold; color: #334155;">👤 ${data.user || 'System'}</td>
+                    <td style="padding: 15px 12px; font-weight: bold; color: #b91c1c;">${data.item}</td>
+                    <td style="padding: 15px 12px; font-weight: 900; color: #ef4444; font-size: 16px;">-${qtyLost} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${data.uom || ''}</span><br><span style="font-size: 11px; color: #64748b;">(₱${valueLost.toFixed(2)})</span></td>
+                    <td style="padding: 15px 12px; color: #475569; font-style: italic; max-width: 200px;">
+                        "${data.note || 'No reason provided'}"
+                        ${photoBtn}
+                    </td>
                 </tr>
             `;
         });
         
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No waste records found for this branch.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No waste records found for this location.</td></tr>';
         
         if(document.getElementById('wasteTotalCount')) document.getElementById('wasteTotalCount').innerText = totalWasteCount;
         if(document.getElementById('wasteTotalValue')) document.getElementById('wasteTotalValue').innerText = `₱${totalValueLost.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
