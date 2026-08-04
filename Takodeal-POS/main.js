@@ -8526,3 +8526,48 @@ window.printParkedOrder = async function(encodedData) {
     
     await window.printReceipt('customer');
 };
+
+// ==========================================
+// 🚀 PER-BRANCH UPDATE & VERSION CONTROL ENGINE
+// ==========================================
+setTimeout(() => {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    // Silently listen to this branch's document in Firebase
+    window.onSnapshot(window.doc(window.db, "branches", branch), (docSnap) => {
+        if (docSnap.exists()) {
+            let approvedVersion = parseFloat(docSnap.data().approvedVersion) || 10.0;
+            let localVersion = window.LOCAL_APP_VERSION || 10.0;
+            
+            let updateBanner = document.getElementById('updateAppBanner');
+            if (updateBanner) {
+                // If the Manager turned the dial UP, show the button!
+                if (approvedVersion > localVersion) {
+                    updateBanner.style.display = 'flex';
+                } else {
+                    updateBanner.style.display = 'none';
+                }
+            }
+        }
+    });
+}, 5000); // Wait 5 seconds after boot so it doesn't interrupt login
+
+// The function that runs when they click the Update Button
+window.forceAppUpdate = function() {
+    Swal.fire({
+        title: 'Updating System...',
+        html: 'Downloading the latest features from HQ.<br><b>Please wait, the app will restart...</b>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+
+    // 💣 NUKE THE CACHE AND FORCE A HARD RELOAD
+    caches.keys().then(names => { 
+        for (let name of names) caches.delete(name); 
+    }).then(() => {
+        setTimeout(() => {
+            window.location.reload(true);
+        }, 1500); // Small delay to ensure cache is wiped
+    });
+};
