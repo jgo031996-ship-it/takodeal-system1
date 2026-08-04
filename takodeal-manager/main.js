@@ -26,6 +26,25 @@ export const db = initializeFirestore(app, {
 window.storage = storage;
 window.db = db;
 
+// 🔥 THE MISSING FIREBASE BRIDGE 🔥
+window.query = query;
+window.where = where;
+window.collection = collection;
+window.getDocs = getDocs;
+window.getDoc = getDoc;
+window.addDoc = addDoc;
+window.updateDoc = updateDoc;
+window.deleteDoc = deleteDoc;
+window.doc = doc;
+window.setDoc = setDoc;
+window.serverTimestamp = serverTimestamp;
+window.increment = increment;
+window.orderBy = orderBy;
+window.limit = limit;
+window.ref = ref;
+window.uploadBytes = uploadBytes;
+window.getDownloadURL = getDownloadURL;
+
 console.log("🚀 TAKODEÁL Manager Offline Storage is ACTIVE!");
 
 // Your secure Master Key
