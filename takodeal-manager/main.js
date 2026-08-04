@@ -9955,16 +9955,23 @@ window.openPayslipModal = async function(staffName) {
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
         data.logs.forEach(log => {
-            // 🔥 THE LATE SUBLINE FIX: Inject the late minutes securely under Time In!
+            // 🔥 THE FIX: Color Sync Engine for In/Out Times
             let inTimeHtml = log.in || '';
+            let inColor = '#16a34a'; // Default Green
             if (log.lateMins && log.lateMins > 0) {
                 inTimeHtml += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${log.lateMins}m</span>`;
+                inColor = '#dc2626'; // Red if late!
+            }
+
+            let outColor = '#16a34a'; // Default Green
+            if (log.remark && (log.remark.includes('Short') || log.remark.includes('INVALID') || log.remark.includes('Missed'))) {
+                outColor = '#dc2626'; // Red if undertime/missed
             }
 
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 8px; text-align: center;">${log.date || ''}</td>
-                <td style="padding: 8px; font-weight: bold; color: #16a34a; text-align: center; vertical-align: middle;">${inTimeHtml}</td>
-                <td style="padding: 8px; font-weight: bold; color: #dc2626; text-align: center; vertical-align: middle;">${log.out || ''}</td>
+                <td style="padding: 8px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle;">${inTimeHtml}</td>
+                <td style="padding: 8px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle;">${log.out || ''}</td>
                 <td style="padding: 8px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
                 <td style="padding: 8px; font-size:11px; text-align: center; vertical-align: middle;">${log.remark || ''}</td>
             </tr>`;
