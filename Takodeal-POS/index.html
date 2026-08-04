@@ -3301,13 +3301,19 @@ window.rejectMobileOrder = async function(docId) {
       });
     }
   </script>
-<!-- 🚀 DYNAMIC UPDATE BANNER -->
-<div id="updateAppBanner" style="display:none; position:fixed; bottom:20px; right:20px; background:#dc2626; color:white; padding:15px 25px; border-radius:30px; font-weight:900; box-shadow:0 10px 25px rgba(220,38,38,0.5); z-index:999999; cursor:pointer; align-items:center; gap:12px; transition: transform 0.2s;" onclick="window.forceAppUpdate()" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+<!-- 🚀 DYNAMIC UPDATE BANNER (TOP DROP-DOWN) -->
+<style>
+    @keyframes slideDownBanner {
+        from { transform: translateY(-100%); }
+        to { transform: translateY(0); }
+    }
+</style>
+<div id="updateAppBanner" onclick="window.forceAppUpdate()" style="display:none; position:fixed; top:0; left:0; width:100%; background:#ef4444; color:white; padding:12px 20px; font-weight:900; box-shadow:0 4px 15px rgba(239, 68, 68, 0.4); z-index:9999999; cursor:pointer; justify-content:center; align-items:center; gap:15px; border-bottom: 3px solid #b91c1c; box-sizing: border-box; animation: slideDownBanner 0.5s ease-out;">
     <span style="font-size:24px; animation: pulse 1s infinite;">🚀</span> 
-    <div style="display: flex; flex-direction: column;">
-        <span style="font-size: 15px;">NEW UPDATE AVAILABLE</span>
-        <span style="font-size: 11px; font-weight: 500; opacity: 0.9;">Tap here to install new features</span>
+    <div style="display: flex; flex-direction: column; text-align: center;">
+        <span style="font-size: 16px; letter-spacing: 1px;">NEW UPDATE AVAILABLE</span>
+        <span style="font-size: 13px; font-weight: bold; opacity: 0.95;">Tap here to refresh the app to use the updated version</span>
     </div>
-</div>
+  </div>
 </body>
 </html>
