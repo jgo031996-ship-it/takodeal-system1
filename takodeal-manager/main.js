@@ -15012,6 +15012,8 @@ window.openBranchSettings = function(docId) {
 
     document.getElementById('settingBranchId').value = docId;
     document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;
+    // Inside window.openBranchSettings, add this line:
+    document.getElementById('settingAppVersion').value = d.approvedVersion || 10.0;
     document.getElementById('settingAddress').value = d.address || '';
     document.getElementById('settingContact').value = d.contact || '';
     document.getElementById('settingWifi').value = d.wifi || '';
@@ -15043,6 +15045,8 @@ window.saveBranchSettings = async function() {
     let payload = {
         address: document.getElementById('settingAddress').value.trim(),
         contact: document.getElementById('settingContact').value.trim(),
+        // Inside window.saveBranchSettings, add this inside the payload object:
+        approvedVersion: parseFloat(document.getElementById('settingAppVersion').value) || 10.0,
         wifi: document.getElementById('settingWifi').value.trim(),
         printerSize: document.getElementById('settingPrinterSize').value,
         headerName: document.getElementById('settingHeaderName').value.trim(),
