@@ -6423,12 +6423,10 @@ window.loadConsumablesView = async function() {
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b; font-weight:bold;">Fetching Store Supplies...</div>';
 
     try {
-        // Fetch config from Manager App (Allows dynamic category adding!)
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
         if (configSnap.exists() && configSnap.data().consumableCats) {
             window.consumableCategories = configSnap.data().consumableCats.map(c => c.trim().toLowerCase());
         } else {
-            // Lowercase mapping for safety
             window.consumableCategories = window.consumableCategories.map(c => c.toLowerCase());
         }
 
@@ -6447,7 +6445,6 @@ window.loadConsumablesView = async function() {
 
         items.sort((a,b) => a.name.localeCompare(b.name));
 
-        // Render Categories
         let activeCats = [...new Set(items.map(i => i.category || 'Uncategorized'))];
         let catHtml = `<button class="cat-btn active" onclick="window.filterConsumables('All', this)">All Supplies</button>`;
         activeCats.forEach(c => {
@@ -6482,38 +6479,76 @@ window.filterConsumables = function(category, btn) {
 
     filtered.forEach(item => {
         let stock = parseFloat(item.currentStock) || 0;
-        let uom = item.uom || 'units';
+        
+        // 🔥 THE FIX: GRAB ALL THE UOMS AND CONVERSION RATES!
+        let bUom = item.uom || item.baseUom || 'units';
+        let pUom = item.purchaseUom || item.purchUom || bUom;
+        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
         let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
 
         grid.innerHTML += `
-            <div class="item-card" onclick="window.addToConsumablesCart('${item.id}', '${item.name.replace(/'/g, "\\'")}', '${uom}')">
+            <div class="item-card" onclick="window.addToConsumablesCart('${item.id}', '${item.name.replace(/'/g, "\\'")}', '${bUom}', '${pUom}', ${conv})">
                 <div class="item-card-bg" style="${bgStyle}"></div>
-                <div class="item-name-overlay">${item.name}<br><span style="color:#10b981; font-size: 11px;">Stock: ${stock.toFixed(1)} ${uom}</span></div>
+                <div class="item-name-overlay">${item.name}<br><span style="color:#10b981; font-size: 11px;">Stock: ${stock.toFixed(1)} ${bUom}</span></div>
             </div>
         `;
     });
 };
 
-window.addToConsumablesCart = async function(id, name, uom) {
-    const { value: qtyRaw } = await Swal.fire({
-        title: 'Add to Cart',
-        html: `<div style="color: #475569; font-size: 14px;">How many <strong>${uom}s</strong> of <strong style="color: #0f172a;">${name}</strong> are you taking for Store Use?</div>`,
-        input: 'number',
-        inputAttributes: { min: 0.1, step: 'any' },
+window.addToConsumablesCart = async function(id, name, bUom, pUom, conv) {
+    
+    // Build the Dropdown!
+    let uomOptions = '';
+    if (pUom.toLowerCase() !== bUom.toLowerCase() && conv > 1) {
+        uomOptions += `<option value="purch" data-conv="${conv}">${pUom}</option>`;
+    }
+    uomOptions += `<option value="base" data-conv="1" selected>${bUom}</option>`;
+
+    const { value: formValues } = await Swal.fire({
+        title: 'Store Use',
+        html: `
+            <div style="color: #475569; font-size: 14px; margin-bottom: 15px;">How much <strong style="color: #0f172a;">${name}</strong> are you taking?</div>
+            <div style="display: flex; gap: 10px; justify-content: center; align-items: stretch;">
+                <input type="number" id="swalConsQty" class="swal2-input" placeholder="0" style="width: 100px; margin: 0; text-align: center; font-weight: bold; outline: none; border: 1px solid #cbd5e1;">
+                <select id="swalConsUom" class="swal2-select" style="margin: 0; padding: 10px; font-weight: bold; cursor: pointer; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+                    ${uomOptions}
+                </select>
+            </div>
+        `,
         showCancelButton: true,
         confirmButtonText: 'Add to Cart',
         confirmButtonColor: '#0ea5e9',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            let qty = parseFloat(document.getElementById('swalConsQty').value);
+            if (isNaN(qty) || qty <= 0) {
+                Swal.showValidationMessage('Please enter a valid quantity');
+                return false;
+            }
+            let sel = document.getElementById('swalConsUom');
+            let selOpt = sel.options[sel.selectedIndex];
+            let cRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+            let displayUom = selOpt.text;
+            
+            return { rawQty: qty, displayUom: displayUom, baseQty: qty * cRate, bUom: bUom };
+        }
     });
 
-    if (!qtyRaw) return;
-    let qty = parseFloat(qtyRaw);
+    if (!formValues) return;
 
     let existing = window.consumablesCart.find(i => i.id === id);
     if (existing) {
-        existing.qty += qty;
+        existing.qty += formValues.baseQty;
+        existing.displayMsg = `${existing.qty.toFixed(2)} ${formValues.bUom}`; // If they stack it, just show the base total
     } else {
-        window.consumablesCart.push({ id, name, uom, qty });
+        window.consumablesCart.push({ 
+            id: id, 
+            name: name, 
+            uom: formValues.bUom, // Strict base unit used for deduction math
+            qty: formValues.baseQty, // Strict base math for deduction math
+            displayMsg: `${formValues.rawQty} ${formValues.displayUom}` // Friendly UI label
+        });
     }
     window.renderConsumablesCart();
 };
@@ -6526,11 +6561,12 @@ window.renderConsumablesCart = function() {
     }
     let html = '';
     window.consumablesCart.forEach((item, index) => {
+        let display = item.displayMsg || `${item.qty} ${item.uom}`;
         html += `
             <li class="cart-item" style="border-bottom: 1px solid #f1f5f9;">
                 <div class="cart-item-desc"><span class="cart-item-name" style="color:#0f172a;">${item.name}</span></div>
-                <div class="cart-item-qty" style="color: #0ea5e9; font-weight: 900;">${item.qty} <span style="font-size: 10px; color:#64748b;">${item.uom}</span></div>
-                <div class="cart-item-sub"><button class="btn-remove" onclick="window.consumablesCart.splice(${index}, 1); window.renderConsumablesCart();" style="background: #fee2e2; color:#dc2626; border:1px solid #fca5a5; padding: 4px 8px; border-radius: 4px; font-size: 11px;">✖</button></div>
+                <div class="cart-item-qty" style="color: #0ea5e9; font-weight: 900;">${display}</div>
+                <div class="cart-item-sub"><button class="btn-remove" onclick="window.consumablesCart.splice(${index}, 1); window.renderConsumablesCart();" style="background: #fef2f2; color:#dc2626; border:1px solid #fca5a5; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">✖</button></div>
             </li>
         `;
     });
