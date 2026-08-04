@@ -8329,7 +8329,6 @@ window.loadFromCloud = async function() {
             }
         });
         
-        // 🔥 THE FIX: Lock the HR list permanently into the window memory!
         window.employees = fetchedEmployees; 
         employees = fetchedEmployees; 
 
@@ -8351,11 +8350,51 @@ window.loadFromCloud = async function() {
             currentMonth = safeMonth;
         }
 
+        // 🔥 THE INDESTRUCTIBLE BRANCH AUTO-SYNC ENGINE 🔥
+        if (window.globalActiveBranches && window.globalActiveBranches.length > 0) {
+            let validBranches = window.globalActiveBranches.filter(b => b !== "Main Office");
+            let needsCloudSave = false;
+
+            // 1. Purge deleted branches from Config
+            for (let b in branchConfig) {
+                if (!validBranches.includes(b)) {
+                    delete branchConfig[b];
+                    needsCloudSave = true;
+                }
+            }
+            
+            // 2. Add newly created branches to Config automatically
+            validBranches.forEach(b => {
+                if (!branchConfig[b]) {
+                    branchConfig[b] = JSON.parse(JSON.stringify(defaultSchedConfig["Cabantian"] || []));
+                    needsCloudSave = true;
+                }
+            });
+
+            // 3. Purge deleted branches from the active calendar
+            if (currentSchedule) {
+                for (let day in currentSchedule) {
+                    for (let b in currentSchedule[day]) {
+                        if (!validBranches.includes(b)) {
+                            delete currentSchedule[day][b];
+                            needsCloudSave = true;
+                        }
+                    }
+                }
+            }
+
+            // If we found ghost data, silently wipe it from the cloud so it never comes back!
+            if (needsCloudSave && typeof window.saveToCloud === 'function') {
+                window.saveToCloud();
+            }
+        }
+
         const mm = String(currentMonth).padStart(2, '0');
         const monthInput = document.getElementById("monthSelector");
         if (monthInput) monthInput.value = `${currentYear}-${mm}`;
 
-        if(!window.currentActiveTab || window.currentActiveTab === "Main Office") {
+        // Ensure the active tab defaults to a branch that actually exists
+        if(!window.currentActiveTab || window.currentActiveTab === "Main Office" || (window.globalActiveBranches && !window.globalActiveBranches.includes(window.currentActiveTab))) {
             let validBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ['Cabantian'];
             window.currentActiveTab = validBranches.length > 0 ? validBranches[0] : 'Cabantian';
         }
