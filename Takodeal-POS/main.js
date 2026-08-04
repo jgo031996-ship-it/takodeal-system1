@@ -4338,10 +4338,9 @@ window.submitWasteCart = async function() {
                 const fileExt = item.file.name.split('.').pop();
                 const fileName = `waste_proofs/${branch}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
                 
-                // 🔥 THE FIX: Removed 'window.' from Firebase Storage commands!
-                const storageReference = ref(storage, fileName);
-                const snapshot = await uploadBytes(storageReference, item.file);
-                photoUrl = await getDownloadURL(snapshot.ref);
+                const storageReference = window.ref(window.storage, fileName);
+                const snapshot = await window.uploadBytes(storageReference, item.file);
+                photoUrl = await window.getDownloadURL(snapshot.ref);
             }
 
             let itemLoss = item.baseQty * item.cost;
@@ -4354,15 +4353,17 @@ window.submitWasteCart = async function() {
         }
 
         // 2. Submit to the Manager's Staff Request Inbox
-        // 🔥 THE FIX: Removed 'window.' from Firebase Database commands!
-        await addDoc(collection(db, "staff_requests"), {
+        // 🔥 THE BULLETPROOF FIX: We bypass addDoc and use setDoc to auto-generate the ID!
+        let newRequestRef = window.doc(window.collection(window.db, "staff_requests"));
+        
+        await window.setDoc(newRequestRef, {
             type: "Waste Report",
             branch: branch,
             staffName: cashier,
             items: uploadedItems,
             totalValueLost: totalValueLost,
             status: "Pending",
-            timestamp: serverTimestamp()
+            timestamp: new Date() // Native JS Date works perfectly in Firebase!
         });
 
         Swal.fire({
@@ -4373,11 +4374,11 @@ window.submitWasteCart = async function() {
         });
         
         window.wasteCart = [];
-        window.renderWasteCart();
+        if (typeof window.renderWasteCart === 'function') window.renderWasteCart();
         
     } catch (e) {
         console.error("Waste Submit Error:", e);
-        Swal.fire('Error', 'Failed to submit waste report. Check internet connection.', 'error');
+        Swal.fire('Error', 'Failed to submit waste report. Check console for details.', 'error');
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
     }
