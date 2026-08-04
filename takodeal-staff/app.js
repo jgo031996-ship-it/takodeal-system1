@@ -2213,7 +2213,7 @@ window.viewPastPayslip = function(encodedData) {
     let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts)).toFixed(2);
     let netPay = parseFloat(d.finalNetPay || (grossIncome - totalDeduct)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+    let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
 
     let html = `
         <div style="background: white; padding: 20px; font-family: 'Segoe UI', Arial, sans-serif; color: black; text-align: left; max-width: 100%; box-sizing: border-box;">
