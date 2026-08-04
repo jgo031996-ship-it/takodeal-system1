@@ -8571,3 +8571,25 @@ window.forceAppUpdate = function() {
         }, 1500); // Small delay to ensure cache is wiped
     });
 };
+
+// ==========================================
+// 📡 AUTOMATIC VERSION REPORTER
+// ==========================================
+setTimeout(async () => {
+    try {
+        const vRef = window.doc(window.db, "settings", "live_cashier_version");
+        const vSnap = await window.getDoc(vRef);
+        let currentHighest = vSnap.exists() ? (parseFloat(vSnap.data().version) || 10.0) : 10.0;
+        let myVersion = parseFloat(window.LOCAL_APP_VERSION) || 10.0;
+        
+        // If this tablet (or your testing PC) is running newer code than the Cloud, update the Cloud!
+        if (myVersion > currentHighest) {
+            await window.setDoc(vRef, { 
+                version: myVersion, 
+                updatedOn: new Date().toISOString() 
+            }, { merge: true });
+        }
+    } catch (e) {
+        console.warn("Version check skipped:", e);
+    }
+}, 8000); // Waits 8 seconds so it doesn't slow down the POS boot sequence
