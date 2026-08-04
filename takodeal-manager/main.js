@@ -16433,25 +16433,24 @@ window.viewSopLog = function(encodedData) {
 };
 
 // ========================================================
-// 📱 SIDEBAR ARRANGEMENT ENGINE
+// 📱 SIDEBAR ARRANGEMENT & VISIBILITY ENGINE
 // ========================================================
-window.defaultSidebar = [
+window.masterSidebarTabs = [
     { id: "nav-pos", icon: "🖥️", text: "Point of Sale" },
     { id: "nav-sales", icon: "🧾", text: "Shift Sales" },
-    { id: "nav-stockcount", icon: "📋", text: "Stock Count" },
     { id: "nav-remit", icon: "💸", text: "Remit Cash to HQ" },
     { id: "nav-staffreq", icon: "📝", text: "Staff Requests" },
     { id: "nav-sop", icon: "📋", text: "Daily SOPs" },
     { id: "nav-prep", icon: "🔪", text: "Kitchen Prep" },
+    { id: "nav-consumables", icon: "🧹", text: "Consumables" }, // 🔥 NEW TAB ADDED!
     { id: "nav-deliveries", icon: "🚚", text: "Incoming Stock" },
     { id: "nav-menumgr", icon: "🍔", text: "Menu Toggle" },
     { id: "nav-stockreq", icon: "📦", text: "Request Stock" },
     { id: "nav-waste", icon: "🗑️", text: "Log Waste" },
-    { id: "nav-equipment", icon: "🛠️", text: "Assets & Equipment" },
     { id: "nav-timeclock", icon: "📸", text: "Time Clock" },
-    { id: "nav-schedule", icon: "📅", text: "My Schedule" },
+    { id: "nav-schedule", icon: "📅", text: "Branch Schedule" },
     { id: "nav-grab", icon: "🟢", text: "Log Grab Earnings" },
-    { id: "nav-printer", icon: "🖨️", text: "Printer Setup" }
+    { id: "nav-printer", icon: "🖨️", text: "Printer Hub" }
 ];
 
 window.currentSidebarLayout = [];
@@ -16463,21 +16462,30 @@ window.loadSidebarLayout = async function() {
 
     try {
         const docSnap = await getDoc(doc(db, "settings", "sidebar_layout"));
-        let layout = docSnap.exists() ? docSnap.data().tabs || [] : [];
+        let savedTabs = docSnap.exists() ? docSnap.data().tabs || [] : [];
 
-        // Smart merge: ensure all default tabs are present even if new ones were added later
-        let mergedLayout = [];
-        layout.forEach(item => {
-            let found = window.defaultSidebar.find(d => d.id === item.id);
-            if (found) mergedLayout.push(found);
+        window.currentSidebarLayout = [];
+
+        // 1. Keep the saved order and hidden status, but ONLY if the tab still exists in the master list!
+        // This automatically deletes dead ghost tabs like Stock Count and Assets.
+        savedTabs.forEach(savedTab => {
+            let foundMaster = window.masterSidebarTabs.find(m => m.id === savedTab.id);
+            if (foundMaster) {
+                window.currentSidebarLayout.push({
+                    ...foundMaster,
+                    isHidden: savedTab.isHidden || false
+                });
+            }
         });
 
-        // Push any missing default tabs to the bottom automatically
-        window.defaultSidebar.forEach(d => {
-            if (!mergedLayout.find(m => m.id === d.id)) mergedLayout.push(d);
+        // 2. Add any completely new tabs (like Consumables) to the bottom automatically!
+        window.masterSidebarTabs.forEach(master => {
+            let exists = window.currentSidebarLayout.find(c => c.id === master.id);
+            if (!exists) {
+                window.currentSidebarLayout.push({ ...master, isHidden: false });
+            }
         });
 
-        window.currentSidebarLayout = mergedLayout;
         window.renderSidebarEditor();
     } catch(e) {
         console.error("Sidebar Load Error:", e);
@@ -16488,14 +16496,18 @@ window.loadSidebarLayout = async function() {
 window.moveSidebarLayout = function(index, direction) {
     let i = parseInt(index);
     let newIndex = i + direction;
-    // Stop it from moving out of bounds
     if (newIndex < 0 || newIndex >= window.currentSidebarLayout.length) return;
     
-    // Swap elements in the array
     let temp = window.currentSidebarLayout[i];
     window.currentSidebarLayout[i] = window.currentSidebarLayout[newIndex];
     window.currentSidebarLayout[newIndex] = temp;
     
+    window.renderSidebarEditor();
+};
+
+// 🔥 THE NEW VISIBILITY TOGGLE ENGINE
+window.toggleSidebarTabVisibility = function(index) {
+    window.currentSidebarLayout[index].isHidden = !window.currentSidebarLayout[index].isHidden;
     window.renderSidebarEditor();
 };
 
@@ -16504,14 +16516,29 @@ window.renderSidebarEditor = function() {
     let html = '';
     
     window.currentSidebarLayout.forEach((tab, index) => {
+        let isHidden = tab.isHidden;
+        let opacity = isHidden ? '0.4' : '1';
+        let bgClass = isHidden ? 'background: #f8fafc; border-color: #cbd5e1;' : 'background: white; border-color: #94a3b8;';
+        
+        // 🔥 THE VISIBILITY BUTTON HTML
+        let visibilityBtn = isHidden 
+            ? `<button onclick="window.toggleSidebarTabVisibility(${index})" style="background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 13px;"><span style="font-size: 16px;">🙈</span> Hidden</button>`
+            : `<button onclick="window.toggleSidebarTabVisibility(${index})" style="background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 13px;"><span style="font-size: 16px;">👁️</span> Visible</button>`;
+
         html += `
-            <div style="display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+            <div style="display: flex; align-items: center; gap: 15px; ${bgClass} padding: 12px 15px; border-radius: 8px; border: 1px solid; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 8px; transition: 0.2s;">
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <button onclick="window.moveSidebarLayout('${index}', -1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▲ UP</button>
-                    <button onclick="window.moveSidebarLayout('${index}', 1)" style="background: white; border: 1px solid #94a3b8; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold;">▼ DOWN</button>
+                    <button onclick="window.moveSidebarLayout(${index}, -1)" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: ${index === 0 ? 'not-allowed' : 'pointer'}; font-size: 10px; font-weight: bold;" ${index === 0 ? 'disabled' : ''}>▲ UP</button>
+                    <button onclick="window.moveSidebarLayout(${index}, 1)" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 10px; border-radius: 4px; cursor: ${index === window.currentSidebarLayout.length - 1 ? 'not-allowed' : 'pointer'}; font-size: 10px; font-weight: bold;" ${index === window.currentSidebarLayout.length - 1 ? 'disabled' : ''}>▼ DOWN</button>
                 </div>
-                <div style="width: 45px; height: 45px; border-radius: 8px; background: #fffbeb; border: 1px solid #fde68a; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;">${tab.icon}</div>
-                <div style="font-weight: 900; color: #1e293b; font-size: 16px; flex-grow: 1;">${tab.text}</div>
+                <div style="width: 45px; height: 45px; border-radius: 8px; background: #fffbeb; border: 1px solid #fde68a; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; opacity: ${opacity};">${tab.icon}</div>
+                <div style="font-weight: 900; color: #1e293b; font-size: 16px; flex-grow: 1; opacity: ${opacity};">${tab.text}</div>
+                
+                <!-- Visibility Toggle here! -->
+                <div style="margin-right: 15px;">
+                    ${visibilityBtn}
+                </div>
+
                 <div style="font-weight: bold; font-size: 12px; color: #94a3b8; background: #e2e8f0; padding: 4px 8px; border-radius: 6px;">Pos: ${index + 1}</div>
             </div>`;
     });
@@ -16519,32 +16546,23 @@ window.renderSidebarEditor = function() {
 };
 
 window.saveSidebarLayout = async function() {
+    let btn = document.querySelector('button[onclick*="saveSidebarLayout"]');
+    let origText = btn ? btn.innerText : 'Save & Sync Sidebar Order';
+    if(btn) { btn.innerText = "⏳ Saving..."; btn.disabled = true; }
+
     try {
         await setDoc(doc(db, "settings", "sidebar_layout"), { tabs: window.currentSidebarLayout }, { merge: true });
         Swal.fire({
-            title: '✅ Saved!',
-            text: 'Sidebar arrangement saved. Cashier apps will update on refresh.',
+            title: '✅ Layout Synced!',
+            text: 'Sidebar arrangement and visibility have been pushed to all Cashier tablets globally.',
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
     } catch(e) { 
         console.error(e);
         Swal.fire('Error', 'Failed to save layout to cloud.', 'error');
-    }
-};
-
-window.filterAuditTable = function() {
-    let search = document.getElementById('auditModalSearch').value.toLowerCase();
-    let tbody = document.getElementById('auditModalBody');
-    let rows = tbody.getElementsByTagName('tr');
-    
-    for(let i = 0; i < rows.length; i++) {
-        let nameTd = rows[i].getElementsByTagName('td')[0];
-        let catTd = rows[i].getElementsByTagName('td')[1];
-        if(nameTd && catTd) {
-            let text = nameTd.innerText.toLowerCase() + " " + catTd.innerText.toLowerCase();
-            rows[i].style.display = text.includes(search) ? "" : "none";
-        }
+    } finally {
+        if(btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
 
