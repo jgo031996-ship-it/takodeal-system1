@@ -14809,10 +14809,9 @@ window.loadBranchManager = async function() {
     if(!tbody) return;
     
     try {
-        // 🔥 STEP 1: Find out what the absolute newest code version is from the Cashier Apps
-        let highestCodeVersion = 10.0;
-        const vSnap = await getDoc(doc(db, "settings", "live_cashier_version"));
-        if (vSnap.exists()) highestCodeVersion = parseFloat(vSnap.data().version) || 10.0;
+        // 🔥 1. Fetch the exact timestamp of the newest code update!
+        const vSnap = await getDoc(doc(db, "settings", "global_app_version"));
+        let globalVersion = vSnap.exists() ? (parseFloat(vSnap.data().latestVersion) || 0) : 0;
 
         const q = query(collection(db, "branches"), orderBy("createdAt", "asc"));
         const snap = await getDocs(q);
@@ -14830,16 +14829,16 @@ window.loadBranchManager = async function() {
             
             let delBtn = d.isCore 
                 ? `<span style="color:#94a3b8; font-size: 11px; font-style: italic;">Protected</span>` 
-                : `<button onclick="window.deleteBranch('${docSnap.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>`;
+                : `<button onclick="window.deleteBranch('${docSnap.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>`;
 
-            // 🔥 STEP 2: Compare the Branch's Version to the Newest Version
-            let approvedVer = parseFloat(d.approvedVersion) || 10.0;
+            // 🔥 2. Compare the Branch's timestamp to the Global timestamp
+            let approvedVer = parseFloat(d.approvedVersion) || 0;
             let updateBtnHtml = '';
             
-            if (approvedVer < highestCodeVersion) {
-                updateBtnHtml = `<button onclick="window.pushBranchUpdate('${docSnap.id}', '${d.name}', ${highestCodeVersion})" style="background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 2px 4px rgba(220,38,38,0.3); animation: pulse 1.5s infinite;">🚀 UPDATE NOW!</button>`;
+            if (approvedVer < globalVersion) {
+                updateBtnHtml = `<button onclick="window.pushBranchUpdate('${docSnap.id}', '${d.name}', ${globalVersion})" style="background:#dc2626; color:white; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow: 0 2px 4px rgba(220,38,38,0.3); font-size:11px;">🚀 UPDATE NOW!</button>`;
             } else {
-                updateBtnHtml = `<button disabled style="background:#dcfce7; color:#16a34a; border:1px solid #bbf7d0; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:not-allowed;">✅ Branch UPDATED</button>`;
+                updateBtnHtml = `<button disabled style="background:#dcfce7; color:#16a34a; border:1px solid #bbf7d0; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:not-allowed; font-size:11px;">✅ Branch UPDATED</button>`;
             }
 
             html += `
@@ -14848,7 +14847,7 @@ window.loadBranchManager = async function() {
                     <td style="padding: 12px;"><span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Online</span></td>
                     <td style="padding: 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 12px; display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
-                        <button onclick="window.openBranchSettings('${docSnap.id}')" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">⚙️ Settings</button>
+                        <button onclick="window.openBranchSettings('${docSnap.id}')" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:8px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">⚙️ Settings</button>
                         ${updateBtnHtml}
                         ${delBtn}
                     </td>
@@ -14868,6 +14867,49 @@ window.loadBranchManager = async function() {
     } catch (e) {
         console.error("Branch Manager Error:", e);
         tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading branches.</td></tr>';
+    }
+};
+
+// 🔥 MASTER BUTTON: Tells the entire system that a new update exists!
+window.announceNewGlobalUpdate = async function() {
+    let confirmMsg = await Swal.fire({
+        title: 'Register New Update?',
+        text: 'Did you just push new code to GitHub? Clicking this will notify the system that a new version exists, turning all branch buttons red so you can push the update to them.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Yes, Register Update',
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (confirmMsg.isConfirmed) {
+        Swal.fire({title: 'Registering...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        // This generates the new master timestamp!
+        await setDoc(doc(db, "settings", "global_app_version"), { latestVersion: Date.now() }, { merge: true });
+        
+        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Registered! Branches ready for update.', showConfirmButton: false, timer: 3000 });
+        window.loadBranchManager();
+    }
+};
+
+// 🔥 BRANCH BUTTON: Pushes the new update directly to the specific branch!
+window.pushBranchUpdate = async function(docId, branchName, targetVersion) {
+    if (!confirm(`Deploy the latest update to ${branchName}?`)) return;
+    
+    try {
+        Swal.fire({title: 'Pushing Update...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        await updateDoc(doc(db, "branches", docId), {
+            approvedVersion: targetVersion
+        });
+        
+        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: `Update pushed to ${branchName}!`, showConfirmButton: false, timer: 2000 });
+        
+        window.loadBranchManager(); // Instantly refresh the table to turn the button green!
+    } catch (e) {
+        console.error("Update Error:", e);
+        Swal.fire('Error', 'Failed to push update to branch.', 'error');
     }
 };
 
@@ -19726,64 +19768,6 @@ window.openEmployeeProfile = function(docId) {
         document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
         });
-    });
-};
-
-// ==========================================
-// 🚨 FLEET MANAGEMENT VERSION WATCHDOG
-// ==========================================
-window.initVersionWatchdog = function() {
-    let topBar = document.querySelector('.top-bar');
-    if (!topBar) return;
-    
-    // Create the red banner UI
-    let banner = document.createElement('div');
-    banner.id = "managerUpdateBanner";
-    banner.style.cssText = "display: none; background: #dc2626; color: white; padding: 12px 25px; font-size: 14px; font-weight: bold; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(220,38,38,0.3); z-index: 50; border-bottom: 2px solid #991b1b;";
-    
-    // Inject it right under the Top Navigation Bar
-    topBar.parentNode.insertBefore(banner, topBar.nextSibling);
-
-    let highestCodeVersion = 10.0;
-    let branchData = {};
-
-    function checkDiscrepancy() {
-        let outdated = [];
-        // Loop through all branches and see who is behind the Highest Code Version
-        for (let id in branchData) {
-            if (branchData[id].approved < highestCodeVersion) {
-                outdated.push(branchData[id].name);
-            }
-        }
-        
-        if (outdated.length > 0) {
-            banner.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 22px; animation: pulse 1s infinite;">🚨</span>
-                    <span><b>⚠️ UPDATE FORGOTTEN:</b> New Cashier Code (v${highestCodeVersion}) is ready, but <b>${outdated.join(', ')}</b> are still on old versions! Go to POS Config to turn their dials up!</span>
-                </div>
-            `;
-            banner.style.display = 'flex';
-        } else {
-            banner.style.display = 'none'; // Hide if everyone is updated!
-        }
-    }
-
-    // 1. Watch Firebase for the Highest Version reported by the Cashier App
-    window.onSnapshot(window.doc(window.db, "settings", "live_cashier_version"), (docSnap) => {
-        if (docSnap.exists()) highestCodeVersion = parseFloat(docSnap.data().version) || 10.0;
-        checkDiscrepancy();
-    });
-
-    // 2. Watch Firebase for changes to the Branch Approved Versions
-    window.onSnapshot(window.collection(window.db, "branches"), (snap) => {
-        snap.forEach(d => {
-            branchData[d.id] = {
-                name: d.data().name || d.id,
-                approved: parseFloat(d.data().approvedVersion) || 10.0
-            };
-        });
-        checkDiscrepancy();
     });
 };
 
