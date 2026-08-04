@@ -6134,22 +6134,30 @@ window.kickCashDrawer = function() {
 };
 
 // ========================================================
-// 📱 SIDEBAR AUTO-ARRANGEMENT ENGINE (SYNC)
+// 📱 SIDEBAR AUTO-ARRANGEMENT & VISIBILITY ENGINE
 // ========================================================
 window.applySidebarLayout = async function() {
     try {
-        const docSnap = await getDoc(doc(db, "settings", "sidebar_layout"));
+        const docSnap = await window.getDoc(window.doc(window.db, "settings", "sidebar_layout"));
         if (docSnap.exists() && docSnap.data().tabs) {
             let layout = docSnap.data().tabs;
             let navMenu = document.querySelector('.nav-menu');
             if (!navMenu) return;
             
-            // Reorder the DOM elements! 
-            // By appending them, they automatically move to the bottom in order.
             layout.forEach(tabData => {
                 let id = tabData.id;
                 let el = document.getElementById(id);
-                if (el) navMenu.appendChild(el); 
+                if (el) {
+                    // 1. Move it into the correct order
+                    navMenu.appendChild(el); 
+                    
+                    // 2. 🔥 THE FIX: Hide it if the Manager turned it off!
+                    if (tabData.isHidden) {
+                        el.style.display = 'none';
+                    } else {
+                        el.style.display = 'flex'; // Sidebar items use flex layout
+                    }
+                }
             });
         }
     } catch (e) {
