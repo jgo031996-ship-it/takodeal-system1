@@ -4295,7 +4295,7 @@ window.submitWasteCart = async function() {
     if (!window.wasteCart || window.wasteCart.length === 0) return Swal.fire('Empty', 'Your waste list is empty.', 'info');
 
     let btn = document.getElementById('btnSubmitWasteCart');
-    let origText = btn ? btn.innerText : "🗑️ Submit Waste to HQ";
+    let origText = btn ? btn.innerText : "🗑️ Submit Waste to HQ for Approval";
     if(btn) { btn.innerText = "⏳ Uploading Photos to HQ..."; btn.disabled = true; }
 
     let branch = localStorage.getItem('takodeal_device_branch');
@@ -4311,9 +4311,11 @@ window.submitWasteCart = async function() {
             if (item.file) {
                 const fileExt = item.file.name.split('.').pop();
                 const fileName = `waste_proofs/${branch}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-                const storageReference = window.ref(window.storage, fileName);
-                const snapshot = await window.uploadBytes(storageReference, item.file);
-                photoUrl = await window.getDownloadURL(snapshot.ref);
+                
+                // 🔥 THE FIX: Removed 'window.' from Firebase Storage commands!
+                const storageReference = ref(storage, fileName);
+                const snapshot = await uploadBytes(storageReference, item.file);
+                photoUrl = await getDownloadURL(snapshot.ref);
             }
 
             let itemLoss = item.baseQty * item.cost;
@@ -4325,15 +4327,16 @@ window.submitWasteCart = async function() {
             });
         }
 
-        // 2. Submit to the Manager's Staff Request Inbox as a Pending Approval!
-        await window.addDoc(window.collection(window.db, "staff_requests"), {
+        // 2. Submit to the Manager's Staff Request Inbox
+        // 🔥 THE FIX: Removed 'window.' from Firebase Database commands!
+        await addDoc(collection(db, "staff_requests"), {
             type: "Waste Report",
             branch: branch,
             staffName: cashier,
             items: uploadedItems,
             totalValueLost: totalValueLost,
             status: "Pending",
-            timestamp: window.serverTimestamp()
+            timestamp: serverTimestamp()
         });
 
         Swal.fire({
@@ -4347,7 +4350,7 @@ window.submitWasteCart = async function() {
         window.renderWasteCart();
         
     } catch (e) {
-        console.error(e);
+        console.error("Waste Submit Error:", e);
         Swal.fire('Error', 'Failed to submit waste report. Check internet connection.', 'error');
     } finally {
         if(btn) { btn.innerText = origText; btn.disabled = false; }
