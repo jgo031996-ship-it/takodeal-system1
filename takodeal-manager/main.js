@@ -13445,15 +13445,13 @@ document.addEventListener("DOMContentLoaded", () => {
 // ========================================================
 // ⚙️ MASTER POS CONFIGURATION ENGINE
 // ========================================================
-
 window.loadPosConfigHub = async function() {
-    let btn = document.querySelector("#view-posconfig .btn-refresh");
+    let btn = document.querySelector("#view-posconfig .btn-refresh") || document.querySelector('button[onclick*="saveGlobalPosConfig"]');
     let originalText = btn ? btn.innerText : "💾 Save Changes to Cloud";
     if (btn) btn.innerText = "⏳ Loading Data...";
 
-    // 🚨 We completely deleted the messy HTML injection code here! 🚨
-
     try {
+        // 🔥 FIX: Removed the "window." prefix so it connects to your database properly!
         const docRef = doc(db, "settings", "global_pos_config");
         const docSnap = await getDoc(docRef);
 
