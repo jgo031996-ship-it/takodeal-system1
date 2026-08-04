@@ -14809,6 +14809,11 @@ window.loadBranchManager = async function() {
     if(!tbody) return;
     
     try {
+        // 🔥 STEP 1: Find out what the absolute newest code version is from the Cashier Apps
+        let highestCodeVersion = 10.0;
+        const vSnap = await getDoc(doc(db, "settings", "live_cashier_version"));
+        if (vSnap.exists()) highestCodeVersion = parseFloat(vSnap.data().version) || 10.0;
+
         const q = query(collection(db, "branches"), orderBy("createdAt", "asc"));
         const snap = await getDocs(q);
         
@@ -14827,13 +14832,24 @@ window.loadBranchManager = async function() {
                 ? `<span style="color:#94a3b8; font-size: 11px; font-style: italic;">Protected</span>` 
                 : `<button onclick="window.deleteBranch('${docSnap.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>`;
 
+            // 🔥 STEP 2: Compare the Branch's Version to the Newest Version
+            let approvedVer = parseFloat(d.approvedVersion) || 10.0;
+            let updateBtnHtml = '';
+            
+            if (approvedVer < highestCodeVersion) {
+                updateBtnHtml = `<button onclick="window.pushBranchUpdate('${docSnap.id}', '${d.name}', ${highestCodeVersion})" style="background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 2px 4px rgba(220,38,38,0.3); animation: pulse 1.5s infinite;">🚀 UPDATE NOW!</button>`;
+            } else {
+                updateBtnHtml = `<button disabled style="background:#dcfce7; color:#16a34a; border:1px solid #bbf7d0; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:not-allowed;">✅ Branch UPDATED</button>`;
+            }
+
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px; font-weight: bold; color: #4c1d95; font-size: 15px;">📍 ${d.name}</td>
                     <td style="padding: 12px;"><span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Online</span></td>
                     <td style="padding: 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 12px; display: flex; gap: 5px;">
+                    <td style="padding: 12px; display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
                         <button onclick="window.openBranchSettings('${docSnap.id}')" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">⚙️ Settings</button>
+                        ${updateBtnHtml}
                         ${delBtn}
                     </td>
                 </tr>
@@ -14852,6 +14868,30 @@ window.loadBranchManager = async function() {
     } catch (e) {
         console.error("Branch Manager Error:", e);
         tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading branches.</td></tr>';
+    }
+};
+
+// 🔥 THE NEW 1-CLICK PUSH ENGINE
+window.pushBranchUpdate = async function(docId, branchName, targetVersion) {
+    if (!confirm(`Are you sure you want to push Update v${targetVersion} to the ${branchName} tablets?`)) return;
+    
+    try {
+        Swal.fire({title: 'Pushing Update...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        await updateDoc(doc(db, "branches", docId), {
+            approvedVersion: targetVersion
+        });
+        
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: `Update pushed to ${branchName}!`, 
+            showConfirmButton: false, timer: 2000
+        });
+        
+        window.loadBranchManager(); // Instantly refresh the table to turn the button green!
+    } catch (e) {
+        console.error("Update Error:", e);
+        Swal.fire('Error', 'Failed to push update to branch.', 'error');
     }
 };
 
@@ -14999,8 +15039,6 @@ window.openBranchSettings = function(docId) {
 
     document.getElementById('settingBranchId').value = docId;
     document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;
-    // Inside window.openBranchSettings, add this line:
-    document.getElementById('settingAppVersion').value = d.approvedVersion || 10.0;
     document.getElementById('settingAddress').value = d.address || '';
     document.getElementById('settingContact').value = d.contact || '';
     document.getElementById('settingWifi').value = d.wifi || '';
@@ -15032,8 +15070,6 @@ window.saveBranchSettings = async function() {
     let payload = {
         address: document.getElementById('settingAddress').value.trim(),
         contact: document.getElementById('settingContact').value.trim(),
-        // Inside window.saveBranchSettings, add this inside the payload object:
-        approvedVersion: parseFloat(document.getElementById('settingAppVersion').value) || 10.0,
         wifi: document.getElementById('settingWifi').value.trim(),
         printerSize: document.getElementById('settingPrinterSize').value,
         headerName: document.getElementById('settingHeaderName').value.trim(),
