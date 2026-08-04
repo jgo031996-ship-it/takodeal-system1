@@ -859,12 +859,18 @@ window.switchView = function(viewId, btnElement) {
     if (targetView) targetView.classList.add('active');
 
     document.querySelectorAll('.bottom-nav .nav-item').forEach(btn => btn.classList.remove('active'));
-    if (btnElement) btnElement.classList.add('active');
+    if (btnElement) {
+        btnElement.classList.add('active');
+    } else {
+        // 🔥 THE FIX: Auto-highlights the tab even if triggered by code!
+        let autoBtn = document.querySelector(`.bottom-nav .nav-item[onclick*="'${viewId}'"]`);
+        if (autoBtn) autoBtn.classList.add('active');
+    }
     
     if (viewId === 'timeclock') window.startCameraAndGPS();
     else window.stopCamera();
     if (viewId === 'payslip') window.loadPayslipVault();
-    if (viewId === 'schedule') window.loadStaffSchedule(); // 🔥 THE NEW HOOK
+    if (viewId === 'schedule') window.loadStaffSchedule();
 };
 
 // ==========================================
@@ -2087,14 +2093,23 @@ window.loadPayslipVault = async function() {
                 let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---');
                 let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : `${parseFloat(p.hrs).toFixed(2)}h`;
                 
+                // 🔥 THE FIX: Color Sync Engine for In/Out Times
+                let inColor = '#16a34a'; // Default Green
                 if (p.lateMins && p.lateMins > 0) {
                     inStr += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${p.lateMins}m</span>`;
+                    inColor = '#dc2626'; // Red if late!
                 }
+
+                let outColor = '#16a34a'; // Default Green
+                if (p.remark && (p.remark.includes('Short') || p.remark.includes('INVALID') || p.remark.includes('Missed'))) {
+                    outColor = '#dc2626'; // Red if undertime/missed
+                }
+                if (p.isActive) outColor = '#0ea5e9'; // Blue if active
 
                 detailsHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 10px 8px; color: #64748b;">${dateStr}</td>
-                    <td style="padding: 10px 8px; color: #16a34a; font-weight: bold; text-align: center; vertical-align: middle;">${inStr}</td>
-                    <td style="padding: 10px 8px; color: #dc2626; font-weight: bold; text-align: center; vertical-align: middle;">${outStr}</td>
+                    <td style="padding: 10px 8px; color: ${inColor}; font-weight: bold; text-align: center; vertical-align: middle;">${inStr}</td>
+                    <td style="padding: 10px 8px; color: ${outColor}; font-weight: bold; text-align: center; vertical-align: middle;">${outStr}</td>
                     <td style="padding: 10px 8px; font-weight: bold; color: #334155; text-align: center; vertical-align: middle;">${hrStr}</td>
                     <td style="padding: 10px 8px; font-size: 11px; text-align: center; vertical-align: middle;">${p.remark}</td>
                 </tr>`;
