@@ -6942,64 +6942,6 @@ window.MASTER_CloseShift = async function () {
     }
 };
 
-// ==========================================
-// 🗑️ UPGRADED WASTE & SPOILAGE ENGINE (CART INTEGRATION)
-// ==========================================
-
-const origSwitchViewWaste = window.switchView;
-window.switchView = function(viewId) {
-    if (typeof origSwitchViewWaste === 'function') origSwitchViewWaste(viewId);
-    
-    if (viewId === 'waste') {
-        setTimeout(async () => {
-            let qtyInput = document.getElementById('wasteQty');
-            if (qtyInput && !document.getElementById('wasteUomSelect')) {
-                // Instantly upgrade the UI to include the UOM box!
-                let wrapper = document.createElement('div');
-                wrapper.style.display = 'flex'; wrapper.style.gap = '5px';
-                wrapper.style.width = '100%';
-                qtyInput.parentNode.insertBefore(wrapper, qtyInput);
-                wrapper.appendChild(qtyInput);
-                
-                let uomSelect = document.createElement('select');
-                uomSelect.id = 'wasteUomSelect';
-                uomSelect.style.cssText = 'padding: 16px; border-radius: 8px; border: 2px solid #fca5a5; font-weight: 900; color: #b91c1c; outline: none; background: #fef2f2; cursor: pointer; min-width: 110px; font-size: 16px;';
-                uomSelect.innerHTML = '<option value="base" data-conv="1">Units</option>';
-                wrapper.appendChild(uomSelect);
-
-                let itemInput = document.getElementById('wasteSearchInput');
-                if (itemInput) {
-                    // 🐶 WATCHDOG SCANNER: Detects when the custom search dropdown auto-fills the box!
-                    let lastVal = itemInput.value;
-                    setInterval(() => {
-                        if (itemInput.value !== lastVal) {
-                            lastVal = itemInput.value;
-                            window.updateWasteUomLabel();
-                        }
-                    }, 500);
-                }
-            }
-
-            // Fetch Dynamic Reasons from the Manager's POS Config
-            try {
-                const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
-                let reasons = ["Dropped / Spilled", "Burnt / Overcooked", "Spoiled / Expired", "Customer Replacement", "Pest Damage", "Other"];
-                
-                if (configSnap.exists() && configSnap.data().wasteReasons) {
-                    reasons = configSnap.data().wasteReasons;
-                }
-                
-                let reasonDrop = document.getElementById('wasteReason');
-                if (reasonDrop) {
-                    let currentVal = reasonDrop.value;
-                    reasonDrop.innerHTML = reasons.map(r => `<option value="${r}">${r}</option>`).join('');
-                    if (reasons.includes(currentVal)) reasonDrop.value = currentVal; 
-                }
-            } catch(e) { console.log("Failed to load custom waste reasons."); }
-        }, 100);
-    }
-};
-
 window.updateWasteUomLabel = async function() {
     let itemInput = document.getElementById('wasteSearchInput');
     let uomDrop = document.getElementById('wasteUomSelect');
