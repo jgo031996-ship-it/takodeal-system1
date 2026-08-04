@@ -338,855 +338,183 @@
       position: relative;
     }
 
+    /* ========================================== */
+    /* 🌟 PREMIUM MENU & CATEGORY UI */
+    /* ========================================== */
     .category-header {
       display: flex;
-      flex-wrap: nowrap !important; /* 🔥 Forces them to stay on ONE single line */
-      gap: 10px;
-      padding: 12px 15px;
+      flex-wrap: nowrap !important;
+      gap: 12px;
+      padding: 15px 20px;
       border-bottom: 1px solid var(--border);
-      background: var(--card-bg);
-      overflow-x: auto !important; /* 🔥 Allows you to swipe left and right! */
-      -webkit-overflow-scrolling: touch; /* Silky smooth swiping on tablets */
-      scrollbar-width: none; /* Hides the scrollbar on Firefox */
+      background: var(--bg-color);
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
-
-    /* 🔥 Hides the ugly scrollbar on Chrome/Safari but keeps it swipeable */
-    .category-header::-webkit-scrollbar { 
-      display: none; 
-    }
+    .category-header::-webkit-scrollbar { display: none; }
 
     .cat-btn {
-      padding: 10px 18px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
+      padding: 10px 22px;
+      border: 1px solid #cbd5e1;
+      border-radius: 30px; /* Modern Pill Shape */
       background: white;
-      font-weight: bold;
-      color: #666;
-      cursor: pointer;
-      white-space: nowrap; /* Keeps the text inside the button from breaking */
-      font-size: 13px;
-      flex-shrink: 0; /* 🔥 Prevents the buttons from squishing together when you swipe */
-      transition: all 0.2s;
-    }
-
-    /* 👈 Hides the horizontal scrollbar for a clean look */
-    .category-header::-webkit-scrollbar {
-      display: none; 
-    }
-
-    .cat-btn {
-      padding: 12px 20px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      background: white;
-      font-weight: bold;
-      color: #666;
+      font-weight: 800;
+      color: #64748b;
       cursor: pointer;
       white-space: nowrap;
       font-size: 13px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
-
     .cat-btn.active {
       color: white;
       border-color: var(--primary);
       background: var(--primary);
+      box-shadow: 0 4px 12px rgba(229, 169, 61, 0.35);
+      transform: translateY(-1px);
     }
 
+    /* ========================================== */
+    /* 🍱 PREMIUM ITEM GRID & CARDS */
+    /* ========================================== */
     .item-grid-container {
       flex: 1;
       padding: 20px;
       overflow-y: auto;
-      min-height: 0; /* 👈 Prevents stretching */
+      min-height: 0;
+      background: #f8fafc; /* Softer background so white cards pop */
     }
 
     .item-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 15px;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 18px;
       align-content: start;
     }
 
     .item-card {
-      background: var(--card-bg);
-      border-radius: 12px;
-      border: 1px solid var(--border);
+      background: white;
+      border-radius: 16px; /* Smoother, modern corners */
+      border: 1px solid rgba(0,0,0,0.05);
       display: flex;
       flex-direction: column;
       cursor: pointer;
       position: relative;
       padding: 0;
-      text-align: center;
-      height: 160px; /* 👈 Made slightly taller to fit the picture */
-      justify-content: space-between;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
-      overflow: hidden; /* Keeps the image inside the rounded corners */
-    }
-
-    .item-image {
-      width: 100%;
-      height: 85px;
-      object-fit: cover;
-      background: #f1f5f9;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .item-name {
-      font-weight: 600;
-      font-size: 13px;
-      margin-top: 5px;
-      padding: 0 5px;
-      color: #444;
-      line-height: 1.2;
-    }
-
-    .item-name {
-      font-weight: 600;
-      font-size: 14px;
-      margin-top: 30px;
-      padding: 0 10px;
-      color: #444;
-    }
-
-    .item-price-tag {
-      background: #fff3e6;
-      color: var(--primary);
-      border-radius: 8px;
-      padding: 8px;
-      font-size: 15px;
-      font-weight: bold;
-      width: 85%;
-      margin: 0 auto 15px auto;
-    }
-
-    .ticket-panel {
-      flex: 1;
-      background: #fff;
-      display: flex;
-      flex-direction: column;
-      min-width: 400px;
-      max-width: 450px;
-      flex-shrink: 0;
-      border-left: 1px solid var(--border);
-      height: 100%; /* Force it to take the full screen height */
-    }
-
-    .ticket-header {
-      padding: 15px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #fafafa;
-    }
-
-    .table-header {
-      display: flex;
-      padding: 10px 20px;
-      font-size: 11px;
-      font-weight: bold;
-      color: #888;
-      text-transform: uppercase;
-      border-bottom: 1px solid var(--border);
-      background: #fafafa;
-    }
-
-    .col-desc {
-      flex: 2;
-    }
-
-    .col-price {
-      flex: 1;
-      text-align: right;
-    }
-
-    .col-qty {
-      flex: 1;
-      text-align: center;
-    }
-
-    .col-sub {
-      flex: 1;
-      text-align: right;
-    }
-
-    .order-list {
-      flex: 1;
-      overflow-y: auto;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      min-height: 0; /* 👈 Forces the cart to scroll, saving your Place Order button! */
-    }
-
-    .cart-item {
-      display: flex;
-      padding: 15px 20px;
-      border-bottom: 1px solid #f1f1f1;
-      align-items: flex-start;
-      font-size: 13px;
-      background: white;
-      cursor: pointer;
-    }
-
-    .cart-item-desc {
-      flex: 2;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .cart-item-name {
-      font-weight: 700;
-      color: #333;
-      font-size: 14px;
-    }
-
-    .cart-item-price {
-      flex: 1;
-      text-align: right;
-      color: #777;
-      font-weight: 500;
-    }
-
-    .cart-item-qty {
-      flex: 1;
-      display: flex;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 14px;
-    }
-
-    .cart-item-sub {
-      flex: 1;
-      text-align: right;
-      font-weight: 700;
-      color: var(--text-main);
-      font-size: 14px;
-    }
-
-    .btn-remove {
-      margin-left: 10px;
-      color: #ccc;
-      background: none;
-      border: none;
-      font-size: 16px;
-      cursor: pointer;
-    }
-
-    .ticket-footer {
-      padding: 20px;
-      border-top: 1px solid var(--border);
-      background: #fafafa;
-      position: sticky; /* Lock it to the bottom */
-      bottom: 0;
-      z-index: 10;
-    }
-
-    .total-line {
-      display: flex;
-      justify-content: space-between;
-      font-size: 13px;
-      margin-bottom: 8px;
-      color: #666;
-      font-weight: 500;
-    }
-
-    .total-line.grand {
-      font-size: 22px;
-      font-weight: bold;
-      color: var(--text-main);
-      margin-top: 15px;
-      margin-bottom: 20px;
-      border-top: 1px dashed #ccc;
-      padding-top: 15px;
-    }
-
-    .action-row {
-      display: flex;
-      gap: 12px;
-    }
-
-    .btn-clear {
-      flex: 1;
-      padding: 16px;
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-weight: bold;
-      cursor: pointer;
-      color: #666;
-    }
-
-    .btn-place {
-      flex: 2;
-      text-align: center;
-      padding: 16px;
-      font-size: 16px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    .shift-lockout {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(255, 255, 255, 0.95);
-      z-index: 50;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(3px);
-    }
-
-    .btn-shift-open {
-      padding: 15px 40px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      flex: none;
-      box-shadow: 0 4px 12px rgba(255, 159, 67, 0.3);
-      margin-top: 15px;
-    }
-
-    .dashboard-layout {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-color);
-      width: 100%;
-    }
-
-    .sales-table-card {
-      background: white;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      margin: 20px;
-      max-width: 1200px;
-    }
-
-    .sales-tabs {
-      display: flex;
-      gap: 10px;
-      border-bottom: 2px solid var(--border);
-      margin-bottom: 15px;
-    }
-
-    .st-btn {
-      padding: 8px 15px;
-      cursor: pointer;
-      font-weight: bold;
-      font-size: 13px;
-      color: #666;
-      border-radius: 6px 6px 0 0;
-    }
-
-    .stable {
-      width: 100%;
-      border-collapse: collapse;
       text-align: left;
-      font-size: 14px;
-    }
-
-    .stable th {
-      background: #fafafa;
-      padding: 12px 20px;
-      color: #666;
-      font-size: 12px;
-      text-transform: uppercase;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .stable td {
-      padding: 15px 20px;
-      border-bottom: 1px solid #f1f1f1;
-      color: #444;
-    }
-
-    .dot-menu {
-      cursor: pointer;
-      color: #999;
-      font-weight: bold;
-      font-size: 18px;
-      padding: 0 10px;
-      position: relative;
-    }
-
-    .action-dropdown {
-      display: none;
-      position: absolute;
-      right: 20px;
-      top: 20px;
-      background: white;
-      border: 1px solid #ddd;
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-      border-radius: 8px;
-      z-index: 50;
-      flex-direction: column;
-      min-width: 150px;
+      height: 170px;
+      justify-content: flex-end;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
       overflow: hidden;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .item-card:active {
+      transform: scale(0.96);
     }
 
-    .action-dropdown.show {
-      display: flex;
+    .item-card-bg { 
+      position: absolute; 
+      top: 0; left: 0; 
+      width: 100%; height: 100%; 
+      background-size: cover; 
+      background-position: center; 
+      transition: 0.3s ease; 
+    }
+    .item-card:hover .item-card-bg { 
+      transform: scale(1.08); 
     }
 
-    .action-item {
-      padding: 12px 15px;
-      font-size: 13px;
-      cursor: pointer;
-      color: #444;
-      border-bottom: 1px solid #f1f1f1;
-      text-align: left;
-    }
-
-    .action-item.danger {
-      color: #dc3545;
-      font-weight: bold;
-    }
-
-    .status-badge {
-      padding: 5px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: bold;
-      white-space: nowrap;
-    }
-
-    .status-good {
-      background: #e6f4ea;
-      color: #198754;
-      border: 1px solid #c3e6cb;
-    }
-
-    .status-out {
-      background: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-
-    .overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 10000;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .modal {
-      background: white;
-      border-radius: 12px;
-      overflow: hidden;
+    /* Beautiful dark gradient so text is always readable over bright images */
+    .item-name-overlay { 
+      position: absolute; 
+      bottom: 0; left: 0; width: 100%; 
+      background: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.6) 60%, transparent 100%);
+      color: white; 
+      padding: 30px 12px 12px 12px; 
+      font-size: 13px; 
+      font-weight: 800; 
+      z-index: 2; 
       display: flex;
       flex-direction: column;
-      max-height: 95vh;
-      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
-      width: 100%;
-    }
-
-    .modal-head {
-      padding: 18px 25px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      font-weight: bold;
-      font-size: 17px;
-    }
-
-    .modal-body {
-      padding: 25px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-    }
-
-    .modal-foot {
-      padding: 15px 25px;
-      display: flex;
-      gap: 12px;
-      border-top: 1px solid var(--border);
-      background: #fafafa;
-    }
-
-    .close-modal {
-      cursor: pointer;
-      color: #999;
-      font-size: 20px;
-    }
-
-    .input-box {
-      width: 100%;
-      padding: 14px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-size: 14px;
+      gap: 4px;
       box-sizing: border-box;
-      outline: none;
-      background: white;
     }
 
-    .section-title {
-      font-size: 12px;
-      font-weight: bold;
-      color: #999;
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-
-    .qty-controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 5px;
-    }
-
-    .btn-qty-small {
-      width: 30px;
-      height: 30px;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      background: white;
-      cursor: pointer;
-      font-weight: bold;
-    }
-
-    .variant-grid,
-    .discount-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    .discount-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
-    .var-btn {
-      padding: 14px;
-      font-size: 13px;
-      font-weight: bold;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      cursor: pointer;
-      color: #666;
-    }
-
-    .var-btn.active {
-      background: var(--sidebar-bg);
-      color: white;
-      border-color: var(--sidebar-bg);
-    }
-
-    .qty-display-box {
-      width: 60px;
-      height: 60px;
-      font-size: 32px;
-      font-weight: bold;
-      color: #333;
-      text-align: center;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    /* ========================================== */
+    /* 🛒 FLUID TICKET CART (RIGHT SIDEBAR) */
+    /* ========================================== */
+    .ticket-panel {
+      width: 380px; /* Fixed width instead of flex */
+      flex-shrink: 0; /* Prevents it from crushing the menu */
       background: #fff;
-      border: 2px solid #ddd;
-      border-radius: 12px;
-      cursor: pointer;
-    }
-
-    .checkout-yellow-box {
-      background: #fffcf0;
-      padding: 20px;
-      border-radius: 10px;
-      border: 1px solid #ffeeba;
-    }
-
-    .checkout-grey-box {
-      background: #f8f9fa;
-      padding: 18px;
-      border-radius: 10px;
-      margin-bottom: 15px;
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border: 1px solid #eee;
+      flex-direction: column;
+      border-left: 1px solid var(--border);
+      height: 100%;
+      box-shadow: -4px 0 15px rgba(0,0,0,0.03); /* Subtle depth shadow */
+      z-index: 5;
     }
 
-    .numpad-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-
-    .num-btn {
-      padding: 18px;
-      font-size: 20px;
-      font-weight: bold;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-
-    .payment-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 15px;
-    }
-
-    .pay-btn {
-      padding: 14px 5px;
-      font-size: 13px;
-      font-weight: bold;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      cursor: pointer;
-      color: #666;
-    }
-
-    .pay-btn.active {
-      background: var(--primary);
-      color: white;
-    }
-
-    .shift-section {
-      border-bottom: 1px solid #eee;
-      padding-bottom: 15px;
-      margin-bottom: 15px;
-    }
-
-    .shift-section-title {
-      font-size: 13px;
-      font-weight: bold;
-      color: var(--sidebar-bg);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .shift-section-title:hover {
-      color: var(--primary);
-    }
-
-    .shift-arrow {
-      display: inline-block;
-      width: 15px;
-      text-align: center;
-      color: #888;
-      font-size: 10px;
-    }
-
-    .shift-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 14px;
-      margin-bottom: 8px;
-      color: #555;
-    }
-
-    .shift-val {
-      font-weight: 600;
-      color: #333;
-    }
-
-    .modal.variant-modal {
-      width: 550px;
-      position: relative;
-    }
-
-    .modal.checkout-modal {
-      width: 450px;
-    }
-
-    .modal.shift-modal {
-      width: 500px;
-    }
-
-    .modal.receipt-modal {
-      width: 450px;
-      padding-bottom: 0;
-    }
-
-    /* NEW INVENTORY CHECK MODAL STYLES */
-    .count-row {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr;
-      gap: 10px;
-      align-items: center;
-      padding: 12px 0;
-      border-bottom: 1px solid #f1f1f1;
-    }
-
-    .count-row:last-child {
-      border-bottom: none;
-    }
-
-    .count-input {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      outline: none;
-      font-size: 14px;
-    }
-
-    .count-input:focus {
-      border-color: var(--primary);
-    }
-
-    /* 🔥 FIX: Automatically shrinks the top right buttons on smaller tablets so they don't squish! */
-    @media screen and (max-width: 1250px) {
-        .top-bar-right div { gap: 5px !important; }
-        .top-bar-right button { 
-            padding: 6px 10px !important; 
-            font-size: 12px !important; 
-            white-space: nowrap !important;
-        }
-        .top-title { font-size: 15px !important; }
-    }
+    /* ========================================== */
+    /* 📱 FLUID TABLET RESPONSIVENESS ENGINE */
+    /* ========================================== */
     
+    /* Standard Tablets (iPad, 1024px) */
     @media screen and (max-width: 1024px) {
-        .sidebar { width: 75px; } /* Automatically shrinks sidebar to save space */
+        .sidebar { width: 75px; }
         .sidebar .brand-container, .sidebar .nav-item-text, .sidebar .sidebar-footer { display: none; }
         .sidebar .brand-icon { display: block; }
 
-        body, button, input { font-size: 13px; }
-        .item-card, .menu-toggle-card { padding: 10px; min-height: 100px; height: 130px; }
-        .item-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+        /* Shrink the cart slightly to give the grid more breathing room */
+        .ticket-panel { width: 330px; } 
+
+        .item-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+        .item-card { height: 150px; border-radius: 12px; }
+        .item-name-overlay { font-size: 12px; padding: 20px 10px 10px 10px; }
         
-        /* 🔥 Shrink the cart slightly to give the menu more room */
-        .ticket-panel { min-width: 320px; max-width: 350px; }
+        .cat-btn { padding: 8px 16px; font-size: 12px; }
         
-        /* 🔥 Fix the bottom spacing so the Place Order button is always safe! */
         .ticket-footer { padding: 10px 15px; }
         .total-line.grand { margin-top: 10px; margin-bottom: 10px; padding-top: 10px; font-size: 18px; }
         .btn-place { padding: 12px; font-size: 16px; }
     }
     
+    /* Small Tablets (800px - e.g., Lenovo, Samsung Tabs) */
+    @media screen and (max-width: 850px) {
+        /* Max squeeze on the cart so the menu doesn't break! */
+        .ticket-panel { width: 280px; } 
+        
+        .item-grid { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 10px; padding: 10px; }
+        .item-card { height: 130px; border-radius: 10px; }
+        .item-name-overlay { font-size: 11px; padding: 15px 8px 8px 8px; }
+    }
+    
+    /* Mobile Phones (768px and below) */
     @media (max-width: 768px) {
-      body {
-        flex-direction: column;
-        overflow: auto;
-      }
+      body { flex-direction: column; overflow: auto; }
 
       .sidebar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        height: 60px;
-        flex-direction: row;
-        z-index: 100;
+        position: fixed; bottom: 0; left: 0; right: 0;
+        width: 100%; height: 60px; flex-direction: row; z-index: 100;
       }
+      .sidebar-header, .sidebar-footer, .nav-item-text { display: none; }
 
-      .sidebar-header,
-      .sidebar-footer {
-        display: none;
-      }
+      .nav-menu { display: flex; flex-direction: row; justify-content: space-around; padding: 0; width: 100%; }
+      .nav-item { flex: 1; text-align: center; border-left: none; border-bottom: 4px solid transparent; flex-direction: column; padding: 10px 0; gap: 0; }
+      .nav-item.active { background: none; border-bottom-color: var(--primary); }
+      .nav-item span { font-size: 20px; }
 
-      .nav-menu {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-around;
-        padding: 0;
-        width: 100%;
-      }
+      .content-area { width: 100%; display: block; margin-bottom: 60px; overflow-y: auto; }
+      .top-bar { position: sticky; top: 0; left: 0; width: 100%; z-index: 10; }
+      .pos-layout { display: block; height: auto; }
 
-      .nav-item {
-        flex: 1;
-        text-align: center;
-        border-left: none;
-        border-bottom: 4px solid transparent;
-        flex-direction: column;
-        padding: 10px 0;
-        gap: 0;
-      }
+      .menu-panel { width: 100%; border-right: none; height: auto; border-bottom: 3px solid var(--primary); display: block; margin-top: 10px; }
+      .item-grid { grid-template-columns: 1fr 1fr; }
 
-      .nav-item.active {
-        background: none;
-        border-bottom-color: var(--primary);
-      }
-
-      .nav-item span {
-        font-size: 20px;
-      }
-
-      .nav-item-text {
-        display: none;
-      }
-
-      .content-area {
-        width: 100%;
-        display: block;
-        margin-bottom: 60px;
-        overflow-y: auto;
-      }
-
-      .top-bar {
-        position: sticky;
-        top: 0;
-        left: 0;
-        width: 100%;
-        z-index: 10;
-      }
-
-      .pos-layout {
-        display: block;
-        height: auto;
-      }
-
-      .menu-panel {
-        width: 100%;
-        border-right: none;
-        height: auto;
-        border-bottom: 3px solid var(--primary);
-        display: block;
-        margin-top: 10px;
-      }
-
-      .item-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-
-      .ticket-panel {
-        width: 100%;
-        display: block;
-        height: auto;
-        min-width: 100%;
-        max-width: 100%;
-        border-left: none;
-      }
-
-      .modal {
-        width: 90% !important;
-        margin: 20px;
-      }
+      .ticket-panel { width: 100%; display: block; height: auto; border-left: none; }
+      .modal { width: 90% !important; margin: 20px; }
     }
       /* --- NEW DEPARTMENT BOTTOM TABS --- */
       .department-footer {
