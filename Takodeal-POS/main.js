@@ -4213,6 +4213,24 @@ window.selectWasteItem = function(encodedItem) {
     
     document.getElementById('wasteSearchInput').value = item.name;
     document.getElementById('wasteSearchResults').style.display = 'none';
+    
+    // 🔥 THE FIX: Dynamically update the UOM dropdown based on the exact item selected!
+    let uomDrop = document.getElementById('wasteUomSelect');
+    if (uomDrop) {
+        let bUom = item.uom || item.baseUom || 'Units';
+        let pUom = item.purchaseUom || item.purchUom || 'Bulk';
+        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+        if (bUom.toLowerCase() !== pUom.toLowerCase() && conv !== 1) {
+            uomDrop.innerHTML = `
+                <option value="purch" data-conv="${conv}">${pUom}</option>
+                <option value="base" data-conv="1" selected>${bUom}</option>
+            `;
+        } else {
+            uomDrop.innerHTML = `<option value="base" data-conv="1" selected>${bUom}</option>`;
+        }
+    }
+
     document.getElementById('wasteQty').focus(); // Automatically move cursor to the Qty box!
 };
 
@@ -4232,7 +4250,11 @@ window.addWasteToCart = function() {
 
     let itemName = itemInput.value.trim();
     let uomDrop = document.getElementById('wasteUomSelect');
-    let convRate = 1; let displayUom = window.currentWasteItemBUom || 'units'; let baseUom = window.currentWasteItemBUom || 'units';
+    
+    // 🔥 THE FIX: Extract UOMs safely from the newly selected item in memory
+    let baseUom = window.selectedWasteItem ? (window.selectedWasteItem.uom || window.selectedWasteItem.baseUom || 'units') : 'units';
+    let convRate = 1;
+    let displayUom = baseUom;
 
     if (uomDrop && uomDrop.tagName === 'SELECT') {
         let selOpt = uomDrop.options[uomDrop.selectedIndex];
@@ -4245,9 +4267,13 @@ window.addWasteToCart = function() {
     if (typeof window.wasteCart === 'undefined') window.wasteCart = [];
 
     window.wasteCart.push({
-        id: window.currentWasteItemId || null,
-        name: itemName, rawQty: rawQty, displayUom: displayUom,
-        baseQty: finalQty, baseUom: baseUom, reason: reason,
+        id: window.selectedWasteItem ? window.selectedWasteItem.id : null,
+        name: itemName, 
+        rawQty: rawQty, 
+        displayUom: displayUom,
+        baseQty: finalQty, 
+        baseUom: baseUom, 
+        reason: reason,
         file: photoInput.files[0], // Store the image file!
         cost: (window.selectedWasteItem ? (window.selectedWasteItem.baseCost || window.selectedWasteItem.cost) : 0) || 0
     });
