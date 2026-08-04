@@ -759,6 +759,10 @@
         <span style="font-size: 18px;">🔪</span>
         <div class="nav-item-text">Kitchen Prep</div>
       </div>
+      <div class="nav-item" id="nav-consumables" onclick="switchView('consumables'); window.loadConsumablesView();">
+        <span style="font-size: 18px;">🧹</span>
+        <div class="nav-item-text">Consumables</div>
+      </div>
       <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries'); window.renderDeliveriesTab();">
         <span style="font-size: 18px;">🚚</span>
         <div class="nav-item-text">
@@ -891,7 +895,6 @@
           </div>
 
           <!-- NEW BOTTOM DEPARTMENT TABS -->
-          <div class="department-footer" id="bottomDepartmentFooter"></div>
         </div>
         <div class="ticket-panel">
           <div class="ticket-header">
@@ -1181,6 +1184,39 @@
 
       </div>
     </div>
+
+    <!-- 🧹 DEDICATED CONSUMABLES & STORE USE VIEW -->
+    <div class="view-container" id="view-consumables">
+      <div class="pos-layout">
+        <div class="menu-panel">
+          <div class="category-header" id="consumablesCategoryHeader"></div>
+          <div class="item-grid-container">
+            <div class="item-grid" id="consumablesItemGrid">
+              <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Loading Store Supplies...</div>
+            </div>
+          </div>
+        </div>
+        <div class="ticket-panel">
+          <div class="ticket-header">
+            <h2>📦 Store Use Cart</h2>
+          </div>
+          <div class="table-header">
+            <span class="col-desc">Item Taken</span>
+            <span class="col-qty">Qty</span>
+            <span class="col-sub">Action</span>
+          </div>
+          <ul class="order-list" id="consumablesCartList">
+            <li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Cart is empty.</li>
+          </ul>
+          <div class="ticket-footer">
+            <button class="btn-place" id="btnSubmitConsumables" onclick="window.submitConsumablesCart()" style="width: 100%; padding: 18px; font-size: 16px; background: #0ea5e9; box-shadow: 0 4px 6px rgba(14,165,233,0.3);">
+                📥 Log & Deduct Inventory
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <div class="view-container" id="view-deliveries" style="padding: 20px; width: 100%; overflow-y: auto; background: var(--bg-color);">
         <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
               <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🚚 Incoming Deliveries</h2>
@@ -1542,10 +1578,6 @@
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;"><input type="text" id="finalCustomerName"
             class="input-box" placeholder="Customer Name (Optional)"></div>
-      </div>
-      <div class="modal-foot" style="display: flex; gap: 10px;">
-        <button class="btn-place" style="flex: 1; background: #f59e0b; font-size: 16px;" onclick="window.processStoreUse()">📦 Log as Store Use</button>
-        <button class="btn-place" style="flex: 2;" id="btnSubmitFinal" onclick="submitFinalOrder()">Complete checkout</button>
       </div>
     </div>
   </div>
