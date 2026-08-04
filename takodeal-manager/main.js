@@ -13451,31 +13451,7 @@ window.loadPosConfigHub = async function() {
     let originalText = btn ? btn.innerText : "💾 Save Changes to Cloud";
     if (btn) btn.innerText = "⏳ Loading Data...";
 
-    // 🔥 DYNAMICALLY INJECT MIX & MATCH, WASTE REASONS, AND CONSUMABLES
-    if (!document.getElementById('configMixMatch')) {
-        let container = document.getElementById('configPosTabs').parentElement.parentElement;
-        container.insertAdjacentHTML('beforeend', `
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
-                <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">🐙 Mix & Match Flavors</h3>
-                <p style="font-size: 11px; color: #64748b; margin-bottom: 10px;">Comma-separated list of flavors for the Takoyaki Mix & Match.</p>
-                <textarea id="configMixMatch" rows="4" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-                <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Example: Pork, Shrimp, Octopus, Ham & Cheese, Bacon & Cheese</div>
-            </div>
-            <div style="background: #fff1f2; border: 1px solid #fecaca; border-radius: 8px; padding: 15px; margin-top: 15px;">
-                <h3 style="margin-top: 0; color: #be123c; font-size: 16px; border-bottom: 2px solid #fecaca; padding-bottom: 5px;">🗑️ Custom Waste Reasons</h3>
-                <p style="font-size: 11px; color: #9f1239; margin-bottom: 10px;">Comma-separated list of reasons for the Waste & Spoilage log.</p>
-                <textarea id="configWasteReasons" rows="3" style="width: 100%; padding: 10px; border: 1px solid #fca5a5; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-                <div style="font-size: 10px; color: #fda4af; margin-top: 5px;">Example: Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Pest Damage</div>
-            </div>
-            <!-- 🔥 NEW: CONSUMABLES CATEGORY BOX -->
-            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 15px; margin-top: 15px;">
-                <h3 style="margin-top: 0; color: #15803d; font-size: 16px; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🧹 Consumables Tab Categories</h3>
-                <p style="font-size: 11px; color: #16a34a; margin-bottom: 10px;">Comma-separated list of inventory categories that should appear in the Cashier Consumables Tab.</p>
-                <textarea id="configConsumables" rows="3" style="width: 100%; padding: 10px; border: 1px solid #86efac; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>
-                <div style="font-size: 10px; color: #22c55e; margin-top: 5px;">Example: Consumables, Cleaning Supplies, Packaging</div>
-            </div>
-        `);
-    }
+    // 🚨 We completely deleted the messy HTML injection code here! 🚨
 
     try {
         const docRef = doc(db, "settings", "global_pos_config");
@@ -13483,26 +13459,27 @@ window.loadPosConfigHub = async function() {
 
         if (docSnap.exists()) {
             let data = docSnap.data();
-            document.getElementById('configPayMethods').value = (data.paymentMethods || []).join(', ');
-            document.getElementById('configOrderTypes').value = (data.orderTypes || []).join(', ');
-            document.getElementById('configPosTabs').value = (data.posTabs || []).join(', ');
-            document.getElementById('configKitchenPrep').value = (data.kitchenPrepCats || ["Prepared Batch"]).join(', ');
-            document.getElementById('configAuditList').value = (data.auditItems || []).join(', ');
-            document.getElementById('configMixMatch').value = (data.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]).join(', ');
-            document.getElementById('configWasteReasons').value = (data.wasteReasons || ["Dropped / Spilled", "Burnt / Overcooked", "Spoiled / Expired", "Customer Replacement", "Pest Damage", "Other"]).join(', ');
             
-            // 🔥 LOAD SAVED CONSUMABLES
-            document.getElementById('configConsumables').value = (data.consumableCats || ["Consumables", "Cleaning Supplies", "Packaging"]).join(', ');
+            // Safely load all data into our new, clean HTML inputs
+            if(document.getElementById('configPayMethods')) document.getElementById('configPayMethods').value = (data.paymentMethods || []).join(', ');
+            if(document.getElementById('configOrderTypes')) document.getElementById('configOrderTypes').value = (data.orderTypes || []).join(', ');
+            if(document.getElementById('configPosTabs')) document.getElementById('configPosTabs').value = (data.posTabs || []).join(', ');
+            if(document.getElementById('configKitchenPrep')) document.getElementById('configKitchenPrep').value = (data.kitchenPrepCats || ["Prepared Batch"]).join(', ');
+            if(document.getElementById('configAuditList')) document.getElementById('configAuditList').value = (data.auditItems || []).join(', ');
+            if(document.getElementById('configMixMatch')) document.getElementById('configMixMatch').value = (data.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]).join(', ');
+            if(document.getElementById('configWasteReasons')) document.getElementById('configWasteReasons').value = (data.wasteReasons || ["Dropped / Spilled", "Burnt / Overcooked", "Spoiled / Expired", "Customer Replacement", "Pest Damage", "Other"]).join(', ');
+            if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = (data.consumableCats || ["Consumables", "Cleaning Supplies", "Packaging"]).join(', ');
+            
         } else {
-            // Defaults
-            document.getElementById('configPayMethods').value = "Cash, GCash, Bank, Grab";
-            document.getElementById('configOrderTypes').value = "Dine-In, Take-Out, Delivery, Grab";
-            document.getElementById('configPosTabs').value = "Takoyaki, Milk Tea, Coffee, Add-ons";
-            document.getElementById('configKitchenPrep').value = "Prepared Batch";
-            document.getElementById('configAuditList').value = "320cc Paper Bowl, 520cc Paper Bowl, LB1 Box, Burger Box";
-            document.getElementById('configMixMatch').value = "Pork, Shrimp, Octopus, Ham & Cheese, Bacon & Cheese";
-            document.getElementById('configWasteReasons').value = "Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Customer Replacement, Pest Damage, Other";
-            document.getElementById('configConsumables').value = "Consumables, Cleaning Supplies, Packaging";
+            // Load Defaults if nothing exists yet
+            if(document.getElementById('configPayMethods')) document.getElementById('configPayMethods').value = "Cash, GCash, Bank, Grab";
+            if(document.getElementById('configOrderTypes')) document.getElementById('configOrderTypes').value = "Dine-In, Take-Out, Delivery, Grab";
+            if(document.getElementById('configPosTabs')) document.getElementById('configPosTabs').value = "Takoyaki, Milk Tea, Coffee, Add-ons";
+            if(document.getElementById('configKitchenPrep')) document.getElementById('configKitchenPrep').value = "Prepared Batch";
+            if(document.getElementById('configAuditList')) document.getElementById('configAuditList').value = "320cc Paper Bowl, 520cc Paper Bowl, LB1 Box, Burger Box";
+            if(document.getElementById('configMixMatch')) document.getElementById('configMixMatch').value = "Pork, Shrimp, Octopus, Ham & Cheese, Bacon & Cheese";
+            if(document.getElementById('configWasteReasons')) document.getElementById('configWasteReasons').value = "Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Customer Replacement, Pest Damage, Other";
+            if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = "Consumables, Cleaning Supplies, Packaging";
         }
     } catch (error) {
         console.error("Error loading config:", error);
@@ -13525,7 +13502,7 @@ window.saveGlobalPosConfig = async function() {
         let auditList = document.getElementById('configAuditList').value.split(',').map(s => s.trim()).filter(Boolean);
         let mixFlavors = document.getElementById('configMixMatch').value.split(',').map(s => s.trim()).filter(Boolean);
         let wasteReasons = document.getElementById('configWasteReasons').value.split(',').map(s => s.trim()).filter(Boolean);
-        let consumableCats = document.getElementById('configConsumables').value.split(',').map(s => s.trim()).filter(Boolean); // 🔥 GRAB CONSUMABLES DATA
+        let consumableCats = document.getElementById('configConsumables').value.split(',').map(s => s.trim()).filter(Boolean);
 
         await setDoc(doc(db, "settings", "global_pos_config"), {
             paymentMethods: payMethods,
