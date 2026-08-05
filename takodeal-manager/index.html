@@ -196,27 +196,45 @@
         .modal-body { max-height: 75vh !important; overflow-y: auto !important; }
     }
 
-    /* 📱 PHONE MODE */
+    /* ========================================= */
+    /* 📱 ULTRA MODE MOBILE ENGINE (iPHONE FIX)  */
+    /* ========================================= */
     @media (max-width: 768px) {
         .mobile-menu-btn { display: block !important; }
+        
         .sidebar {
             position: fixed !important; left: -300px !important; top: 0 !important;
             height: 100dvh !important; width: 260px !important; z-index: 99999 !important;
             box-shadow: 4px 0 20px rgba(0,0,0,0.5) !important; transition: left 0.3s ease-in-out !important;
         }
         .sidebar.show-mobile { left: 0 !important; }
-        /* Restore text and categories inside the slide-out menu */
         .sidebar .nav-text, .sidebar .brand .text, .user-profile .details, .nav-category, .nav-badge { display: block !important; } 
         .sidebar .nav-item { justify-content: flex-start; padding: 12px 20px; }
         .sidebar .nav-item .nav-icon { margin-right: 15px; font-size: 17px; }
 
         .main-content { width: 100% !important; margin-left: 0 !important; padding: 10px !important; padding-bottom: 40px !important; }
-        .topbar { flex-direction: column !important; align-items: flex-start !important; gap: 10px; }
-        #globalDateControls { width: 100% !important; flex-direction: column !important; align-items: stretch !important; gap: 10px !important; margin-top: 10px !important; }
-        #globalDateControls input, #globalDateControls button { width: 100% !important; margin: 0 !important; }
         
+        /* 🔥 THE HEADER & DATE CONTROLS COMPACT FIX 🔥 */
+        .topbar { flex-direction: column !important; align-items: stretch !important; padding: 15px 10px !important; gap: 12px; height: auto !important; }
+        .topbar h1 { font-size: 18px !important; }
+        
+        #globalDateControls { 
+            display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 8px !important; width: 100% !important; margin-top: 0 !important; 
+        }
+        #globalDateControls > span { display: none !important; } /* Hide 'From/To' text to save space */
+        
+        /* Side-by-Side Dates */
+        #dashStartDate, #dashEndDate { 
+            flex: 1 1 45% !important; padding: 10px !important; font-size: 13px !important; margin: 0 !important;
+        }
+        
+        /* Compact Single-Row Buttons */
+        #btnRefreshData { flex: 1 1 100% !important; padding: 12px !important; font-size: 14px !important; margin: 0 !important; }
+        #btnExportSales { flex: 1 1 60% !important; padding: 12px !important; font-size: 13px !important; margin: 0 !important; }
+        #btnWipeData { flex: 1 1 20% !important; padding: 12px !important; font-size: 18px !important; margin: 0 !important; }
+        
+        /* Fix Modals & Grids */
         input, select, button { padding: 12px !important; font-size: 16px !important; }
-
         div[style*="grid-template-columns: repeat(5"] { grid-template-columns: 1fr 1fr !important; }
         #analyticsModal .stat-grid .stat-card:nth-child(1) { grid-column: 1 / -1 !important; }
         #analyticsModal div[style*="grid-template-columns: 2fr 1fr"] { display: flex !important; flex-direction: column !important; gap: 15px !important; }
@@ -434,6 +452,7 @@
     <div
       style="background: white; padding: 40px 60px; border-radius: 12px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
       <h2 style="margin: 0 0 10px 0; color: #333;">Secure Control Center</h2>
+</h2>
       <p style="color: #666; font-size: 14px; margin-bottom: 30px;">Authorized personnel only.</p>
 
       <button onclick="loginWithGoogle()"
@@ -442,6 +461,11 @@
           style="width: 20px; height: 20px;">
         Sign in with Google
       </button>
+      <button onclick="window.promptMobileInstall()"
+        style="background: #f8fafc; color: #0ea5e9; border: 2px dashed #bae6fd; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 15px auto 0 auto; box-shadow: 0 2px 4px rgba(14,165,233,0.1); width: 100%; box-sizing: border-box;">
+        📱 Install Native Mobile App
+      </button>
+
     </div>
   </div>
 
