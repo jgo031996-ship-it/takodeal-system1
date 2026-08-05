@@ -242,95 +242,70 @@
         .modal-body { padding: 15px !important; }
     }
 
-    /* ======================================================= */
-    /* 📱 MANAGER APP MOBILE UI RESPONSIVE ENGINE              */
-    /* ======================================================= */
+    /* ========================================= */
+    /* 📱 ULTRA MODE MOBILE ENGINE (iPHONE FIX)  */
+    /* ========================================= */
     @media (max-width: 768px) {
-        /* 1. Stack the layout */
-        body {
-            display: flex !important;
-            flex-direction: column !important;
-        }
+        /* 1. Stack the layout & Hide Desktop Elements */
+        body { display: flex !important; flex-direction: column !important; overflow: hidden !important; height: 100dvh !important; }
+        .mobile-menu-btn, .sidebar-header, .sidebar-footer, .nav-text, .nav-category, .nav-badge, .user-profile { display: none !important; }
     
         /* 2. Transform Sidebar into a Swipeable Top Navigation */
         #sidebar, .sidebar {
-            width: 100% !important;
-            height: 70px !important;
-            min-height: 70px !important;
-            display: flex !important;
-            flex-direction: row !important;
-            overflow-x: auto !important;
-            overflow-y: hidden !important;
-            white-space: nowrap !important;
-            padding: 5px 10px !important;
-            border-right: none !important;
-            border-bottom: 2px solid #1e293b !important;
-            position: sticky !important;
-            top: 0 !important;
-            z-index: 1000 !important;
+            position: sticky !important; top: 0 !important; left: 0 !important; z-index: 1000 !important;
+            width: 100% !important; height: 70px !important; min-height: 70px !important;
+            display: flex !important; flex-direction: row !important;
+            overflow-x: auto !important; overflow-y: hidden !important; white-space: nowrap !important;
+            padding: 5px 10px !important; background: #0f172a !important;
+            border-right: none !important; border-bottom: 2px solid #1e293b !important;
             -webkit-overflow-scrolling: touch !important;
-            background: #0f172a !important; /* Ensure background stays solid */
+            box-shadow: none !important; 
         }
     
-        /* Align sidebar items horizontally for phone tapping */
+        /* Align sidebar items horizontally */
         #sidebar a, .sidebar a, .sidebar .nav-item {
-            display: inline-flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-            padding: 8px 15px !important;
-            margin-bottom: 0 !important;
-            font-size: 11px !important;
-            border-radius: 8px !important;
-            flex: 0 0 auto !important;
+            display: inline-flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important;
+            padding: 8px 15px !important; margin-bottom: 0 !important; border-radius: 8px !important; flex: 0 0 auto !important; border-left: none !important;
         }
-    
-        /* Adjust the text under the icons */
-        #sidebar span, .sidebar span {
-            margin-left: 0 !important;
-            margin-top: 4px !important;
-            font-size: 10px !important;
-        }
+        #sidebar .nav-icon, .sidebar .nav-icon { margin: 0 !important; font-size: 22px !important; }
     
         /* 3. Adjust Main Content Area */
         .main-content, #mainContent {
-            width: 100% !important;
-            margin-left: 0 !important; 
-            padding: 10px !important;
+            width: 100% !important; margin-left: 0 !important; padding: 15px !important; 
+            padding-bottom: 90px !important; overflow-y: auto !important; height: calc(100dvh - 70px) !important;
         }
     
-        /* 4. Shrink Modals for Phone Screens */
-        .modal > div {
-            width: 95% !important;
-            min-width: 95% !important;
-            margin: 10px auto !important;
-            max-height: 90vh !important;
-            overflow-y: auto !important;
-            padding: 15px !important;
-        }
+        /* 4. HEADER & DATE CONTROLS COMPACT FIX */
+        .topbar { flex-direction: column !important; align-items: stretch !important; padding: 10px 0 !important; gap: 10px !important; height: auto !important; }
+        .topbar h1 { font-size: 20px !important; margin-bottom: 5px !important; }
+        
+        #globalDateControls { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px !important; width: 100% !important; margin-top: 0 !important; }
+        #globalDateControls > span { display: none !important; } /* Hide 'From/To' text */
+        
+        #dashStartDate, #dashEndDate { width: 100% !important; padding: 10px !important; font-size: 13px !important; margin: 0 !important; box-sizing: border-box !important; }
+        
+        #btnRefreshData { grid-column: span 2 !important; padding: 12px !important; font-size: 14px !important; }
+        #btnExportSales { grid-column: span 1 !important; padding: 12px !important; font-size: 13px !important; }
+        #btnWipeData { grid-column: span 1 !important; padding: 12px !important; font-size: 13px !important; }
     
-        /* 5. Stack Dashboard Cards and Grids */
-        .grid, .grid-2, .grid-3, .grid-4 {
-            grid-template-columns: 1fr !important;
-            gap: 10px !important;
-        }
+        /* 5. Fix Dashboard Cards and Grids */
+        div[style*="grid-template-columns: repeat(3, 1fr)"] { grid-template-columns: 1fr !important; }
+        div[style*="grid-template-columns: repeat(3, 1fr)"] > div { border-right: none !important; border-bottom: 1px solid #e2e8f0 !important; }
+        div[style*="grid-template-columns: 2fr 1fr"] { display: flex !important; flex-direction: column !important; gap: 15px !important; }
+        .grid, .grid-2, .grid-3, .grid-4, .stat-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
     
-        /* 6. Stretch Buttons and Inputs */
-        input, select, button {
-            box-sizing: border-box !important;
-        }
-    }
-    
-    /* 🔥 THE SMOOTH TABLE SCROLLING CLASS (Applied via JS below) */
-    .mobile-table-wrapper {
-        width: 100% !important;
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch !important;
-        border-radius: 8px;
-        margin-bottom: 15px;
-        border: 1px solid #e2e8f0;
+        /* 6. Fix Modals */
+        .modal { width: 95% !important; max-width: 95% !important; margin: 10px auto !important; }
+        .modal-body { padding: 15px !important; max-height: 75vh !important; }
+        input, select, button { box-sizing: border-box !important; }
     }
 
+    /* 🔥 THE SMOOTH TABLE SCROLLING CLASS (Applied via JS) */
+    .mobile-table-wrapper {
+        width: 100% !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important;
+        border-radius: 8px; margin-bottom: 15px; border: 1px solid #e2e8f0;
+    }
+         
     /* ======================================================= */
     /* 🚀 FINANCIAL DASHBOARD "ULTRA MODE"                     */
     /* ======================================================= */
