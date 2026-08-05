@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 window.onSnapshot = onSnapshot;
 
@@ -163,22 +163,67 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
-// 🔥 iOS & MOBILE FRIENDLY GOOGLE LOGIN ENGINE
-window.loginWithGoogle = async function() {
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  try {
-    if (isMobile) {
-      // iPhone/Mobile Safari requires redirect instead of popups
-      await signInWithRedirect(auth, provider);
-    } else {
-      // Desktop PC/Laptops can still use clean popups
-      await signInWithPopup(auth, provider);
+// 🔥 FIX 1: Catch Safari Redirects Globally (Required for iPhones)
+getRedirectResult(auth).then((result) => {
+    if (result !== null) {
+        console.log("Redirect login successful");
     }
-  } catch (error) {
-    console.error("Login Error:", error);
-    alert("Login failed: " + error.message);
-  }
+}).catch((error) => {
+    console.error("Redirect Error:", error);
+    Swal.fire('Login Error', error.message, 'error');
+});
+
+// 🔥 FIX 2: Bulletproof Google Login Engine
+window.loginWithGoogle = async function() {
+    let btn = document.querySelector('#loginOverlay button');
+    let origText = btn ? btn.innerHTML : "Sign in with Google";
+    if (btn) { btn.innerHTML = "⏳ Authenticating..."; btn.disabled = true; }
+
+    try {
+        // Force account selection to prevent silent Safari auth loops
+        provider.setCustomParameters({ prompt: 'select_account' });
+        
+        // Always try popup first. It works inside iOS PWAs natively.
+        await signInWithPopup(auth, provider);
+        
+    } catch (error) {
+        console.error("Popup failed:", error);
+        
+        // If Apple Safari explicitly blocked the popup, fallback to redirect!
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user' || error.message.includes('popup')) {
+            Swal.fire({
+                title: 'Popup Blocked 🛡️',
+                text: 'Safari blocked the login window. Switching to safe redirect mode...',
+                icon: 'info',
+                timer: 2000,
+                showConfirmButton: false
+            }).then(() => {
+                signInWithRedirect(auth, provider);
+            });
+        } else {
+            Swal.fire('Login Failed', error.message, 'error');
+            if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+        }
+    }
 };
+
+// 📱 MOBILE INSTALL HELPER
+window.promptMobileInstall = function() {
+    const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+    if (isIos) {
+        Swal.fire({
+            title: '📱 Install on iPhone',
+            html: '<div style="text-align: left; font-size: 15px; color: #334155;">To run TAKODEÁL in Full-Screen Ultra Mode without browser bars:<br><br><b>1.</b> Tap the Safari <b>Share</b> icon at the bottom of your screen (the square with an arrow pointing up).<br><br><b>2.</b> Scroll down and tap <b>Add to Home Screen</b> ➕.</div>',
+            icon: 'info',
+            confirmButtonText: 'Got it!',
+            confirmButtonColor: '#0ea5e9',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+    } else {
+        Swal.fire('📱 Android / PC Install', 'Tap the 3-dot menu (⋮) in the top right of your Chrome browser and select "Install App" or "Add to Home screen".', 'info');
+    }
+};
+
 
 // Catch redirect results when returning to app on Mobile/iOS
 getRedirectResult(auth).catch((error) => {
