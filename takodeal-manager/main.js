@@ -19988,3 +19988,30 @@ window.openEmployeeProfile = function(docId) {
 
 // Start the watchdog 3 seconds after the Manager App loads!
 setTimeout(window.initVersionWatchdog, 3000);
+
+// ========================================================
+// 📱 MOBILE TABLE AUTO-WRAPPER (MUTATION OBSERVER)
+// ========================================================
+document.addEventListener("DOMContentLoaded", () => {
+    const tableObserver = new MutationObserver(() => {
+        // Find every table currently on the screen
+        document.querySelectorAll('table').forEach(table => {
+            // If the table isn't already wrapped, wrap it!
+            if (!table.parentElement.classList.contains('mobile-table-wrapper')) {
+                let wrapper = document.createElement('div');
+                wrapper.className = 'mobile-table-wrapper';
+                
+                // Move the table inside our smooth-scrolling wrapper
+                table.parentNode.insertBefore(wrapper, table);
+                wrapper.appendChild(table);
+                
+                // Force the table to stay wide so the user can swipe through it
+                table.style.minWidth = "800px"; 
+                table.style.width = "100%";
+            }
+        });
+    });
+
+    // Tell the observer to actively watch the whole app for changes
+    tableObserver.observe(document.body, { childList: true, subtree: true });
+});
