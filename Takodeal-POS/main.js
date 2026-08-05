@@ -1015,107 +1015,69 @@ window.processCheckout = async function (payload) {
     }
 };
 
-// 🤖 THE INVISIBLE BACKGROUND SYNC ROBOT
+// ========================================================
+// ⚡ ATOMIC BATCH SYNC ENGINE (ZERO CORRUPTION)
+// ========================================================
 window.syncOfflineQueue = async function() {
-    // If it's already syncing, the queue is empty, or there's no internet, go back to sleep!
     if (window.isSyncing || window.offlineQueue.length === 0 || !navigator.onLine) return;
     
     window.isSyncing = true;
     let badge = document.getElementById('liveClock').nextElementSibling;
 
     try {
-        // Process orders one by one from the queue
         while (window.offlineQueue.length > 0) {
             if (badge) {
-                badge.innerHTML = `<span style="background: #eab308; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(234,179,8,0.5);">⏳ SYNCING SALES (${window.offlineQueue.length})...</span>`;
+                badge.innerHTML = `<span style="background: #eab308; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px;">⏳ SYNCING SALES (${window.offlineQueue.length})...</span>`;
             }
 
             let payload = window.offlineQueue[0];
-
-            // --- ☁️ FIREBASE CLOUD SYNC BEGINS ---
             
-            // 1. Upload Transaction (Using the exact time the cashier pressed checkout)
-            await addDoc(collection(db, "transactions"), {
-                ...payload, 
-                timestamp: new Date(payload.localTimestamp) 
+            // 1. Create an Atomic Write Batch
+            const batch = writeBatch(db);
+
+            // 2. Add Transaction Document
+            const txRef = doc(collection(db, "transactions"));
+            batch.set(txRef, {
+                ...payload,
+                timestamp: new Date(payload.localTimestamp)
             });
 
-            // 2. Route Cash to Ledgers
-            let paymentsToRoute = payload.splitDetails ? payload.splitDetails : [{ method: payload.paymentMethod || 'Cash', amount: payload.netTotal || 0 }];
-            for (let p of paymentsToRoute) {
-                if (p.amount <= 0) continue; 
-                const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", payload.branch), where("name", "==", p.method));
-                const accSnap = await getDocs(accQuery);
-                if (!accSnap.empty) {
-                    let accDoc = accSnap.docs[0];
-                    await updateDoc(doc(db, "cash_accounts", accDoc.id), { balance: (parseFloat(accDoc.data().balance) || 0) + p.amount });
-                } else {
-                    await addDoc(collection(db, "cash_accounts"), { branch: payload.branch, name: p.method, balance: p.amount });
-                }
-            }
-
-            // 3. Deduct Inventory & Recipes
-            let lowStockTriggered = false;
+            // 3. Batch Inventory Deductions
             for (let cartItem of payload.cart) {
                 let itemName = cartItem.name || cartItem.itemName;
                 let qtySold = cartItem.qty || 1;
 
                 const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
                 const bomSnap = await getDocs(bomQ);
+                
                 for (let bomDoc of bomSnap.docs) {
                     let recipeData = bomDoc.data();
-                    let totalAmountToDeduct = (recipeData.qty || 0) * qtySold;
+                    let totalDeduct = (recipeData.qty || 0) * qtySold;
+                    
                     const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", recipeData.ingredientName));
                     const invSnap = await getDocs(invQ);
+                    
                     if (!invSnap.empty) {
-                        let invData = invSnap.docs[0].data();
-                        let newStock = (invData.currentStock || 0) - totalAmountToDeduct;
-                        await updateDoc(invSnap.docs[0].ref, { currentStock: newStock });
-                        if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
-                    }
-                }
-
-                if (cartItem.addons) {
-                    for (let addonKey in cartItem.addons) {
-                        let addon = cartItem.addons[addonKey];
-                        if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                            let totalAddonDeduct = addon.deductQty * addon.qty * qtySold;
-                            const addonInvQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", addon.linkedIngredient));
-                            const addonInvSnap = await getDocs(addonInvQ);
-                            if (!addonInvSnap.empty) {
-                                let invData = addonInvSnap.docs[0].data();
-                                let newStock = (invData.currentStock || 0) - totalAddonDeduct;
-                                await updateDoc(addonInvSnap.docs[0].ref, { currentStock: newStock });
-                                if (newStock <= (invData.reorderLevel || 5)) lowStockTriggered = true;
-                            }
-                        }
+                        let invRef = invSnap.docs[0].ref;
+                        batch.update(invRef, { currentStock: increment(-totalDeduct) });
                     }
                 }
             }
-            if (lowStockTriggered) window.pendingLowStockAlarm = true;
 
-            // 4. Update Takoyaki Global Vault Counter
-            let totalBallsInOrder = 0;
-            for (let cartItem of payload.cart) {
-                let match = (cartItem.name || cartItem.itemName).match(/(\d+)\s*Pcs/i);
-                if (match) totalBallsInOrder += (parseInt(match[1]) * (cartItem.qty || 1));
-            }
-            if (totalBallsInOrder > 0) {
-                await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: increment(totalBallsInOrder) }, { merge: true });
-            }
+            // 4. Commit All Writes At the Exact Same Time
+            await batch.commit();
 
-            // --- ☁️ FIREBASE CLOUD SYNC ENDS ---
-
-            // If we survived without network errors, the cloud has the data! 
-            // We can now safely delete it from the tablet's local queue.
+            // Remove processed order from local queue
             window.offlineQueue.shift();
             localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
         }
     } catch(e) {
-        console.warn("Offline Sync Robot Paused: Internet dropped mid-sync. Will retry automatically.", e);
+        console.warn("Offline Sync Paused: Will retry automatically when connection stabilizes.", e);
     } finally {
         window.isSyncing = false;
-        if (window.isAppOnline) window.updateNetworkStatusUI(); // Restores the Green Online Badge
+        if (window.isAppOnline && typeof window.updateNetworkStatusUI === 'function') {
+            window.updateNetworkStatusUI();
+        }
     }
 };
 
