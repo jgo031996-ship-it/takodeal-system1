@@ -13668,29 +13668,41 @@ window.saveGlobalPosConfig = async function() {
     if (btn) { btn.innerText = "⏳ Saving..."; btn.disabled = true; }
 
     try {
-        let payMethods = document.getElementById('configPayMethods').value.split(',').map(s => s.trim()).filter(Boolean);
-        let orderTypes = document.getElementById('configOrderTypes').value.split(',').map(s => s.trim()).filter(Boolean);
-        let posTabs = document.getElementById('configPosTabs').value.split(',').map(s => s.trim()).filter(Boolean);
-        let prepCats = document.getElementById('configKitchenPrep').value.split(',').map(s => s.trim()).filter(Boolean);
-        let auditList = document.getElementById('configAuditList').value.split(',').map(s => s.trim()).filter(Boolean);
-        let mixFlavors = document.getElementById('configMixMatch').value.split(',').map(s => s.trim()).filter(Boolean);
-        let wasteReasons = document.getElementById('configWasteReasons').value.split(',').map(s => s.trim()).filter(Boolean);
-        let consumableCats = document.getElementById('configConsumables').value.split(',').map(s => s.trim()).filter(Boolean);
-
-        await setDoc(doc(db, "settings", "global_pos_config"), {
-            paymentMethods: payMethods,
-            orderTypes: orderTypes,
-            posTabs: posTabs,
-            kitchenPrepCats: prepCats,
-            auditItems: auditList,
-            mixMatchFlavors: mixFlavors,
-            wasteReasons: wasteReasons, 
-            consumableCats: consumableCats, // 🔥 SAVES THE CONSUMABLES TO CLOUD
+        // 1. Create a dynamic payload (only things we actually want to change go in here)
+        let payload = {
             lastUpdatedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
-        }, { merge: true });
+        };
 
-        Swal.fire({ title: '✅ Success!', text: 'POS Settings saved to Cloud.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
+        // 2. Grab the raw text from all the input boxes
+        let rawPay = document.getElementById('configPayMethods').value.trim();
+        let rawOrder = document.getElementById('configOrderTypes').value.trim();
+        let rawTabs = document.getElementById('configPosTabs').value.trim();
+        let rawPrep = document.getElementById('configKitchenPrep').value.trim();
+        let rawAudit = document.getElementById('configAuditList').value.trim();
+        let rawMix = document.getElementById('configMixMatch').value.trim();
+        let rawWaste = document.getElementById('configWasteReasons').value.trim();
+        let rawCons = document.getElementById('configConsumables').value.trim();
+
+        // 3. THE SMART MERGE SHIELD: Only convert and add to payload IF the box is NOT empty!
+        if (rawPay !== "") payload.paymentMethods = rawPay.split(',').map(s => s.trim()).filter(Boolean);
+        if (rawOrder !== "") payload.orderTypes = rawOrder.split(',').map(s => s.trim()).filter(Boolean);
+        if (rawTabs !== "") payload.posTabs = rawTabs.split(',').map(s => s.trim()).filter(Boolean);
+        if (rawPrep !== "") payload.kitchenPrepCats = rawPrep.split(',').map(s => s.trim()).filter(Boolean);
+        if (rawAudit !== "") payload.auditItems = rawAudit.split(',').map(s => s.trim()).filter(Boolean);
+        if (rawMix !== "") payload.mixMatchFlavors = rawMix.split(',').map(s => s.trim()).filter(Boolean);
+        if (rawWaste !== "") payload.wasteReasons = rawWaste.split(',').map(s => s.trim()).filter(Boolean);
+        if (rawCons !== "") payload.consumableCats = rawCons.split(',').map(s => s.trim()).filter(Boolean);
+
+        // 4. Send ONLY the filled fields to Firebase
+        await setDoc(doc(db, "settings", "global_pos_config"), payload, { merge: true });
+
+        Swal.fire({ 
+            title: '✅ Success!', 
+            text: 'POS Settings saved! Blank categories were safely ignored.', 
+            icon: 'success', 
+            customClass: { popup: 'rounded-2xl' } 
+        });
     } catch (error) {
         console.error("Error saving config:", error); 
         Swal.fire('Error', '❌ Failed to save.', 'error');
