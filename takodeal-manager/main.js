@@ -20109,3 +20109,87 @@ document.addEventListener("DOMContentLoaded", () => {
     // Tell the observer to actively watch the whole app for changes
     tableObserver.observe(document.body, { childList: true, subtree: true });
 });
+
+// ========================================================
+// 📦 SUPPLIER PO AGGREGATOR & AUTO-REORDER ENGINE
+// ========================================================
+window.generateSupplierPurchaseOrders = async function() {
+    Swal.fire({ title: 'Scanning Inventory Levels...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    try {
+        const invSnap = await getDocs(collection(db, "inventory"));
+        let supplierOrders = {};
+
+        invSnap.forEach(docSnap => {
+            let item = docSnap.data();
+            let stock = parseFloat(item.currentStock) || 0;
+            let reorderLevel = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
+
+            // Trigger reorder if stock is at or below reorder level
+            if (stock <= reorderLevel) {
+                let supplier = item.supplier || "General Supplier";
+                let neededStock = (reorderLevel * 2) - stock;
+                if (neededStock <= 0) neededStock = reorderLevel;
+
+                let convRate = parseFloat(item.conversionRate) || 1;
+                let purchQty = Math.ceil(neededStock / convRate);
+                let purchUom = item.purchaseUom || item.uom || 'units';
+
+                if (!supplierOrders[supplier]) supplierOrders[supplier] = [];
+
+                supplierOrders[supplier].push({
+                    branch: item.branch,
+                    itemName: item.name,
+                    purchQty: purchQty,
+                    purchUom: purchUom,
+                    estCost: (purchQty * (parseFloat(item.purchaseCost) || 0))
+                });
+            }
+        });
+
+        let html = '';
+        let totalPOCost = 0;
+
+        for (let supplier in supplierOrders) {
+            let items = supplierOrders[supplier];
+            let supplierTotal = items.reduce((sum, i) => sum + i.estCost, 0);
+            totalPOCost += supplierTotal;
+
+            let itemListHtml = items.map(i => `
+                <div style="display:flex; justify-content:space-between; font-size:12px; padding:4px 0; border-bottom:1px dashed #e2e8f0;">
+                    <span>📍 <b>${i.branch}:</b> ${i.itemName}</span>
+                    <b>${i.purchQty} ${i.purchUom} (₱${i.estCost.toLocaleString()})</b>
+                </div>
+            `).join('');
+
+            html += `
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:15px; margin-bottom:15px; text-align:left;">
+                    <div style="display:flex; justify-content:space-between; border-bottom:2px solid #0f766e; padding-bottom:8px; margin-bottom:10px;">
+                        <strong style="color:#0f766e; font-size:15px;">🚚 ${supplier}</strong>
+                        <strong style="color:#16a34a; font-size:15px;">₱${supplierTotal.toLocaleString()}</strong>
+                    </div>
+                    ${itemListHtml}
+                </div>
+            `;
+        }
+
+        if (Object.keys(supplierOrders).length === 0) {
+            return Swal.fire('Optimal Inventory', 'All branch inventory levels are currently optimal. No reorders needed!', 'success');
+        }
+
+        Swal.fire({
+            title: '📦 Master Supplier Purchase Orders',
+            html: `<div style="max-height:50vh; overflow-y:auto;">${html}</div><div style="font-size:16px; font-weight:900; color:#0f172a; text-align:right; margin-top:10px;">Total Procurement Cost: ₱${totalPOCost.toLocaleString()}</div>`,
+            width: 650,
+            showCancelButton: true,
+            confirmButtonText: 'Close Window',
+            confirmButtonColor: '#64748b',
+            showCancelButton: false,
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+
+    } catch(e) {
+        console.error("PO Aggregator Error:", e);
+        Swal.fire('Error', 'Failed to generate supplier orders.', 'error');
+    }
+};
