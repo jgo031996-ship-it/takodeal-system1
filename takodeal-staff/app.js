@@ -1206,9 +1206,6 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
     return R * c; 
 };
 
-// ==========================================
-// ⏱️ STRICT TIME CLOCK & SOP BLOCKER ENGINE (CRASH-PROOF)
-// ==========================================
 window.punchTime = async function(type) {
     let staffName = localStorage.getItem('takodeal_staff_name');
     if (!staffName) return Swal.fire('Error', 'Not logged in.', 'error');
@@ -1225,14 +1222,12 @@ window.punchTime = async function(type) {
         let lookBack = new Date();
         lookBack.setHours(lookBack.getHours() - 18); 
         
-        // 🔥 THE FIX: Removed the composite ">=" timestamp query to bypass the Index crash!
         const q = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
         const snap = await getDocs(q);
         
         let userLogs = [];
         snap.forEach(doc => {
             let d = doc.data();
-            // Filter the time locally instead of asking Firebase to do it!
             if (d.timestamp && d.timestamp.toDate() >= lookBack) {
                 userLogs.push(d);
             }
@@ -1268,14 +1263,12 @@ window.punchTime = async function(type) {
             let startOfDay = new Date();
             startOfDay.setHours(0,0,0,0);
             
-            // 🔥 THE FIX: Removed the composite ">=" timestamp query to bypass the Index crash!
             const sopQ = query(collection(db, "sop_logs"), where("staffName", "==", staffName));
             const sopSnap = await getDocs(sopQ);
             
             let hasSopToday = false;
             sopSnap.forEach(doc => {
                 let d = doc.data();
-                // Filter the time locally instead of asking Firebase to do it!
                 if (d.timestamp && d.timestamp.toDate() >= startOfDay) {
                     hasSopToday = true;
                 }
@@ -1296,11 +1289,11 @@ window.punchTime = async function(type) {
                         window.switchView('sop', document.querySelectorAll('.bottom-nav .nav-item')[4]);
                     }
                 });
-                return; // Completely stops the Time Out from proceeding!
+                return; 
             }
         }
 
-        // 3. 📍 GPS VERIFICATION
+        // 3. 📍 GPS VERIFICATION (MOVED UP FOR LATE CHECKER)
         if (!window.currentLat || !window.currentLng) {
             Swal.fire('GPS Required', 'Please wait for GPS verification. Ensure your location is turned on.', 'warning');
             return;
@@ -1318,7 +1311,126 @@ window.punchTime = async function(type) {
             return;
         }
 
-        // 4. 📸 PHOTO CAPTURE
+        // 4. ⏰ THE STRICT LATE DETECTOR & PHOTO INTERCEPTOR
+        if (type === "TIME IN") {
+            try {
+                let nickname = staffName;
+                const staffDocSnap = await getDoc(doc(db, "cashiers", localStorage.getItem('takodeal_staff_id')));
+                if (staffDocSnap.exists()) {
+                    nickname = staffDocSnap.data().scheduleNickname || staffName;
+                }
+
+                const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+                if (schedSnap.exists()) {
+                    let scheduleData = schedSnap.data();
+                    let logDate = new Date();
+                    let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
+                    
+                    if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth && scheduleData.currentSchedule) {
+                        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][closestBranch] : null;
+                        
+                        if (branchSched && branchSched.scheduled) {
+                            let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
+                            
+                            if (assignedShiftId && scheduleData.branchConfig[closestBranch]) {
+                                let shiftConfig = scheduleData.branchConfig[closestBranch].find(s => s.id === assignedShiftId);
+                                if (shiftConfig) {
+                                    let expectedStartHour = null;
+                                    if (shiftConfig.startTime) {
+                                        let parts = shiftConfig.startTime.split(':');
+                                        expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                    } else {
+                                        const parseTimeStr = (timeStr) => {
+                                            let t = timeStr.toLowerCase().replace(/\s/g, '');
+                                            let isPM = t.includes('pm'); let isNN = t.includes('nn');
+                                            let parts = t.replace(/(am|pm|nn)/, '').split(':');
+                                            let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+                                            if ((isPM || isNN) && hour < 12) hour += 12;
+                                            if (t.includes('am') && hour === 12) hour = 0;
+                                            return hour + (minute / 60);
+                                        };
+                                        let match = shiftConfig.name.match(/\((.*?)-/);
+                                        if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                    }
+                                    
+                                    if (expectedStartHour !== null) {
+                                        let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                        let diffHours = actualHour - expectedStartHour;
+                                        
+                                        // Trigger interceptor if they are more than 3 minutes late!
+                                        if (diffHours > 0.05 && diffHours < 4) {
+                                            let lateMins = Math.floor(diffHours * 60);
+                                            
+                                            Swal.close(); // Close the loading screen to show the modal!
+
+                                            const { value: lateForm, isConfirmed } = await Swal.fire({
+                                                title: '⏰ You are Late!',
+                                                html: `
+                                                    <div style="font-size: 14px; color: #475569; margin-bottom: 15px; text-align: left;">
+                                                        You are <b>${lateMins} minutes late</b> for your shift.<br><br>
+                                                        You are strictly required to provide a valid reason and attach a screenshot of your message sent to the Owner, Manager, or HR.
+                                                    </div>
+                                                    <textarea id="lateReason" placeholder="Enter your valid reason here..." style="width: 100%; padding: 12px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; font-family: inherit; resize: none; outline: none; font-weight: bold; box-sizing: border-box;"></textarea>
+                                                    <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px; text-align: left;">Upload Screenshot Proof 📸 *</label>
+                                                    <input type="file" id="lateProof" accept="image/*" style="width: 100%; padding: 10px; border: 2px dashed #fca5a5; border-radius: 8px; box-sizing: border-box; background: #fef2f2; color: #b91c1c; font-weight: bold; outline: none;">
+                                                `,
+                                                showCancelButton: true,
+                                                confirmButtonText: 'Submit & Time In',
+                                                cancelButtonText: 'Cancel',
+                                                confirmButtonColor: '#ef4444',
+                                                cancelButtonColor: '#64748b',
+                                                allowOutsideClick: false,
+                                                customClass: { popup: 'rounded-2xl shadow-xl border border-red-100' },
+                                                preConfirm: () => {
+                                                    let reason = document.getElementById('lateReason').value.trim();
+                                                    let file = document.getElementById('lateProof').files[0];
+                                                    if (!reason || !file) {
+                                                        Swal.showValidationMessage("Both a reason and a screenshot proof are strictly required to time in.");
+                                                        return false;
+                                                    }
+                                                    return { reason, file };
+                                                }
+                                            });
+
+                                            // If they click cancel, abort the Time In silently
+                                            if (!isConfirmed) return; 
+
+                                            Swal.fire({title: 'Uploading Proof...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+                                            let proofUrl = "";
+                                            const fileExt = lateForm.file.name.split('.').pop();
+                                            const fileName = `staff_requests/late_${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
+                                            const storageRef = ref(window.storage || getStorage(db.app), fileName);
+                                            const snapshot = await uploadBytes(storageRef, lateForm.file);
+                                            proofUrl = await getDownloadURL(snapshot.ref);
+
+                                            // Submits immediately to the Manager's Request Inbox!
+                                            await addDoc(collection(db, "staff_requests"), {
+                                                type: "Reason Letter",
+                                                staffName: staffName,
+                                                branch: closestBranch,
+                                                status: "Pending",
+                                                explanationCause: "Tardiness / Late Arrival",
+                                                explanationMessage: `Clocked in ${lateMins} minutes late. Reason: ${lateForm.reason}`,
+                                                proofImageUrl: proofUrl,
+                                                timestamp: serverTimestamp()
+                                            });
+                                            
+                                            // Show verifying again
+                                            Swal.fire({title: 'Verifying location...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch(e) {
+                console.error("Late Checker Error:", e);
+            }
+        }
+
+        // 5. 📸 PHOTO CAPTURE
         let photoBase64 = "";
         const video = document.getElementById('clockVideo');
         const canvas = document.getElementById('clockCanvas');
@@ -1330,7 +1442,7 @@ window.punchTime = async function(type) {
             photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
         }
 
-        // 5. 💾 SAVE TO FIREBASE
+        // 6. 💾 SAVE TO FIREBASE
         await addDoc(collection(db, "attendance_logs"), {
             staffName: staffName, branch: closestBranch, type: type, timestamp: serverTimestamp(),
             locationLat: window.currentLat, locationLng: window.currentLng, distanceMeters: Math.round(minDistance),
@@ -1348,6 +1460,7 @@ window.punchTime = async function(type) {
         if(btnOut) btnOut.disabled = false; 
     }
 };
+
 // ==========================================
 // 📥 STAFF REQUESTS & INBOX ENGINE
 // ==========================================
@@ -1866,6 +1979,13 @@ window.loadPayslipVault = async function() {
                         }
                     }
                 }
+
+                // 🔥 THE MATH FIX: Dynamic rate calculation per shift!
+                let effectiveDailyRate = dailyRate;
+                if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) {
+                    effectiveDailyRate += 50; 
+                }
+                let ratePerHour = effectiveDailyRate / 8;
 
                 let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
                 let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
