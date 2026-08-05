@@ -312,6 +312,58 @@
         margin-bottom: 15px;
         border: 1px solid #e2e8f0;
     }
+
+    /* ======================================================= */
+    /* 🚀 FINANCIAL DASHBOARD "ULTRA MODE"                     */
+    /* ======================================================= */
+    
+    /* Upgrade the 3 Main Top Cards */
+    #view-finance .grid-3 > div {
+        background: linear-gradient(145deg, #ffffff, #f8fafc);
+        border-radius: 16px !important;
+        box-shadow: 6px 6px 18px #e2e8f0, -6px -6px 18px #ffffff !important;
+        border: 1px solid rgba(226, 232, 240, 0.6) !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        padding: 25px !important;
+    }
+    
+    #view-finance .grid-3 > div:hover {
+        transform: translateY(-4px);
+        box-shadow: 10px 10px 25px #cbd5e1, -10px -10px 25px #ffffff !important;
+    }
+    
+    /* Upgrade the Cash Accounts & Budget Tracker Containers */
+    .cash-accounts-panel, .budget-tracker-panel {
+        background: #ffffff;
+        border-radius: 16px !important;
+        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.08) !important;
+        border: 1px solid #f1f5f9 !important;
+        overflow: hidden;
+    }
+    
+    /* Modernize the Table Rows */
+    #view-finance table tbody tr {
+        transition: background-color 0.2s ease;
+    }
+    #view-finance table tbody tr:hover {
+        background-color: #f8fafc !important;
+        cursor: pointer;
+    }
+    
+    /* Make the Action Buttons Pop */
+    .btn-ultra {
+        background: linear-gradient(to right, #3b82f6, #2563eb);
+        color: white;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        transition: all 0.2s;
+    }
+    .btn-ultra:hover {
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+        transform: scale(1.02);
+    }
 </style>
 </head>
 
