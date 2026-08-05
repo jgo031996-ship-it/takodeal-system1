@@ -1931,7 +1931,9 @@ window.openExpenseModal = async function () {
 
     let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     window.expenseInventoryCache = [];
+    window.isMallBranch = false;
     
+    // 1. Fetch Inventory
     try {
         const q = query(collection(db, "inventory"), where("branch", "==", branch));
         const snap = await getDocs(q);
@@ -1941,6 +1943,40 @@ window.openExpenseModal = async function () {
             window.expenseInventoryCache.push(item);
         });
     } catch (e) { console.error("Error loading inventory for expenses:", e); }
+
+    // 2. Fetch Branch Settings (Check for Mall Branch Mode)
+    try {
+        const bSnap = await getDocs(query(collection(db, "branches"), where("name", "==", branch)));
+        if (!bSnap.empty) {
+            window.isMallBranch = bSnap.docs[0].data().isMallBranch || false;
+        }
+    } catch(e) {}
+
+    // 3. Inject the UI dynamically
+    let sourceContainer = document.getElementById('expenseSourceContainer');
+    if (!sourceContainer) {
+        let titleBar = document.querySelector('#expenseModal .modal > div:nth-child(1)');
+        let newDiv = document.createElement('div');
+        newDiv.id = 'expenseSourceContainer';
+        newDiv.style.cssText = "padding: 0 20px; background: #f8fafc;";
+        titleBar.insertAdjacentElement('afterend', newDiv);
+        sourceContainer = document.getElementById('expenseSourceContainer');
+    }
+
+    if (window.isMallBranch) {
+        sourceContainer.innerHTML = `
+            <div style="margin-top: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 2px dashed #fcd34d;">
+                <label style="font-size: 13px; font-weight: bold; color: #b45309; display: block; margin-bottom: 5px;">💳 Source of Funds</label>
+                <select id="expFundSource" class="input-box" style="width: 100%; padding: 12px; font-weight: bold; color: #92400e; background: white; border-color: #fcd34d; outline: none; cursor: pointer; font-size: 14px;">
+                    <option value="Drawer">💵 POS Cash Drawer (Deducts from Z-Reading)</option>
+                    <option value="Manager Fund">💼 Manager's Floating Cash (No Z-Reading Impact)</option>
+                </select>
+                <div style="font-size: 11px; color: #d97706; margin-top: 8px; font-weight: bold;">If the Manager bought this using the weekly remittance money, select "Manager's Floating Cash".</div>
+            </div>
+        `;
+    } else {
+        sourceContainer.innerHTML = '';
+    }
 };
 
 // Mobile-friendly custom search dropdown (UPGRADED WITH "OTHERS" OPTION)
@@ -2127,10 +2163,11 @@ window.submitExpenseCart = async function() {
             }
         }
 
+        let fundSource = document.getElementById('expFundSource') ? document.getElementById('expFundSource').value : "Drawer";
+
         // 2. Process each item in cart
         for (let item of window.expenseCart) {
             
-            // 🔥 THE FIX: Inject the Quantity directly into the description so the Manager Expense Feed can read it!
             let finalDescription = item.description;
             if (item.isRestock && item.displayQty > 0) {
                 finalDescription = `${item.description} (Qty: ${item.displayQty} ${item.displayUom})`;
@@ -2138,11 +2175,12 @@ window.submitExpenseCart = async function() {
 
             await addDoc(collection(db, "expenses"), {
                 branch: branch,
-                shiftId: activeShiftDetails.logId,
+                shiftId: fundSource === "Drawer" ? activeShiftDetails.logId : "Manager_Fund",
                 cashier: cashier,
                 amount: item.cost,
                 description: finalDescription,
                 receiptPhoto: photoUrl, 
+                paidFrom: fundSource, // 🔥 TELLS THE HQ EXACTLY WHERE THE MONEY CAME FROM!
                 timestamp: serverTimestamp()
             });
 
@@ -2165,7 +2203,6 @@ window.submitExpenseCart = async function() {
                         cost: newAverageCost 
                     });
 
-                    // Log the stock addition
                     await addDoc(collection(db, "stock_logs"), {
                         branch: branch, item: item.dbName, uom: item.uom, oldQty: currentStock, newQty: newTotalStock, variance: item.baseQty,
                         type: "Store Restock (Expense)", note: `Purchased ${item.displayQty} ${item.displayUom} for ₱${item.cost}`, user: cashier, timestamp: serverTimestamp()
@@ -2174,12 +2211,17 @@ window.submitExpenseCart = async function() {
             }
         }
 
-        const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
-        const shiftSnap = await getDoc(shiftRef);
-        let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
-        await updateDoc(shiftRef, { expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal });
+        // 🔥 ONLY DEDUCT FROM THE DRAWER IF THEY SELECTED DRAWER!
+        if (fundSource === "Drawer") {
+            const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
+            const shiftSnap = await getDoc(shiftRef);
+            let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
+            await updateDoc(shiftRef, { expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal });
+            alert(`✅ Success! ₱${grandTotal.toFixed(2)} deducted from POS drawer for ${window.expenseCart.length} item(s).`);
+        } else {
+            alert(`✅ Success! Logged ${window.expenseCart.length} item(s). Deducted from Manager's Floating Cash.`);
+        }
 
-        alert(`✅ Success! ₱${grandTotal.toFixed(2)} deducted from drawer for ${window.expenseCart.length} item(s).`);
         document.getElementById('expenseModal').style.display = 'none';
         
         if (typeof checkCurrentShift === 'function') checkCurrentShift();
