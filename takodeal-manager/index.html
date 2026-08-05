@@ -452,16 +452,29 @@
         <h1 id="pageTitle" style="margin: 0; font-size: 22px;">Global Dashboard</h1>
       </div>
       
-      <div id="globalDateControls" class="actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-        <span style="font-size: 13px; font-weight: bold; color: var(--text-muted);">From:</span>
-        <input type="date" id="dashStartDate" class="date-display" style="padding: 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
-        <span style="font-size: 13px; font-weight: bold; color: var(--text-muted);">To:</span>
-        <input type="date" id="dashEndDate" class="date-display" style="padding: 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
-        <button class="btn-refresh" id="btnRefreshData" style="background: var(--primary); color: white; border: none;">🔄 Refresh Live Data</button>
-        <button id="btnExportSales" class="btn-refresh" style="background: #0ea5e9; color: white; border: none;" onclick="window.exportDashboardSalesCSV()">📥 Export Sales CSV</button>
+      <div id="globalDateControls" class="actions" style="display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 500px;">
+        
+        <!-- 📅 Side-by-Side Date Pickers for Mobile -->
+        <div style="display: flex; gap: 10px; width: 100%; box-sizing: border-box;">
+          <div style="flex: 1;">
+            <span style="font-size: 11px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 2px;">From:</span>
+            <input type="date" id="dashStartDate" class="date-display" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: bold; box-sizing: border-box; outline: none; background: white;">
+          </div>
+          <div style="flex: 1;">
+            <span style="font-size: 11px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 2px;">To:</span>
+            <input type="date" id="dashEndDate" class="date-display" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: bold; box-sizing: border-box; outline: none; background: white;">
+          </div>
+        </div>
 
-        <button id="btnWipeData" class="btn-refresh" style="background: #ef4444; color: white; border: none;" onclick="openSelectiveResetModal()">🧹 Factory Reset</button>
+        <!-- 🔘 Single Row Action Buttons -->
+        <div style="display: flex; gap: 8px; width: 100%; box-sizing: border-box;">
+          <button class="btn-refresh" id="btnRefreshData" style="flex: 2; background: var(--primary); color: white; border: none; padding: 10px 12px; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 Refresh</button>
+          <button id="btnExportSales" class="btn-refresh" style="flex: 1; background: #0ea5e9; color: white; border: none; padding: 10px 12px; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; white-space: nowrap;" onclick="window.exportDashboardSalesCSV()">📥 CSV</button>
+          <button id="btnWipeData" class="btn-refresh" style="flex: 0 0 auto; background: #ef4444; color: white; border: none; padding: 10px 14px; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer;" onclick="openSelectiveResetModal()" title="Factory Reset">🧹</button>
+        </div>
+
       </div>
+
     </header>
     
     <div id="mobileSidebarOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 99998;" onclick="toggleManagerSidebar()"></div>
