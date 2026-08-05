@@ -11049,7 +11049,15 @@ window.generateAutoPayslips = async function() {
                     }
 
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
-                    let ratePerHour = dailyRate / 8; 
+                    let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+                    let effectiveDailyRate = dailyRate;
+                    
+                    // 🔥 THE MATH FIX: If the shift starts at 2 PM (14.0) or later, calculate penalty against Base + ₱50!
+                    if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) {
+                        effectiveDailyRate += 50; 
+                    }
+                    
+                    let ratePerHour = effectiveDailyRate / 8; 
                     let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
                     let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
 
