@@ -4642,7 +4642,7 @@ window.loadAccountsAndBudget = async function() {
 }; // <-- THIS IS THE MAGIC BRACKET THAT WAS MISSING!
 
 // ==========================================
-// 🏢 NEW: BRANCH ACCOUNTS MODAL ENGINE
+// 🏢 UPGRADED: BRANCH ACCOUNTS MODAL ENGINE
 // ==========================================
 window.openBranchAccountsModal = function(branch) {
     let branchAccounts = window.liveAccounts.filter(acc => acc.branch === branch);
@@ -4660,10 +4660,13 @@ window.openBranchAccountsModal = function(branch) {
         
         branchAccounts.forEach(acc => {
             html += `
-                <tr style="border-bottom: 1px dashed #e2e8f0;">
+                <tr style="border-bottom: 1px dashed #e2e8f0; transition: background-color 0.2s ease;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                     <td style="font-weight: bold; color: #334155; font-size: 15px; padding: 12px;">${acc.name}</td>
                     <td style="font-weight: 900; color: #059669; font-size: 15px; padding: 12px;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="text-align: right; padding: 12px;">
+                    <td style="text-align: right; padding: 12px; white-space: nowrap;">
+                        <!-- 👁️ THE NEW LOGS BUTTON -->
+                        <button onclick="window.viewAccountLogs('${acc.id}', '${acc.name}')" style="background: #eff6ff; color: #3b82f6; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">👁️ Logs</button>
+                        
                         <button onclick="window.editCashAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
                         <button onclick="window.deleteCashAccount('${acc.id}', '${acc.name}'); document.getElementById('branchAccountsModal').style.display='none';" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🗑️</button>
                     </td>
@@ -4865,7 +4868,69 @@ window.submitCashTransfer = async function() {
     }
 };
 
-// 🛠️ THE FIX FOR THE LOGS BUTTON ERROR 
+// ==========================================
+// 🔍 SPECIFIC ACCOUNT LOG VIEWER
+// ==========================================
+window.viewAccountLogs = async function(accountId, accountName) {
+    // 1. Hide the Branch Accounts Modal so they don't overlap
+    document.getElementById('branchAccountsModal').style.display = 'none';
+    
+    // 2. Open your existing Global History Modal
+    document.getElementById('accountHistoryModal').style.display = 'flex';
+    const tbody = document.getElementById('accHistoryTableBody');
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center" style="padding: 30px;">⏳ Fetching exact logs for ${accountName}...</td></tr>`;
+
+    try {
+        // Fetch only logs tied to THIS specific account ID
+        const q = query(collection(db, "account_logs"), where("accountId", "==", accountId));
+        const snap = await getDocs(q);
+
+        let logsArray = [];
+        snap.forEach(docSnap => logsArray.push(docSnap.data()));
+
+        // Sort newest first manually to prevent Firebase Index errors
+        logsArray.sort((a, b) => {
+            let timeA = a.timestamp ? a.timestamp.toMillis() : 0;
+            let timeB = b.timestamp ? b.timestamp.toMillis() : 0;
+            return timeB - timeA;
+        });
+
+        let html = '';
+        logsArray.forEach(data => {
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            let amount = parseFloat(data.amount) || 0;
+            let balance = parseFloat(data.newBalance) || 0;
+            
+            let actionColor = amount > 0 ? '#16a34a' : (amount < 0 ? '#dc2626' : '#64748b');
+            let amountSign = amount > 0 ? '+' : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                    <td style="padding: 12px 10px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">👤 ${data.user || 'System'}</td>
+                    <td style="padding: 12px 10px;">
+                        <span style="font-weight: bold; color: var(--primary);">${data.action || 'Manual Edit'}</span><br>
+                        <span style="font-size: 12px; color: ${actionColor}; font-weight: bold;">${amountSign}₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </td>
+                    <td style="padding: 12px 10px;">
+                        <strong>${data.accountName || 'Unknown'}</strong><br>
+                        <span style="font-size: 11px; color: #64748b;">New Bal: ₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </td>
+                    <td style="padding: 12px 10px; font-size: 12px; color: #475569; font-style: italic; max-width: 200px;">
+                        ${data.note || data.reason || 'No notes provided.'}
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = logsArray.length === 0 ? `<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No transaction history found for ${accountName}.</td></tr>` : html;
+
+    } catch (e) {
+        console.error("Audit Log Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 30px;">❌ Error loading specific audit logs. Check connection.</td></tr>';
+    }
+};
+
 // ==========================================
 // 📜 ACCOUNT AUDIT LOGS ENGINE
 // ==========================================
@@ -6785,74 +6850,91 @@ window.rejectRemittance = async function(docId, branchName) {
     }
 };
 
-// --- THE NEW SMART DEPOSIT APPROVAL BUTTON ---
+// --- THE NEW SMART DEPOSIT APPROVAL BUTTON (ULTRA MODE UI) ---
 window.approveRemittance = async function (docId) {
-    if (!confirm("✅ Mark this remittance as safely received and deposit it into your Cash Accounts?")) return;
-    
-    try {
-        Swal.fire({title: 'Approving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    // 🔥 Replaced ugly confirm() with a beautiful modern prompt!
+    Swal.fire({
+        title: 'Receive Remittance?',
+        text: "Mark this remittance as safely received and route it into your Cash Accounts?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#10b981', // Emerald green for money!
+        cancelButtonColor: '#ef4444',
+        confirmButtonText: 'Yes, Deposit It!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            try {
+                Swal.fire({title: 'Approving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-        // 1. Fetch the exact remittance document to see how much money is coming in
-        const remitRef = doc(db, "remittances", docId);
-        const remitSnap = await getDoc(remitRef);
-        if (!remitSnap.exists()) return;
+                // 1. Fetch the exact remittance document to see how much money is coming in
+                const remitRef = doc(db, "remittances", docId);
+                const remitSnap = await getDoc(remitRef);
+                if (!remitSnap.exists()) return;
 
-        const data = remitSnap.data();
-        const amountToDeposit = parseFloat(data.amount) || 0;
-        const channelUsed = data.channel; // e.g., "GCash" or "Physical Handover"
+                const data = remitSnap.data();
+                const amountToDeposit = parseFloat(data.amount) || 0;
+                const channelUsed = data.channel || "Physical Handover";
 
-        // 2. Map the channel to your actual Manager Account names
-        let targetAccountName = channelUsed;
-        if (channelUsed === "Physical Handover") {
-            targetAccountName = "Cash"; 
+                // 2. Map the channel to your actual Manager Account names
+                let targetAccountName = channelUsed;
+                if (channelUsed === "Physical Handover") {
+                    targetAccountName = "Cash"; 
+                }
+
+                // 3. Find that matching account in your Master Cash & Budget database
+                const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", targetAccountName));
+                const accSnap = await getDocs(accQuery);
+
+                if (accSnap.empty) {
+                    Swal.fire('⚠️ Routing Error', `No cash account named "${targetAccountName}" found in the Main Office!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}" for the Main Office, and try approving this again.`, 'error');
+                    return; 
+                }
+
+                // 4. Deposit the money!
+                const targetAccDoc = accSnap.docs[0];
+                const currentBalance = parseFloat(targetAccDoc.data().balance) || 0;
+                const newBalance = currentBalance + amountToDeposit;
+                
+                await updateDoc(doc(db, "cash_accounts", targetAccDoc.id), { balance: newBalance });
+
+                await addDoc(collection(db, "account_logs"), {
+                    accountId: targetAccDoc.id,
+                    accountName: targetAccountName,
+                    branch: "Main Office",
+                    action: "Remittance Received",
+                    amount: amountToDeposit,
+                    newBalance: newBalance,
+                    user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
+                    timestamp: serverTimestamp(),
+                    note: `Remitted by ${data.cashier || data.staffName || 'Staff'} from ${data.branch}`
+                });
+
+                // 5. Finally, mark the remittance as safely Received
+                await updateDoc(remitRef, { status: "Received" });
+
+                Swal.fire({
+                    title: '✅ Success!', 
+                    text: `₱${amountToDeposit.toLocaleString('en-US', {minimumFractionDigits: 2})} has been deposited into your [${targetAccountName}] account.`, 
+                    icon: 'success',
+                    customClass: { popup: 'rounded-2xl' }
+                });
+                
+                // Refresh the screens
+                if (typeof window.loadCashExplorer === 'function') window.loadCashExplorer(); 
+                if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
+
+                // 🔥 THE UI FIX: Refresh the Modal so the button disappears instantly!
+                if (document.getElementById('branchTransferHistoryModal') && document.getElementById('branchTransferHistoryModal').style.display === 'flex') {
+                    if (typeof window.openBranchTransferHistory === 'function') window.openBranchTransferHistory(data.branch);
+                }
+
+            } catch (e) {
+                console.error("Deposit Error:", e); 
+                Swal.fire("Error", "Failed to approve and route the remittance.", "error");
+            }
         }
-
-        // 3. Find that matching account in your Master Cash & Budget database
-        const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", targetAccountName));
-        const accSnap = await getDocs(accQuery);
-
-        if (accSnap.empty) {
-            Swal.fire('⚠️ Routing Error', `No cash account named "${targetAccountName}" found in the Main Office!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}" for the Main Office, and try approving this again.`, 'error');
-            return; 
-        }
-
-        // 4. Deposit the money!
-        const targetAccDoc = accSnap.docs[0];
-        const currentBalance = parseFloat(targetAccDoc.data().balance) || 0;
-        const newBalance = currentBalance + amountToDeposit;
-        
-        await updateDoc(doc(db, "cash_accounts", targetAccDoc.id), { balance: newBalance });
-
-        await addDoc(collection(db, "account_logs"), {
-            accountId: targetAccDoc.id,
-            accountName: targetAccountName,
-            branch: "Main Office",
-            action: "Remittance Received",
-            amount: amountToDeposit,
-            newBalance: newBalance,
-            user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
-            timestamp: serverTimestamp(),
-            note: `Remitted by ${data.cashier || data.staffName} from ${data.branch}`
-        });
-
-        // 5. Finally, mark the remittance as safely Received
-        await updateDoc(remitRef, { status: "Received" });
-
-        Swal.fire('✅ Success!', `₱${amountToDeposit.toLocaleString()} has been officially deposited into your [${targetAccountName}] account.`, 'success');
-        
-        // Refresh the screens
-        window.loadCashExplorer(); 
-        if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
-
-        // 🔥 THE UI FIX: Refresh the Modal so the button disappears instantly!
-        if (document.getElementById('branchTransferHistoryModal') && document.getElementById('branchTransferHistoryModal').style.display === 'flex') {
-            window.openBranchTransferHistory(data.branch);
-        }
-
-    } catch (e) {
-        console.error("Deposit Error:", e); 
-        Swal.fire("Error", "Failed to approve and route the remittance.", "error");
-    }
+    });
 };
 
 // ========================================================
