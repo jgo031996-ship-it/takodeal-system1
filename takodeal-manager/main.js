@@ -15331,10 +15331,10 @@ window.saveBranchSettings = async function() {
         headerName: document.getElementById('settingHeaderName').value.trim(),
         footerMessage: document.getElementById('settingFooterMsg').value.trim(),
         royaltyPercent: parseFloat(document.getElementById('settingRoyalty').value) || 0,
-        receiptLogoBase64: window.uploadedLogoBase64, // 🔥 SAVE THE LOGO TO CLOUD
+        receiptLogoBase64: window.uploadedLogoBase64, 
         logoWidthScale: parseFloat(document.getElementById('logoWidthScale').value) || 1,
-        logoHeightScale: parseFloat(document.getElementById('logoHeightScale').value) || 1
-        isMallBranch: document.getElementById('settingMallBranch') ? document.getElementById('settingMallBranch').checked : false // 🔥 THE NEW MALL TOGGLE
+        logoHeightScale: parseFloat(document.getElementById('logoHeightScale').value) || 1, // 🔥 THE MISSING COMMA IS HERE!
+        isMallBranch: document.getElementById('settingMallBranch') ? document.getElementById('settingMallBranch').checked : false
     };
 
     try {
