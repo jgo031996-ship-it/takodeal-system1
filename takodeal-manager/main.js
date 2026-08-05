@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 window.onSnapshot = onSnapshot;
 
@@ -163,13 +163,43 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
+// 🔥 iOS & MOBILE FRIENDLY GOOGLE LOGIN ENGINE
 window.loginWithGoogle = async function() {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   try {
-    await signInWithPopup(auth, provider);
+    if (isMobile) {
+      // iPhone/Mobile Safari requires redirect instead of popups
+      await signInWithRedirect(auth, provider);
+    } else {
+      // Desktop PC/Laptops can still use clean popups
+      await signInWithPopup(auth, provider);
+    }
   } catch (error) {
-    console.error(error);
+    console.error("Login Error:", error);
     alert("Login failed: " + error.message);
   }
+};
+
+// Catch redirect results when returning to app on Mobile/iOS
+getRedirectResult(auth).catch((error) => {
+  if (error) console.error("Redirect Result Error:", error);
+});
+
+// 📱 MOBILE INSTALL HELPER
+window.promptMobileInstall = function() {
+    const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+    if (isIos) {
+        Swal.fire({
+            title: '📱 Install on iPhone',
+            html: '<div style="text-align: left; font-size: 15px; color: #334155;">To run TAKODEÁL in Full-Screen Ultra Mode without browser bars:<br><br><b>1.</b> Tap the Safari <b>Share</b> icon at the bottom of your screen (the square with an arrow pointing up).<br><br><b>2.</b> Scroll down and tap <b>Add to Home Screen</b> ➕.</div>',
+            icon: 'info',
+            confirmButtonText: 'Got it!',
+            confirmButtonColor: '#0ea5e9',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+    } else {
+        Swal.fire('📱 Android / PC Install', 'Tap the 3-dot menu (⋮) in the top right of your Chrome browser and select "Install App" or "Add to Home screen".', 'info');
+    }
 };
 
 // --- ACCESS CONTROL ENGINE (FRANCHISE PROFILES) ---
