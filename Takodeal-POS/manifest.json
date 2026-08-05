@@ -1,21 +1,23 @@
 {
-  "name": "Takodeal POS",
-  "short_name": "Takodeal",
-  "start_url": "./",
-  "display": "fullscreen",
-  "background_color": "#ffffff",
-  "theme_color": "#127c67",
+  "name": "TAKODEÁL Cashier",
+  "short_name": "TAKODEAL",
+  "description": "Official TAKODEÁL Point of Sale System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2C2421",
+  "theme_color": "#E5A93D",
   "icons": [
     {
-      "src": "logo.jpg",
+      "src": "logo.png",
       "sizes": "192x192",
-      "type": "image/jpeg"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "logo.jpg",
+      "src": "logo.png",
       "sizes": "512x512",
-      "type": "image/jpeg"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
- 
