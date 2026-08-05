@@ -8623,7 +8623,11 @@ setTimeout(() => {
     });
 }, 5000); // Wait 5 seconds after boot so it doesn't interrupt login
 
-// The function that runs when they click the Update Button
+// ==========================================
+// 🚀 THE SMART UPDATE & CACHE NUKE ENGINE
+// ==========================================
+
+// 1. The function that runs when they click the Red Banner at the top
 window.forceAppUpdate = function() {
     Swal.fire({
         title: 'Updating System...',
@@ -8632,19 +8636,54 @@ window.forceAppUpdate = function() {
         didOpen: () => Swal.showLoading()
     });
 
-    // 1. Save the new timestamp to memory so the banner hides after reload
     if (window.TARGET_UPDATE_VERSION) {
         localStorage.setItem('takodeal_local_version', window.TARGET_UPDATE_VERSION.toString());
     }
 
-    // 2. 💣 NUKE THE CACHE AND FORCE A HARD RELOAD
-    caches.keys().then(names => { 
-        for (let name of names) caches.delete(name); 
-    }).then(() => {
-        setTimeout(() => {
-            window.location.reload(true);
-        }, 1500); 
+    window.executeCacheWipe();
+};
+
+// 2. The function that runs when they click the "Force System Update" button on the Login Screen
+window.manualHardUpdate = function() {
+    Swal.fire({
+        title: 'Force Update?',
+        text: 'This will clear the app cache and download the newest files from the server. You will not lose your device registration.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#0ea5e9',
+        confirmButtonText: 'Yes, Update Now!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({title: 'Clearing Cache...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            window.executeCacheWipe();
+        }
     });
+};
+
+// 3. The surgical strike that kills the Service Worker WITHOUT wiping the Device ID!
+window.executeCacheWipe = function() {
+    // A. Unregister the stubborn Service Workers
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for(let registration of registrations) {
+                registration.unregister();
+            }
+        });
+    }
+
+    // B. Nuke the old PWA file storage
+    if ('caches' in window) {
+        caches.keys().then(names => { 
+            for (let name of names) caches.delete(name); 
+        }).then(() => {
+            // C. Force reload the page from Vercel bypassing the browser cache
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 1500); 
+        });
+    } else {
+        setTimeout(() => { window.location.reload(true); }, 1500); 
+    }
 };
 
 // ==========================================
