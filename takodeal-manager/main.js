@@ -7813,40 +7813,85 @@ window.loadZReadingReports = async function () {
 };
 
 // ========================================================
-// 💸 EXPENSE & RESTOCK FEED ENGINE (DATE FILTER UPGRADE)
+// 💸 EXPENSE & RESTOCK FEED ENGINE (UPGRADED TABS & FILTERS)
 // ========================================================
+window.activeExpenseTab = window.activeExpenseTab || 'Restocks';
+
+window.switchExpenseTab = function(tab) {
+    window.activeExpenseTab = tab;
+    window.loadExpenseLogs();
+};
+
 window.loadExpenseLogs = async function() {
     const tbody = document.getElementById('expenseLogsTableBody');
     if (!tbody) return;
+
+    // 🔥 INJECT THE TAB & FILTER UI DYNAMICALLY ABOVE THE TABLE
+    let table = tbody.closest('table');
+    if (!document.getElementById('expenseTabContainer')) {
+        let tabHtml = `
+            <div id="expenseTabContainer" style="display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 15px; background: #f8fafc; border-radius: 8px 8px 0 0; overflow: hidden;">
+                <button onclick="window.switchExpenseTab('Restocks')" id="btnTabExpRestock" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s;">
+                    📦 Restock Logs
+                </button>
+                <button onclick="window.switchExpenseTab('Expenses')" id="btnTabExpGen" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
+                    💸 General Expenses
+                </button>
+                <button onclick="window.switchExpenseTab('Payroll')" id="btnTabExpPay" style="flex: 1; padding: 14px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; cursor: pointer; font-size: 13px; text-transform: uppercase; transition: 0.2s; border-left: 1px solid #e2e8f0;">
+                    🧑‍💼 Payroll Logs
+                </button>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                <span style="font-size: 12px; font-weight: bold; color: #64748b;">Filter Branch:</span>
+                <select id="expenseBranchFilter" onchange="window.loadExpenseLogs()" style="padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #334155; cursor: pointer;">
+                    <option value="All">All Branches</option>
+                    <option value="Main Office">Main Office</option>
+                    <option value="Cabantian">Cabantian</option>
+                    <option value="Citygate">Citygate</option>
+                    <option value="Maa">Maa</option>
+                </select>
+            </div>
+        `;
+        table.insertAdjacentHTML('beforebegin', tabHtml);
+    }
+
+    // Highlight the active tab
+    ['Expenses', 'Restocks', 'Payroll'].forEach(t => {
+        let btnId = t === 'Expenses' ? 'btnTabExpGen' : (t === 'Restocks' ? 'btnTabExpRestock' : 'btnTabExpPay');
+        let btn = document.getElementById(btnId);
+        if (btn) {
+            btn.style.color = window.activeExpenseTab === t ? '#0ea5e9' : '#64748b';
+            btn.style.borderBottomColor = window.activeExpenseTab === t ? '#0ea5e9' : 'transparent';
+            btn.style.background = window.activeExpenseTab === t ? 'white' : 'transparent';
+        }
+    });
+
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Loading logs...</td></tr>';
 
-    // 🔥 DYNAMICALLY INJECT THE "ACTION" HEADER SO IT MATCHES THE NEW BUTTONS
-    let headerRow = tbody.previousElementSibling;
-    if (headerRow && headerRow.tagName === 'THEAD') {
-        headerRow = headerRow.querySelector('tr');
-    }
-    if (headerRow && headerRow.children.length === 5) {
-        let th = document.createElement('th');
-        th.style.cssText = "text-align: center; padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;";
-        th.innerText = "ACTION";
-        headerRow.appendChild(th);
+    let dateFilter = document.getElementById('expenseDateFilter') ? document.getElementById('expenseDateFilter').value : "";
+    let branchFilter = document.getElementById('expenseBranchFilter') ? document.getElementById('expenseBranchFilter').value : "All";
+    
+    // Franchise Security Lock
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee) {
+        branchFilter = window.sessionUser.branch;
+        document.getElementById('expenseBranchFilter').value = branchFilter;
+        document.getElementById('expenseBranchFilter').disabled = true;
     }
 
-    let dateFilter = document.getElementById('expenseDateFilter') ? document.getElementById('expenseDateFilter').value : "";
-    
     let totalExp = 0;
     let countExp = 0;
 
     try {
-        const q = query(collection(db, "expenses"), orderBy("timestamp", "desc"));
-        const snap = await getDocs(q);
+        const q = window.query(window.collection(window.db, "expenses"), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
         let html = '';
 
         snap.forEach(docSnap => {
             let data = docSnap.data();
             let jsDate = data.timestamp ? data.timestamp.toDate() : new Date();
             
-            // Filter by Date
+            // Apply Date Filter
             if (dateFilter) {
                 let yyyy = jsDate.getFullYear();
                 let mm = String(jsDate.getMonth() + 1).padStart(2, '0');
@@ -7854,23 +7899,36 @@ window.loadExpenseLogs = async function() {
                 if (`${yyyy}-${mm}-${dd}` !== dateFilter) return;
             }
 
-            let amount = parseFloat(data.amount) || 0;
-            let desc = data.description || data.note || data.category || 'Expense';
+            // Apply Branch Filter
+            if (branchFilter !== "All" && data.branch !== branchFilter) return;
+
+            let category = data.category || 'Expense';
+            let desc = data.description || data.note || category;
             
+            // Smart routing to determine which tab this belongs in
+            let isPayroll = category.toLowerCase().includes('payroll');
+            let isRestock = (desc && desc.includes('(Qty:')) || category.toLowerCase().includes('restock');
+
+            if (window.activeExpenseTab === 'Payroll' && !isPayroll) return;
+            if (window.activeExpenseTab === 'Restocks' && !isRestock) return;
+            if (window.activeExpenseTab === 'Expenses' && (isPayroll || isRestock)) return;
+
+            let amount = parseFloat(data.amount) || 0;
             totalExp += amount;
             countExp++;
 
             let dateStr = jsDate.toLocaleString('en-PH');
-            
-            // Protect strings with apostrophes (e.g. "Manager's Meal") so they don't break the Edit button!
             let safeDesc = desc.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            
+            // 🔥 RENDER THE PHOTO PROOF BUTTON IF IT EXISTS
+            let photoBtn = data.receiptPhoto || data.photoUrl ? `<div style="margin-top: 8px;"><button onclick="window.viewSelfie('${data.receiptPhoto || data.photoUrl}', 'Receipt/Proof for ${data.branch}')" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📸 View Uploaded Receipt</button></div>` : '';
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                     <td style="padding: 15px 20px; color: #64748b; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 15px 20px;"><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
                     <td style="padding: 15px 20px;"><strong>${data.cashier || 'System'}</strong></td>
-                    <td style="padding: 15px 20px; color: #475569;">${desc}</td>
+                    <td style="padding: 15px 20px; color: #475569;">${desc} ${photoBtn}</td>
                     <td style="padding: 15px 20px; text-align: right; color: #dc2626; font-weight: bold; font-size: 15px;">₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="padding: 15px 20px; text-align: center;">
                         <div style="display: flex; gap: 5px; justify-content: center;">
@@ -7882,7 +7940,7 @@ window.loadExpenseLogs = async function() {
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #64748b;">No expenses found for this date.</td></tr>';
+        tbody.innerHTML = html || `<tr><td colspan="6" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No logs found for ${window.activeExpenseTab}.</td></tr>`;
         
         if(document.getElementById('expSumTotal')) document.getElementById('expSumTotal').innerText = `₱${totalExp.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         if(document.getElementById('expSumCount')) document.getElementById('expSumCount').innerText = countExp;
@@ -15221,7 +15279,7 @@ window.openBranchSettings = function(docId) {
     } else {
         window.removeLogo();
     }
-
+    if (document.getElementById('settingMallBranch')) document.getElementById('settingMallBranch').checked = d.isMallBranch || false;
     document.getElementById('branchSettingsModal').style.display = 'flex';
 };
 
@@ -15238,6 +15296,7 @@ window.saveBranchSettings = async function() {
         receiptLogoBase64: window.uploadedLogoBase64, // 🔥 SAVE THE LOGO TO CLOUD
         logoWidthScale: parseFloat(document.getElementById('logoWidthScale').value) || 1,
         logoHeightScale: parseFloat(document.getElementById('logoHeightScale').value) || 1
+        isMallBranch: document.getElementById('settingMallBranch') ? document.getElementById('settingMallBranch').checked : false // 🔥 THE NEW MALL TOGGLE
     };
 
     try {
