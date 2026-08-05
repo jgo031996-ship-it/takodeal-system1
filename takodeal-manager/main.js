@@ -11500,6 +11500,43 @@ window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, a
         });
         if (!recentRemittancesHtml) recentRemittancesHtml = '<div style="font-size:12px; color:#94a3b8; font-style:italic;">No previous remittances found.</div>';
 
+        // 🔥 3.5 FETCH MANAGER FUND PURCHASES (MALL BRANCHES)
+        let managerFundExpensesTotal = 0;
+        let managerFundHtml = '';
+        
+        let periodStart = new Date(startStr + 'T00:00:00');
+        let periodEnd = new Date(endStr + 'T23:59:59');
+
+        const mfExpQ = query(collection(db, "expenses"), where("branch", "==", branch), where("paidFrom", "==", "Manager Fund"));
+        const mfExpSnap = await getDocs(mfExpQ);
+
+        mfExpSnap.forEach(doc => {
+            let d = doc.data();
+            managerFundExpensesTotal += (parseFloat(d.amount) || 0);
+            
+            // Only show it in the breakdown list if it happened during THIS remittance period!
+            let expDate = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp)) : new Date();
+            if (expDate >= periodStart && expDate <= periodEnd) {
+                let dateStr = expDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+                managerFundHtml += `<div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #fcd34d; padding:6px 0;">
+                    <span style="color:#92400e; font-weight: bold;">${dateStr} - ${d.description || d.category}</span>
+                    <strong style="color:#dc2626;">- ₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits:2})}</strong>
+                </div>`;
+            }
+        });
+
+        unremittedCashAvailable -= managerFundExpensesTotal; // Safely deducts it from the expected cash!
+
+        let managerFundUI = '';
+        if (managerFundHtml !== '') {
+            managerFundUI = `
+                <div style="margin-top: 15px; text-align: left; padding: 15px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
+                    <div style="font-size: 11px; font-weight: bold; color: #b45309; margin-bottom: 5px; text-transform: uppercase;">🛍️ Manager Mall Purchases (Deducted)</div>
+                    ${managerFundHtml}
+                </div>
+            `;
+        }
+      
         // 4. Calculate Variance!
         // Fix micro-decimal math errors
         if (unremittedCashAvailable < 0.1) unremittedCashAvailable = 0; 
@@ -11532,7 +11569,8 @@ window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, a
                 <div style="font-size: 18px; font-weight: 900; color: ${diffColor}; margin-top: 5px;">${diffNote} <br>(₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits:2})})</div>
                 <div style="font-size: 11px; color: #92400e; margin-top: 8px; font-style: italic;">*Note: This strictly calculates Unremitted Cash Profit (Sales minus Expenses) and completely ignores the drawer's starting float.</div>
             </div>
-
+            
+            ${managerFundUI}
             <!-- 🔥 THE NEW REMITTANCE HISTORY BLOCK 🔥 -->
             <div style="margin-top: 15px; text-align: left; padding: 15px; background: white; border: 1px solid #cbd5e1; border-radius: 8px;">
                 <div style="font-size: 11px; font-weight: bold; color: #64748b; margin-bottom: 5px; text-transform: uppercase;">Recent Remittance History</div>
