@@ -5888,6 +5888,10 @@ window.saveAdvancedInventoryItem = async function () {
   let conv = parseFloat(document.getElementById('newInvConv').value);
   let cost = parseFloat(document.getElementById('newInvCost').value);
   let initQty = parseFloat(document.getElementById('newInvInitQty').value);
+  
+  // 🔥 Convert Purchase UOM input to Base UOM!
+  let reorderPurch = parseFloat(document.getElementById('newInvReorder').value) || 0;
+  let reorderBase = reorderPurch * conv;
   let reorder = parseFloat(document.getElementById('newInvReorder').value) || 5000;
 
   if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
@@ -5914,8 +5918,8 @@ window.saveAdvancedInventoryItem = async function () {
           purchaseCost: cost,
           baseCost: baseCost, 
           currentStock: totalBaseStock, 
-          reorderLevel: reorder,
-          showToCashier: showCashier, // 🔥 THIS COMMA WAS MISSING!
+          reorderLevel: reorderBase, // 🔥 Saves securely as Base UOM
+          showToCashier: showCashier, 
           showInPrep: document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true,
           allowRequest: document.getElementById('newInvAllowRequest') ? document.getElementById('newInvAllowRequest').checked : true,
         });
@@ -6693,7 +6697,10 @@ window.saveInventoryEdit = async function() {
     let baseUom = document.getElementById('editInvBaseUom').value.trim();
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
-    let lowStock = parseFloat(document.getElementById('editInvLowStock').value) || 0;
+    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
+    // 🔥 Grab Purchase UOM input and multiply it by Conversion to store safely in the Database!
+    let lowStockPurch = parseFloat(document.getElementById('editInvLowStock').value) || 0;
+    let lowStockBase = lowStockPurch * conversion;
     
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
     let newQtyRaw = document.getElementById('editInvNewQty').value;
@@ -6746,7 +6753,7 @@ window.saveInventoryEdit = async function() {
             conversion: conversion, conversionRate: conversion, 
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, 
             baseCost: (purchCost / conversion), 
-            lowStockAlert: lowStock, reorderLevel: lowStock, 
+            lowStockAlert: lowStockBase, reorderLevel: lowStockBase, // 🔥 Saves the Base UOM securely
             currentStock: finalQty, 
             showInPrep: showPrepVal,
             allowRequest: allowReqVal,
