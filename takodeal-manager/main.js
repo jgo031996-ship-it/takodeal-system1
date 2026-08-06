@@ -19179,24 +19179,49 @@ window.reviewStockRequest = async function(docId) {
 };
 
 // ========================================================
-// 👥 LIVE STAFF ON DUTY ENGINE (REAL-TIME UPGRADE)
+// 👥 LIVE STAFF ON DUTY ENGINE (REAL-TIME UPGRADE WITH LATE DETECTOR)
 // ========================================================
-window.fetchLiveStaffOnDuty = function() {
+window.fetchLiveStaffOnDuty = async function() {
     let container = document.getElementById('liveStaffGrid');
     if (!container) return;
     
     try {
-        // 1. Get the very beginning of today
+        // 1. Fetch Global Schedule & Staff Profiles for Late Detection
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
+
+        const staffSnap = await getDocs(collection(db, "cashiers"));
+        let staffProfiles = {};
+        staffSnap.forEach(docSnap => {
+            let d = docSnap.data();
+            staffProfiles[d.cashierName] = {
+                nickname: d.scheduleNickname || d.cashierName,
+                isWorkingStudent: d.isWorkingStudent || false
+            };
+        });
+
+        const parseTimeStr = (timeStr) => {
+            let t = timeStr.toLowerCase().replace(/\s/g, '');
+            let isPM = t.includes('pm'); let isNN = t.includes('nn');
+            let parts = t.replace(/(am|pm|nn)/, '').split(':');
+            let hour = parseInt(parts[0]) || 0;
+            let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+            if ((isPM || isNN) && hour < 12) hour += 12;
+            if (t.includes('am') && hour === 12) hour = 0;
+            return hour + (minute / 60);
+        };
+
+        // 2. Get the very beginning of today
         let startOfDay = new Date();
         startOfDay.setHours(0,0,0,0);
         
-        // 2. TRUE REAL-TIME LISTENER (Bypasses offline cache freezing)
+        // 3. TRUE REAL-TIME LISTENER (Bypasses offline cache freezing)
         const q = query(collection(db, "attendance_logs"), where("timestamp", ">=", startOfDay));
         
         onSnapshot(q, (snap) => {
             let latestPunches = {};
             
-            // 3. Find the LATEST punch for every single staff member today
+            // Find the LATEST punch for every single staff member today
             snap.forEach(docSnap => {
                 let data = docSnap.data();
                 let staff = data.staffName;
@@ -19206,12 +19231,13 @@ window.fetchLiveStaffOnDuty = function() {
                     latestPunches[staff] = {
                         branch: data.branch,
                         type: data.type, // "TIME IN" or "TIME OUT"
-                        time: punchTime
+                        time: punchTime,
+                        lateExempted: data.lateExempted || false
                     };
                 }
             });
             
-            // 4. Filter: Keep ONLY staff whose latest punch was "TIME IN"
+            // Filter: Keep ONLY staff whose latest punch was "TIME IN"
             let activeStaffByBranch = {};
             for (let staff in latestPunches) {
                 let punch = latestPunches[staff];
@@ -19219,14 +19245,57 @@ window.fetchLiveStaffOnDuty = function() {
                     if (!activeStaffByBranch[punch.branch]) {
                         activeStaffByBranch[punch.branch] = [];
                     }
+
+                    // 🚨 THE LATE DETECTOR ALGORITHM 🚨
+                    let lateMinutes = 0;
+                    if (scheduleData && scheduleData.currentSchedule) {
+                        let logDate = punch.time;
+                        let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
+
+                        if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
+                            let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][punch.branch] : null;
+
+                            if (branchSched && branchSched.scheduled) {
+                                let nickname = staffProfiles[staff] ? staffProfiles[staff].nickname : staff;
+                                let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
+
+                                if (assignedShiftId && scheduleData.branchConfig[punch.branch]) {
+                                    let shiftConfig = scheduleData.branchConfig[punch.branch].find(s => s.id === assignedShiftId);
+                                    if (shiftConfig) {
+                                        let expectedStartHour = null;
+                                        if (shiftConfig.startTime) {
+                                            let parts = shiftConfig.startTime.split(':');
+                                            expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                        } else {
+                                            let match = shiftConfig.name.match(/\((.*?)-/);
+                                            if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                        }
+
+                                        if (expectedStartHour !== null) {
+                                            let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                            let diffHours = actualHour - expectedStartHour;
+                                            
+                                            // 3 minutes grace period (0.05 hours)
+                                            if (diffHours > 0.05 && diffHours < 4) {
+                                                lateMinutes = Math.floor(diffHours * 60);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     activeStaffByBranch[punch.branch].push({
                         name: staff,
-                        timeIn: punch.time
+                        timeIn: punch.time,
+                        lateMinutes: lateMinutes,
+                        lateExempted: punch.lateExempted
                     });
                 }
             }
             
-            // 5. Render the UI Boxes
+            // Render the UI Boxes
             let html = '';
             let branches = Object.keys(activeStaffByBranch).sort();
             
@@ -19241,11 +19310,25 @@ window.fetchLiveStaffOnDuty = function() {
                     
                     activeStaffByBranch[branch].forEach(s => {
                         let timeStr = s.timeIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        
+                        // 🔥 INJECT THE LATE BADGE UNDER THE NAME
+                        let lateBadge = '';
+                        if (s.lateMinutes > 0) {
+                            if (s.lateExempted) {
+                                lateBadge = `<div style="font-size: 10px; color: #16a34a; font-weight: bold; margin-top: 2px;">✅ Late Exempted</div>`;
+                            } else {
+                                lateBadge = `<div style="font-size: 10px; color: #dc2626; font-weight: bold; margin-top: 2px;">⏰ Late: ${s.lateMinutes} mins</div>`;
+                            }
+                        }
+
                         staffListHtml += `
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <span style="font-size: 16px;">👤</span>
-                                    <span style="font-weight: bold; color: #334155; font-size: 13px;">${s.name}</span>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="font-weight: bold; color: #334155; font-size: 13px;">${s.name}</span>
+                                        ${lateBadge}
+                                    </div>
                                 </div>
                                 <span style="font-size: 11px; background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 6px; font-weight: bold; border: 1px solid #bbf7d0;">In @ ${timeStr}</span>
                             </div>
