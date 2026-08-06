@@ -93,7 +93,7 @@ window.applyPermissions = function() {
 };
 
 // ========================================================
-// 🤖 2FA SECURITY & BIOMETRIC ENGINE
+// ⚡ FAST PIN SECURITY ENGINE
 // ========================================================
 window.tempAuthUser = null;
 window.tempAuthData = null;
@@ -114,7 +114,7 @@ auth.onAuthStateChanged(async (user) => {
             const snap = await getDocs(q);
             if (snap.empty) {
                 const newDoc = await addDoc(collection(db, "hq_managers"), {
-                    email: user.email, role: 'Owner', permissions: ['all'], assignedBranch: 'All', pin: '0319' // Default Master PIN
+                    email: user.email, role: 'Owner', permissions: ['all'], assignedBranch: 'All', pin: '0319'
                 });
                 docId = newDoc.id;
                 userData = { pin: '0319', permissions: ['all'], role: 'Owner', assignedBranch: 'All' };
@@ -135,36 +135,31 @@ auth.onAuthStateChanged(async (user) => {
     } catch (e) { console.error(e); }
 
     if (isAuthorized) {
-        // Force them to have a PIN
         if (!userData.pin) {
             userData.pin = '1234'; 
             await updateDoc(doc(db, "hq_managers", docId), { pin: '1234' });
-            Swal.fire('Security Alert', 'Your default backup PIN is 1234. Please change it in Access Control.', 'warning');
+            if(typeof Swal !== 'undefined') Swal.fire('Security Alert', 'Your default PIN is 1234. Please change it.', 'warning');
         }
         
         window.tempAuthUser = user;
         window.tempAuthData = userData;
         window.tempAuthData.docId = docId;
 
-        // Transition to F.R.I.D.A.Y Lock Screen
-        document.getElementById('authWelcomeName').innerText = `${userData.role}: ${user.displayName || 'AGENT'}`;
+        // Transition to Fast PIN Screen
+        document.getElementById('authWelcomeName').innerText = `${userData.role}: ${user.displayName || 'Authorized'}`;
         stage1.style.display = 'none';
         stage2.style.display = 'block';
         loginOverlay.style.display = 'flex';
         
-        // Auto-check Biometric Status
-        let bioBtn = document.getElementById('btnBiometricAuth');
-        if (!window.PublicKeyCredential) {
-            bioBtn.style.display = 'none'; // Device doesn't support FaceID/Fingerprint natively on Web
-        } else if (!userData.passkeyId) {
-            document.getElementById('bioBtnText').innerText = "Register Face ID / Touch ID";
-        } else {
-            document.getElementById('bioBtnText').innerText = "Scan Face ID / Touch ID";
-        }
+        // Auto-focus the PIN input so you can just start typing immediately!
+        setTimeout(() => {
+            let pinBox = document.getElementById('managerPinInput');
+            if(pinBox) pinBox.focus();
+        }, 300);
 
     } else {
         await signOut(auth);
-        Swal.fire('Clearance Denied', 'Your Google Account is not on the HQ VIP List.', 'error');
+        if(typeof Swal !== 'undefined') Swal.fire('Clearance Denied', 'Your Google Account is not authorized.', 'error');
         loginOverlay.style.display = 'flex';
         stage1.style.display = 'block';
         stage2.style.display = 'none';
@@ -186,14 +181,14 @@ window.checkManagerPin = function() {
     if (pinVal.length === 4) {
         if (pinVal === window.tempAuthData.pin) {
             pinInput.value = '';
+            pinInput.style.borderColor = '#cbd5e1';
+            document.getElementById('pinErrorMsg').style.display = 'none';
             window.finalizeManagerLogin();
         } else {
             let err = document.getElementById('pinErrorMsg');
             err.style.display = 'block';
             pinInput.value = '';
-            // Shake effect for wrong PIN
-            pinInput.style.animation = "shake 0.5s";
-            setTimeout(() => { err.style.display = 'none'; pinInput.style.animation = ""; }, 2000);
+            pinInput.style.borderColor = '#ef4444';
         }
     }
 };
@@ -202,7 +197,12 @@ window.cancelLoginAndSignOut = async function() {
     await signOut(auth);
     window.tempAuthUser = null;
     window.tempAuthData = null;
-    document.getElementById('managerPinInput').value = '';
+    let pinBox = document.getElementById('managerPinInput');
+    if (pinBox) {
+        pinBox.value = '';
+        pinBox.style.borderColor = '#cbd5e1';
+    }
+    document.getElementById('pinErrorMsg').style.display = 'none';
 };
 
 window.finalizeManagerLogin = function() {
@@ -226,67 +226,6 @@ window.finalizeManagerLogin = function() {
 // ========================================================
 function bufferEncode(value) { return Uint8Array.from(value, c => c.charCodeAt(0)); }
 function bufferDecode(value) { return String.fromCharCode.apply(null, new Uint8Array(value)); }
-
-window.triggerNativeFaceID = async function() {
-    let userData = window.tempAuthData;
-    let userEmail = window.tempAuthUser.email;
-
-    if (!userData.passkeyId) {
-        // 🆕 REGISTER A NEW FACE ID
-        try {
-            const publicKeyCredentialCreationOptions = {
-                challenge: crypto.getRandomValues(new Uint8Array(32)),
-                rp: { name: "TAKODEÁL HQ", id: window.location.hostname },
-                user: {
-                    id: bufferEncode(userEmail), // Must be unique per user
-                    name: userEmail,
-                    displayName: window.tempAuthUser.displayName || "Manager"
-                },
-                pubKeyCredParams: [{alg: -7, type: "public-key"}],
-                authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
-                timeout: 60000,
-                attestation: "none"
-            };
-
-            const credential = await navigator.credentials.create({ publicKey: publicKeyCredentialCreationOptions });
-            
-            // Save the unique hardware ID to Firebase so we can recognize their face next time!
-            const rawId = btoa(bufferDecode(credential.rawId));
-            await updateDoc(doc(db, "hq_managers", userData.docId), { passkeyId: rawId });
-            
-            window.tempAuthData.passkeyId = rawId; // Update local memory
-            document.getElementById('bioBtnText').innerText = "Scan Face ID / Touch ID";
-            Swal.fire({toast: true, position: 'top', icon: 'success', title: 'Biometrics Registered!', showConfirmButton: false, timer: 2000});
-
-        } catch (err) {
-            console.error("Biometric Registration Error:", err);
-            Swal.fire('Setup Cancelled', 'Biometric registration was cancelled or failed.', 'info');
-        }
-    } else {
-        // 🔓 UNLOCK USING EXISTING FACE ID
-        try {
-            const publicKeyCredentialRequestOptions = {
-                challenge: crypto.getRandomValues(new Uint8Array(32)),
-                allowCredentials: [{
-                    id: Uint8Array.from(atob(userData.passkeyId), c => c.charCodeAt(0)),
-                    type: 'public-key',
-                    transports: ['internal']
-                }],
-                timeout: 60000,
-                userVerification: "required"
-            };
-
-            const assertion = await navigator.credentials.get({ publicKey: publicKeyCredentialRequestOptions });
-            
-            // If the Face ID scanner succeeds, the code reaches here and logs them in!
-            window.finalizeManagerLogin();
-
-        } catch (err) {
-            console.error("Biometric Scan Error:", err);
-            Swal.fire('Scan Failed', 'Face ID / Touch ID failed. Please use your Backup PIN.', 'error');
-        }
-    }
-};
 
 // 🔥 FIX 1: Catch Safari Redirects Globally (Required for iPhones)
 getRedirectResult(auth).then((result) => {
