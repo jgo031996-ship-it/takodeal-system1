@@ -2017,7 +2017,7 @@ window.renderLogisticsFeed = function() {
 };
 
 // ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (ULTIMATE MATH FIX)
+// 🔍 THE REVIEW REQUEST MODAL (COMPACT ALIGNMENT FIX)
 // ==========================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
@@ -2051,13 +2051,15 @@ window.reviewPurchaseOrder = async function(poId) {
                 <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
             </div>
 
-            <div style="max-height: 35vh; overflow-y: auto; text-align: left; border: 1px solid #cbd5e1; border-radius: 8px; border-bottom: none;">
+            <!-- 🔥 THE FIX: overflow-x: hidden kills the horizontal scrollbar! -->
+            <div style="max-height: 40vh; overflow-y: auto; overflow-x: hidden; text-align: left; border: 1px solid #cbd5e1; border-radius: 8px; border-bottom: none;">
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead style="background: #0f172a; color: white; position: sticky; top: 0; z-index: 10;">
                     <tr>
-                        <th style="padding: 10px; text-align: left; width: 45%;">Item Description</th>
-                        <th style="padding: 10px; text-align: center; width: 35%;">Stock Status / Request</th>
-                        <th style="padding: 10px; text-align: center; width: 20%;">Alert Type</th>
+                        <!-- 🔥 THE FIX: Adjusted column widths and right-aligned the numbers/badges -->
+                        <th style="padding: 12px 15px; text-align: left; width: 50%;">Item Description</th>
+                        <th style="padding: 12px 15px; text-align: right; width: 25%;">Count / Request</th>
+                        <th style="padding: 12px 15px; text-align: right; width: 25%;">Status</th>
                     </tr>
                 </thead>
                 <tbody>`;
@@ -2076,14 +2078,11 @@ window.reviewPurchaseOrder = async function(poId) {
                 let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
                 let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
 
-                // 🔥 THE ULTIMATE MATH FIX: Ignore corrupted branch data and rely solely on HQ!
                 let itemName = item.itemName || item.name;
                 let hqData = hqDetails[itemName] || {};
                 
-                // Always pull the Master Conversion rate from HQ directly
                 let masterCRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
                 
-                // Find the best display word (e.g., Cans, Sacks, Bottles)
                 let printUom = hqData.purchaseUom || hqData.purchUom || item.purchaseUom || item.displayUom || item.uom;
                 let baseUom = hqData.uom || hqData.baseUom || item.uom || item.baseUom;
 
@@ -2091,39 +2090,39 @@ window.reviewPurchaseOrder = async function(poId) {
 
                 let qtyDisplay = '';
                 if (isAudit) {
-                    // STRICTLY use the base unit physical stock, and force-divide it by the master conversion rate
                     let physBase = item.physicalStock !== undefined ? parseFloat(item.physicalStock) : (parseFloat(item.qty) || 0);
                     let sysBase = item.systemStock !== undefined ? parseFloat(item.systemStock) : '---';
 
                     let physCount = physBase / masterCRate;
                     let sysCount = sysBase !== '---' ? (sysBase / masterCRate) : '---';
 
+                    // 🔥 THE FIX: Right-aligned the text so it hugs the badge
                     qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${formatNum(physCount)} <span style="font-size:10px;">${printUom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${printUom}</span></div>
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900; text-align: right;">Phys: ${formatNum(physCount)} <span style="font-size:10px;">${printUom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold; text-align: right;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${printUom}</span></div>
                     `;
                 } else {
-                    // Standard Request Mode
                     let reqBase = parseFloat(item.qty) || 0;
                     let reqCount = reqBase / masterCRate;
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${formatNum(reqCount)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px; text-align: right;">Req: ${formatNum(reqCount)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
                 }
 
                 html += `
                     <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
-                        <td style="padding: 12px 10px; font-weight: bold; color: #334155;">
+                        <td style="padding: 12px 15px; font-weight: bold; color: #334155;">
                             ${itemName}<br>
                             <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${formatNum(hqStock[itemName] || 0)} ${baseUom}</span>
                         </td>
-                        <td style="padding: 12px 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
-                        <td style="padding: 12px 10px; text-align: center; vertical-align: middle;"><span style="${alertStyle} padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; white-space: nowrap;">${badgeText}</span></td>
+                        <td style="padding: 12px 15px; text-align: right; vertical-align: middle;">${qtyDisplay}</td>
+                        <td style="padding: 12px 15px; text-align: right; vertical-align: middle;">
+                            <span style="${alertStyle} padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; white-space: nowrap; display: inline-block;">${badgeText}</span>
+                        </td>
                     </tr>
                 `;
             });
         }
         html += `</tbody></table></div>`;
         
-        // 🔥 INJECT THE REJECT BUTTON DIRECTLY INTO THE MODAL
         html += `
             <div style="margin-top: 15px;">
                 <button type="button" onclick="window.processRejectRequest('${poId}')" style="width: 100%; background: #dc2626; color: white; border: none; padding: 12px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2); transition: 0.2s;">
@@ -2135,7 +2134,9 @@ window.reviewPurchaseOrder = async function(poId) {
         let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📦 Request from ${po.branch}`;
         
         Swal.fire({
-            title: titleTxt, html: html, width: '600px',
+            title: titleTxt, 
+            html: html, 
+            width: '680px', // 🔥 THE FIX: Widened modal slightly so labels have room to breathe
             showCancelButton: true, showDenyButton: true,
             confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#d97706',
             confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏸️ Postpone / Set Aside', cancelButtonText: 'Close Window',
@@ -2167,9 +2168,8 @@ window.reviewPurchaseOrder = async function(poId) {
                     let bUom = hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units';
                     let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
 
-                    // Extract Physical Math correctly
                     let originalBaseQty = parseFloat(newItem.qty) || 0;
-                    let originalDisplayQty = originalBaseQty / cRate; // Auto-repairs corrupted data
+                    let originalDisplayQty = originalBaseQty / cRate; 
                     
                     let physStockToPass = newItem.physicalStock !== undefined ? newItem.physicalStock : originalBaseQty;
                     let sysStockToPass = newItem.systemStock !== undefined ? newItem.systemStock : 0;
