@@ -4860,37 +4860,36 @@ window.loadAccountsAndBudget = async function() {
 }; // <-- THIS IS THE MAGIC BRACKET THAT WAS MISSING!
 
 // ==========================================
-// 🏢 UPGRADED: BRANCH ACCOUNTS MODAL ENGINE (WITH BRANCH LOGS)
+// 🏢 BRANCH ACCOUNTS MODAL ENGINE (ULTRA UI)
 // ==========================================
 window.openBranchAccountsModal = function(branch) {
     let branchAccounts = window.liveAccounts.filter(acc => acc.branch === branch);
     let branchTotal = branchAccounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
     
-    // Inject branch name and add a dedicated "Branch Logs" button in the header area
-    document.getElementById('branchAccModalTitle').innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-            <span>🏢 ${branch} Ledger</span>
-            <button onclick="window.openBranchAccountHistory('${branch}')" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📜 Branch Logs</button>
+    // 🎨 UI FIX: Clean alignment for the Title and the new Branch Logs Button
+    document.getElementById('branchAccModalTitle').innerHTML = `🏢 ${branch} Ledger`;
+    document.getElementById('branchAccModalTotal').innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+            <span style="font-size: 13px; font-weight: 900; color: #16a34a; background: #dcfce7; padding: 6px 12px; border-radius: 6px; border: 1px solid #bbf7d0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">Total: ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <button onclick="window.openBranchAccountHistory('${branch}')" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">📜 View Branch Logs</button>
         </div>
     `;
-    document.getElementById('branchAccModalTotal').innerText = `Total Assets: ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
     
     let html = '';
     if (branchAccounts.length === 0) {
-        html = '<tr><td colspan="3" class="text-center" style="padding: 20px; color: #64748b;">No accounts found for this branch.</td></tr>';
+        html = '<tr><td colspan="3" class="text-center" style="padding: 30px; color: #64748b; font-weight: bold;">No accounts found for this branch.</td></tr>';
     } else {
-        // Sort by balance (highest first)
         branchAccounts.sort((a, b) => (b.balance || 0) - (a.balance || 0));
         
         branchAccounts.forEach(acc => {
+            // ✏️ THE FIX: Prominent Adjust Button that passes the branch name!
             html += `
                 <tr style="border-bottom: 1px dashed #e2e8f0; transition: background-color 0.2s ease;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                    <td style="font-weight: bold; color: #334155; font-size: 15px; padding: 12px;">${acc.name}</td>
-                    <td style="font-weight: 900; color: #059669; font-size: 15px; padding: 12px;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="text-align: right; padding: 12px; white-space: nowrap;">
-                        <button onclick="window.viewAccountLogs('${acc.id}', '${acc.name}')" style="background: #eff6ff; color: #3b82f6; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">👁️ Logs</button>
-                        <button onclick="window.editCashAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
-                        <button onclick="window.deleteCashAccount('${acc.id}', '${acc.name}'); document.getElementById('branchAccountsModal').style.display='none';" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🗑️</button>
+                    <td style="font-weight: 900; color: #334155; font-size: 15px; padding: 16px 12px;">${acc.name}</td>
+                    <td style="font-weight: 900; color: #059669; font-size: 16px; padding: 16px 12px;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="text-align: right; padding: 16px 12px; white-space: nowrap;">
+                        <button onclick="window.editCashAccount('${acc.id}', '${acc.name}', ${acc.balance || 0}, '${branch}')" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 900; margin-right: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">✏️ Adjust Balance</button>
+                        <button onclick="window.deleteCashAccount('${acc.id}', '${acc.name}'); document.getElementById('branchAccountsModal').style.display='none';" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 900; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;" title="Delete Account">🗑️</button>
                     </td>
                 </tr>
             `;
@@ -4899,6 +4898,76 @@ window.openBranchAccountsModal = function(branch) {
     
     document.getElementById('branchAccModalBody').innerHTML = html;
     document.getElementById('branchAccountsModal').style.display = 'flex';
+};
+
+// ==========================================
+// ✏️ CASH ACCOUNT EDIT ENGINE (SECURITY TRACKED)
+// ==========================================
+window.editCashAccount = function(docId, accName, currentBal, branch) {
+    document.getElementById('editAccId').value = docId;
+    document.getElementById('editAccOldBalance').value = currentBal || 0;
+    
+    // 🔥 We secretly store the branch so the Audit Log knows where to put the tracking file!
+    let branchInput = document.getElementById('editAccBranch');
+    if (branchInput) branchInput.value = branch; 
+
+    document.getElementById('editAccName').value = accName;
+    document.getElementById('editAccBalance').value = currentBal || 0;
+    document.getElementById('editAccReason').value = '';
+    document.getElementById('editAccountModal').style.display = 'flex';
+};
+
+window.saveAccountEdit = async function() {
+    let docId = document.getElementById('editAccId').value;
+    let oldBal = parseFloat(document.getElementById('editAccOldBalance').value) || 0;
+    let newName = document.getElementById('editAccName').value.trim();
+    let newBal = parseFloat(document.getElementById('editAccBalance').value);
+    let reason = document.getElementById('editAccReason').value.trim();
+    
+    // Retrieve the secret branch name
+    let branchInput = document.getElementById('editAccBranch');
+    let branchName = branchInput ? branchInput.value : "Main Office";
+
+    if (!newName) { return Swal.fire('Error', 'Account name cannot be blank.', 'error'); }
+    if (isNaN(newBal)) { return Swal.fire('Error', 'Invalid balance amount.', 'error'); }
+    if (oldBal !== newBal && !reason) { 
+        return Swal.fire('⚠️ SECURITY ALERT', 'You are changing the balance. You MUST provide a Reason for Update so it can be tracked!', 'warning'); 
+    }
+
+    try {
+        Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+        // 1. Update the Account Balance
+        await updateDoc(doc(db, "cash_accounts", docId), { name: newName, balance: newBal });
+        
+        // 2. 🛡️ FIREWALL: Log the Action if the money changed!
+        let difference = newBal - oldBal;
+        if (difference !== 0) {
+            await addDoc(collection(db, "account_logs"), {
+                accountId: docId,
+                accountName: newName,
+                branch: branchName, // 🔥 THE FIX: Now it saves to the correct branch!
+                action: "Manager Manual Adjustment",
+                amount: difference,
+                newBalance: newBal,
+                user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
+                timestamp: serverTimestamp(),
+                note: reason
+            });
+        }
+
+        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Account updated successfully!', showConfirmButton: false, timer: 2000 });
+        
+        document.getElementById('editAccountModal').style.display = 'none';
+        
+        // Re-open the Branch Modal so you can instantly see the new balance!
+        window.loadAccountsAndBudget();
+        setTimeout(() => { window.openBranchAccountsModal(branchName); }, 500);
+
+    } catch(e) { 
+        console.error(e); 
+        Swal.fire('Error', 'Failed to update account.', 'error'); 
+    }
 };
 
 // ==========================================
@@ -4963,53 +5032,6 @@ window.openBranchAccountHistory = async function(branchName) {
         console.error("Branch Audit Log Error:", e);
         tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 30px;">❌ Error loading branch audit logs. Check connection.</td></tr>';
     }
-};
-
-// --- CASH ACCOUNT EDIT & DELETE ACTIONS ---
-window.editCashAccount = function(docId, accName, currentBal) {
-    // Fill the beautiful UI Modal instead of using an ugly prompt!
-    document.getElementById('editAccId').value = docId;
-    document.getElementById('editAccOldBalance').value = currentBal || 0;
-    document.getElementById('editAccName').value = accName;
-    document.getElementById('editAccBalance').value = currentBal || 0;
-    document.getElementById('editAccReason').value = '';
-    document.getElementById('editAccountModal').style.display = 'flex';
-};
-
-window.saveAccountEdit = async function() {
-    let docId = document.getElementById('editAccId').value;
-    let oldBal = parseFloat(document.getElementById('editAccOldBalance').value) || 0;
-    let newName = document.getElementById('editAccName').value.trim();
-    let newBal = parseFloat(document.getElementById('editAccBalance').value);
-    let reason = document.getElementById('editAccReason').value.trim();
-
-    if (!newName) { alert("❌ Account name cannot be blank."); return; }
-    if (isNaN(newBal)) { alert("❌ Invalid balance amount."); return; }
-    if (oldBal !== newBal && !reason) { alert("⚠️ SECURITY ALERT: You are changing the balance. You MUST provide a Reason for Update!"); return; }
-
-    try {
-        // 1. Update the Account
-        await updateDoc(doc(db, "cash_accounts", docId), { name: newName, balance: newBal });
-        
-        // 2. Log the Action if the money changed!
-        let difference = newBal - oldBal;
-        if (difference !== 0) {
-            await addDoc(collection(db, "account_logs"), {
-                accountId: docId,
-                accountName: newName,
-                action: "Manager Manual Adjustment",
-                amount: difference,
-                newBalance: newBal,
-                user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
-                timestamp: serverTimestamp(),
-                note: reason
-            });
-        }
-
-        alert(`✅ Account successfully updated!`);
-        document.getElementById('editAccountModal').style.display = 'none';
-        window.loadAccountsAndBudget();
-    } catch(e) { console.error(e); alert("Failed to update account."); }
 };
 
 window.deleteCashAccount = async function(docId, accName) {
