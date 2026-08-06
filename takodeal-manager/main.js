@@ -6571,24 +6571,27 @@ window.openEditInvModal = async function(id) {
             
             document.getElementById('editInvPurchUom').value = itemData.purchaseUom || itemData.purchUom || '';
             document.getElementById('editInvBaseUom').value = itemData.baseUom || itemData.uom || '';
-            document.getElementById('editInvConversion').value = itemData.conversionRate || itemData.conversion || 1;
+            
+            let convRate = parseFloat(itemData.conversionRate) || parseFloat(itemData.conversion) || 1;
+            document.getElementById('editInvConversion').value = convRate;
             document.getElementById('editInvPurchCost').value = itemData.purchaseCost || itemData.purchCost || itemData.cost || 0;
-            document.getElementById('editInvLowStock').value = itemData.lowStockAlert || itemData.reorderLevel || 0;
+            
+            // 🔥 THE UOM MATH FIX: Convert the database Base UOM back to Purchase UOM for easy editing!
+            let lowStockPurch = (parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate;
+            document.getElementById('editInvLowStock').value = lowStockPurch;
             
             document.getElementById('editInvOldQty').value = itemData.currentStock || 0;
             
-            // Clear the physical count box so they don't accidentally save an old number
             let newQtyEl = document.getElementById('editInvNewQty');
             if (newQtyEl) {
                 newQtyEl.value = '';
-                newQtyEl.onkeyup = window.calcEditVariance; // Updates math while typing
+                newQtyEl.onkeyup = window.calcEditVariance;
             }
             
-            // Set the dropdown to default and attach the click listener
             let countTypeEl = document.getElementById('editInvCountType');
             if (countTypeEl) {
                 countTypeEl.value = 'base';
-                countTypeEl.onchange = window.calcEditVariance; // Updates math when switching UOMs!
+                countTypeEl.onchange = window.calcEditVariance;
             }
             
             document.getElementById('editInvNote').value = '';
@@ -6605,10 +6608,12 @@ window.openEditInvModal = async function(id) {
             if (document.getElementById('editInvAllowRequest')) {
                 document.getElementById('editInvAllowRequest').checked = itemData.allowRequest !== false;
             }
+            
             document.getElementById('editInvModal').style.display = 'flex';
 
-            // 🔥 FORCE THE UI TO INJECT THE UOM NAMES INSTANTLY
+            // 🔥 FORCE THE UI CALCULATION ENGINE TO WAKE UP IMMEDIATELY
             window.calcEditVariance();
+            window.calcEditCost();
 
         } else {
             alert("The requested inventory item could not be located in the central database.");
