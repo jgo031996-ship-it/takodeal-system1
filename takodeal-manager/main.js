@@ -4860,14 +4860,20 @@ window.loadAccountsAndBudget = async function() {
 }; // <-- THIS IS THE MAGIC BRACKET THAT WAS MISSING!
 
 // ==========================================
-// 🏢 UPGRADED: BRANCH ACCOUNTS MODAL ENGINE
+// 🏢 UPGRADED: BRANCH ACCOUNTS MODAL ENGINE (WITH BRANCH LOGS)
 // ==========================================
 window.openBranchAccountsModal = function(branch) {
     let branchAccounts = window.liveAccounts.filter(acc => acc.branch === branch);
     let branchTotal = branchAccounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
     
-    document.getElementById('branchAccModalTitle').innerHTML = `🏢 ${branch} Ledger`;
-    document.getElementById('branchAccModalTotal').innerText = `Total: ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    // Inject branch name and add a dedicated "Branch Logs" button in the header area
+    document.getElementById('branchAccModalTitle').innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span>🏢 ${branch} Ledger</span>
+            <button onclick="window.openBranchAccountHistory('${branch}')" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📜 Branch Logs</button>
+        </div>
+    `;
+    document.getElementById('branchAccModalTotal').innerText = `Total Assets: ₱${branchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
     
     let html = '';
     if (branchAccounts.length === 0) {
@@ -4882,9 +4888,7 @@ window.openBranchAccountsModal = function(branch) {
                     <td style="font-weight: bold; color: #334155; font-size: 15px; padding: 12px;">${acc.name}</td>
                     <td style="font-weight: 900; color: #059669; font-size: 15px; padding: 12px;">₱${(acc.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td style="text-align: right; padding: 12px; white-space: nowrap;">
-                        <!-- 👁️ THE NEW LOGS BUTTON -->
                         <button onclick="window.viewAccountLogs('${acc.id}', '${acc.name}')" style="background: #eff6ff; color: #3b82f6; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">👁️ Logs</button>
-                        
                         <button onclick="window.editCashAccount('${acc.id}', '${acc.name}', ${acc.balance || 0})" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-right: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>
                         <button onclick="window.deleteCashAccount('${acc.id}', '${acc.name}'); document.getElementById('branchAccountsModal').style.display='none';" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🗑️</button>
                     </td>
@@ -4895,6 +4899,70 @@ window.openBranchAccountsModal = function(branch) {
     
     document.getElementById('branchAccModalBody').innerHTML = html;
     document.getElementById('branchAccountsModal').style.display = 'flex';
+};
+
+// ==========================================
+// 📜 BRANCH-SPECIFIC AUDIT LOG VIEWER
+// ==========================================
+window.openBranchAccountHistory = async function(branchName) {
+    // 1. Hide the Branch Accounts Modal so they don't overlap
+    document.getElementById('branchAccountsModal').style.display = 'none';
+    
+    // 2. Open the Global History Modal
+    document.getElementById('accountHistoryModal').style.display = 'flex';
+    const tbody = document.getElementById('accHistoryTableBody');
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center" style="padding: 30px;">⏳ Fetching audit logs for ${branchName}...</td></tr>`;
+
+    try {
+        // Fetch logs tied strictly to this branch name
+        const q = query(collection(db, "account_logs"), where("branch", "==", branchName));
+        const snap = await getDocs(q);
+
+        let logsArray = [];
+        snap.forEach(docSnap => logsArray.push(docSnap.data()));
+
+        // Sort newest first manually to prevent Firebase Index errors
+        logsArray.sort((a, b) => {
+            let timeA = a.timestamp ? a.timestamp.toMillis() : 0;
+            let timeB = b.timestamp ? b.timestamp.toMillis() : 0;
+            return timeB - timeB ? timeB - timeA : 0; // Fallback sort
+        });
+
+        let html = '';
+        logsArray.forEach(data => {
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            let amount = parseFloat(data.amount) || 0;
+            let balance = parseFloat(data.newBalance) || 0;
+            
+            let actionColor = amount > 0 ? '#16a34a' : (amount < 0 ? '#dc2626' : '#64748b');
+            if (data.action && data.action.includes('Transfer')) actionColor = '#2563eb';
+            let amountSign = amount > 0 ? '+' : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                    <td style="padding: 12px 10px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">👤 ${data.user || 'System'}</td>
+                    <td style="padding: 12px 10px;">
+                        <span style="font-weight: bold; color: var(--primary);">${data.action || 'Manual Edit'}</span><br>
+                        <span style="font-size: 12px; color: ${actionColor}; font-weight: bold;">${amountSign}₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </td>
+                    <td style="padding: 12px 10px;">
+                        <strong>${data.accountName || 'Unknown'}</strong><br>
+                        <span style="font-size: 11px; color: #64748b;">New Bal: ₱${balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </td>
+                    <td style="padding: 12px 10px; font-size: 12px; color: #475569; font-style: italic; max-width: 200px;">
+                        ${data.note || data.reason || 'No notes provided.'}
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = logsArray.length === 0 ? `<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No transaction history found for ${branchName}.</td></tr>` : html;
+
+    } catch (e) {
+        console.error("Branch Audit Log Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 30px;">❌ Error loading branch audit logs. Check connection.</td></tr>';
+    }
 };
 
 // --- CASH ACCOUNT EDIT & DELETE ACTIONS ---
