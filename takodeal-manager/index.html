@@ -413,55 +413,37 @@
     </div>
   </nav>
 
-  <!-- 🤖 F.R.I.D.A.Y. BIOMETRIC SHIELD OVERLAY -->
-  <div id="loginOverlay" class="hologram-container" style="display: none;">
-      <div class="hologram-grid"></div>
+  <!-- ⚡ LIGHTWEIGHT FAST LOGIN OVERLAY -->
+  <div id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100dvh; background: #0f172a; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;">
+    
+    <!-- STAGE 1: GOOGLE AUTH -->
+    <div id="loginStage1" style="background: white; padding: 35px 25px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 360px; box-sizing: border-box;">
+      <h2 style="margin: 0 0 8px 0; color: #0f172a; font-size: 20px;">TAKODEÁL HQ</h2>
+      <p style="color: #64748b; font-size: 13px; margin-bottom: 25px;">Secure Control Center</p>
 
-      <!-- STAGE 1: GOOGLE AUTHENTICATION -->
-      <div id="loginStage1" class="holo-card">
-          <div class="holo-avatar-container">
-              <div class="holo-ring-1"></div>
-              <div class="holo-ring-2"></div>
-              <img src="logo.jpg" class="holo-logo">
-          </div>
-          
-          <h2 style="color: white; letter-spacing: 2px; margin: 0 0 5px 0;">TAKODEÁL F.R.I.D.A.Y.</h2>
-          <p style="color: #38bdf8; font-size: 11px; margin-bottom: 25px;">Awaiting Google Identity Authorization...</p>
-          
-          <button onclick="loginWithGoogle()" class="holo-btn" style="margin-bottom: 15px;">
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 20px;">
-              Initialize Login
-          </button>
-          <button onclick="window.promptMobileInstall()" class="holo-btn" style="border-color: #cbd5e1; color: #cbd5e1; border-style: dashed;">
-              📱 Install Native Mobile App
-          </button>
-      </div>
+      <button onclick="loginWithGoogle()" style="background: white; color: #334155; border: 1.5px solid #cbd5e1; padding: 14px 20px; border-radius: 10px; font-size: 15px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 15px;">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 20px; height: 20px;">
+        Sign in with Google
+      </button>
 
-      <!-- STAGE 2: FACE ID / SECURE PIN -->
-      <div id="loginStage2" class="holo-card" style="display: none;">
-          <div class="holo-avatar-container">
-              <div class="holo-ring-1" style="border-color: #10b981;"></div>
-              <img src="logo.jpg" class="holo-logo" style="border-color: #10b981; box-shadow: 0 0 25px #10b981;">
-              <div class="scan-line" style="background: #10b981; box-shadow: 0 0 15px 3px #10b981;"></div>
-          </div>
-          
-          <h3 style="color: white; letter-spacing: 1px; margin: 0 0 5px 0; text-transform: uppercase;" id="authWelcomeName">Welcome, Agent</h3>
-          <p style="color: #10b981; font-size: 11px; margin-bottom: 5px;">[✓] Google Authorization Verified</p>
-          <p style="color: #ef4444; font-size: 11px; margin-bottom: 25px; animation: pulse 2s infinite;">[!] Awaiting Security Clearance</p>
-          
-          <button id="btnBiometricAuth" onclick="window.triggerNativeFaceID()" class="holo-btn-bio">
-              <span style="font-size: 22px;">📱</span> <span id="bioBtnText">Scan Face ID / Touch ID</span>
-          </button>
+      <button onclick="window.promptMobileInstall()" style="background: transparent; color: #0ea5e9; border: none; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%;">
+        📱 Install Native Mobile App
+      </button>
+    </div>
 
-          <div style="margin: 20px 0; position: relative; border-top: 1px dashed rgba(56, 189, 248, 0.4);">
-              <span style="position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: rgba(2, 6, 23, 1); padding: 0 10px; font-size: 10px; color: #38bdf8;">OR OVERRIDE PIN</span>
-          </div>
+    <!-- STAGE 2: FAST PIN ENTRY -->
+    <div id="loginStage2" style="display: none; background: white; padding: 35px 25px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 360px; box-sizing: border-box;">
+      <h3 id="authWelcomeName" style="margin: 0 0 5px 0; color: #0f172a; font-size: 18px;">Welcome, Owner</h3>
+      <p style="color: #10b981; font-size: 12px; margin-bottom: 25px; font-weight: bold;">[✓] Identity Verified</p>
+      
+      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 10px;">ENTER SECURITY PIN</label>
+      <input type="password" id="managerPinInput" placeholder="****" maxlength="4" onkeyup="window.checkManagerPin()" style="width: 100%; max-width: 180px; padding: 15px; font-size: 28px; text-align: center; letter-spacing: 15px; border: 2px solid #cbd5e1; border-radius: 10px; outline: none; font-family: monospace; color: #0f172a; transition: border-color 0.2s;">
+      
+      <div id="pinErrorMsg" style="color: #ef4444; font-size: 12px; margin-top: 12px; font-weight: bold; display: none;">ACCESS DENIED. INVALID PIN.</div>
+      
+      <button onclick="window.cancelLoginAndSignOut()" style="background: transparent; color: #94a3b8; border: none; margin-top: 25px; font-size: 12px; cursor: pointer; text-decoration: underline;">Cancel & Sign Out</button>
+    </div>
 
-          <input type="password" id="managerPinInput" class="holo-input" placeholder="****" maxlength="4" onkeyup="window.checkManagerPin()">
-          <div id="pinErrorMsg" style="color: #ef4444; font-size: 12px; margin-top: 12px; font-weight: bold; display: none;">ACCESS DENIED. INVALID PIN.</div>
-          
-          <button onclick="window.cancelLoginAndSignOut()" style="background: transparent; color: #64748b; border: none; margin-top: 25px; font-size: 12px; cursor: pointer; text-decoration: underline; font-family: monospace;">Abort & Sign Out</button>
-      </div>
   </div>
 
   <main class="main-content">
