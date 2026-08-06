@@ -197,3 +197,84 @@ body {
     -webkit-overflow-scrolling: touch !important;
   }
 }
+
+/* ======================================================= */
+/* 🤖 F.R.I.D.A.Y. HOLOGRAPHIC BIOMETRIC ENGINE            */
+/* ======================================================= */
+.hologram-container {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh;
+    background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+    z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    overflow: hidden; font-family: 'Courier New', Courier, monospace;
+}
+
+/* The Grid Background */
+.hologram-grid {
+    position: absolute; width: 200%; height: 200%;
+    background-image: linear-gradient(rgba(14, 165, 233, 0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(14, 165, 233, 0.15) 1px, transparent 1px);
+    background-size: 50px 50px;
+    transform: perspective(600px) rotateX(60deg) translateY(-100px) translateZ(-200px);
+    animation: gridMove 15s linear infinite; z-index: 1;
+}
+
+@keyframes gridMove {
+    0% { transform: perspective(600px) rotateX(60deg) translateY(0) translateZ(-200px); }
+    100% { transform: perspective(600px) rotateX(60deg) translateY(50px) translateZ(-200px); }
+}
+
+/* The Glass Card */
+.holo-card {
+    background: rgba(2, 6, 23, 0.6); border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 20px; padding: 40px 30px; box-shadow: 0 0 40px rgba(14, 165, 233, 0.2), inset 0 0 20px rgba(14, 165, 233, 0.1);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    z-index: 10; text-align: center; width: 90%; max-width: 420px; position: relative;
+    animation: holoFlicker 4s infinite alternate;
+}
+
+/* The Glowing Logo & Rings */
+.holo-avatar-container { position: relative; width: 130px; height: 130px; margin: 0 auto 20px auto; }
+.holo-ring-1 {
+    position: absolute; top: -10px; left: -10px; width: 150px; height: 150px;
+    border: 2px dashed #0ea5e9; border-radius: 50%; animation: spin 10s linear infinite;
+}
+.holo-ring-2 {
+    position: absolute; top: -5px; left: -5px; width: 140px; height: 140px;
+    border: 2px solid rgba(56, 189, 248, 0.3); border-radius: 50%; border-top-color: #38bdf8;
+    animation: spin 3s linear infinite reverse;
+}
+.holo-logo {
+    width: 130px; height: 130px; border-radius: 50%; object-fit: cover;
+    box-shadow: 0 0 25px #0ea5e9; border: 2px solid #38bdf8; position: relative; z-index: 5;
+}
+.scan-line {
+    position: absolute; top: 0; left: 0; width: 100%; height: 3px; background: #38bdf8;
+    box-shadow: 0 0 15px 3px #0ea5e9; z-index: 10; animation: scan 2s ease-in-out infinite alternate;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+@keyframes scan { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+
+/* The PIN Input & Buttons */
+.holo-input {
+    background: rgba(0, 0, 0, 0.5); border: 1px solid #0ea5e9; color: #38bdf8;
+    font-size: 32px; letter-spacing: 15px; text-align: center; padding: 15px; border-radius: 8px;
+    outline: none; box-shadow: inset 0 0 15px rgba(14, 165, 233, 0.3); width: 100%; font-family: monospace;
+    transition: 0.3s;
+}
+.holo-input:focus { border-color: #38bdf8; box-shadow: inset 0 0 25px rgba(14, 165, 233, 0.6), 0 0 15px rgba(14, 165, 233, 0.4); }
+
+.holo-btn {
+    background: rgba(14, 165, 233, 0.1); border: 1px solid #0ea5e9; color: #38bdf8;
+    padding: 15px; width: 100%; border-radius: 8px; font-weight: bold; font-family: monospace;
+    font-size: 14px; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.holo-btn:hover { background: rgba(14, 165, 233, 0.3); box-shadow: 0 0 15px #0ea5e9; color: white; }
+
+.holo-btn-bio {
+    background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; color: #34d399;
+    padding: 15px; width: 100%; border-radius: 8px; font-weight: bold; font-family: monospace;
+    font-size: 14px; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px;
+    display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 20px;
+}
+.holo-btn-bio:hover { background: rgba(16, 185, 129, 0.3); box-shadow: 0 0 15px #10b981; color: white; }
