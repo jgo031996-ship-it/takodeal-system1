@@ -5,7 +5,7 @@
   --primary-hover: #b45309;
   --bg-color: #f3f4f6;
   --surface: #ffffff;
-  --sidebar-bg: #111827; /* Dark Gray/Blue for Admin feel */
+  --sidebar-bg: #111827; /* Dark Gray/Blue */
   --sidebar-hover: #1f2937;
   --text-main: #1f2937;
   --text-muted: #6b7280;
@@ -17,10 +17,18 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-body { display: flex; height: 100vh; background-color: var(--bg-color); color: var(--text-main); overflow: hidden; }
+
+body { 
+  display: flex; 
+  height: 100vh; 
+  height: 100dvh; 
+  background-color: var(--bg-color); 
+  color: var(--text-main); 
+  overflow: hidden; 
+}
 
 /* SIDEBAR */
-.sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; flex-shrink: 0; z-index: 30; }
 .brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); }
 .brand .icon { font-size: 28px; }
 .brand .text { font-size: 18px; font-weight: 900; letter-spacing: 1px; }
@@ -33,17 +41,58 @@ body { display: flex; height: 100vh; background-color: var(--bg-color); color: v
 .user-profile .name { display: block; font-weight: 600; font-size: 14px; }
 .user-profile .role { display: block; font-size: 12px; color: #9ca3af; }
 
-/* MAIN STAGE */
-.main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.topbar { height: 70px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }
-.topbar h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
-.actions { display: flex; align-items: center; gap: 20px; }
-.date-display { font-size: 14px; font-weight: 500; color: var(--text-muted); }
-.btn-refresh { background: var(--surface); border: 1px solid var(--border); padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; color: var(--text-main); cursor: pointer; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+/* MAIN STAGE (FLUID FLEX LAYOUT - PREVENTS OVERLAPS) */
+.main-content { 
+  flex: 1; 
+  display: flex; 
+  flex-direction: column; 
+  height: 100vh; 
+  height: 100dvh; 
+  overflow: hidden; 
+}
+
+.topbar { 
+  min-height: 65px; 
+  height: auto; 
+  background: var(--surface); 
+  border-bottom: 1px solid var(--border); 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  padding: 12px 25px; 
+  flex-wrap: wrap; 
+  gap: 12px; 
+  z-index: 20; 
+  flex-shrink: 0; 
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03); 
+}
+
+.topbar h1 { font-size: 20px; font-weight: 700; color: var(--text-main); margin: 0; }
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.date-display { font-size: 13px; font-weight: 600; color: var(--text-main); }
+
+.btn-refresh { 
+  background: var(--surface); 
+  border: 1px solid var(--border); 
+  padding: 8px 16px; 
+  border-radius: 6px; 
+  font-weight: 600; 
+  font-size: 13px; 
+  color: var(--text-main); 
+  cursor: pointer; 
+  transition: 0.2s; 
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05); 
+}
 .btn-refresh:hover { background: #f9fafc; border-color: #d1d5db; }
 
-/* VIEWS */
-.view { display: none; padding: 30px; overflow-y: auto; height: calc(100vh - 70px); }
+/* VIEWS (AUTO-EXPANDS BELOW TOPBAR) */
+.view { 
+  display: none; 
+  flex: 1; 
+  padding: 25px; 
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch; 
+}
 .view.active { display: block; }
 
 /* STAT CARDS */
@@ -65,7 +114,7 @@ body { display: flex; height: 100vh; background-color: var(--bg-color); color: v
 .data-table tr:last-child td { border-bottom: none; }
 .text-center { text-align: center; color: var(--text-muted); }
 
-/* BADGES (UPGRADED) */
+/* BADGES */
 .badge { 
   display: inline-flex; 
   align-items: center; 
@@ -74,18 +123,17 @@ body { display: flex; height: 100vh; background-color: var(--bg-color); color: v
   border-radius: 20px; 
   font-size: 12px; 
   font-weight: 700; 
-  white-space: nowrap; /* Forces text to stay on one line! */
+  white-space: nowrap; 
 }
 .badge-active { background: var(--success-light); color: var(--success); border: 1px solid #a7f3d0; }
 .badge-closed { background: var(--bg-color); color: var(--text-muted); border: 1px solid var(--border); }
 
-/* BULLETPROOF DOTS */
+/* STATUS DOTS */
 .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .status-dot.green { background: var(--success); box-shadow: 0 0 4px var(--success); }
 .status-dot.gray { background: #9ca3af; }
 .status-dot.red { background: var(--danger); }
 
-/* SECURITY ALARM PULSE */
 @keyframes pulse {
   0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
   70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
@@ -93,86 +141,59 @@ body { display: flex; height: 100vh; background-color: var(--bg-color); color: v
 }
 
 /* ======================================================= */
-/* 📱 MOBILE & IPHONE RESPONSIVE ENGINE (ADDED)            */
+/* 📱 ULTRA MODE MOBILE ENGINE (iPHONE & TABLET)           */
 /* ======================================================= */
 @media (max-width: 768px) {
   body {
-    height: 100dvh;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* 1. Main Stage & Topbar Layout */
-  .main-content {
-    width: 100%;
-    height: 100dvh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    height: 100dvh !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
   }
 
   .topbar {
-    height: auto;
-    min-height: 60px;
-    padding: 12px 15px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .topbar h1 {
-    font-size: 18px;
-  }
-
-  .actions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    width: 100%;
-  }
-
-  /* 2. Fluid Date Controls */
-  #globalDateControls {
-    width: 100% !important;
-    max-width: 100% !important;
+    padding: 10px 15px !important;
     gap: 8px !important;
   }
 
-  #globalDateControls input,
-  #globalDateControls button {
-    font-size: 14px !important;
+  .topbar h1 {
+    font-size: 18px !important;
   }
 
-  /* 3. Responsive Grids & Views */
+  #globalDateControls {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  #globalDateControls input[type="date"] {
+    flex: 1 1 45% !important;
+    min-width: 130px !important;
+    padding: 8px !important;
+    font-size: 12px !important;
+  }
+
+  #btnRefreshData, #btnExportSales, #btnWipeData {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+  }
+
   .view {
-    padding: 15px;
-    height: auto;
-    overflow-y: visible;
+    padding: 12px !important;
   }
 
   .stat-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-    margin-bottom: 20px;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
   }
 
-  .stat-card {
-    padding: 16px;
+  div[style*="grid-template-columns: repeat(3, 1fr)"] {
+    grid-template-columns: 1fr !important;
   }
 
-  .stat-card .value {
-    font-size: 26px;
-  }
-
-  /* 4. Tables Overflow Fix */
-  .table-responsive, .card {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .data-table th, .data-table td {
-    padding: 10px 12px;
-    font-size: 13px;
-    white-space: nowrap;
+  .table-responsive {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 }
