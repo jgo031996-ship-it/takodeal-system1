@@ -17214,13 +17214,18 @@ window.loadEquipmentDashboard = async function() {
 
             // Action Buttons
             let actionHtml = `<div style="display:flex; gap: 5px; flex-direction:column;">`;
+            
+            // ✏️ THE NEW EDIT BUTTON
+            let safeDataStr = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
+            actionHtml += `<button onclick="window.editEquipmentModal('${safeDataStr}')" style="background: #eff6ff; color: #0ea5e9; border: 1px solid #bae6fd; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>`;
+
             if (d.status === "Active") {
                 actionHtml += `<button onclick="window.markEquipmentBroken('${docSnap.id}', '${d.name.replace(/'/g, "\\'")}', '${d.branch}')" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⚠️ Report Breakdown</button>`;
             } else {
-                actionHtml += `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">Archived</span>`;
+                actionHtml += `<span style="font-size: 11px; color: #94a3b8; font-style: italic; text-align: center; padding: 4px 0;">Archived</span>`;
             }
             actionHtml += `<button onclick="window.deleteEquipment('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">🗑️ Delete</button></div>`;
-
+          
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; ${d.status !== 'Active' ? 'opacity: 0.7; background: #f8fafc;' : ''}">
                     <td style="padding: 15px;">
@@ -17369,6 +17374,91 @@ window.openAddEquipmentModal = async function() {
     } catch (e) {
         console.error("Save Asset Error:", e);
         Swal.fire('Error', 'Failed to register equipment.', 'error');
+    }
+};
+
+// ========================================================
+// ✏️ EDIT EQUIPMENT ASSET ENGINE
+// ========================================================
+window.editEquipmentModal = async function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    
+    // Build Branch Dropdown and auto-select current branch
+    let branchOptions = window.globalActiveBranches.map(b => {
+        return `<option value="${b}" ${d.branch === b ? 'selected' : ''}>${b}</option>`;
+    }).join('');
+    
+    const { value: formValues, isConfirmed } = await Swal.fire({
+        title: '✏️ Edit Asset Details',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Equipment Name</label>
+                <input type="text" id="edit-eq-name" value="${d.name || ''}" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px; color: #0f172a;">
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Details / Serial No.</label>
+                <input type="text" id="edit-eq-details" value="${d.details || ''}" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px;">
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Branch Assigned</label>
+                        <select id="edit-eq-branch" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; cursor: pointer; font-size: 14px;">${branchOptions}</select>
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px;">Cost (₱)</label>
+                        <input type="number" id="edit-eq-cost" value="${d.cost || 0}" style="width: 100%; padding: 12px; border-radius: 6px; border: 2px solid #fca5a5; background: #fef2f2; outline: none; box-sizing: border-box; font-weight: 900; color: #dc2626; font-size: 15px;">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 10px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Purchase Date</label>
+                        <input type="date" id="edit-eq-pdate" value="${d.purchaseDate || ''}" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Operate Date</label>
+                        <input type="date" id="edit-eq-odate" value="${d.operateDate || ''}" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; font-size: 14px;">
+                    </div>
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '💾 Save Changes',
+        confirmButtonColor: '#0ea5e9',
+        cancelButtonColor: '#94a3b8',
+        width: '550px',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return {
+                name: document.getElementById('edit-eq-name').value.trim(),
+                details: document.getElementById('edit-eq-details').value.trim(),
+                branch: document.getElementById('edit-eq-branch').value,
+                cost: parseFloat(document.getElementById('edit-eq-cost').value) || 0,
+                purchaseDate: document.getElementById('edit-eq-pdate').value,
+                operateDate: document.getElementById('edit-eq-odate').value
+            }
+        }
+    });
+
+    if (isConfirmed && formValues.name) {
+        Swal.fire({ title: 'Saving Changes...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        try {
+            await updateDoc(doc(db, "equipment_assets", d.id), {
+                name: formValues.name,
+                details: formValues.details,
+                branch: formValues.branch,
+                cost: formValues.cost,
+                purchaseDate: formValues.purchaseDate,
+                operateDate: formValues.operateDate,
+                lastUpdated: serverTimestamp()
+            });
+            
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Asset updated successfully!', showConfirmButton: false, timer: 2000 });
+            window.loadEquipmentDashboard();
+        } catch(e) {
+            console.error("Edit Asset Error:", e);
+            Swal.fire('Error', 'Failed to update equipment. Check your internet connection.', 'error');
+        }
     }
 };
 
