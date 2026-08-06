@@ -5336,11 +5336,15 @@ window.loadStockRequestUI = async function() {
                 }
                 uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
 
-                // 🔥 INJECT REORDER LEVEL VISUAL CUE!
-                let reorderLevel = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
-                let isCriticallyLow = purchStock <= reorderLevel;
+                // 🔥 THE FIX: Accurately display the Reorder Level in Purchase UOM to the Cashier!
+                let reorderLevelBase = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
+                let reorderLevelPurch = reorderLevelBase / conv;
+                
+                // Check if current Purch Stock is lower than or equal to the Reorder Purch Stock
+                let isCriticallyLow = purchStock <= reorderLevelPurch;
                 let stockColor = isCriticallyLow ? '#ef4444' : '#334155';
-                let reorderBadge = `<span style="font-size: 9px; color: ${isCriticallyLow ? '#dc2626' : '#d97706'}; margin-top: 4px; font-weight: bold; background: ${isCriticallyLow ? '#fef2f2' : '#fffbeb'}; border: 1px dashed ${isCriticallyLow ? '#fca5a5' : '#fcd34d'}; padding: 2px 4px; border-radius: 4px;">⚠️ Reorder Lvl: ${reorderLevel}</span>`;
+                
+                let reorderBadge = `<span style="font-size: 9px; color: ${isCriticallyLow ? '#dc2626' : '#d97706'}; margin-top: 4px; font-weight: bold; background: ${isCriticallyLow ? '#fef2f2' : '#fffbeb'}; border: 1px dashed ${isCriticallyLow ? '#fca5a5' : '#fcd34d'}; padding: 2px 4px; border-radius: 4px;">⚠️ Reorder Lvl: ${reorderLevelPurch.toFixed(2)} ${pUom}</span>`;
 
                 html += `
                 <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
