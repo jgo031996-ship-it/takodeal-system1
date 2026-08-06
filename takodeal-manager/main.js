@@ -92,90 +92,201 @@ window.applyPermissions = function() {
     document.getElementById('nav-admin').style.display = 'none'; 
 };
 
-// --- PERSISTENT LOGIN & FRANCHISEE LISTENER ---
+// ========================================================
+// 🤖 2FA SECURITY & BIOMETRIC ENGINE
+// ========================================================
+window.tempAuthUser = null;
+window.tempAuthData = null;
+
 auth.onAuthStateChanged(async (user) => {
-  const loginScreen = document.getElementById('loginOverlay');
+  const loginOverlay = document.getElementById('loginOverlay');
+  const stage1 = document.getElementById('loginStage1');
+  const stage2 = document.getElementById('loginStage2');
+  
   if (user) {
     let isAuthorized = false;
-    let userPerms = ['all'];
-    let assignedBranch = 'Main Office'; // Default for Master
-    let isFranchisee = false;
+    let userData = null;
+    let docId = null;
 
     try {
         if (user.email === MASTER_EMAIL) {
+            const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
+            const snap = await getDocs(q);
+            if (snap.empty) {
+                const newDoc = await addDoc(collection(db, "hq_managers"), {
+                    email: user.email, role: 'Owner', permissions: ['all'], assignedBranch: 'All', pin: '0319' // Default Master PIN
+                });
+                docId = newDoc.id;
+                userData = { pin: '0319', permissions: ['all'], role: 'Owner', assignedBranch: 'All' };
+            } else {
+                docId = snap.docs[0].id;
+                userData = snap.docs[0].data();
+            }
             isAuthorized = true;
-            userPerms = ['all'];
-            assignedBranch = 'All'; // Master sees everything
         } else {
             const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
             const snap = await getDocs(q);
-            
             if (!snap.empty) {
+                docId = snap.docs[0].id;
+                userData = snap.docs[0].data();
                 isAuthorized = true;
-                let data = snap.docs[0].data();
-                userPerms = data.permissions || ['all'];
-                
-                // 🔥 THE FRANCHISEE LOCK
-                if (data.role === 'Franchisee' && data.assignedBranch) {
-                    assignedBranch = data.assignedBranch;
-                    isFranchisee = true;
-                } else if (data.assignedBranch) {
-                    assignedBranch = data.assignedBranch;
-                }
-            } else {
-                const checkAny = await getDocs(query(collection(db, "hq_managers"), limit(1)));
-                if (checkAny.empty) {
-                    await addDoc(collection(db, "hq_managers"), {
-                        email: user.email, 
-                        role: 'Owner', 
-                        permissions: ['all'],
-                        assignedBranch: 'All'
-                    });
-                    isAuthorized = true;
-                    userPerms = ['all'];
-                }
             }
         }
-    } catch (error) {
-        console.error("Auth Database Error:", error);
-    }
+    } catch (e) { console.error(e); }
 
     if (isAuthorized) {
-      window.sessionUser = {
-        email: user.email,
-        branch: assignedBranch, 
-        isFranchisee: isFranchisee, // Tells the app to lock dropdowns!
-        cashierName: user.displayName || 'Manager',
-        isOwner: (user.email === MASTER_EMAIL || (!isFranchisee && userPerms.includes('all'))), 
-        permissions: userPerms
-      };
-      
-      window.applyPermissions(); // Run the tab hider!
-      if (typeof window.startPOListener === 'function') window.startPOListener();
+        // Force them to have a PIN
+        if (!userData.pin) {
+            userData.pin = '1234'; 
+            await updateDoc(doc(db, "hq_managers", docId), { pin: '1234' });
+            Swal.fire('Security Alert', 'Your default backup PIN is 1234. Please change it in Access Control.', 'warning');
+        }
+        
+        window.tempAuthUser = user;
+        window.tempAuthData = userData;
+        window.tempAuthData.docId = docId;
 
-      // 🔥 UPDATE THE SIDEBAR LOGO TEXT!
-      let brandNameEl = document.getElementById('sidebarBrandName');
-      if (brandNameEl) {
-          brandNameEl.innerText = isFranchisee ? assignedBranch.toUpperCase() : "MAIN OFFICE";
-      }
-      let brDisp = document.getElementById('displayBranch');
-      if (brDisp) brDisp.innerText = isFranchisee ? `📍 Franchise: ${assignedBranch}` : `📍 HQ: ${assignedBranch}`;
-      let caDisp = document.getElementById('displayCashier');
-      if (caDisp) caDisp.innerText = "👤 " + window.sessionUser.cashierName;
+        // Transition to F.R.I.D.A.Y Lock Screen
+        document.getElementById('authWelcomeName').innerText = `${userData.role}: ${user.displayName || 'AGENT'}`;
+        stage1.style.display = 'none';
+        stage2.style.display = 'block';
+        loginOverlay.style.display = 'flex';
+        
+        // Auto-check Biometric Status
+        let bioBtn = document.getElementById('btnBiometricAuth');
+        if (!window.PublicKeyCredential) {
+            bioBtn.style.display = 'none'; // Device doesn't support FaceID/Fingerprint natively on Web
+        } else if (!userData.passkeyId) {
+            document.getElementById('bioBtnText').innerText = "Register Face ID / Touch ID";
+        } else {
+            document.getElementById('bioBtnText').innerText = "Scan Face ID / Touch ID";
+        }
 
-      if (loginScreen) loginScreen.style.display = 'none';
-      if (typeof window.switchView === 'function') window.switchView('dashboard');
-      if (typeof loadGlobalDashboard === 'function') loadGlobalDashboard();
-      
     } else {
-      await signOut(auth);
-      alert(`Access Denied.\n\n${user.email} is not authorized in the HQ Access Control list.`);
-      if (loginScreen) loginScreen.style.display = 'flex';
+        await signOut(auth);
+        Swal.fire('Clearance Denied', 'Your Google Account is not on the HQ VIP List.', 'error');
+        loginOverlay.style.display = 'flex';
+        stage1.style.display = 'block';
+        stage2.style.display = 'none';
     }
   } else {
-    if (loginScreen) loginScreen.style.display = 'flex';
+    if (loginOverlay) {
+        loginOverlay.style.display = 'flex';
+        stage1.style.display = 'block';
+        stage2.style.display = 'none';
+    }
   }
 });
+
+// The PIN verification logic
+window.checkManagerPin = function() {
+    let pinInput = document.getElementById('managerPinInput');
+    let pinVal = pinInput.value.trim();
+    
+    if (pinVal.length === 4) {
+        if (pinVal === window.tempAuthData.pin) {
+            pinInput.value = '';
+            window.finalizeManagerLogin();
+        } else {
+            let err = document.getElementById('pinErrorMsg');
+            err.style.display = 'block';
+            pinInput.value = '';
+            // Shake effect for wrong PIN
+            pinInput.style.animation = "shake 0.5s";
+            setTimeout(() => { err.style.display = 'none'; pinInput.style.animation = ""; }, 2000);
+        }
+    }
+};
+
+window.cancelLoginAndSignOut = async function() {
+    await signOut(auth);
+    window.tempAuthUser = null;
+    window.tempAuthData = null;
+    document.getElementById('managerPinInput').value = '';
+};
+
+window.finalizeManagerLogin = function() {
+    window.sessionUser = {
+        email: window.tempAuthUser.email,
+        branch: window.tempAuthData.assignedBranch || 'Main Office',
+        isFranchisee: window.tempAuthData.role === 'Franchisee',
+        cashierName: window.tempAuthUser.displayName || 'Manager',
+        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!window.tempAuthData.role === 'Franchisee' && window.tempAuthData.permissions.includes('all'))),
+        permissions: window.tempAuthData.permissions || ['all']
+    };
+
+    document.getElementById('loginOverlay').style.display = 'none';
+    window.applyPermissions();
+    if (typeof window.switchView === 'function') window.switchView('dashboard');
+    if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
+};
+
+// ========================================================
+// 📱 NATIVE WEBAUTHN (FACE ID / TOUCH ID) BRIDGE
+// ========================================================
+function bufferEncode(value) { return Uint8Array.from(value, c => c.charCodeAt(0)); }
+function bufferDecode(value) { return String.fromCharCode.apply(null, new Uint8Array(value)); }
+
+window.triggerNativeFaceID = async function() {
+    let userData = window.tempAuthData;
+    let userEmail = window.tempAuthUser.email;
+
+    if (!userData.passkeyId) {
+        // 🆕 REGISTER A NEW FACE ID
+        try {
+            const publicKeyCredentialCreationOptions = {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                rp: { name: "TAKODEÁL HQ", id: window.location.hostname },
+                user: {
+                    id: bufferEncode(userEmail), // Must be unique per user
+                    name: userEmail,
+                    displayName: window.tempAuthUser.displayName || "Manager"
+                },
+                pubKeyCredParams: [{alg: -7, type: "public-key"}],
+                authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+                timeout: 60000,
+                attestation: "none"
+            };
+
+            const credential = await navigator.credentials.create({ publicKey: publicKeyCredentialCreationOptions });
+            
+            // Save the unique hardware ID to Firebase so we can recognize their face next time!
+            const rawId = btoa(bufferDecode(credential.rawId));
+            await updateDoc(doc(db, "hq_managers", userData.docId), { passkeyId: rawId });
+            
+            window.tempAuthData.passkeyId = rawId; // Update local memory
+            document.getElementById('bioBtnText').innerText = "Scan Face ID / Touch ID";
+            Swal.fire({toast: true, position: 'top', icon: 'success', title: 'Biometrics Registered!', showConfirmButton: false, timer: 2000});
+
+        } catch (err) {
+            console.error("Biometric Registration Error:", err);
+            Swal.fire('Setup Cancelled', 'Biometric registration was cancelled or failed.', 'info');
+        }
+    } else {
+        // 🔓 UNLOCK USING EXISTING FACE ID
+        try {
+            const publicKeyCredentialRequestOptions = {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                allowCredentials: [{
+                    id: Uint8Array.from(atob(userData.passkeyId), c => c.charCodeAt(0)),
+                    type: 'public-key',
+                    transports: ['internal']
+                }],
+                timeout: 60000,
+                userVerification: "required"
+            };
+
+            const assertion = await navigator.credentials.get({ publicKey: publicKeyCredentialRequestOptions });
+            
+            // If the Face ID scanner succeeds, the code reaches here and logs them in!
+            window.finalizeManagerLogin();
+
+        } catch (err) {
+            console.error("Biometric Scan Error:", err);
+            Swal.fire('Scan Failed', 'Face ID / Touch ID failed. Please use your Backup PIN.', 'error');
+        }
+    }
+};
 
 // 🔥 FIX 1: Catch Safari Redirects Globally (Required for iPhones)
 getRedirectResult(auth).then((result) => {
@@ -335,7 +446,7 @@ window.addHqManager = async function () {
         let branchesToAssign = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
         branchesToAssign.forEach(b => { branchOptions += `<option value="${b}">${b}</option>`; });
 
-        // 🔥 UI UPGRADE: Full Franchisee Registration Profile Form
+        // 🔥 UI UPGRADE: Full Registration Profile with F.R.I.D.A.Y. PIN
         const { value: formValues, isConfirmed } = await Swal.fire({
             title: 'Register Control Center Access',
             html: `
@@ -348,6 +459,10 @@ window.addHqManager = async function () {
 
                     <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number:</label>
                     <input type="text" id="swal-phone" class="input-box" placeholder="09XX XXX XXXX" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+
+                    <!-- 🛡️ NEW SECURE PIN BOX -->
+                    <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Security PIN (4 Digits) *:</label>
+                    <input type="password" id="swal-pin" class="input-box" placeholder="1234" maxlength="4" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #bae6fd; background: #f0f9ff; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 8px; font-weight: bold; font-size: 18px;">
 
                     <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Role:</label>
                     <select id="swal-role" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="document.getElementById('swal-branch-container').style.display = this.value === 'Franchisee' ? 'block' : 'none'">
@@ -369,9 +484,15 @@ window.addHqManager = async function () {
             confirmButtonText: 'Grant Access',
             customClass: { popup: 'rounded-2xl shadow-xl' },
             preConfirm: () => {
+                let pinVal = document.getElementById('swal-pin').value;
+                if (!pinVal || pinVal.length < 4) {
+                    Swal.showValidationMessage('A 4-Digit Security PIN is strictly required.');
+                    return false;
+                }
                 return { 
                     name: document.getElementById('swal-name').value,
                     phone: document.getElementById('swal-phone').value,
+                    pin: pinVal, // 🛡️ Grabs the PIN
                     role: document.getElementById('swal-role').value, 
                     branch: document.getElementById('swal-branch').value 
                 };
@@ -383,7 +504,6 @@ window.addHqManager = async function () {
         let roleStr = formValues.role;
         let branchStr = formValues.role === 'Franchisee' ? formValues.branch : 'All';
         
-        // 🔥 GIVES FRANCHISEES ALL THE TABS THEY NEED TO RUN THEIR STORE!
         let permissions = formValues.role === 'Franchisee' 
             ? ['dashboard', 'inventory', 'purchases', 'zreadings', 'history', 'payroll', 'schedule', 'ledger', 'inbox', 'branches'] 
             : ['all'];
@@ -392,13 +512,14 @@ window.addHqManager = async function () {
             email: email, 
             fullName: formValues.name,
             phone: formValues.phone,
+            pin: formValues.pin, // 🛡️ Saves PIN to Firebase
             role: roleStr, 
             assignedBranch: branchStr, 
             permissions: permissions, 
             addedAt: new Date()
         });
 
-        Swal.fire('✅ Success!', `${formValues.name || email} has been successfully registered as a ${roleStr} for ${branchStr}.`, 'success');
+        Swal.fire('✅ Success!', `${formValues.name || email} has been successfully registered with their Security PIN.`, 'success');
         emailInput.value = '';
         window.loadAdminDashboard();
 
@@ -420,6 +541,10 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
 
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number:</label>
                 <input type="text" id="edit-profile-phone" class="input-box" placeholder="09XX XXX XXXX" value="${currentPhone}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+                
+                <!-- 🛡️ EDIT PIN BOX -->
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Update Security PIN:</label>
+                <input type="password" id="edit-profile-pin" class="input-box" placeholder="Leave blank to keep current PIN" maxlength="4" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px dashed #bae6fd; background: #f8fafc; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 2px;">
             </div>
         `,
         focusConfirm: false,
@@ -428,9 +553,15 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
         confirmButtonText: 'Save Profile',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
+            let newPin = document.getElementById('edit-profile-pin').value.trim();
+            if (newPin && newPin.length < 4) {
+                Swal.showValidationMessage('If changing the PIN, it must be exactly 4 digits.');
+                return false;
+            }
             return { 
                 name: document.getElementById('edit-profile-name').value.trim(),
-                phone: document.getElementById('edit-profile-phone').value.trim()
+                phone: document.getElementById('edit-profile-phone').value.trim(),
+                pin: newPin // 🛡️ Grabs the new PIN if typed
             };
         }
     });
@@ -438,10 +569,18 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
     if (!isConfirmed) return;
 
     try {
-        await updateDoc(doc(db, "hq_managers", docId), {
+        // 🛡️ Smart Payload: Only update the PIN if they actually typed a new one!
+        let updatePayload = {
             fullName: formValues.name,
             phone: formValues.phone
-        });
+        };
+        
+        if (formValues.pin) {
+            updatePayload.pin = formValues.pin;
+        }
+
+        await updateDoc(doc(db, "hq_managers", docId), updatePayload);
+        
         Swal.fire({
             title: '✅ Profile Saved!',
             icon: 'success',
