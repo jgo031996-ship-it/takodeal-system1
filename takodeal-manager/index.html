@@ -1972,8 +1972,7 @@
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h2>💰 Cash Accounts</h2>
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-              <button class="btn-refresh" style="background: #3b82f6; color: white; border: none;"
-                onclick="openAccountHistory()">📜 Logs</button>
+              <!-- ❌ The global Logs button was deleted from here! -->
               <button class="btn-refresh" style="background: var(--surface); color: var(--text-main);"
                 onclick="addCashAccount()">➕ Add</button>
               <button class="btn-refresh" style="background: var(--primary); color: white; border: none;"
@@ -4245,6 +4244,7 @@
       <div style="padding: 20px;">
         <input type="hidden" id="editAccId">
         <input type="hidden" id="editAccOldBalance">
+        <input type="hidden" id="editAccBranch">
         
         <div style="margin-bottom: 15px;">
           <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Account Name</label>
