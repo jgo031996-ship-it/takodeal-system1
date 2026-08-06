@@ -1640,11 +1640,10 @@ window.calculateGrandTotalCash = function() {
 };
 
 // ========================================================
-// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (CRASH-PROOF EDITION)
+// 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH MALL LEDGER)
 // ========================================================
 window.submitComprehensiveCloseShift = async function () {
-    // 1. Grab the button safely to prevent double-clicks
-    let confirmBtn = document.querySelector('#endShiftModal .btn-place:last-child') || document.querySelector('button[onclick*="submitComprehensiveCloseShift"]');
+    let confirmBtn = document.querySelector('#endShiftModal .btn-place:last-child') || document.querySelector('button[onclick*="MASTER_CloseShift"]');
     if (confirmBtn && confirmBtn.disabled) return; 
 
     let origText = confirmBtn ? confirmBtn.innerText : '🛑 Confirm & End Shift';
@@ -1654,7 +1653,7 @@ window.submitComprehensiveCloseShift = async function () {
     }
 
     try {
-        // 2. Crash-Proof Cash Breakdown Reader
+        // 1. Read Cash Drawer Securely
         let declaredCash = 0;
         let cashBreakdown = {};
         
@@ -1667,30 +1666,25 @@ window.submitComprehensiveCloseShift = async function () {
             }
         });
 
-        // Bypass Physical Stock (Since we replaced it with Kitchen Prep Logs)
-        let physicalStock = {};
-
-        // 3. Identify Shift Safely
+        // 2. Identify Shift Safely
         let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
         if (!shiftId) throw new Error("No active shift found to close.");
         
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
         let cashierName = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
         
-        // Ensure we have a valid Date object for queries
         let startTime = new Date();
         if (typeof activeShiftDetails !== 'undefined' && activeShiftDetails && activeShiftDetails.startTime) {
             startTime = activeShiftDetails.startTime;
-            if (startTime.toDate) startTime = startTime.toDate(); // Convert Firestore Timestamp to JS Date
+            if (startTime.toDate) startTime = startTime.toDate(); 
         } else {
             startTime.setHours(0,0,0,0);
         }
 
-        // 4. Crunch Transactions
+        // 3. Crunch Transactions
         let totalCashSales = 0; let totalDigitalSales = 0;
         let digitalBreakdown = {}; let shiftIngredientBurn = {}; 
 
-        // We removed 'window.' from the Firebase commands so they work correctly!
         const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
         const txSnap = await getDocs(txQ);
 
@@ -1734,7 +1728,7 @@ window.submitComprehensiveCloseShift = async function () {
             }
         });
 
-        // 5. Crunch Expenses
+        // 4. Crunch Expenses
         const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
         const expSnap = await getDocs(expQ);
         let cashOut = 0;
@@ -1743,16 +1737,14 @@ window.submitComprehensiveCloseShift = async function () {
         let startingCash = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? (activeShiftDetails.startingCash || 0) : 0;
         let expectedCash = startingCash + totalCashSales - cashOut;
 
-        // 🚨 ZERO CASH LOCKOUT
         if (expectedCash > 0 && declaredCash === 0) {
             Swal.fire('⛔ SECURITY LOCKOUT', `The system has logged cash sales for this shift.<br><br>You cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`, 'error');
             if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
             return;
         }
 
-        // 6. THE VARIANCE SWEETALERT (Interactive check!)
+        // 5. THE VARIANCE SWEETALERT
         let variance = declaredCash - expectedCash;
-        // Allow a generous 2 peso floating point margin
         if (Math.abs(variance) > 2) {
             let isOver = variance > 0;
             let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
@@ -1774,10 +1766,9 @@ window.submitComprehensiveCloseShift = async function () {
 
             if (!result.isConfirmed) {
                 if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
-                return; // User aborted to recount!
+                return; 
             }
             
-            // Log the Variance Alert to HQ
             await addDoc(collection(db, "manager_alerts"), {
                 type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                 expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
@@ -1789,7 +1780,7 @@ window.submitComprehensiveCloseShift = async function () {
 
         confirmBtn.innerText = "⏳ Saving to Cloud...";
         
-        // 7. FIREBASE: CLOSE SHIFT
+        // 6. FIREBASE: CLOSE SHIFT
         await updateDoc(doc(db, "shifts", shiftId), {
             active: false,
             endTime: serverTimestamp(),
@@ -1799,11 +1790,11 @@ window.submitComprehensiveCloseShift = async function () {
             totalDigitalSales: totalDigitalSales,
             digitalBreakdown: digitalBreakdown,
             cashBreakdown: cashBreakdown, 
-            physicalStockCount: {}, // Purged
+            physicalStockCount: {}, 
             status: "Closed"
         });
 
-        // 8. FIREBASE: AUTO-SWEEP
+        // 7. FIREBASE: AUTO-SWEEP DIGITAL PAYMENTS
         for (let method in digitalBreakdown) {
             if (method.toLowerCase() === "gcash") continue; 
             let amountToDeposit = digitalBreakdown[method];
@@ -1827,7 +1818,78 @@ window.submitComprehensiveCloseShift = async function () {
             }
         }
 
-        // 9. FIREBASE: BATCH LOGS
+        // 👑 7.5 FRANCHISE ROYALTY & PROFIT SHARING ENGINE
+        try {
+            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
+            const bSnap = await getDocs(bQ);
+            let royaltyPct = 0;
+            if (!bSnap.empty) royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
+
+            if (royaltyPct > 0) {
+                let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
+                let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
+
+                if (royaltyAmount > 0) {
+                    await addDoc(collection(db, "expenses"), {
+                        branch: branchName, amount: royaltyAmount, category: "Franchise Royalty Fee", account: "System Auto-Deduct", 
+                        note: `Auto-Deducted ${royaltyPct}% Royalty from ₱${totalGrossForRoyalty.toFixed(2)} Total Sales`, timestamp: serverTimestamp()
+                    });
+
+                    const eqQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", "Owner's Equity"));
+                    const eqSnap = await getDocs(eqQ);
+                    
+                    if (!eqSnap.empty) {
+                        let eqDoc = eqSnap.docs[0];
+                        let newBal = (parseFloat(eqDoc.data().balance) || 0) + royaltyAmount;
+                        await updateDoc(eqDoc.ref, { balance: newBal });
+                        await addDoc(collection(db, "account_logs"), { accountId: eqDoc.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection", amount: royaltyAmount, newBalance: newBal, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading` });
+                    } else {
+                        const newEqRef = await addDoc(collection(db, "cash_accounts"), { branch: "Main Office", name: "Owner's Equity", balance: royaltyAmount, createdAt: serverTimestamp() });
+                        await addDoc(collection(db, "account_logs"), { accountId: newEqRef.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection (Account Created)", amount: royaltyAmount, newBalance: royaltyAmount, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading` });
+                    }
+                }
+            }
+        } catch(e) { console.error("Royalty Engine Error:", e); }
+
+        // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
+        try {
+            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
+            const bSnap = await getDocs(bQ);
+            let isMallBranch = false;
+            if (!bSnap.empty) {
+                isMallBranch = bSnap.docs[0].data().isMallBranch === true;
+            }
+
+            if (isMallBranch) {
+                // Net Cash = Declared Physical Cash - Starting Float
+                let netCashEarned = declaredCash - startingCash;
+                
+                if (netCashEarned !== 0) {
+                    const accQ = query(collection(db, "cash_accounts"), where("branch", "==", branchName), where("name", "==", "Manager Fund"));
+                    const accSnap = await getDocs(accQ);
+                    
+                    if (!accSnap.empty) {
+                        let accDoc = accSnap.docs[0];
+                        let currentBal = parseFloat(accDoc.data().balance) || 0;
+                        let newBal = currentBal + netCashEarned;
+                        
+                        await updateDoc(accDoc.ref, { balance: newBal });
+                        await addDoc(collection(db, "account_logs"), {
+                            accountId: accDoc.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Net)",
+                            amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
+                        });
+                    } else {
+                        const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: serverTimestamp() });
+                        await addDoc(collection(db, "account_logs"), {
+                            accountId: newAccRef.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Account Created)",
+                            amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
+                        });
+                    }
+                }
+            }
+        } catch(e) { console.error("Mall Branch Deposit Error:", e); }
+
+        // 8. Deduct Ingredient Burn
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
             if (totalBurn > 0) {
@@ -1839,7 +1901,7 @@ window.submitComprehensiveCloseShift = async function () {
             }
         }
 
-        // 10. CLEANUP & UI RESET
+        // 9. Memory Wipe & UI Reset
         localStorage.removeItem('currentShiftId');
         localStorage.removeItem('takodeal_sop_progress');
         if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
@@ -1872,6 +1934,8 @@ window.submitComprehensiveCloseShift = async function () {
         if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
     }
 };
+
+window.safeSubmitComprehensiveCloseShift = window.submitComprehensiveCloseShift;
 
 // Ensure HTML correctly points to this new master function!
 window.safeSubmitComprehensiveCloseShift = window.submitComprehensiveCloseShift;
