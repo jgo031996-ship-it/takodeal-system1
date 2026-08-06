@@ -13962,52 +13962,49 @@ window.loadPosConfigHub = async function() {
     }
 };
 
-window.saveGlobalPosConfig = async function() {
-    let btn = document.querySelector("#view-posconfig .btn-refresh");
-    let originalText = btn ? btn.innerText : "💾 Save Changes to Cloud";
-    if (btn) { btn.innerText = "⏳ Saving..."; btn.disabled = true; }
+// ========================================================
+// ⚙️ INDIVIDUAL POS CONFIG SAVER (ZERO DATA LOSS)
+// ========================================================
+window.saveSinglePosConfig = async function(dbFieldKey, inputId, btnElement) {
+    let inputEl = document.getElementById(inputId);
+    if (!inputEl) return;
+
+    let rawVal = inputEl.value.trim();
+    if (rawVal === "") {
+        return Swal.fire('Empty Field', 'Cannot save an empty list. Please enter at least one item.', 'warning');
+    }
+
+    // Convert the comma-separated string into a clean array
+    let arrayVal = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+
+    let origText = btnElement.innerText;
+    btnElement.innerText = "⏳...";
+    btnElement.disabled = true;
 
     try {
-        // 1. Create a dynamic payload (only things we actually want to change go in here)
+        // 🔥 The Magic: We use the bracket notation [dbFieldKey] to dynamically tell 
+        // Firebase to ONLY update this exact field, leaving the rest completely untouched!
         let payload = {
+            [dbFieldKey]: arrayVal,
             lastUpdatedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
         };
 
-        // 2. Grab the raw text from all the input boxes
-        let rawPay = document.getElementById('configPayMethods').value.trim();
-        let rawOrder = document.getElementById('configOrderTypes').value.trim();
-        let rawTabs = document.getElementById('configPosTabs').value.trim();
-        let rawPrep = document.getElementById('configKitchenPrep').value.trim();
-        let rawAudit = document.getElementById('configAuditList').value.trim();
-        let rawMix = document.getElementById('configMixMatch').value.trim();
-        let rawWaste = document.getElementById('configWasteReasons').value.trim();
-        let rawCons = document.getElementById('configConsumables').value.trim();
-
-        // 3. THE SMART MERGE SHIELD: Only convert and add to payload IF the box is NOT empty!
-        if (rawPay !== "") payload.paymentMethods = rawPay.split(',').map(s => s.trim()).filter(Boolean);
-        if (rawOrder !== "") payload.orderTypes = rawOrder.split(',').map(s => s.trim()).filter(Boolean);
-        if (rawTabs !== "") payload.posTabs = rawTabs.split(',').map(s => s.trim()).filter(Boolean);
-        if (rawPrep !== "") payload.kitchenPrepCats = rawPrep.split(',').map(s => s.trim()).filter(Boolean);
-        if (rawAudit !== "") payload.auditItems = rawAudit.split(',').map(s => s.trim()).filter(Boolean);
-        if (rawMix !== "") payload.mixMatchFlavors = rawMix.split(',').map(s => s.trim()).filter(Boolean);
-        if (rawWaste !== "") payload.wasteReasons = rawWaste.split(',').map(s => s.trim()).filter(Boolean);
-        if (rawCons !== "") payload.consumableCats = rawCons.split(',').map(s => s.trim()).filter(Boolean);
-
-        // 4. Send ONLY the filled fields to Firebase
         await setDoc(doc(db, "settings", "global_pos_config"), payload, { merge: true });
 
-        Swal.fire({ 
-            title: '✅ Success!', 
-            text: 'POS Settings saved! Blank categories were safely ignored.', 
-            icon: 'success', 
-            customClass: { popup: 'rounded-2xl' } 
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success',
+            title: '✅ Saved successfully!',
+            showConfirmButton: false, timer: 2500,
+            customClass: { popup: 'rounded-xl shadow-lg border border-gray-100' }
         });
+
     } catch (error) {
-        console.error("Error saving config:", error); 
-        Swal.fire('Error', '❌ Failed to save.', 'error');
+        console.error("Error saving config:", error);
+        Swal.fire('Error', 'Failed to save configuration. Check your internet connection.', 'error');
     } finally {
-        if (btn) { btn.innerText = originalText; btn.disabled = false; }
+        btnElement.innerText = origText;
+        btnElement.disabled = false;
     }
 };
 
