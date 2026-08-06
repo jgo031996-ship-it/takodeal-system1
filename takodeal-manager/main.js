@@ -6695,7 +6695,6 @@ window.saveInventoryEdit = async function() {
     let name = document.getElementById('editInvName').value.trim();
     let purchUom = document.getElementById('editInvPurchUom').value.trim();
     let baseUom = document.getElementById('editInvBaseUom').value.trim();
-    let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
     // 🔥 Grab Purchase UOM input and multiply it by Conversion to store safely in the Database!
