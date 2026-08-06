@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, setPersistence, browserLocalPersistence, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 window.onSnapshot = onSnapshot;
 
@@ -15,6 +15,20 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// 🔒 FORCE LOCAL PERSISTENCE FOR SAFARI / IPHONE
+setPersistence(auth, browserLocalPersistence).catch(err => console.error("Persistence error:", err));
+
+// 📱 PROCESS GOOGLE REDIRECT RESULT ON PAGE BOOT
+getRedirectResult(auth).then(result => {
+  if (result && result.user) {
+    console.log("✅ Successfully authenticated via Redirect:", result.user.email);
+  }
+}).catch(error => {
+  console.error("Redirect Login Error:", error);
+  if (typeof Swal !== 'undefined') {
+    Swal.fire('Login Error', error.message, 'error');
+  }
+});
 const provider = new GoogleAuthProvider();
 const storage = getStorage(app);
 
@@ -173,38 +187,28 @@ getRedirectResult(auth).then((result) => {
     Swal.fire('Login Error', error.message, 'error');
 });
 
-// 🔥 FIX 2: Bulletproof Google Login Engine
+// 🔥 BULLETPROOF GOOGLE LOGIN (DESKTOP & IPHONE)
 window.loginWithGoogle = async function() {
-    let btn = document.querySelector('#loginOverlay button');
-    let origText = btn ? btn.innerHTML : "Sign in with Google";
-    if (btn) { btn.innerHTML = "⏳ Authenticating..."; btn.disabled = true; }
-
-    try {
-        // Force account selection to prevent silent Safari auth loops
-        provider.setCustomParameters({ prompt: 'select_account' });
-        
-        // Always try popup first. It works inside iOS PWAs natively.
-        await signInWithPopup(auth, provider);
-        
-    } catch (error) {
-        console.error("Popup failed:", error);
-        
-        // If Apple Safari explicitly blocked the popup, fallback to redirect!
-        if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user' || error.message.includes('popup')) {
-            Swal.fire({
-                title: 'Popup Blocked 🛡️',
-                text: 'Safari blocked the login window. Switching to safe redirect mode...',
-                icon: 'info',
-                timer: 2000,
-                showConfirmButton: false
-            }).then(() => {
-                signInWithRedirect(auth, provider);
-            });
-        } else {
-            Swal.fire('Login Failed', error.message, 'error');
-            if (btn) { btn.innerHTML = origText; btn.disabled = false; }
-        }
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  
+  try {
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
+    if (isMobile) {
+      // iPhone / Safari requires Redirect mode
+      await signInWithRedirect(auth, provider);
+    } else {
+      // Desktop PC uses Popup mode
+      await signInWithPopup(auth, provider);
     }
+  } catch (error) {
+    console.error("Login Trigger Error:", error);
+    if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+      await signInWithRedirect(auth, provider);
+    } else {
+      alert("Login failed: " + error.message);
+    }
+  }
 };
 
 // 📱 MOBILE INSTALL HELPER
