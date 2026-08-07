@@ -71,12 +71,61 @@
         <span class="text-xl">🐙</span> <span>Added to your cart!</span>
     </div>
 
+    <!-- 🛵 DELIVERY PARTNERS MODAL -->
+    <div id="deliveryPartnersModal" class="hidden fixed inset-0 bg-black/80 z-[80] flex items-center justify-center backdrop-blur-sm px-4 animate-fade-in">
+        <div class="bg-cardbg w-full max-w-md rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl p-6">
+            <div class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                <h2 class="text-xl font-black text-white flex items-center gap-2"><span class="text-2xl">🛵</span> Delivery Options</h2>
+                <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden')" class="text-zinc-500 hover:text-white text-2xl font-bold">&times;</button>
+            </div>
+            
+            <p class="text-zinc-400 text-sm mb-6">Choose your preferred delivery method below. If our in-house delivery is paused due to high volume, you can still order via our delivery partners!</p>
+            
+            <div class="space-y-4">
+                <!-- TAKODEAL Direct -->
+                <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden'); window.enterOrderingScreen();" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
+                    <div class="flex items-center gap-3">
+                        <img src="customer-logo.jpg" class="w-10 h-10 rounded-full border border-brandred">
+                        <div class="text-left">
+                            <div class="font-black text-white text-sm">TAKODEÁL Direct</div>
+                            <div id="directDeliveryStatus" class="text-xs text-brandred font-bold">Standard 40-Min Delivery</div>
+                        </div>
+                    </div>
+                    <span class="text-brandred group-hover:translate-x-1 transition-transform">➔</span>
+                </button>
+
+                <!-- GrabFood -->
+                <a href="https://food.grab.com/ph/en/restaurant/takodeal-cabantian-delivery/2-C6LTLJEFVK6TLN" target="_blank" class="w-full bg-[#00b14f]/10 border border-[#00b14f] p-4 rounded-xl flex items-center justify-between hover:bg-[#00b14f]/20 transition group">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-[#00b14f] rounded-full flex items-center justify-center text-white font-black text-xl">G</div>
+                        <div class="text-left">
+                            <div class="font-black text-white text-sm">GrabFood</div>
+                            <div class="text-xs text-[#00b14f] font-bold">Order via Grab App</div>
+                        </div>
+                    </div>
+                    <span class="text-[#00b14f] group-hover:translate-x-1 transition-transform">➔</span>
+                </a>
+
+                <!-- FoodPanda -->
+                <a href="https://www.foodpanda.ph/city/davao-city" target="_blank" class="w-full bg-[#d70f64]/10 border border-[#d70f64] p-4 rounded-xl flex items-center justify-between hover:bg-[#d70f64]/20 transition group">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-[#d70f64] rounded-full flex items-center justify-center text-white font-black text-xl">fp</div>
+                        <div class="text-left">
+                            <div class="font-black text-white text-sm">foodpanda</div>
+                            <div class="text-xs text-[#d70f64] font-bold">Order via foodpanda App</div>
+                        </div>
+                    </div>
+                    <span class="text-[#d70f64] group-hover:translate-x-1 transition-transform">➔</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
     <!-- ========================================== -->
     <!-- 🌟 STAGE 1: THE PREMIUM LANDING PAGE -->
     <!-- ========================================== -->
     <div id="greetingScreen" class="w-full min-h-screen flex flex-col relative z-30 transition-all duration-500">
         
-        <!-- Navbar -->
         <nav class="flex justify-between items-center p-6 lg:px-12 w-full max-w-7xl mx-auto">
             <div class="flex items-center gap-3">
                 <img src="customer-logo.jpg" alt="Takodeal Logo" class="w-10 h-10 rounded-full border-2 border-brandred">
@@ -85,17 +134,15 @@
             <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-zinc-400">
                 <a href="#" class="hover:text-white transition">Home</a>
                 <a href="#" onclick="window.enterOrderingScreen()" class="hover:text-white transition">Menu</a>
-                <a href="#" class="hover:text-white transition">Tracking</a>
+                <a href="#" onclick="window.openDeliveryPartners()" class="hover:text-white transition">Partners</a>
             </div>
             <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red">
                 Order Now
             </button>
         </nav>
 
-        <!-- Hero Section (Image 1 & 2 Vibe) -->
         <div class="flex flex-col-reverse lg:flex-row items-center justify-between px-6 lg:px-12 py-10 lg:py-20 max-w-7xl mx-auto w-full gap-10 relative">
             
-            <!-- Background glow blobs -->
             <div class="absolute top-20 left-10 w-72 h-72 bg-red-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-20"></div>
             <div class="absolute bottom-10 right-10 w-72 h-72 bg-orange-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-10"></div>
 
@@ -118,40 +165,50 @@
                     <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red w-full sm:w-auto">
                         Order Now
                     </button>
-                    <button onclick="window.enterOrderingScreen()" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">
+                    <button onclick="document.getElementById('favoritesGrid').scrollIntoView({behavior: 'smooth'})" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">
                         See Menu
                     </button>
                 </div>
             </div>
             
             <div class="lg:w-1/2 w-full flex justify-center z-10">
-                <!-- Floating Premium Image -->
                 <div class="relative w-[350px] h-[350px] lg:w-[500px] lg:h-[500px] rounded-full p-2 border-4 border-dashed border-zinc-800 animate-fade-in">
                     <img src="banner.png" alt="Hero Image" class="w-full h-full object-cover rounded-full shadow-2xl">
                     
-                    <!-- Floating Badge -->
-                    <div class="absolute bottom-10 -left-10 bg-cardbg border border-zinc-800 p-4 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in" style="animation-delay: 0.3s;">
+                    <!-- 🔥 NEW: Clickable Fallback Delivery Badge -->
+                    <div onclick="window.openDeliveryPartners()" class="absolute bottom-10 -left-10 bg-cardbg border border-zinc-800 p-4 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in cursor-pointer hover:scale-105 transition-transform hover:border-brandred" style="animation-delay: 0.3s;" title="View Delivery Partners">
                         <div class="w-12 h-12 bg-red-950 rounded-full flex items-center justify-center text-2xl">🛵</div>
                         <div>
                             <div class="text-xs text-zinc-400 font-bold uppercase">Delivery within</div>
-                            <div class="text-lg font-black text-white">40 Minutes</div>
+                            <div id="heroDeliveryText" class="text-lg font-black text-white">40 Minutes</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Featured Popular Items -->
+        <!-- Featured Popular Items & Drinks -->
         <div class="px-6 py-20 max-w-7xl mx-auto w-full z-10 border-t border-zinc-900 mt-10">
+            <!-- Dishes Grid -->
             <div class="flex justify-between items-end mb-10">
                 <div>
                     <h2 class="text-3xl font-black text-white">Popular Dishes</h2>
                     <p class="text-zinc-500 mt-1">Our best sellers, ready for you.</p>
                 </div>
             </div>
-            
-            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
                 <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Fetching live favorites from TAKODEÁL HQ...</div>
+            </div>
+
+            <!-- Drinks Grid -->
+            <div class="flex justify-between items-end mb-10">
+                <div>
+                    <h2 class="text-3xl font-black text-white">Signature Drinks</h2>
+                    <p class="text-zinc-500 mt-1">Perfect refreshments to pair with your Takoyaki.</p>
+                </div>
+            </div>
+            <div id="drinksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Fetching refreshing drinks...</div>
             </div>
         </div>
     </div>
@@ -162,14 +219,12 @@
     <!-- ========================================== -->
     <div id="appContainer" class="hidden max-w-2xl mx-auto bg-darkbg min-h-screen relative flex-col border-x border-zinc-900 animate-fade-in">
         
-        <!-- Sticky Header (With Top-Right Cart) -->
         <div class="sticky top-0 z-40 bg-darkbg/90 backdrop-blur-md p-4 flex justify-between items-center border-b border-zinc-800">
             <div class="flex items-center gap-3 cursor-pointer" onclick="location.reload()">
                 <img src="customer-logo.jpg" class="w-9 h-9 rounded-full border border-brandred">
                 <div class="font-black text-xl tracking-widest text-white">TAKODEÁL</div>
             </div>
             
-            <!-- 🔥 NEW: TOP RIGHT FLOATING CART BUTTON -->
             <button onclick="window.openCheckoutModal()" id="topRightCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
                 <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
                 <span id="headerCartTotal" class="font-bold text-sm text-brandgold hidden">₱0.00</span>
@@ -178,8 +233,6 @@
         </div>
 
         <div id="orderingScreen" class="flex-1 flex flex-col">
-            
-            <!-- Search & Branch Selection -->
             <div class="p-5 border-b border-zinc-900">
                 <div class="relative mb-4">
                     <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500">🔍</span>
@@ -201,7 +254,6 @@
                     <!-- Populated by JS -->
                 </div>
             </div>
-
         </div>
     </div>
 
@@ -212,29 +264,21 @@
     <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
             
-            <!-- Top Image Banner -->
             <div id="modalImage" class="w-full h-56 bg-zinc-900 flex items-center justify-center text-4xl relative">
-                <!-- Image injected via JS -->
                 <button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20">&times;</button>
             </div>
             
             <div class="p-5 flex-1 overflow-y-auto custom-scrollbar">
-                
-                <!-- Title & Price -->
                 <div class="mb-4">
                     <h2 id="modalItemName" class="text-2xl font-black text-white leading-tight mb-1">Item Name</h2>
                     <span id="modalItemPrice" class="text-xl font-black text-brandred">₱0.00</span>
                 </div>
                 
-                <!-- Variants (Sizes) Grid -->
                 <div id="modalVariantContainer" class="w-full mb-6 hidden">
                     <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Select Variant</h3>
-                    <div class="grid grid-cols-2 gap-3 w-full" id="modalVariantGrid">
-                        <!-- Injected via JS -->
-                    </div>
+                    <div class="grid grid-cols-2 gap-3 w-full" id="modalVariantGrid"></div>
                 </div>
 
-                <!-- Quantity Selector -->
                 <div class="mb-6">
                     <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Set Quantity</h3>
                     <div class="flex items-center w-32 bg-darkbg border border-zinc-800 rounded-xl overflow-hidden h-12">
@@ -244,35 +288,27 @@
                     </div>
                 </div>
 
-                <!-- Mix & Match Accordion -->
                 <div id="mixMatchContainer" class="mb-6 hidden">
                     <details class="group bg-darkbg border border-zinc-800 rounded-xl overflow-hidden">
                         <summary class="font-bold text-sm p-4 cursor-pointer flex justify-between items-center text-white select-none">
                             <span class="flex items-center gap-2">🐙 Customize Fillings (Mix & Match)</span>
                             <span class="group-open:rotate-180 transition-transform duration-300 text-brandred">▼</span>
                         </summary>
-                        <div class="p-4 border-t border-zinc-800 bg-cardbg space-y-3" id="mixMatchList">
-                            <!-- Injected via JS -->
-                        </div>
+                        <div class="p-4 border-t border-zinc-800 bg-cardbg space-y-3" id="mixMatchList"></div>
                     </details>
                 </div>
 
-                <!-- Add-ons Container -->
                 <div id="modalAddonsContainer" class="mb-6 hidden">
                     <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Select Add-ons</h3>
-                    <div id="modalAddonsList" class="space-y-4">
-                        <!-- Base Flavor & Extra Addons injected via JS -->
-                    </div>
+                    <div id="modalAddonsList" class="space-y-4"></div>
                 </div>
 
-                <!-- Notes -->
                 <div class="mt-2 mb-4">
                     <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Special Instructions</h3>
                     <input type="text" id="modalNotes" class="w-full bg-darkbg border border-zinc-800 rounded-xl p-4 text-sm outline-none focus:border-brandred font-medium text-white placeholder-zinc-600" placeholder="e.g. No mayo, extra spicy...">
                 </div>
             </div>
 
-            <!-- Bottom Add to Cart Bar -->
             <div class="p-4 bg-cardbg border-t border-zinc-800">
                 <button onclick="window.addModalItemToCart()" class="w-full bg-brandgold text-white font-black py-4 rounded-xl shadow-lg hover:bg-yellow-600 active:scale-95 transition-all text-lg flex justify-between px-6 items-center">
                     <span>Add to Order</span>
@@ -282,43 +318,37 @@
         </div>
     </div>
 
-    <!-- Check Checkout/Cart Modal Code inside JS below! -->
-
     <!-- ========================================== -->
     <!-- 🛒 THE PREMIUM CHECKOUT CART MODAL -->
     <!-- ========================================== -->
     <div id="checkoutModal" class="hidden fixed inset-0 bg-black/80 z-[70] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[85vh] border border-zinc-800 shadow-2xl">
             
-            <!-- Header -->
             <div class="p-5 border-b border-zinc-800 flex justify-between items-center bg-darkbg">
                 <h2 class="text-xl font-black text-white">🛒 Your Cart</h2>
                 <button onclick="window.closeCheckoutModal()" class="text-zinc-500 hover:text-white text-3xl font-bold leading-none transition-colors">&times;</button>
             </div>
             
-            <!-- Items List -->
             <div id="checkoutModalItems" class="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-4">
-                <!-- Cart items injected here via JS -->
+                <!-- Cart items injected here -->
             </div>
 
-            <!-- Total & Checkout Action -->
             <div class="p-5 bg-darkbg border-t border-zinc-800">
                 <div class="flex justify-between mb-5 items-center">
                     <span class="text-zinc-400 font-bold text-sm uppercase tracking-widest">Grand Total</span>
                     <span id="checkoutModalTotal" class="text-2xl font-black text-brandred">₱0.00</span>
                 </div>
-                
-                <!-- NOTE: For now, this triggers your existing submit order logic! -->
                 <button onclick="window.submitOrder()" id="submitBtn" class="w-full bg-brandgold text-white font-black py-4 rounded-xl shadow-[0_0_15px_rgba(217,119,6,0.3)] hover:bg-yellow-600 active:scale-95 transition-all text-lg flex justify-center items-center gap-2">
                     <span>Place Order 🚀</span>
                 </button>
             </div>
         </div>
     </div>
-    
+
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
         // ⚠️ WARNING: Ensure this config exactly matches your live database keys!
         const firebaseConfig = {
@@ -339,7 +369,6 @@
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
         window.phantomVariants = {}; 
 
-        // 1. Fetch Menu & Build UI
         window.loadLiveMenu = async function() {
             try {
                 const q = query(collection(db, "menu"), orderBy("category"));
@@ -386,7 +415,7 @@
                 });
 
                 renderDarkMenuGrid(categoriesMap);
-                renderPremiumFavorites(); 
+                renderLandingPageGrids(); 
 
             } catch (error) {
                 console.error(error);
@@ -394,38 +423,52 @@
             }
         }
 
-        // 🔥 Premium Landing Page Grid
-        function renderPremiumFavorites() {
-            let favHtml = '';
-            let favItems = window.masterMenu.filter(i => !i.isGrouped && i.image).slice(0, 4); 
-            if(favItems.length === 0 && window.masterMenu.length > 0) favItems = window.masterMenu.slice(0, 4); 
+        // 🔥 Expanded Landing Page Grids (Takoyaki & Drinks separately!)
+        function renderLandingPageGrids() {
+            let foodHtml = '';
+            let drinkHtml = '';
+            
+            // Smart Filter: Seperate Food and Drinks
+            let foodItems = window.masterMenu.filter(i => !i.isGrouped && i.image && !i.category.toLowerCase().includes('drink') && !i.category.toLowerCase().includes('tea') && !i.category.toLowerCase().includes('coffee') && !i.category.toLowerCase().includes('shake')).slice(0, 8);
+            
+            let drinkItems = window.masterMenu.filter(i => !i.isGrouped && i.image && (i.category.toLowerCase().includes('drink') || i.category.toLowerCase().includes('tea') || i.category.toLowerCase().includes('coffee') || i.category.toLowerCase().includes('shake'))).slice(0, 4);
 
-            favItems.forEach(item => {
+            // Fallback if images are missing
+            if(foodItems.length === 0) foodItems = window.masterMenu.filter(i => !i.category.toLowerCase().includes('tea')).slice(0, 8);
+            if(drinkItems.length === 0) drinkItems = window.masterMenu.filter(i => i.category.toLowerCase().includes('tea') || i.category.toLowerCase().includes('coffee')).slice(0, 4);
+
+            const buildCard = (item) => {
                 let price = parseFloat(item.price || item.basePrice || 0);
                 let imgHtml = item.image ? `<img src="${item.image}" class="w-full h-48 object-cover rounded-t-2xl">` : `<div class="w-full h-48 bg-zinc-900 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
                 let safeData = encodeURIComponent(JSON.stringify(item));
-                
-                favHtml += `
-                    <div class="bg-cardbg rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-left flex flex-col cursor-pointer border border-zinc-800 group" onclick="window.openItemModal('${safeData}')">
+                return `
+                    <div class="bg-cardbg rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-left flex flex-col cursor-pointer border border-zinc-800 group overflow-hidden" onclick="window.openItemModal('${safeData}')">
                         <div class="overflow-hidden rounded-t-2xl relative">
                             ${imgHtml.replace('class="', 'class="group-hover:scale-110 transition-transform duration-500 ')}
                             <div class="absolute inset-0 bg-gradient-to-t from-cardbg to-transparent opacity-80"></div>
                         </div>
-                        <div class="p-5 flex-1 flex flex-col">
-                            <h3 class="font-bold text-lg text-white mb-1 leading-tight">${item.name}</h3>
-                            <div class="flex justify-between items-center mt-auto pt-4">
-                                <span class="font-black text-brandred">₱${price.toFixed(2)}</span>
-                                <button class="w-8 h-8 rounded-full bg-zinc-800 text-white font-bold flex items-center justify-center group-hover:bg-brandred transition-colors text-lg">+</button>
+                        <div class="p-5 flex-1 flex flex-col relative">
+                            <h3 class="font-bold text-lg text-white mb-1 leading-tight pr-6">${item.name}</h3>
+                            <p class="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-4">${item.category}</p>
+                            <div class="mt-auto flex justify-between items-center border-t border-zinc-800 pt-4">
+                                <span class="font-black text-brandred text-lg">₱${price.toFixed(2)}</span>
+                                <button class="absolute bottom-4 right-4 w-9 h-9 rounded-full bg-zinc-800 text-white font-black flex items-center justify-center group-hover:bg-brandred transition-colors text-xl leading-none pb-1 shadow-md">+</button>
                             </div>
                         </div>
                     </div>
                 `;
-            });
+            };
+
+            foodItems.forEach(item => foodHtml += buildCard(item));
+            drinkItems.forEach(item => drinkHtml += buildCard(item));
+
             const favGrid = document.getElementById('favoritesGrid');
-            if (favGrid) favGrid.innerHTML = favHtml;
+            const drinkGrid = document.getElementById('drinksGrid');
+            if (favGrid) favGrid.innerHTML = foodHtml || '<div class="text-zinc-500">No popular dishes found.</div>';
+            if (drinkGrid) drinkGrid.innerHTML = drinkHtml || '<div class="text-zinc-500">No signature drinks found.</div>';
         }
 
-        // 🔥 Premium Dark Menu Grid (Vertical Cards)
+        // 🔥 Premium Dark Menu Grid (Replaces Accordions)
         function renderDarkMenuGrid(categoriesMap) {
             const container = document.getElementById('liveMenuContainer');
             container.innerHTML = '';
@@ -434,41 +477,28 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    
-                    // The beautiful image header for the card
-                    let imgHtml = item.image 
-                        ? `<img src="${item.image}" class="w-full h-36 object-cover rounded-t-2xl">` 
-                        : `<div class="w-full h-36 bg-zinc-800 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
-                    
-                    // Price or "Select Size" label
-                    let priceLabel = item.isGrouped 
-                        ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` 
-                        : `<span class="text-zinc-400 text-sm font-bold">₱${price.toFixed(2)}</span>`;
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-24 h-24 object-cover rounded-xl shadow-sm">` : `<div class="w-24 h-24 bg-zinc-800 rounded-xl flex items-center justify-center text-3xl border border-zinc-700">🍲</div>`;
+                    let priceLabel = item.isGrouped ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` : `₱${price.toFixed(2)}`;
 
                     return `
-                        <div class="flex flex-col bg-cardbg rounded-2xl shadow-sm cursor-pointer hover:shadow-xl hover:border-zinc-600 border border-zinc-800 transition-all group overflow-hidden relative" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="menu-item-row flex items-center p-3 bg-cardbg border border-zinc-800 rounded-2xl shadow-sm cursor-pointer hover:border-zinc-600 transition-all group" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
-                            <div class="p-4 flex-1 flex flex-col relative">
-                                <h4 class="font-black text-sm text-white leading-tight mb-3 group-hover:text-brandred transition-colors pr-6">${item.name}</h4>
-                                <div class="mt-auto flex justify-between items-end">
-                                    ${priceLabel}
-                                </div>
-                                <!-- Floating Circular Add Button -->
-                                <div class="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-black group-hover:bg-brandred transition-colors shadow-md text-lg leading-none pb-0.5">+</div>
+                            <div class="ml-4 flex-1">
+                                <h4 class="font-black text-sm text-white leading-tight mb-1 group-hover:text-brandred transition-colors">${item.name}</h4>
+                                <p class="text-sm font-bold text-zinc-400">${priceLabel}</p>
                             </div>
+                            <div class="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold mr-2 group-hover:bg-brandred transition-colors">+</div>
                         </div>
                     `;
                 }).join('');
 
-                // The Category Header with the Red Accent Line
                 container.innerHTML += `
-                    <div class="category-section mb-10">
-                        <h2 class="text-lg font-black text-white mb-5 flex items-center gap-3 uppercase tracking-wider">
-                            <span class="w-1.5 h-6 bg-brandred rounded-full"></span>
-                            ${category}
+                    <div class="category-section mb-8">
+                        <h2 class="text-xl font-black text-white mb-4 flex items-center gap-3">
+                            <span class="w-2 h-6 bg-brandred rounded-full"></span>
+                            ${category.toUpperCase()}
                         </h2>
-                        <!-- Responsive Grid: 2 columns on phones, up to 5 on large screens -->
-                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             ${itemsHtml}
                         </div>
                     </div>
@@ -477,7 +507,7 @@
         }
 
         // ==========================================
-        // 🛍️ PREMIUM ITEM MODAL ENGINE (MATCHING IMAGE 4)
+        // 🛍️ PREMIUM ITEM MODAL ENGINE
         // ==========================================
         window.openItemModal = function(encodedData) {
             const item = JSON.parse(decodeURIComponent(encodedData));
@@ -505,7 +535,6 @@
             if (hasSizes) priceHeader.style.display = 'none';
             else { priceHeader.style.display = 'block'; priceHeader.innerText = '₱' + price.toFixed(2); }
 
-            // Top Image
             const imgContainer = document.getElementById('modalImage');
             if (item.image) {
                 imgContainer.innerHTML = `<img src="${item.image}" class="w-full h-full object-cover"><button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20">&times;</button>`;
@@ -513,7 +542,6 @@
                 imgContainer.innerHTML = `🍲<button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20">&times;</button>`;
             }
 
-            // 1. SELECT VARIANT (Sizes)
             let variantContainer = document.getElementById('modalVariantContainer');
             let variantGrid = document.getElementById('modalVariantGrid');
             if (hasSizes) {
@@ -537,14 +565,11 @@
                 variantContainer.classList.add('hidden');
             }
 
-            // 2. MIX & MATCH FILLINGS (🐙)
             let mixMatchContainer = document.getElementById('mixMatchContainer');
             let mixMatchList = document.getElementById('mixMatchList');
             if (item.mixMatchFlavors && item.mixMatchFlavors.length > 0) {
                 mixMatchContainer.classList.remove('hidden');
                 let mmHtml = '';
-                
-                // Read max pieces from name (e.g. "8 Pcs")
                 let sizeMatch = item.realName ? item.realName.match(/(\d+)\s*Pcs/i) : item.name.match(/(\d+)\s*Pcs/i);
                 window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
 
@@ -565,7 +590,6 @@
                 mixMatchContainer.classList.add('hidden');
             }
 
-            // 3. ADD-ONS (Base Flavor & Extras)
             const addonsContainer = document.getElementById('modalAddonsContainer');
             const addonsList = document.getElementById('modalAddonsList');
             addonsList.innerHTML = '';
@@ -584,7 +608,6 @@
                 let addonsArr = Object.values(groupedAddons);
                 let hasSauce = addonsArr.some(a => a.name === "Regular Sauce" || a.name === "Spicy Sauce");
 
-                // Base Flavor Block
                 if (hasSauce) {
                     let regAddon = addonsArr.find(a => a.name === "Regular Sauce") || { linkedIngredient: "Regular Sauce", deductQty: 1 };
                     let spicyAddon = addonsArr.find(a => a.name === "Spicy Sauce") || { linkedIngredient: "Spicy Sauce", deductQty: 1 };
@@ -615,7 +638,6 @@
                     `;
                 }
 
-                // Extras Block
                 let extras = addonsArr.filter(a => a.name !== "Regular Sauce" && a.name !== "Spicy Sauce");
                 if (extras.length > 0) {
                     newUiHtml += `
@@ -642,7 +664,6 @@
                 }
                 addonsList.innerHTML = newUiHtml;
                 
-                // Add listener to radios to swap styles
                 document.querySelectorAll('.modal-addon-radio').forEach(r => {
                     r.addEventListener('change', function() {
                         document.querySelectorAll('label:has(.modal-addon-radio)').forEach(l => {
@@ -651,9 +672,7 @@
                         this.closest('label').className = 'flex items-center justify-between p-3 border border-brandgold bg-brandgold/10 rounded-xl cursor-pointer';
                     });
                 });
-            } else { 
-                addonsContainer.classList.add('hidden'); 
-            }
+            } else { addonsContainer.classList.add('hidden'); }
 
             window.updateModalPrice();
             document.getElementById('itemModal').classList.remove('hidden');
@@ -671,19 +690,16 @@
             window.activeModalItem.price = vPrice;
             window.activeModalItem.basePrice = vPrice;
             
-            // Recalculate MixMatch limits based on new size!
             let sizeMatch = realName.match(/(\d+)\s*Pcs/i);
             if(sizeMatch) {
                 window.maxMixMatch = parseInt(sizeMatch[1]);
                 let counter = document.getElementById('mmCounter');
                 if(counter) {
-                    // Reset counts
                     document.querySelectorAll('.mm-qty').forEach(span => span.innerText = '0');
                     counter.innerText = `0 / ${window.maxMixMatch} Selected`;
                     counter.className = 'text-xs text-brandred font-bold text-right mt-2';
                 }
             }
-
             window.updateModalPrice();
         };
 
@@ -695,8 +711,8 @@
             let targetSpan = btn.parentElement.querySelector('.mm-qty');
             let currentVal = parseInt(targetSpan.innerText);
 
-            if (delta > 0 && currentTotal >= window.maxMixMatch) return; // Cap reached
-            if (delta < 0 && currentVal <= 0) return; // Floor reached
+            if (delta > 0 && currentTotal >= window.maxMixMatch) return; 
+            if (delta < 0 && currentVal <= 0) return; 
 
             targetSpan.innerText = currentVal + delta;
             
@@ -741,7 +757,6 @@
             let qty = window.activeModalItem.selectedQty;
             let notes = document.getElementById('modalNotes').value.trim();
             
-            // Validate Mix & Match
             let mixMatchNotes = "";
             let mmSpans = document.querySelectorAll('.mm-qty');
             if (mmSpans.length > 0) {
@@ -790,6 +805,7 @@
             setTimeout(() => toast.classList.remove('show'), 2500);
         };
 
+        // Cart updates
         window.updateCartUI = function() {
             let grandTotal = 0; let totalItems = 0;
             window.cart.forEach(item => { grandTotal += item.lineTotalFinal; totalItems += item.quantity; });
@@ -806,7 +822,7 @@
                 headerBadge.classList.remove('hidden');
                 headerBadge.classList.add('flex');
                 
-                topBtn.classList.add('border-brandred'); // Glows red when items are inside!
+                topBtn.classList.add('border-brandred'); 
             } else {
                 headerTotal.classList.add('hidden');
                 headerBadge.classList.add('hidden');
@@ -877,9 +893,72 @@
             if (window.cart.length === 0) window.closeCheckoutModal();
         };
 
-        window.resetSubmitButton = function(grandTotal) {
-            let submitBtn = document.getElementById('submitBtn');
-            if(submitBtn) { submitBtn.innerHTML = '<span>Place Order 🚀</span>'; submitBtn.disabled = false; }
+        window.filterMenu = function() {
+            let input = document.getElementById('searchInput').value.toLowerCase();
+            let categories = document.querySelectorAll('.category-section');
+
+            categories.forEach(sec => {
+                let items = sec.querySelectorAll('.menu-item-row');
+                let hasVisibleItems = false;
+                items.forEach(item => {
+                    let name = item.getAttribute('data-name');
+                    if (name.includes(input)) {
+                        item.style.display = 'flex'; hasVisibleItems = true;
+                    } else { item.style.display = 'none'; }
+                });
+                sec.style.display = hasVisibleItems ? 'block' : 'none';
+            });
+        };
+
+        // ==========================================
+        // 🚨 STORE STATUS / DELIVERY KILLSWITCH ENGINE
+        // ==========================================
+        window.listenToStoreStatus = function() {
+            let selectedBranch = document.getElementById('selectedBranch') ? document.getElementById('selectedBranch').value : 'Cabantian';
+            
+            if (window.statusListenerUnsubscribe) { window.statusListenerUnsubscribe(); }
+
+            window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
+                let checkoutButton = document.getElementById('reviewBtn'); 
+                let heroDeliveryText = document.getElementById('heroDeliveryText');
+                let directDeliveryStatus = document.getElementById('directDeliveryStatus');
+
+                let isEnabled = true;
+                if (docSnap.exists()) {
+                    isEnabled = docSnap.data().mobileOrdersActive !== false;
+                }
+
+                window.isStoreAcceptingOrders = isEnabled;
+
+                if (!isEnabled) {
+                    // Store is Paused - Hijack the buttons to open Delivery Partners
+                    if (checkoutButton) {
+                        checkoutButton.disabled = false; // Need it enabled to open modal
+                        checkoutButton.innerHTML = "<span>🛑 Store Paused - Use Grab/Foodpanda</span>";
+                        checkoutButton.classList.replace('bg-brandred', 'bg-zinc-600');
+                        checkoutButton.classList.replace('hover:bg-red-700', 'hover:bg-zinc-500');
+                        checkoutButton.onclick = window.openDeliveryPartners; 
+                    }
+                    if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
+                    if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
+                } else {
+                    // Store is Active
+                    if (checkoutButton) {
+                        checkoutButton.disabled = false;
+                        checkoutButton.onclick = window.openCheckoutModal; 
+                        let t = window.cart ? window.cart.reduce((sum, i) => sum + i.lineTotalFinal, 0) : 0;
+                        checkoutButton.innerHTML = `<span>🛒 View Cart</span> <span id="floatingTotal" class="bg-red-950 px-3 py-1 rounded-lg border border-red-800">₱${t.toFixed(2)}</span>`;
+                        checkoutButton.classList.replace('bg-zinc-600', 'bg-brandred');
+                        checkoutButton.classList.replace('hover:bg-zinc-500', 'hover:bg-red-700');
+                    }
+                    if(heroDeliveryText) { heroDeliveryText.innerText = "40 Minutes"; heroDeliveryText.classList.remove('text-red-500'); }
+                    if(directDeliveryStatus) { directDeliveryStatus.innerText = "Standard 40-Min Delivery"; directDeliveryStatus.classList.remove('text-red-500'); }
+                }
+            });
+        };
+
+        window.openDeliveryPartners = function() {
+            document.getElementById('deliveryPartnersModal').classList.remove('hidden');
         };
 
         // Initialize App
@@ -893,6 +972,7 @@
 
         document.addEventListener("DOMContentLoaded", async () => {
             window.loadLiveMenu(); 
+            window.listenToStoreStatus();
         });
 
     </script>
