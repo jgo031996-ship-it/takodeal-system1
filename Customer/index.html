@@ -347,6 +347,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        // 🔥 NEW: Added Firebase Auth Imports
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -359,6 +361,14 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+        window.currentUser = null;
+
+        // Tracks if the user is logged in
+        onAuthStateChanged(auth, (user) => {
+            window.currentUser = user;
+        });
 
         window.rawMenuCache = []; // Stores the raw DB download
         window.masterMenu = [];
@@ -943,6 +953,170 @@
             if (window.cart.length === 0) window.closeCheckoutModal();
         };
 
+        // ==========================================
+        // 🚀 MASTER ORDER SUBMISSION & ANTI-SCAM ENGINE
+        // ==========================================
+        window.submitOrder = async function() {
+            if (window.cart.length === 0) {
+                return Swal.fire({ title: 'Cart Empty', text: 'Add items first.', icon: 'warning', background: '#141414', color: '#fff' });
+            }
+
+            // 🛡️ ANTI-SCAM STEP 1: Force Google Login
+            if (!window.currentUser) {
+                const loginPrompt = await Swal.fire({
+                    title: '🛡️ Identity Verification',
+                    html: '<span class="text-zinc-400 text-sm">To protect against prank orders and ensure fast delivery, please verify your identity securely via Google.</span>',
+                    icon: 'info',
+                    showCancelButton: true,
+                    confirmButtonText: 'Verify with Google',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#dc2626',
+                    cancelButtonColor: '#3f3f46',
+                    background: '#0a0a0a',
+                    color: '#ffffff',
+                    customClass: { popup: 'border border-zinc-800 rounded-2xl' }
+                });
+
+                if (loginPrompt.isConfirmed) {
+                    try {
+                        const result = await signInWithPopup(auth, provider);
+                        window.currentUser = result.user;
+                    } catch (e) {
+                        console.error(e);
+                        return Swal.fire({ title: 'Login Failed', text: 'Could not verify identity.', icon: 'error', background: '#141414', color: '#fff' });
+                    }
+                } else {
+                    return; // User cancelled
+                }
+            }
+
+            // 📦 STEP 2: Ask for Delivery Details (Premium Dark Theme Modal)
+            const { value: formValues, isConfirmed } = await Swal.fire({
+                title: '📍 Order Details',
+                html: `
+                    <div style="text-align: left; font-size: 14px; font-family: 'Plus Jakarta Sans', sans-serif; margin-top: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #a1a1aa; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Order Type</label>
+                        <select id="swal-order-type" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #3f3f46; background: #18181b; color: white; outline: none; font-weight: bold; cursor: pointer;">
+                            <option value="Takeout">Pick-up / Takeout</option>
+                            <option value="Delivery">Standard Delivery</option>
+                        </select>
+
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #a1a1aa; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Contact Number 📞</label>
+                        <input type="tel" id="swal-phone" placeholder="09XX XXX XXXX" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #3f3f46; background: #18181b; color: white; outline: none; font-weight: bold;">
+
+                        <div id="delivery-div" style="display:none;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #a1a1aa; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Complete Address & Landmarks</label>
+                            <textarea id="swal-address" placeholder="e.g. Green gate beside bakery..." style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #3f3f46; background: #18181b; color: white; outline: none; resize: none; height: 80px; font-weight: 500;"></textarea>
+                        </div>
+                    </div>
+                `,
+                background: '#0a0a0a',
+                color: '#ffffff',
+                focusConfirm: false,
+                showCancelButton: true,
+                confirmButtonText: 'Confirm & Send',
+                cancelButtonText: 'Back',
+                confirmButtonColor: '#dc2626',
+                cancelButtonColor: '#3f3f46',
+                customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' },
+                didOpen: () => {
+                    document.getElementById('swal-order-type').addEventListener('change', function() {
+                        document.getElementById('delivery-div').style.display = this.value === 'Delivery' ? 'block' : 'none';
+                    });
+                },
+                preConfirm: () => {
+                    let type = document.getElementById('swal-order-type').value;
+                    let phone = document.getElementById('swal-phone').value.trim();
+                    let address = document.getElementById('swal-address').value.trim();
+                    
+                    if (!phone) { Swal.showValidationMessage('Contact number is required'); return false; }
+                    if (type === 'Delivery' && !address) { Swal.showValidationMessage('Delivery address is required'); return false; }
+                    
+                    return { type, phone, address };
+                }
+            });
+
+            if (!isConfirmed || !formValues) return;
+
+            // 🚀 STEP 3: Save to Firebase
+            let btn = document.getElementById('submitBtn');
+            let origHtml = btn.innerHTML;
+            btn.innerHTML = '<span>⏳ Processing...</span>';
+            btn.disabled = true;
+
+            let branch = document.getElementById('selectedBranch').value || 'Cabantian';
+            let grandTotal = window.cart.reduce((sum, item) => sum + item.lineTotalFinal, 0);
+
+            try {
+                let orderPayload = {
+                    customerName: window.currentUser.displayName || 'Verified User',
+                    customerEmail: window.currentUser.email,
+                    branch: branch,
+                    orderType: formValues.type,
+                    contactNumber: formValues.phone,
+                    deliveryAddress: formValues.address,
+                    items: window.cart,
+                    totalAmount: grandTotal,
+                    paymentMode: 'Pending FB Verification',
+                    status: 'mobile_queue', // Rings the Cashier App!
+                    timestamp: serverTimestamp()
+                };
+
+                const docRef = await addDoc(collection(db, "incoming_orders"), orderPayload);
+                
+                // Clear the Cart UI
+                window.closeCheckoutModal();
+                window.cart = [];
+                window.updateCartUI();
+
+                // 🚨 ANTI-SCAM STEP 4: Redirect to Facebook Messenger!
+                let orderIdShort = docRef.id.substring(0, 6).toUpperCase();
+                
+                // Generate a pre-filled message for them to send to your page!
+                let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\n` +
+                                 `Order ID: ${orderIdShort}\n` +
+                                 `Name: ${window.currentUser.displayName}\n` +
+                                 `Total: ₱${grandTotal.toFixed(2)}\n\n` +
+                                 `Please confirm my order!`;
+                                 
+                let fbMessage = encodeURIComponent(rawMessage);
+                
+                // The m.me link opens messenger directly to your page with the text pre-filled!
+                let fbLink = `https://m.me/Takodeal?text=${fbMessage}`;
+
+                await Swal.fire({
+                    title: 'Order Received! 🎉',
+                    html: `
+                        <div style="font-size: 14px; color: #a1a1aa; line-height: 1.6;">
+                            Your order has been sent to the <b>${branch}</b> kitchen!<br><br>
+                            <span style="color: #dc2626; font-weight: bold;">⚠️ FINAL STEP:</span><br>
+                            To prevent prank orders, <b>we will not start cooking until you confirm via Facebook Messenger.</b><br><br>
+                            Click the button below to message our page!
+                        </div>
+                    `,
+                    icon: 'success',
+                    confirmButtonText: 'Verify via Messenger 💬',
+                    confirmButtonColor: '#0ea5e9',
+                    allowOutsideClick: false,
+                    background: '#0a0a0a',
+                    color: '#ffffff',
+                    customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
+                }).then(() => {
+                    // Instantly opens Messenger when they click the button!
+                    window.open(fbLink, '_blank'); 
+                    // Reload the page to clear the state
+                    location.reload();
+                });
+
+            } catch (e) {
+                console.error(e);
+                Swal.fire({ title: 'Error', text: 'Failed to submit order. Check connection.', icon: 'error', background: '#141414', color: '#fff' });
+            } finally {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+        };
+        
         window.filterMenu = function() {
             let input = document.getElementById('searchInput').value.toLowerCase();
             let categories = document.querySelectorAll('.category-section');
