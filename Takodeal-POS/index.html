@@ -548,33 +548,34 @@
               
               <div id="posSettingsDropdown" style="display: none; position: absolute; top: 45px; right: 0; min-width: 240px; padding: 15px; gap: 12px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 1000; flex-direction: column;">
                   
-                  <!-- 📱 MOBILE ORDERS (RED) -->
-                  <button onclick="window.showMobileOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                  <!-- 🕒 PARKED ORDERS (SLATE BLUE - TOP PRIORITY) -->
+                  <button onclick="window.showParkedOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #334155; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    🕒 Parked Orders
+                    <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">0</span>
+                  </button>
+
+                  <div style="border-top: 1px dashed #cbd5e1; margin-top: 4px; margin-bottom: 4px;"></div>
+
+                  <!-- 📱 MOBILE APP CONTROLS -->
+                  <div style="font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; text-align: left; margin-bottom: -4px;">📱 Mobile App Controls</div>
+                  
+                  <button onclick="window.showMobileOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     📱 Mobile Orders
                     <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #facc15; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">0</span>
                   </button>
                   
-                  <!-- 🔴 KILLSWITCH (DYNAMIC COLOR) -->
-                  <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 App Accepting</button>
+                  <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🟢 App Accepting</button>
                   
-                  <!-- 🚚 DELIVERY TOGGLE -->
-                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🚚 Delivery: <span id="deliveryStatusText">OFF</span></button>
+                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚚 Delivery: <span id="deliveryStatusText">OFF</span></button>
 
-                  <!-- 🕒 PARKED ORDERS (SLATE BLUE) -->
-                  <button onclick="window.showParkedOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #334155; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                    🕒 Parked Orders
-                    <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
-                  </button>
+                  <button id="btnToggleBusy" onclick="window.toggleBusyMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🟢 Normal Prep (15m)</button>
 
-                  <!-- 🟢 BUSY PREP TOGGLE -->
-                  <button id="btnToggleBusy" onclick="window.toggleBusyMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 Normal Prep (15m)</button>
-
-                  <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+                  <div style="border-top: 1px dashed #cbd5e1; margin-top: 4px; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                       <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center;">
                           <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;" checked>
                           Auto-Open Drawer
                       </label>
-                      <button onclick="window.kickCashDrawer(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; font-weight: bold;">💵 Kick Drawer</button>
+                      <button onclick="window.kickCashDrawer(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">💵 Kick Drawer</button>
                   </div>
               </div>
           </div>
