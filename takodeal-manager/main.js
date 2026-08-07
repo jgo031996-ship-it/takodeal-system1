@@ -11413,6 +11413,7 @@ window.generateAutoPayslips = async function() {
                     let logDate = log.timestamp.toDate();
                     let lateMinutes = 0;
                     let wasScheduled = false; 
+                    let expectedStartHour = null; // 🔥 THE FIX: Moved outside so the whole math engine can see it!
                     
                     if (scheduleData && scheduleData.currentSchedule) {
                         let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
@@ -11426,7 +11427,7 @@ window.generateAutoPayslips = async function() {
                                     wasScheduled = true; 
                                     let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
                                     if (shiftConfig) {
-                                        let expectedStartHour = null;
+                                        // Removed the 'let' here so it uses our global variable above!
                                         if (shiftConfig.startTime) {
                                             let parts = shiftConfig.startTime.split(':');
                                             expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
