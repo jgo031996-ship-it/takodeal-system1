@@ -21087,3 +21087,52 @@ window.openFlowCogsModal = function() {
         customClass: { popup: 'rounded-2xl shadow-xl' }
     });
 };
+
+// ========================================================
+// 📱 LIVE STOREFRONT PREVIEWER ENGINE
+// ========================================================
+window.openStorefrontPreview = function() {
+    let modal = document.getElementById('storefrontPreviewModal');
+    let iframe = document.getElementById('storefrontIframe');
+    
+    // 🔥 UPDATE THIS URL: Paste the live Vercel link of your Customer App here!
+    let customerAppUrl = "https://your-customer-app-url.vercel.app"; 
+    
+    // Only reload the iframe if it's currently empty to save bandwidth
+    if (!iframe.src || iframe.src === window.location.href) {
+        iframe.src = customerAppUrl;
+    }
+    
+    modal.style.display = 'flex';
+    window.togglePreviewDevice('mobile'); // Default to mobile view
+};
+
+window.togglePreviewDevice = function(deviceType) {
+    let frame = document.getElementById('previewDeviceFrame');
+    let btnMobile = document.getElementById('btnPreviewMobile');
+    let btnDesktop = document.getElementById('btnPreviewDesktop');
+
+    if (deviceType === 'mobile') {
+        // Morph into an iPhone shape
+        frame.style.width = '390px';
+        frame.style.height = '844px';
+        frame.style.borderRadius = '40px';
+        frame.style.borderWidth = '14px';
+
+        btnMobile.style.background = '#3b82f6';
+        btnMobile.style.color = 'white';
+        btnDesktop.style.background = 'transparent';
+        btnDesktop.style.color = '#94a3b8';
+    } else {
+        // Morph into a Desktop Monitor shape
+        frame.style.width = '100%';
+        frame.style.height = '100%';
+        frame.style.borderRadius = '8px';
+        frame.style.borderWidth = '4px';
+
+        btnDesktop.style.background = '#3b82f6';
+        btnDesktop.style.color = 'white';
+        btnMobile.style.background = 'transparent';
+        btnMobile.style.color = '#94a3b8';
+    }
+};
