@@ -21089,22 +21089,40 @@ window.openFlowCogsModal = function() {
 };
 
 // ========================================================
-// 📱 LIVE STOREFRONT PREVIEWER ENGINE
+// 📱 LIVE STOREFRONT PREVIEWER ENGINE (FIXED IFRAME)
 // ========================================================
 window.openStorefrontPreview = function() {
     let modal = document.getElementById('storefrontPreviewModal');
     let iframe = document.getElementById('storefrontIframe');
     
-    // 🔥 UPDATE THIS URL: Paste the live Vercel link of your Customer App here!
-    let customerAppUrl = "https://your-customer-app-url.vercel.app"; 
+    // Check if the URL is saved in the browser memory
+    let savedUrl = localStorage.getItem('takodeal_customer_app_url');
     
-    // Only reload the iframe if it's currently empty to save bandwidth
-    if (!iframe.src || iframe.src === window.location.href) {
-        iframe.src = customerAppUrl;
+    // If not, ask the manager to paste it!
+    if (!savedUrl) {
+        savedUrl = prompt("Enter your Live Customer App URL (e.g. https://takodeal-customer.vercel.app):");
+        if (savedUrl) {
+            localStorage.setItem('takodeal_customer_app_url', savedUrl);
+        } else {
+            return; // Cancelled
+        }
+    }
+    
+    if (iframe.src !== savedUrl) {
+        iframe.src = savedUrl;
     }
     
     modal.style.display = 'flex';
     window.togglePreviewDevice('mobile'); // Default to mobile view
+};
+
+// Also give them a way to reset the URL if they make a typo!
+window.resetStorefrontUrl = function() {
+    let newUrl = prompt("Update your Live Customer App URL:", localStorage.getItem('takodeal_customer_app_url'));
+    if (newUrl) {
+        localStorage.setItem('takodeal_customer_app_url', newUrl);
+        document.getElementById('storefrontIframe').src = newUrl;
+    }
 };
 
 window.togglePreviewDevice = function(deviceType) {
