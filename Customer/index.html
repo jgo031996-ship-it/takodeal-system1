@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TAKODEÁL | Authentic Japanese Street Food</title>
+    <title>TAKODEÁL | Premium Japanese Street Food</title>
     
     <link rel="manifest" href="manifest.json">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -18,13 +18,13 @@
             theme: {
                 extend: {
                     colors: {
-                        cream: '#fdfbf7',
-                        espresso: '#2c2421',
-                        gold: '#c89f5a',
-                        muted: '#6b635e'
+                        darkbg: '#0a0a0a',     /* Deepest black/gray */
+                        cardbg: '#141414',     /* Slightly lighter for cards */
+                        cardhover: '#1c1c1c',  /* Hover state for cards */
+                        brandred: '#dc2626',   /* Takodeal Red */
+                        brandgold: '#d97706',  /* Takodeal Gold */
                     },
                     fontFamily: {
-                        serif: ['"Playfair Display"', 'serif'],
                         sans: ['"Plus Jakarta Sans"', 'sans-serif']
                     }
                 }
@@ -33,355 +33,261 @@
     </script>
 
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f9fafb; overflow-x: hidden; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0a0a0a; color: #ffffff; overflow-x: hidden; }
         
-        /* 🔥 ANIMATIONS */
-        @keyframes floatUp { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
-        .animate-float { animation: floatUp 0.4s ease-out forwards; }
+        /* Custom Scrollbar for Dark Theme */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #dc2626; }
+
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
         
         .toast-notification {
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-            background: #16a34a; color: white; font-weight: bold; padding: 12px 24px;
-            border-radius: 50px; box-shadow: 0 10px 25px rgba(22, 163, 74, 0.4);
+            background: #dc2626; color: white; font-weight: bold; padding: 12px 24px;
+            border-radius: 50px; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4);
             z-index: 9999; display: flex; align-items: center; gap: 10px;
             opacity: 0; transition: opacity 0.3s, top 0.3s; pointer-events: none;
         }
         .toast-notification.show { opacity: 1; top: 40px; }
 
-        /* Chef Animations */
-        @keyframes chefBodyBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-        @keyframes pickWiggle { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-20deg) translateX(-2px); } }
-        @keyframes brushBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(12px) rotate(5deg); } }
-        .chef-container { position: relative; width: 220px; height: 220px; margin-bottom: 20px; }
-        .chef-body { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('cooking-chef.jpg') no-repeat center center; background-size: contain; animation: chefBodyBob 1s infinite ease-in-out; }
-        .chef-body::before { content: "🧑‍🍳"; font-size: 3rem; color: transparent; position: absolute; top: 56%; left: 33%; width: 40px; height: 40px; animation: pickWiggle 0.4s infinite ease-in-out; }
-        .chef-body::after { content: "🧑‍🍳"; font-size: 3rem; color: transparent; position: absolute; top: 56%; right: 28%; width: 50px; height: 50px; animation: brushBob 1.2s infinite ease-in-out; }
-        
+        /* Glow Effects */
+        .glow-red { box-shadow: 0 0 20px rgba(220, 38, 38, 0.4); }
+        .glow-text { text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+
+        /* Mix & Match Accordion Reset */
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
-        
-        .hero-bg {
-            background-image: url('https://images.unsplash.com/photo-1596649299486-5cdea741887e?q=80&w=1200&auto=format&fit=crop');
-            background-size: cover;
-            background-position: center;
-        }
     </style>
 </head>
 
-<body class="pb-24 text-espresso">
+<body class="pb-24">
 
+    <!-- Toast Notification -->
     <div id="cartToast" class="toast-notification">
         <span class="text-xl">🐙</span> <span>Added to your cart!</span>
     </div>
 
-    <div id="greetingScreen" class="w-full min-h-screen bg-cream flex flex-col relative z-30 pb-10 transition-all duration-500">
+    <!-- ========================================== -->
+    <!-- 🌟 STAGE 1: THE PREMIUM LANDING PAGE -->
+    <!-- ========================================== -->
+    <div id="greetingScreen" class="w-full min-h-screen flex flex-col relative z-30 transition-all duration-500">
         
+        <!-- Navbar -->
         <nav class="flex justify-between items-center p-6 lg:px-12 w-full max-w-7xl mx-auto">
-            <div class="font-black text-2xl tracking-widest text-espresso">TAKODEÁL</div>
-            <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-muted">
-                <a href="#" class="hover:text-gold transition">Home</a>
-                <a href="#" onclick="window.enterOrderingScreen()" class="hover:text-gold transition">Menu</a>
-                <a href="#" class="hover:text-gold transition">Locations</a>
+            <div class="flex items-center gap-3">
+                <img src="customer-logo.jpg" alt="Takodeal Logo" class="w-10 h-10 rounded-full border-2 border-brandred">
+                <div class="font-black text-2xl tracking-widest text-white">TAKODEÁL</div>
             </div>
-            <button onclick="window.enterOrderingScreen()" class="bg-espresso text-white px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-gold transition-colors shadow-lg">
+            <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-zinc-400">
+                <a href="#" class="hover:text-white transition">Home</a>
+                <a href="#" onclick="window.enterOrderingScreen()" class="hover:text-white transition">Menu</a>
+                <a href="#" class="hover:text-white transition">Tracking</a>
+            </div>
+            <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red">
                 Order Now
             </button>
         </nav>
 
-        <div class="flex flex-col-reverse lg:flex-row items-center justify-between px-6 lg:px-12 py-10 lg:py-16 max-w-7xl mx-auto w-full gap-10">
-            <div class="lg:w-1/2 text-center lg:text-left z-10">
-                <h1 class="font-serif text-5xl lg:text-7xl leading-tight text-espresso mb-2">STREET FOOD THAT CONNECTS.</h1>
-                <h2 class="font-serif text-3xl lg:text-5xl italic text-gold font-semibold mb-6">Moments that last.</h2>
-                <p class="text-muted leading-relaxed mb-8 max-w-md mx-auto lg:mx-0">From our sizzling grills to your moments, we are here to make every day a little better. Handcrafted takoyaki, refreshing milk teas, and perfect bites.</p>
-                <button onclick="window.enterOrderingScreen()" class="bg-espresso text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-gold transition-colors shadow-xl flex items-center justify-center mx-auto lg:mx-0 gap-3 group">
-                    Explore Our Menu <span class="group-hover:translate-x-1 transition-transform">›</span>
-                </button>
-            </div>
-            <div class="lg:w-1/2 w-full h-[400px] lg:h-[550px] hero-bg rounded-[40px] shadow-2xl relative overflow-hidden">
-                <div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
-            </div>
-        </div>
-
-        <div class="bg-white border-y border-gray-200 py-10 mt-10">
-            <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8 text-center md:text-left">
-                <div class="flex items-center gap-4">
-                    <span class="text-4xl">🐙</span>
-                    <div>
-                        <h4 class="text-sm font-black uppercase tracking-wider text-espresso">Premium Ingredients</h4>
-                        <p class="text-xs text-muted mt-1">Authentic Japanese flavors.</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-4">
-                    <span class="text-4xl">🔥</span>
-                    <div>
-                        <h4 class="text-sm font-black uppercase tracking-wider text-espresso">Freshly Cooked</h4>
-                        <p class="text-xs text-muted mt-1">Made to order, served hot.</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-4">
-                    <span class="text-4xl">🛵</span>
-                    <div>
-                        <h4 class="text-sm font-black uppercase tracking-wider text-espresso">Fast Delivery</h4>
-                        <p class="text-xs text-muted mt-1">Straight to your doorstep.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="px-6 py-20 text-center max-w-7xl mx-auto w-full">
-            <p class="font-serif italic text-gold text-xl mb-2">Our Signatures</p>
-            <h2 class="font-serif text-4xl lg:text-5xl text-espresso mb-12">HANDCRAFTED FAVORITES</h2>
+        <!-- Hero Section (Image 1 & 2 Vibe) -->
+        <div class="flex flex-col-reverse lg:flex-row items-center justify-between px-6 lg:px-12 py-10 lg:py-20 max-w-7xl mx-auto w-full gap-10 relative">
             
-            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                <div class="col-span-full text-muted py-10 font-medium">⏳ Fetching live favorites from TAKODEÁL HQ...</div>
+            <!-- Background glow blobs -->
+            <div class="absolute top-20 left-10 w-72 h-72 bg-red-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-20"></div>
+            <div class="absolute bottom-10 right-10 w-72 h-72 bg-orange-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-10"></div>
+
+            <div class="lg:w-1/2 text-center lg:text-left z-10">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-300 mb-6 uppercase tracking-widest">
+                    <span class="text-brandred">🔥</span> Easy way to order your food
+                </div>
+                
+                <h1 class="text-5xl lg:text-7xl font-black leading-tight text-white mb-4">
+                    Delivery of fresh <br>
+                    <span class="text-brandred glow-text">and hot food</span><br>
+                    anytime!
+                </h1>
+                
+                <p class="text-zinc-400 leading-relaxed mb-8 max-w-md mx-auto lg:mx-0 text-lg">
+                    Just confirm your order and enjoy our delicious, authentic Japanese takoyaki with the fastest delivery.
+                </p>
+                
+                <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
+                    <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red w-full sm:w-auto">
+                        Order Now
+                    </button>
+                    <button onclick="window.enterOrderingScreen()" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">
+                        See Menu
+                    </button>
+                </div>
             </div>
-
-            <button onclick="window.enterOrderingScreen()" class="mt-12 bg-white text-espresso border-2 border-espresso px-8 py-3 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-espresso hover:text-white transition-colors">
-                View Full Menu
-            </button>
+            
+            <div class="lg:w-1/2 w-full flex justify-center z-10">
+                <!-- Floating Premium Image -->
+                <div class="relative w-[350px] h-[350px] lg:w-[500px] lg:h-[500px] rounded-full p-2 border-4 border-dashed border-zinc-800 animate-fade-in">
+                    <img src="banner.png" alt="Hero Image" class="w-full h-full object-cover rounded-full shadow-2xl">
+                    
+                    <!-- Floating Badge -->
+                    <div class="absolute bottom-10 -left-10 bg-cardbg border border-zinc-800 p-4 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in" style="animation-delay: 0.3s;">
+                        <div class="w-12 h-12 bg-red-950 rounded-full flex items-center justify-center text-2xl">🛵</div>
+                        <div>
+                            <div class="text-xs text-zinc-400 font-bold uppercase">Delivery within</div>
+                            <div class="text-lg font-black text-white">40 Minutes</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="bg-espresso text-white py-20 px-6 text-center mt-10">
-            <h2 class="font-serif text-4xl lg:text-5xl mb-4">WIN EXCITING PRIZES!</h2>
-            <p class="text-gray-300 max-w-2xl mx-auto mb-8 leading-relaxed">Join our VIP Loyalty Club. Every ₱500 purchase earns you a raffle ticket for our monthly grand prize, plus exclusive discounts on your favorite Takoyaki platters.</p>
-            <button class="bg-gold text-white px-8 py-3 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-espresso transition-colors">
-                Join The Club ›
-            </button>
+        <!-- Featured Popular Items -->
+        <div class="px-6 py-20 max-w-7xl mx-auto w-full z-10 border-t border-zinc-900 mt-10">
+            <div class="flex justify-between items-end mb-10">
+                <div>
+                    <h2 class="text-3xl font-black text-white">Popular Dishes</h2>
+                    <p class="text-zinc-500 mt-1">Our best sellers, ready for you.</p>
+                </div>
+            </div>
+            
+            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Fetching live favorites from TAKODEÁL HQ...</div>
+            </div>
         </div>
-
     </div>
-    <div id="appContainer" class="hidden max-w-md mx-auto bg-gray-50 min-h-screen shadow-2xl relative flex-col border-x border-gray-200 animate-float">
+
+
+    <!-- ========================================== -->
+    <!-- 🛒 STAGE 2: THE MAIN ORDERING APP -->
+    <!-- ========================================== -->
+    <div id="appContainer" class="hidden max-w-2xl mx-auto bg-darkbg min-h-screen relative flex-col border-x border-zinc-900 animate-fade-in">
         
-        <div class="sticky top-0 z-40 shadow-sm bg-white p-4 flex justify-between items-center border-b border-gray-100">
-            <div class="font-black text-xl tracking-widest text-espresso">TAKODEÁL</div>
-            <button onclick="location.reload()" class="text-sm font-bold text-muted hover:text-red-600">Home</button>
+        <!-- Sticky Header -->
+        <div class="sticky top-0 z-40 bg-darkbg/90 backdrop-blur-md p-4 flex justify-between items-center border-b border-zinc-800">
+            <div class="flex items-center gap-2">
+                <img src="customer-logo.jpg" class="w-8 h-8 rounded-full border border-brandred">
+                <div class="font-black text-lg tracking-widest text-white">TAKODEÁL</div>
+            </div>
+            <button onclick="location.reload()" class="text-xs font-bold bg-zinc-900 px-4 py-2 rounded-full text-zinc-300 hover:text-white">Exit</button>
         </div>
 
         <div id="orderingScreen" class="flex-1 flex flex-col">
-            <div class="search-bar-container shadow-sm bg-white">
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">🔍</span>
-                    <input type="text" id="searchInput" onkeyup="filterMenu()" class="w-full bg-gray-100 rounded-lg pl-10 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-red-500 font-medium" placeholder="Search for takoyaki, drinks...">
+            
+            <!-- Search & Branch Selection -->
+            <div class="p-5 border-b border-zinc-900">
+                <div class="relative mb-4">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500">🔍</span>
+                    <input type="text" id="searchInput" onkeyup="filterMenu()" class="w-full bg-cardbg border border-zinc-800 rounded-full pl-12 pr-4 py-3 text-sm outline-none focus:border-brandred text-white placeholder-zinc-500 transition-colors" placeholder="Search dishes...">
+                </div>
+
+                <div class="flex gap-2">
+                    <select id="selectedBranch" class="flex-1 rounded-full border-zinc-800 bg-cardbg py-2.5 px-4 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer">
+                        <option value="Cabantian">📍 Cabantian</option>
+                        <option value="Citygate">📍 Citygate</option>
+                        <option value="Maa">📍 Maa</option>
+                    </select>
                 </div>
             </div>
 
-            <div class="p-6 pb-32">
-                <div class="mb-6 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
-                    <h3 class="text-sm font-black text-gray-800 mb-4 border-b border-gray-100 pb-2">🏪 Select Branch</h3>
-                    <select id="selectedBranch" class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 transition-colors cursor-pointer">
-                        <option value="Cabantian">TAKODEÁL Cabantian</option>
-                        <option value="Citygate">TAKODEÁL Citygate</option>
-                        <option value="Maa">TAKODEÁL Maa</option>
-                    </select>
-                    
-                    <h3 class="text-sm font-black text-gray-800 mb-4 border-b border-gray-100 pb-2 mt-5">👤 Your Details</h3>
-                    
-                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Full Name (Required)</label>
-                    <input type="text" id="customerName" required class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 mb-4 transition-colors" placeholder="e.g. Juan Dela Cruz">
+            <!-- The Live Menu Grid -->
+            <div class="p-5 pb-32">
+                <div id="liveMenuContainer" class="space-y-8">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
 
-                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Contact Number (Required) 📞</label>
-                    <input type="tel" id="customerContact" required class="block w-full rounded-xl border-gray-300 bg-gray-50 p-3 border focus:border-red-500 outline-none font-bold text-gray-800 transition-colors" placeholder="e.g. 0912 345 6789">
+            <!-- Floating Review Order Bar -->
+            <div class="fixed bottom-0 left-0 w-full p-4 bg-darkbg/95 backdrop-blur-md border-t border-zinc-900 z-40 md:absolute md:max-w-2xl md:left-auto">
+                <button onclick="window.openCheckoutModal()" id="reviewBtn" class="w-full bg-brandred text-white font-black py-4 px-6 rounded-2xl hover:bg-red-700 active:scale-95 transition-all shadow-[0_0_20px_rgba(220,38,38,0.3)] flex justify-between items-center text-lg">
+                    <span>🛒 View Cart</span>
+                    <span id="floatingTotal" class="bg-red-950 px-3 py-1 rounded-lg border border-red-800">₱0.00</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 🍲 STAGE 3: THE PREMIUM ITEM MODAL (IMAGE 4) -->
+    <!-- ========================================== -->
+    <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
+        <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
+            
+            <!-- Top Image Banner -->
+            <div id="modalImage" class="w-full h-56 bg-zinc-900 flex items-center justify-center text-4xl relative">
+                <!-- Image injected via JS -->
+                <button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20">&times;</button>
+            </div>
+            
+            <div class="p-5 flex-1 overflow-y-auto custom-scrollbar">
+                
+                <!-- Title & Price -->
+                <div class="mb-4">
+                    <h2 id="modalItemName" class="text-2xl font-black text-white leading-tight mb-1">Item Name</h2>
+                    <span id="modalItemPrice" class="text-xl font-black text-brandred">₱0.00</span>
+                </div>
+                
+                <!-- Variants (Sizes) Grid -->
+                <div id="modalVariantContainer" class="w-full mb-6 hidden">
+                    <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Select Variant</h3>
+                    <div class="grid grid-cols-2 gap-3 w-full" id="modalVariantGrid">
+                        <!-- Injected via JS -->
+                    </div>
                 </div>
 
+                <!-- Quantity Selector -->
                 <div class="mb-6">
-                    <label class="block text-sm font-bold text-gray-700 mb-3">Menu Categories</label>
-                    <div id="liveMenuContainer" class="space-y-3">
+                    <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Set Quantity</h3>
+                    <div class="flex items-center w-32 bg-darkbg border border-zinc-800 rounded-xl overflow-hidden h-12">
+                        <button onclick="changeModalQty(-1)" class="flex-1 h-full font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 transition">-</button>
+                        <span id="modalQty" class="flex-1 text-center font-black text-white">1</span>
+                        <button onclick="changeModalQty(1)" class="flex-1 h-full font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 transition">+</button>
+                    </div>
+                </div>
+
+                <!-- Mix & Match Accordion -->
+                <div id="mixMatchContainer" class="mb-6 hidden">
+                    <details class="group bg-darkbg border border-zinc-800 rounded-xl overflow-hidden">
+                        <summary class="font-bold text-sm p-4 cursor-pointer flex justify-between items-center text-white select-none">
+                            <span class="flex items-center gap-2">🐙 Customize Fillings (Mix & Match)</span>
+                            <span class="group-open:rotate-180 transition-transform duration-300 text-brandred">▼</span>
+                        </summary>
+                        <div class="p-4 border-t border-zinc-800 bg-cardbg space-y-3" id="mixMatchList">
+                            <!-- Injected via JS -->
                         </div>
+                    </details>
                 </div>
 
-                <div class="mb-6">
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Order Type</label>
-                    <select id="orderType" class="block w-full rounded-xl border-gray-300 bg-white p-3 border focus:border-red-500 outline-none mb-3 font-bold text-gray-700 shadow-sm" onchange="window.toggleOrderTypeView()">
-                        <option value="Dine-In">Dine-In (Order Now)</option>
-                        <option value="Takeout">Pick-up / Take-out</option>
-                        <option value="Advance Dine-In">Advance Order (Dine-In)</option>
-                        <option value="Advance Pick-up">Advance Order (Pick-up)</option>
-                        <option value="Delivery" id="deliveryOption">Delivery (Loading status...)</option>
-                    </select>
-
-                    <div id="preferredTimeSection" class="hidden bg-orange-50 p-4 rounded-xl border border-orange-200 shadow-inner">
-                        <label class="block text-xs font-bold text-orange-800 mb-1 uppercase tracking-wider">⏰ Preferred Time</label>
-                        <input type="time" id="preferredTime" class="block w-full rounded-lg border-orange-300 bg-white p-3 text-sm outline-none focus:border-orange-500 font-bold text-gray-800">
+                <!-- Add-ons Container -->
+                <div id="modalAddonsContainer" class="mb-6 hidden">
+                    <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Select Add-ons</h3>
+                    <div id="modalAddonsList" class="space-y-4">
+                        <!-- Base Flavor & Extra Addons injected via JS -->
                     </div>
                 </div>
 
-                <div id="deliverySection" class="hidden bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6 shadow-inner">
-                    <p class="font-bold text-purple-800 mb-2">🚚 Delivery Details</p>
-                    
-                    <button type="button" onclick="window.openDeliveryMap()" class="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg mb-3 shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
-                        <span>📍 Pin My Exact Location on Map</span>
-                    </button>
-                    
-                    <div id="mapContainer" class="w-full h-48 rounded-lg mb-3 border-2 border-purple-300 hidden relative z-10"></div>
-                    <p id="mapStatusText" class="text-xs text-purple-600 font-bold mb-3 text-center hidden">✅ Location Pinned!</p>
-                    <input type="hidden" id="pinnedLat">
-                    <input type="hidden" id="pinnedLng">
-
-                    <p class="text-xs text-purple-600 mb-3 mt-4 font-medium">Please provide landmarks or house details for the rider.</p>
-                    <textarea id="deliveryAddress" class="block w-full rounded-lg border-purple-200 p-3 text-sm outline-none focus:border-purple-500 shadow-sm mb-4 bg-white" placeholder="e.g. Green gate, beside the bakery..." rows="2"></textarea>
-                    
-                    <label class="block text-xs font-bold text-purple-700 mb-2 uppercase tracking-wider">📸 Photo of House/Gate (Helpful!)</label>
-                    <input type="file" id="locationImage" accept="image/*" class="block w-full text-sm text-purple-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer">
-                </div>
-                
-                <div class="mb-6">
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Mode of Payment</label>
-                    <select id="paymentMode" class="block w-full rounded-xl border-gray-300 bg-white p-3 border focus:border-red-500 outline-none font-bold text-gray-700 shadow-sm" onchange="window.togglePaymentView()">
-                        <option value="cash">Cash (Pay at counter / COD)</option>
-                        <option value="gcash">GCash</option>
-                    </select>
-                </div>
-
-                <div id="gcashSection" class="hidden bg-blue-50 p-5 rounded-xl border border-blue-200 text-center mb-6 shadow-inner">
-                    <p class="font-bold text-blue-800 mb-3">Pay via GCash</p>
-                    <div class="w-40 h-40 bg-white mx-auto flex items-center justify-center mb-3 rounded-lg shadow-sm border border-blue-100">
-                        <img src="QR.jpg" alt="GCash QR Code" style="max-width: 100%; max-height: 100%; object-fit: contain;">
-                    </div>
-                    <p class="text-sm font-bold text-gray-800">Account: JOSTUART O.</p>
-                    <p class="text-sm text-gray-600 mb-3">No: 09629721305</p>
-                    <input type="text" id="refNumber" class="block w-full rounded-lg border-gray-300 p-3 text-center font-bold text-sm outline-none focus:border-blue-500" placeholder="Enter Ref No. (Optional)">
-                </div>
-
-                <div id="codChangeSection" class="hidden bg-orange-50 p-5 rounded-xl border border-orange-200 mb-6 shadow-inner">
-                    <p class="font-bold text-orange-800 mb-1">💵 Cash on Delivery (COD)</p>
-                    <p class="text-xs text-orange-600 mb-3 font-medium">How much cash will you give the rider for change?</p>
-                    <input type="number" id="codAmount" class="block w-full rounded-lg border-orange-300 p-3 font-bold text-sm outline-none focus:border-orange-500 shadow-sm bg-white" placeholder="e.g. 500 or 1000">
+                <!-- Notes -->
+                <div class="mt-2 mb-4">
+                    <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Special Instructions</h3>
+                    <input type="text" id="modalNotes" class="w-full bg-darkbg border border-zinc-800 rounded-xl p-4 text-sm outline-none focus:border-brandred font-medium text-white placeholder-zinc-600" placeholder="e.g. No mayo, extra spicy...">
                 </div>
             </div>
 
-            <div class="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 shadow-[0_-4px_10px_-1px_rgba(0,0,0,0.05)] z-40 md:absolute md:max-w-md md:left-auto">
-                <button onclick="openCartModal()" id="reviewBtn" class="w-full bg-red-600 text-white font-black py-4 px-6 rounded-xl hover:bg-red-700 active:scale-95 transition-all shadow-lg flex justify-between items-center text-lg">
-                    <span>🛒 Review Order</span>
-                    <span id="floatingTotal" class="bg-red-800 px-3 py-1 rounded-lg">₱0.00</span>
-                </button>
-            </div>
-        </div>
-
-        <div id="trackerScreen" class="hidden flex-1 flex flex-col items-center justify-center p-6 text-center bg-gray-50 z-30">
-            <div id="chefAnimation" class="chef-container">
-                <div class="chef-body"></div>
-            </div>
-            <div id="trackerIcon" class="hidden text-6xl mb-4">📤</div>
-            
-            <h2 id="trackerTitle" class="font-black text-3xl mb-1 text-gray-800">The grill is hot!</h2>
-            <p id="trackerSubtitle" class="text-gray-500 font-medium mb-4">The kitchen crew is reviewing your order.</p>
-            
-            <div class="bg-red-100 text-red-700 font-black px-5 py-2 rounded-full text-sm mb-6 shadow-sm border border-red-200 flex items-center gap-2">
-                <span>📍 Routed to:</span>
-                <span id="trackerBranchDisplay">Locating...</span>
-            </div>
-
-            <div class="w-full max-w-sm mx-auto mb-6 px-2">
-                <div class="flex justify-between items-center relative">
-                    <div class="absolute top-4 left-0 w-full h-1 bg-gray-200 z-0"></div>
-                    <div id="progressLine" class="absolute top-4 left-0 h-1 bg-red-600 w-0 z-0 transition-all duration-700 ease-in-out"></div>
-                    
-                    <div class="flex flex-col items-center relative z-10">
-                        <div id="step1Icon" class="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500">1</div>
-                        <span id="step1Text" class="text-[11px] font-bold text-red-600 mt-2">Received</span>
-                    </div>
-                    <div class="flex flex-col items-center relative z-10">
-                        <div id="step2Icon" class="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center font-bold text-sm shadow-sm transition-colors duration-500">2</div>
-                        <span id="step2Text" class="text-[11px] font-bold text-gray-400 mt-2">Cooking</span>
-                    </div>
-                    <div class="flex flex-col items-center relative z-10">
-                        <div id="step3Icon" class="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center font-bold text-sm shadow-sm transition-colors duration-500">3</div>
-                        <span id="step3Text" class="text-[11px] font-bold text-gray-400 mt-2">Ready</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 w-full mb-4 text-left relative overflow-hidden">
-                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 border-b border-gray-100 pb-2">Your Order Summary</h3>
-                <div id="trackerOrderDetails" class="text-sm text-gray-700 space-y-2 max-h-32 overflow-y-auto mb-2 relative z-10"></div>
-                <div class="text-right font-black text-red-600 text-lg border-t border-gray-100 pt-2 relative z-10" id="trackerOrderTotal">₱0.00</div>
-            </div>
-            
-            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 w-full mb-8 relative overflow-hidden">
-                <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Estimated Wait Time</div>
-                <div id="waitTimeDisplay" class="text-2xl font-black text-red-600">10 - 15 Mins</div>
-                <div class="absolute -right-4 -bottom-4 opacity-5 text-6xl">⏱️</div>
-            </div>
-
-            <button onclick="window.startNewOrder()" class="bg-gray-200 text-gray-800 font-bold py-4 px-6 rounded-xl w-full hover:bg-gray-300 transition-colors">Place New Order</button>
-            
-            <div id="cancelOrderSection" class="w-full hidden mt-4">
-                <button onclick="window.cancelMyOrder()" class="bg-red-50 text-red-600 font-bold py-3 px-6 rounded-lg w-full border border-red-200 active:bg-red-100 transition">
-                    Cancel Order (<span id="cancelTimer">05:00</span>)
-                </button>
-                <p class="text-sm font-medium text-gray-500 mt-3 text-center">You can only cancel before the kitchen starts preparing.</p>
-            </div>
-        </div>
-
-    </div>
-
-    <button id="floatingCartBtn" class="hidden fixed bottom-6 right-6 bg-espresso text-white border-none w-16 h-16 rounded-full text-2xl cursor-pointer shadow-2xl flex justify-center items-center z-50 transition-transform hover:scale-110" onclick="window.openCartModal()">
-        🛒
-        <div class="cart-badge" id="cartCountBadge" style="display: none; position: absolute; top: -2px; right: -2px; background: #ef4444; color: white; font-size: 11px; font-weight: bold; width: 22px; height: 22px; border-radius: 50%; justify-content: center; align-items: center;">0</div>
-    </button>
-
-    <div id="cartModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4">
-        <div class="bg-white w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[85vh] shadow-2xl">
-            <div class="bg-gray-50 p-5 border-b border-gray-200 flex justify-between items-center">
-                <h2 class="text-xl font-black text-gray-800">🛒 Review Your Order</h2>
-                <button onclick="closeCartModal()" class="text-gray-400 hover:text-gray-600 text-3xl font-bold leading-none">&times;</button>
-            </div>
-            
-            <div id="cartModalItems" class="p-5 flex-1 overflow-y-auto space-y-3 bg-gray-50"></div>
-
-            <div class="p-5 bg-white border-t border-gray-200 shadow-[0_-4px_10px_-1px_rgba(0,0,0,0.05)]">
-                <div class="flex justify-between mb-4 text-gray-800 font-black text-xl">
-                    <span>Grand Total:</span>
-                    <span id="cartModalTotal" class="text-red-600">₱0.00</span>
-                </div>
-                <button onclick="submitOrder()" id="submitBtn" class="w-full bg-red-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-red-700 active:scale-95 transition-all text-lg flex justify-center items-center gap-2">
-                    <span>Send to Kitchen 🚀</span>
+            <!-- Bottom Add to Cart Bar -->
+            <div class="p-4 bg-cardbg border-t border-zinc-800">
+                <button onclick="window.addModalItemToCart()" class="w-full bg-brandgold text-white font-black py-4 rounded-xl shadow-lg hover:bg-yellow-600 active:scale-95 transition-all text-lg flex justify-between px-6 items-center">
+                    <span>Add to Order</span>
+                    <span id="modalBtnTotal">₱0.00</span>
                 </button>
             </div>
         </div>
     </div>
-    
-    <div id="itemModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4">
-        <div class="bg-white w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div id="modalImage" class="w-full h-48 bg-gray-200 flex items-center justify-center text-4xl">🍲</div>
-            <div class="p-5 flex-1 overflow-y-auto bg-white">
-                <div class="flex justify-between items-start mb-2">
-                    <h2 id="modalItemName" class="text-xl font-black text-gray-800">Item Name</h2>
-                    <span id="modalItemPrice" class="text-lg font-black text-red-600">₱0.00</span>
-                </div>
-                
-                <div id="modalVariantContainer" class="w-full mt-4 mb-2 hidden"></div>
 
-                <div id="modalAddonsContainer" class="mt-4 hidden">
-                    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Add-ons</h3>
-                    <div id="modalAddonsList" class="space-y-2"></div>
-                </div>
-
-                <div class="mt-5">
-                    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Special Instructions</h3>
-                    <input type="text" id="modalNotes" class="w-full border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-red-500 font-medium bg-gray-50" placeholder="e.g. No mayo, extra spicy...">
-                </div>
-            </div>
-
-            <div class="p-5 bg-gray-50 border-t border-gray-200 flex items-center gap-4">
-                <div class="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden h-12">
-                    <button onclick="changeModalQty(-1)" class="w-12 h-full font-bold text-gray-600 active:bg-gray-100 text-lg border-r border-gray-100">-</button>
-                    <span id="modalQty" class="w-10 text-center font-black text-gray-800">1</span>
-                    <button onclick="changeModalQty(1)" class="w-12 h-full font-bold text-gray-600 active:bg-gray-100 text-lg border-l border-gray-100">+</button>
-                </div>
-                <button onclick="addModalItemToCart()" class="flex-1 bg-espresso text-white font-bold h-12 rounded-xl shadow-md hover:bg-gold transition-colors active:scale-95 text-sm uppercase tracking-wide">
-                    Add to Order
-                </button>
-                <button onclick="closeItemModal()" class="w-12 h-12 flex items-center justify-center bg-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-300">✖</button>
-            </div>
-        </div>
-    </div>
-
+    <!-- Check Checkout/Cart Modal Code inside JS below! -->
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, where, orderBy, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
         // ⚠️ WARNING: Ensure this config exactly matches your live database keys!
         const firebaseConfig = {
@@ -395,7 +301,6 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const storage = getStorage(app);
 
         window.masterMenu = [];
         window.cart = [];
@@ -403,13 +308,14 @@
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
         window.phantomVariants = {}; 
 
-        // 1. Fetch the Menu and Build the UI
+        // 1. Fetch Menu & Build UI
         window.loadLiveMenu = async function() {
             try {
                 const q = query(collection(db, "menu"), orderBy("category"));
                 const snap = await getDocs(q);
                 let categoriesMap = {};
                 let rawItems = [];
+                
                 snap.forEach(docSnap => {
                     let item = docSnap.data();
                     item.id = docSnap.id;
@@ -420,82 +326,76 @@
 
                 rawItems.forEach(item => {
                     let catName = item.category || "Other";
-                    let isHidden = hiddenCategories.includes(catName.toLowerCase());
+                    if (hiddenCategories.includes(catName.toLowerCase()) || item.isAvailable === false) return;
 
-                    if (item.isAvailable !== false && !isHidden) {
-                        let name = item.name;
-                        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad|Platter|Family)$/i);
+                    let name = item.name;
+                    let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad|Platter|Family)$/i);
 
-                        if (match) {
-                            let baseName = match[1].trim();
-                            let sizeName = match[2].trim();
+                    if (match) {
+                        let baseName = match[1].trim();
+                        let sizeName = match[2].trim();
 
-                            if (!window.phantomVariants[baseName]) {
-                                window.phantomVariants[baseName] = [];
-                                let baseItem = { ...item, name: baseName, isGrouped: true };
-                                window.masterMenu.push(baseItem);
-                                if (!categoriesMap[catName]) categoriesMap[catName] = [];
-                                categoriesMap[catName].push(baseItem);
-                            }
-
-                            window.phantomVariants[baseName].push({
-                                realName: item.name, sizeLabel: sizeName, price: parseFloat(item.price || item.basePrice) || 0, id: item.id
-                            });
-                            window.phantomVariants[baseName].sort((a, b) => a.price - b.price);
-                        } else {
-                            window.masterMenu.push(item);
+                        if (!window.phantomVariants[baseName]) {
+                            window.phantomVariants[baseName] = [];
+                            let baseItem = { ...item, name: baseName, isGrouped: true };
+                            window.masterMenu.push(baseItem);
                             if (!categoriesMap[catName]) categoriesMap[catName] = [];
-                            categoriesMap[catName].push(item);
+                            categoriesMap[catName].push(baseItem);
                         }
+
+                        window.phantomVariants[baseName].push({
+                            realName: item.name, sizeLabel: sizeName, price: parseFloat(item.price || item.basePrice) || 0, id: item.id
+                        });
+                        window.phantomVariants[baseName].sort((a, b) => a.price - b.price);
+                    } else {
+                        window.masterMenu.push(item);
+                        if (!categoriesMap[catName]) categoriesMap[catName] = [];
+                        categoriesMap[catName].push(item);
                     }
                 });
 
-                renderAccordions(categoriesMap);
-                renderPremiumFavorites(); // 🔥 This builds the Landing Page Grid!
+                renderDarkMenuGrid(categoriesMap);
+                renderPremiumFavorites(); 
 
             } catch (error) {
                 console.error(error);
-                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-400">Failed to load menu. Check connection.</div>';
-                document.getElementById('favoritesGrid').innerHTML = '<div class="col-span-full text-red-400">Failed to load favorites.</div>';
+                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-500">Failed to load menu.</div>';
             }
         }
 
-        // 🔥 THE NEW LANDING PAGE MENU RENDERER
+        // 🔥 Premium Landing Page Grid
         function renderPremiumFavorites() {
             let favHtml = '';
-            // Let's grab 4 items to feature (skip the grouped items for simplicity on the homepage card)
             let favItems = window.masterMenu.filter(i => !i.isGrouped && i.image).slice(0, 4); 
-            // If they don't have images, just grab the first 4 items
             if(favItems.length === 0 && window.masterMenu.length > 0) favItems = window.masterMenu.slice(0, 4); 
 
             favItems.forEach(item => {
                 let price = parseFloat(item.price || item.basePrice || 0);
-                let imgHtml = item.image 
-                    ? `<img src="${item.image}" class="w-full h-56 object-cover rounded-xl mb-4 bg-gray-100">` 
-                    : `<div class="w-full h-56 bg-gray-200 rounded-xl mb-4 flex items-center justify-center text-4xl">🍲</div>`;
+                let imgHtml = item.image ? `<img src="${item.image}" class="w-full h-48 object-cover rounded-t-2xl">` : `<div class="w-full h-48 bg-zinc-900 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
                 let safeData = encodeURIComponent(JSON.stringify(item));
                 
                 favHtml += `
-                    <div class="bg-white p-5 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 text-left flex flex-col cursor-pointer border border-gray-100 group" onclick="window.openItemModal('${safeData}')">
-                        <div class="overflow-hidden rounded-xl mb-4">
-                            ${imgHtml.replace('class="', 'class="group-hover:scale-105 transition-transform duration-500 ')}
+                    <div class="bg-cardbg rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-left flex flex-col cursor-pointer border border-zinc-800 group" onclick="window.openItemModal('${safeData}')">
+                        <div class="overflow-hidden rounded-t-2xl relative">
+                            ${imgHtml.replace('class="', 'class="group-hover:scale-110 transition-transform duration-500 ')}
+                            <div class="absolute inset-0 bg-gradient-to-t from-cardbg to-transparent opacity-80"></div>
                         </div>
-                        <h3 class="font-bold text-lg text-espresso mb-1 leading-tight">${item.name}</h3>
-                        <p class="text-[10px] text-gold font-black uppercase tracking-widest mb-4">${item.category}</p>
-                        <div class="mt-auto flex justify-between items-center border-t border-gray-100 pt-4">
-                            <span class="font-black text-xl text-espresso">₱${price.toFixed(2)}</span>
-                            <button class="w-10 h-10 rounded-full bg-gold text-white font-bold flex items-center justify-center group-hover:bg-espresso transition-colors text-xl shadow-md">+</button>
+                        <div class="p-5 flex-1 flex flex-col">
+                            <h3 class="font-bold text-lg text-white mb-1 leading-tight">${item.name}</h3>
+                            <div class="flex justify-between items-center mt-auto pt-4">
+                                <span class="font-black text-brandred">₱${price.toFixed(2)}</span>
+                                <button class="w-8 h-8 rounded-full bg-zinc-800 text-white font-bold flex items-center justify-center group-hover:bg-brandred transition-colors text-lg">+</button>
+                            </div>
                         </div>
                     </div>
                 `;
             });
-
             const favGrid = document.getElementById('favoritesGrid');
             if (favGrid) favGrid.innerHTML = favHtml;
         }
 
-        // Builds the Accordions inside the Ordering Screen
-        function renderAccordions(categoriesMap) {
+        // 🔥 Premium Dark Menu Grid (Replaces Accordions)
+        function renderDarkMenuGrid(categoriesMap) {
             const container = document.getElementById('liveMenuContainer');
             container.innerHTML = '';
 
@@ -503,55 +403,37 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    let imgHtml = item.image ? `<img src="${item.image}" class="w-20 h-20 object-cover rounded-xl shadow-sm">` : `<div class="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center text-2xl border border-gray-200 shadow-sm">🍲</div>`;
-                    let badgeHtml = item.name.toLowerCase().includes('cheesy') ? `<span class="bg-red-500 text-white text-[9px] px-2 py-0.5 rounded-full ml-2 animate-pulse shadow-sm tracking-widest uppercase">🔥 Best Seller</span>` : '';
-                    let priceLabel = item.isGrouped ? `<span class="text-green-600 font-black">Select Size ➡</span>` : `₱${price.toFixed(2)}`;
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-24 h-24 object-cover rounded-xl shadow-sm">` : `<div class="w-24 h-24 bg-zinc-800 rounded-xl flex items-center justify-center text-3xl border border-zinc-700">🍲</div>`;
+                    let priceLabel = item.isGrouped ? `<span class="text-brandgold text-xs uppercase tracking-widest">Select Size</span>` : `₱${price.toFixed(2)}`;
 
                     return `
-                        <div class="menu-item-row flex items-center p-3 bg-white border border-gray-100 rounded-2xl shadow-sm mb-3 cursor-pointer active:scale-95 transition-all hover:border-red-200 hover:shadow-md animate-float" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="menu-item-row flex items-center p-3 bg-cardbg border border-zinc-800 rounded-2xl shadow-sm cursor-pointer hover:border-zinc-600 transition-all group" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
-                            <div class="ml-3 flex-1">
-                                <h4 class="font-black text-sm text-gray-800 leading-tight">${item.name} ${badgeHtml}</h4>
-                                <p class="text-xs font-bold text-red-600 mt-1">${priceLabel}</p>
+                            <div class="ml-4 flex-1">
+                                <h4 class="font-black text-sm text-white leading-tight mb-1 group-hover:text-brandred transition-colors">${item.name}</h4>
+                                <p class="text-sm font-bold text-zinc-400">${priceLabel}</p>
                             </div>
-                            <div class="text-red-500 font-bold bg-red-50 w-8 h-8 rounded-full flex items-center justify-center border border-red-100">✚</div>
+                            <div class="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold mr-2 group-hover:bg-brandred transition-colors">+</div>
                         </div>
                     `;
                 }).join('');
 
                 container.innerHTML += `
-                    <details class="category-accordion bg-white rounded-xl shadow-sm border border-gray-200 group overflow-hidden mb-3">
-                        <summary class="font-black p-4 cursor-pointer flex justify-between items-center bg-gray-50 select-none">
-                            ${category.toUpperCase()} 
-                            <span class="group-open:rotate-180 transition-transform duration-300 text-gray-400">▼</span>
-                        </summary>
-                        <div class="p-3 bg-gray-50 border-t border-gray-100">${itemsHtml}</div>
-                    </details>
+                    <div class="category-section mb-8">
+                        <h2 class="text-xl font-black text-white mb-4 flex items-center gap-3">
+                            <span class="w-2 h-6 bg-brandred rounded-full"></span>
+                            ${category.toUpperCase()}
+                        </h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            ${itemsHtml}
+                        </div>
+                    </div>
                 `;
             }
         }
 
         // ==========================================
-        // 🚪 SCREEN TRANSITION ENGINE
-        // ==========================================
-        window.enterOrderingScreen = function() {
-            // Hide the landing page
-            document.getElementById('greetingScreen').classList.add('hidden');
-            
-            // Show the Mobile App interface
-            let appContainer = document.getElementById('appContainer');
-            appContainer.classList.remove('hidden');
-            appContainer.classList.add('flex');
-            
-            // Show the floating cart button
-            document.getElementById('floatingCartBtn').classList.remove('hidden');
-            
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        };
-
-
-        // ==========================================
-        // 🛍️ ITEM MODAL & CART ENGINE
+        // 🛍️ PREMIUM ITEM MODAL ENGINE (MATCHING IMAGE 4)
         // ==========================================
         window.openItemModal = function(encodedData) {
             const item = JSON.parse(decodeURIComponent(encodedData));
@@ -579,38 +461,67 @@
             if (hasSizes) priceHeader.style.display = 'none';
             else { priceHeader.style.display = 'block'; priceHeader.innerText = '₱' + price.toFixed(2); }
 
+            // Top Image
             const imgContainer = document.getElementById('modalImage');
             if (item.image) {
-                imgContainer.innerHTML = `<img src="${item.image}" class="w-full h-full object-cover">`;
+                imgContainer.innerHTML = `<img src="${item.image}" class="w-full h-full object-cover"><button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20">&times;</button>`;
             } else {
-                imgContainer.innerHTML = '🍲';
+                imgContainer.innerHTML = `🍲<button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20">&times;</button>`;
             }
 
-            // Sizes Builder
+            // 1. SELECT VARIANT (Sizes)
             let variantContainer = document.getElementById('modalVariantContainer');
-            if (variantContainer) {
-                if (hasSizes) {
-                    let sizeHtml = '<label class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">Select Size / Quantity</label>';
-                    sizeHtml += '<div class="grid grid-cols-2 gap-3 w-full box-border">';
-                    phantomSizes.forEach(sizeObj => {
-                        let isActive = (window.activeModalItem.realName === sizeObj.realName) ? 'bg-orange-50 border-orange-500 shadow-md' : 'bg-gray-50 border-gray-200 shadow-sm';
-                        sizeHtml += `
-                            <div class="modal-size-btn ${isActive} border-2 rounded-xl p-3 text-center cursor-pointer transition-all active:scale-95 flex flex-col justify-center items-center w-full"
-                                 onclick="window.selectMobileVariant('${sizeObj.realName}', ${sizeObj.price}, this)">
-                                <div class="font-black text-gray-800 text-sm mb-1">${sizeObj.sizeLabel}</div>
-                                <div class="font-bold text-red-600 text-xs">₱${sizeObj.price.toFixed(2)}</div>
-                            </div>
-                        `;
-                    });
-                    sizeHtml += '</div>';
-                    variantContainer.innerHTML = sizeHtml;
-                    variantContainer.classList.remove('hidden');
-                } else {
-                    variantContainer.classList.add('hidden');
-                }
+            let variantGrid = document.getElementById('modalVariantGrid');
+            if (hasSizes) {
+                let sizeHtml = '';
+                phantomSizes.forEach(sizeObj => {
+                    let isActive = (window.activeModalItem.realName === sizeObj.realName);
+                    let activeClass = isActive ? 'border-brandgold bg-brandgold/10' : 'border-zinc-800 bg-darkbg';
+                    let textClass = isActive ? 'text-brandgold' : 'text-zinc-400';
+                    
+                    sizeHtml += `
+                        <div class="modal-size-btn ${activeClass} border-2 rounded-xl p-4 text-center cursor-pointer transition-all active:scale-95"
+                             onclick="window.selectMobileVariant('${sizeObj.realName}', ${sizeObj.price}, this)">
+                            <div class="font-black text-white text-sm mb-1">${sizeObj.sizeLabel}</div>
+                            <div class="font-bold ${textClass} text-xs">₱${sizeObj.price.toFixed(2)}</div>
+                        </div>
+                    `;
+                });
+                variantGrid.innerHTML = sizeHtml;
+                variantContainer.classList.remove('hidden');
+            } else {
+                variantContainer.classList.add('hidden');
             }
 
-            // Add-ons Builder
+            // 2. MIX & MATCH FILLINGS (🐙)
+            let mixMatchContainer = document.getElementById('mixMatchContainer');
+            let mixMatchList = document.getElementById('mixMatchList');
+            if (item.mixMatchFlavors && item.mixMatchFlavors.length > 0) {
+                mixMatchContainer.classList.remove('hidden');
+                let mmHtml = '';
+                
+                // Read max pieces from name (e.g. "8 Pcs")
+                let sizeMatch = item.realName ? item.realName.match(/(\d+)\s*Pcs/i) : item.name.match(/(\d+)\s*Pcs/i);
+                window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
+
+                item.mixMatchFlavors.forEach(flavor => {
+                    mmHtml += `
+                        <div class="flex justify-between items-center bg-darkbg p-3 rounded-lg border border-zinc-800">
+                            <span class="text-sm font-bold text-white">${flavor}</span>
+                            <div class="flex items-center gap-3">
+                                <button onclick="window.adjustMixMatch(this, -1)" class="w-8 h-8 rounded border border-zinc-700 text-zinc-400 hover:text-white font-bold">-</button>
+                                <span class="mm-qty w-4 text-center font-black text-brandgold" data-flavor="${flavor}">0</span>
+                                <button onclick="window.adjustMixMatch(this, 1)" class="w-8 h-8 rounded border border-zinc-700 text-zinc-400 hover:text-white font-bold">+</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                mixMatchList.innerHTML = mmHtml + `<div class="text-xs text-brandred font-bold text-right mt-2" id="mmCounter">0 / ${window.maxMixMatch} Selected</div>`;
+            } else {
+                mixMatchContainer.classList.add('hidden');
+            }
+
+            // 3. ADD-ONS (Base Flavor & Extras)
             const addonsContainer = document.getElementById('modalAddonsContainer');
             const addonsList = document.getElementById('modalAddonsList');
             addonsList.innerHTML = '';
@@ -623,83 +534,133 @@
                 item.addons.forEach(a => {
                     if (!groupedAddons[a.name]) {
                         groupedAddons[a.name] = { name: a.name, price: parseFloat(a.price) || 0, linkedIngredient: a.linkedIngredient || '', deductQty: a.deductQty || 0 };
-                    } else {
-                        groupedAddons[a.name].price += (parseFloat(a.price) || 0);
-                    }
+                    } else { groupedAddons[a.name].price += (parseFloat(a.price) || 0); }
                 });
 
                 let addonsArr = Object.values(groupedAddons);
                 let hasSauce = addonsArr.some(a => a.name === "Regular Sauce" || a.name === "Spicy Sauce");
 
+                // Base Flavor Block
                 if (hasSauce) {
                     let regAddon = addonsArr.find(a => a.name === "Regular Sauce") || { linkedIngredient: "Regular Sauce", deductQty: 1 };
                     let spicyAddon = addonsArr.find(a => a.name === "Spicy Sauce") || { linkedIngredient: "Spicy Sauce", deductQty: 1 };
 
                     newUiHtml += `
                         <div class="mb-4">
-                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Base Flavor (Required)</h3>
-                            <div class="space-y-2 bg-orange-50 p-3 rounded-xl border border-orange-100">
-                                <label class="flex items-center justify-between cursor-pointer">
+                            <div class="flex justify-between items-end mb-2">
+                                <h4 class="text-xs font-bold text-zinc-400 uppercase tracking-widest">Base Flavor</h4>
+                                <span class="text-[10px] text-zinc-500 font-bold">REQUIRED</span>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="flex items-center justify-between p-3 border border-brandgold bg-brandgold/10 rounded-xl cursor-pointer">
                                     <div class="flex items-center gap-3">
-                                        <input type="radio" name="baseSauce" value="Regular Sauce|0|${regAddon.linkedIngredient}|${regAddon.deductQty}" checked class="w-5 h-5 text-orange-500 border-gray-300 focus:ring-orange-500 modal-addon-radio">
-                                        <span class="text-sm font-bold text-orange-900">Regular Sauce</span>
+                                        <input type="radio" name="baseSauce" value="Regular Sauce|0|${regAddon.linkedIngredient}|${regAddon.deductQty}" checked class="w-4 h-4 accent-brandgold modal-addon-radio">
+                                        <span class="text-sm font-bold text-white">Regular Sauce</span>
                                     </div>
-                                    <span class="text-xs font-bold text-orange-600">Free</span>
+                                    <span class="text-xs font-bold text-brandgold">(Free)</span>
                                 </label>
-                                <label class="flex items-center justify-between cursor-pointer">
+                                <label class="flex items-center justify-between p-3 border border-zinc-800 bg-darkbg rounded-xl cursor-pointer hover:border-zinc-600 transition-colors">
                                     <div class="flex items-center gap-3">
-                                        <input type="radio" name="baseSauce" value="Spicy Sauce|0|${spicyAddon.linkedIngredient}|${spicyAddon.deductQty}" class="w-5 h-5 text-red-600 border-gray-300 focus:ring-red-600 modal-addon-radio">
-                                        <span class="text-sm font-bold text-red-700">Spicy Sauce</span>
+                                        <input type="radio" name="baseSauce" value="Spicy Sauce|0|${spicyAddon.linkedIngredient}|${spicyAddon.deductQty}" class="w-4 h-4 accent-brandgold modal-addon-radio">
+                                        <span class="text-sm font-bold text-white">Spicy Sauce</span>
                                     </div>
-                                    <span class="text-xs font-bold text-red-500">Free</span>
+                                    <span class="text-xs font-bold text-brandgold">(Free)</span>
                                 </label>
                             </div>
                         </div>
                     `;
                 }
 
+                // Extras Block
                 let extras = addonsArr.filter(a => a.name !== "Regular Sauce" && a.name !== "Spicy Sauce");
                 if (extras.length > 0) {
-                    newUiHtml += `<div class="mb-2"><h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Extra Add-ons (Optional)</h3><div class="space-y-2">`;
+                    newUiHtml += `
+                        <div>
+                            <div class="flex justify-between items-end mb-2">
+                                <h4 class="text-xs font-bold text-zinc-400 uppercase tracking-widest">Extra Add-ons</h4>
+                                <span class="text-[10px] text-zinc-500 font-bold">OPTIONAL</span>
+                            </div>
+                            <div class="space-y-2">
+                    `;
                     extras.forEach(addon => {
                         let aPrice = addon.price;
-                        let priceLabel = aPrice > 0 ? `(+₱${aPrice.toFixed(2)})` : '(Free)';
                         newUiHtml += `
-                            <label class="flex items-center justify-between p-3 border rounded-xl bg-white shadow-sm cursor-pointer active:bg-gray-50 transition">
-                                <span class="text-sm font-bold text-gray-700">${addon.name} <span class="text-red-500 font-normal text-xs">${priceLabel}</span></span>
-                                <input type="checkbox" value="${addon.name}|${aPrice}|${addon.linkedIngredient}|${addon.deductQty}" class="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500 modal-addon-cb">
+                            <label class="flex items-center justify-between p-3 border border-zinc-800 rounded-xl bg-darkbg cursor-pointer hover:border-zinc-600 transition-colors group">
+                                <div class="flex items-center gap-3">
+                                    <input type="checkbox" value="${addon.name}|${aPrice}|${addon.linkedIngredient}|${addon.deductQty}" class="w-4 h-4 accent-brandgold modal-addon-cb" onchange="window.updateModalPrice()">
+                                    <span class="text-sm font-bold text-zinc-300 group-hover:text-white">${addon.name}</span>
+                                </div>
+                                <span class="text-xs font-bold text-white">+₱${aPrice.toFixed(2)}</span>
                             </label>
                         `;
                     });
                     newUiHtml += `</div></div>`;
                 }
                 addonsList.innerHTML = newUiHtml;
+                
+                // Add listener to radios to swap styles
+                document.querySelectorAll('.modal-addon-radio').forEach(r => {
+                    r.addEventListener('change', function() {
+                        document.querySelectorAll('label:has(.modal-addon-radio)').forEach(l => {
+                            l.className = 'flex items-center justify-between p-3 border border-zinc-800 bg-darkbg rounded-xl cursor-pointer hover:border-zinc-600 transition-colors';
+                        });
+                        this.closest('label').className = 'flex items-center justify-between p-3 border border-brandgold bg-brandgold/10 rounded-xl cursor-pointer';
+                    });
+                });
             } else { 
                 addonsContainer.classList.add('hidden'); 
             }
+
+            window.updateModalPrice();
             document.getElementById('itemModal').classList.remove('hidden');
         };
 
         window.selectMobileVariant = function(realName, vPrice, clickedBtn) {
             document.querySelectorAll('.modal-size-btn').forEach(b => {
-                b.classList.remove('bg-orange-50', 'border-orange-500', 'shadow-md');
-                b.classList.add('bg-gray-50', 'border-gray-200', 'shadow-sm');
+                b.className = 'modal-size-btn border-zinc-800 bg-darkbg border-2 rounded-xl p-4 text-center cursor-pointer transition-all active:scale-95';
+                b.querySelector('div:last-child').className = 'font-bold text-zinc-400 text-xs';
             });
-            clickedBtn.classList.remove('bg-gray-50', 'border-gray-200', 'shadow-sm');
-            clickedBtn.classList.add('bg-orange-50', 'border-orange-500', 'shadow-md');
+            clickedBtn.className = 'modal-size-btn border-brandgold bg-brandgold/10 border-2 rounded-xl p-4 text-center cursor-pointer transition-all active:scale-95';
+            clickedBtn.querySelector('div:last-child').className = 'font-bold text-brandgold text-xs';
 
             window.activeModalItem.realName = realName;
             window.activeModalItem.price = vPrice;
             window.activeModalItem.basePrice = vPrice;
+            
+            // Recalculate MixMatch limits based on new size!
+            let sizeMatch = realName.match(/(\d+)\s*Pcs/i);
+            if(sizeMatch) {
+                window.maxMixMatch = parseInt(sizeMatch[1]);
+                let counter = document.getElementById('mmCounter');
+                if(counter) {
+                    // Reset counts
+                    document.querySelectorAll('.mm-qty').forEach(span => span.innerText = '0');
+                    counter.innerText = `0 / ${window.maxMixMatch} Selected`;
+                    counter.className = 'text-xs text-brandred font-bold text-right mt-2';
+                }
+            }
 
-            let priceHeader = document.getElementById('modalItemPrice');
-            priceHeader.style.display = 'block';
-            priceHeader.innerText = '₱' + vPrice.toFixed(2);
+            window.updateModalPrice();
         };
 
-        window.closeItemModal = function() {
-            document.getElementById('itemModal').classList.add('hidden');
-            window.activeModalItem = null;
+        window.adjustMixMatch = function(btn, delta) {
+            let spans = document.querySelectorAll('.mm-qty');
+            let currentTotal = 0;
+            spans.forEach(s => currentTotal += parseInt(s.innerText));
+
+            let targetSpan = btn.parentElement.querySelector('.mm-qty');
+            let currentVal = parseInt(targetSpan.innerText);
+
+            if (delta > 0 && currentTotal >= window.maxMixMatch) return; // Cap reached
+            if (delta < 0 && currentVal <= 0) return; // Floor reached
+
+            targetSpan.innerText = currentVal + delta;
+            
+            let newTotal = currentTotal + delta;
+            let counter = document.getElementById('mmCounter');
+            counter.innerText = `${newTotal} / ${window.maxMixMatch} Selected`;
+            if (newTotal === window.maxMixMatch) counter.className = 'text-xs text-green-500 font-bold text-right mt-2';
+            else counter.className = 'text-xs text-brandred font-bold text-right mt-2';
         };
 
         window.changeModalQty = function(delta) {
@@ -708,7 +669,27 @@
             if (current + delta > 0) {
                 window.activeModalItem.selectedQty = current + delta;
                 document.getElementById('modalQty').innerText = window.activeModalItem.selectedQty;
+                window.updateModalPrice();
             }
+        };
+
+        window.updateModalPrice = function() {
+            if (!window.activeModalItem) return;
+            let basePrice = parseFloat(window.activeModalItem.price || 0);
+            let qty = window.activeModalItem.selectedQty;
+            let addonsTotal = 0;
+
+            document.querySelectorAll('#modalAddonsList .modal-addon-cb:checked').forEach(cb => {
+                addonsTotal += parseFloat(cb.value.split('|')[1]) || 0;
+            });
+
+            let finalPrice = (basePrice + addonsTotal) * qty;
+            document.getElementById('modalBtnTotal').innerText = '₱' + finalPrice.toFixed(2);
+        };
+
+        window.closeItemModal = function() {
+            document.getElementById('itemModal').classList.add('hidden');
+            window.activeModalItem = null;
         };
 
         window.addModalItemToCart = function() {
@@ -716,13 +697,29 @@
             let qty = window.activeModalItem.selectedQty;
             let notes = document.getElementById('modalNotes').value.trim();
             
+            // Validate Mix & Match
+            let mixMatchNotes = "";
+            let mmSpans = document.querySelectorAll('.mm-qty');
+            if (mmSpans.length > 0) {
+                let mmTotal = 0;
+                let mmArr = [];
+                mmSpans.forEach(s => {
+                    let v = parseInt(s.innerText);
+                    if (v > 0) { mmTotal += v; mmArr.push(`${v} ${s.getAttribute('data-flavor')}`); }
+                });
+                if (mmTotal !== window.maxMixMatch) {
+                    alert(`Please select exactly ${window.maxMixMatch} pieces for your filling combination.`);
+                    return;
+                }
+                mixMatchNotes = `[MIX: ${mmArr.join(', ')}] `;
+            }
+
             let activeAddons = {};
             let addonsTotal = 0;
 
             document.querySelectorAll('#modalAddonsList .modal-addon-radio:checked').forEach(radio => {
                 let parts = radio.value.split('|');
                 activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1, linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) };
-                addonsTotal += parseFloat(parts[1]);
             });
 
             document.querySelectorAll('#modalAddonsList .modal-addon-cb:checked').forEach(cb => {
@@ -738,7 +735,7 @@
                 variantName: 'Standard',
                 lineTotalFinal: (basePrice + addonsTotal) * qty,
                 addons: activeAddons,
-                notes: notes
+                notes: mixMatchNotes + notes
             });
 
             window.updateCartUI();
@@ -756,562 +753,24 @@
             let floatTotal = document.getElementById('floatingTotal');
             if (floatTotal) floatTotal.innerText = `₱${grandTotal.toFixed(2)}`;
             
-            let badge = document.getElementById('cartCountBadge');
-            if (badge) {
-                badge.innerText = totalItems;
-                badge.style.display = totalItems > 0 ? 'flex' : 'none';
+            let btn = document.getElementById('reviewBtn');
+            if(totalItems > 0) {
+                btn.classList.replace('bg-zinc-800', 'bg-brandred');
+                btn.classList.replace('text-zinc-500', 'text-white');
             }
         };
 
-        window.openCartModal = function() {
-            if (window.cart.length === 0) {
-                Swal.fire('Your cart is empty', 'Add some delicious Takoyaki first!', 'info');
-                return;
-            }
-            window.renderCartModal();
-            document.getElementById('cartModal').classList.remove('hidden');
-        };
-
-        window.closeCartModal = function() {
-            document.getElementById('cartModal').classList.add('hidden');
-        };
-
-        window.renderCartModal = function() {
-            let container = document.getElementById('cartModalItems');
-            let totalDisplay = document.getElementById('cartModalTotal');
-            let grandTotal = 0;
-            let html = '';
-
-            window.cart.forEach((item, index) => {
-                grandTotal += item.lineTotalFinal;
-                
-                let addonsText = '';
-                if (item.addons) {
-                    for (let key in item.addons) {
-                        if (item.addons[key].qty > 0) {
-                            let addPrice = item.addons[key].price > 0 ? ` (+₱${item.addons[key].price})` : '';
-                            addonsText += `<div class="text-[11px] text-orange-600 font-bold">+ ${item.addons[key].qty}x ${key}${addPrice}</div>`;
-                        }
-                    }
-                }
-                let notesText = item.notes ? `<div class="text-[11px] italic text-gray-500 mt-1">✎ "${item.notes}"</div>` : '';
-
-                html += `
-                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
-                        <div class="flex-1">
-                            <div class="font-black text-gray-800 text-sm leading-tight">${item.quantity}x ${item.name}</div>
-                            ${addonsText}
-                            ${notesText}
-                            <div class="text-red-600 font-bold text-sm mt-1">₱${item.lineTotalFinal.toFixed(2)}</div>
-                        </div>
-                        <button onclick="window.removeCartItem(${index})" class="w-8 h-8 flex items-center justify-center bg-red-50 text-red-500 rounded-full font-bold active:bg-red-100 transition-colors ml-3 border border-red-100">✖</button>
-                    </div>
-                `;
-            });
-
-            container.innerHTML = html;
-            totalDisplay.innerText = '₱' + grandTotal.toFixed(2);
-        };
-
-        window.removeCartItem = function(index) {
-            window.cart.splice(index, 1);
-            window.updateCartUI();
-            window.renderCartModal();
-            if (window.cart.length === 0) window.closeCartModal();
-        };
-
-        window.resetSubmitButton = function(grandTotal) {
-            let submitBtn = document.getElementById('submitBtn');
-            if(submitBtn) { submitBtn.innerHTML = '<span>Send to Kitchen 🚀</span>'; submitBtn.disabled = false; }
-        };
-
-        // ==========================================
-        // 📍 SMART GPS & DELIVERY ENGINE
-        // ==========================================
-        const BRANCH_ZONES = {
-            "Cabantian": { lat: 7.130420626391755, lng: 125.61730998805625 }, 
-            "Citygate": { lat: 7.111077615812063, lng: 125.61288981236622 },  
-            "Maa": { lat: 7.078642149249695, lng: 125.58343773215358 }
-        };
-
-        window.currentOrderId = null;
-        window.cancelInterval = null;
-        window.pendingOrderData = null; 
-
-        // Listen for Store Killswitch
-        onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
-            let deliveryOpt = document.getElementById('deliveryOption');
-            let orderTypeSelect = document.getElementById('orderType');
-            
-            if(docSnap.exists()) {
-                let isEnabled = docSnap.data().enabled;
-                if(isEnabled) {
-                    if(deliveryOpt) { deliveryOpt.text = "Delivery"; deliveryOpt.disabled = false; }
-                } else {
-                    if(deliveryOpt) { deliveryOpt.text = "Delivery (Unavailable)"; deliveryOpt.disabled = true; }
-                    if(orderTypeSelect && orderTypeSelect.value === 'Delivery') {
-                        orderTypeSelect.value = 'Takeout';
-                        window.toggleOrderTypeView();
-                        Swal.fire("Delivery Paused", "The store is exceptionally busy and has paused deliveries. Your order was switched to Pick-up.", "info");
-                    }
-                }
-            }
-        });
-
-        window.toggleOrderTypeView = function() {
-            let orderType = document.getElementById('orderType').value;
-            if (orderType === 'Delivery') document.getElementById('deliverySection').classList.remove('hidden');
-            else document.getElementById('deliverySection').classList.add('hidden');
-            document.getElementById('preferredTimeSection').classList.remove('hidden');
-            window.togglePaymentView(); 
-        };
-
-        window.togglePaymentView = function() {
-            let payMode = document.getElementById('paymentMode').value;
-            let orderType = document.getElementById('orderType').value;
-
-            if (payMode === 'gcash') document.getElementById('gcashSection').classList.remove('hidden');
-            else document.getElementById('gcashSection').classList.add('hidden');
-
-            if (payMode === 'cash' && orderType === 'Delivery') document.getElementById('codChangeSection').classList.remove('hidden');
-            else document.getElementById('codChangeSection').classList.add('hidden');
-        };
-
-        window.deliveryMap = null;
-        window.deliveryMarker = null;
-
-        window.openDeliveryMap = function() {
-            let mapDiv = document.getElementById('mapContainer');
-            let statusText = document.getElementById('mapStatusText');
-            mapDiv.classList.remove('hidden');
-            statusText.classList.remove('hidden');
-            statusText.innerText = "⏳ Locating you via GPS...";
-
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        let lat = position.coords.latitude;
-                        let lng = position.coords.longitude;
-                        
-                        document.getElementById('pinnedLat').value = lat;
-                        document.getElementById('pinnedLng').value = lng;
-                        statusText.innerText = "✅ Location Pinned! (Drag the blue marker to adjust)";
-
-                        if (!window.deliveryMap) {
-                            window.deliveryMap = L.map('mapContainer').setView([lat, lng], 17);
-                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(window.deliveryMap);
-                            window.deliveryMarker = L.marker([lat, lng], {draggable: true}).addTo(window.deliveryMap);
-                            
-                            window.deliveryMarker.on('dragend', function(event) {
-                                let position = event.target.getLatLng();
-                                document.getElementById('pinnedLat').value = position.lat;
-                                document.getElementById('pinnedLng').value = position.lng;
-                            });
-                        } else {
-                            window.deliveryMap.setView([lat, lng], 17);
-                            window.deliveryMarker.setLatLng([lat, lng]);
-                        }
-                        setTimeout(() => window.deliveryMap.invalidateSize(), 300);
-                    },
-                    (error) => {
-                        statusText.innerText = "❌ Please enable GPS location on your phone!";
-                        statusText.classList.replace('text-purple-600', 'text-red-600');
-                    },
-                    { enableHighAccuracy: true }
-                );
-            } else {
-                statusText.innerText = "❌ GPS not supported.";
-            }
-        };
-
-        window.isStoreAcceptingOrders = true; 
-        window.statusListenerUnsubscribe = null;
-
-        window.listenToStoreStatus = function() {
-            let selectedBranch = document.getElementById('selectedBranch').value;
-            if (!selectedBranch) return;
-
-            if (window.statusListenerUnsubscribe) { window.statusListenerUnsubscribe(); }
-
-            window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
-                let checkoutButton = document.getElementById('reviewBtn'); 
-                
-                let statusBanner = document.getElementById('storeStatusBanner');
-                if (!statusBanner) {
-                    let container = document.getElementById('orderingScreen');
-                    let bannerHtml = `<div id="storeStatusBanner" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl relative text-center text-sm font-bold mb-4 shadow-sm mx-6">
-                        ⚠️ Due to high volume, this branch is temporarily pausing mobile orders. Please try again in a few minutes!
-                    </div>`;
-                    container.querySelector('.search-bar-container').insertAdjacentHTML('afterend', bannerHtml);
-                    statusBanner = document.getElementById('storeStatusBanner');
-                }
-
-                if (docSnap.exists()) {
-                    window.isStoreAcceptingOrders = docSnap.data().mobileOrdersActive !== false;
-                } else {
-                    window.isStoreAcceptingOrders = true;
-                }
-
-                if (!window.isStoreAcceptingOrders) {
-                    if (checkoutButton) {
-                        checkoutButton.disabled = true;
-                        checkoutButton.innerHTML = "<span>🛑 Store Paused</span>";
-                        checkoutButton.classList.replace('bg-red-600', 'bg-gray-400');
-                        checkoutButton.classList.replace('hover:bg-red-700', 'hover:bg-gray-500');
-                    }
-                    if (statusBanner) statusBanner.classList.remove('hidden');
-                } else {
-                    if (checkoutButton) {
-                        checkoutButton.disabled = false;
-                        let t = window.cart ? window.cart.reduce((sum, i) => sum + i.lineTotalFinal, 0) : 0;
-                        checkoutButton.innerHTML = `<span>🛒 Review Order</span> <span id="floatingTotal" class="bg-red-800 px-3 py-1 rounded-lg">₱${t.toFixed(2)}</span>`;
-                        checkoutButton.classList.replace('bg-gray-400', 'bg-red-600');
-                        checkoutButton.classList.replace('hover:bg-gray-500', 'hover:bg-red-700');
-                    }
-                    if (statusBanner) statusBanner.classList.add('hidden');
-                }
-            });
-        };
-
-        document.getElementById('selectedBranch').addEventListener('change', window.listenToStoreStatus);
-        
-        // --- ORDER SUBMISSION & TRACKING ---
-        window.filterMenu = function() {
-            let input = document.getElementById('searchInput').value.toLowerCase();
-            let accordions = document.querySelectorAll('.category-accordion');
-
-            accordions.forEach(acc => {
-                let items = acc.querySelectorAll('.menu-item-row');
-                let hasVisibleItems = false;
-                items.forEach(item => {
-                    let name = item.getAttribute('data-name');
-                    if (name.includes(input)) {
-                        item.style.display = 'flex'; hasVisibleItems = true;
-                    } else { item.style.display = 'none'; }
-                });
-                if (input.length > 0) acc.open = true;
-                acc.style.display = hasVisibleItems ? 'block' : 'none';
-            });
-        };
-
-        function getDistanceInMeters(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; const p1 = lat1 * Math.PI/180; const p2 = lat2 * Math.PI/180;
-            const deltaP = (lat2-lat1) * Math.PI/180; const deltaLon = (lon2-lon1) * Math.PI/180;
-            const a = Math.sin(deltaP/2) * Math.sin(deltaP/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        }
-
-        window.submitOrder = async function() {
-            if (window.cart.length === 0) { alert("Your order is empty."); return; }
-
-            const name = document.getElementById('customerName').value.trim();
-            const contact = document.getElementById('customerContact').value.trim();
-            const selectedBranch = document.getElementById('selectedBranch').value;
-            
-            if (!name) { alert("👤 Please provide your name!"); window.closeCartModal(); document.getElementById('customerName').focus(); return; }
-            if (!contact) { alert("📞 Please provide a contact number!"); window.closeCartModal(); document.getElementById('customerContact').focus(); return; }
-
-            const paymentMode = document.getElementById('paymentMode').value;
-            const orderType = document.getElementById('orderType').value;
-            let deliveryNotes = document.getElementById('deliveryAddress').value.trim();
-
-            if (orderType === "Delivery" && !deliveryNotes) {
-                alert("Please provide delivery details/landmarks so our rider can find you easily!"); 
-                window.closeCartModal(); return;
-            }
-
-            if (orderType === "Delivery" && paymentMode === "cash") {
-                let codAmount = document.getElementById('codAmount').value.trim();
-                if (codAmount) deliveryNotes += `\n\n[RIDER: PREPARE CHANGE FOR ₱${codAmount}]`;
-            }
-
-            const activeShiftQ = query(collection(db, "shifts"), where("branch", "==", selectedBranch), where("active", "==", true));
-            const activeShiftSnap = await getDocs(activeShiftQ);
-
-            if (activeShiftSnap.empty) {
-                alert(`🚨 STORE CLOSED!\n\nThe ${selectedBranch} branch is currently closed. Please check back later or try selecting a different branch!`);
-                window.closeCartModal(); return; 
-            }
-            
-            let grandTotal = 0; window.cart.forEach(i => grandTotal += i.lineTotalFinal);
-            const btn = document.getElementById('submitBtn');
-
-            btn.innerHTML = '<span class="mx-auto">Uploading Photo...</span>'; 
-            btn.disabled = true;
-
-            let locationPicUrl = "";
-            let imageFile = document.getElementById('locationImage').files[0];
-            
-            if (orderType === "Delivery" && imageFile) {
-                try {
-                    const fileExt = imageFile.name.split('.').pop();
-                    const fileName = `location_pics/delivery_${Date.now()}.${fileExt}`;
-                    const storageRef = ref(storage, fileName);
-                    const snapshot = await uploadBytes(storageRef, imageFile);
-                    locationPicUrl = await getDownloadURL(snapshot.ref);
-                } catch (e) { console.error("Image upload failed", e); }
-            }
-
-            btn.innerHTML = '<span class="mx-auto">Routing Order...</span>'; 
-
-            const finalizeSubmission = async (userLat, userLng) => {
-                let preferredTime = document.getElementById('preferredTime').value;
-                let timeText = preferredTime ? ` | ⏰ Time: ${preferredTime}` : '';
-                let cashierVisibleName = `${name} (${orderType})${timeText} - 📞 ${contact}`;
-
-                window.pendingOrderData = {
-                    customerName: cashierVisibleName, 
-                    branch: selectedBranch, 
-                    orderType: orderType,  
-                    preferredTime: preferredTime,
-                    deliveryAddress: deliveryNotes,
-                    locationImage: locationPicUrl, 
-                    items: window.cart, 
-                    totalAmount: grandTotal,
-                    paymentMode: paymentMode, 
-                    gcashRef: paymentMode === 'gcash' ? (document.getElementById('refNumber')?.value || "") : null,
-                    locationLat: userLat, 
-                    locationLng: userLng,
-                    status: "mobile_queue", 
-                    timestamp: serverTimestamp()
-                };
-
-                try {
-                    const docRef = await addDoc(collection(db, "incoming_orders"), window.pendingOrderData);
-                    
-                    localStorage.setItem('activeTakodealOrderId', docRef.id);
-                    localStorage.setItem('activeTakodealBranch', selectedBranch);
-                    localStorage.setItem('activeTakodealCart', JSON.stringify(window.cart));
-                    localStorage.setItem('activeTakodealTotal', grandTotal);
-                    
-                    document.getElementById('cartModal').classList.add('hidden');
-                    document.getElementById('appContainer').classList.add('hidden'); // Hide ordering
-                    document.getElementById('floatingCartBtn').classList.add('hidden');
-                    
-                    // Show Tracker spanning full screen
-                    document.getElementById('trackerScreen').classList.remove('hidden');
-                    document.getElementById('trackerScreen').classList.add('flex');
-                    document.getElementById('trackerScreen').style.minHeight = '100vh';
-                    
-                    document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + selectedBranch;
-                    window.renderTrackerOrderDetails();
-                    
-                    window.scrollTo(0,0);
-                    window.startCancelTimer(); 
-                    window.monitorOrderStatus(docRef.id);
-
-                } catch (error) {
-                    console.error(error); 
-                    alert("Error sending order. Please check your connection.");
-                    window.resetSubmitButton(grandTotal);
-                }
-            };
-
-            let pinnedLat = document.getElementById('pinnedLat').value;
-            let pinnedLng = document.getElementById('pinnedLng').value;
-
-            if (pinnedLat && pinnedLng) {
-                let distance = getDistanceInMeters(pinnedLat, pinnedLng, BRANCH_ZONES[selectedBranch].lat, BRANCH_ZONES[selectedBranch].lng);
-                if (distance > 20000) {
-                    alert("📍 Out of Delivery Zone!\n\nSorry! TAKODEÁL currently only serves within Davao City.");
-                    window.resetSubmitButton(grandTotal); window.closeCartModal(); return; 
-                }
-                finalizeSubmission(pinnedLat, pinnedLng);
-            } else if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    async (position) => {
-                        let userLat = position.coords.latitude;
-                        let userLng = position.coords.longitude;
-                        let targetZone = BRANCH_ZONES[selectedBranch];
-                        if (targetZone) {
-                            let distance = getDistanceInMeters(userLat, userLng, targetZone.lat, targetZone.lng);
-                            if (distance > 20000) {
-                                alert("📍 Out of Delivery Zone!\n\nSorry! TAKODEÁL currently only serves within Davao City.");
-                                window.resetSubmitButton(grandTotal); window.closeCartModal(); return; 
-                            }
-                        }
-                        finalizeSubmission(userLat, userLng);
-                    }, 
-                    (error) => {
-                        alert("📍 Location Required!\n\nPlease allow GPS access or click 'Pin My Exact Location' so we can verify your address.");
-                        window.resetSubmitButton(grandTotal);
-                    }, 
-                    { enableHighAccuracy: true, timeout: 5000 }
-                );
-            } else {
-                alert("📍 Location Required!\n\nYour device does not support GPS tracking.");
-                window.resetSubmitButton(grandTotal);
-            }
-        };
-
-        window.startCancelTimer = function() {
-            let expiresAt = localStorage.getItem('takodealCancelExpiresAt');
-            if (!expiresAt) {
-                expiresAt = Date.now() + 60000;
-                localStorage.setItem('takodealCancelExpiresAt', expiresAt);
-            }
-            document.getElementById('cancelOrderSection').classList.remove('hidden');
-            window.cancelInterval = setInterval(() => {
-                let timeLeft = Math.floor((expiresAt - Date.now()) / 1000);
-                if (timeLeft <= 0) {
-                    clearInterval(window.cancelInterval);
-                    document.getElementById('cancelOrderSection').classList.add('hidden'); 
-                    localStorage.removeItem('takodealCancelExpiresAt'); 
-                } else {
-                    let m = Math.floor(timeLeft / 60); let s = timeLeft % 60;
-                    document.getElementById('cancelTimer').innerText = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
-                }
-            }, 1000);
-        }
-
-        window.monitorOrderStatus = function(docId) {
-            window.currentOrderId = docId;
-            onSnapshot(doc(db, "incoming_orders", docId), (snapshot) => {
-                if (snapshot.exists()) {
-                    const currentStatus = snapshot.data().status;
-                    const chefAnimation = document.getElementById('chefAnimation');
-                    const oldIcon = document.getElementById('trackerIcon');
-                    const title = document.getElementById('trackerTitle');
-                    const subtitle = document.getElementById('trackerSubtitle');
-                    const waitTime = document.getElementById('waitTimeDisplay');
-
-                    if (currentStatus === "preparing") {
-                        if (chefAnimation) chefAnimation.classList.remove('hidden');
-                        if (oldIcon) oldIcon.classList.add('hidden');
-                        
-                        title.innerText = "Sizzling now! 🍳";
-                        title.classList.replace('text-gray-800', 'text-orange-600');
-                        subtitle.innerText = "The kitchen is actively cooking your order.";
-                        waitTime.innerText = "Almost Ready...";
-                        
-                        document.getElementById('progressLine').style.width = '50%';
-                        document.getElementById('step2Icon').className = 'w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500';
-                        document.getElementById('step2Text').className = 'text-[11px] font-bold text-orange-600 mt-2';
-                        
-                        clearInterval(window.cancelInterval);
-                        document.getElementById('cancelOrderSection').classList.add('hidden');
-                        localStorage.removeItem('takodealCancelExpiresAt');
-                        localStorage.removeItem('activeTakodealOrderId'); 
-                    } 
-                    else if (currentStatus === "rejected" || currentStatus === "rejected_by_customer") {
-                        if (chefAnimation) chefAnimation.classList.add('hidden');
-                        if (oldIcon) { oldIcon.classList.remove('hidden'); oldIcon.innerText = "❌"; oldIcon.classList.remove('animate-pulse'); }
-                        
-                        title.innerText = "Order Cancelled";
-                        title.classList.add('text-red-600');
-                        if (currentStatus === "rejected") subtitle.innerText = "We're sorry, but the store had to cancel your order.";
-                        waitTime.innerText = "--";
-                        
-                        document.getElementById('progressLine').style.width = '0%';
-                        document.getElementById('step1Icon').className = 'w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center font-bold text-sm shadow-sm transition-colors duration-500';
-                        document.getElementById('step1Text').className = 'text-[11px] font-bold text-gray-400 mt-2';
-
-                        clearInterval(window.cancelInterval);
-                        document.getElementById('cancelOrderSection').classList.add('hidden');
-                        localStorage.removeItem('activeTakodealOrderId');
-                        localStorage.removeItem('takodealCancelExpiresAt');
-                    }
-                } else {
-                    localStorage.removeItem('activeTakodealOrderId');
-                    localStorage.removeItem('takodealCancelExpiresAt');
-                    
-                    const chefAnimation = document.getElementById('chefAnimation');
-                    const oldIcon = document.getElementById('trackerIcon');
-                    
-                    if (chefAnimation) chefAnimation.classList.add('hidden');
-                    if (oldIcon) { oldIcon.classList.remove('hidden'); oldIcon.innerText = "🎉"; oldIcon.classList.remove('animate-pulse'); }
-                    
-                    const title = document.getElementById('trackerTitle');
-                    const subtitle = document.getElementById('trackerSubtitle');
-                    const waitTime = document.getElementById('waitTimeDisplay');
-
-                    title.innerText = "Order Complete!";
-                    title.classList.remove('text-gray-800', 'text-orange-600'); 
-                    title.classList.add('text-green-600');
-                    subtitle.innerText = "Thank you for ordering! Please pick up your food at the counter.";
-                    waitTime.innerText = "Ready!";
-                    
-                    document.getElementById('progressLine').style.width = '100%';
-                    document.getElementById('step2Icon').className = 'w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500';
-                    document.getElementById('step2Text').className = 'text-[11px] font-bold text-green-600 mt-2';
-                    document.getElementById('step3Icon').className = 'w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm shadow-md transition-colors duration-500';
-                    document.getElementById('step3Text').className = 'text-[11px] font-bold text-green-600 mt-2';
-
-                    document.getElementById('cancelOrderSection').classList.add('hidden');
-                }
-            });
-        };
-
-        window.checkActiveOrder = async function() {
-            let savedOrderId = localStorage.getItem('activeTakodealOrderId');
-            if (savedOrderId) {
-                // Hide Landing & Ordering
-                document.getElementById('greetingScreen').classList.add('hidden');
-                document.getElementById('appContainer').classList.add('hidden'); 
-                
-                // Show Tracker
-                let tracker = document.getElementById('trackerScreen');
-                tracker.classList.remove('hidden');
-                tracker.classList.add('flex');
-                tracker.style.minHeight = '100vh';
-                
-                let savedBranch = localStorage.getItem('activeTakodealBranch');
-                if (savedBranch) {
-                     document.getElementById('trackerBranchDisplay').innerText = "TAKODEÁL " + savedBranch;
-                }
-
-                window.renderTrackerOrderDetails();
-                window.monitorOrderStatus(savedOrderId);
-            }
-        }
-
-        window.renderTrackerOrderDetails = function() {
-            let savedCartStr = localStorage.getItem('activeTakodealCart');
-            let savedTotal = localStorage.getItem('activeTakodealTotal');
-            if(savedCartStr) {
-                let savedCart = JSON.parse(savedCartStr);
-                let html = '';
-                savedCart.forEach(item => {
-                    html += `<div class="flex justify-between border-b border-gray-50 pb-1"><span>${item.quantity}x ${item.name}</span><span class="font-bold text-gray-900">₱${item.lineTotalFinal.toFixed(2)}</span></div>`;
-                });
-                document.getElementById('trackerOrderDetails').innerHTML = html;
-                document.getElementById('trackerOrderTotal').innerText = `Total: ₱${parseFloat(savedTotal).toFixed(2)}`;
-            }
-        };
-
-        window.cancelMyOrder = async function() {
-            if(!window.currentOrderId) return;
-            try {
-                const orderRef = doc(db, "incoming_orders", window.currentOrderId);
-                const orderSnap = await getDoc(orderRef);
-                if (!orderSnap.exists()) return;
-
-                let diffMins = (new Date() - orderSnap.data().timestamp.toDate()) / 60000;
-
-                if (diffMins > 1) {
-                    alert("⚠️ Too Late to Cancel!\n\nYour order has already been received by the cashier and preparation has started.\n\nIf you really need to cancel, please contact the branch immediately using our business page:\nwww.facebook.com/Takodeal");
-                    return; 
-                }
-
-                if(!confirm("Are you sure you want to cancel your order?")) return;
-                await updateDoc(orderRef, { status: "rejected_by_customer" });
-            } catch(e) { console.error(e); }
-        };
-
-        window.startNewOrder = function() {
-            localStorage.removeItem('activeTakodealOrderId');
-            localStorage.removeItem('activeTakodealBranch');
-            localStorage.removeItem('takodealCancelExpiresAt');
-            localStorage.removeItem('activeTakodealCart');       
-            localStorage.removeItem('activeTakodealTotal');    
-            window.cart = [];
-            location.reload();
+        // Initialize App
+        window.enterOrderingScreen = function() {
+            document.getElementById('greetingScreen').classList.add('hidden');
+            let appContainer = document.getElementById('appContainer');
+            appContainer.classList.remove('hidden');
+            appContainer.classList.add('flex');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
         document.addEventListener("DOMContentLoaded", async () => {
-            await window.checkActiveOrder();
             window.loadLiveMenu(); 
-            window.listenToStoreStatus(); 
         });
 
     </script>
