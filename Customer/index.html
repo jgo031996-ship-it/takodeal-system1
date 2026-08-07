@@ -425,7 +425,7 @@
             if (favGrid) favGrid.innerHTML = favHtml;
         }
 
-        // 🔥 Premium Dark Menu Grid (Replaces Accordions)
+        // 🔥 Premium Dark Menu Grid (Vertical Cards)
         function renderDarkMenuGrid(categoriesMap) {
             const container = document.getElementById('liveMenuContainer');
             container.innerHTML = '';
@@ -434,28 +434,41 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    let imgHtml = item.image ? `<img src="${item.image}" class="w-24 h-24 object-cover rounded-xl shadow-sm">` : `<div class="w-24 h-24 bg-zinc-800 rounded-xl flex items-center justify-center text-3xl border border-zinc-700">🍲</div>`;
-                    let priceLabel = item.isGrouped ? `<span class="text-brandgold text-xs uppercase tracking-widest">Select Size</span>` : `₱${price.toFixed(2)}`;
+                    
+                    // The beautiful image header for the card
+                    let imgHtml = item.image 
+                        ? `<img src="${item.image}" class="w-full h-36 object-cover rounded-t-2xl">` 
+                        : `<div class="w-full h-36 bg-zinc-800 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
+                    
+                    // Price or "Select Size" label
+                    let priceLabel = item.isGrouped 
+                        ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` 
+                        : `<span class="text-zinc-400 text-sm font-bold">₱${price.toFixed(2)}</span>`;
 
                     return `
-                        <div class="menu-item-row flex items-center p-3 bg-cardbg border border-zinc-800 rounded-2xl shadow-sm cursor-pointer hover:border-zinc-600 transition-all group" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="flex flex-col bg-cardbg rounded-2xl shadow-sm cursor-pointer hover:shadow-xl hover:border-zinc-600 border border-zinc-800 transition-all group overflow-hidden relative" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
-                            <div class="ml-4 flex-1">
-                                <h4 class="font-black text-sm text-white leading-tight mb-1 group-hover:text-brandred transition-colors">${item.name}</h4>
-                                <p class="text-sm font-bold text-zinc-400">${priceLabel}</p>
+                            <div class="p-4 flex-1 flex flex-col relative">
+                                <h4 class="font-black text-sm text-white leading-tight mb-3 group-hover:text-brandred transition-colors pr-6">${item.name}</h4>
+                                <div class="mt-auto flex justify-between items-end">
+                                    ${priceLabel}
+                                </div>
+                                <!-- Floating Circular Add Button -->
+                                <div class="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-black group-hover:bg-brandred transition-colors shadow-md text-lg leading-none pb-0.5">+</div>
                             </div>
-                            <div class="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold mr-2 group-hover:bg-brandred transition-colors">+</div>
                         </div>
                     `;
                 }).join('');
 
+                // The Category Header with the Red Accent Line
                 container.innerHTML += `
-                    <div class="category-section mb-8">
-                        <h2 class="text-xl font-black text-white mb-4 flex items-center gap-3">
-                            <span class="w-2 h-6 bg-brandred rounded-full"></span>
-                            ${category.toUpperCase()}
+                    <div class="category-section mb-10">
+                        <h2 class="text-lg font-black text-white mb-5 flex items-center gap-3 uppercase tracking-wider">
+                            <span class="w-1.5 h-6 bg-brandred rounded-full"></span>
+                            ${category}
                         </h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <!-- Responsive Grid: 2 columns on phones, up to 5 on large screens -->
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                             ${itemsHtml}
                         </div>
                     </div>
