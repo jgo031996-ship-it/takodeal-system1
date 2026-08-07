@@ -3548,24 +3548,53 @@ window.showMobileOrders = function() {
                     </div>`;
         }).join('');
 
-        let paymentColor = o.paymentMode === 'gcash' ? '#3b82f6' : '#f59e0b';
-        let paymentLabel = o.paymentMode === 'gcash' ? 'GCash (Verify Ref: ' + (o.gcashRef || 'No Ref') + ')' : 'Cash (Pay at Counter)';
+        // Parse Payment Methods Safely
+        let paymentColor = '#f59e0b';
+        let paymentLabel = 'Cash (Pay at Counter)';
+        
+        if (o.paymentMode && o.paymentMode.toLowerCase() !== 'cash') {
+            paymentColor = '#3b82f6';
+            let refText = o.paymentReference || o.gcashRef || 'No Ref';
+            paymentLabel = `${o.paymentMode} (Verify Ref: ${refText})`;
+        }
 
-        // 🔥 THE NEW DELIVERY DETAILS (Fixed Variable Names!)
+        // 🔥 EXTRACT THE MISSING DATA
+        let customerName = o.customerName || o.name || 'Mobile Customer';
+        customerName = customerName.split('(')[0].trim(); // Clean up if the app accidentally appended order types to the name
+        
+        let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : 'No Phone Provided';
+        let orderTime = o.preferredTime ? `⏰ Advance Time: ${o.preferredTime}` : 'ASAP';
+
+        // 🔥 RE-INJECT GOOGLE MAPS & PHOTOS
+        let mapBtn = o.mapLink ? `<a href="${o.mapLink}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Open Google Maps</a>` : '';
+        let photoBtn = o.locationImage ? `<a href="${o.locationImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; border:1px solid #c7d2fe; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block;">📸 View Landmark</a>` : '';
         let locText = o.deliveryAddress ? `<div style="font-size:12px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0;">📍 <strong>Delivery Address:</strong><br>${o.deliveryAddress}</div>` : '';
-        let photoBtn = o.locationImage ? `<div style="margin-top:8px;"><a href="${o.locationImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; border:1px solid #c7d2fe;">📸 View Landmark Photo</a></div>` : '';
+        
+        // COD Change Alert
+        let changeStr = o.changeFor ? `<div style="font-size:11px; color:#b91c1c; font-weight:bold; margin-top:6px; background: white; padding: 4px; border-radius: 4px;">⚠️ Prepare Change For: ₱${o.changeFor}</div>` : '';
 
         html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
-                        <strong style="font-size:16px;">👤 ${o.customerName}</strong>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px; align-items: flex-start;">
+                        <div>
+                            <strong style="font-size:16px;">👤 ${customerName}</strong><br>
+                            <span style="font-size:12px; color:#64748b; font-weight:bold;">${contactInfo} | ${orderTime}</span>
+                        </div>
                         <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
                     </div>
+                    
                     <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; text-align: center;">
                         ${paymentLabel}
+                        ${changeStr}
                     </div>
+                    
                     ${locText}
-                    ${photoBtn}
+                    <div style="margin-top: 8px;">
+                        ${mapBtn}
+                        ${photoBtn}
+                    </div>
+                    
                     <div style="margin-bottom:15px; margin-top:15px;">${itemsHtml}</div>
+                    
                     <div style="display:flex; gap:10px;">
                         <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
                         <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
