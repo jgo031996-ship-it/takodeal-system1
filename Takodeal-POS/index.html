@@ -548,25 +548,30 @@
               
               <div id="posSettingsDropdown" style="display: none; position: absolute; top: 45px; right: 0; min-width: 240px; padding: 15px; gap: 12px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 1000; flex-direction: column;">
                   
-                  <button onclick="window.showMobileOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #e74c3c; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                  <!-- 📱 MOBILE ORDERS (RED) -->
+                  <button onclick="window.showMobileOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
                     📱 Mobile Orders
-                    <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #f1c40f; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
+                    <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #facc15; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">0</span>
                   </button>
                   
+                  <!-- 🔴 KILLSWITCH (DYNAMIC COLOR) -->
                   <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 App Accepting</button>
                   
-                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #8b5cf6; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🚚 Delivery: <span id="deliveryStatusText">ON</span></button>
+                  <!-- 🚚 DELIVERY TOGGLE -->
+                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🚚 Delivery: <span id="deliveryStatusText">OFF</span></button>
 
-                  <button onclick="window.showParkedOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #34495e; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                  <!-- 🕒 PARKED ORDERS (SLATE BLUE) -->
+                  <button onclick="window.showParkedOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #334155; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold;">
                     🕒 Parked Orders
-                    <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #e74c3c; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
+                    <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none;">0</span>
                   </button>
 
+                  <!-- 🟢 BUSY PREP TOGGLE -->
                   <button id="btnToggleBusy" onclick="window.toggleBusyMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold;">🟢 Normal Prep (15m)</button>
 
                   <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                       <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center;">
-                          <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;">
+                          <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.2); accent-color: #0f766e;" checked>
                           Auto-Open Drawer
                       </label>
                       <button onclick="window.kickCashDrawer(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; font-weight: bold;">💵 Kick Drawer</button>
@@ -3201,6 +3206,7 @@ window.playNotificationPing = function() {
 };
 
 window.showMobileOrders = function() {
+    window.stopMobileOrderAlarm();
     document.getElementById('mobileOrdersModal').style.display = 'flex';
     let container = document.getElementById('mobileListContainer');
 
@@ -3218,18 +3224,53 @@ window.showMobileOrders = function() {
                     </div>`;
         }).join('');
 
-        let paymentColor = o.paymentMode === 'gcash' ? '#3b82f6' : '#f59e0b';
-        let paymentLabel = o.paymentMode === 'gcash' ? 'GCash (Verify Ref: ' + (o.gcashRef || 'No Ref') + ')' : 'Cash (Pay at Counter)';
+        // Parse Payment Methods Safely
+        let paymentColor = '#f59e0b';
+        let paymentLabel = 'Cash (Pay at Counter)';
+        
+        if (o.paymentMode && o.paymentMode.toLowerCase() !== 'cash') {
+            paymentColor = '#3b82f6';
+            let refText = o.paymentReference || o.gcashRef || 'No Ref';
+            paymentLabel = `${o.paymentMode} (Verify Ref: ${refText})`;
+        }
+
+        // 🔥 EXTRACT THE MISSING DATA
+        let customerName = o.customerName || o.name || 'Mobile Customer';
+        customerName = customerName.split('(')[0].trim(); // Clean up if the app accidentally appended order types to the name
+        
+        let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : 'No Phone Provided';
+        let orderTime = o.preferredTime ? `⏰ Advance Time: ${o.preferredTime}` : 'ASAP';
+
+        // 🔥 RE-INJECT GOOGLE MAPS & PHOTOS
+        let mapBtn = o.mapLink ? `<a href="${o.mapLink}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Open Google Maps</a>` : '';
+        let photoBtn = o.locationImage ? `<a href="${o.locationImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; border:1px solid #c7d2fe; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block;">📸 View Landmark</a>` : '';
+        let locText = o.deliveryAddress ? `<div style="font-size:12px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0;">📍 <strong>Delivery Address:</strong><br>${o.deliveryAddress}</div>` : '';
+        
+        // COD Change Alert
+        let changeStr = o.changeFor ? `<div style="font-size:11px; color:#b91c1c; font-weight:bold; margin-top:6px; background: white; padding: 4px; border-radius: 4px;">⚠️ Prepare Change For: ₱${o.changeFor}</div>` : '';
 
         html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px;">
-                        <strong style="font-size:16px;">👤 ${o.customerName}</strong>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px; align-items: flex-start;">
+                        <div>
+                            <strong style="font-size:16px;">👤 ${customerName}</strong><br>
+                            <span style="font-size:12px; color:#64748b; font-weight:bold;">${contactInfo} | ${orderTime}</span>
+                        </div>
                         <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
                     </div>
-                    <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; margin-bottom: 10px; text-align: center;">
+                    
+                    <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; text-align: center;">
                         ${paymentLabel}
+                        ${changeStr}
                     </div>
-                    <div style="margin-bottom:15px;">${itemsHtml}</div>
+                    
+                    ${locText}
+                    <div style="margin-top: 8px;">
+                        ${mapBtn}
+                        ${photoBtn}
+                    </div>
+                    
+                    <div style="margin-bottom:15px; margin-top:15px;">${itemsHtml}</div>
+                    
                     <div style="display:flex; gap:10px;">
                         <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
                         <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
