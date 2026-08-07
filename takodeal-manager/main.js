@@ -15061,12 +15061,21 @@ window.switchView = function (viewId) {
 // ========================================================
 // 🧠 TAKODEAL FORECASTER ENGINE
 // ========================================================
+window.globalForecasterData = []; 
+window.isForecasterLoading = false; 
+
 window.loadForecasterEngine = async function() {
-    let container = document.getElementById('forecasterGrid');
-    let branch = document.getElementById('forecasterBranchSelect').value;
-    
-    if (!container) return;
-    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #0f766e; font-size: 18px; font-weight: bold;">⏳ Scanning 14 days of data... Please wait.</div>';
+    let branchSelect = document.getElementById('forecasterBranchSelect');
+    let branch = branchSelect ? branchSelect.value : 'Cabantian';
+    let grid = document.getElementById('forecasterGrid');
+    if (!grid) return;
+
+    window.isForecasterLoading = true; // Lock the search bar to prevent crashes
+
+    let btnRun = document.getElementById('btnRunForecaster') || document.querySelector('button[onclick="window.loadForecasterEngine()"]');
+    if (btnRun) { btnRun.innerText = "⏳ Scanning..."; btnRun.disabled = true; }
+
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Deep scanning stock history... Please wait.</div>';
 
     try {
         // 📸 FETCH MENU IMAGES FOR THE CARDS!
@@ -15082,7 +15091,8 @@ window.loadForecasterEngine = async function() {
         let inventory = [];
         invSnap.forEach(doc => inventory.push({ id: doc.id, ...doc.data() }));
 
-        let daysToScan = 14;
+        // 🔥 THE FIX: Extended to 30 Days to catch older data if staff forget to close shifts!
+        let daysToScan = 30;
         let pastDate = new Date();
         pastDate.setDate(pastDate.getDate() - daysToScan);
         pastDate.setHours(0,0,0,0);
@@ -15093,84 +15103,46 @@ window.loadForecasterEngine = async function() {
         let burnData = {}; 
         logsSnap.forEach(docSnap => {
             let log = docSnap.data();
-            if (log.variance < 0 && (log.type.includes("Auto-Deduct") || log.type.includes("Waste") || log.type.includes("Spoilage") || log.type.includes("Prep"))) {
-                if (!burnData[log.item]) burnData[log.item] = 0;
-                burnData[log.item] += Math.abs(log.variance);
+            let logTimeMs = 0;
+            if (log.timestamp) {
+                if (log.timestamp.toDate) logTimeMs = log.timestamp.toDate().getTime();
+                else logTimeMs = new Date(log.timestamp).getTime();
+            }
+            
+            // Matches Sales, Waste, Prep, and Adjustments!
+            let v = parseFloat(log.variance) || 0;
+            let t = (log.type || "").toLowerCase();
+            let itemName = (log.item || "").trim().toLowerCase(); 
+            
+            if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                if (!burnData[itemName]) burnData[itemName] = 0;
+                burnData[itemName] += Math.abs(v);
             }
         });
 
-        let html = '';
-        let today = new Date();
+        // 3. Process Burn Rate Data
+        window.globalForecasterData = inventoryItems.map(item => {
+            let normalizedItemName = (item.name || "").trim().toLowerCase();
+            let totalBurn = burnData[normalizedItemName] || 0;
+            let dailyBurn = totalBurn / daysToScan;
+            let stock = parseFloat(item.currentStock) || 0;
+            let daysLeft = dailyBurn > 0 ? (stock / dailyBurn) : Infinity;
 
-        inventory.sort((a, b) => a.name.localeCompare(b.name)).forEach(item => {
-            let totalBurned = burnData[item.name] || 0;
-            let avgDailyBurn = totalBurned / daysToScan;
-            let currentStock = parseFloat(item.currentStock) || 0;
-            let uom = item.uom || 'units';
-
-            let daysLeft = Infinity;
-            if (avgDailyBurn > 0) daysLeft = currentStock / avgDailyBurn;
-
-            let statusColor = "#16a34a"; let statusBg = "#f0fdf4"; let warningIcon = "✅";
-            let dLeftStr = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1);
-            let avgDailyStr = avgDailyBurn === 0 ? "0.0" : avgDailyBurn.toFixed(1);
-            let runOutDateStr = "Sufficient Stock";
-
-            // 📉 STRICT HANDLING OF NEGATIVE INVENTORY
-            if (currentStock < 0) {
-                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; 
-                dLeftStr = "0.0";
-                runOutDateStr = "NEGATIVE STOCK (Audit Needed)";
-            } else if (daysLeft <= 0 || currentStock === 0) {
-                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "🚨"; 
-                dLeftStr = "0.0";
-                runOutDateStr = "Out of Stock Now";
-            } else if (daysLeft <= 3) {
-                statusColor = "#dc2626"; statusBg = "#fef2f2"; warningIcon = "⚠️";
-            } else if (daysLeft <= 7) {
-                statusColor = "#ea580c"; statusBg = "#fff7ed"; warningIcon = "⚡";
-            }
-
-            if (currentStock > 0 && daysLeft !== Infinity && daysLeft > 0) {
-                let runOutDate = new Date();
-                runOutDate.setDate(today.getDate() + daysLeft);
-                runOutDateStr = runOutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            }
-
-            // 📸 PHOTOS INJECTION
-            let photoHtml = itemImages[item.name] 
-                ? `<img src="${itemImages[item.name]}" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0;">` 
-                : `<div style="width: 40px; height: 40px; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid #e2e8f0;">📦</div>`;
-
-            html += `
-                <div onclick="window.openForecasterItemTrace('${item.name.replace(/'/g, "\\'")}', '${branch}')" style="cursor: pointer; background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); overflow: hidden; border: 1px solid #e2e8f0; display: flex; flex-direction: column; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 10px 25px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(0,0,0,0.03)';">
-                    <div style="padding: 15px 20px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 15px; align-items: center;">
-                        ${photoHtml}
-                        <div>
-                            <h3 style="margin: 0; font-size: 15px; color: #0f172a;">${item.name}</h3>
-                            <span style="font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase;">${branch}</span>
-                        </div>
-                    </div>
-                    <div style="padding: 20px; display: flex; align-items: center; justify-content: space-between; background: #fdfdfd; flex: 1;">
-                        <div style="font-size: 13px; color: #475569; line-height: 1.8;">
-                            <span style="color: #64748b;">Current Stock:</span> <strong style="color: ${currentStock < 0 ? '#dc2626' : '#0f172a'}; font-size: 14px;">${currentStock.toLocaleString()} ${uom}</strong><br>
-                            <span style="color: #64748b;">Daily Burn Rate:</span> <strong style="color: ${statusColor}; font-size: 14px;">${avgDailyStr} ${uom} / day</strong>
-                        </div>
-                        <div style="text-align: center; background: ${statusBg}; padding: 12px; border-radius: 12px; border: 1px dashed ${statusColor}; min-width: 80px;">
-                            <div style="font-size: 24px; font-weight: 900; color: ${statusColor};">${dLeftStr}</div>
-                            <div style="font-size: 10px; font-weight: bold; color: ${statusColor}; text-transform: uppercase;">Days Left</div>
-                        </div>
-                    </div>
-                    <div style="background: ${statusBg}; padding: 12px 20px; font-size: 12px; color: ${statusColor}; font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9;">
-                        <span>${warningIcon} Run-Out Date:</span><span>${runOutDateStr}</span>
-                    </div>
-                </div>
-            `;
+            return { ...item, totalBurn, dailyBurn, daysLeft };
         });
-        container.innerHTML = html || '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #94a3b8;">No inventory found.</div>';
-    } catch (error) {
-        console.error("Forecaster Error:", error);
-        container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #ef4444; font-weight: bold;">❌ Failed to run Forecast. Check connection.</div>';
+
+        // Sort by most critical (lowest days left)
+        window.globalForecasterData.sort((a, b) => a.daysLeft - b.daysLeft);
+        
+        window.isForecasterLoading = false; 
+        window.filterForecaster(); 
+
+    } catch(e) {
+        console.error("Forecaster Error:", e);
+        window.isForecasterLoading = false;
+        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error: ${e.message}</div>`;
+    } finally {
+        if (btnRun) { btnRun.innerText = "🔄 Run Calculation"; btnRun.disabled = false; }
     }
 };
 
@@ -16087,10 +16059,8 @@ window.openItemLedger = async function(branch, itemName) {
         let curStockEl = document.getElementById('ledgerCurrentStock');
         if (curStockEl) curStockEl.innerText = `${currentStock.toFixed(2)} ${uom}`;
 
-        // 🔥 THE INDEX-FREE FIX: Local Sorting for Dispatch Logs
         let lastDelHtml = '<span style="color:#94a3b8; font-style:italic;">No deliveries recorded.</span>';
         if (branch !== "Main Office") {
-            // We removed the orderBy() here to prevent Firebase from crashing!
             const delQ = query(collection(db, "dispatch_logs"), where("toBranch", "==", branch), where("item", "==", itemName));
             const delSnap = await getDocs(delQ);
             
@@ -16100,7 +16070,6 @@ window.openItemLedger = async function(branch, itemName) {
                 if (data.status === "Received") delLogs.push(data);
             });
             
-            // 🧠 Javascript does the heavy sorting safely in the background
             delLogs.sort((a, b) => {
                 let timeA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
                 let timeB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
@@ -16139,15 +16108,12 @@ window.openItemLedger = async function(branch, itemName) {
             `;
         }
 
-        // 🔥 THE INDEX-FREE FIX: Local Sorting for Stock Logs
-        // We removed orderBy("timestamp", "desc") to prevent the Firebase crash!
         const logQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("item", "==", itemName));
         const logSnap = await getDocs(logQ);
 
         let logsArray = [];
         logSnap.forEach(doc => logsArray.push(doc.data()));
 
-        // 🧠 Javascript takes over the sorting mathematically!
         logsArray.sort((a, b) => {
             let timeA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
             let timeB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
@@ -16161,10 +16127,12 @@ window.openItemLedger = async function(branch, itemName) {
             let variance = parseFloat(d.variance) || 0;
             let type = d.type || "Unknown";
 
-            // 🔥 CRITICAL FIX: Trust the historical snapshot stored in Firebase!
-            // Do not calculate backwards, as silent deductions will corrupt the math!
-            d._renderNew = d.newQty !== undefined ? parseFloat(d.newQty) : runningNewQty;
-            d._renderOld = d.oldQty !== undefined ? parseFloat(d.oldQty) : (d._renderNew - variance);
+            // 🔥 CRITICAL FIX: Safely parse strings like "Shift" or "Summary" from sales deductions!
+            let pNew = parseFloat(d.newQty);
+            let pOld = parseFloat(d.oldQty);
+
+            d._renderNew = !isNaN(pNew) ? pNew : runningNewQty;
+            d._renderOld = !isNaN(pOld) ? pOld : (d._renderNew - variance);
 
             // Update running qty just as a fallback for extremely old legacy logs
             runningNewQty = d._renderOld; 
