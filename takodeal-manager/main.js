@@ -6520,7 +6520,8 @@ window.openEditInvModal = async function(id) {
             document.getElementById('editInvPurchCost').value = itemData.purchaseCost || itemData.purchCost || itemData.cost || 0;
             
             // 🔥 THE UOM MATH FIX: Convert the database Base UOM back to Purchase UOM for easy editing!
-            let lowStockPurch = (parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate;
+            // 🔥 THE ROUNDING FIX: Keeps the UI clean by rounding to 2 decimal places max
+            let lowStockPurch = parseFloat(((parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate).toFixed(2));
             document.getElementById('editInvLowStock').value = lowStockPurch;
             
             document.getElementById('editInvOldQty').value = itemData.currentStock || 0;
@@ -6556,7 +6557,7 @@ window.openEditInvModal = async function(id) {
 
             // 🔥 FORCE THE UI CALCULATION ENGINE TO WAKE UP IMMEDIATELY
             window.calcEditVariance();
-            window.calcEditCost();
+            if(typeof window.calcEditCost === 'function') window.calcEditCost();
 
         } else {
             alert("The requested inventory item could not be located in the central database.");
@@ -6636,6 +6637,7 @@ window.saveInventoryEdit = async function() {
     let baseUom = document.getElementById('editInvBaseUom').value.trim();
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
+    
     // 🔥 Grab Purchase UOM input and multiply it by Conversion to store safely in the Database!
     let lowStockPurch = parseFloat(document.getElementById('editInvLowStock').value) || 0;
     let lowStockBase = lowStockPurch * conversion;
@@ -6659,13 +6661,13 @@ window.saveInventoryEdit = async function() {
     }
 
     let btn = document.getElementById('btnSaveInvEdit');
-    btn.innerText = "⏳ Saving & Syncing Globally..."; btn.disabled = true;
+    if (btn) { btn.innerText = "⏳ Saving & Syncing Globally..."; btn.disabled = true; }
 
     // 🔥 UPLOAD INVENTORY PHOTO TO STORAGE
     let photoUrl = undefined;
     let fileInput = document.getElementById('editInvPhoto');
     if (fileInput && fileInput.files.length > 0) {
-        btn.innerText = "⏳ Uploading Photo...";
+        if (btn) btn.innerText = "⏳ Uploading Photo...";
         const file = fileInput.files[0];
         const fileExt = file.name.split('.').pop();
         const fileName = `inventory_images/${docId}_${Date.now()}.${fileExt}`;
@@ -6721,9 +6723,9 @@ window.saveInventoryEdit = async function() {
                     purchaseCost: purchCost, purchCost: purchCost, cost: purchCost,
                     baseCost: (purchCost / conversion),
                     
-                    // 🔥 THE FIX: Now globally syncs the Reorder Levels and Checkboxes!
-                    lowStockAlert: lowStock, 
-                    reorderLevel: lowStock,
+                    // 🔥 THE CRASH FIX: Properly uses lowStockBase now!
+                    lowStockAlert: lowStockBase, 
+                    reorderLevel: lowStockBase,
                     allowRequest: allowReqVal,
                     showInPrep: showPrepVal 
                 };
@@ -6737,7 +6739,6 @@ window.saveInventoryEdit = async function() {
         });
 
         // 🔥 3. CASCADE RECIPE & ADD-ON RENAME PROTECTOR 🔥
-        // If the name changed, we MUST update recipes or the POS costing will crash!
         if (oldName !== name) {
             const bomQ = query(collection(db, "bom"), where("ingredientName", "==", oldName));
             const bomSnap = await getDocs(bomQ);
@@ -6782,8 +6783,8 @@ window.saveInventoryEdit = async function() {
     } catch (e) {
         console.error(e); alert("Failed to save changes.");
     } finally {
-        btn.innerText = "💾 Save All Changes"; btn.disabled = false;
-        if(document.getElementById('editInvCountType')) document.getElementById('editInvCountType').value = 'base';
+        if (btn) { btn.innerText = "💾 Save All Changes"; btn.disabled = false; }
+        if (document.getElementById('editInvCountType')) document.getElementById('editInvCountType').value = 'base';
     }
 };
 
