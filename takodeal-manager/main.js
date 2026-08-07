@@ -20967,6 +20967,91 @@ window.loadFinancialFlow = async function() {
             options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
         });
 
+        // ==========================================
+        // 🤖 GEMINI FINANCIAL MENTOR AI ENGINE
+        // ==========================================
+        let aiContainer = document.getElementById('financialAiMentorContent');
+        if (aiContainer) {
+            let cogsPct = totalRevenue > 0 ? (totalCOGS / totalRevenue) * 100 : 0;
+            let laborPct = totalRevenue > 0 ? (totalPayroll / totalRevenue) * 100 : 0;
+            let opexPct = totalRevenue > 0 ? (totalExpenses / totalRevenue) * 100 : 0;
+            let marginPct = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+            // F&B Industry Standard Benchmarks
+            let cogsTarget = 35;
+            let laborTarget = 20;
+            let opexTarget = 25;
+
+            let html = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px;">`;
+
+            // 1. COGS Diagnostic
+            if (cogsPct > cogsTarget) {
+                html += `<div style="background: #fff1f2; padding: 15px; border-radius: 8px; border-left: 4px solid #e11d48;">
+                    <strong style="color: #be123c;">🥩 Food Cost Leakage (${cogsPct.toFixed(1)}%)</strong><br>
+                    Your COGS is exceeding the ${cogsTarget}% target. You are losing <b>₱${(totalCOGS - (totalRevenue * (cogsTarget/100))).toLocaleString(undefined, {minimumFractionDigits:0})}</b> to potential spoilage, over-portioning, or supplier price hikes. Check your Waste Logs and Audit Variances immediately.
+                </div>`;
+            } else {
+                html += `<div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #16a34a;">
+                    <strong style="color: #15803d;">🥩 Food Cost Optimal (${cogsPct.toFixed(1)}%)</strong><br>
+                    Excellent recipe management. You are keeping ingredients well within the healthy F&B benchmark.
+                </div>`;
+            }
+
+            // 2. Labor Diagnostic
+            if (laborPct > laborTarget) {
+                html += `<div style="background: #fff1f2; padding: 15px; border-radius: 8px; border-left: 4px solid #e11d48;">
+                    <strong style="color: #be123c;">👥 High Labor Ratio (${laborPct.toFixed(1)}%)</strong><br>
+                    You are over-staffed relative to your sales volume. Consider optimizing the schedule during slow hours to keep payroll under ${laborTarget}%.
+                </div>`;
+            } else {
+                html += `<div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #16a34a;">
+                    <strong style="color: #15803d;">👥 Labor Optimized (${laborPct.toFixed(1)}%)</strong><br>
+                    Your scheduling is highly efficient. Your staff is generating strong revenue relative to their payroll cost.
+                </div>`;
+            }
+
+            // 3. OpEx Diagnostic
+            if (opexPct > opexTarget) {
+                html += `<div style="background: #fffbeb; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                    <strong style="color: #b45309;">💡 Heavy Operating Expenses (${opexPct.toFixed(1)}%)</strong><br>
+                    Overhead is eating your profit. You are spending <b>₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits:0})}</b> on non-food/labor costs. Ensure these are categorized properly in your Budget Tracker to spot the exact leak (e.g., Rent, Utilities, Consumables).
+                </div>`;
+            } else {
+                html += `<div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #16a34a;">
+                    <strong style="color: #15803d;">💡 OpEx Controlled (${opexPct.toFixed(1)}%)</strong><br>
+                    Operating expenses are lean and well within the ${opexTarget}% benchmark.
+                </div>`;
+            }
+
+            html += `</div>`;
+
+            // 4. The Final Executive Summary
+            let summaryClass = marginPct >= 15 ? 'bg-[#f0fdf4] border-[#bbf7d0] text-[#16a34a]' : (marginPct > 0 ? 'bg-[#fffbeb] border-[#fde68a] text-[#d97706]' : 'bg-[#fef2f2] border-[#fecaca] text-[#dc2626]');
+            
+            let summaryText = "";
+            if (marginPct >= 15) {
+                summaryText = `This branch is operating like a highly-tuned machine. At a <b>${marginPct.toFixed(1)}% Net Margin</b>, you are retaining solid profits. Keep scaling your volume!`;
+            } else if (marginPct > 0) {
+                summaryText = `This branch is surviving, but margins are tight (<b>${marginPct.toFixed(1)}%</b>). Focus on fixing the red/yellow alerts above to convert more of that ₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits:0})} gross revenue into actual take-home profit.`;
+            } else {
+                summaryText = `<b>Critical Warning:</b> This branch is operating at a loss. Your expenses are outpacing your revenue. An immediate audit of COGS and OpEx is required to stop the cash bleed.`;
+            }
+
+            html += `
+                <div style="padding: 15px; border-radius: 8px; border: 1px solid; margin-top: 10px;" class="${summaryClass.split(' ').map(c => c.replace(/\[|\]/g, '')).join(' ')}">
+                    <strong style="font-size: 16px;">CEO Executive Summary:</strong><br>
+                    ${summaryText}
+                </div>
+            `;
+            
+            // Clean up Tailwind classes for standard inline CSS
+            html = html.replace(/bg-#f0fdf4/g, 'background-color: #f0fdf4').replace(/border-#bbf7d0/g, 'border-color: #bbf7d0').replace(/text-#16a34a/g, 'color: #16a34a')
+                       .replace(/bg-#fffbeb/g, 'background-color: #fffbeb').replace(/border-#fde68a/g, 'border-color: #fde68a').replace(/text-#d97706/g, 'color: #d97706')
+                       .replace(/bg-#fef2f2/g, 'background-color: #fef2f2').replace(/border-#fecaca/g, 'border-color: #fecaca').replace(/text-#dc2626/g, 'color: #dc2626');
+
+            aiContainer.innerHTML = html;
+        }
+
     } catch(e) {
         console.error("Financial Flow Error:", e);
         container.innerHTML = `<div style="color: red; text-align: center; padding: 40px; font-weight: bold;">Error compiling P&L. Check console.</div>`;
