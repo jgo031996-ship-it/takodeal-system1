@@ -1267,6 +1267,7 @@ window.switchView = function (viewId) {
   // Change the top title safely using 'var'
   var title = "Global Dashboard";
   if (viewId === 'transfers') title = "Cash Transfers Explorer";
+  if (viewId === 'financial-flow') title = "Financial Flow & Revenue Distribution";
   if (viewId === 'devices') title = "Device Fleet Management";
   if (viewId === 'branches') title = "Staff & Security Management";
   if (viewId === 'menu') title = "Central Menu Editor";
@@ -1294,6 +1295,7 @@ window.switchView = function (viewId) {
 
   // Trigger the engine for that specific page
   if (viewId === 'dashboard') window.loadGlobalDashboard();
+  if (viewId === 'financial-flow') window.loadFinancialFlow();
   if (viewId === 'branches') window.loadHRModule();
   if (viewId === 'menu') window.loadMenuEditor();
   if (viewId === 'addons') window.loadGlobalAddons();
@@ -20682,4 +20684,320 @@ window.saveBranchMenuRestrictions = async function() {
         console.error("Filter Save Error:", e);
         Swal.fire('Error', 'Failed to save restrictions.', 'error');
     }
+};
+
+// ========================================================
+// 🌊 FINANCIAL FLOW & P&L WATERFALL ENGINE
+// ========================================================
+window.flowSpendChartInstance = null;
+window.flowBudgetChartInstance = null;
+
+window.toggleFlowTimePicker = function() {
+    let type = document.getElementById('flowTimeFilter').value;
+    if (type === 'month') {
+        document.getElementById('flowMonthContainer').style.display = 'block';
+        document.getElementById('flowYearContainer').style.display = 'none';
+    } else {
+        document.getElementById('flowMonthContainer').style.display = 'none';
+        document.getElementById('flowYearContainer').style.display = 'block';
+    }
+    window.loadFinancialFlow();
+};
+
+window.loadFinancialFlow = async function() {
+    let container = document.getElementById('financialFlowchartContainer');
+    if (!container) return;
+
+    let branchSelect = document.getElementById('flowBranchFilter');
+    let timeType = document.getElementById('flowTimeFilter').value;
+    
+    // Auto-populate branch dropdown if empty
+    if (branchSelect.options.length <= 1 && window.globalActiveBranches) {
+        let opts = '<option value="All">🌐 All Branches</option>';
+        window.globalActiveBranches.forEach(b => { if(b !== "Main Office") opts += `<option value="${b}">${b}</option>`; });
+        branchSelect.innerHTML = opts;
+    }
+
+    let branch = branchSelect.value;
+    
+    // Calculate Date Range
+    let startOfDay, endOfDay;
+    let periodLabel = "";
+
+    if (timeType === 'month') {
+        let monthVal = document.getElementById('flowMonthPicker').value;
+        if (!monthVal) {
+            let today = new Date();
+            monthVal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+            document.getElementById('flowMonthPicker').value = monthVal;
+        }
+        let [y, m] = monthVal.split('-');
+        startOfDay = new Date(y, m - 1, 1);
+        endOfDay = new Date(y, m, 0, 23, 59, 59, 999);
+        periodLabel = new Date(y, m - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    } else {
+        let yearVal = document.getElementById('flowYearPicker').value || new Date().getFullYear();
+        startOfDay = new Date(yearVal, 0, 1);
+        endOfDay = new Date(yearVal, 11, 31, 23, 59, 59, 999);
+        periodLabel = `Year ${yearVal}`;
+    }
+
+    container.innerHTML = `<div style="padding: 50px; color: #0ea5e9; font-weight: bold; font-size: 16px;">⏳ Calculating P&L for ${periodLabel}...</div>`;
+
+    try {
+        // 1. FETCH REVENUE & COGS
+        let totalRevenue = 0;
+        let totalCOGS = 0;
+        window.tempCogsBreakdown = {}; // Store for the clickable modal
+
+        let txQ = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        if (branch !== "All") txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        
+        const txSnap = await getDocs(txQ);
+        
+        // Fetch Live Inventory Costs for COGS math
+        const invSnap = await getDocs(collection(db, "inventory"));
+        let invCosts = {};
+        invSnap.forEach(d => { invCosts[`${d.data().branch}_${d.data().name}`] = parseFloat(d.data().baseCost) || 0; });
+
+        const bomSnap = await getDocs(collection(db, "bom"));
+        let recipes = {};
+        bomSnap.forEach(d => {
+            let data = d.data();
+            if (!recipes[data.menuItem]) recipes[data.menuItem] = [];
+            recipes[data.menuItem].push({ ingredient: data.ingredientName, qty: parseFloat(data.qty) || 0 });
+        });
+
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (tx.status === "Voided") return;
+            totalRevenue += (parseFloat(tx.netTotal) || 0);
+
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let itemName = item.name || item.itemName;
+                    let qtySold = parseFloat(item.qty) || 1;
+                    let recipe = recipes[itemName] || [];
+                    
+                    let lineCogs = 0;
+                    recipe.forEach(ing => {
+                        let cost = invCosts[`${tx.branch}_${ing.ingredient}`] || invCosts[`Main Office_${ing.ingredient}`] || 0;
+                        lineCogs += (cost * ing.qty * qtySold);
+                    });
+
+                    // Addons Cogs
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            let addon = item.addons[key];
+                            if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                let aCost = invCosts[`${tx.branch}_${addon.linkedIngredient}`] || invCosts[`Main Office_${addon.linkedIngredient}`] || 0;
+                                lineCogs += (aCost * addon.deductQty * addon.qty * qtySold);
+                            }
+                        }
+                    }
+                    totalCOGS += lineCogs;
+
+                    if (!window.tempCogsBreakdown[itemName]) window.tempCogsBreakdown[itemName] = { qty: 0, cogs: 0 };
+                    window.tempCogsBreakdown[itemName].qty += qtySold;
+                    window.tempCogsBreakdown[itemName].cogs += lineCogs;
+                });
+            }
+        });
+
+        // 2. FETCH EXPENSES (Payroll & Budgets)
+        let totalPayroll = 0;
+        let totalExpenses = 0;
+        let expenseBreakdown = {}; // Used for the charts and tree
+
+        let expQ = query(collection(db, "expenses"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        if (branch !== "All") expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        
+        const expSnap = await getDocs(expQ);
+
+        expSnap.forEach(doc => {
+            let exp = doc.data();
+            let amt = parseFloat(exp.amount) || 0;
+            let cat = exp.category || 'Uncategorized';
+            
+            if (cat.toLowerCase().includes('payroll')) {
+                totalPayroll += amt;
+            } else if (!cat.toLowerCase().includes('royalty')) { // Exclude system royalty from operating expenses
+                totalExpenses += amt;
+                if (!expenseBreakdown[cat]) expenseBreakdown[cat] = 0;
+                expenseBreakdown[cat] += amt;
+            }
+        });
+
+        // 3. FETCH BUDGET LIMITS (For the Bar Chart)
+        let budgetLimits = {};
+        const budSnap = await getDocs(collection(db, "budgets"));
+        budSnap.forEach(doc => {
+            let b = doc.data();
+            if (branch === "All" || b.branch === branch) {
+                if (!budgetLimits[b.category]) budgetLimits[b.category] = 0;
+                budgetLimits[b.category] += (parseFloat(b.limit) || 0);
+            }
+        });
+
+        // 4. CALCULATE FINAL NET PROFIT
+        let netProfit = totalRevenue - totalCOGS - totalPayroll - totalExpenses;
+
+        // 🌊 5. BUILD THE WATERFALL TREE UI
+        let opExBoxes = '';
+        Object.keys(expenseBreakdown).sort((a,b) => expenseBreakdown[b] - expenseBreakdown[a]).forEach(cat => {
+            opExBoxes += `
+                <div style="background: white; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); min-width: 120px;">
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">${cat}</div>
+                    <div style="font-size: 14px; font-weight: 900; color: #0f172a;">₱${expenseBreakdown[cat].toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                </div>
+            `;
+        });
+        if (opExBoxes === '') opExBoxes = '<div style="color: #94a3b8; font-style: italic; font-size: 12px;">No operational expenses logged.</div>';
+
+        let flowHtml = `
+            <div style="display: flex; flex-direction: column; align-items: center; font-family: 'Segoe UI', sans-serif;">
+                
+                <!-- TOP NODE: REVENUE -->
+                <div style="background: #f0fdf4; border: 2px solid #16a34a; padding: 20px 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(22,163,74,0.15); z-index: 2; position: relative;">
+                    <div style="font-size: 13px; font-weight: bold; color: #15803d; text-transform: uppercase; letter-spacing: 1px;">Gross Revenue</div>
+                    <div style="font-size: 32px; font-weight: 900; color: #16a34a;">₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="font-size: 11px; color: #16a34a; margin-top: 5px;">${periodLabel} • ${branch}</div>
+                </div>
+
+                <!-- MAIN SPLIT ARROWS -->
+                <div style="display: flex; justify-content: center; width: 600px; height: 30px; border-top: 2px solid #cbd5e1; border-left: 2px solid #cbd5e1; border-right: 2px solid #cbd5e1; margin-top: 20px; position: relative;">
+                    <div style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%); width: 2px; height: 20px; background: #cbd5e1;"></div>
+                    <!-- Dropdown lines -->
+                    <div style="position: absolute; top: 30px; left: 0; width: 2px; height: 20px; background: #cbd5e1;"></div>
+                    <div style="position: absolute; top: 30px; left: 50%; transform: translateX(-50%); width: 2px; height: 20px; background: #cbd5e1;"></div>
+                    <div style="position: absolute; top: 30px; right: 0; width: 2px; height: 20px; background: #cbd5e1;"></div>
+                </div>
+
+                <!-- ROW 2: THE DEDUCTIONS -->
+                <div style="display: flex; justify-content: center; gap: 40px; width: 100%; margin-top: 20px; position: relative;">
+                    
+                    <!-- COGS -->
+                    <div onclick="window.openFlowCogsModal()" style="background: #fff1f2; border: 2px dashed #fca5a5; padding: 15px; border-radius: 12px; width: 200px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#ffe4e6';" onmouseout="this.style.background='#fff1f2';">
+                        <div style="font-size: 11px; font-weight: bold; color: #dc2626; text-transform: uppercase;">Cost of Goods (COGS)</div>
+                        <div style="font-size: 20px; font-weight: 900; color: #b91c1c;">-₱${totalCOGS.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 10px; color: #ef4444; margin-top: 5px; font-weight: bold;">🔍 Click to see trace logs</div>
+                    </div>
+
+                    <!-- PAYROLL -->
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 12px; width: 200px;">
+                        <div style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Payroll Paid</div>
+                        <div style="font-size: 20px; font-weight: 900; color: #334155;">-₱${totalPayroll.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    </div>
+
+                    <!-- OPEX -->
+                    <div style="background: #fffbeb; border: 1px solid #fcd34d; padding: 15px; border-radius: 12px; width: 200px; position: relative;">
+                        <div style="font-size: 11px; font-weight: bold; color: #d97706; text-transform: uppercase;">Operating Expenses</div>
+                        <div style="font-size: 20px; font-weight: 900; color: #b45309;">-₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        
+                        <!-- Mini Dropdown Line to OpEx Boxes -->
+                        <div style="position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); width: 2px; height: 20px; background: #cbd5e1;"></div>
+                    </div>
+
+                </div>
+
+                <!-- OPEX BREAKDOWN ROW -->
+                <div style="display: flex; justify-content: flex-end; width: 100%; max-width: 800px; margin-top: 20px; padding-right: 20px;">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; padding: 15px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; max-width: 500px;">
+                        ${opExBoxes}
+                    </div>
+                </div>
+
+                <!-- FINAL NET PROFIT -->
+                <div style="margin-top: 30px;">
+                    <div style="font-size: 24px; color: #94a3b8; font-weight: 900; margin-bottom: 10px;">↓</div>
+                    <div style="background: ${netProfit >= 0 ? '#0f766e' : '#dc2626'}; color: white; padding: 25px 50px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+                        <div style="font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,0.8);">Remaining Net Profit</div>
+                        <div style="font-size: 38px; font-weight: 900;">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 12px; margin-top: 5px; color: rgba(255,255,255,0.7);">${((netProfit / totalRevenue) * 100).toFixed(1)}% Profit Margin</div>
+                    </div>
+                </div>
+
+            </div>
+        `;
+        container.innerHTML = flowHtml;
+
+        // 📊 6. RENDER THE CHARTS
+        let ctxSpend = document.getElementById('flowSpendChart').getContext('2d');
+        if (window.flowSpendChartInstance) window.flowSpendChartInstance.destroy();
+        
+        let spendLabels = ['COGS', 'Payroll'];
+        let spendData = [totalCOGS, totalPayroll];
+        let spendColors = ['#f87171', '#94a3b8']; // Red, Gray
+
+        // Add OpEx categories to the pie chart
+        Object.keys(expenseBreakdown).forEach((cat, idx) => {
+            spendLabels.push(cat);
+            spendData.push(expenseBreakdown[cat]);
+            let colors = ['#f59e0b', '#0ea5e9', '#8b5cf6', '#10b981', '#ec4899'];
+            spendColors.push(colors[idx % colors.length]);
+        });
+
+        window.flowSpendChartInstance = new Chart(ctxSpend, {
+            type: 'doughnut',
+            data: {
+                labels: spendLabels,
+                datasets: [{ data: spendData, backgroundColor: spendColors, borderWidth: 2, borderColor: '#ffffff' }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right' } } }
+        });
+
+        // Bar Chart: Budget vs Actual
+        let ctxBudget = document.getElementById('flowBudgetChart').getContext('2d');
+        if (window.flowBudgetChartInstance) window.flowBudgetChartInstance.destroy();
+
+        let budgetLabels = Object.keys(expenseBreakdown);
+        let budgetActuals = budgetLabels.map(cat => expenseBreakdown[cat]);
+        let budgetLimitsArr = budgetLabels.map(cat => budgetLimits[cat] || 0);
+
+        window.flowBudgetChartInstance = new Chart(ctxBudget, {
+            type: 'bar',
+            data: {
+                labels: budgetLabels,
+                datasets: [
+                    { label: 'Actual Spent', data: budgetActuals, backgroundColor: '#ea580c' },
+                    { label: 'Budget Limit', data: budgetLimitsArr, backgroundColor: '#e2e8f0' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        });
+
+    } catch(e) {
+        console.error("Financial Flow Error:", e);
+        container.innerHTML = `<div style="color: red; text-align: center; padding: 40px; font-weight: bold;">Error compiling P&L. Check console.</div>`;
+    }
+};
+
+window.openFlowCogsModal = function() {
+    let items = window.tempCogsBreakdown || {};
+    let html = '';
+    
+    let sortedItems = Object.keys(items).sort((a,b) => items[b].cogs - items[a].cogs);
+    
+    sortedItems.forEach(name => {
+        let d = items[name];
+        if (d.cogs > 0) {
+            html += `
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding: 10px 0;">
+                    <div>
+                        <strong style="color: #334155; font-size: 14px;">${name}</strong><br>
+                        <span style="font-size: 11px; color: #64748b;">${d.qty} items sold</span>
+                    </div>
+                    <strong style="color: #dc2626; font-size: 15px;">₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+                </div>
+            `;
+        }
+    });
+
+    Swal.fire({
+        title: '📦 COGS Trace Breakdown',
+        html: `<div style="max-height: 50vh; overflow-y: auto; text-align: left; padding-right: 10px;">${html || '<i>No COGS data found for this period.</i>'}</div>`,
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#0f766e',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
 };
