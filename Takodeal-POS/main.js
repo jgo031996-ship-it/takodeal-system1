@@ -1037,58 +1037,86 @@ window.processCheckout = async function (payload) {
 };
 
 // ========================================================
-// ⚡ ATOMIC BATCH SYNC ENGINE (ZERO CORRUPTION)
+// ⚡ ATOMIC BATCH SYNC ENGINE (CORRUPTION & LEAK FIX)
 // ========================================================
 window.syncOfflineQueue = async function() {
-    if (window.isSyncing || window.offlineQueue.length === 0 || !navigator.onLine) return;
+    if (window.isSyncing || window.offlineQueue.length === 0) return;
     
     window.isSyncing = true;
     let badge = document.getElementById('liveClock').nextElementSibling;
 
     try {
+        // We use a predefined inventory cache so we only ask Firebase for the Document ID once!
+        let localInvCache = {};
+
         while (window.offlineQueue.length > 0) {
             if (badge) {
                 badge.innerHTML = `<span style="background: #eab308; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px;">⏳ SYNCING SALES (${window.offlineQueue.length})...</span>`;
             }
 
             let payload = window.offlineQueue[0];
+            let promises = []; // Using Promise.all instead of writeBatch prevents crash loops!
             
-            // 1. Create an Atomic Write Batch
-            const batch = writeBatch(db);
-
-            // 2. Add Transaction Document
-            const txRef = doc(collection(db, "transactions"));
-            batch.set(txRef, {
+            // 1. Save Transaction to Firebase
+            let txRef = window.doc(window.collection(window.db, "transactions"));
+            promises.push(window.setDoc(txRef, {
                 ...payload,
                 timestamp: new Date(payload.localTimestamp)
-            });
+            }));
 
-            // 3. Batch Inventory Deductions
-            for (let cartItem of payload.cart) {
-                let itemName = cartItem.name || cartItem.itemName;
-                let qtySold = cartItem.qty || 1;
+            // 2. Gather all ingredient deductions (Base Recipe + Addons)
+            let ingredientsToDeduct = {};
 
-                const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
-                const bomSnap = await getDocs(bomQ);
-                
-                for (let bomDoc of bomSnap.docs) {
-                    let recipeData = bomDoc.data();
-                    let totalDeduct = (recipeData.qty || 0) * qtySold;
+            if (payload.cart && Array.isArray(payload.cart)) {
+                payload.cart.forEach(cartItem => {
+                    let itemName = cartItem.name || cartItem.itemName;
+                    let qtySold = cartItem.qty || 1;
+
+                    // A. Deduct Base Recipe (Reads from Tablet Memory, ZERO Network Lag!)
+                    let recipe = (window.masterPOSData && window.masterPOSData.bom) ? window.masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                    recipe.forEach(r => {
+                        if (!ingredientsToDeduct[r.ingredientName]) ingredientsToDeduct[r.ingredientName] = 0;
+                        ingredientsToDeduct[r.ingredientName] += (r.qty || 0) * qtySold;
+                    });
+
+                    // B. Deduct Add-ons & Mix-Match Fillings (The missing leak!)
+                    if (cartItem.addons) {
+                        for (let key in cartItem.addons) {
+                            let addon = cartItem.addons[key];
+                            if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                if (!ingredientsToDeduct[addon.linkedIngredient]) ingredientsToDeduct[addon.linkedIngredient] = 0;
+                                ingredientsToDeduct[addon.linkedIngredient] += (addon.deductQty * addon.qty * qtySold);
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 3. Process Live Inventory Deductions
+            for (let ing in ingredientsToDeduct) {
+                let totalDeduct = ingredientsToDeduct[ing];
+                if (totalDeduct > 0) {
+                    // Check local cache first to avoid hanging on a fluctuating network
+                    if (!localInvCache[ing]) {
+                        const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", payload.branch), window.where("name", "==", ing));
+                        const invSnap = await window.getDocs(invQ);
+                        if (!invSnap.empty) {
+                            localInvCache[ing] = invSnap.docs[0].ref;
+                        }
+                    }
                     
-                    const invQ = query(collection(db, "inventory"), where("branch", "==", payload.branch), where("name", "==", recipeData.ingredientName));
-                    const invSnap = await getDocs(invQ);
-                    
-                    if (!invSnap.empty) {
-                        let invRef = invSnap.docs[0].ref;
-                        batch.update(invRef, { currentStock: increment(-totalDeduct) });
+                    if (localInvCache[ing]) {
+                        promises.push(window.updateDoc(localInvCache[ing], { 
+                            currentStock: window.increment(-totalDeduct) 
+                        }));
                     }
                 }
             }
 
-            // 4. Commit All Writes At the Exact Same Time
-            await batch.commit();
+            // 4. Execute everything simultaneously. If offline, Firebase caches these naturally!
+            await Promise.all(promises);
 
-            // Remove processed order from local queue
+            // 5. Remove processed order from local queue securely
             window.offlineQueue.shift();
             localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
         }
@@ -1098,6 +1126,10 @@ window.syncOfflineQueue = async function() {
         window.isSyncing = false;
         if (window.isAppOnline && typeof window.updateNetworkStatusUI === 'function') {
             window.updateNetworkStatusUI();
+        } else if (badge && window.isAppOnline === false) {
+            badge.innerHTML = `<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(220,38,38,0.5);">🔴 OFFLINE (SAVING LOCALLY)</span>`;
+        } else if (badge) {
+            badge.innerHTML = `<span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(22,163,74,0.5);">🟢 ONLINE & SYNCING</span>`;
         }
     }
 };
@@ -1105,7 +1137,7 @@ window.syncOfflineQueue = async function() {
 // Automatically wake up the robot whenever the tablet connects to Wi-Fi
 window.addEventListener('online', () => { 
     window.isAppOnline = true; 
-    window.updateNetworkStatusUI(); 
+    if(typeof window.updateNetworkStatusUI === 'function') window.updateNetworkStatusUI(); 
     window.syncOfflineQueue(); 
 });
 
