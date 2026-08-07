@@ -311,6 +311,27 @@ window.processRawItemsIntoMenu = function(rawItems) {
 window.loadPOSData = async function() {
     window.applySidebarLayout(); 
     let products = await window.fetchMenu();
+
+    // 🍔 THE MALL BRANCH MENU FILTER INTERCEPTOR
+    try {
+        let currentBranch = localStorage.getItem('takodeal_device_branch');
+        if (currentBranch) {
+            const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch));
+            const bSnap = await window.getDocs(bQ);
+            if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
+                let allowedCats = bSnap.docs[0].data().allowedCategories;
+                
+                // If the array has items, it means restrictions are active! Strip out the disallowed items.
+                if (allowedCats.length > 0) {
+                    products = products.filter(item => allowedCats.includes(item.category));
+                }
+            }
+        }
+    } catch(filterError) {
+        console.error("Menu Filter Error:", filterError);
+    }
+
+    // ⬇️ The filtered products are now passed to the POS memory!
     window.masterPOSData.items = products;
     window.masterPOSData.variants = {}; 
     window.masterPOSData.addons = [];
