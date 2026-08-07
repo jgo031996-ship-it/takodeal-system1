@@ -18,11 +18,11 @@
             theme: {
                 extend: {
                     colors: {
-                        darkbg: '#0a0a0a',     /* Deepest black/gray */
-                        cardbg: '#141414',     /* Slightly lighter for cards */
-                        cardhover: '#1c1c1c',  /* Hover state for cards */
-                        brandred: '#dc2626',   /* Takodeal Red */
-                        brandgold: '#d97706',  /* Takodeal Gold */
+                        darkbg: '#0a0a0a',     
+                        cardbg: '#141414',     
+                        cardhover: '#1c1c1c',  
+                        brandred: '#dc2626',   
+                        brandgold: '#d97706',  
                     },
                     fontFamily: {
                         sans: ['"Plus Jakarta Sans"', 'sans-serif']
@@ -34,17 +34,12 @@
 
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0a0a0a; color: #ffffff; overflow-x: hidden; }
-        
-        /* Custom Scrollbar for Dark Theme */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #dc2626; }
-
-        /* Animations */
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
-        
         .toast-notification {
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
             background: #dc2626; color: white; font-weight: bold; padding: 12px 24px;
@@ -53,12 +48,8 @@
             opacity: 0; transition: opacity 0.3s, top 0.3s; pointer-events: none;
         }
         .toast-notification.show { opacity: 1; top: 40px; }
-
-        /* Glow Effects */
         .glow-red { box-shadow: 0 0 20px rgba(220, 38, 38, 0.4); }
         .glow-text { text-shadow: 0 0 10px rgba(255,255,255,0.3); }
-
-        /* Mix & Match Accordion Reset */
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
     </style>
@@ -66,7 +57,6 @@
 
 <body class="pb-24">
 
-    <!-- Toast Notification -->
     <div id="cartToast" class="toast-notification">
         <span class="text-xl">🐙</span> <span>Added to your cart!</span>
     </div>
@@ -78,11 +68,8 @@
                 <h2 class="text-xl font-black text-white flex items-center gap-2"><span class="text-2xl">🛵</span> Delivery Options</h2>
                 <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden')" class="text-zinc-500 hover:text-white text-2xl font-bold">&times;</button>
             </div>
-            
             <p class="text-zinc-400 text-sm mb-6">Choose your preferred delivery method below. If our in-house delivery is paused due to high volume, you can still order via our delivery partners!</p>
-            
             <div class="space-y-4">
-                <!-- TAKODEAL Direct -->
                 <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden'); window.enterOrderingScreen();" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
                     <div class="flex items-center gap-3">
                         <img src="customer-logo.jpg" class="w-10 h-10 rounded-full border border-brandred">
@@ -93,8 +80,6 @@
                     </div>
                     <span class="text-brandred group-hover:translate-x-1 transition-transform">➔</span>
                 </button>
-
-                <!-- GrabFood -->
                 <a href="https://food.grab.com/ph/en/restaurant/takodeal-cabantian-delivery/2-C6LTLJEFVK6TLN" target="_blank" class="w-full bg-[#00b14f]/10 border border-[#00b14f] p-4 rounded-xl flex items-center justify-between hover:bg-[#00b14f]/20 transition group">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-[#00b14f] rounded-full flex items-center justify-center text-white font-black text-xl">G</div>
@@ -105,8 +90,6 @@
                     </div>
                     <span class="text-[#00b14f] group-hover:translate-x-1 transition-transform">➔</span>
                 </a>
-
-                <!-- FoodPanda -->
                 <a href="https://www.foodpanda.ph/city/davao-city" target="_blank" class="w-full bg-[#d70f64]/10 border border-[#d70f64] p-4 rounded-xl flex items-center justify-between hover:bg-[#d70f64]/20 transition group">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-[#d70f64] rounded-full flex items-center justify-center text-white font-black text-xl">fp</div>
@@ -129,20 +112,28 @@
         <nav class="flex justify-between items-center p-6 lg:px-12 w-full max-w-7xl mx-auto">
             <div class="flex items-center gap-3">
                 <img src="customer-logo.jpg" alt="Takodeal Logo" class="w-10 h-10 rounded-full border-2 border-brandred">
-                <div class="font-black text-2xl tracking-widest text-white">TAKODEÁL</div>
+                <div class="font-black text-2xl tracking-widest text-white hidden sm:block">TAKODEÁL</div>
             </div>
             <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-zinc-400">
                 <a href="#" class="hover:text-white transition">Home</a>
                 <a href="#" onclick="window.enterOrderingScreen()" class="hover:text-white transition">Menu</a>
                 <a href="#" onclick="window.openDeliveryPartners()" class="hover:text-white transition">Partners</a>
             </div>
-            <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red">
-                Order Now
-            </button>
+            
+            <!-- 🔥 NEW: HOME PAGE CART BUTTON -->
+            <div class="flex items-center gap-4">
+                <button onclick="window.enterOrderingScreen()" class="hidden sm:block bg-brandred text-white px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red">
+                    Order Now
+                </button>
+                <button onclick="window.openCheckoutModal()" id="homeCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
+                    <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
+                    <span id="homeCartTotal" class="font-bold text-sm text-brandgold hidden">₱0.00</span>
+                    <div id="homeCartBadge" class="absolute -top-1.5 -right-1.5 bg-brandred text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-[0_0_10px_rgba(220,38,38,0.5)] hidden border border-darkbg">0</div>
+                </button>
+            </div>
         </nav>
 
         <div class="flex flex-col-reverse lg:flex-row items-center justify-between px-6 lg:px-12 py-10 lg:py-20 max-w-7xl mx-auto w-full gap-10 relative">
-            
             <div class="absolute top-20 left-10 w-72 h-72 bg-red-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-20"></div>
             <div class="absolute bottom-10 right-10 w-72 h-72 bg-orange-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-10"></div>
 
@@ -150,22 +141,17 @@
                 <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-300 mb-6 uppercase tracking-widest">
                     <span class="text-brandred">🔥</span> Easy way to order your food
                 </div>
-                
                 <h1 class="text-5xl lg:text-7xl font-black leading-tight text-white mb-4">
-                    Delivery of fresh <br>
-                    <span class="text-brandred glow-text">and hot food</span><br>
-                    anytime!
+                    Delivery of fresh <br><span class="text-brandred glow-text">and hot food</span><br>anytime!
                 </h1>
-                
                 <p class="text-zinc-400 leading-relaxed mb-8 max-w-md mx-auto lg:mx-0 text-lg">
                     Just confirm your order and enjoy our delicious, authentic Japanese takoyaki with the fastest delivery.
                 </p>
-                
                 <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
                     <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red w-full sm:w-auto">
                         Order Now
                     </button>
-                    <button onclick="document.getElementById('favoritesGrid').scrollIntoView({behavior: 'smooth'})" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">
+                    <button onclick="document.getElementById('homeBranchSelect').scrollIntoView({behavior: 'smooth'})" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">
                         See Menu
                     </button>
                 </div>
@@ -174,8 +160,6 @@
             <div class="lg:w-1/2 w-full flex justify-center z-10">
                 <div class="relative w-[350px] h-[350px] lg:w-[500px] lg:h-[500px] rounded-full p-2 border-4 border-dashed border-zinc-800 animate-fade-in">
                     <img src="banner.png" alt="Hero Image" class="w-full h-full object-cover rounded-full shadow-2xl">
-                    
-                    <!-- 🔥 NEW: Clickable Fallback Delivery Badge -->
                     <div onclick="window.openDeliveryPartners()" class="absolute bottom-10 -left-10 bg-cardbg border border-zinc-800 p-4 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in cursor-pointer hover:scale-105 transition-transform hover:border-brandred" style="animation-delay: 0.3s;" title="View Delivery Partners">
                         <div class="w-12 h-12 bg-red-950 rounded-full flex items-center justify-center text-2xl">🛵</div>
                         <div>
@@ -187,21 +171,36 @@
             </div>
         </div>
 
-        <!-- Featured Popular Items & Drinks -->
         <div class="px-6 py-20 max-w-7xl mx-auto w-full z-10 border-t border-zinc-900 mt-10">
+            
+            <!-- 🔥 NEW: HOME PAGE BRANCH SELECTOR -->
+            <div class="flex flex-col md:flex-row justify-between items-center bg-cardbg p-6 rounded-2xl border border-zinc-800 mb-12 shadow-lg">
+                <div class="mb-4 md:mb-0 text-center md:text-left">
+                    <h2 class="text-xl font-black text-white">📍 Select Your Location</h2>
+                    <p class="text-zinc-400 text-sm mt-1">See live availability for your nearest branch.</p>
+                </div>
+                <div class="w-full md:w-auto">
+                    <select id="homeBranchSelect" onchange="window.syncBranchSelection(this.value)" class="w-full md:w-72 rounded-xl border border-zinc-700 bg-darkbg py-3 px-5 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer shadow-inner">
+                        <option value="Cabantian">TAKODEÁL Cabantian</option>
+                        <option value="Citygate">TAKODEÁL Citygate</option>
+                        <option value="Maa">TAKODEÁL Maa</option>
+                    </select>
+                </div>
+            </div>
+
             <!-- Dishes Grid -->
-            <div class="flex justify-between items-end mb-10">
+            <div class="flex justify-between items-end mb-8">
                 <div>
                     <h2 class="text-3xl font-black text-white">Popular Dishes</h2>
                     <p class="text-zinc-500 mt-1">Our best sellers, ready for you.</p>
                 </div>
             </div>
             <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
-                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Fetching live favorites from TAKODEÁL HQ...</div>
+                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Scanning live inventory...</div>
             </div>
 
             <!-- Drinks Grid -->
-            <div class="flex justify-between items-end mb-10">
+            <div class="flex justify-between items-end mb-8">
                 <div>
                     <h2 class="text-3xl font-black text-white">Signature Drinks</h2>
                     <p class="text-zinc-500 mt-1">Perfect refreshments to pair with your Takoyaki.</p>
@@ -240,7 +239,7 @@
                 </div>
 
                 <div class="flex gap-2">
-                    <select id="selectedBranch" class="flex-1 rounded-full border-zinc-800 bg-cardbg py-2.5 px-4 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer">
+                    <select id="selectedBranch" onchange="window.syncBranchSelection(this.value)" class="flex-1 rounded-full border-zinc-800 bg-cardbg py-2.5 px-4 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer">
                         <option value="Cabantian">📍 Cabantian</option>
                         <option value="Citygate">📍 Citygate</option>
                         <option value="Maa">📍 Maa</option>
@@ -248,7 +247,6 @@
                 </div>
             </div>
 
-            <!-- The Live Menu Grid -->
             <div class="p-5 pb-32">
                 <div id="liveMenuContainer" class="space-y-8">
                     <!-- Populated by JS -->
@@ -259,7 +257,7 @@
 
 
     <!-- ========================================== -->
-    <!-- 🍲 STAGE 3: THE PREMIUM ITEM MODAL (IMAGE 4) -->
+    <!-- 🍲 STAGE 3: THE PREMIUM ITEM MODAL -->
     <!-- ========================================== -->
     <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
@@ -348,9 +346,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-        // ⚠️ WARNING: Ensure this config exactly matches your live database keys!
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
             authDomain: "takodeal-pos.firebaseapp.com",
@@ -363,29 +360,74 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        window.rawMenuCache = []; // Stores the raw DB download
         window.masterMenu = [];
         window.cart = [];
         window.activeModalItem = null;
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
         window.phantomVariants = {}; 
 
+        // 🔥 1. INITIAL DOWNLOAD (Runs once)
         window.loadLiveMenu = async function() {
             try {
                 const q = query(collection(db, "menu"), orderBy("category"));
                 const snap = await getDocs(q);
-                let categoriesMap = {};
-                let rawItems = [];
                 
+                window.rawMenuCache = [];
                 snap.forEach(docSnap => {
                     let item = docSnap.data();
                     item.id = docSnap.id;
-                    rawItems.push(item);
+                    window.rawMenuCache.push(item);
                 });
 
-                window.phantomVariants = {};
+                // Default to Cabantian on load
+                let defaultBranch = document.getElementById('homeBranchSelect').value || 'Cabantian';
+                window.syncBranchSelection(defaultBranch);
 
-                rawItems.forEach(item => {
+            } catch (error) {
+                console.error(error);
+                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-500">Failed to load menu.</div>';
+            }
+        }
+
+        // 🔥 2. THE SMART BRANCH SELECTION SYNC ENGINE
+        window.syncBranchSelection = function(branchName) {
+            // Sync both dropdowns so the user doesn't have to select it twice
+            document.getElementById('homeBranchSelect').value = branchName;
+            document.getElementById('selectedBranch').value = branchName;
+            
+            // Re-render the menu grid factoring in availability!
+            window.renderMenuForBranch(branchName);
+            
+            // Listen to the emergency kill switch for this specific branch
+            window.listenToStoreStatus();
+        };
+
+        // 🔥 3. THE LIVE AVAILABILITY FILTER
+        window.renderMenuForBranch = async function(branchName) {
+            try {
+                // Check if this branch is a Mall Branch (Allowed Categories filter)
+                let allowedCats = [];
+                const bQ = query(collection(db, "branches"), where("name", "==", branchName));
+                const bSnap = await getDocs(bQ);
+                if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
+                    allowedCats = bSnap.docs[0].data().allowedCategories;
+                }
+
+                window.masterMenu = [];
+                window.phantomVariants = {};
+                let categoriesMap = {};
+
+                window.rawMenuCache.forEach(item => {
                     let catName = item.category || "Other";
+                    
+                    // A. Mall Mode Check
+                    if (allowedCats.length > 0 && !allowedCats.includes(catName)) return;
+
+                    // B. Manager App Menu Toggle Check (Out of Stock at this specific branch)
+                    if (item.unavailableAt && item.unavailableAt.includes(branchName)) return;
+
+                    // C. Hidden Categories Check
                     if (hiddenCategories.includes(catName.toLowerCase()) || item.isAvailable === false) return;
 
                     let name = item.name;
@@ -416,26 +458,22 @@
 
                 renderDarkMenuGrid(categoriesMap);
                 renderLandingPageGrids(); 
-
-            } catch (error) {
-                console.error(error);
-                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-500">Failed to load menu.</div>';
+            } catch(e) {
+                console.error("Render Branch Error:", e);
             }
-        }
+        };
 
-        // 🔥 Expanded Landing Page Grids (Takoyaki & Drinks separately!)
+        // 🔥 Landing Page Grids (Takoyaki & Drinks separately!)
         function renderLandingPageGrids() {
             let foodHtml = '';
             let drinkHtml = '';
             
-            // Smart Filter: Seperate Food and Drinks
             let foodItems = window.masterMenu.filter(i => !i.isGrouped && i.image && !i.category.toLowerCase().includes('drink') && !i.category.toLowerCase().includes('tea') && !i.category.toLowerCase().includes('coffee') && !i.category.toLowerCase().includes('shake')).slice(0, 8);
             
             let drinkItems = window.masterMenu.filter(i => !i.isGrouped && i.image && (i.category.toLowerCase().includes('drink') || i.category.toLowerCase().includes('tea') || i.category.toLowerCase().includes('coffee') || i.category.toLowerCase().includes('shake'))).slice(0, 4);
 
-            // Fallback if images are missing
-            if(foodItems.length === 0) foodItems = window.masterMenu.filter(i => !i.category.toLowerCase().includes('tea')).slice(0, 8);
-            if(drinkItems.length === 0) drinkItems = window.masterMenu.filter(i => i.category.toLowerCase().includes('tea') || i.category.toLowerCase().includes('coffee')).slice(0, 4);
+            if(foodItems.length === 0 && window.masterMenu.length > 0) foodItems = window.masterMenu.filter(i => !i.category.toLowerCase().includes('tea')).slice(0, 8);
+            if(drinkItems.length === 0 && window.masterMenu.length > 0) drinkItems = window.masterMenu.filter(i => i.category.toLowerCase().includes('tea') || i.category.toLowerCase().includes('coffee')).slice(0, 4);
 
             const buildCard = (item) => {
                 let price = parseFloat(item.price || item.basePrice || 0);
@@ -468,7 +506,7 @@
             if (drinkGrid) drinkGrid.innerHTML = drinkHtml || '<div class="text-zinc-500">No signature drinks found.</div>';
         }
 
-        // 🔥 Premium Dark Menu Grid (Replaces Accordions)
+        // 🔥 Premium Dark Menu Grid
         function renderDarkMenuGrid(categoriesMap) {
             const container = document.getElementById('liveMenuContainer');
             container.innerHTML = '';
@@ -477,28 +515,30 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    let imgHtml = item.image ? `<img src="${item.image}" class="w-24 h-24 object-cover rounded-xl shadow-sm">` : `<div class="w-24 h-24 bg-zinc-800 rounded-xl flex items-center justify-center text-3xl border border-zinc-700">🍲</div>`;
-                    let priceLabel = item.isGrouped ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` : `₱${price.toFixed(2)}`;
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-full h-36 object-cover rounded-t-2xl">` : `<div class="w-full h-36 bg-zinc-800 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
+                    let priceLabel = item.isGrouped ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` : `<span class="text-zinc-400 text-sm font-bold">₱${price.toFixed(2)}</span>`;
 
                     return `
-                        <div class="menu-item-row flex items-center p-3 bg-cardbg border border-zinc-800 rounded-2xl shadow-sm cursor-pointer hover:border-zinc-600 transition-all group" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="flex flex-col bg-cardbg rounded-2xl shadow-sm cursor-pointer hover:shadow-xl hover:border-zinc-600 border border-zinc-800 transition-all group overflow-hidden relative" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
-                            <div class="ml-4 flex-1">
-                                <h4 class="font-black text-sm text-white leading-tight mb-1 group-hover:text-brandred transition-colors">${item.name}</h4>
-                                <p class="text-sm font-bold text-zinc-400">${priceLabel}</p>
+                            <div class="p-4 flex-1 flex flex-col relative">
+                                <h4 class="font-black text-sm text-white leading-tight mb-3 group-hover:text-brandred transition-colors pr-6">${item.name}</h4>
+                                <div class="mt-auto flex justify-between items-end">
+                                    ${priceLabel}
+                                </div>
+                                <div class="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-black group-hover:bg-brandred transition-colors shadow-md text-lg leading-none pb-0.5">+</div>
                             </div>
-                            <div class="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold mr-2 group-hover:bg-brandred transition-colors">+</div>
                         </div>
                     `;
                 }).join('');
 
                 container.innerHTML += `
-                    <div class="category-section mb-8">
-                        <h2 class="text-xl font-black text-white mb-4 flex items-center gap-3">
-                            <span class="w-2 h-6 bg-brandred rounded-full"></span>
-                            ${category.toUpperCase()}
+                    <div class="category-section mb-10">
+                        <h2 class="text-lg font-black text-white mb-5 flex items-center gap-3 uppercase tracking-wider">
+                            <span class="w-1.5 h-6 bg-brandred rounded-full"></span>
+                            ${category}
                         </h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                             ${itemsHtml}
                         </div>
                     </div>
@@ -814,20 +854,30 @@
             let headerBadge = document.getElementById('headerCartBadge');
             let topBtn = document.getElementById('topRightCartBtn');
 
+            let homeTotal = document.getElementById('homeCartTotal');
+            let homeBadge = document.getElementById('homeCartBadge');
+            let homeBtn = document.getElementById('homeCartBtn');
+
             if(totalItems > 0) {
-                headerTotal.innerText = `₱${grandTotal.toFixed(2)}`;
-                headerTotal.classList.remove('hidden');
+                let totalStr = `₱${grandTotal.toFixed(2)}`;
                 
-                headerBadge.innerText = totalItems;
-                headerBadge.classList.remove('hidden');
-                headerBadge.classList.add('flex');
+                if(headerTotal) { headerTotal.innerText = totalStr; headerTotal.classList.remove('hidden'); }
+                if(homeTotal) { homeTotal.innerText = totalStr; homeTotal.classList.remove('hidden'); }
                 
-                topBtn.classList.add('border-brandred'); 
+                if(headerBadge) { headerBadge.innerText = totalItems; headerBadge.classList.remove('hidden'); headerBadge.classList.add('flex'); }
+                if(homeBadge) { homeBadge.innerText = totalItems; homeBadge.classList.remove('hidden'); homeBadge.classList.add('flex'); }
+                
+                if(topBtn) topBtn.classList.add('border-brandred'); 
+                if(homeBtn) homeBtn.classList.add('border-brandred'); 
             } else {
-                headerTotal.classList.add('hidden');
-                headerBadge.classList.add('hidden');
-                headerBadge.classList.remove('flex');
-                topBtn.classList.remove('border-brandred');
+                if(headerTotal) headerTotal.classList.add('hidden');
+                if(homeTotal) homeTotal.classList.add('hidden');
+                
+                if(headerBadge) { headerBadge.classList.add('hidden'); headerBadge.classList.remove('flex'); }
+                if(homeBadge) { homeBadge.classList.add('hidden'); homeBadge.classList.remove('flex'); }
+                
+                if(topBtn) topBtn.classList.remove('border-brandred');
+                if(homeBtn) homeBtn.classList.remove('border-brandred');
             }
         };
 
@@ -931,9 +981,8 @@
                 window.isStoreAcceptingOrders = isEnabled;
 
                 if (!isEnabled) {
-                    // Store is Paused - Hijack the buttons to open Delivery Partners
                     if (checkoutButton) {
-                        checkoutButton.disabled = false; // Need it enabled to open modal
+                        checkoutButton.disabled = false;
                         checkoutButton.innerHTML = "<span>🛑 Store Paused - Use Grab/Foodpanda</span>";
                         checkoutButton.classList.replace('bg-brandred', 'bg-zinc-600');
                         checkoutButton.classList.replace('hover:bg-red-700', 'hover:bg-zinc-500');
@@ -942,7 +991,6 @@
                     if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
                 } else {
-                    // Store is Active
                     if (checkoutButton) {
                         checkoutButton.disabled = false;
                         checkoutButton.onclick = window.openCheckoutModal; 
@@ -972,7 +1020,6 @@
 
         document.addEventListener("DOMContentLoaded", async () => {
             window.loadLiveMenu(); 
-            window.listenToStoreStatus();
         });
 
     </script>
