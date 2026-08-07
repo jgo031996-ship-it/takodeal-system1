@@ -1306,7 +1306,7 @@ window.switchView = function (viewId) {
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
   if (viewId === 'equipment') window.loadEquipmentDashboard();
-  if (viewId === 'posconfig') { window.c(); window.loadPosLayout(); window.loadSidebarLayout(); }
+  if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); window.loadSidebarLayout(); }
   if (viewId === 'admin') { 
       window.loadAdminDashboard(); 
       if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
@@ -20628,9 +20628,9 @@ window.generateSupplierPurchaseOrders = async function() {
 // ==========================================
 
 // Intercept POS Config load to populate the branch dropdown automatically
-const originalLoadPosConfig = window.loadPosConfig || function(){};
-window.loadPosConfig = async function() {
-    await originalLoadPosConfig();
+const originalLoadPosConfigHub = window.loadPosConfigHub || function(){};
+window.loadPosConfigHub = async function() {
+    await originalLoadPosConfigHub();
     
     let sel = document.getElementById('restrictBranchSelect');
     if(sel && window.globalActiveBranches) {
