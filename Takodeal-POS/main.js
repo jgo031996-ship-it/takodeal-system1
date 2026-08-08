@@ -3580,29 +3580,26 @@ window.showMobileOrders = function() {
                     </div>`;
         }).join('');
 
-        // Parse Payment Methods Safely
         let paymentColor = '#f59e0b';
         let paymentLabel = 'Cash (Pay at Counter)';
-        
         if (o.paymentMode && o.paymentMode.toLowerCase() !== 'cash') {
             paymentColor = '#3b82f6';
             let refText = o.paymentReference || o.gcashRef || 'No Ref';
             paymentLabel = `${o.paymentMode} (Verify Ref: ${refText})`;
         }
 
-        // 🔥 EXTRACT THE MISSING DATA
         let customerName = o.customerName || o.name || 'Mobile Customer';
-        customerName = customerName.split('(')[0].trim(); // Clean up if the app accidentally appended order types to the name
+        customerName = customerName.split('(')[0].trim(); 
         
         let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : 'No Phone Provided';
         let orderTime = o.preferredTime ? `⏰ Advance Time: ${o.preferredTime}` : 'ASAP';
 
-        // 🔥 RE-INJECT GOOGLE MAPS & PHOTOS
-        let mapBtn = o.mapLink ? `<a href="${o.mapLink}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Open Google Maps</a>` : '';
+        // 🔥 THE MAP LINK FIX 🔥
+        let searchAddr = encodeURIComponent(o.deliveryAddress || '');
+        let mapBtn = o.mapLink ? `<a href="${o.mapLink}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Open Pinned Map</a>` : (o.deliveryAddress ? `<a href="https://www.google.com/maps/search/?api=1&query=${searchAddr}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Search Address</a>` : '');
         let photoBtn = o.locationImage ? `<a href="${o.locationImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; border:1px solid #c7d2fe; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block;">📸 View Landmark</a>` : '';
         let locText = o.deliveryAddress ? `<div style="font-size:12px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0;">📍 <strong>Delivery Address:</strong><br>${o.deliveryAddress}</div>` : '';
         
-        // COD Change Alert
         let changeStr = o.changeFor ? `<div style="font-size:11px; color:#b91c1c; font-weight:bold; margin-top:6px; background: white; padding: 4px; border-radius: 4px;">⚠️ Prepare Change For: ₱${o.changeFor}</div>` : '';
 
         html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
@@ -3629,7 +3626,7 @@ window.showMobileOrders = function() {
                     
                     <div style="display:flex; gap:10px;">
                         <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
-                        <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Send to Cart</button>
+                        <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Accept & Set Time</button>
                     </div>
                  </div>`;
     });
@@ -3778,46 +3775,44 @@ window.acceptMobileOrder = async function(docId) {
     let order = window.mobileOrdersList.find(o => o.id === docId);
     if (!order) return;
 
+    // 🔥 PREP TIME SELECTOR 🔥
+    const { value: prepTime } = await Swal.fire({
+        title: '⏱️ Set Preparation Time',
+        text: 'How long will this order take? The customer will see this on their live tracker.',
+        input: 'select',
+        inputOptions: { '10': '10 Minutes', '15': '15 Minutes', '20': '20 Minutes', '30': '30 Minutes', '45': '45 Minutes', '60': '1 Hour' },
+        inputPlaceholder: 'Select prep time',
+        showCancelButton: true,
+        confirmButtonColor: '#10b981',
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (!prepTime) return;
+
     if (typeof cart !== 'undefined' && cart.length > 0) {
         if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
     }
 
     cart = order.items.map(i => ({
-        name: i.name,
-        basePrice: i.price,
-        variantName: 'Standard',
-        variantPrice: i.price,
-        qty: i.quantity,
-        lineTotalFinal: i.price * i.quantity,
-        discountType: 'none',
-        discountVal: 0,
-        addons: i.addons || {},
-        notes: i.notes || '📱 Mobile App Order'
+        name: i.name, basePrice: i.price, variantName: 'Standard', variantPrice: i.price,
+        qty: i.quantity, lineTotalFinal: i.price * i.quantity, discountType: 'none', discountVal: 0,
+        addons: i.addons || {}, notes: i.notes || '📱 Mobile App Order'
     }));
 
     document.getElementById('finalCustomerName').value = order.customerName;
+    let orderTypeDrop = document.getElementById('mainOrderType');
+    if (orderTypeDrop && order.orderType) orderTypeDrop.value = order.orderType;
 
-    // UPDATE STATUS TO "PREPARING" INSTEAD OF DELETING!
-    // (Because the listener only looks for "mobile_queue", it will still disappear from this screen)
+    // 🔥 UPDATE FIREBASE SO CUSTOMER CAN TRACK IT (DO NOT DELETE IT YET!)
     await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
-        status: "preparing"
+        status: "preparing",
+        prepTime: parseInt(prepTime),
+        acceptedAt: window.serverTimestamp()
     });
 
-    // 🔥 THE FIX: Cashier App must remember this ID! 🔥
     window.activeMobileOrderId = docId;
 
     if (typeof renderCart === 'function') renderCart();
-    // 🔥 Lock in the customer details from the mobile order!
-    let customerInput = document.getElementById('customerName') || document.getElementById('checkoutCustomerName');
-    let orderTypeDrop = document.getElementById('orderType') || document.getElementById('checkoutOrderType');
-        
-    // (orderData is usually the variable name for the selected order. If yours is named 'order' or 'mobileOrder', change it below!)
-    if (customerInput) {
-         customerInput.value = order.customerName || order.name || "Mobile Customer";
-    }
-    if (orderTypeDrop) {
-         orderTypeDrop.value = order.orderType || "Take-Out";
-    }
     closeModal('mobileOrdersModal');
 };
 
