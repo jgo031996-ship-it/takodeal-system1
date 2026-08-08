@@ -447,19 +447,25 @@
         const provider = new GoogleAuthProvider();
         window.currentUser = null;
 
-        // 🔥 THE APP NAVIGATION ENGINE
+        // 🔥 THE APP NAVIGATION ENGINE (SQUISH-PROOF FIX)
         window.switchScreen = function(screenId) {
             document.querySelectorAll('.app-screen').forEach(screen => {
                 screen.classList.add('hidden');
-                screen.classList.remove('block', 'flex');
+                // Remove all layout classes to prevent conflicts
+                screen.classList.remove('block', 'flex', 'flex-col'); 
             });
             
             let target = document.getElementById(screenId);
             target.classList.remove('hidden');
             
             // Adjust display type based on the screen
-            if (screenId === 'greetingScreen') target.classList.add('block');
-            else target.classList.add('flex');
+            if (screenId === 'orderingScreen') {
+                // Only the menu screen needs flex to push the search bar up
+                target.classList.add('flex', 'flex-col'); 
+            } else {
+                // Profile, Home, and Reviews use standard block stacking!
+                target.classList.add('block'); 
+            }
             
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
