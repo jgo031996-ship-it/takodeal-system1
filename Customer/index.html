@@ -105,7 +105,7 @@
             </div>
             <p class="text-zinc-400 text-sm mb-6">Choose your preferred delivery method below based on your selected branch.</p>
             <div class="space-y-4">
-                <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden'); window.enterOrderingScreen();" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
+                <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden'); window.switchScreen('orderingScreen');" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
                     <div class="flex items-center gap-3">
                         <img src="customer-logo.jpg" class="w-10 h-10 rounded-full border border-brandred">
                         <div class="text-left">
@@ -139,31 +139,42 @@
         </div>
     </div>
 
-    <!-- 🌟 STAGE 1: THE PREMIUM LANDING PAGE -->
-    <div id="greetingScreen" class="w-full min-h-screen flex flex-col relative z-30 transition-all duration-500">
-        <nav class="sticky top-0 z-50 bg-darkbg/90 backdrop-blur-md flex justify-between items-center p-6 lg:px-12 w-full mx-auto border-b border-zinc-800">
-            <div class="flex items-center gap-3 max-w-7xl mx-auto w-full justify-between">
-                <div class="flex items-center gap-3">
-                    <img src="customer-logo.jpg" alt="Takodeal Logo" class="w-10 h-10 rounded-full border-2 border-brandred">
-                    <div class="hidden sm:block text-[#fcd34d]" style="font-family: 'Luckiest Guy', cursive; font-size: 32px; letter-spacing: 2px; text-shadow: 2px 2px 0px #b91c1c; margin-bottom: -5px;">TAKODEÁL</div>
-                </div>
-                <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-zinc-400">
-                    <a href="#" class="hover:text-white transition">Home</a>
-                    <a href="#" onclick="window.enterOrderingScreen()" class="hover:text-white transition">Menu</a>
-                    <a href="#" onclick="window.openDeliveryPartners()" class="hover:text-white transition">Partners</a>
-                    <a href="#" onclick="window.openReviewHub()" class="hover:text-white transition text-brandgold">Reviews ⭐</a>
-                </div>
-                <div class="flex items-center gap-4">
-                    <button onclick="window.enterOrderingScreen()" class="hidden sm:block bg-brandred text-white px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red">Order Now</button>
-                    <button onclick="window.openCheckoutModal()" id="homeCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
-                        <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
-                        <span id="homeCartTotal" class="font-bold text-sm text-brandgold hidden">₱0.00</span>
-                        <div id="homeCartBadge" class="absolute -top-1.5 -right-1.5 bg-brandred text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-[0_0_10px_rgba(220,38,38,0.5)] hidden border border-darkbg">0</div>
-                    </button>
-                </div>
+    <!-- 🌐 GLOBAL TOP NAVIGATION -->
+    <nav class="sticky top-0 z-50 bg-darkbg/90 backdrop-blur-md flex justify-between items-center p-6 lg:px-12 w-full mx-auto border-b border-zinc-800">
+        <div class="flex items-center gap-3 max-w-7xl mx-auto w-full justify-between">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="window.switchScreen('greetingScreen')">
+                <img src="customer-logo.jpg" alt="Takodeal Logo" class="w-10 h-10 rounded-full border-2 border-brandred shadow-[0_0_10px_rgba(220,38,38,0.5)]">
+                <div class="hidden sm:block text-[#fcd34d]" style="font-family: 'Luckiest Guy', cursive; font-size: 32px; letter-spacing: 2px; text-shadow: 2px 2px 0px #b91c1c; margin-bottom: -5px;">TAKODEÁL</div>
             </div>
-        </nav>
+            
+            <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-zinc-400">
+                <a href="#" onclick="window.switchScreen('greetingScreen')" class="hover:text-white transition">Home</a>
+                <a href="#" onclick="window.switchScreen('orderingScreen')" class="hover:text-white transition">Menu</a>
+                <a href="#" onclick="window.openDeliveryPartners()" class="hover:text-white transition">Partners</a>
+                <a href="#" onclick="window.openReviewHub()" class="hover:text-white transition text-brandgold">Reviews ⭐</a>
+            </div>
+            
+            <div class="flex items-center gap-3 sm:gap-4">
+                <!-- Profile / Loyalty Button -->
+                <button onclick="window.openUserProfile()" class="bg-zinc-900 border border-zinc-800 p-2 sm:px-4 sm:py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg flex items-center gap-2 group">
+                    <span class="text-lg group-hover:scale-110 transition-transform">👤</span>
+                    <span class="hidden sm:block font-bold text-xs">Profile</span>
+                </button>
 
+                <!-- Floating Cart Button -->
+                <button onclick="window.openCheckoutModal()" id="globalCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
+                    <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
+                    <span id="globalCartTotal" class="font-bold text-sm text-brandgold hidden">₱0.00</span>
+                    <div id="globalCartBadge" class="absolute -top-1.5 -right-1.5 bg-brandred text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-[0_0_10px_rgba(220,38,38,0.5)] hidden border border-darkbg">0</div>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- 🌟 STAGE 1: THE PREMIUM LANDING PAGE -->
+    <!-- ========================================== -->
+    <div id="greetingScreen" class="app-screen w-full flex flex-col relative z-30 transition-all duration-500 block">
         <div class="flex flex-col-reverse lg:flex-row items-center justify-between px-6 lg:px-12 py-10 lg:py-20 max-w-7xl mx-auto w-full gap-10 relative">
             <div class="absolute top-20 left-10 w-72 h-72 bg-red-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-20"></div>
             <div class="absolute bottom-10 right-10 w-72 h-72 bg-orange-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-10"></div>
@@ -179,7 +190,7 @@
                     Just confirm your order and bite into our signature takoyaki—perfectly crafted for the Filipino taste, loaded with flavor, and delivered piping hot to your door.
                 </p>
                 <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 mb-8">
-                    <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red w-full sm:w-auto">Order Now</button>
+                    <button onclick="window.switchScreen('orderingScreen')" class="bg-brandred text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red w-full sm:w-auto">Order Now</button>
                     <button onclick="document.getElementById('homeBranchSelect').scrollIntoView({behavior: 'smooth'})" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">See Menu</button>
                 </div>
                 
@@ -235,31 +246,20 @@
     </div>
 
 
-    <!-- 🛒 STAGE 2: THE MAIN ORDERING APP -->
-    <div id="appContainer" class="hidden max-w-2xl mx-auto bg-darkbg min-h-screen relative flex-col border-x border-zinc-900 animate-fade-in">
-        
-        <div class="sticky top-0 z-40 bg-darkbg/90 backdrop-blur-md p-4 flex justify-between items-center border-b border-zinc-800">
-            <div class="flex items-center gap-3 cursor-pointer" onclick="location.reload()">
-                <img src="customer-logo.jpg" class="w-9 h-9 rounded-full border border-brandred">
-                <div class="font-black text-xl tracking-widest text-white">TAKODEÁL</div>
-            </div>
-            
-            <button onclick="window.openCheckoutModal()" id="topRightCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
-                <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
-                <span id="headerCartTotal" class="font-bold text-sm text-brandgold hidden">₱0.00</span>
-                <div id="headerCartBadge" class="absolute -top-1.5 -right-1.5 bg-brandred text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-[0_0_10px_rgba(220,38,38,0.5)] hidden border border-darkbg">0</div>
-            </button>
-        </div>
-
-        <div id="orderingScreen" class="flex-1 flex flex-col">
+    <!-- ========================================== -->
+    <!-- 🛒 STAGE 2: THE MAIN ORDERING APP SCREEN -->
+    <!-- ========================================== -->
+    <div id="orderingScreen" class="app-screen hidden max-w-2xl mx-auto w-full bg-darkbg min-h-screen relative flex-col border-x border-zinc-900 animate-fade-in">
+        <div class="flex-1 flex flex-col">
             <div class="p-5 border-b border-zinc-900">
+                <h2 class="text-2xl font-black text-white mb-4">Hungry? Let's Order.</h2>
                 <div class="relative mb-4">
                     <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500">🔍</span>
-                    <input type="text" id="searchInput" onkeyup="filterMenu()" class="w-full bg-cardbg border border-zinc-800 rounded-full pl-12 pr-4 py-3 text-sm outline-none focus:border-brandred text-white placeholder-zinc-500 transition-colors" placeholder="Search dishes...">
+                    <input type="text" id="searchInput" onkeyup="filterMenu()" class="w-full bg-cardbg border border-zinc-800 rounded-full pl-12 pr-4 py-3 text-sm outline-none focus:border-brandred text-white placeholder-zinc-500 transition-colors shadow-inner" placeholder="Search dishes...">
                 </div>
 
                 <div class="flex gap-2">
-                    <select id="selectedBranch" onchange="window.syncBranchSelection(this.value)" class="flex-1 rounded-full border-zinc-800 bg-cardbg py-2.5 px-4 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer">
+                    <select id="selectedBranch" onchange="window.syncBranchSelection(this.value)" class="flex-1 rounded-full border border-zinc-800 bg-cardbg py-2.5 px-4 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer shadow-inner">
                         <option value="Cabantian">📍 Cabantian</option>
                         <option value="Citygate">📍 Citygate</option>
                         <option value="Maa">📍 Maa</option>
@@ -275,8 +275,74 @@
         </div>
     </div>
 
+    <!-- ========================================== -->
+    <!-- ⭐ STAGE 3: THE DEDICATED REVIEWS PAGE -->
+    <!-- ========================================== -->
+    <div id="reviewsScreen" class="app-screen hidden max-w-3xl mx-auto w-full min-h-screen p-6 lg:p-10 animate-fade-in">
+        <div class="flex justify-between items-end mb-8 border-b border-zinc-800 pb-6">
+            <div>
+                <h1 class="text-4xl font-black text-white">Reviews ⭐</h1>
+                <p class="text-zinc-400 mt-2">See what others are saying about our Takoyaki.</p>
+            </div>
+            <button onclick="window.submitFeedbackSuggestion()" class="hidden sm:flex bg-zinc-900 border border-brandgold text-brandgold hover:bg-brandgold hover:text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors shadow-lg items-center gap-2">
+                <span>💡</span> Suggestion Box
+            </button>
+        </div>
+        
+        <!-- Mobile Feedback Button -->
+        <button onclick="window.submitFeedbackSuggestion()" class="sm:hidden w-full mb-6 bg-zinc-900 border border-brandgold text-brandgold hover:bg-brandgold hover:text-white px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors shadow-lg flex justify-center items-center gap-2">
+            <span>💡</span> Suggestion / Feedback Box
+        </button>
 
-    <!-- 🍲 STAGE 3: THE PREMIUM ITEM MODAL -->
+        <div id="reviewsPageGrid" class="columns-1 sm:columns-2 gap-6 space-y-6 pb-32">
+            <div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading reviews...</div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 👤 STAGE 4: USER PROFILE & LOYALTY HUB -->
+    <!-- ========================================== -->
+    <div id="profileScreen" class="app-screen hidden max-w-2xl mx-auto w-full min-h-screen p-6 lg:p-10 animate-fade-in">
+        
+        <!-- User Header -->
+        <div class="flex items-center gap-5 bg-cardbg border border-zinc-800 p-6 rounded-2xl shadow-xl mb-8">
+            <img id="profileUserPic" src="customer-logo.jpg" class="w-20 h-20 rounded-full border-4 border-zinc-700 object-cover">
+            <div>
+                <h2 id="profileUserName" class="text-2xl font-black text-white">Loading Profile...</h2>
+                <p id="profileUserEmail" class="text-sm text-zinc-400">Please wait</p>
+                <button onclick="window.logoutCustomer()" class="mt-2 text-xs font-bold text-red-500 hover:text-red-400 underline">Sign Out</button>
+            </div>
+        </div>
+
+        <!-- 🏆 Takoyaki Loyalty Club -->
+        <div class="bg-gradient-to-br from-zinc-900 to-black border border-brandgold/30 p-6 rounded-2xl shadow-[0_0_20px_rgba(217,119,6,0.15)] mb-8 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-brandgold/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+            
+            <div class="flex justify-between items-center mb-6 relative z-10">
+                <div>
+                    <h3 class="text-lg font-black text-brandgold uppercase tracking-widest flex items-center gap-2"><span>🏆</span> VIP Loyalty Club</h3>
+                    <p class="text-xs text-zinc-400 mt-1 font-bold">1 Order = 1 Stamp. Collect 10 for a surprise!</p>
+                </div>
+                <div class="text-3xl font-black text-white bg-darkbg px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
+                    <span id="loyaltyPointsTxt">0</span><span class="text-sm text-zinc-500">/10</span>
+                </div>
+            </div>
+
+            <!-- Stamp Card Grid -->
+            <div class="grid grid-cols-5 gap-3 relative z-10" id="loyaltyStampsGrid">
+                <!-- Javascript will inject 10 circles here -->
+            </div>
+        </div>
+
+        <!-- 📜 Order History -->
+        <h3 class="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-3">📜 My Order History</h3>
+        <div id="orderHistoryList" class="space-y-4 pb-32">
+            <div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">⏳ Fetching your past orders...</div>
+        </div>
+
+    </div>
+
+    <!-- 🍲 STAGE 5: THE PREMIUM ITEM MODAL -->
     <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
             
@@ -363,7 +429,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc, limit } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -380,6 +446,28 @@
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
         window.currentUser = null;
+
+        // 🔥 THE APP NAVIGATION ENGINE
+        window.switchScreen = function(screenId) {
+            document.querySelectorAll('.app-screen').forEach(screen => {
+                screen.classList.add('hidden');
+                screen.classList.remove('block', 'flex');
+            });
+            
+            let target = document.getElementById(screenId);
+            target.classList.remove('hidden');
+            
+            // Adjust display type based on the screen
+            if (screenId === 'greetingScreen') target.classList.add('block');
+            else target.classList.add('flex');
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // If switching to Reviews, auto-load them
+            if (screenId === 'reviewsScreen') {
+                window.loadReviewsPage();
+            }
+        };
 
         // 🔥 VISIT COUNTER ENGINE 🔥
         window.initVisitCounter = async function() {
@@ -398,7 +486,14 @@
 
         onAuthStateChanged(auth, (user) => {
             window.currentUser = user;
-            if (user) window.startOrderTracker(user.email); // Start tracker if logged in!
+            if (user) {
+                window.startOrderTracker(user.email); // Start tracker if logged in!
+                
+                // If they are on the profile screen, update it instantly
+                if (document.getElementById('profileScreen').classList.contains('flex')) {
+                    window.renderUserProfile();
+                }
+            }
         });
 
         window.rawMenuCache = []; 
@@ -439,7 +534,7 @@
         };
 
         window.routeToGrab = function() {
-            let branch = document.getElementById('selectedBranch').value;
+            let branch = document.getElementById('selectedBranch').value || document.getElementById('homeBranchSelect').value;
             if (branch === 'Maa') {
                 window.open('https://r.grab.com/g/6-20260808_082607_a0d106d056c649f7abc73f31852b1c7e_MEXMPS-2-C72VAZAJTGN3A6', '_blank');
             } else {
@@ -547,17 +642,19 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    let imgHtml = item.image ? `<img src="${item.image}" class="w-24 h-24 object-cover rounded-xl shadow-sm">` : `<div class="w-24 h-24 bg-zinc-800 rounded-xl flex items-center justify-center text-3xl border border-zinc-700">🍲</div>`;
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-full h-36 object-cover rounded-t-2xl">` : `<div class="w-full h-36 bg-zinc-800 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
                     let priceLabel = item.isGrouped ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` : `<span class="text-zinc-400 text-sm font-bold">₱${price.toFixed(2)}</span>`;
 
                     return `
-                        <div class="menu-item-row flex items-center p-3 bg-cardbg border border-zinc-800 rounded-2xl shadow-sm cursor-pointer hover:border-zinc-600 transition-all group" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="flex flex-col bg-cardbg rounded-2xl shadow-sm cursor-pointer hover:shadow-xl hover:border-zinc-600 border border-zinc-800 transition-all group overflow-hidden relative" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
-                            <div class="ml-4 flex-1">
-                                <h4 class="font-black text-sm text-white leading-tight mb-1 group-hover:text-brandred transition-colors">${item.name}</h4>
-                                <p class="text-sm font-bold text-zinc-400">${priceLabel}</p>
+                            <div class="p-4 flex-1 flex flex-col relative">
+                                <h4 class="font-black text-sm text-white leading-tight mb-3 group-hover:text-brandred transition-colors pr-6">${item.name}</h4>
+                                <div class="mt-auto flex justify-between items-end">
+                                    ${priceLabel}
+                                </div>
+                                <div class="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-black group-hover:bg-brandred transition-colors shadow-md text-lg leading-none pb-0.5">+</div>
                             </div>
-                            <div class="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold mr-2 group-hover:bg-brandred transition-colors">+</div>
                         </div>
                     `;
                 }).join('');
@@ -568,7 +665,7 @@
                             <span class="w-1.5 h-6 bg-brandred rounded-full"></span>
                             ${category}
                         </h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                             ${itemsHtml}
                         </div>
                     </div>
@@ -874,7 +971,7 @@
             
             let headerTotal = document.getElementById('headerCartTotal');
             let headerBadge = document.getElementById('headerCartBadge');
-            let topBtn = document.getElementById('topRightCartBtn');
+            let topBtn = document.getElementById('globalCartBtn');
 
             let homeTotal = document.getElementById('homeCartTotal');
             let homeBadge = document.getElementById('homeCartBadge');
@@ -1056,7 +1153,6 @@
                         customClass: { popup: 'bg-cardbg text-white border border-zinc-800 rounded-2xl shadow-2xl' }
                     });
 
-                    // If they didn't explicitly click "Skip & Proceed", stop the checkout flow!
                     if (!upsellRes.isConfirmed) return; 
                 }
             }
@@ -1292,7 +1388,7 @@
                 }
                 
                 tracker.classList.remove('hidden');
-                setTimeout(() => tracker.classList.remove('translate-y-full'), 100); // Slide up animation
+                setTimeout(() => tracker.classList.remove('translate-y-full'), 100); 
                 
                 document.getElementById('trackerCode').innerText = `Order: ${order.orderCode}`;
                 
@@ -1338,36 +1434,170 @@
             });
         };
 
-        window.openReviewHub = async function() {
-            Swal.fire({title: 'Loading Reviews...', background: '#141414', color: '#fff', didOpen: () => Swal.showLoading()});
+        window.loadReviewsPage = async function() {
+            let grid = document.getElementById('reviewsPageGrid');
+            grid.innerHTML = '<div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading reviews...</div>';
+            
             try {
-                const q = query(collection(db, "reviews"), orderBy("timestamp", "desc"), limit(10));
+                const q = query(collection(db, "reviews"), orderBy("timestamp", "desc"), limit(30));
                 const snap = await getDocs(q);
                 let html = '';
+                
                 snap.forEach(d => {
                     let rev = d.data();
                     let dateStr = rev.timestamp ? rev.timestamp.toDate().toLocaleDateString() : 'Recent';
                     html += `
-                        <div class="bg-darkbg border border-zinc-800 p-4 rounded-xl mb-3 text-left">
-                            <div class="flex justify-between items-start mb-2">
-                                <span class="font-bold text-brandgold">${rev.customer || 'Customer'}</span>
-                                <span class="text-xs text-zinc-500">${dateStr}</span>
+                        <div class="bg-cardbg border border-zinc-800 p-6 rounded-2xl break-inside-avoid shadow-lg hover:border-zinc-600 transition-colors">
+                            <div class="flex justify-between items-start mb-3">
+                                <span class="font-black text-white text-lg">${rev.customer || 'Customer'}</span>
+                                <span class="text-xs font-bold text-zinc-500 bg-darkbg px-2 py-1 rounded-md border border-zinc-800">${dateStr}</span>
                             </div>
-                            <div class="text-sm text-zinc-300 italic">"${rev.text}"</div>
+                            <div class="text-brandgold mb-3 text-lg">⭐⭐⭐⭐⭐</div>
+                            <div class="text-sm text-zinc-300 leading-relaxed">"${rev.text}"</div>
                         </div>
                     `;
                 });
-                if(!html) html = '<div class="text-zinc-500 text-sm">No reviews yet. Be the first!</div>';
                 
-                Swal.fire({
-                    title: '⭐ Customer Reviews',
-                    html: `<div class="max-h-[60vh] overflow-y-auto">${html}</div>`,
-                    confirmButtonText: 'Close',
-                    confirmButtonColor: '#3f3f46',
-                    background: '#141414', color: '#fff',
+                if(!html) html = '<div class="text-zinc-500 text-sm col-span-full text-center py-10">No reviews yet. Place an order to be the first!</div>';
+                grid.innerHTML = html;
+                
+            } catch(e) { 
+                grid.innerHTML = '<div class="text-red-500 text-sm col-span-full text-center py-10">Failed to load reviews.</div>'; 
+            }
+        };
+
+        window.submitFeedbackSuggestion = async function() {
+            const { value: feedbackText } = await Swal.fire({
+                title: 'Suggestion Box 💡',
+                html: '<div class="text-sm text-zinc-400 mb-4">Have an idea for a new flavor? Or feedback on how we can improve? Let us know!</div>',
+                input: 'textarea',
+                inputPlaceholder: 'Type your suggestions here...',
+                showCancelButton: true,
+                confirmButtonText: 'Send to HQ 🚀',
+                confirmButtonColor: '#d97706',
+                cancelButtonColor: '#3f3f46',
+                background: '#141414', color: '#fff',
+                customClass: { popup: 'border border-zinc-800 rounded-2xl' },
+                inputValidator: (value) => { if (!value) return 'Please write something!'; }
+            });
+
+            if (feedbackText) {
+                Swal.fire({title: 'Sending...', background: '#0a0a0a', color: '#fff', didOpen: () => Swal.showLoading()});
+                try {
+                    await addDoc(collection(db, "customer_feedback"), {
+                        text: feedbackText,
+                        timestamp: serverTimestamp(),
+                        customerName: window.currentUser ? window.currentUser.displayName : 'Anonymous Guest',
+                        email: window.currentUser ? window.currentUser.email : 'None'
+                    });
+                    Swal.fire({ title: 'Sent! 🎉', text: 'HQ has received your message.', icon: 'success', background: '#0a0a0a', color: '#fff', confirmButtonColor: '#16a34a', customClass: { popup: 'border border-zinc-800 rounded-2xl' } });
+                } catch(e) { Swal.fire({title: 'Error', text: 'Failed to send feedback', icon: 'error', background: '#0a0a0a', color: '#fff'}); }
+            }
+        };
+
+        // 👤 USER PROFILE & LOYALTY ENGINE
+        window.openUserProfile = async function() {
+            if (!window.currentUser) {
+                const loginPrompt = await Swal.fire({
+                    title: 'Sign In Required',
+                    text: 'Please verify your identity with Google to view your loyalty points and past orders.',
+                    icon: 'info', showCancelButton: true, confirmButtonText: 'Sign In with Google',
+                    background: '#0a0a0a', color: '#fff', confirmButtonColor: '#16a34a', cancelButtonColor: '#3f3f46',
                     customClass: { popup: 'border border-zinc-800 rounded-2xl' }
                 });
-            } catch(e) { Swal.fire('Error', 'Could not load reviews.', 'error'); }
+                
+                if (loginPrompt.isConfirmed) {
+                    try {
+                        const result = await signInWithPopup(auth, provider);
+                        window.currentUser = result.user;
+                        window.switchScreen('profileScreen');
+                        window.renderUserProfile();
+                    } catch (e) { return Swal.fire({title: 'Login Failed', background: '#0a0a0a', color: '#fff'}); }
+                }
+                return;
+            }
+            
+            window.switchScreen('profileScreen');
+            window.renderUserProfile();
+        };
+
+        window.renderUserProfile = async function() {
+            if (!window.currentUser) return;
+            
+            document.getElementById('profileUserName').innerText = window.currentUser.displayName;
+            document.getElementById('profileUserEmail').innerText = window.currentUser.email;
+            
+            if (window.currentUser.photoURL) {
+                document.getElementById('profileUserPic').src = window.currentUser.photoURL;
+            }
+
+            let list = document.getElementById('orderHistoryList');
+            list.innerHTML = '<div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">⏳ Fetching your past orders...</div>';
+
+            try {
+                const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", window.currentUser.email), orderBy("timestamp", "desc"), limit(20));
+                const snap = await getDocs(q);
+                
+                let orders = [];
+                snap.forEach(d => orders.push(d.data()));
+                
+                // Loyalty Math
+                let totalOrders = orders.length;
+                let points = totalOrders % 10;
+                document.getElementById('loyaltyPointsTxt').innerText = points;
+                
+                let stampsHtml = '';
+                for (let i = 1; i <= 10; i++) {
+                    if (i <= points) {
+                        stampsHtml += `<div class="aspect-square bg-brandgold rounded-full flex items-center justify-center text-xl shadow-[0_0_15px_rgba(217,119,6,0.5)] border-2 border-yellow-200">🐙</div>`;
+                    } else if (i === 10) {
+                        stampsHtml += `<div class="aspect-square bg-darkbg border-2 border-dashed border-zinc-700 rounded-full flex items-center justify-center text-xl opacity-50">🎁</div>`;
+                    } else {
+                        stampsHtml += `<div class="aspect-square bg-darkbg border border-zinc-800 rounded-full flex items-center justify-center text-xs text-zinc-700 font-bold">${i}</div>`;
+                    }
+                }
+                document.getElementById('loyaltyStampsGrid').innerHTML = stampsHtml;
+
+                // Order History List
+                let html = '';
+                orders.forEach(o => {
+                    let dateStr = o.timestamp ? o.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : 'Recent';
+                    let statCol = o.status === 'completed' ? 'text-green-500' : (o.status === 'rejected' ? 'text-red-500' : 'text-brandgold');
+                    
+                    let itemsHtml = o.items.map(i => `<div class="text-sm text-zinc-300">• ${i.quantity}x ${i.name}</div>`).join('');
+                    
+                    html += `
+                        <div class="bg-cardbg border border-zinc-800 p-5 rounded-2xl shadow-sm">
+                            <div class="flex justify-between items-start border-b border-zinc-800 pb-3 mb-3">
+                                <div>
+                                    <div class="font-black text-white text-lg">${o.orderCode}</div>
+                                    <div class="text-xs text-zinc-500 font-bold">${dateStr} • ${o.branch}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-black text-brandred text-lg">₱${o.totalAmount.toFixed(2)}</div>
+                                    <div class="text-xs font-bold uppercase ${statCol}">${o.status}</div>
+                                </div>
+                            </div>
+                            <div class="space-y-1">
+                                ${itemsHtml}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                list.innerHTML = html || '<div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">You have no past orders yet.</div>';
+
+            } catch(e) {
+                console.error(e);
+                list.innerHTML = '<div class="text-red-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-red-900/50">Error fetching history.</div>';
+            }
+        };
+
+        window.logoutCustomer = async function() {
+            await signOut(auth);
+            window.currentUser = null;
+            window.switchScreen('greetingScreen');
+            Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Signed Out', showConfirmButton: false, timer: 2000});
         };
 
         window.filterMenu = function() {
@@ -1393,7 +1623,6 @@
             if (window.statusListenerUnsubscribe) { window.statusListenerUnsubscribe(); }
 
             window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
-                let checkoutButton = document.getElementById('reviewBtn'); 
                 let heroDeliveryText = document.getElementById('heroDeliveryText');
                 let directDeliveryStatus = document.getElementById('directDeliveryStatus');
 
@@ -1405,24 +1634,9 @@
                 window.isStoreAcceptingOrders = isEnabled;
 
                 if (!isEnabled) {
-                    if (checkoutButton) {
-                        checkoutButton.disabled = false;
-                        checkoutButton.innerHTML = "<span>🛑 Store Paused - Use Grab/Foodpanda</span>";
-                        checkoutButton.classList.replace('bg-brandred', 'bg-zinc-600');
-                        checkoutButton.classList.replace('hover:bg-red-700', 'hover:bg-zinc-500');
-                        checkoutButton.onclick = window.openDeliveryPartners; 
-                    }
                     if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
                 } else {
-                    if (checkoutButton) {
-                        checkoutButton.disabled = false;
-                        checkoutButton.onclick = window.openCheckoutModal; 
-                        let t = window.cart ? window.cart.reduce((sum, i) => sum + i.lineTotalFinal, 0) : 0;
-                        checkoutButton.innerHTML = `<span>🛒 View Cart</span> <span id="floatingTotal" class="bg-red-950 px-3 py-1 rounded-lg border border-red-800">₱${t.toFixed(2)}</span>`;
-                        checkoutButton.classList.replace('bg-zinc-600', 'bg-brandred');
-                        checkoutButton.classList.replace('hover:bg-zinc-500', 'hover:bg-red-700');
-                    }
                     if(heroDeliveryText) { heroDeliveryText.innerText = "40 Minutes"; heroDeliveryText.classList.remove('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Standard 40-Min Delivery"; directDeliveryStatus.classList.remove('text-red-500'); }
                 }
@@ -1434,11 +1648,7 @@
         };
 
         window.enterOrderingScreen = function() {
-            document.getElementById('greetingScreen').classList.add('hidden');
-            let appContainer = document.getElementById('appContainer');
-            appContainer.classList.remove('hidden');
-            appContainer.classList.add('flex');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            window.switchScreen('orderingScreen');
         };
 
         document.addEventListener("DOMContentLoaded", async () => {
