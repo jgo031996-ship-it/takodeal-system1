@@ -1,18 +1,59 @@
+// ========================================================
+// 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
+// ========================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, setPersistence, browserLocalPersistence, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
-const auth = getAuth(window.app); // Ensures it attaches to your existing Firebase app
+window.onSnapshot = onSnapshot;
+
+// 🔥 RESTORED FIREBASE CONFIG KEYS
+const firebaseConfig = {
+  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
+  authDomain: "takodeal-pos.firebaseapp.com",
+  projectId: "takodeal-pos",
+  storageBucket: "takodeal-pos.firebasestorage.app",
+  messagingSenderId: "248826111383",
+  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
-const storage = getStorage(window.app);
+const storage = getStorage(app);
 
 // 🔒 FORCE LOCAL PERSISTENCE FOR SAFARI / IPHONE
 setPersistence(auth, browserLocalPersistence).catch(err => console.error("Persistence error:", err));
 
 // 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
-window.storage = storage;
-window.db = window.db; // Already initialized at the top of your file
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+});
 
-console.log("🚀 TAKODEÁL Manager Authentication is ACTIVE!");
+window.storage = storage;
+window.db = db;
+
+// 🔥 THE MISSING FIREBASE BRIDGE 🔥
+window.query = query;
+window.where = where;
+window.collection = collection;
+window.getDocs = getDocs;
+window.getDoc = getDoc;
+window.addDoc = addDoc;
+window.updateDoc = updateDoc;
+window.deleteDoc = deleteDoc;
+window.doc = doc;
+window.setDoc = setDoc;
+window.serverTimestamp = serverTimestamp;
+window.increment = increment;
+window.orderBy = orderBy;
+window.limit = limit;
+window.ref = ref;
+window.uploadBytes = uploadBytes;
+window.getDownloadURL = getDownloadURL;
+
+console.log("🚀 TAKODEÁL Manager Offline Storage is ACTIVE!");
 
 // Your secure Master Key
 const MASTER_EMAIL = "jgo031996@gmail.com";
