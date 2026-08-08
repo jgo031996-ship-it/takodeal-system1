@@ -231,49 +231,7 @@ window.verifyPin = async function (pin) {
   }
 };
 
-// --- 🔥 INSTANT-BOOT MENU ENGINE ---
-window.fetchMenu = async function () {
-    let localData = [];
-    
-    // 1. Try to load instantly from the Tablet's Hard Drive
-    try {
-        let saved = localStorage.getItem('takodeal_offline_menu');
-        if (saved) localData = JSON.parse(saved);
-    } catch(e) { console.warn("Local storage read error"); }
-
-    // 2. Background Cloud Sync (Runs silently without freezing the screen!)
-    setTimeout(async () => {
-        try {
-            const snapshot = await window.getDocs(window.collection(window.db, "menu"));
-            let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            if (rawItems.length > 0) {
-                // Secretly save the freshest menu to the tablet for tomorrow
-                localStorage.setItem('takodeal_offline_menu', JSON.stringify(rawItems));
-                
-                // Silently refresh the POS screen if prices/names changed
-                let processed = window.processRawItemsIntoMenu(rawItems);
-                window.masterPOSData.items = processed;
-                if (typeof window.buildCategories === 'function') window.buildCategories();
-            }
-        } catch(error) { 
-            console.warn("Silent cloud sync failed. Relying on offline tablet memory.", error); 
-        }
-    }, 500); // Waits half a second so the UI can load first!
-
-    // 3. Return data! (Instant local load, or wait for Firebase if it's the very first time opening the app)
-    if (localData && localData.length > 0) {
-        console.log("⚡ Instant Boot: Loaded menu from tablet memory!");
-        return window.processRawItemsIntoMenu(localData);
-    } else {
-        console.log("☁️ First Boot: Downloading menu from Firebase...");
-        const snapshot = await window.getDocs(window.collection(window.db, "menu"));
-        let rawItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        localStorage.setItem('takodeal_offline_menu', JSON.stringify(rawItems));
-        return window.processRawItemsIntoMenu(rawItems);
-    }
-};
-
+// --- 🔥 INSTANT-BOOT & LIVE REAL-TIME MENU ENGINE ---
 window.processRawItemsIntoMenu = function(rawItems) {
     let groupedMenu = [];
     if (!window.masterPOSData) window.masterPOSData = {};
@@ -297,7 +255,7 @@ window.processRawItemsIntoMenu = function(rawItems) {
             window.masterPOSData.phantomVariants[baseName].push({
                 realName: item.name,
                 sizeLabel: sizeName,
-                price: parseFloat(item.price) || 0,
+                price: parseFloat(item.price || item.basePrice) || 0, // 🔥 FORCE THE TRUE PRICE
                 id: item.id
             });
             window.masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
@@ -308,110 +266,102 @@ window.processRawItemsIntoMenu = function(rawItems) {
     return groupedMenu;
 };
 
+window.menuListenerUnsubscribe = null;
+
 window.loadPOSData = async function() {
     window.applySidebarLayout(); 
-    let products = await window.fetchMenu();
-
-    // 🍔 THE MALL BRANCH MENU FILTER INTERCEPTOR
-    try {
-        let currentBranch = localStorage.getItem('takodeal_device_branch');
-        if (currentBranch) {
-            const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch));
-            const bSnap = await window.getDocs(bQ);
-            if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
-                let allowedCats = bSnap.docs[0].data().allowedCategories;
-                
-                // If the array has items, it means restrictions are active! Strip out the disallowed items.
-                if (allowedCats.length > 0) {
-                    products = products.filter(item => allowedCats.includes(item.category));
-                }
-            }
-        }
-    } catch(filterError) {
-        console.error("Menu Filter Error:", filterError);
-    }
-
-    // ⬇️ The filtered products are now passed to the POS memory!
-    window.masterPOSData.items = products;
-    window.masterPOSData.variants = {}; 
-    window.masterPOSData.addons = [];
     
-    // 🐙 NEW: Fetch Global Mix & Match configuration!
-    window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
-    try {
-        const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
-        if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
-    } catch(e) {}
-
-    // 🔥 SMART RECIPE LINKER: Downloads Global Add-ons
-    try {
-        const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
-        addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
-    } catch(e) { console.log("Failed to load addons", e); }
-
+    // 1. Load Global Configs & Addons FIRST
     try {
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
-        let dbCats = [...new Set(products.map(p => p.category))].filter(Boolean);
-        
         if (configSnap.exists()) {
             let configData = configSnap.data();
             window.masterPOSData.settings = {
-                orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery"],
+                orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery", "Grab"],
                 payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
             };
-        } else {
-            window.masterPOSData.settings = { 
-                orderTypes: ["Dine-In", "Take-Out", "Delivery", "Grab"], 
-                payMethods: ["Cash", "GCash", "Bank"] 
-            };
         }
-
-        // 🔥 THE FIX: ONLY USE THE NEW MANAGER DRAG-AND-DROP LAYOUT!
+        
         const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
         if (catLayoutSnap.exists() && catLayoutSnap.data().categories) {
             window.masterPOSData.categories = catLayoutSnap.data().categories;
-        } else {
-            window.masterPOSData.categories = dbCats.length > 0 ? dbCats : ["Takoyaki", "Milk Tea", "Coffee"];
+        }
+
+        const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
+        if (itemLayoutSnap.exists()) {
+            window.globalItemLayout = itemLayoutSnap.data().items || [];
         }
         
-        // 🛡️ ANTI-DUPLICATE SHIELD: Physically destroys duplicate categories in memory!
-        if (Array.isArray(window.masterPOSData.categories)) {
-            window.masterPOSData.categories = [...new Set(window.masterPOSData.categories.map(c => c.trim()))];
+        const addonLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
+        if (addonLayoutSnap.exists() && addonLayoutSnap.data().itemNames) {
+            window.masterPOSData.addonLayoutNames = addonLayoutSnap.data().itemNames;
         }
+        
+        window.masterPOSData.addons = [];
+        const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
+        addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
+        
+        // Mix match configs
+        window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
+        const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
+        if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
+        
+    } catch(e) { console.warn("Config load error", e); }
 
-        window.masterPOSData.addonLayoutNames = [];
-        const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
-        if (layoutSnap.exists() && layoutSnap.data().itemNames) {
-            window.masterPOSData.addonLayoutNames = layoutSnap.data().itemNames;
-        }
-
-    } catch (e) {
-        console.warn("Could not load global config, using defaults", e);
-    }
-
-    window.masterPOSData.stockLevels = {};
-    const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
-    invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
-
-    window.masterPOSData.bom = [];
-    const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-    bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
-
-    if (typeof buildCategories === 'function') buildCategories();
-    else if (typeof window.buildCategories === 'function') window.buildCategories();
-
-    let otHtml = ''; 
-    window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
-    document.getElementById('mainOrderType').innerHTML = otHtml;
+    // 2. Start LIVE Menu Listener (Never caches old prices again!)
+    if (window.menuListenerUnsubscribe) window.menuListenerUnsubscribe();
     
-    let pmHtml = ''; 
-    let optHtml = ''; 
+    let currentBranch = localStorage.getItem('takodeal_device_branch');
+    let allowedCats = [];
+    try {
+        if (currentBranch) {
+            const bSnap = await window.getDocs(window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch)));
+            if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
+                allowedCats = bSnap.docs[0].data().allowedCategories;
+            }
+        }
+    } catch(e) {}
+
+    const menuQ = window.query(window.collection(window.db, "menu"));
+    
+    window.menuListenerUnsubscribe = window.onSnapshot(menuQ, async (snapshot) => {
+        let rawItems = [];
+        snapshot.forEach(doc => rawItems.push({ id: doc.id, ...doc.data() }));
+        
+        // Save backup to local storage just in case of total outage
+        localStorage.setItem('takodeal_offline_menu', JSON.stringify(rawItems));
+        
+        // Filter by branch mall settings
+        if (allowedCats.length > 0) {
+            rawItems = rawItems.filter(item => allowedCats.includes(item.category));
+        }
+
+        // Process into Variants and Inject
+        let processed = window.processRawItemsIntoMenu(rawItems);
+        window.masterPOSData.items = processed;
+
+        // Fetch live stock for badges
+        window.masterPOSData.stockLevels = {};
+        try {
+            const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
+            invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
+            
+            window.masterPOSData.bom = [];
+            const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+            bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
+        } catch(e) {}
+
+        // Redraw UI instantly
+        if (typeof window.buildCategories === 'function') window.buildCategories();
+    });
+
+    let otHtml = ''; window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
+    let pmHtml = ''; let optHtml = '';
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
-        let act = idx === 0 ? 'active' : ''; 
-        if (idx === 0) window.selectedPaymentMethod = m; 
+        let act = idx === 0 ? 'active' : ''; if (idx === 0) window.selectedPaymentMethod = m; 
         pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
         optHtml += `<option value="${m}">${m}</option>`;
-    }); 
+    });
     pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
     
     let payGrid = document.querySelector('.payment-grid');
@@ -8814,3 +8764,67 @@ setTimeout(async () => {
         console.warn("Version check skipped:", e);
     }
 }, 8000); // Waits 8 seconds so it doesn't slow down the POS boot sequence
+
+// ==========================================
+// 🖨️ SILENT BLUETOOTH AUTO-RECONNECT ENGINE
+// ==========================================
+window.autoConnectPrinters = async function() {
+    let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
+    if (currentMode !== 'ble') return; // Only applies to modern direct Bluetooth mode
+    
+    let targets = ['main', 'kitchen', 'bar'];
+    let connectedCount = 0;
+
+    for (let target of targets) {
+        let savedDeviceId = localStorage.getItem(`takodeal_printer_${target}_id`);
+        if (savedDeviceId && navigator.bluetooth && navigator.bluetooth.getDevices) {
+            try {
+                const permittedDevices = await navigator.bluetooth.getDevices();
+                let device = permittedDevices.find(d => d.id === savedDeviceId);
+                
+                if (device) {
+                    console.log(`Auto-connecting to ${target} printer in background...`);
+                    
+                    // We must add an event listener to handle accidental disconnects!
+                    device.addEventListener('gattserverdisconnected', () => {
+                        console.warn(`${target.toUpperCase()} Printer disconnected.`);
+                        if (target === 'main') window.mainPrinterChar = null;
+                        else if (target === 'kitchen') window.kitchenPrinterChar = null;
+                        else if (target === 'bar') window.barPrinterChar = null;
+                    });
+
+                    const server = await device.gatt.connect();
+                    let foundChar = null;
+                    const services = await server.getPrimaryServices();
+                    
+                    for (let service of services) {
+                        const characteristics = await service.getCharacteristics();
+                        for (let char of characteristics) {
+                            if (char.properties.write || char.properties.writeWithoutResponse) {
+                                foundChar = char; break;
+                            }
+                        }
+                        if (foundChar) break;
+                    }
+
+                    if (foundChar) {
+                        if (target === 'main') window.mainPrinterChar = foundChar;
+                        else if (target === 'kitchen') window.kitchenPrinterChar = foundChar;
+                        else if (target === 'bar') window.barPrinterChar = foundChar;
+                        connectedCount++;
+                    }
+                }
+            } catch (e) {
+                console.warn(`Failed to auto-connect ${target} printer:`, e);
+            }
+        }
+    }
+    
+    if (connectedCount > 0) {
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: `🖨️ ${connectedCount} Printer(s) Auto-Connected!`, 
+            showConfirmButton: false, timer: 3000
+        });
+    }
+};
