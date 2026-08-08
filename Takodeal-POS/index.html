@@ -2807,7 +2807,12 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       let receiptId = await window.processCheckout(payload);
       if (receiptId) {
         if (window.activeMobileOrderId) {
-            await window.deleteDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId));
+            // 🔥 DO NOT DELETE! Update status so the customer's tracker marks it complete!
+            await window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
+                status: "completed",
+                receiptId: receiptId,
+                completedAt: window.serverTimestamp()
+            });
             window.activeMobileOrderId = null; 
         }
         lastTransactionData = { ...payload, receiptId: receiptId };
@@ -2855,7 +2860,6 @@ window.printReceipt = async function(type) {
     orderType = orderType.toUpperCase();
 
     if (type === 'food' || type === 'drinks') {
-        // \x1B\x21\x10 is Safe Double Height
         let tReceipt = "\x1B\x40\n\x1B\x61\x01\x1B\x21\x10"; 
         tReceipt += (type === 'food' ? "KITCHEN TICKET" : "BAR TICKET") + "\n";
         tReceipt += "\x1B\x21\x00>> " + orderType + " <<\n"; 
@@ -2869,9 +2873,16 @@ window.printReceipt = async function(type) {
             if (type === 'food' && isDrink) return; 
             if (type === 'drinks' && !isDrink) return;
             
-            tReceipt += "\x1B\x21\x10"; // Double Height
+            tReceipt += "\x1B\x21\x10"; 
+            
+            // 🔥 VARIANT NAME FIX (Removes redundant "(8 Pcs)" or "(L)")
             let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
-            tReceipt += `${item.qty}x ${item.name}${variantName}\n`;
+            if (item.variantName && (item.name.toLowerCase().includes(item.variantName.toLowerCase()) || (item.name.endsWith("(L)") && item.variantName === "L"))) {
+                variantName = ''; 
+            }
+            
+            let cleanQty = (item.qty % 1 === 0) ? item.qty.toString() : item.qty.toFixed(1);
+            tReceipt += `${cleanQty}x ${item.name}${variantName}\n`;
             tReceipt += "\x1B\x21\x00"; 
             if (item.addons) {
                 for (let key in item.addons) if (item.addons[key].qty > 0) tReceipt += `  + ${item.addons[key].qty}x ${key}\n`;
@@ -2888,30 +2899,23 @@ window.printReceipt = async function(type) {
 
     let initCmd = "\x1B\x40\n";
     if (localStorage.getItem('takodeal_auto_drawer') !== 'false') initCmd += "\x1B\x70\x00\x19\x96\n";
-    initCmd += "\x1B\x61\x01"; // Center Align
+    initCmd += "\x1B\x61\x01"; 
     payloadBuffers.push(window.stringToBuffer(initCmd)); 
 
-    // 🔥 PRINT THE LOGO
     if (logoBase64 && typeof window.encodeImageForPrinter === 'function') {
         let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH);
         if (imageBytes) payloadBuffers.push(imageBytes); 
     }
 
-    let receiptTop = "\n"; 
-    
-    // 🔥 THE FIX: Turn ON Center Align FIRST!
-    receiptTop += "\x1B\x61\x01"; 
+    let receiptTop = "\n\x1B\x61\x01"; 
 
-    // 🔥 THE FIX: Only print the Header if it actually exists!
     if (headerName && headerName.trim() !== "") {
         let safeHeaderName = headerName.toUpperCase().replace(/[^A-Z0-9\s-]/g, "");
         receiptTop += "\x1B\x21\x30" + safeHeaderName + "\n\x1B\x21\x00";
     }
     
     if (storeAddress) receiptTop += storeAddress + "\n";
-    if (storeContact) receiptTop += storeContact + "\n"; // 🔥 THE FIX: Removed "Contact:"
-    
-    // Turn OFF Center Align, go back to Left Align
+    if (storeContact) receiptTop += storeContact + "\n"; 
     receiptTop += "\x1B\x61\x00" + drawDoubleLine();
 
     const now = new Date();
@@ -2923,13 +2927,15 @@ window.printReceipt = async function(type) {
     let customer = d.customerName || "Guest";
     customer = customer.length > 20 ? customer.substring(0, 20) : customer;
 
-    // 🔥 THE FIX: Added Receipt Number and aligned everything!
-    receiptTop += "OR#:      " + (d.receiptId || "N/A") + "\n";
+    // 🔥 FIX: Properly displays TKDL order code for mobile orders
+    let finalReceiptId = d.orderCode || d.receiptId || "N/A";
+    receiptTop += "OR#:      " + finalReceiptId + "\n";
     receiptTop += "Date:     " + now.toLocaleDateString() + "\n";
     receiptTop += "Time:     " + hours + ':' + minutes + ' ' + ampm + "\n";
     receiptTop += drawDoubleLine();
     
-    receiptTop += "\x1B\x61\x01\x1B\x21\x10>> " + orderType + " <<\n\x1B\x21\x00\x1B\x61\x00\n"; 
+    // 🔥 FIX: Perfectly centers the Order Type header with a newline!
+    receiptTop += "\n\x1B\x61\x01\x1B\x21\x10>> " + orderType + " <<\x1B\x21\x00\n\x1B\x61\x00\n"; 
     receiptTop += drawDoubleLine();
 
     receiptTop += "Customer: " + customer + "\n";
@@ -2942,13 +2948,21 @@ window.printReceipt = async function(type) {
 
     d.cart.forEach(item => {
         let name = item.name || "Item"; let qty = parseFloat(item.qty || 1);
+        
+        // 🔥 VARIANT NAME FIX (Removes redundant "(8 Pcs)" or "(L)")
         let variantName = (item.variantName && item.variantName !== 'Standard') ? ` (${item.variantName})` : '';
+        if (item.variantName && (name.toLowerCase().includes(item.variantName.toLowerCase()) || (name.endsWith("(L)") && item.variantName === "L"))) {
+            variantName = ''; 
+        }
+
         let basePrice = parseFloat(item.variantPrice || item.basePrice || item.price || 0);
         let baseLineTotal = qty * basePrice; let itemGrossTotal = baseLineTotal;
 
         receiptTop += name + variantName + "\n";
         
-        let qtyStr = qty.toFixed(1) + "  x " + basePrice.toFixed(2);
+        // 🔥 FIX: Clean Qty (1 x 135.00 instead of 1.0 x 135.00)
+        let cleanQty = (qty % 1 === 0) ? qty.toString() : qty.toFixed(1);
+        let qtyStr = cleanQty + "  x " + basePrice.toFixed(2);
         let totalStr = baseLineTotal.toFixed(2);
         let padding = width - qtyStr.length - totalStr.length;
         receiptTop += qtyStr + " ".repeat(Math.max(1, padding)) + totalStr + "\n";
@@ -2963,7 +2977,7 @@ window.printReceipt = async function(type) {
                     
                     let aName = `  + ${addon.qty}x ${key}`;
                     if (addonPrice > 0) {
-                        let aQtyStr = `  ${addonTotalQty.toFixed(1)} x ${addonPrice.toFixed(2)}`;
+                        let aQtyStr = `  ${(addonTotalQty % 1 === 0 ? addonTotalQty.toString() : addonTotalQty.toFixed(1))} x ${addonPrice.toFixed(2)}`;
                         let aTotalStr = addonLineTotal.toFixed(2);
                         let aPad = width - aQtyStr.length - aTotalStr.length;
                         receiptTop += aName + "\n" + aQtyStr + " ".repeat(Math.max(1, aPad)) + aTotalStr + "\n";
@@ -3003,11 +3017,17 @@ window.printReceipt = async function(type) {
     receiptTop += finalTotalDue.toFixed(2) + "\n\x1B\x21\x00\n\x1B\x61\x00"; 
     receiptTop += drawDoubleLine();
     
-    if (amountRec > 0) {
+    // 🔥 FIX: Clean Cash/Gcash Display
+    receiptTop += "Method: " + (d.paymentMethod || "Cash") + "\n";
+    
+    // Only show "Cash Given" and "Change" if it's actually Cash!
+    let isCash = (!d.paymentMethod || d.paymentMethod === 'Cash' || d.paymentMethod.includes('Split'));
+    if (amountRec > 0 && isCash) {
         receiptTop += formatLine("Cash Given:", parseFloat(amountRec));
-        receiptTop += "Method: " + (d.paymentMethod || "Cash") + "\n";
         let changeVal = amountRec - finalTotalDue;
         receiptTop += formatLine("Change Amount:", changeVal > 0 ? changeVal : 0);
+    } else if (!isCash) {
+        receiptTop += formatLine("Amount Paid:", finalTotalDue);
     } else {
         receiptTop += "\x1B\x61\x01\x1B\x21\x10>> UNPAID ORDER <<\n\x1B\x21\x00\x1B\x61\x00\n";
     }
@@ -3115,21 +3135,25 @@ window.deleteParkedOrderManually = async function(docId) {
       window.updateParkedBadge();
 };
 
+// ==========================================
+// 🕒 ULTIMATE PARKED ORDERS & PRINTER ENGINE
+// ==========================================
 window.printParkedReceipt = async function(docId) {
     let order = window.currentParkedOrdersList.find(o => o.id === docId); 
     if (!order) { alert("Order data missing! Please refresh."); return; }
     
     // Morph the parked data into a live transaction format
     window.lastTransactionData = {
-        cart: order.items || [],
+        cart: order.items || order.cart || [],
         orderType: (order.orderType || "DINE-IN") + " (PARKED)",
         customerName: order.name || order.customerName || "Guest",
         cashierName: localStorage.getItem('cashierName') || "Staff",
-        netTotal: order.total || 0,
+        netTotal: order.total || order.netTotal || order.totalDue || 0,
         amountReceived: 0, 
         paymentMethod: "UNPAID",
         globalDiscountAmount: 0,
-        globalDiscountReason: ""
+        globalDiscountReason: "",
+        orderCode: order.orderCode || order.id // 🔥 OR# Fix mapped here too!
     };
     
     await window.printReceipt('receipt');
