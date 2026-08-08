@@ -394,6 +394,9 @@
           if (typeof checkCurrentShift === 'function') await checkCurrentShift();
           if (typeof updateParkedBadge === 'function') await updateParkedBadge();
           if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
+
+          // 🔥 THE NEW TRIGGER: Auto-reconnect printers the second they login!
+          if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
       }
   </script>
   <div class="login-overlay" id="loginOverlay">
