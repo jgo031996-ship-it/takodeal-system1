@@ -495,9 +495,12 @@
             Incoming Stock <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
         </div>
       </div>
-      <div class="nav-item" id="nav-menumgr" onclick="switchView('menumgr'); window.loadMenuManager();">
-        <span style="font-size: 18px;">🍔</span>
-        <div class="nav-item-text">Menu Toggle</div>
+      <div class="nav-item" id="nav-mobilehub" onclick="switchView('mobilehub'); window.loadMenuManager();">
+        <span style="font-size: 18px;">📱</span>
+        <div class="nav-item-text">
+            Mobile Hub 
+            <span id="mobileSidebarBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
+        </div>
       </div>
       <div class="nav-item" id="nav-stockreq" onclick="switchView('stockreq'); window.loadStockRequestUI();">
         <span style="font-size: 18px;">📦</span>
@@ -551,27 +554,11 @@
               
               <div id="posSettingsDropdown" style="display: none; position: absolute; top: 45px; right: 0; min-width: 240px; padding: 15px; gap: 12px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 1000; flex-direction: column;">
                   
-                  <!-- 🕒 PARKED ORDERS (SLATE BLUE - TOP PRIORITY) -->
+                  <!-- 🕒 PARKED ORDERS -->
                   <button onclick="window.showParkedOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #334155; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     🕒 Parked Orders
                     <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">0</span>
                   </button>
-
-                  <div style="border-top: 1px dashed #cbd5e1; margin-top: 4px; margin-bottom: 4px;"></div>
-
-                  <!-- 📱 MOBILE APP CONTROLS -->
-                  <div style="font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; text-align: left; margin-bottom: -4px;">📱 Mobile App Controls</div>
-                  
-                  <button onclick="window.showMobileOrders(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    📱 Mobile Orders
-                    <span id="mobileBadge" style="position: absolute; top: -5px; right: -5px; background: #facc15; color: #333; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">0</span>
-                  </button>
-                  
-                  <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🟢 App Accepting</button>
-                  
-                  <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚚 Delivery: <span id="deliveryStatusText">OFF</span></button>
-
-                  <button id="btnToggleBusy" onclick="window.toggleBusyMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🟢 Normal Prep (15m)</button>
 
                   <div style="border-top: 1px dashed #cbd5e1; margin-top: 4px; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                       <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center;">
@@ -980,37 +967,57 @@
       </div>
     </div>
     
-    <!-- UPDATED MENU TOGGLE VIEW -->
-    <div class="view-container" id="view-menumgr" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
+    <!-- 📱 NEW INTEGRATED MOBILE HUB & MENU TOGGLE -->
+    <div class="view-container" id="view-mobilehub" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="display: flex; gap: 20px; width: 100%; max-width: 1400px; margin: 0 auto; align-items: flex-start;">
           
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                  <span style="font-size: 22px;">🍔</span>
-                  <h2 style="margin: 0; color: #1e293b; font-size: 1.5rem;">Menu Toggle</h2>
+          <!-- LEFT COLUMN: Store Controls & Mobile Orders -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+              
+              <!-- App Controls -->
+              <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid var(--border);">
+                  <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">⚙️ Store App Controls</h3>
+                  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                      <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus()" style="background: #16a34a; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🟢 App Accepting</button>
+                      <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery()" style="background: #ef4444; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚚 Delivery: <span id="deliveryStatusText">OFF</span></button>
+                      <button id="btnToggleBusy" onclick="window.toggleBusyMode()" style="background: #10b981; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🟢 Normal Prep (15m)</button>
+                  </div>
               </div>
-              <p style="color: #64748b; font-size: 13px; margin: 0;">Turn items Sold Out here to instantly hide them from the Customer App.</p>
+
+              <!-- Live Mobile Orders -->
+              <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid var(--border); min-height: 500px;">
+                  <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📱 Live Mobile Orders</h3>
+                  <div id="mobileHubListContainer" style="display: flex; flex-direction: column; gap: 15px; max-height: 60vh; overflow-y: auto; padding-right: 5px;">
+                      <div style="text-align:center; padding: 20px; color: #94a3b8; font-weight: bold;">Loading orders...</div>
+                  </div>
+              </div>
           </div>
 
-          <!-- NEW: SEARCH & DROPDOWN FILTER BAR -->
-          <div id="menuToggleHeader" style="display: flex; justify-content: center; align-items: center; gap: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 20px;">
-              <div style="position: relative; width: 100%; max-width: 300px;">
-                  <span style="position: absolute; left: 12px; top: 12px; color: #94a3b8;">🔍</span>
-                  <input type="text" id="menuToggleSearch" onkeyup="filterMenuToggle()" placeholder="Search items..." style="width: 100%; padding: 10px 10px 10px 40px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; transition: border 0.3s; box-sizing: border-box;">
+          <!-- RIGHT COLUMN: Menu Toggle -->
+          <div style="flex: 1; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid var(--border); min-height: 700px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                      <span style="font-size: 20px;">🍔</span>
+                      <h2 style="margin: 0; color: #1e293b; font-size: 18px;">Menu Toggle</h2>
+                  </div>
+                  <p style="color: #64748b; font-size: 12px; margin: 0;">Mark items Sold Out</p>
               </div>
-              
-              <div style="display: flex; align-items: center; gap: 10px; width: 100%; max-width: 300px;">
-                  <label for="categoryFilter" style="color: #64748b; font-size: 14px; white-space: nowrap;">Filter:</label>
-                  <select id="categoryFilter" onchange="filterMenuToggle()" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: var(--text-main); background: white; cursor: pointer;">
-                      <option value="All">All Items</option>
+
+              <div id="menuToggleHeader" style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 20px;">
+                  <div style="position: relative; flex: 1;">
+                      <span style="position: absolute; left: 10px; top: 10px; color: #94a3b8; font-size: 14px;">🔍</span>
+                      <input type="text" id="menuToggleSearch" onkeyup="filterMenuToggle()" placeholder="Search items..." style="width: 100%; padding: 10px 10px 10px 35px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-size: 13px; box-sizing: border-box;">
+                  </div>
+                  <select id="categoryFilter" onchange="filterMenuToggle()" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #334155; font-size: 13px; outline: none;">
+                      <option value="All">All Categories</option>
                   </select>
               </div>
+              
+              <div id="menuManagerList" style="display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; padding-right: 5px;">
+                  <div style="text-align: center; padding: 20px; color: #94a3b8;">Loading menu...</div>
+              </div>
           </div>
-          
-          <!-- ITEM GRID (Populated by JS) -->
-          <div id="menuManagerList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
-              <div style="text-align: center; padding: 20px; color: #94a3b8; grid-column: 1/-1;">Loading menu database...</div>
-          </div>
+
       </div>
     </div>
 
@@ -1537,14 +1544,6 @@
       <div class="modal-head"><span>🕒 Parked Orders (Pay Later)</span><span class="close-modal"
           onclick="closeModal('parkedModal')">✖</span></div>
       <div class="modal-body" id="parkedListContainer" style="padding: 15px; background: #f9f9f9;">Loading...</div>
-    </div>
-  </div>
-
-  <div class="overlay" id="mobileOrdersModal">
-    <div class="modal" style="width: 500px; max-height: 85vh;">
-      <div class="modal-head"><span>📱 Incoming Mobile Orders</span><span class="close-modal"
-          onclick="closeModal('mobileOrdersModal')">✖</span></div>
-      <div class="modal-body" id="mobileListContainer" style="padding: 15px; background: #f9f9f9;">Waiting for orders...</div>
     </div>
   </div>
 
