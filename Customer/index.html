@@ -7,6 +7,8 @@
     
     <link rel="manifest" href="manifest.json">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- 🔥 NEW: Fun takoyaki logo font -->
+    <link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap" rel="stylesheet">
     
     <!-- THE CSS STYLING ENGINE (This is what was missing!) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -143,7 +145,7 @@
             <div class="flex items-center gap-3 max-w-7xl mx-auto w-full justify-between">
                 <div class="flex items-center gap-3">
                     <img src="customer-logo.jpg" alt="Takodeal Logo" class="w-10 h-10 rounded-full border-2 border-brandred">
-                    <div class="font-black text-2xl tracking-widest text-white hidden sm:block">TAKODEÁL</div>
+                    <div class="hidden sm:block text-[#fcd34d]" style="font-family: 'Luckiest Guy', cursive; font-size: 32px; letter-spacing: 2px; text-shadow: 2px 2px 0px #b91c1c; margin-bottom: -5px;">TAKODEÁL</div>
                 </div>
                 <div class="hidden md:flex gap-8 text-sm font-bold tracking-wider uppercase text-zinc-400">
                     <a href="#" class="hover:text-white transition">Home</a>
@@ -360,7 +362,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc, limit } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
