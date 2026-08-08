@@ -3412,59 +3412,60 @@ window.toggleMobileOrderingStatus = async function() {
 };
 
 window.startMobileOrdersListener = function(branch) {
-    if (window.mobileOrdersUnsubscribe) {
-        window.mobileOrdersUnsubscribe(); 
-    }
+    if (window.mobileOrdersUnsubscribe) window.mobileOrdersUnsubscribe(); 
 
+    // Listen for BOTH Incoming AND Preparing orders
     const q = window.query(
         window.collection(window.db, "incoming_orders"),
         window.where("branch", "==", branch),
-        window.where("status", "==", "mobile_queue")
+        window.where("status", "in", ["mobile_queue", "preparing"]) 
     );
 
     window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
         window.mobileOrdersList = [];
         let newOrdersFound = false;
+        let incomingCount = 0;
 
         snapshot.forEach((doc) => {
-            window.mobileOrdersList.push({ id: doc.id, ...doc.data() });
+            let data = doc.data();
+            window.mobileOrdersList.push({ id: doc.id, ...data });
+            if (data.status === "mobile_queue") incomingCount++; 
         });
 
-        // Check if a brand new order arrived while they were staring at the screen
         snapshot.docChanges().forEach((change) => {
-            if (change.type === "added" && window.hasLoadedMobileOrdersOnce) {
+            if (change.type === "added" && window.hasLoadedMobileOrdersOnce && change.doc.data().status === "mobile_queue") {
                 newOrdersFound = true;
             }
         });
 
-        // Update the Red Notification Badge
-        let badge = document.getElementById('mobileBadge');
+        // 🔥 THE CRASH FIX: Safely check if the badge exists BEFORE touching its style!
+        let badge = document.getElementById('mobileSidebarBadge') || document.getElementById('mobileBadge');
         if (badge) {
-            if (window.mobileOrdersList.length > 0) {
-                badge.innerText = window.mobileOrdersList.length;
-                badge.style.display = 'block';
+            if (incomingCount > 0) {
+                badge.innerText = incomingCount;
+                badge.style.display = 'inline-block';
+                badge.style.animation = 'pulse 1s infinite';
             } else {
                 badge.style.display = 'none';
+                badge.style.animation = 'none';
             }
         }
 
-        // Refresh UI if the cashier is currently looking at the modal
-        if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
-            window.showMobileOrders();
+        // Always redraw the Hub List if it updates
+        if (typeof window.renderMobileHubOrders === 'function') {
+            window.renderMobileHubOrders();
         }
 
-        // 🔥 THE NEW RING LOGIC: 
-        // Ring if a new order arrives OR if they just logged in and an order is waiting!
-        if (newOrdersFound || (!window.hasLoadedMobileOrdersOnce && window.mobileOrdersList.length > 0)) {
-            window.startMobileOrderAlarm();
+        if (newOrdersFound || (!window.hasLoadedMobileOrdersOnce && incomingCount > 0)) {
+            if (typeof window.startMobileOrderAlarm === 'function') {
+                window.startMobileOrderAlarm();
+            }
         }
 
-        window.hasLoadedMobileOrdersOnce = true; // Mark that they have officially logged in
+        window.hasLoadedMobileOrdersOnce = true; 
         
-    // 🔥 PART 3 FIX: ADD THE ERROR CATCHER HERE!
     }, (error) => {
         console.error("Firebase Mobile Orders Error:", error);
-        alert("Firebase Error: " + error.message + "\n\n(If you see this, turn off Tracking Prevention in your browser shield icon!)");
     });
 };
 
