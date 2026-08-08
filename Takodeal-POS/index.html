@@ -3057,13 +3057,21 @@ window.currentParkedOrdersList = [];
 
 window.parkOrder = async function() {
     if (typeof cart === 'undefined' || cart.length === 0) return;
-    let customerName = prompt("Enter Customer Name or Table Number:"); if (!customerName) return;
+    
+    // 🔥 NEW: Auto-pull the name from the Customer Name box!
+    let defaultName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : '';
+    
+    let customerName = prompt("Enter Customer Name or Table Number:", defaultName); 
+    if (!customerName) return;
+    
+    // Also save the order type so it stays when un-parked!
+    let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : 'Dine-In';
     
     let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     let cashier = localStorage.getItem('cashierName') || 'Unknown';
     let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
 
-    let payload = { branch: branch, cashier: cashier, name: customerName, items: cart, total: grandTotal };
+    let payload = { branch: branch, cashier: cashier, name: customerName, items: cart, total: grandTotal, orderType: currentOrderType };
     let parkedId = await window.parkOrderToDB(payload);
     
     if (parkedId) { 
@@ -3072,6 +3080,10 @@ window.parkOrder = async function() {
         
         cart = []; 
         if (typeof renderCart === 'function') renderCart(); 
+        
+        // Reset the customer name box for the next order
+        document.getElementById('finalCustomerName').value = '';
+
         window.updateParkedBadge(); 
         window.printParkedReceipt(parkedId); 
         alert("✅ Order Parked Securely!"); 
