@@ -355,8 +355,22 @@ window.loadPOSData = async function() {
         if (typeof window.buildCategories === 'function') window.buildCategories();
     });
 
-    let otHtml = ''; window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
-    let pmHtml = ''; let optHtml = '';
+    let otHtml = ''; window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
+    let otSelect = document.getElementById('mainOrderType');
+    otSelect.innerHTML = otHtml;
+
+    // 🔥 NEW: Auto-sync Payment Method when Grab/Foodpanda is selected 🔥
+    otSelect.addEventListener('change', function() {
+        let val = this.value.toLowerCase();
+        
+        if (val.includes('grab')) {
+            let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
+            if (btn) btn.click();
+        } else if (val.includes('foodpanda') || val.includes('panda')) {
+            let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
+            if (btn) btn.click();
+        }
+    });
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; if (idx === 0) window.selectedPaymentMethod = m; 
         pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
