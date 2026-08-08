@@ -302,7 +302,7 @@
     <!-- ========================================== -->
     <!-- 👤 STAGE 4: USER PROFILE & LOYALTY HUB -->
     <!-- ========================================== -->
-    <div id="profileScreen" class="app-screen hidden max-w-2xl mx-auto w-full min-h-screen p-6 lg:p-10 animate-fade-in">
+    <div id="profileScreen" class="app-screen hidden max-w-2xl mx-auto w-full min-h-screen flex-col p-6 lg:p-10 animate-fade-in">
         
         <!-- User Header -->
         <div class="flex items-center gap-5 bg-cardbg border border-zinc-800 p-6 rounded-2xl shadow-xl mb-8">
@@ -1535,11 +1535,22 @@
             list.innerHTML = '<div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">⏳ Fetching your past orders...</div>';
 
             try {
-                const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", window.currentUser.email), orderBy("timestamp", "desc"), limit(20));
+                // 1. Fetch orders by email only (Removes the Firebase orderBy to prevent the crash!)
+                const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", window.currentUser.email));
                 const snap = await getDocs(q);
                 
                 let orders = [];
                 snap.forEach(d => orders.push(d.data()));
+                
+                // 2. Sort the orders manually from newest to oldest
+                orders.sort((a, b) => {
+                    let timeA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
+                    let timeB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
+                    return timeB - timeA;
+                });
+                
+                // 3. Limit to the 20 most recent orders
+                orders = orders.slice(0, 20);
                 
                 // Loyalty Math
                 let totalOrders = orders.length;
@@ -1561,7 +1572,7 @@
                 // Order History List
                 let html = '';
                 orders.forEach(o => {
-                    let dateStr = o.timestamp ? o.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : 'Recent';
+                    let dateStr = o.timestamp ? (o.timestamp.toDate ? o.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : new Date(o.timestamp).toLocaleDateString()) : 'Recent';
                     let statCol = o.status === 'completed' ? 'text-green-500' : (o.status === 'rejected' ? 'text-red-500' : 'text-brandgold');
                     
                     let itemsHtml = o.items.map(i => `<div class="text-sm text-zinc-300">• ${i.quantity}x ${i.name}</div>`).join('');
@@ -1570,11 +1581,11 @@
                         <div class="bg-cardbg border border-zinc-800 p-5 rounded-2xl shadow-sm">
                             <div class="flex justify-between items-start border-b border-zinc-800 pb-3 mb-3">
                                 <div>
-                                    <div class="font-black text-white text-lg">${o.orderCode}</div>
+                                    <div class="font-black text-white text-lg">${o.orderCode || o.receiptId || 'Order'}</div>
                                     <div class="text-xs text-zinc-500 font-bold">${dateStr} • ${o.branch}</div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="font-black text-brandred text-lg">₱${o.totalAmount.toFixed(2)}</div>
+                                    <div class="font-black text-brandred text-lg">₱${(o.totalAmount || 0).toFixed(2)}</div>
                                     <div class="text-xs font-bold uppercase ${statCol}">${o.status}</div>
                                 </div>
                             </div>
