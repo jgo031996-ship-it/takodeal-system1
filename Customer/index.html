@@ -66,7 +66,7 @@
         <span class="text-xl">🐙</span> <span>Added to your cart!</span>
     </div>
 
-    <!-- 🌟 LIVE ORDER TRACKER -->
+    <!-- 🌟 LIVE ORDER TRACKER (GRABFOOD STYLE) -->
     <div id="liveOrderTracker" class="hidden fixed bottom-0 left-0 w-full bg-brandred text-white p-5 z-[100] rounded-t-3xl shadow-[0_-15px_30px_rgba(220,38,38,0.4)] transition-transform transform translate-y-0">
         <div class="max-w-2xl mx-auto flex justify-between items-center cursor-pointer" onclick="document.getElementById('trackerDetails').classList.toggle('hidden')">
             <div>
@@ -81,7 +81,7 @@
         </div>
     </div>
 
-    <!-- Hidden Receipt Template -->
+    <!-- Hidden Receipt Template for Image Generation -->
     <div id="hiddenReceiptTemplate" style="position: absolute; left: -9999px; top: 0; width: 320px; background: white; color: black; padding: 20px; font-family: monospace; border: 1px solid #ccc; box-sizing: border-box; z-index: -1;">
         <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 10px;">
             <h2 style="margin: 0; font-size: 22px;">TAKODEÁL</h2>
@@ -103,6 +103,7 @@
                 <h2 class="text-xl font-black text-white flex items-center gap-2"><span class="text-2xl">🛵</span> Delivery Options</h2>
                 <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden')" class="text-zinc-500 hover:text-white text-2xl font-bold">&times;</button>
             </div>
+            <p class="text-zinc-400 text-sm mb-6">Choose your preferred delivery method below based on your selected branch.</p>
             <div class="space-y-4">
                 <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden'); window.switchScreen('orderingScreen');" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
                     <div class="flex items-center gap-3">
@@ -154,15 +155,17 @@
             </div>
             
             <div class="flex items-center gap-3 sm:gap-4">
+                <!-- Profile / Loyalty Button -->
                 <button onclick="window.openUserProfile()" class="bg-zinc-900 border border-zinc-800 p-2 sm:px-4 sm:py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg flex items-center gap-2 group">
                     <span class="text-lg group-hover:scale-110 transition-transform">👤</span>
                     <span class="hidden sm:block font-bold text-xs">Profile</span>
                 </button>
 
-                <button onclick="window.openCheckoutModal()" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group global-cart-btn">
+                <!-- Floating Cart Button -->
+                <button onclick="window.openCheckoutModal()" id="globalCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
                     <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
-                    <span class="font-bold text-sm text-brandgold hidden global-cart-total">₱0.00</span>
-                    <div class="absolute -top-1.5 -right-1.5 bg-brandred text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-[0_0_10px_rgba(220,38,38,0.5)] hidden border border-darkbg global-cart-badge">0</div>
+                    <span id="globalCartTotal" class="font-bold text-sm text-brandgold hidden">₱0.00</span>
+                    <div id="globalCartBadge" class="absolute -top-1.5 -right-1.5 bg-brandred text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-[0_0_10px_rgba(220,38,38,0.5)] hidden border border-darkbg">0</div>
                 </button>
             </div>
         </div>
@@ -191,6 +194,7 @@
                     <button onclick="document.getElementById('homeBranchSelect').scrollIntoView({behavior: 'smooth'})" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">See Menu</button>
                 </div>
                 
+                <!-- 🔥 LIVE VISIT COUNTER 🔥 -->
                 <div class="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-xl text-zinc-400 text-xs font-bold uppercase tracking-widest shadow-lg">
                     <span class="text-brandgold animate-pulse text-sm">👁️</span> <span id="visitCounterTxt">Loading Visitors...</span>
                 </div>
@@ -228,12 +232,16 @@
             <div class="flex justify-between items-end mb-8">
                 <div><h2 class="text-3xl font-black text-white">Popular Dishes</h2><p class="text-zinc-500 mt-1">Our best sellers, ready for you.</p></div>
             </div>
-            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20"></div>
+            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
+                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Scanning live inventory...</div>
+            </div>
 
             <div class="flex justify-between items-end mb-8">
                 <div><h2 class="text-3xl font-black text-white">Signature Drinks</h2><p class="text-zinc-500 mt-1">Perfect refreshments to pair with your Takoyaki.</p></div>
             </div>
-            <div id="drinksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"></div>
+            <div id="drinksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Fetching refreshing drinks...</div>
+            </div>
         </div>
     </div>
 
@@ -281,8 +289,9 @@
             </button>
         </div>
         
+        <!-- Mobile Feedback Button -->
         <button onclick="window.submitFeedbackSuggestion()" class="sm:hidden w-full mb-6 bg-zinc-900 border border-brandgold text-brandgold hover:bg-brandgold hover:text-white px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors shadow-lg flex justify-center items-center gap-2">
-            <span>💡</span> Suggestion Box
+            <span>💡</span> Suggestion / Feedback Box
         </button>
 
         <div id="reviewsPageGrid" class="columns-1 sm:columns-2 gap-6 space-y-6 pb-32">
@@ -293,7 +302,7 @@
     <!-- ========================================== -->
     <!-- 👤 STAGE 4: USER PROFILE & LOYALTY HUB -->
     <!-- ========================================== -->
-    <div id="profileScreen" class="app-screen hidden max-w-2xl mx-auto w-full min-h-screen flex-col p-6 lg:p-10 animate-fade-in">
+    <div id="profileScreen" class="app-screen hidden max-w-2xl mx-auto w-full min-h-screen p-6 lg:p-10 animate-fade-in">
         
         <!-- User Header -->
         <div class="flex items-center gap-5 bg-cardbg border border-zinc-800 p-6 rounded-2xl shadow-xl mb-8">
@@ -319,18 +328,22 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-5 gap-3 relative z-10" id="loyaltyStampsGrid"></div>
+            <!-- Stamp Card Grid -->
+            <div class="grid grid-cols-5 gap-3 relative z-10" id="loyaltyStampsGrid">
+                <!-- Javascript will inject 10 circles here -->
+            </div>
         </div>
 
         <!-- 📜 Order History -->
         <h3 class="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-3">📜 My Order History</h3>
-        <div id="orderHistoryList" class="space-y-4 pb-32 w-full">
+        <div id="orderHistoryList" class="space-y-4 pb-32">
             <div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">⏳ Fetching your past orders...</div>
         </div>
+
     </div>
 
     <!-- 🍲 STAGE 5: THE PREMIUM ITEM MODAL -->
-    <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[100000] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
+    <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[90] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
             
             <div id="modalImage" class="w-full h-56 bg-zinc-900 flex items-center justify-center text-4xl relative">
@@ -396,13 +409,16 @@
                 <button onclick="window.closeCheckoutModal()" class="text-zinc-500 hover:text-white text-3xl font-bold leading-none transition-colors">&times;</button>
             </div>
             
-            <div id="checkoutModalItems" class="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-4"></div>
+            <div id="checkoutModalItems" class="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-4">
+                <!-- Cart items injected here -->
+            </div>
 
             <div class="p-5 bg-darkbg border-t border-zinc-800">
                 <div class="flex justify-between mb-5 items-center">
                     <span class="text-zinc-400 font-bold text-sm uppercase tracking-widest">Grand Total</span>
                     <span id="checkoutModalTotal" class="text-2xl font-black text-brandred">₱0.00</span>
                 </div>
+                <!-- Proceed to Details Button -->
                 <button onclick="window.submitOrder()" id="submitBtn" class="w-full bg-brandgold text-white font-black py-4 rounded-xl shadow-[0_0_15px_rgba(217,119,6,0.3)] hover:bg-yellow-600 active:scale-95 transition-all text-lg flex justify-center items-center gap-2">
                     <span>Proceed to Details 🚀</span>
                 </button>
@@ -426,6 +442,7 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
         window.currentUser = null;
@@ -440,15 +457,19 @@
             let target = document.getElementById(screenId);
             target.classList.remove('hidden');
             
+            // Adjust display type based on the screen
             if (screenId === 'greetingScreen') target.classList.add('block');
             else target.classList.add('flex');
             
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
-            if (screenId === 'reviewsScreen') { window.loadReviewsPage(); }
-            if (screenId === 'profileScreen') { window.renderUserProfile(); }
+            // If switching to Reviews, auto-load them
+            if (screenId === 'reviewsScreen') {
+                window.loadReviewsPage();
+            }
         };
 
+        // 🔥 VISIT COUNTER ENGINE 🔥
         window.initVisitCounter = async function() {
             try {
                 const visitRef = doc(db, "settings", "visit_counter");
@@ -466,7 +487,9 @@
         onAuthStateChanged(auth, (user) => {
             window.currentUser = user;
             if (user) {
-                window.startOrderTracker(user.email); 
+                window.startOrderTracker(user.email); // Start tracker if logged in!
+                
+                // If they are on the profile screen, update it instantly
                 if (document.getElementById('profileScreen').classList.contains('flex')) {
                     window.renderUserProfile();
                 }
@@ -501,7 +524,7 @@
                 console.error(error);
                 document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-500">Failed to load menu.</div>';
             }
-        };
+        }
 
         window.syncBranchSelection = function(branchName) {
             document.getElementById('homeBranchSelect').value = branchName;
@@ -926,7 +949,6 @@
 
             window.cart.push({
                 name: window.activeModalItem.realName || window.activeModalItem.name,
-                category: window.activeModalItem.category || "Uncategorized",
                 quantity: qty,
                 price: basePrice,
                 variantName: 'Standard',
@@ -947,23 +969,36 @@
             let grandTotal = 0; let totalItems = 0;
             window.cart.forEach(item => { grandTotal += item.lineTotalFinal; totalItems += item.quantity; });
             
-            // Loop through all elements matching these classes so we update everywhere instantly!
-            document.querySelectorAll('.global-cart-total').forEach(el => {
-                el.innerText = `₱${grandTotal.toFixed(2)}`;
-                if (totalItems > 0) el.classList.remove('hidden');
-                else el.classList.add('hidden');
-            });
+            let headerTotal = document.getElementById('headerCartTotal');
+            let headerBadge = document.getElementById('headerCartBadge');
+            // 🔥 FIXED: Matched the exact ID from your Top Navbar!
+            let topBtn = document.getElementById('topRightCartBtn'); 
 
-            document.querySelectorAll('.global-cart-badge').forEach(el => {
-                el.innerText = totalItems;
-                if (totalItems > 0) { el.classList.remove('hidden'); el.classList.add('flex'); }
-                else { el.classList.add('hidden'); el.classList.remove('flex'); }
-            });
+            let homeTotal = document.getElementById('homeCartTotal');
+            let homeBadge = document.getElementById('homeCartBadge');
+            let homeBtn = document.getElementById('homeCartBtn');
 
-            document.querySelectorAll('.global-cart-btn').forEach(el => {
-                if (totalItems > 0) el.classList.add('border-brandred');
-                else el.classList.remove('border-brandred');
-            });
+            if(totalItems > 0) {
+                let totalStr = `₱${grandTotal.toFixed(2)}`;
+                
+                if(headerTotal) { headerTotal.innerText = totalStr; headerTotal.classList.remove('hidden'); }
+                if(homeTotal) { homeTotal.innerText = totalStr; homeTotal.classList.remove('hidden'); }
+                
+                if(headerBadge) { headerBadge.innerText = totalItems; headerBadge.classList.remove('hidden'); headerBadge.classList.add('flex'); }
+                if(homeBadge) { homeBadge.innerText = totalItems; homeBadge.classList.remove('hidden'); homeBadge.classList.add('flex'); }
+                
+                if(topBtn) topBtn.classList.add('border-brandred'); 
+                if(homeBtn) homeBtn.classList.add('border-brandred'); 
+            } else {
+                if(headerTotal) headerTotal.classList.add('hidden');
+                if(homeTotal) homeTotal.classList.add('hidden');
+                
+                if(headerBadge) { headerBadge.classList.add('hidden'); headerBadge.classList.remove('flex'); }
+                if(homeBadge) { homeBadge.classList.add('hidden'); homeBadge.classList.remove('flex'); }
+                
+                if(topBtn) topBtn.classList.remove('border-brandred');
+                if(homeBtn) homeBtn.classList.remove('border-brandred');
+            }
         };
 
         window.openCheckoutModal = function() {
@@ -1028,6 +1063,7 @@
             if (window.cart.length === 0) window.closeCheckoutModal();
         };
 
+        // 🚀 THE MASTER ANTI-SCAM, UPSELL & CHECKOUT ENGINE
         window.swalMap = null;
         window.swalMarker = null;
 
@@ -1066,7 +1102,7 @@
         window.updateSwalUI = function() {
             let type = document.getElementById('swal-type').value;
             let pay = document.getElementById('swal-payment').value;
-            let branch = document.getElementById('selectedBranch').value || document.getElementById('homeBranchSelect').value;
+            let branch = document.getElementById('selectedBranch').value;
 
             document.getElementById('swal-time-div').style.display = type.includes('Advance') ? 'block' : 'none';
 
@@ -1088,28 +1124,18 @@
             if (window.cart.length === 0) return Swal.fire({ title: 'Cart Empty', icon: 'warning', background: '#141414', color: '#fff' });
 
             // 🔥 STAGE 1: JOLLIBEE-STYLE DRINK UPSELL ENGINE 🔥
-            let hasFood = window.cart.some(i => {
-                let cat = (i.category || "").toLowerCase();
-                return !cat.includes('drink') && !cat.includes('tea') && !cat.includes('coffee') && !cat.includes('beverage');
-            });
-            let hasDrink = window.cart.some(i => {
-                let cat = (i.category || "").toLowerCase();
-                return cat.includes('drink') || cat.includes('tea') || cat.includes('coffee') || cat.includes('beverage');
-            });
+            let hasFood = window.cart.some(i => !i.category?.toLowerCase().includes('drink') && !i.category?.toLowerCase().includes('tea') && !i.category?.toLowerCase().includes('coffee') && !i.category?.toLowerCase().includes('beverage'));
+            let hasDrink = window.cart.some(i => i.category?.toLowerCase().includes('drink') || i.category?.toLowerCase().includes('tea') || i.category?.toLowerCase().includes('coffee') || i.category?.toLowerCase().includes('beverage'));
 
             if (hasFood && !hasDrink) {
-                let drinks = window.masterMenu.filter(i => {
-                    let cat = (i.category || "").toLowerCase();
-                    return cat.includes('drink') || cat.includes('tea') || cat.includes('coffee') || cat.includes('beverage');
-                });
+                let drinks = window.masterMenu.filter(i => i.category?.toLowerCase().includes('drink') || i.category?.toLowerCase().includes('tea') || i.category?.toLowerCase().includes('coffee') || i.category?.toLowerCase().includes('beverage'));
                 
                 if (drinks.length > 0) {
                     let shuffled = drinks.sort(() => 0.5 - Math.random()).slice(0, 3);
                     let drinkCards = shuffled.map(d => {
                         let safeData = encodeURIComponent(JSON.stringify(d));
                         let imgHtml = d.image ? `<img src="${d.image}" style="width:100%; height:80px; object-fit:cover; border-radius:8px; margin-bottom:8px;">` : `<div style="width:100%; height:80px; background:#27272a; border-radius:8px; margin-bottom:8px; display:flex; align-items:center; justify-content:center; font-size:24px;">🥤</div>`;
-                        // 🔥 THE Z-INDEX FIX: Close Swal completely before opening Item Modal
-                        return `<div style="background:#18181b; border:1px solid #27272a; padding:10px; border-radius:12px; min-width:130px; flex:1; display:flex; flex-direction:column; justify-content:space-between; cursor:pointer; transition:0.2s; hover:border-brandgold;" onclick="Swal.close(); setTimeout(() => window.openItemModal('${safeData}'), 300);">
+                        return `<div style="background:#18181b; border:1px solid #27272a; padding:10px; border-radius:12px; min-width:130px; flex:1; display:flex; flex-direction:column; justify-content:space-between; cursor:pointer; transition:0.2s; hover:border-brandgold;" onclick="window.openItemModal('${safeData}'); Swal.close();">
                             ${imgHtml}
                             <div style="font-size:12px; font-weight:bold; color:white; line-height:1.2; margin-bottom:5px;">${d.name}</div>
                             <div style="color:#d97706; font-weight:900; font-size:14px;">₱${parseFloat(d.price||d.basePrice||0).toFixed(2)}</div>
@@ -1248,7 +1274,7 @@
             let origHtml = btn.innerHTML;
             btn.innerHTML = '<span>⏳ Processing...</span>'; btn.disabled = true;
 
-            let branch = document.getElementById('selectedBranch').value || document.getElementById('homeBranchSelect').value;
+            let branch = document.getElementById('selectedBranch').value || 'Cabantian';
             let grandTotal = window.cart.reduce((sum, item) => sum + item.lineTotalFinal, 0);
 
             try {
@@ -1346,6 +1372,69 @@
             }
         };
 
+        // 🌟 LIVE ORDER TRACKER & REVIEW SYSTEM 🌟
+        window.startOrderTracker = function(email) {
+            const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", email), orderBy("timestamp", "desc"), limit(1));
+            onSnapshot(q, (snap) => {
+                let tracker = document.getElementById('liveOrderTracker');
+                if (snap.empty) { tracker.classList.add('translate-y-full'); return; }
+                
+                let order = snap.docs[0].data();
+                if (order.status === 'completed' || order.status === 'rejected') {
+                    tracker.classList.add('translate-y-full');
+                    if (order.status === 'completed' && !order.reviewPrompted) {
+                        window.promptReview(order.orderCode, snap.docs[0].id);
+                    }
+                    return;
+                }
+                
+                tracker.classList.remove('hidden');
+                setTimeout(() => tracker.classList.remove('translate-y-full'), 100); 
+                
+                document.getElementById('trackerCode').innerText = `Order: ${order.orderCode}`;
+                
+                let statusText = "Pending Confirmation";
+                let timeStr = "Awaiting Kitchen...";
+                
+                if (order.status === 'preparing') {
+                    statusText = "🍳 Kitchen is preparing your food!";
+                    timeStr = order.prepTime ? `Est. Prep Time: ${order.prepTime} Mins` : "Cooking now!";
+                } else if (order.status === 'out_for_delivery' || order.status === 'ready') {
+                    statusText = "🛵 Order is Ready / On the way!";
+                    timeStr = "Enjoy your meal!";
+                }
+
+                document.getElementById('trackerStatus').innerText = statusText;
+                document.getElementById('trackerTime').innerText = timeStr;
+            });
+        };
+
+        window.promptReview = function(orderCode, docId) {
+            Swal.fire({
+                title: 'How was your food? 🐙',
+                html: `
+                    <div class="text-sm text-zinc-400 mb-4">We'd love to hear your feedback on order ${orderCode}!</div>
+                    <textarea id="reviewText" class="w-full bg-darkbg border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none resize-none h-24" placeholder="Tell us what you loved! (Optional)"></textarea>
+                `,
+                confirmButtonText: 'Submit Review ⭐',
+                confirmButtonColor: '#d97706',
+                showCancelButton: true,
+                cancelButtonText: 'Skip',
+                cancelButtonColor: '#3f3f46',
+                background: '#141414', color: '#fff',
+                customClass: { popup: 'border border-zinc-800 rounded-2xl' },
+                preConfirm: () => {
+                    let text = document.getElementById('reviewText').value;
+                    if(text) addDoc(collection(db, "reviews"), { orderCode: orderCode, text: text, timestamp: serverTimestamp(), customer: window.currentUser.displayName });
+                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
+                }
+            }).then((res) => {
+                if(res.dismiss === Swal.DismissReason.cancel) {
+                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
+                }
+            });
+        };
+
         window.loadReviewsPage = async function() {
             let grid = document.getElementById('reviewsPageGrid');
             grid.innerHTML = '<div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading reviews...</div>';
@@ -1357,7 +1446,7 @@
                 
                 snap.forEach(d => {
                     let rev = d.data();
-                    let dateStr = rev.timestamp ? (rev.timestamp.toDate ? rev.timestamp.toDate().toLocaleDateString() : new Date(rev.timestamp).toLocaleDateString()) : 'Recent';
+                    let dateStr = rev.timestamp ? rev.timestamp.toDate().toLocaleDateString() : 'Recent';
                     html += `
                         <div class="bg-cardbg border border-zinc-800 p-6 rounded-2xl break-inside-avoid shadow-lg hover:border-zinc-600 transition-colors">
                             <div class="flex justify-between items-start mb-3">
@@ -1407,6 +1496,7 @@
             }
         };
 
+        // 👤 USER PROFILE & LOYALTY ENGINE
         window.openUserProfile = async function() {
             if (!window.currentUser) {
                 const loginPrompt = await Swal.fire({
@@ -1446,20 +1536,13 @@
             list.innerHTML = '<div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">⏳ Fetching your past orders...</div>';
 
             try {
-                const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", window.currentUser.email));
+                const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", window.currentUser.email), orderBy("timestamp", "desc"), limit(20));
                 const snap = await getDocs(q);
                 
                 let orders = [];
                 snap.forEach(d => orders.push(d.data()));
                 
-                orders.sort((a, b) => {
-                    let timeA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
-                    let timeB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
-                    return timeB - timeA;
-                });
-                
-                orders = orders.slice(0, 20);
-                
+                // Loyalty Math
                 let totalOrders = orders.length;
                 let points = totalOrders % 10;
                 document.getElementById('loyaltyPointsTxt').innerText = points;
@@ -1476,9 +1559,10 @@
                 }
                 document.getElementById('loyaltyStampsGrid').innerHTML = stampsHtml;
 
+                // Order History List
                 let html = '';
                 orders.forEach(o => {
-                    let dateStr = o.timestamp ? (o.timestamp.toDate ? o.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : new Date(o.timestamp).toLocaleDateString()) : 'Recent';
+                    let dateStr = o.timestamp ? o.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : 'Recent';
                     let statCol = o.status === 'completed' ? 'text-green-500' : (o.status === 'rejected' ? 'text-red-500' : 'text-brandgold');
                     
                     let itemsHtml = o.items.map(i => `<div class="text-sm text-zinc-300">• ${i.quantity}x ${i.name}</div>`).join('');
@@ -1487,11 +1571,11 @@
                         <div class="bg-cardbg border border-zinc-800 p-5 rounded-2xl shadow-sm">
                             <div class="flex justify-between items-start border-b border-zinc-800 pb-3 mb-3">
                                 <div>
-                                    <div class="font-black text-white text-lg">${o.orderCode || o.receiptId || 'Order'}</div>
+                                    <div class="font-black text-white text-lg">${o.orderCode}</div>
                                     <div class="text-xs text-zinc-500 font-bold">${dateStr} • ${o.branch}</div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="font-black text-brandred text-lg">₱${(o.totalAmount || 0).toFixed(2)}</div>
+                                    <div class="font-black text-brandred text-lg">₱${o.totalAmount.toFixed(2)}</div>
                                     <div class="text-xs font-bold uppercase ${statCol}">${o.status}</div>
                                 </div>
                             </div>
@@ -1515,6 +1599,57 @@
             window.currentUser = null;
             window.switchScreen('greetingScreen');
             Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Signed Out', showConfirmButton: false, timer: 2000});
+        };
+
+        window.filterMenu = function() {
+            let input = document.getElementById('searchInput').value.toLowerCase();
+            let categories = document.querySelectorAll('.category-section');
+
+            categories.forEach(sec => {
+                let items = sec.querySelectorAll('.menu-item-row');
+                let hasVisibleItems = false;
+                items.forEach(item => {
+                    let name = item.getAttribute('data-name');
+                    if (name.includes(input)) {
+                        item.style.display = 'flex'; hasVisibleItems = true;
+                    } else { item.style.display = 'none'; }
+                });
+                sec.style.display = hasVisibleItems ? 'block' : 'none';
+            });
+        };
+
+        window.listenToStoreStatus = function() {
+            let selectedBranch = document.getElementById('selectedBranch') ? document.getElementById('selectedBranch').value : 'Cabantian';
+            
+            if (window.statusListenerUnsubscribe) { window.statusListenerUnsubscribe(); }
+
+            window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
+                let heroDeliveryText = document.getElementById('heroDeliveryText');
+                let directDeliveryStatus = document.getElementById('directDeliveryStatus');
+
+                let isEnabled = true;
+                if (docSnap.exists()) {
+                    isEnabled = docSnap.data().mobileOrdersActive !== false;
+                }
+
+                window.isStoreAcceptingOrders = isEnabled;
+
+                if (!isEnabled) {
+                    if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
+                    if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
+                } else {
+                    if(heroDeliveryText) { heroDeliveryText.innerText = "40 Minutes"; heroDeliveryText.classList.remove('text-red-500'); }
+                    if(directDeliveryStatus) { directDeliveryStatus.innerText = "Standard 40-Min Delivery"; directDeliveryStatus.classList.remove('text-red-500'); }
+                }
+            });
+        };
+
+        window.openDeliveryPartners = function() {
+            document.getElementById('deliveryPartnersModal').classList.remove('hidden');
+        };
+
+        window.enterOrderingScreen = function() {
+            window.switchScreen('orderingScreen');
         };
 
         document.addEventListener("DOMContentLoaded", async () => {
