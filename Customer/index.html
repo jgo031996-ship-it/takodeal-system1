@@ -1,3 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAKODEÁL | Your Ideal Takoyaki</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- THE CSS STYLING ENGINE (This is what was missing!) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0a0a0a',     
+                        cardbg: '#141414',     
+                        cardhover: '#1c1c1c',  
+                        brandred: '#dc2626',   
+                        brandgold: '#d97706',  
+                    },
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0a0a0a; color: #ffffff; overflow-x: hidden; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #dc2626; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        .toast-notification {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background: #dc2626; color: white; font-weight: bold; padding: 12px 24px;
+            border-radius: 50px; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4);
+            z-index: 9999; display: flex; align-items: center; gap: 10px;
+            opacity: 0; transition: opacity 0.3s, top 0.3s; pointer-events: none;
+        }
+        .toast-notification.show { opacity: 1; top: 40px; }
+        .glow-red { box-shadow: 0 0 20px rgba(220, 38, 38, 0.4); }
+        .glow-text { text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+    </style>
+</head>
+
 <body class="pb-24">
 
     <!-- Toast Notification -->
@@ -18,6 +77,21 @@
         <div id="trackerDetails" class="hidden mt-4 pt-4 border-t border-red-800/50">
             <p class="text-xs font-medium text-red-100 italic">Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!</p>
         </div>
+    </div>
+
+    <!-- Hidden Receipt Template for Image Generation -->
+    <div id="hiddenReceiptTemplate" style="position: absolute; left: -9999px; top: 0; width: 320px; background: white; color: black; padding: 20px; font-family: monospace; border: 1px solid #ccc; box-sizing: border-box; z-index: -1;">
+        <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 10px;">
+            <h2 style="margin: 0; font-size: 22px;">TAKODEÁL</h2>
+            <div style="font-size: 12px; margin-top: 5px;" id="receiptBranch">Branch</div>
+            <div style="font-size: 14px; font-weight: bold; margin-top: 5px;" id="receiptCode">TKDL-XXXXX</div>
+        </div>
+        <div id="receiptItems" style="font-size: 12px; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; margin-bottom: 10px;">
+            <span>TOTAL:</span><span id="receiptTotal">₱0.00</span>
+        </div>
+        <div id="receiptPaymentDetails" style="font-size: 11px; margin-bottom: 15px;"></div>
+        <div style="text-align: center; font-size: 10px; color: #555;">Please send this to our Facebook Page to confirm your order!</div>
     </div>
 
     <!-- 🛵 DELIVERY PARTNERS MODAL -->
@@ -471,19 +545,17 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    let imgHtml = item.image ? `<img src="${item.image}" class="w-full h-36 object-cover rounded-t-2xl">` : `<div class="w-full h-36 bg-zinc-800 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-24 h-24 object-cover rounded-xl shadow-sm">` : `<div class="w-24 h-24 bg-zinc-800 rounded-xl flex items-center justify-center text-3xl border border-zinc-700">🍲</div>`;
                     let priceLabel = item.isGrouped ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` : `<span class="text-zinc-400 text-sm font-bold">₱${price.toFixed(2)}</span>`;
 
                     return `
-                        <div class="flex flex-col bg-cardbg rounded-2xl shadow-sm cursor-pointer hover:shadow-xl hover:border-zinc-600 border border-zinc-800 transition-all group overflow-hidden relative" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="menu-item-row flex items-center p-3 bg-cardbg border border-zinc-800 rounded-2xl shadow-sm cursor-pointer hover:border-zinc-600 transition-all group" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
-                            <div class="p-4 flex-1 flex flex-col relative">
-                                <h4 class="font-black text-sm text-white leading-tight mb-3 group-hover:text-brandred transition-colors pr-6">${item.name}</h4>
-                                <div class="mt-auto flex justify-between items-end">
-                                    ${priceLabel}
-                                </div>
-                                <div class="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-black group-hover:bg-brandred transition-colors shadow-md text-lg leading-none pb-0.5">+</div>
+                            <div class="ml-4 flex-1">
+                                <h4 class="font-black text-sm text-white leading-tight mb-1 group-hover:text-brandred transition-colors">${item.name}</h4>
+                                <p class="text-sm font-bold text-zinc-400">${priceLabel}</p>
                             </div>
+                            <div class="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold mr-2 group-hover:bg-brandred transition-colors">+</div>
                         </div>
                     `;
                 }).join('');
@@ -494,7 +566,7 @@
                             <span class="w-1.5 h-6 bg-brandred rounded-full"></span>
                             ${category}
                         </h2>
-                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             ${itemsHtml}
                         </div>
                     </div>
@@ -1373,3 +1445,4 @@
 
     </script>
 </body>
+</html>
