@@ -17049,7 +17049,7 @@ window.masterSidebarTabs = [
     { id: "nav-prep", icon: "🔪", text: "Kitchen Prep" },
     { id: "nav-consumables", icon: "🧹", text: "Consumables" }, // 🔥 NEW TAB ADDED!
     { id: "nav-deliveries", icon: "🚚", text: "Incoming Stock" },
-    { id: "nav-menumgr", icon: "🍔", text: "Menu Toggle" },
+    { id: 'nav-mobilehub', label: 'Mobile Hub', icon: '📱' },
     { id: "nav-stockreq", icon: "📦", text: "Request Stock" },
     { id: "nav-waste", icon: "🗑️", text: "Log Waste" },
     { id: "nav-timeclock", icon: "📸", text: "Time Clock" },
