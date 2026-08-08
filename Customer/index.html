@@ -1,62 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TAKODEÁL | Your Ideal Takoyaki</title>
-    
-    <link rel="manifest" href="manifest.json">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- 🔥 NEW: Receipt Image Generator Engine -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        darkbg: '#0a0a0a',     
-                        cardbg: '#141414',     
-                        cardhover: '#1c1c1c',  
-                        brandred: '#dc2626',   
-                        brandgold: '#d97706',  
-                    },
-                    fontFamily: {
-                        sans: ['"Plus Jakarta Sans"', 'sans-serif']
-                    }
-                }
-            }
-        }
-    </script>
-
-    <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0a0a0a; color: #ffffff; overflow-x: hidden; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #0a0a0a; }
-        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #dc2626; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
-        .toast-notification {
-            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-            background: #dc2626; color: white; font-weight: bold; padding: 12px 24px;
-            border-radius: 50px; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4);
-            z-index: 9999; display: flex; align-items: center; gap: 10px;
-            opacity: 0; transition: opacity 0.3s, top 0.3s; pointer-events: none;
-        }
-        .toast-notification.show { opacity: 1; top: 40px; }
-        .glow-red { box-shadow: 0 0 20px rgba(220, 38, 38, 0.4); }
-        .glow-text { text-shadow: 0 0 10px rgba(255,255,255,0.3); }
-        details > summary { list-style: none; }
-        details > summary::-webkit-details-marker { display: none; }
-    </style>
-</head>
-
 <body class="pb-24">
 
     <!-- Toast Notification -->
@@ -64,29 +5,29 @@
         <span class="text-xl">🐙</span> <span>Added to your cart!</span>
     </div>
 
-    <!-- Hidden Receipt Template for Image Generation -->
-    <div id="hiddenReceiptTemplate" style="position: absolute; left: -9999px; top: 0; width: 320px; background: white; color: black; padding: 20px; font-family: monospace; border: 1px solid #ccc; box-sizing: border-box; z-index: -1;">
-        <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 10px;">
-            <h2 style="margin: 0; font-size: 22px;">TAKODEÁL</h2>
-            <div style="font-size: 12px; margin-top: 5px;" id="receiptBranch">Branch</div>
-            <div style="font-size: 14px; font-weight: bold; margin-top: 5px;" id="receiptCode">TKDL-XXXXX</div>
+    <!-- 🌟 LIVE ORDER TRACKER (GRABFOOD STYLE) -->
+    <div id="liveOrderTracker" class="hidden fixed bottom-0 left-0 w-full bg-brandred text-white p-5 z-[100] rounded-t-3xl shadow-[0_-15px_30px_rgba(220,38,38,0.4)] transition-transform transform translate-y-0">
+        <div class="max-w-2xl mx-auto flex justify-between items-center cursor-pointer" onclick="document.getElementById('trackerDetails').classList.toggle('hidden')">
+            <div>
+                <div class="text-[10px] font-black uppercase tracking-widest text-red-200 mb-1" id="trackerCode">Order: TKDL-XXXXX</div>
+                <div class="font-black text-xl leading-tight" id="trackerStatus">Pending Confirmation</div>
+                <div class="text-sm font-bold mt-1 text-red-100" id="trackerTime">Awaiting Kitchen...</div>
+            </div>
+            <div class="text-5xl animate-bounce drop-shadow-lg" id="trackerIcon">🛵</div>
         </div>
-        <div id="receiptItems" style="font-size: 12px; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px;"></div>
-        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; margin-bottom: 10px;">
-            <span>TOTAL:</span><span id="receiptTotal">₱0.00</span>
+        <div id="trackerDetails" class="hidden mt-4 pt-4 border-t border-red-800/50">
+            <p class="text-xs font-medium text-red-100 italic">Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!</p>
         </div>
-        <div id="receiptPaymentDetails" style="font-size: 11px; margin-bottom: 15px;"></div>
-        <div style="text-align: center; font-size: 10px; color: #555;">Please send this to our Facebook Page to confirm your order!</div>
     </div>
 
     <!-- 🛵 DELIVERY PARTNERS MODAL -->
-    <div id="deliveryPartnersModal" class="hidden fixed inset-0 bg-black/80 z-[80] flex items-center justify-center backdrop-blur-sm px-4 animate-fade-in">
+    <div id="deliveryPartnersModal" class="hidden fixed inset-0 bg-black/90 z-[80] flex items-center justify-center backdrop-blur-sm px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl p-6">
             <div class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
                 <h2 class="text-xl font-black text-white flex items-center gap-2"><span class="text-2xl">🛵</span> Delivery Options</h2>
                 <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden')" class="text-zinc-500 hover:text-white text-2xl font-bold">&times;</button>
             </div>
-            <p class="text-zinc-400 text-sm mb-6">Choose your preferred delivery method below. If our in-house delivery is paused due to high volume, you can still order via our delivery partners!</p>
+            <p class="text-zinc-400 text-sm mb-6">Choose your preferred delivery method below based on your selected branch.</p>
             <div class="space-y-4">
                 <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden'); window.enterOrderingScreen();" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
                     <div class="flex items-center gap-3">
@@ -98,22 +39,22 @@
                     </div>
                     <span class="text-brandred group-hover:translate-x-1 transition-transform">➔</span>
                 </button>
-                <a href="https://food.grab.com/ph/en/restaurant/takodeal-cabantian-delivery/2-C6LTLJEFVK6TLN" target="_blank" class="w-full bg-[#00b14f]/10 border border-[#00b14f] p-4 rounded-xl flex items-center justify-between hover:bg-[#00b14f]/20 transition group">
+                <button onclick="window.routeToGrab()" class="w-full bg-[#00b14f]/10 border border-[#00b14f] p-4 rounded-xl flex items-center justify-between hover:bg-[#00b14f]/20 transition group">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-[#00b14f] rounded-full flex items-center justify-center text-white font-black text-xl">G</div>
                         <div class="text-left">
                             <div class="font-black text-white text-sm">GrabFood</div>
-                            <div class="text-xs text-[#00b14f] font-bold">Order via Grab App</div>
+                            <div class="text-xs text-[#00b14f] font-bold">Open Grab App</div>
                         </div>
                     </div>
                     <span class="text-[#00b14f] group-hover:translate-x-1 transition-transform">➔</span>
-                </a>
+                </button>
                 <a href="https://www.foodpanda.ph/city/davao-city" target="_blank" class="w-full bg-[#d70f64]/10 border border-[#d70f64] p-4 rounded-xl flex items-center justify-between hover:bg-[#d70f64]/20 transition group">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-[#d70f64] rounded-full flex items-center justify-center text-white font-black text-xl">fp</div>
                         <div class="text-left">
                             <div class="font-black text-white text-sm">foodpanda</div>
-                            <div class="text-xs text-[#d70f64] font-bold">Order via foodpanda App</div>
+                            <div class="text-xs text-[#d70f64] font-bold">Open foodpanda App</div>
                         </div>
                     </div>
                     <span class="text-[#d70f64] group-hover:translate-x-1 transition-transform">➔</span>
@@ -122,12 +63,8 @@
         </div>
     </div>
 
-    <!-- ========================================== -->
     <!-- 🌟 STAGE 1: THE PREMIUM LANDING PAGE -->
-    <!-- ========================================== -->
     <div id="greetingScreen" class="w-full min-h-screen flex flex-col relative z-30 transition-all duration-500">
-        
-        <!-- 🔥 STICKY FLOATING NAVBAR -->
         <nav class="sticky top-0 z-50 bg-darkbg/90 backdrop-blur-md flex justify-between items-center p-6 lg:px-12 w-full mx-auto border-b border-zinc-800">
             <div class="flex items-center gap-3 max-w-7xl mx-auto w-full justify-between">
                 <div class="flex items-center gap-3">
@@ -138,13 +75,10 @@
                     <a href="#" class="hover:text-white transition">Home</a>
                     <a href="#" onclick="window.enterOrderingScreen()" class="hover:text-white transition">Menu</a>
                     <a href="#" onclick="window.openDeliveryPartners()" class="hover:text-white transition">Partners</a>
+                    <a href="#" onclick="window.openReviewHub()" class="hover:text-white transition text-brandgold">Reviews ⭐</a>
                 </div>
-                
                 <div class="flex items-center gap-4">
-                    <button onclick="window.enterOrderingScreen()" class="hidden sm:block bg-brandred text-white px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red">
-                        Order Now
-                    </button>
-                    <!-- Floating Cart Button -->
+                    <button onclick="window.enterOrderingScreen()" class="hidden sm:block bg-brandred text-white px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red">Order Now</button>
                     <button onclick="window.openCheckoutModal()" id="homeCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
                         <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
                         <span id="homeCartTotal" class="font-bold text-sm text-brandgold hidden">₱0.00</span>
@@ -168,13 +102,14 @@
                 <p class="text-zinc-400 leading-relaxed mb-8 max-w-md mx-auto lg:mx-0 text-lg">
                     Just confirm your order and bite into our signature takoyaki—perfectly crafted for the Filipino taste, loaded with flavor, and delivered piping hot to your door.
                 </p>
-                <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-                    <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red w-full sm:w-auto">
-                        Order Now
-                    </button>
-                    <button onclick="document.getElementById('homeBranchSelect').scrollIntoView({behavior: 'smooth'})" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">
-                        See Menu
-                    </button>
+                <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 mb-8">
+                    <button onclick="window.enterOrderingScreen()" class="bg-brandred text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors glow-red w-full sm:w-auto">Order Now</button>
+                    <button onclick="document.getElementById('homeBranchSelect').scrollIntoView({behavior: 'smooth'})" class="text-white px-8 py-4 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-zinc-900 transition-colors w-full sm:w-auto underline underline-offset-4">See Menu</button>
+                </div>
+                
+                <!-- 🔥 LIVE VISIT COUNTER 🔥 -->
+                <div class="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-xl text-zinc-400 text-xs font-bold uppercase tracking-widest shadow-lg">
+                    <span class="text-brandgold animate-pulse text-sm">👁️</span> <span id="visitCounterTxt">Loading Visitors...</span>
                 </div>
             </div>
             
@@ -206,22 +141,16 @@
                     </select>
                 </div>
             </div>
-
+            
             <div class="flex justify-between items-end mb-8">
-                <div>
-                    <h2 class="text-3xl font-black text-white">Popular Dishes</h2>
-                    <p class="text-zinc-500 mt-1">Our best sellers, ready for you.</p>
-                </div>
+                <div><h2 class="text-3xl font-black text-white">Popular Dishes</h2><p class="text-zinc-500 mt-1">Our best sellers, ready for you.</p></div>
             </div>
             <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
                 <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Scanning live inventory...</div>
             </div>
 
             <div class="flex justify-between items-end mb-8">
-                <div>
-                    <h2 class="text-3xl font-black text-white">Signature Drinks</h2>
-                    <p class="text-zinc-500 mt-1">Perfect refreshments to pair with your Takoyaki.</p>
-                </div>
+                <div><h2 class="text-3xl font-black text-white">Signature Drinks</h2><p class="text-zinc-500 mt-1">Perfect refreshments to pair with your Takoyaki.</p></div>
             </div>
             <div id="drinksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Fetching refreshing drinks...</div>
@@ -230,9 +159,7 @@
     </div>
 
 
-    <!-- ========================================== -->
     <!-- 🛒 STAGE 2: THE MAIN ORDERING APP -->
-    <!-- ========================================== -->
     <div id="appContainer" class="hidden max-w-2xl mx-auto bg-darkbg min-h-screen relative flex-col border-x border-zinc-900 animate-fade-in">
         
         <div class="sticky top-0 z-40 bg-darkbg/90 backdrop-blur-md p-4 flex justify-between items-center border-b border-zinc-800">
@@ -273,9 +200,7 @@
     </div>
 
 
-    <!-- ========================================== -->
     <!-- 🍲 STAGE 3: THE PREMIUM ITEM MODAL -->
-    <!-- ========================================== -->
     <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
             
@@ -333,9 +258,7 @@
         </div>
     </div>
 
-    <!-- ========================================== -->
     <!-- 🛒 THE PREMIUM CHECKOUT CART MODAL -->
-    <!-- ========================================== -->
     <div id="checkoutModal" class="hidden fixed inset-0 bg-black/80 z-[70] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[85vh] border border-zinc-800 shadow-2xl">
             
@@ -363,7 +286,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
@@ -382,8 +305,24 @@
         const provider = new GoogleAuthProvider();
         window.currentUser = null;
 
+        // 🔥 VISIT COUNTER ENGINE 🔥
+        window.initVisitCounter = async function() {
+            try {
+                const visitRef = doc(db, "settings", "visit_counter");
+                await updateDoc(visitRef, { count: increment(1) }).catch(async () => {
+                    await setDoc(visitRef, { count: 1 });
+                });
+                onSnapshot(visitRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        document.getElementById('visitCounterTxt').innerText = docSnap.data().count.toLocaleString() + " Live Visitors";
+                    }
+                });
+            } catch(e) { console.log("Counter hidden."); }
+        };
+
         onAuthStateChanged(auth, (user) => {
             window.currentUser = user;
+            if (user) window.startOrderTracker(user.email); // Start tracker if logged in!
         });
 
         window.rawMenuCache = []; 
@@ -408,6 +347,7 @@
 
                 let defaultBranch = document.getElementById('homeBranchSelect').value || 'Cabantian';
                 window.syncBranchSelection(defaultBranch);
+                window.initVisitCounter();
 
             } catch (error) {
                 console.error(error);
@@ -420,6 +360,15 @@
             document.getElementById('selectedBranch').value = branchName;
             window.renderMenuForBranch(branchName);
             window.listenToStoreStatus();
+        };
+
+        window.routeToGrab = function() {
+            let branch = document.getElementById('selectedBranch').value;
+            if (branch === 'Maa') {
+                window.open('https://r.grab.com/g/6-20260808_082607_a0d106d056c649f7abc73f31852b1c7e_MEXMPS-2-C72VAZAJTGN3A6', '_blank');
+            } else {
+                window.open('https://r.grab.com/g/6-20260808_082623_a0d106d056c649f7abc73f31852b1c7e_MEXMPS-2-C6LTLJEFVK6TLN', '_blank');
+            }
         };
 
         window.renderMenuForBranch = async function(branchName) {
@@ -522,17 +471,19 @@
                 let itemsHtml = items.map(item => {
                     let price = parseFloat(item.price || item.basePrice || 0);
                     let safeData = encodeURIComponent(JSON.stringify(item));
-                    let imgHtml = item.image ? `<img src="${item.image}" class="w-24 h-24 object-cover rounded-xl shadow-sm">` : `<div class="w-24 h-24 bg-zinc-800 rounded-xl flex items-center justify-center text-3xl border border-zinc-700">🍲</div>`;
+                    let imgHtml = item.image ? `<img src="${item.image}" class="w-full h-36 object-cover rounded-t-2xl">` : `<div class="w-full h-36 bg-zinc-800 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
                     let priceLabel = item.isGrouped ? `<span class="text-brandgold text-[10px] uppercase tracking-widest font-black">Select Size</span>` : `<span class="text-zinc-400 text-sm font-bold">₱${price.toFixed(2)}</span>`;
 
                     return `
-                        <div class="menu-item-row flex items-center p-3 bg-cardbg border border-zinc-800 rounded-2xl shadow-sm cursor-pointer hover:border-zinc-600 transition-all group" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
+                        <div class="flex flex-col bg-cardbg rounded-2xl shadow-sm cursor-pointer hover:shadow-xl hover:border-zinc-600 border border-zinc-800 transition-all group overflow-hidden relative" onclick="window.openItemModal('${safeData}')" data-name="${item.name.toLowerCase()}">
                             ${imgHtml}
-                            <div class="ml-4 flex-1">
-                                <h4 class="font-black text-sm text-white leading-tight mb-1 group-hover:text-brandred transition-colors">${item.name}</h4>
-                                <p class="text-sm font-bold text-zinc-400">${priceLabel}</p>
+                            <div class="p-4 flex-1 flex flex-col relative">
+                                <h4 class="font-black text-sm text-white leading-tight mb-3 group-hover:text-brandred transition-colors pr-6">${item.name}</h4>
+                                <div class="mt-auto flex justify-between items-end">
+                                    ${priceLabel}
+                                </div>
+                                <div class="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-black group-hover:bg-brandred transition-colors shadow-md text-lg leading-none pb-0.5">+</div>
                             </div>
-                            <div class="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold mr-2 group-hover:bg-brandred transition-colors">+</div>
                         </div>
                     `;
                 }).join('');
@@ -543,7 +494,7 @@
                             <span class="w-1.5 h-6 bg-brandred rounded-full"></span>
                             ${category}
                         </h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                             ${itemsHtml}
                         </div>
                     </div>
@@ -940,9 +891,7 @@
             if (window.cart.length === 0) window.closeCheckoutModal();
         };
 
-        // ==========================================
-        // 🚀 THE MASTER ANTI-SCAM & CHECKOUT ENGINE
-        // ==========================================
+        // 🚀 THE MASTER ANTI-SCAM, UPSELL & CHECKOUT ENGINE
         window.swalMap = null;
         window.swalMarker = null;
 
@@ -1002,7 +951,43 @@
         window.submitOrder = async function() {
             if (window.cart.length === 0) return Swal.fire({ title: 'Cart Empty', icon: 'warning', background: '#141414', color: '#fff' });
 
-            // 1. Force Google Login
+            // 🔥 STAGE 1: JOLLIBEE-STYLE DRINK UPSELL ENGINE 🔥
+            let hasFood = window.cart.some(i => !i.category?.toLowerCase().includes('drink') && !i.category?.toLowerCase().includes('tea') && !i.category?.toLowerCase().includes('coffee') && !i.category?.toLowerCase().includes('beverage'));
+            let hasDrink = window.cart.some(i => i.category?.toLowerCase().includes('drink') || i.category?.toLowerCase().includes('tea') || i.category?.toLowerCase().includes('coffee') || i.category?.toLowerCase().includes('beverage'));
+
+            if (hasFood && !hasDrink) {
+                let drinks = window.masterMenu.filter(i => i.category?.toLowerCase().includes('drink') || i.category?.toLowerCase().includes('tea') || i.category?.toLowerCase().includes('coffee') || i.category?.toLowerCase().includes('beverage'));
+                
+                if (drinks.length > 0) {
+                    let shuffled = drinks.sort(() => 0.5 - Math.random()).slice(0, 3);
+                    let drinkCards = shuffled.map(d => {
+                        let safeData = encodeURIComponent(JSON.stringify(d));
+                        let imgHtml = d.image ? `<img src="${d.image}" style="width:100%; height:80px; object-fit:cover; border-radius:8px; margin-bottom:8px;">` : `<div style="width:100%; height:80px; background:#27272a; border-radius:8px; margin-bottom:8px; display:flex; align-items:center; justify-content:center; font-size:24px;">🥤</div>`;
+                        return `<div style="background:#18181b; border:1px solid #27272a; padding:10px; border-radius:12px; min-width:130px; flex:1; display:flex; flex-direction:column; justify-content:space-between; cursor:pointer; transition:0.2s; hover:border-brandgold;" onclick="window.openItemModal('${safeData}'); Swal.close();">
+                            ${imgHtml}
+                            <div style="font-size:12px; font-weight:bold; color:white; line-height:1.2; margin-bottom:5px;">${d.name}</div>
+                            <div style="color:#d97706; font-weight:900; font-size:14px;">₱${parseFloat(d.price||d.basePrice||0).toFixed(2)}</div>
+                            <button style="background:#dc2626; color:white; font-size:11px; font-weight:bold; padding:6px; border-radius:6px; margin-top:8px; width:100%;">+ Add</button>
+                        </div>`;
+                    }).join('');
+
+                    const upsellRes = await Swal.fire({
+                        title: 'Wait! Thirsty? 🥤',
+                        html: `<div style="font-size:14px; color:#a1a1aa; margin-bottom:15px;">Complete your meal with our refreshing signature drinks!</div><div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:10px;">${drinkCards}</div>`,
+                        showCancelButton: true,
+                        confirmButtonText: 'Skip & Proceed ➔',
+                        cancelButtonText: 'Back to Cart',
+                        confirmButtonColor: '#3f3f46',
+                        cancelButtonColor: '#18181b',
+                        customClass: { popup: 'bg-cardbg text-white border border-zinc-800 rounded-2xl shadow-2xl' }
+                    });
+
+                    // If they didn't explicitly click "Skip & Proceed", stop the checkout flow!
+                    if (!upsellRes.isConfirmed) return; 
+                }
+            }
+
+            // 🛡️ STAGE 2: IDENTITY VERIFICATION
             if (!window.currentUser) {
                 const loginPrompt = await Swal.fire({
                     title: '🛡️ Identity Verification',
@@ -1022,7 +1007,7 @@
                 } else return;
             }
 
-            // 2. Order Details Form
+            // 📍 STAGE 3: ORDER DETAILS FORM
             let deliveryDisabledAttr = window.isStoreAcceptingOrders ? '' : 'disabled';
             let deliveryLabel = window.isStoreAcceptingOrders ? 'Standard Delivery' : 'Standard Delivery (Unavailable)';
             let advDeliveryLabel = window.isStoreAcceptingOrders ? 'Advance Order (Delivery)' : 'Advance Order Delivery (Unavailable)';
@@ -1201,10 +1186,10 @@
                         link.href = imgData;
                         link.click();
                         Swal.fire({title:'Downloaded!', text:'Now please click Chat on Facebook.', icon:'info', confirmButtonText: 'Go to Facebook', background: '#0a0a0a', color: '#ffffff'}).then(()=> {
-                            window.open(fbLink, '_blank'); location.reload();
+                            window.open(fbLink, '_blank'); window.startOrderTracker(window.currentUser.email);
                         });
                     } else if (result.isConfirmed) {
-                        window.open(fbLink, '_blank'); location.reload();
+                        window.open(fbLink, '_blank'); window.startOrderTracker(window.currentUser.email);
                     }
                 });
 
@@ -1214,6 +1199,101 @@
             } finally {
                 btn.innerHTML = origHtml; btn.disabled = false;
             }
+        };
+
+        // 🌟 LIVE ORDER TRACKER & REVIEW SYSTEM 🌟
+        window.startOrderTracker = function(email) {
+            const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", email), orderBy("timestamp", "desc"), limit(1));
+            onSnapshot(q, (snap) => {
+                let tracker = document.getElementById('liveOrderTracker');
+                if (snap.empty) { tracker.classList.add('translate-y-full'); return; }
+                
+                let order = snap.docs[0].data();
+                if (order.status === 'completed' || order.status === 'rejected') {
+                    tracker.classList.add('translate-y-full');
+                    if (order.status === 'completed' && !order.reviewPrompted) {
+                        window.promptReview(order.orderCode, snap.docs[0].id);
+                    }
+                    return;
+                }
+                
+                tracker.classList.remove('hidden');
+                setTimeout(() => tracker.classList.remove('translate-y-full'), 100); // Slide up animation
+                
+                document.getElementById('trackerCode').innerText = `Order: ${order.orderCode}`;
+                
+                let statusText = "Pending Confirmation";
+                let timeStr = "Awaiting Kitchen...";
+                
+                if (order.status === 'preparing') {
+                    statusText = "🍳 Kitchen is preparing your food!";
+                    timeStr = order.prepTime ? `Est. Prep Time: ${order.prepTime} Mins` : "Cooking now!";
+                } else if (order.status === 'out_for_delivery' || order.status === 'ready') {
+                    statusText = "🛵 Order is Ready / On the way!";
+                    timeStr = "Enjoy your meal!";
+                }
+
+                document.getElementById('trackerStatus').innerText = statusText;
+                document.getElementById('trackerTime').innerText = timeStr;
+            });
+        };
+
+        window.promptReview = function(orderCode, docId) {
+            Swal.fire({
+                title: 'How was your food? 🐙',
+                html: `
+                    <div class="text-sm text-zinc-400 mb-4">We'd love to hear your feedback on order ${orderCode}!</div>
+                    <textarea id="reviewText" class="w-full bg-darkbg border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none resize-none h-24" placeholder="Tell us what you loved! (Optional)"></textarea>
+                `,
+                confirmButtonText: 'Submit Review ⭐',
+                confirmButtonColor: '#d97706',
+                showCancelButton: true,
+                cancelButtonText: 'Skip',
+                cancelButtonColor: '#3f3f46',
+                background: '#141414', color: '#fff',
+                customClass: { popup: 'border border-zinc-800 rounded-2xl' },
+                preConfirm: () => {
+                    let text = document.getElementById('reviewText').value;
+                    if(text) addDoc(collection(db, "reviews"), { orderCode: orderCode, text: text, timestamp: serverTimestamp(), customer: window.currentUser.displayName });
+                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
+                }
+            }).then((res) => {
+                if(res.dismiss === Swal.DismissReason.cancel) {
+                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
+                }
+            });
+        };
+
+        window.openReviewHub = async function() {
+            Swal.fire({title: 'Loading Reviews...', background: '#141414', color: '#fff', didOpen: () => Swal.showLoading()});
+            try {
+                const q = query(collection(db, "reviews"), orderBy("timestamp", "desc"), limit(10));
+                const snap = await getDocs(q);
+                let html = '';
+                snap.forEach(d => {
+                    let rev = d.data();
+                    let dateStr = rev.timestamp ? rev.timestamp.toDate().toLocaleDateString() : 'Recent';
+                    html += `
+                        <div class="bg-darkbg border border-zinc-800 p-4 rounded-xl mb-3 text-left">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="font-bold text-brandgold">${rev.customer || 'Customer'}</span>
+                                <span class="text-xs text-zinc-500">${dateStr}</span>
+                            </div>
+                            <div class="text-sm text-zinc-300 italic">"${rev.text}"</div>
+                        </div>
+                    `;
+                });
+                if(!html) html = '<div class="text-zinc-500 text-sm">No reviews yet. Be the first!</div>';
+                
+                Swal.fire({
+                    title: '⭐ Customer Reviews',
+                    html: `<div class="max-h-[60vh] overflow-y-auto">${html}</div>`,
+                    confirmButtonText: 'Close',
+                    confirmButtonColor: '#3f3f46',
+                    background: '#141414', color: '#fff',
+                    customClass: { popup: 'border border-zinc-800 rounded-2xl' }
+                });
+            } catch(e) { Swal.fire('Error', 'Could not load reviews.', 'error'); }
         };
 
         window.filterMenu = function() {
@@ -1235,20 +1315,40 @@
 
         window.listenToStoreStatus = function() {
             let selectedBranch = document.getElementById('selectedBranch') ? document.getElementById('selectedBranch').value : 'Cabantian';
+            
             if (window.statusListenerUnsubscribe) { window.statusListenerUnsubscribe(); }
 
             window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
-                let isEnabled = true;
-                if (docSnap.exists()) { isEnabled = docSnap.data().mobileOrdersActive !== false; }
-
-                window.isStoreAcceptingOrders = isEnabled;
+                let checkoutButton = document.getElementById('reviewBtn'); 
                 let heroDeliveryText = document.getElementById('heroDeliveryText');
                 let directDeliveryStatus = document.getElementById('directDeliveryStatus');
 
+                let isEnabled = true;
+                if (docSnap.exists()) {
+                    isEnabled = docSnap.data().mobileOrdersActive !== false;
+                }
+
+                window.isStoreAcceptingOrders = isEnabled;
+
                 if (!isEnabled) {
+                    if (checkoutButton) {
+                        checkoutButton.disabled = false;
+                        checkoutButton.innerHTML = "<span>🛑 Store Paused - Use Grab/Foodpanda</span>";
+                        checkoutButton.classList.replace('bg-brandred', 'bg-zinc-600');
+                        checkoutButton.classList.replace('hover:bg-red-700', 'hover:bg-zinc-500');
+                        checkoutButton.onclick = window.openDeliveryPartners; 
+                    }
                     if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
                 } else {
+                    if (checkoutButton) {
+                        checkoutButton.disabled = false;
+                        checkoutButton.onclick = window.openCheckoutModal; 
+                        let t = window.cart ? window.cart.reduce((sum, i) => sum + i.lineTotalFinal, 0) : 0;
+                        checkoutButton.innerHTML = `<span>🛒 View Cart</span> <span id="floatingTotal" class="bg-red-950 px-3 py-1 rounded-lg border border-red-800">₱${t.toFixed(2)}</span>`;
+                        checkoutButton.classList.replace('bg-zinc-600', 'bg-brandred');
+                        checkoutButton.classList.replace('hover:bg-zinc-500', 'hover:bg-red-700');
+                    }
                     if(heroDeliveryText) { heroDeliveryText.innerText = "40 Minutes"; heroDeliveryText.classList.remove('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Standard 40-Min Delivery"; directDeliveryStatus.classList.remove('text-red-500'); }
                 }
@@ -1269,9 +1369,7 @@
 
         document.addEventListener("DOMContentLoaded", async () => {
             window.loadLiveMenu(); 
-            window.listenToStoreStatus();
         });
 
     </script>
 </body>
-</html>
