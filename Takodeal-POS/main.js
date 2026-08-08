@@ -6353,15 +6353,14 @@ window.applySidebarLayout = async function() {
             layout.forEach(tabData => {
                 let id = tabData.id;
                 let el = document.getElementById(id);
+                
+                // 🔥 THE BULLETPROOF FIX: Only apply styles if the tab actually exists!
                 if (el) {
-                    // 1. Move it into the correct order
                     navMenu.appendChild(el); 
-                    
-                    // 2. Hide it if the Manager turned it off!
                     if (tabData.isHidden) {
                         el.style.display = 'none';
                     } else {
-                        el.style.display = 'flex'; // Sidebar items use flex layout
+                        el.style.display = 'flex'; 
                     }
                 }
             });
