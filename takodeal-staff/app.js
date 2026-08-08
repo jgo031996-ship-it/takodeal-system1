@@ -1917,27 +1917,51 @@ window.loadPayslipVault = async function() {
             return hour + (minute / 60);
         };
 
-        const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName), where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp), orderBy("timestamp", "asc"));
+        // 🔥 THE INDEX CRASH FIX: Fetch by name only, filter and sort manually!
+        const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
         const attSnap = await getDocs(attQ);
 
-        const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName), where("dateAdded", ">=", startTimestamp), where("dateAdded", "<=", endTimestamp));
+        let filteredAttLogs = [];
+        attSnap.forEach(docSnap => {
+            let log = docSnap.data();
+            if (log.timestamp) {
+                let t = log.timestamp.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
+                if (t >= startTimestamp && t <= endTimestamp) {
+                    filteredAttLogs.push(log);
+                }
+            }
+        });
+        filteredAttLogs.sort((a, b) => {
+            let tA = a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+            let tB = b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+            return tA - tB;
+        });
+
+        const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName));
         const bonusSnap = await getDocs(bonusQ);
 
         let totalBonuses = 0;
         let bonusesList = [];
-        bonusSnap.forEach(b => { 
-            let amt = parseFloat(b.data().amount) || 0;
-            totalBonuses += amt; 
-            bonusesList.push(b.data()); 
+        bonusSnap.forEach(docSnap => { 
+            let b = docSnap.data();
+            if (b.dateAdded) {
+                let t = b.dateAdded.toDate ? b.dateAdded.toDate() : new Date(b.dateAdded);
+                if (t >= startTimestamp && t <= endTimestamp) {
+                    let amt = parseFloat(b.amount) || 0;
+                    totalBonuses += amt; 
+                    bonusesList.push(b); 
+                }
+            }
         });
 
         let totalHours = 0;
-        let shiftsWorked = 0; // 🔥 THE FIX: Calculate pay by shifts, not raw exact hours!
+        let shiftsWorked = 0; 
         let totalLatePenalty = 0;
         let activeShifts = {};
         let shiftPairs = [];
         
-        attSnap.forEach(docSnap => {
+        filteredAttLogs.forEach(docSnap => {
+            let log = docSnap; // Data is already extracted in the array
             let log = docSnap.data();
             let manualPenalty = parseFloat(log.penaltyAmount) || 0;
 
@@ -2266,11 +2290,20 @@ window.loadPayslipVault = async function() {
 
         logsContainer.innerHTML = detailsHtml;
 
-        const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName), orderBy("processedAt", "desc"));
+        // 🔥 THE INDEX CRASH FIX: Safe history fetch
+        const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName));
         const prSnap = await getDocs(prQ);
 
+        let prLogs = [];
+        prSnap.forEach(docSnap => prLogs.push(docSnap.data()));
+        prLogs.sort((a, b) => {
+            let tA = a.processedAt ? (a.processedAt.toDate ? a.processedAt.toDate().getTime() : new Date(a.processedAt).getTime()) : 0;
+            let tB = b.processedAt ? (b.processedAt.toDate ? b.processedAt.toDate().getTime() : new Date(b.processedAt).getTime()) : 0;
+            return tB - tA;
+        });
+
         let historyHtml = '';
-        prSnap.forEach(docSnap => {
+        prLogs.forEach(d => {
             let d = docSnap.data();
             let pd = d.frozenData || {};
             pd.processedAt = d.processedAt; 
