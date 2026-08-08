@@ -328,31 +328,25 @@ window.loadPOSData = async function() {
         let rawItems = [];
         snapshot.forEach(doc => rawItems.push({ id: doc.id, ...doc.data() }));
         
-        // Save backup to local storage just in case of total outage
+        // 🔥 THE PRICE FIX: Forcefully update the memory cache so old prices are DESTROYED
         localStorage.setItem('takodeal_offline_menu', JSON.stringify(rawItems));
         
-        // Filter by branch mall settings
         if (allowedCats.length > 0) {
             rawItems = rawItems.filter(item => allowedCats.includes(item.category));
         }
 
-        // Process into Variants and Inject
         let processed = window.processRawItemsIntoMenu(rawItems);
         window.masterPOSData.items = processed;
 
-        // Fetch live stock for badges
-        window.masterPOSData.stockLevels = {};
-        try {
-            const invSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.POS_BRANCH)));
-            invSnap.forEach(doc => window.masterPOSData.stockLevels[doc.data().name] = doc.data().currentStock);
-            
-            window.masterPOSData.bom = [];
-            const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-            bomSnap.forEach(doc => window.masterPOSData.bom.push(doc.data()));
-        } catch(e) {}
-
-        // Redraw UI instantly
-        if (typeof window.buildCategories === 'function') window.buildCategories();
+        // 🔥 FORCE THE UI TO REDRAW INSTANTLY
+        if (typeof window.buildCategories === 'function') {
+            window.buildCategories();
+        }
+        
+        // 🔥 IF A CATEGORY IS ALREADY OPEN, REDRAW THE GRID TO SHOW NEW PRICES!
+        if (window.currentDepartment && typeof window.renderTopCategories === 'function') {
+            window.renderTopCategories();
+        }
     });
 
     let otHtml = ''; window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
@@ -8603,9 +8597,21 @@ window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, targe
     else if (target === 'bar') activeChar = window.barPrinterChar || window.mainPrinterChar;
     else activeChar = window.mainPrinterChar;
 
-    if (!activeChar) return; 
+    if (!activeChar) {
+        console.log("Printer not active. Attempting auto-reconnect...");
+        await window.autoConnectPrinters();
+        
+        if (target === 'kitchen') activeChar = window.kitchenPrinterChar || window.mainPrinterChar;
+        else if (target === 'bar') activeChar = window.barPrinterChar || window.mainPrinterChar;
+        else activeChar = window.mainPrinterChar;
+    }
+    
+    if (!activeChar) {
+        Swal.fire('🖨️ Printer Offline', 'The printer is disconnected or asleep. Please tap the Printer Hub icon to reconnect it.', 'warning');
+        return; 
+    }
 
-    // 🔥 THE FIX: Send the receipt to the waiting line instead of attacking the printer!
+    // Send the receipt to the waiting line instead of attacking the printer!
     window.bluetoothPrintQueue.push({ data: data, activeChar: activeChar });
     window.processBluetoothQueue();
 };
@@ -8842,3 +8848,11 @@ window.autoConnectPrinters = async function() {
         });
     }
 };
+
+// Run on boot if already logged in!
+setTimeout(() => {
+    let existingCashier = localStorage.getItem('cashierName');
+    if (existingCashier && typeof window.autoConnectPrinters === 'function') {
+        window.autoConnectPrinters();
+    }
+}, 3000);
