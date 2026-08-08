@@ -1,94 +1,43 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, setPersistence, browserLocalPersistence, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithPopup, setPersistence, browserLocalPersistence, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-window.onSnapshot = onSnapshot;
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
-  authDomain: "takodeal-pos.firebaseapp.com",
-  projectId: "takodeal-pos",
-  storageBucket: "takodeal-pos.firebasestorage.app",
-  messagingSenderId: "248826111383",
-  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
-};
+const auth = getAuth(window.app); // Ensures it attaches to your existing Firebase app
+const provider = new GoogleAuthProvider();
+const storage = getStorage(window.app);
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 // 🔒 FORCE LOCAL PERSISTENCE FOR SAFARI / IPHONE
 setPersistence(auth, browserLocalPersistence).catch(err => console.error("Persistence error:", err));
 
-// 📱 PROCESS GOOGLE REDIRECT RESULT ON PAGE BOOT
-getRedirectResult(auth).then(result => {
-  if (result && result.user) {
-    console.log("✅ Successfully authenticated via Redirect:", result.user.email);
-  }
-}).catch(error => {
-  console.error("Redirect Login Error:", error);
-  if (typeof Swal !== 'undefined') {
-    Swal.fire('Login Error', error.message, 'error');
-  }
-});
-const provider = new GoogleAuthProvider();
-const storage = getStorage(app);
-
 // 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
-});
-
 window.storage = storage;
-window.db = db;
+window.db = window.db; // Already initialized at the top of your file
 
-// 🔥 THE MISSING FIREBASE BRIDGE 🔥
-window.query = query;
-window.where = where;
-window.collection = collection;
-window.getDocs = getDocs;
-window.getDoc = getDoc;
-window.addDoc = addDoc;
-window.updateDoc = updateDoc;
-window.deleteDoc = deleteDoc;
-window.doc = doc;
-window.setDoc = setDoc;
-window.serverTimestamp = serverTimestamp;
-window.increment = increment;
-window.orderBy = orderBy;
-window.limit = limit;
-window.ref = ref;
-window.uploadBytes = uploadBytes;
-window.getDownloadURL = getDownloadURL;
-
-console.log("🚀 TAKODEÁL Manager Offline Storage is ACTIVE!");
+console.log("🚀 TAKODEÁL Manager Authentication is ACTIVE!");
 
 // Your secure Master Key
 const MASTER_EMAIL = "jgo031996@gmail.com";
 
-// --- HELPER: FORMAT CURRENCY (THIS WAS MISSING!) ---
+// --- HELPER: FORMAT CURRENCY ---
 window.formatMoney = (amount) => '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatMoney = window.formatMoney;
 
 window.applyPermissions = function() {
     if (!window.sessionUser) return;
     
-    // If they are the Master Owner or have 'all' permissions, show everything!
     if (window.sessionUser.isOwner || window.sessionUser.permissions.includes('all')) {
         document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
         return;
     }
     
-    // 1. Hide ALL tabs first
     document.querySelectorAll('.nav-item').forEach(el => {
         if (el.id !== 'nav-dashboard') el.style.display = 'none';
     });
     
-    // 2. Show only the tabs they were granted
     window.sessionUser.permissions.forEach(tabName => {
         let el = document.getElementById('nav-' + tabName);
         if (el) el.style.display = 'block';
     });
 
-    // 3. STRICT LOCK: Never let non-owners see the Admin Security tab
     document.getElementById('nav-admin').style.display = 'none'; 
 };
 
@@ -98,7 +47,7 @@ window.applyPermissions = function() {
 window.tempAuthUser = null;
 window.tempAuthData = null;
 
-auth.onAuthStateChanged(async (user) => {
+onAuthStateChanged(auth, async (user) => {
   const loginOverlay = document.getElementById('loginOverlay');
   const stage1 = document.getElementById('loginStage1');
   const stage2 = document.getElementById('loginStage2');
@@ -110,10 +59,10 @@ auth.onAuthStateChanged(async (user) => {
 
     try {
         if (user.email === MASTER_EMAIL) {
-            const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
-            const snap = await getDocs(q);
+            const q = window.query(window.collection(window.db, "hq_managers"), window.where("email", "==", user.email));
+            const snap = await window.getDocs(q);
             if (snap.empty) {
-                const newDoc = await addDoc(collection(db, "hq_managers"), {
+                const newDoc = await window.addDoc(window.collection(window.db, "hq_managers"), {
                     email: user.email, role: 'Owner', permissions: ['all'], assignedBranch: 'All', pin: '0319'
                 });
                 docId = newDoc.id;
@@ -124,8 +73,8 @@ auth.onAuthStateChanged(async (user) => {
             }
             isAuthorized = true;
         } else {
-            const q = query(collection(db, "hq_managers"), where("email", "==", user.email));
-            const snap = await getDocs(q);
+            const q = window.query(window.collection(window.db, "hq_managers"), window.where("email", "==", user.email));
+            const snap = await window.getDocs(q);
             if (!snap.empty) {
                 docId = snap.docs[0].id;
                 userData = snap.docs[0].data();
@@ -137,21 +86,18 @@ auth.onAuthStateChanged(async (user) => {
     if (isAuthorized) {
         if (!userData.pin) {
             userData.pin = '1234'; 
-            await updateDoc(doc(db, "hq_managers", docId), { pin: '1234' });
-            if(typeof Swal !== 'undefined') Swal.fire('Security Alert', 'Your default PIN is 1234. Please change it.', 'warning');
+            await window.updateDoc(window.doc(window.db, "hq_managers", docId), { pin: '1234' });
         }
         
         window.tempAuthUser = user;
         window.tempAuthData = userData;
         window.tempAuthData.docId = docId;
 
-        // Transition to Fast PIN Screen
         document.getElementById('authWelcomeName').innerText = `${userData.role}: ${user.displayName || 'Authorized'}`;
         stage1.style.display = 'none';
         stage2.style.display = 'block';
         loginOverlay.style.display = 'flex';
         
-        // Auto-focus the PIN input so you can just start typing immediately!
         setTimeout(() => {
             let pinBox = document.getElementById('managerPinInput');
             if(pinBox) pinBox.focus();
@@ -173,7 +119,6 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
-// The PIN verification logic
 window.checkManagerPin = function() {
     let pinInput = document.getElementById('managerPinInput');
     let pinVal = pinInput.value.trim();
@@ -221,68 +166,33 @@ window.finalizeManagerLogin = function() {
     if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
 };
 
-// ========================================================
-// 📱 NATIVE WEBAUTHN (FACE ID / TOUCH ID) BRIDGE
-// ========================================================
-function bufferEncode(value) { return Uint8Array.from(value, c => c.charCodeAt(0)); }
-function bufferDecode(value) { return String.fromCharCode.apply(null, new Uint8Array(value)); }
-
-// 🔥 FIX 1: Catch Safari Redirects Globally (Required for iPhones)
-getRedirectResult(auth).then((result) => {
-    if (result !== null) {
-        console.log("Redirect login successful");
-    }
-}).catch((error) => {
-    console.error("Redirect Error:", error);
-    Swal.fire('Login Error', error.message, 'error');
-});
-
-// 🔥 BULLETPROOF GOOGLE LOGIN (DESKTOP & IPHONE)
+// 🔥 THE BULLETPROOF GOOGLE LOGIN FIX FOR iOS/IPHONE
 window.loginWithGoogle = async function() {
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  
   try {
+    // Show loading state so you know it was clicked
+    let btn = document.querySelector('#loginStage1 button');
+    let oldHtml = btn.innerHTML;
+    btn.innerHTML = '⏳ Securely connecting...';
+    btn.disabled = true;
+
     provider.setCustomParameters({ prompt: 'select_account' });
     
-    if (isMobile) {
-      // iPhone / Safari requires Redirect mode
-      await signInWithRedirect(auth, provider);
-    } else {
-      // Desktop PC uses Popup mode
-      await signInWithPopup(auth, provider);
-    }
+    // Apple ITP blocks redirects, but Popup works flawlessly via secure overlay
+    await signInWithPopup(auth, provider);
+    
   } catch (error) {
     console.error("Login Trigger Error:", error);
-    if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
-      await signInWithRedirect(auth, provider);
-    } else {
-      alert("Login failed: " + error.message);
+    let btn = document.querySelector('#loginStage1 button');
+    if (btn) {
+        btn.innerHTML = '<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 20px; height: 20px;"> Sign in with Google';
+        btn.disabled = false;
+    }
+    // Ignore harmless popup closures, alert true errors
+    if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+        if(typeof Swal !== 'undefined') Swal.fire("Login failed", error.message, "error");
     }
   }
 };
-
-// 📱 MOBILE INSTALL HELPER
-window.promptMobileInstall = function() {
-    const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
-    if (isIos) {
-        Swal.fire({
-            title: '📱 Install on iPhone',
-            html: '<div style="text-align: left; font-size: 15px; color: #334155;">To run TAKODEÁL in Full-Screen Ultra Mode without browser bars:<br><br><b>1.</b> Tap the Safari <b>Share</b> icon at the bottom of your screen (the square with an arrow pointing up).<br><br><b>2.</b> Scroll down and tap <b>Add to Home Screen</b> ➕.</div>',
-            icon: 'info',
-            confirmButtonText: 'Got it!',
-            confirmButtonColor: '#0ea5e9',
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        });
-    } else {
-        Swal.fire('📱 Android / PC Install', 'Tap the 3-dot menu (⋮) in the top right of your Chrome browser and select "Install App" or "Add to Home screen".', 'info');
-    }
-};
-
-
-// Catch redirect results when returning to app on Mobile/iOS
-getRedirectResult(auth).catch((error) => {
-  if (error) console.error("Redirect Result Error:", error);
-});
 
 // 📱 MOBILE INSTALL HELPER
 window.promptMobileInstall = function() {
