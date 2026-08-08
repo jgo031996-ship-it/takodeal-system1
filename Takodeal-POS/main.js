@@ -365,11 +365,16 @@ window.loadPOSData = async function() {
             if (btn) btn.click();
         }
     });
+    // 🔥 THE FIX: Added the missing declarations right here!
+    let pmHtml = ''; 
+    let optHtml = '';
+
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; if (idx === 0) window.selectedPaymentMethod = m; 
         pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
         optHtml += `<option value="${m}">${m}</option>`;
     });
+    
     pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
     
     let payGrid = document.querySelector('.payment-grid');
