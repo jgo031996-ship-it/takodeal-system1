@@ -161,6 +161,7 @@
                     <span class="text-lg group-hover:scale-110 transition-transform">💬</span>
                     <span class="hidden sm:block font-bold text-xs">Contact</span>
                 </a>
+            </div>
             
             <div class="flex items-center gap-3 sm:gap-4">
                 <!-- Profile / Loyalty Button -->
@@ -1519,8 +1520,7 @@
                 grid.innerHTML = '<div class="text-red-500 text-sm col-span-full text-center py-10">Failed to load reviews.</div>'; 
             }
         };
-
-
+                            
         window.submitFeedbackSuggestion = async function() {
             const { value: feedbackText } = await Swal.fire({
                 title: 'Suggestion Box 💡',
@@ -1678,22 +1678,30 @@
             Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Signed Out', showConfirmButton: false, timer: 2000});
         };
 
-        window.filterMenu = function() {
+         window.filterMenu = function() {
             let input = document.getElementById('searchInput').value.toLowerCase();
             let categories = document.querySelectorAll('.category-section');
 
             categories.forEach(sec => {
-                let items = sec.querySelectorAll('.menu-item-row');
+                let catName = sec.querySelector('h2').innerText.toLowerCase();
+                let items = sec.querySelectorAll('div[data-name]'); 
                 let hasVisibleItems = false;
+                
                 items.forEach(item => {
-                    let name = item.getAttribute('data-name');
-                    if (name.includes(input)) {
-                        item.style.display = 'flex'; hasVisibleItems = true;
-                    } else { item.style.display = 'none'; }
+                    let itemName = item.getAttribute('data-name');
+                    // 🔥 THE FIX: Now searches the item name OR the Category name!
+                    if (itemName.includes(input) || catName.includes(input)) {
+                        item.style.display = 'flex'; 
+                        hasVisibleItems = true;
+                    } else { 
+                        item.style.display = 'none'; 
+                    }
                 });
+                
                 sec.style.display = hasVisibleItems ? 'block' : 'none';
             });
         };
+
 
         window.listenToStoreStatus = function() {
             let selectedBranch = document.getElementById('selectedBranch') ? document.getElementById('selectedBranch').value : 'Cabantian';
