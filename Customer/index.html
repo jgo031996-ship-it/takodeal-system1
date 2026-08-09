@@ -151,8 +151,16 @@
                 <a href="#" onclick="window.switchScreen('greetingScreen')" class="hover:text-white transition">Home</a>
                 <a href="#" onclick="window.switchScreen('orderingScreen')" class="hover:text-white transition">Menu</a>
                 <a href="#" onclick="window.openDeliveryPartners()" class="hover:text-white transition">Partners</a>
-                <a href="#" onclick="window.openReviewHub()" class="hover:text-white transition text-brandgold">Reviews ⭐</a>
+                <!-- 🔥 FIXED: Now properly routes to the Reviews Screen -->
+                <a href="#" onclick="window.switchScreen('reviewsScreen')" class="hover:text-white transition text-brandgold">Reviews ⭐</a>
             </div>
+            
+            <div class="flex items-center gap-3 sm:gap-4">
+                <!-- 🔥 NEW: Facebook Contact Button -->
+                <a href="https://www.facebook.com/Takodeal" target="_blank" class="bg-blue-600 border border-blue-500 p-2 sm:px-4 sm:py-2 rounded-full text-white hover:bg-blue-500 transition-colors shadow-lg flex items-center gap-2 group">
+                    <span class="text-lg group-hover:scale-110 transition-transform">💬</span>
+                    <span class="hidden sm:block font-bold text-xs">Contact</span>
+                </a>
             
             <div class="flex items-center gap-3 sm:gap-4">
                 <!-- Profile / Loyalty Button -->
@@ -160,7 +168,6 @@
                     <span class="text-lg group-hover:scale-110 transition-transform">👤</span>
                     <span class="hidden sm:block font-bold text-xs">Profile</span>
                 </button>
-
                 <!-- Floating Cart Button -->
                 <button onclick="window.openCheckoutModal()" id="globalCartBtn" class="relative flex items-center gap-2 bg-cardbg border border-zinc-800 px-4 py-2 rounded-full text-white hover:bg-zinc-800 transition-colors shadow-lg group">
                     <span class="text-lg group-hover:scale-110 transition-transform">🛒</span>
@@ -229,9 +236,11 @@
                 </div>
             </div>
             
-            <div class="flex justify-between items-end mb-8">
-                <div><h2 class="text-3xl font-black text-white">Popular Dishes</h2><p class="text-zinc-500 mt-1">Our best sellers, ready for you.</p></div>
+            <!-- 🔥 NEW: Fancy Circular Categories Container -->
+            <div id="homeCategoriesContainer" class="flex flex-col gap-12 mt-12 pb-10">
+                <div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading categories...</div>
             </div>
+
             <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
                 <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Scanning live inventory...</div>
             </div>
@@ -343,12 +352,15 @@
     </div>
 
     <!-- 🍲 STAGE 5: THE PREMIUM ITEM MODAL -->
-    <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[90] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
-        <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
+    <!-- 🔥 FIXED: Added pb-28 to mobile so the Red Tracker doesn't block the bottom! -->
+    <div id="itemModal" class="hidden fixed inset-0 bg-black/80 z-[90] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 pb-28 sm:pb-0 animate-fade-in">
+        <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[85vh] border border-zinc-800 shadow-2xl">
             
             <div id="modalImage" class="w-full h-56 bg-zinc-900 flex items-center justify-center text-4xl relative">
-                <button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20">&times;</button>
+                <!-- 🔥 FIXED: Added pb-1 and leading-none to perfectly center the X! -->
+                <button onclick="window.closeItemModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center backdrop-blur-md border border-white/20 text-2xl leading-none pb-1">&times;</button>
             </div>
+
             
             <div class="p-5 flex-1 overflow-y-auto custom-scrollbar">
                 <div class="mb-4">
@@ -600,45 +612,60 @@
         };
 
         function renderLandingPageGrids() {
-            let foodHtml = '';
-            let drinkHtml = '';
-            
-            let foodItems = window.masterMenu.filter(i => !i.isGrouped && i.image && !i.category.toLowerCase().includes('drink') && !i.category.toLowerCase().includes('tea') && !i.category.toLowerCase().includes('coffee') && !i.category.toLowerCase().includes('shake')).slice(0, 8);
-            let drinkItems = window.masterMenu.filter(i => !i.isGrouped && i.image && (i.category.toLowerCase().includes('drink') || i.category.toLowerCase().includes('tea') || i.category.toLowerCase().includes('coffee') || i.category.toLowerCase().includes('shake'))).slice(0, 4);
+            const container = document.getElementById('homeCategoriesContainer');
+            if (!container) return;
 
-            if(foodItems.length === 0 && window.masterMenu.length > 0) foodItems = window.masterMenu.filter(i => !i.category.toLowerCase().includes('tea')).slice(0, 8);
-            if(drinkItems.length === 0 && window.masterMenu.length > 0) drinkItems = window.masterMenu.filter(i => i.category.toLowerCase().includes('tea') || i.category.toLowerCase().includes('coffee')).slice(0, 4);
+            let categoriesMap = {};
+            // Group items by category to find a good display image
+            window.masterMenu.forEach(item => {
+                let cat = item.category || 'Other';
+                if (!categoriesMap[cat]) categoriesMap[cat] = [];
+                categoriesMap[cat].push(item);
+            });
 
-            const buildCard = (item) => {
-                let price = parseFloat(item.price || item.basePrice || 0);
-                let imgHtml = item.image ? `<img src="${item.image}" class="w-full h-48 object-cover rounded-t-2xl">` : `<div class="w-full h-48 bg-zinc-900 rounded-t-2xl flex items-center justify-center text-4xl">🍲</div>`;
-                let safeData = encodeURIComponent(JSON.stringify(item));
-                return `
-                    <div class="bg-cardbg rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-left flex flex-col cursor-pointer border border-zinc-800 group overflow-hidden" onclick="window.openItemModal('${safeData}')">
-                        <div class="overflow-hidden rounded-t-2xl relative">
-                            ${imgHtml.replace('class="', 'class="group-hover:scale-110 transition-transform duration-500 ')}
-                            <div class="absolute inset-0 bg-gradient-to-t from-cardbg to-transparent opacity-80"></div>
+            let html = '';
+            let isReversed = false;
+
+            for (let cat in categoriesMap) {
+                // Find an item with an image to represent the category
+                let repItem = categoriesMap[cat].find(i => i.image) || categoriesMap[cat][0];
+                let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg'; 
+                
+                // Fancy description based on category name
+                let desc = `Explore our delicious ${cat} selection! Freshly made and prepared just for you.`;
+                if(cat.toLowerCase().includes('takoyaki')) desc = "Authentic, mouth-watering Takoyaki loaded with premium fillings, topped with our signature sauces and bonito flakes!";
+                if(cat.toLowerCase().includes('tea')) desc = "Sweet, refreshing, and perfectly brewed Milk Teas with your favorite chewy boba pearls!";
+                if(cat.toLowerCase().includes('coffee')) desc = "Start your day right with our bold, rich, and freshly crafted iced coffee selections.";
+
+                // Switch layout sides based on the isReversed boolean
+                let rowDirection = isReversed ? 'md:flex-row-reverse' : 'md:flex-row';
+                let textAlignment = isReversed ? 'md:text-right' : 'md:text-left';
+                
+                html += `
+                    <div class="flex flex-col ${rowDirection} items-center gap-6 sm:gap-12 cursor-pointer group hover:bg-zinc-900/50 p-6 rounded-3xl transition-all duration-300 border border-transparent hover:border-zinc-800" onclick="window.switchScreen('orderingScreen')">
+                        
+                        <!-- Circular Image -->
+                        <div class="w-48 h-48 sm:w-64 sm:h-64 flex-shrink-0 rounded-full border-4 border-zinc-800 overflow-hidden relative shadow-[0_0_20px_rgba(0,0,0,0.5)] group-hover:border-brandred transition-colors duration-300">
+                            <img src="${imgSrc}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
+                            <div class="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
                         </div>
-                        <div class="p-5 flex-1 flex flex-col relative">
-                            <h3 class="font-bold text-lg text-white mb-1 leading-tight pr-6">${item.name}</h3>
-                            <p class="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-4">${item.category}</p>
-                            <div class="mt-auto flex justify-between items-center border-t border-zinc-800 pt-4">
-                                <span class="font-black text-brandred text-lg">₱${price.toFixed(2)}</span>
-                                <button class="absolute bottom-4 right-4 w-9 h-9 rounded-full bg-zinc-800 text-white font-black flex items-center justify-center group-hover:bg-brandred transition-colors text-xl leading-none pb-1 shadow-md">+</button>
+
+                        <!-- Category Text -->
+                        <div class="flex-1 text-center ${textAlignment}">
+                            <h3 class="text-3xl sm:text-4xl font-black text-white mb-3 group-hover:text-brandgold transition-colors">${cat}</h3>
+                            <p class="text-zinc-400 leading-relaxed text-sm sm:text-base">${desc}</p>
+                            <div class="mt-4 inline-flex items-center gap-2 text-brandred font-bold text-sm uppercase tracking-widest group-hover:translate-x-2 transition-transform">
+                                Explore Menu <span>➔</span>
                             </div>
                         </div>
                     </div>
                 `;
-            };
+                isReversed = !isReversed; // Alternate the layout for the next category
+            }
 
-            foodItems.forEach(item => foodHtml += buildCard(item));
-            drinkItems.forEach(item => drinkHtml += buildCard(item));
-
-            const favGrid = document.getElementById('favoritesGrid');
-            const drinkGrid = document.getElementById('drinksGrid');
-            if (favGrid) favGrid.innerHTML = foodHtml || '<div class="text-zinc-500">No popular dishes found.</div>';
-            if (drinkGrid) drinkGrid.innerHTML = drinkHtml || '<div class="text-zinc-500">No signature drinks found.</div>';
+            container.innerHTML = html || '<div class="text-zinc-500 text-center">No categories found.</div>';
         }
+
 
         function renderDarkMenuGrid(categoriesMap) {
             const container = document.getElementById('liveMenuContainer');
