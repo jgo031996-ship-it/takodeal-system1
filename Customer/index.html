@@ -251,34 +251,29 @@
             </div>
         </div>
     </div>
-    <!-- ========================================== -->
-    <!-- 🛒 STAGE 2: THE MAIN ORDERING APP SCREEN -->
-    <!-- ========================================== -->
-    <div id="orderingScreen" class="app-screen hidden max-w-2xl mx-auto w-full bg-darkbg min-h-screen relative flex-col border-x border-zinc-900 animate-fade-in">
-        <div class="flex-1 flex flex-col">
-            <div class="p-5 border-b border-zinc-900">
-                <h2 class="text-2xl font-black text-white mb-4">Hungry? Let's Order.</h2>
-                <div class="relative mb-4">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500">🔍</span>
-                    <input type="text" id="searchInput" onkeyup="filterMenu()" class="w-full bg-cardbg border border-zinc-800 rounded-full pl-12 pr-4 py-3 text-sm outline-none focus:border-brandred text-white placeholder-zinc-500 transition-colors shadow-inner" placeholder="Search dishes...">
+    
+        <div class="px-6 py-20 max-w-7xl mx-auto w-full z-10 border-t border-zinc-900 mt-10">
+            <div class="flex flex-col md:flex-row justify-between items-center bg-cardbg p-6 rounded-2xl border border-zinc-800 mb-12 shadow-lg">
+                <div class="mb-4 md:mb-0 text-center md:text-left">
+                    <h2 class="text-xl font-black text-white">📍 Select Your Location</h2>
+                    <p class="text-zinc-400 text-sm mt-1">See live availability for your nearest branch.</p>
                 </div>
-
-                <div class="flex gap-2">
-                    <select id="selectedBranch" onchange="window.syncBranchSelection(this.value)" class="flex-1 rounded-full border border-zinc-800 bg-cardbg py-2.5 px-4 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer shadow-inner">
-                        <option value="Cabantian">📍 Cabantian</option>
-                        <option value="Citygate">📍 Citygate</option>
-                        <option value="Maa">📍 Maa</option>
+                <div class="w-full md:w-auto">
+                    <select id="homeBranchSelect" onchange="window.syncBranchSelection(this.value)" class="w-full md:w-72 rounded-xl border border-zinc-700 bg-darkbg py-3 px-5 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer shadow-inner">
+                        <option value="Cabantian">TAKODEÁL Cabantian</option>
+                        <option value="Citygate">TAKODEÁL Citygate</option>
+                        <option value="Maa">TAKODEÁL Maa</option>
                     </select>
                 </div>
             </div>
-
-            <div class="p-5 pb-32">
-                <div id="liveMenuContainer" class="space-y-8">
-                    <!-- Populated by JS -->
-                </div>
+            
+            <!-- 🔥 CLEANED UP: Fancy Circular Categories Container -->
+            <div id="homeCategoriesContainer" class="flex flex-col gap-12 mt-12 pb-10 w-full">
+                <div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading categories...</div>
             </div>
         </div>
     </div>
+
 
     <!-- ========================================== -->
     <!-- ⭐ STAGE 3: THE DEDICATED REVIEWS PAGE -->
@@ -607,59 +602,17 @@
             } catch(e) { console.error("Render Branch Error:", e); }
         };
 
-        function renderLandingPageGrids() {
-            const container = document.getElementById('homeCategoriesContainer');
-            if (!container) return;
-
-            let categoriesMap = {};
-            // Group items by category to find a good display image
-            window.masterMenu.forEach(item => {
-                let cat = item.category || 'Other';
-                if (!categoriesMap[cat]) categoriesMap[cat] = [];
-                categoriesMap[cat].push(item);
-            });
-
-            let html = '';
-            let isReversed = false;
-
-            for (let cat in categoriesMap) {
-                // Find an item with an image to represent the category
-                let repItem = categoriesMap[cat].find(i => i.image) || categoriesMap[cat][0];
-                let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg'; 
-                
-                // Fancy description based on category name
-                let desc = `Explore our delicious ${cat} selection! Freshly made and prepared just for you.`;
-                if(cat.toLowerCase().includes('takoyaki')) desc = "Authentic, mouth-watering Takoyaki loaded with premium fillings, topped with our signature sauces and bonito flakes!";
-                if(cat.toLowerCase().includes('tea')) desc = "Sweet, refreshing, and perfectly brewed Milk Teas with your favorite chewy boba pearls!";
-                if(cat.toLowerCase().includes('coffee')) desc = "Start your day right with our bold, rich, and freshly crafted iced coffee selections.";
-
-                // Switch layout sides based on the isReversed boolean
-                let rowDirection = isReversed ? 'md:flex-row-reverse' : 'md:flex-row';
-                let textAlignment = isReversed ? 'md:text-right' : 'md:text-left';
-                
-                html += `
-                    <div class="flex flex-col ${rowDirection} items-center gap-6 sm:gap-12 cursor-pointer group hover:bg-zinc-900/50 p-6 rounded-3xl transition-all duration-300 border border-transparent hover:border-zinc-800" onclick="window.switchScreen('orderingScreen')">
-                        
-                        <!-- Circular Image -->
-                        <div class="w-48 h-48 sm:w-64 sm:h-64 flex-shrink-0 rounded-full border-4 border-zinc-800 overflow-hidden relative shadow-[0_0_20px_rgba(0,0,0,0.5)] group-hover:border-brandred transition-colors duration-300">
-                            <img src="${imgSrc}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
-                            <div class="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
-                        </div>
-
-                        <!-- Category Text -->
-                        <div class="flex-1 text-center ${textAlignment}">
-                            <h3 class="text-3xl sm:text-4xl font-black text-white mb-3 group-hover:text-brandgold transition-colors">${cat}</h3>
-                            <p class="text-zinc-400 leading-relaxed text-sm sm:text-base">${desc}</p>
-                            <div class="mt-4 inline-flex items-center gap-2 text-brandred font-bold text-sm uppercase tracking-widest group-hover:translate-x-2 transition-transform">
-                                Explore Menu <span>➔</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                isReversed = !isReversed; // Alternate the layout for the next category
+        window.goToCategory = function(catName) {
+            window.switchScreen('orderingScreen');
+            let searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.value = catName;
+                window.filterMenu(); 
             }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
 
-                    window.goToCategory = function(catName) {
+        window.goToCategory = function(catName) {
             window.switchScreen('orderingScreen');
             let searchInput = document.getElementById('searchInput');
             if (searchInput) {
