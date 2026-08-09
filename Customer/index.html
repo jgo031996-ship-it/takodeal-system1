@@ -236,40 +236,7 @@
                 </div>
             </div>
             
-            <!-- 🔥 NEW: Fancy Circular Categories Container -->
-            <div id="homeCategoriesContainer" class="flex flex-col gap-12 mt-12 pb-10">
-                <div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading categories...</div>
-            </div>
-
-            <div id="favoritesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
-                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Scanning live inventory...</div>
-            </div>
-
-            <div class="flex justify-between items-end mb-8">
-                <div><h2 class="text-3xl font-black text-white">Signature Drinks</h2><p class="text-zinc-500 mt-1">Perfect refreshments to pair with your Takoyaki.</p></div>
-            </div>
-            <div id="drinksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="col-span-full text-zinc-500 py-10 font-medium text-center">⏳ Fetching refreshing drinks...</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="px-6 py-20 max-w-7xl mx-auto w-full z-10 border-t border-zinc-900 mt-10">
-            <div class="flex flex-col md:flex-row justify-between items-center bg-cardbg p-6 rounded-2xl border border-zinc-800 mb-12 shadow-lg">
-                <div class="mb-4 md:mb-0 text-center md:text-left">
-                    <h2 class="text-xl font-black text-white">📍 Select Your Location</h2>
-                    <p class="text-zinc-400 text-sm mt-1">See live availability for your nearest branch.</p>
-                </div>
-                <div class="w-full md:w-auto">
-                    <select id="homeBranchSelect" onchange="window.syncBranchSelection(this.value)" class="w-full md:w-72 rounded-xl border border-zinc-700 bg-darkbg py-3 px-5 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer shadow-inner">
-                        <option value="Cabantian">TAKODEÁL Cabantian</option>
-                        <option value="Citygate">TAKODEÁL Citygate</option>
-                        <option value="Maa">TAKODEÁL Maa</option>
-                    </select>
-                </div>
-            </div>
-            
-            <!-- 🔥 NEW: Fancy Circular Categories Container -->
+            <!-- 🔥 CLEANED UP: Fancy Circular Categories Container -->
             <div id="homeCategoriesContainer" class="flex flex-col gap-12 mt-12 pb-10 w-full">
                 <div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading categories...</div>
             </div>
@@ -304,6 +271,7 @@
             </div>
         </div>
     </div>
+    
     <!-- ========================================== -->
     <!-- ⭐ STAGE 3: THE DEDICATED REVIEWS PAGE -->
     <!-- ========================================== -->
