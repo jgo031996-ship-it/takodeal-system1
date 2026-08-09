@@ -739,7 +739,7 @@
       </div>
     </div>
     
-    <div class="view-container" id="view-waste" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+    <div class="view-container" id="view-waste" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto !important; -webkit-overflow-scrolling: touch; padding-bottom: 100px;">
       <div style="width: 100%; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
         
         <div style="background: white; border-radius: 12px; border: 1px solid #fecaca; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden;">
@@ -801,9 +801,9 @@
             <div style="padding: 20px; border-bottom: 1px solid var(--border);">
                 <h2 style="margin: 0; color: #1e293b; font-size: 18px;">📜 Today's Waste Logs</h2>
             </div>
-            <div class="table-responsive">
+            <div class="table-responsive" style="max-height: 45vh; overflow-y: auto; -webkit-overflow-scrolling: touch;">
                 <table class="data-table" style="width: 100%; text-align: left; border-collapse: collapse;">
-                    <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                    <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 5;">
                         <tr>
                             <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Time</th>
                             <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Item</th>
