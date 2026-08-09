@@ -9382,8 +9382,7 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     if (modal) modal.style.display = 'flex';
 };
 
-window.executeSwap = function() {
-    // 🔥 Standardized select lookup to match openSwapModal
+window.executeSwap = async function() {
     const selectEl = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect') || document.getElementById('swapTarget');
     const target = selectEl ? selectEl.value : null;
 
@@ -9391,28 +9390,26 @@ window.executeSwap = function() {
     
     const { day, branch, shiftId } = window.swapData;
     const curStaff = currentSchedule[day][branch].scheduled[shiftId];
+    let newStaff = null;
     
     if (target.startsWith('shift_')) {
-        // Swap with another scheduled staff
         const tSId = target.replace('shift_', '');
-        currentSchedule[day][branch].scheduled[shiftId] = currentSchedule[day][branch].scheduled[tSId];
+        newStaff = currentSchedule[day][branch].scheduled[tSId];
+        currentSchedule[day][branch].scheduled[shiftId] = newStaff;
         currentSchedule[day][branch].scheduled[tSId] = curStaff;
         
     } else if (target.startsWith('global_')) {
-        // Pulling an outsider from another branch
-        const globalName = target.replace('global_', '');
-        currentSchedule[day][branch].scheduled[shiftId] = globalName;
+        newStaff = target.replace('global_', '');
+        currentSchedule[day][branch].scheduled[shiftId] = newStaff;
         
-        // If the current staff wasn't UNFILLED, put them on standby
         if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !currentSchedule[day][branch].rest.includes(curStaff)) {
             currentSchedule[day][branch].rest.push(curStaff);
         }
         
     } else if (target.startsWith('rest_')) {
-        // Assign from standby
         const rIdx = parseInt(target.replace('rest_', ''));
-        const tStaff = currentSchedule[day][branch].rest[rIdx];
-        currentSchedule[day][branch].scheduled[shiftId] = tStaff;
+        newStaff = currentSchedule[day][branch].rest[rIdx];
+        currentSchedule[day][branch].scheduled[shiftId] = newStaff;
         
         if (curStaff !== "UNFILLED" && curStaff !== "N/A") {
             currentSchedule[day][branch].rest[rIdx] = curStaff;
@@ -9424,11 +9421,47 @@ window.executeSwap = function() {
     window.closeModal(); 
     window.renderTables(); 
     
-    // Trigger UI updates (using safe checks just in case they aren't loaded yet)
     if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
     if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
     if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
     if (typeof window.saveToCloud === 'function') window.saveToCloud();
+
+    // 🔥 THE MAGIC FIX: Auto-Delete pending Late Letters & Refresh Data!
+    try {
+        let targetDate = new Date(currentYear, currentMonth - 1, day);
+        let startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
+        let endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
+
+        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
+            window.where("explanationCause", "==", "Tardiness / Late Arrival"),
+            window.where("status", "==", "Pending")
+        );
+        const reqSnap = await window.getDocs(reqQ);
+
+        let deletePromises = [];
+        reqSnap.forEach(docSnap => {
+            let r = docSnap.data();
+            let rTime = r.timestamp ? (r.timestamp.toDate ? r.timestamp.toDate() : new Date(r.timestamp)) : null;
+            
+            // If the late letter was sent on the exact day we just swapped...
+            if (rTime && rTime >= startOfDay && rTime <= endOfDay) {
+                // ...and it belongs to the person who was late
+                if (r.staffName === curStaff || r.staffName === newStaff) {
+                    deletePromises.push(window.deleteDoc(window.doc(window.db, "staff_requests", docSnap.id)));
+                }
+            }
+        });
+
+        await Promise.all(deletePromises);
+        
+        // Aggressively refresh the background tables so the red 'Late' badges vanish instantly!
+        if (typeof window.loadAttendanceLogs === 'function') window.loadAttendanceLogs();
+        if (typeof window.loadPayrollDashboard === 'function') window.loadPayrollDashboard();
+        if (typeof window.loadInbox === 'function') window.loadInbox();
+
+    } catch(e) { 
+        console.error("Auto-Cleanup Error:", e); 
+    }
 };
 
 window.closeModal = function() { 
