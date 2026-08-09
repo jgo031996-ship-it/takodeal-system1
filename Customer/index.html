@@ -277,6 +277,34 @@
     </div>
 
     <!-- ========================================== -->
+    <!-- 🛒 STAGE 2: THE MAIN ORDERING APP SCREEN -->
+    <!-- ========================================== -->
+    <div id="orderingScreen" class="app-screen hidden max-w-2xl mx-auto w-full bg-darkbg min-h-screen relative flex-col border-x border-zinc-900 animate-fade-in">
+        <div class="flex-1 flex flex-col">
+            <div class="p-5 border-b border-zinc-900">
+                <h2 class="text-2xl font-black text-white mb-4">Hungry? Let's Order.</h2>
+                <div class="relative mb-4">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500">🔍</span>
+                    <input type="text" id="searchInput" onkeyup="filterMenu()" class="w-full bg-cardbg border border-zinc-800 rounded-full pl-12 pr-4 py-3 text-sm outline-none focus:border-brandred text-white placeholder-zinc-500 transition-colors shadow-inner" placeholder="Search dishes...">
+                </div>
+
+                <div class="flex gap-2">
+                    <select id="selectedBranch" onchange="window.syncBranchSelection(this.value)" class="flex-1 rounded-full border border-zinc-800 bg-cardbg py-2.5 px-4 text-sm font-bold text-white outline-none focus:border-brandred cursor-pointer shadow-inner">
+                        <option value="Cabantian">📍 Cabantian</option>
+                        <option value="Citygate">📍 Citygate</option>
+                        <option value="Maa">📍 Maa</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="p-5 pb-32">
+                <div id="liveMenuContainer" class="space-y-8">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ========================================== -->
     <!-- ⭐ STAGE 3: THE DEDICATED REVIEWS PAGE -->
     <!-- ========================================== -->
     <div id="reviewsScreen" class="app-screen hidden max-w-3xl mx-auto w-full min-h-screen p-6 lg:p-10 animate-fade-in">
@@ -514,6 +542,18 @@
         window.phantomVariants = {}; 
         window.isStoreAcceptingOrders = true;
 
+        window.syncBranchSelection = function(branchName) {
+            let homeSel = document.getElementById('homeBranchSelect');
+            let selBranch = document.getElementById('selectedBranch');
+            
+            // 🔥 Safety checks prevent null errors if elements are hidden/switching
+            if (homeSel) homeSel.value = branchName;
+            if (selBranch) selBranch.value = branchName;
+            
+            window.renderMenuForBranch(branchName);
+            window.listenToStoreStatus();
+        };
+
         window.loadLiveMenu = async function() {
             try {
                 const q = query(collection(db, "menu"), orderBy("category"));
@@ -526,23 +566,18 @@
                     window.rawMenuCache.push(item);
                 });
 
-                let defaultBranch = document.getElementById('homeBranchSelect').value || 'Cabantian';
+                let homeSel = document.getElementById('homeBranchSelect');
+                let defaultBranch = homeSel ? homeSel.value : 'Cabantian';
                 window.syncBranchSelection(defaultBranch);
                 window.initVisitCounter();
 
             } catch (error) {
                 console.error(error);
-                document.getElementById('liveMenuContainer').innerHTML = '<div class="text-center py-8 text-red-500">Failed to load menu.</div>';
+                let container = document.getElementById('liveMenuContainer');
+                if (container) container.innerHTML = '<div class="text-center py-8 text-red-500">Failed to load menu.</div>';
             }
-        }
-
-        window.syncBranchSelection = function(branchName) {
-            document.getElementById('homeBranchSelect').value = branchName;
-            document.getElementById('selectedBranch').value = branchName;
-            window.renderMenuForBranch(branchName);
-            window.listenToStoreStatus();
         };
-
+        
         window.routeToGrab = function() {
             let branch = document.getElementById('selectedBranch').value || document.getElementById('homeBranchSelect').value;
             if (branch === 'Maa') {
