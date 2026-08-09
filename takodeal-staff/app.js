@@ -1962,7 +1962,6 @@ window.loadPayslipVault = async function() {
         
         filteredAttLogs.forEach(docSnap => {
             let log = docSnap; // Data is already extracted in the array
-            let log = docSnap.data();
             let manualPenalty = parseFloat(log.penaltyAmount) || 0;
 
             if (log.type === "TIME IN") {
