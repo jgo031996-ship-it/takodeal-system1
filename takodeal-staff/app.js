@@ -2303,7 +2303,6 @@ window.loadPayslipVault = async function() {
 
         let historyHtml = '';
         prLogs.forEach(d => {
-            let d = docSnap.data();
             let pd = d.frozenData || {};
             pd.processedAt = d.processedAt; 
             
