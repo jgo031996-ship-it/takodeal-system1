@@ -4289,23 +4289,55 @@ window.loadInventoryData = async function() {
 // ========================================================
 // 📊 COMMAND CENTER DASHBOARD LOGIC
 // ========================================================
+window.toggleInvDropdown = function(e) {
+    e.preventDefault();
+    let submenu = document.getElementById('invSubmenu');
+    let icon = document.getElementById('invDropdownIcon');
+    if (submenu.classList.contains('open')) {
+        submenu.classList.remove('open');
+        icon.innerText = '▼';
+    } else {
+        submenu.classList.add('open');
+        icon.innerText = '▲';
+        if (!window.activeInvTab) window.switchInvTab('Overview');
+        else window.switchView('inventory');
+    }
+};
+
 window.switchInvTab = function(tab) {
     window.activeInvTab = tab; 
-    let overviewTab = document.getElementById('tabInvOverview'); let auditsTab = document.getElementById('tabInvAudits'); let wasteTab = document.getElementById('tabInvWaste'); let prepTab = document.getElementById('tabInvPrep'); let logsTab = document.getElementById('tabInvStockLogs'); let forecasterTab = document.getElementById('tabInvForecaster'); let alertsTab = document.getElementById('tabInvAlerts'); let aiBriefTab = document.getElementById('tabInvAIBrief');
     
-    let liveSec = document.getElementById('invTabLiveContent'); let auditsSec = document.getElementById('invSectionAudits'); let wasteSec = document.getElementById('invSectionWaste'); let prepSec = document.getElementById('invSectionPrepLogs'); let logsSec = document.getElementById('invTabLogsContent'); let forecasterSec = document.getElementById('invSectionForecaster'); let alertsSec = document.getElementById('invSectionAlerts'); let aiBriefSec = document.getElementById('invSectionAIBrief');
+    // Ensure parent view is visible
+    window.switchView('inventory');
+    
+    // 1. Highlight the correct sidebar sub-item
+    document.querySelectorAll('.nav-subitem').forEach(el => el.classList.remove('active'));
+    let activeSub = document.getElementById('subnav-' + tab);
+    if (activeSub) activeSub.classList.add('active');
 
-    [overviewTab, auditsTab, wasteTab, prepTab, logsTab, forecasterTab, alertsTab, aiBriefTab].forEach(t => { if(t) { t.style.color = '#64748b'; t.style.borderBottomColor = 'transparent'; }});
-    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec, aiBriefSec].forEach(s => { if(s) s.style.display = 'none'; });
+    // 2. Hide all sections
+    let liveSec = document.getElementById('invTabLiveContent'); 
+    let auditsSec = document.getElementById('invSectionAudits'); 
+    let wasteSec = document.getElementById('invSectionWaste'); 
+    let prepSec = document.getElementById('invSectionPrepLogs'); 
+    let logsSec = document.getElementById('invTabLogsContent'); 
+    let forecasterSec = document.getElementById('invSectionForecaster'); 
+    let alertsSec = document.getElementById('invSectionAlerts'); 
+    let aiBriefSec = document.getElementById('invSectionAIBrief');
+    let yieldSec = document.getElementById('invSectionYield'); // 🔥 New Yield Section
 
-    if (tab === 'Overview') { if(overviewTab) { overviewTab.style.color = '#0f766e'; overviewTab.style.borderBottomColor = '#0f766e'; } if(liveSec) liveSec.style.display = 'block'; } 
-    else if (tab === 'Audits') { if(auditsTab) { auditsTab.style.color = '#0f766e'; auditsTab.style.borderBottomColor = '#0f766e'; } if(auditsSec) auditsSec.style.display = 'block'; } 
-    else if (tab === 'Waste') { if(wasteTab) { wasteTab.style.color = '#0f766e'; wasteTab.style.borderBottomColor = '#0f766e'; } if(wasteSec) wasteSec.style.display = 'block'; } 
-    else if (tab === 'Prep') { if(prepTab) { prepTab.style.color = '#0f766e'; prepTab.style.borderBottomColor = '#0f766e'; } if(prepSec) prepSec.style.display = 'block'; } 
-    else if (tab === 'StockLogs') { if(logsTab) { logsTab.style.color = '#0f766e'; logsTab.style.borderBottomColor = '#0f766e'; } if(logsSec) logsSec.style.display = 'block'; } 
-    else if (tab === 'Forecaster') { if(forecasterTab) { forecasterTab.style.color = '#0f766e'; forecasterTab.style.borderBottomColor = '#0f766e'; } if(forecasterSec) forecasterSec.style.display = 'block'; }
-    else if (tab === 'Alerts') { if(alertsTab) { alertsTab.style.color = '#ef4444'; alertsTab.style.borderBottomColor = '#ef4444'; } if(alertsSec) alertsSec.style.display = 'block'; }
-    else if (tab === 'AIBrief') { if(aiBriefTab) { aiBriefTab.style.color = '#8b5cf6'; aiBriefTab.style.borderBottomColor = '#8b5cf6'; } if(aiBriefSec) aiBriefSec.style.display = 'block'; }
+    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec, aiBriefSec, yieldSec].forEach(s => { if(s) s.style.display = 'none'; });
+
+    // 3. Show correct section
+    if (tab === 'Overview') { if(liveSec) liveSec.style.display = 'block'; } 
+    else if (tab === 'Audits') { if(auditsSec) auditsSec.style.display = 'block'; } 
+    else if (tab === 'Waste') { if(wasteSec) wasteSec.style.display = 'block'; } 
+    else if (tab === 'Prep') { if(prepSec) prepSec.style.display = 'block'; } 
+    else if (tab === 'StockLogs') { if(logsSec) logsSec.style.display = 'block'; } 
+    else if (tab === 'Forecaster') { if(forecasterSec) forecasterSec.style.display = 'block'; }
+    else if (tab === 'Alerts') { if(alertsSec) alertsSec.style.display = 'block'; }
+    else if (tab === 'AIBrief') { if(aiBriefSec) aiBriefSec.style.display = 'block'; }
+    else if (tab === 'Yield') { if(yieldSec) yieldSec.style.display = 'block'; }
 
     window.refreshActiveInventoryTab();
 };
@@ -4320,6 +4352,7 @@ window.refreshActiveInventoryTab = function() {
     else if (tab === 'Forecaster') window.loadForecasterEngine(); 
     else if (tab === 'Alerts') window.loadPurchasesAndAlerts(); 
     else if (tab === 'AIBrief') window.generateAIReport(); 
+    else if (tab === 'Yield') window.loadYieldCalculator(); 
 };
 
 window.openInventoryLogs = function() { window.switchInvTab('StockLogs'); };
@@ -21136,5 +21169,172 @@ window.togglePreviewDevice = function(deviceType) {
         btnDesktop.style.color = 'white';
         btnMobile.style.background = 'transparent';
         btnMobile.style.color = '#94a3b8';
+    }
+};
+
+// ========================================================
+// ⚖️ YIELD COST CALCULATOR ENGINE
+// ========================================================
+window.yieldInventoryList = [];
+
+window.loadYieldCalculator = async function() {
+    let select = document.getElementById('yieldItemSelect');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">⏳ Scanning inventory...</option>';
+    
+    try {
+        // Load distinct ingredients from Main Office
+        const q = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const snap = await getDocs(q);
+        
+        window.yieldInventoryList = [];
+        let html = '<option value="">-- Select Raw Ingredient --</option>';
+        
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            data.id = docSnap.id;
+            window.yieldInventoryList.push(data);
+        });
+        
+        window.yieldInventoryList.sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
+            html += `<option value="${item.id}">${item.name} (Current Base Cost: ₱${parseFloat(item.baseCost || 0).toFixed(2)} / ${item.uom})</option>`;
+        });
+        
+        select.innerHTML = html;
+        window.loadYieldLogs();
+    } catch(e) {
+        console.error(e);
+        select.innerHTML = '<option value="">❌ Error loading items</option>';
+    }
+};
+
+window.handleYieldItemSelect = function() {
+    let id = document.getElementById('yieldItemSelect').value;
+    let item = window.yieldInventoryList.find(i => i.id === id);
+    if (item) {
+        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${item.uom}</span>`;
+        window.calcYieldMath();
+    }
+};
+
+window.calcYieldMath = function() {
+    let id = document.getElementById('yieldItemSelect').value;
+    let item = window.yieldInventoryList.find(i => i.id === id);
+    let uom = item ? item.uom : 'unit';
+
+    let totalCost = parseFloat(document.getElementById('yieldTotalCost').value) || 0;
+    let netYield = parseFloat(document.getElementById('yieldNetQty').value) || 0;
+    
+    if (netYield > 0 && totalCost > 0) {
+        let costPerUnit = totalCost / netYield;
+        document.getElementById('yieldResultCost').innerHTML = `₱${costPerUnit.toFixed(4)} <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${uom}</span>`;
+    } else {
+        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${uom}</span>`;
+    }
+};
+
+window.saveYieldCost = async function() {
+    let id = document.getElementById('yieldItemSelect').value;
+    let totalCost = parseFloat(document.getElementById('yieldTotalCost').value) || 0;
+    let rawQty = parseFloat(document.getElementById('yieldRawQty').value) || 0;
+    let netYield = parseFloat(document.getElementById('yieldNetQty').value) || 0;
+    
+    if (!id || totalCost <= 0 || rawQty <= 0 || netYield <= 0) {
+        return Swal.fire('Missing Data', 'Please fill out all fields with valid numbers.', 'warning');
+    }
+
+    let costPerUnit = totalCost / netYield;
+    let item = window.yieldInventoryList.find(i => i.id === id);
+    let cashier = window.sessionUser ? window.sessionUser.cashierName : "Manager";
+
+    try {
+        Swal.fire({title: 'Updating Globally...', text: 'Recalculating BOMs for all branches...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        // 1. Update this specific item in Main Office
+        await updateDoc(doc(db, "inventory", id), {
+            baseCost: costPerUnit
+        });
+
+        // 2. Cascade update to all OTHER branches for this item!
+        const syncQ = query(collection(db, "inventory"), where("name", "==", item.name));
+        const syncSnap = await getDocs(syncQ);
+        let promises = [];
+        syncSnap.forEach(d => {
+            if (d.id !== id) promises.push(updateDoc(doc(db, "inventory", d.id), { baseCost: costPerUnit }));
+        });
+        await Promise.all(promises);
+
+        // 3. Log the Yield Test
+        await addDoc(collection(db, "yield_logs"), {
+            itemName: item.name,
+            totalCost: totalCost,
+            rawQty: rawQty,
+            netYield: netYield,
+            newBaseCost: costPerUnit,
+            uom: item.uom,
+            loggedBy: cashier,
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '✅ Yield Applied!', 
+            text: `The base cost for ${item.name} is now ₱${costPerUnit.toFixed(4)}/${item.uom}. All recipes using this ingredient will automatically recalculate.`, 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        // Reset inputs
+        document.getElementById('yieldTotalCost').value = '';
+        document.getElementById('yieldRawQty').value = '';
+        document.getElementById('yieldNetQty').value = '';
+        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${item.uom}</span>`;
+        
+        window.loadYieldLogs();
+        
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to update yield cost.', 'error');
+    }
+};
+
+window.loadYieldLogs = async function() {
+    let tbody = document.getElementById('yieldLogsBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading logs...</td></tr>';
+    
+    try {
+        const q = query(collection(db, "yield_logs"), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let wastePct = (((d.rawQty - d.netYield) / d.rawQty) * 100).toFixed(1);
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; background: white;">
+                    <td style="padding: 15px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #0f172a; font-size: 15px;">${d.itemName}</td>
+                    <td style="padding: 15px;">
+                        <div style="font-size: 14px; font-weight: bold; color: #dc2626;">Cost: ₱${d.totalCost.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Raw: ${d.rawQty} ${d.uom}</div>
+                    </td>
+                    <td style="padding: 15px; font-weight: bold; color: #16a34a; font-size: 15px;">
+                        ${d.netYield} ${d.uom} <br>
+                        <span style="font-size: 11px; color: #ef4444; font-weight: normal;">(Waste: ${wastePct}%)</span>
+                    </td>
+                    <td style="padding: 15px; font-weight: 900; color: #0ea5e9; font-size: 16px;">₱${d.newBaseCost.toFixed(4)} <span style="font-size:11px; font-weight:normal; color:#64748b;">/${d.uom}</span></td>
+                    <td style="padding: 15px; color: #475569; font-size: 13px;">👤 ${d.loggedBy}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No yield calculations logged yet.</td></tr>';
+        
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading logs.</td></tr>';
     }
 };
