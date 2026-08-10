@@ -1009,7 +1009,15 @@ window.syncOfflineQueue = async function() {
     let badge = document.getElementById('liveClock').nextElementSibling;
 
     try {
-        // We use a predefined inventory cache so we only ask Firebase for the Document ID once!
+        // 🔥 THE LEAK FIX: Force BOM to load if the internet was slow during boot!
+        if (!window.masterPOSData) window.masterPOSData = {};
+        if (!window.masterPOSData.bom || window.masterPOSData.bom.length === 0) {
+            let tempBom = [];
+            const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+            bomSnap.forEach(doc => tempBom.push(doc.data()));
+            window.masterPOSData.bom = tempBom;
+        }
+
         let localInvCache = {};
 
         while (window.offlineQueue.length > 0) {
@@ -1018,7 +1026,7 @@ window.syncOfflineQueue = async function() {
             }
 
             let payload = window.offlineQueue[0];
-            let promises = []; // Using Promise.all instead of writeBatch prevents crash loops!
+            let promises = []; 
             
             // 1. Save Transaction to Firebase
             let txRef = window.doc(window.collection(window.db, "transactions"));
@@ -1033,14 +1041,13 @@ window.syncOfflineQueue = async function() {
             if (payload.cart && Array.isArray(payload.cart)) {
                 payload.cart.forEach(cartItem => {
                     let itemName = cartItem.name || cartItem.itemName;
-                    let qtySold = cartItem.qty || 1;
+                    let qtySold = parseFloat(cartItem.qty) || 1;
 
-                    // A. Deduct Base Recipe (Reads from Tablet Memory, ZERO Network Lag!)
                     let recipe = (window.masterPOSData && window.masterPOSData.bom) ? window.masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
-                    let orderType = payload.orderType || 'Dine-In'; // Grab the order type!
+                    let orderType = payload.orderType || 'Dine-In'; 
                     
                     recipe.forEach(r => {
-                        let deductAmount = (r.qty || 0) * qtySold;
+                        let deductAmount = (parseFloat(r.qty) || 0) * qtySold;
                         
                         // 🔥 THE SMART DINE-IN PACKAGING ENGINE
                         let ingName = (r.ingredientName || "").toLowerCase();
@@ -1054,13 +1061,13 @@ window.syncOfflineQueue = async function() {
                         ingredientsToDeduct[r.ingredientName] += deductAmount;
                     });
 
-                    // B. Deduct Add-ons & Mix-Match Fillings (The missing leak!)
+                    // B. Deduct Add-ons & Mix-Match Fillings
                     if (cartItem.addons) {
                         for (let key in cartItem.addons) {
                             let addon = cartItem.addons[key];
                             if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
                                 if (!ingredientsToDeduct[addon.linkedIngredient]) ingredientsToDeduct[addon.linkedIngredient] = 0;
-                                ingredientsToDeduct[addon.linkedIngredient] += (addon.deductQty * addon.qty * qtySold);
+                                ingredientsToDeduct[addon.linkedIngredient] += (parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtySold);
                             }
                         }
                     }
@@ -1071,7 +1078,6 @@ window.syncOfflineQueue = async function() {
             for (let ing in ingredientsToDeduct) {
                 let totalDeduct = ingredientsToDeduct[ing];
                 if (totalDeduct > 0) {
-                    // Check local cache first to avoid hanging on a fluctuating network
                     if (!localInvCache[ing]) {
                         const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", payload.branch), window.where("name", "==", ing));
                         const invSnap = await window.getDocs(invQ);
@@ -1088,7 +1094,6 @@ window.syncOfflineQueue = async function() {
                 }
             }
 
-            // 4. Execute everything simultaneously. If offline, Firebase caches these naturally!
             await Promise.all(promises);
 
             // 5. Remove processed order from local queue securely
@@ -1340,7 +1345,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
     if (txData.cart && Array.isArray(txData.cart)) {
       for (let cartItem of txData.cart) {
         let itemName = cartItem.name || cartItem.itemName;
-        let qtyVoided = cartItem.qty || 1;
+        let qtyVoided = parseFloat(cartItem.qty) || 1;
 
         // --- A. REPLENISH MAIN RECIPE (BOM) ---
         const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
@@ -1350,9 +1355,8 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
           let recipeData = bomDoc.data();
           let ingredientName = recipeData.ingredientName;
           
-          // Calculate exactly how much to return (+ instead of -)
-          let totalAmountToReturn = (recipeData.qty || 0) * qtyVoided;
-          
+          let totalAmountToReturn = (parseFloat(recipeData.qty) || 0) * qtyVoided;
+
           // 🔥 THE SMART DINE-IN PACKAGING ENGINE (FOR VOIDS)
           let ingName = (ingredientName || "").toLowerCase();
           let orderType = txData.orderType || 'Dine-In';
@@ -1371,10 +1375,9 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
             let invData = invSnap.docs[0].data();
             
             // Add it back to the current stock!
-            let newStock = (invData.currentStock || 0) + totalAmountToReturn;
+            let newStock = (parseFloat(invData.currentStock) || 0) + totalAmountToReturn;
             await updateDoc(invDocRef, { currentStock: newStock });
 
-            // 🔥 THE FIX: Changed 'safeFirstName' to 'cashierName' so it doesn't crash!
             await addDoc(collection(db, "stock_logs"), {
                 branch: branch,
                 item: ingredientName,
@@ -1395,9 +1398,8 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
             for (let addonKey in cartItem.addons) {
                 let addon = cartItem.addons[addonKey];
                 
-                // If the addon has a linked ingredient, return it!
                 if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                    let totalAddonReturn = addon.deductQty * addon.qty * qtyVoided;
+                    let totalAddonReturn = parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtyVoided;
 
                     const addonInvQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", addon.linkedIngredient));
                     const addonInvSnap = await getDocs(addonInvQ);
@@ -1406,10 +1408,9 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                         let invDocRef = addonInvSnap.docs[0].ref;
                         let invData = addonInvSnap.docs[0].data();
                         
-                        let newStock = (invData.currentStock || 0) + totalAddonReturn;
+                        let newStock = (parseFloat(invData.currentStock) || 0) + totalAddonReturn;
                         await updateDoc(invDocRef, { currentStock: newStock });
 
-                      // 🔥 THE FIX: Changed 'safeFirstName' to 'cashierName' here as well!
                       await addDoc(collection(db, "stock_logs"), {
                           branch: branch,
                           item: addon.linkedIngredient,
@@ -1426,11 +1427,10 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                 }
             }
         }
-        
       }
     }
 
-    // 🔥 NEW: REVERSE THE 1 MILLION BALLS TRACKER 🔥
+    // 🔥 REVERSE THE 1 MILLION BALLS TRACKER 🔥
     let totalBallsToReturn = 0;
     for (let cartItem of txData.cart) {
         let itemName = cartItem.name || cartItem.itemName;
@@ -1728,15 +1728,21 @@ window.submitComprehensiveCloseShift = async function () {
         txSnap.forEach(docSnap => {
             let tx = docSnap.data();
             if (tx.status !== 'Voided') {
+                
+                // 🚨 CHECK IF MANAGER HAS VERIFIED DIGITAL PAYMENTS
+                if (tx.paymentMethod && tx.paymentMethod.toLowerCase() !== 'cash' && tx.paymentVerified !== true) {
+                    unverifiedDigitalCount++;
+                }
+
                 if (tx.cart) {
                     tx.cart.forEach(item => {
                         let itemName = item.name || item.itemName;
-                        let qty = item.qty || 1;
+                        let qty = parseFloat(item.qty) || 1;
                         let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
-                        let orderType = tx.orderType || 'Dine-In'; // Grab the order type!
-                        
+                        let orderType = tx.orderType || 'Dine-In';
+
                         recipe.forEach(r => {
-                            let deductAmount = r.qty * qty;
+                            let deductAmount = (parseFloat(r.qty) || 0) * qty;
                             
                             // 🔥 THE SMART DINE-IN PACKAGING ENGINE
                             let ingName = (r.ingredientName || "").toLowerCase();
@@ -1749,17 +1755,19 @@ window.submitComprehensiveCloseShift = async function () {
                             if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
                             shiftIngredientBurn[r.ingredientName] += deductAmount;
                         });
+
                         if (item.addons) {
                             for (let key in item.addons) {
                                 let addon = item.addons[key];
                                 if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
                                     if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
-                                    shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
+                                    shiftIngredientBurn[addon.linkedIngredient] += (parseFloat(addon.deductQty) * parseFloat(addon.qty) * qty);
                                 }
                             }
                         }
                     });
                 }
+
                 if (tx.splitDetails) {
                     tx.splitDetails.forEach(split => {
                         if (split.method === 'Cash') totalCashSales += split.amount;
