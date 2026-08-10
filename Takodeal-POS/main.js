@@ -1037,9 +1037,21 @@ window.syncOfflineQueue = async function() {
 
                     // A. Deduct Base Recipe (Reads from Tablet Memory, ZERO Network Lag!)
                     let recipe = (window.masterPOSData && window.masterPOSData.bom) ? window.masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                    let orderType = payload.orderType || 'Dine-In'; // Grab the order type!
+                    
                     recipe.forEach(r => {
+                        let deductAmount = (r.qty || 0) * qtySold;
+                        
+                        // 🔥 THE SMART DINE-IN PACKAGING ENGINE
+                        let ingName = (r.ingredientName || "").toLowerCase();
+                        if (ingName.includes("box")) {
+                            if (orderType.toLowerCase().includes("dine-in")) {
+                                deductAmount = deductAmount / 2; // Deduct exactly half a box!
+                            }
+                        }
+
                         if (!ingredientsToDeduct[r.ingredientName]) ingredientsToDeduct[r.ingredientName] = 0;
-                        ingredientsToDeduct[r.ingredientName] += (r.qty || 0) * qtySold;
+                        ingredientsToDeduct[r.ingredientName] += deductAmount;
                     });
 
                     // B. Deduct Add-ons & Mix-Match Fillings (The missing leak!)
@@ -1340,6 +1352,15 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
           
           // Calculate exactly how much to return (+ instead of -)
           let totalAmountToReturn = (recipeData.qty || 0) * qtyVoided;
+          
+          // 🔥 THE SMART DINE-IN PACKAGING ENGINE (FOR VOIDS)
+          let ingName = (ingredientName || "").toLowerCase();
+          let orderType = txData.orderType || 'Dine-In';
+          if (ingName.includes("box")) {
+              if (orderType.toLowerCase().includes("dine-in")) {
+                  totalAmountToReturn = totalAmountToReturn / 2; // Return exactly half a box!
+              }
+          }
 
           // Find the ingredient in this specific branch's inventory
           const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ingredientName));
@@ -1712,9 +1733,21 @@ window.submitComprehensiveCloseShift = async function () {
                         let itemName = item.name || item.itemName;
                         let qty = item.qty || 1;
                         let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                        let orderType = tx.orderType || 'Dine-In'; // Grab the order type!
+                        
                         recipe.forEach(r => {
+                            let deductAmount = r.qty * qty;
+                            
+                            // 🔥 THE SMART DINE-IN PACKAGING ENGINE
+                            let ingName = (r.ingredientName || "").toLowerCase();
+                            if (ingName.includes("box")) {
+                                if (orderType.toLowerCase().includes("dine-in")) {
+                                    deductAmount = deductAmount / 2; // Exact half deduction!
+                                }
+                            }
+
                             if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
-                            shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
+                            shiftIngredientBurn[r.ingredientName] += deductAmount;
                         });
                         if (item.addons) {
                             for (let key in item.addons) {
