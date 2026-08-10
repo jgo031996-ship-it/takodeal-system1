@@ -349,7 +349,8 @@ window.loadPOSData = async function() {
         }
     });
 
-    let otHtml = ''; window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
+    let otHtml = '<option value="" disabled selected>-- Select Type --</option>'; 
+    window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
     let otSelect = document.getElementById('mainOrderType');
     otSelect.innerHTML = otHtml;
 
