@@ -21402,3 +21402,266 @@ window.loadYieldLogs = async function() {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading logs.</td></tr>';
     }
 };
+
+// ========================================================
+// 🗑️ MANAGER DIRECT WASTE LOGGING ENGINE
+// ========================================================
+window.mgrWasteCart = [];
+window.mgrWasteInventoryList = [];
+
+window.openManagerWasteModal = async function() {
+    document.getElementById('managerWasteModal').style.display = 'flex';
+    
+    // 1. Populate the Branch Dropdown
+    let branchSelect = document.getElementById('mgrWasteBranch');
+    let options = '';
+    window.globalActiveBranches.forEach(b => {
+        options += `<option value="${b}">📍 ${b}</option>`;
+    });
+    branchSelect.innerHTML = options;
+    
+    // Auto-select the branch they are currently viewing in the tab!
+    if (window.activeWasteBranch && window.activeWasteBranch !== 'All') {
+        branchSelect.value = window.activeWasteBranch;
+    } else if (window.sessionUser && window.sessionUser.isFranchisee) {
+        branchSelect.value = window.sessionUser.branch;
+    }
+    
+    // Lock branch if Franchisee
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        branchSelect.disabled = true;
+    }
+
+    // 2. Reset the modal UI
+    window.mgrWasteCart = [];
+    window.renderMgrWasteCart();
+    document.getElementById('mgrWastePhoto').value = '';
+    document.getElementById('mgrWasteQty').value = '';
+    document.getElementById('mgrWasteItem').value = '';
+    
+    // 3. Load the specific branch inventory
+    await window.loadManagerWasteInventory();
+};
+
+window.loadManagerWasteInventory = async function() {
+    let branch = document.getElementById('mgrWasteBranch').value;
+    let itemInput = document.getElementById('mgrWasteItem');
+    let datalist = document.getElementById('mgrWasteDatalist');
+    
+    itemInput.value = '';
+    itemInput.placeholder = '⏳ Fetching stock...';
+    itemInput.disabled = true;
+    
+    try {
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
+        
+        window.mgrWasteInventoryList = [];
+        let html = '';
+        
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            data.id = docSnap.id;
+            window.mgrWasteInventoryList.push(data);
+        });
+        
+        window.mgrWasteInventoryList.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+        
+        window.mgrWasteInventoryList.forEach(item => {
+            html += `<option value="${item.name}">Live Stock: ${parseFloat(item.currentStock||0).toFixed(1)} ${item.uom}</option>`;
+        });
+        
+        datalist.innerHTML = html;
+        itemInput.placeholder = 'Type to search item...';
+        itemInput.disabled = false;
+    } catch(e) {
+        console.error("Manager Waste Inventory Error:", e);
+        itemInput.placeholder = '❌ Error loading stock';
+    }
+};
+
+window.updateMgrWasteUom = function() {
+    let itemName = document.getElementById('mgrWasteItem').value.trim();
+    let uomDrop = document.getElementById('mgrWasteUom');
+    
+    if (!itemName) {
+        uomDrop.innerHTML = '<option value="base" data-conv="1">Units</option>';
+        return;
+    }
+    
+    let invItem = window.mgrWasteInventoryList.find(i => i.name === itemName);
+    if (invItem) {
+        let bUom = invItem.baseUom || invItem.uom || 'units';
+        let pUom = invItem.purchaseUom || invItem.purchUom || 'Bulk';
+        let conv = parseFloat(invItem.conversionRate) || parseFloat(invItem.conversion) || 1;
+        
+        if (bUom.toLowerCase() !== pUom.toLowerCase() && conv !== 1) {
+            uomDrop.innerHTML = `
+                <option value="purch" data-conv="${conv}">${pUom}</option>
+                <option value="base" data-conv="1" selected>${bUom}</option>
+            `;
+        } else {
+            uomDrop.innerHTML = `<option value="base" data-conv="1" selected>${bUom}</option>`;
+        }
+    }
+};
+
+window.addMgrWasteToCart = function() {
+    let itemName = document.getElementById('mgrWasteItem').value.trim();
+    let rawQty = parseFloat(document.getElementById('mgrWasteQty').value);
+    let reason = document.getElementById('mgrWasteReason').value;
+    let branch = document.getElementById('mgrWasteBranch').value;
+    
+    if (!itemName || isNaN(rawQty) || rawQty <= 0) {
+        return Swal.fire('Error', 'Please select an item and enter a valid quantity.', 'error');
+    }
+    
+    let invItem = window.mgrWasteInventoryList.find(i => i.name === itemName);
+    if (!invItem) return Swal.fire('Error', 'Item not found in inventory.', 'error');
+    
+    let uomDrop = document.getElementById('mgrWasteUom');
+    let convRate = 1;
+    let displayUom = invItem.baseUom || invItem.uom || 'units';
+    
+    if (uomDrop && uomDrop.tagName === 'SELECT') {
+        let selOpt = uomDrop.options[uomDrop.selectedIndex];
+        convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
+        displayUom = selOpt.text;
+    }
+    
+    let baseQty = rawQty * convRate;
+    let costPerUnit = parseFloat(invItem.baseCost) || parseFloat(invItem.cost) || 0;
+    let valueLost = baseQty * costPerUnit;
+    
+    let photoInput = document.getElementById('mgrWastePhoto');
+    let photoFile = photoInput.files.length > 0 ? photoInput.files[0] : null;
+
+    window.mgrWasteCart.push({
+        id: invItem.id,
+        name: itemName,
+        branch: branch,
+        rawQty: rawQty,
+        displayUom: displayUom,
+        baseQty: baseQty,
+        baseUom: invItem.baseUom || invItem.uom || 'units',
+        reason: reason,
+        valueLost: valueLost,
+        file: photoFile
+    });
+    
+    document.getElementById('mgrWasteItem').value = '';
+    document.getElementById('mgrWasteQty').value = '';
+    document.getElementById('mgrWastePhoto').value = '';
+    if(uomDrop) uomDrop.innerHTML = '<option value="base" data-conv="1">Units</option>';
+    
+    window.renderMgrWasteCart();
+};
+
+window.removeMgrWasteItem = function(index) {
+    window.mgrWasteCart.splice(index, 1);
+    window.renderMgrWasteCart();
+};
+
+window.renderMgrWasteCart = function() {
+    let tbody = document.getElementById('mgrWasteCartBody');
+    if (!tbody) return;
+    
+    if (window.mgrWasteCart.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 15px; color: #94a3b8;">Cart is empty.</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    window.mgrWasteCart.forEach((item, idx) => {
+        let photoBadge = item.file ? `<span style="color:#16a34a; font-size:10px; margin-left:5px; font-weight:bold;">(📸 Photo Attached)</span>` : '';
+        html += `
+            <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                <td style="padding: 12px 10px;">
+                    <strong style="color: #0f172a; font-size: 13px;">${item.name}</strong> ${photoBadge}<br>
+                    <span style="font-size: 11px; color: #dc2626; font-style: italic;">Reason: ${item.reason}</span>
+                </td>
+                <td style="padding: 12px 10px; text-align: center;">
+                    <strong style="color: #dc2626; font-size: 14px;">${item.rawQty} ${item.displayUom}</strong><br>
+                    <span style="font-size: 10px; color: #64748b; font-weight: bold;">(Loss: ₱${item.valueLost.toFixed(2)})</span>
+                </td>
+                <td style="padding: 12px 10px; text-align: right;">
+                    <button onclick="window.removeMgrWasteItem(${idx})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-weight: bold; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✖</button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+};
+
+window.submitMgrWasteCart = async function() {
+    if (window.mgrWasteCart.length === 0) return Swal.fire('Cart Empty', 'Please add items to log.', 'warning');
+    
+    let btn = document.getElementById('btnSubmitMgrWaste');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Deducting Inventory..."; btn.disabled = true;
+    
+    let cashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager HQ';
+
+    try {
+        for (let item of window.mgrWasteCart) {
+            let photoUrl = "";
+            
+            // 1. Upload photo to Firebase Storage if attached
+            if (item.file) {
+                const fileExt = item.file.name.split('.').pop();
+                const fileName = `waste_proofs/${item.branch}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const storageRef = ref(window.storage, fileName);
+                const snapshot = await uploadBytes(storageRef, item.file);
+                photoUrl = await getDownloadURL(snapshot.ref);
+            }
+            
+            // 2. Fetch live inventory directly to prevent race conditions
+            const invRef = doc(db, "inventory", item.id);
+            const invSnap = await getDoc(invRef);
+            
+            if (invSnap.exists()) {
+                let currentStock = parseFloat(invSnap.data().currentStock) || 0;
+                let newStock = currentStock - item.baseQty;
+                
+                // 3. Mathematical Deduction
+                await updateDoc(invRef, { currentStock: newStock });
+                
+                // 4. Log the Ledger Trace
+                await addDoc(collection(db, "stock_logs"), {
+                    branch: item.branch,
+                    item: item.name,
+                    uom: item.baseUom,
+                    oldQty: currentStock,
+                    newQty: newStock,
+                    variance: -item.baseQty,
+                    type: "Waste / Spoilage",
+                    note: `Manager Log: ${item.reason}`,
+                    user: cashierName,
+                    timestamp: serverTimestamp(),
+                    photoUrl: photoUrl
+                });
+            }
+        }
+        
+        Swal.fire({
+            title: '✅ Waste Logged', 
+            text: 'Inventory has been successfully updated and deducted.', 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        document.getElementById('managerWasteModal').style.display = 'none';
+        window.mgrWasteCart = [];
+        window.renderMgrWasteCart();
+        
+        // Refresh the underlying table and boxes automatically
+        if (typeof window.loadWasteTabLogs === 'function') window.loadWasteTabLogs();
+        if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
+        
+    } catch(e) {
+        console.error("Manager Waste Submit Error:", e);
+        Swal.fire('Error', 'Failed to log waste. Check internet connection.', 'error');
+    } finally {
+        btn.innerText = origText; btn.disabled = false;
+    }
+};
