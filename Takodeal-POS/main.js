@@ -827,7 +827,10 @@ window.confirmAddOrUpdateToCart = function() {
 };
 
 window.renderCart = function() {
-    const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
+    const list = document.getElementById('cartList'); 
+    let grandTotal = 0; 
+    list.innerHTML = '';
+    
     if (!window.cart || window.cart.length === 0) { 
         list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
         document.getElementById('displaySubTotal').innerText = '₱0.00'; 
@@ -836,35 +839,41 @@ window.renderCart = function() {
     } else {
         window.cart.forEach((item, index) => {
             grandTotal += item.lineTotalFinal;
-            let notesText = item.notes ? `<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">${item.notes}</div>` : '';
+            
+            // Safe string concatenation (No backticks to break!)
+            let notesText = item.notes ? '<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">' + item.notes + '</div>' : '';
 
             let addonsText = '';
             if (item.addons) {
                 for (let key in item.addons) {
                     let addon = item.addons[key];
                     if (addon.qty > 0) {
-                        let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
-                        // Fix: Fallback to dictionary key if addon.name is undefined
+                        let priceText = (addon.price && addon.price > 0) ? '(₱' + (addon.price * addon.qty).toFixed(2) + ')' : '';
                         let addonName = addon.name || key;
-                        addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addonName} <span style="color:#64748b;">${priceText}</span></div>`;
+                        addonsText += '<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ' + addon.qty + 'x ' + addonName + ' <span style="color:#64748b;">' + priceText + '</span></div>';
                     }
                 }
             }
 
-            // 🔥 THE FIX: The badge logic is now safely processed BEFORE we build the HTML!
-            let typeBadge = item.orderType ? `<span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px;">${item.orderType}</span>` : '';
+            // Safe Badge HTML
+            let typeBadge = item.orderType ? '<span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px;">' + item.orderType + '</span>' : '';
 
-            list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
-                <div class="cart-item-desc">
-                    <span class="cart-item-name">${item.name} ${typeBadge}</span>
-                    <div class="cart-item-subtext">${addonsText}${notesText}</div>
-                </div>
-                <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
-                <div class="cart-item-qty">x ${item.qty}</div>
-                <div class="cart-item-sub">₱${item.lineTotalFinal.toFixed(2)}</div>
-                <button class="btn-remove" onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();">✖</button>
-            </li>`;
+            // Protect against apostrophes in item names breaking the click event
+            let safeItemName = item.name.replace(/'/g, "\\'");
+
+            // Safe HTML builder
+            list.innerHTML += '<li class="cart-item" onclick="window.openAddOrderModal(\'' + safeItemName + '\', ' + item.basePrice + ', window.cart[' + index + '])">' +
+                '<div class="cart-item-desc">' +
+                    '<span class="cart-item-name">' + item.name + ' ' + typeBadge + '</span>' +
+                    '<div class="cart-item-subtext">' + addonsText + notesText + '</div>' +
+                '</div>' +
+                '<div class="cart-item-price">₱' + item.variantPrice.toFixed(2) + '</div>' +
+                '<div class="cart-item-qty">x ' + item.qty + '</div>' +
+                '<div class="cart-item-sub">₱' + item.lineTotalFinal.toFixed(2) + '</div>' +
+                '<button class="btn-remove" onclick="window.cart.splice(' + index + ', 1); window.renderCart(); event.stopPropagation();">✖</button>' +
+            '</li>';
         });
+        
         window.currentGrandTotal = grandTotal; 
         document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
         document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
