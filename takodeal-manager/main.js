@@ -18233,19 +18233,36 @@ window.toggleAnnouncementStatus = async function(id, currentState) {
 };
 
 // ==========================================
-// 🏢 SMART HR ROUTING ENGINE
+// 🏢 SMART HR ROUTING & DROPDOWN ENGINE
 // ==========================================
-window.navToHr = function(tabName) {
-    // 1. Visually update ALL copies of the nav bar instantly
-    document.querySelectorAll('.hr-tab-btn').forEach(btn => {
-        if (btn.getAttribute('data-target') === tabName) {
-            btn.style.borderBottom = "3px solid #3b82f6";
-            btn.style.color = "#0f172a";
-        } else {
-            btn.style.borderBottom = "3px solid transparent";
-            btn.style.color = "#64748b";
+window.toggleHrDropdown = function(e) {
+    e.preventDefault();
+    let submenu = document.getElementById('hrSubmenu');
+    let icon = document.getElementById('hrDropdownIcon');
+    if (submenu.classList.contains('open')) {
+        submenu.classList.remove('open');
+        icon.innerText = '▼';
+    } else {
+        submenu.classList.add('open');
+        icon.innerText = '▲';
+        
+        // When opening, route to whatever tab was last active, or default to Feed
+        let activeSub = document.querySelector('#hrSubmenu .nav-subitem.active');
+        if (!activeSub) window.navToHr('Feed');
+        else {
+            let target = activeSub.id.split('-')[1];
+            window.navToHr(target);
         }
+    }
+};
+
+window.navToHr = function(tabName) {
+    // 1. Visually update the Sidebar Sub-items instantly!
+    document.querySelectorAll('#hrSubmenu .nav-subitem').forEach(btn => {
+        btn.classList.remove('active');
     });
+    let activeBtn = document.getElementById('subnav-' + tabName);
+    if (activeBtn) activeBtn.classList.add('active');
 
     // 2. Route to the correct Master View securely
     if (tabName === 'Feed' || tabName === 'Sanctions') {
