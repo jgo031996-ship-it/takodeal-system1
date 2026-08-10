@@ -618,9 +618,9 @@
         <div class="ticket-panel">
           <div class="ticket-header" style="align-items: center; gap: 10px;">
             <h2 style="margin:0; font-size: 16px;">Current Orders</h2>
-            <select id="mainOrderType" class="order-type-select" style="background: var(--primary); color: white; border: none; border-radius: 8px; padding: 8px; font-weight: bold; font-size: 13px; outline: none; cursor: pointer; box-shadow: 0 4px 6px rgba(229,169,61,0.3); flex: 1; text-align: center; appearance: auto;">
+            <select id="mainOrderType" style="background: #f39c12; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; padding: 10px 15px; outline: none; box-shadow: 0 4px 6px rgba(243, 156, 18, 0.3); appearance: auto;">
               <option value="" disabled selected>-- Select Type --</option>
-            </select>
+          </select>
           </div>
           <div class="table-header"><span class="col-desc">Description</span><span class="col-price">Unit
               Price</span><span class="col-qty">Qty</span><span class="col-sub">Subtotal</span></div>
@@ -1093,6 +1093,13 @@
               onclick="adjustModalMainQty(1)">+</button>
           </div>
         </div>
+        <div style="margin-bottom:15px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+            <div class="section-title" style="color: #0f766e; margin-bottom: 0;">Item Order Type</div>
+            <select id="modalItemOrderType" class="input-box" style="width: 150px; padding: 8px; font-weight: bold; cursor: pointer; border-color: #0ea5e9; color: #0284c7; background: #e0f2fe; outline: none;">
+                <option value="Take-Out">🛍️ Take-Out</option>
+                <option value="Dine-In">🍽️ Dine-In</option>
+            </select>
+        </div>
         <div id="takoyakiCustomizationArea" style="display: none; margin-bottom: 15px;">
           <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
               <span>🐙 Customize Fillings (Mix & Match)</span>
@@ -1299,7 +1306,7 @@
     <div class="modal checkout-modal" style="display: flex; flex-direction: column; max-height: 90vh;">
       <div class="modal-head" style="flex-shrink: 0;"><span>Secure Payment</span><span class="close-modal"
           onclick="closeModal('checkoutModal')">✖</span></div>
-      <div class="modal-body" style="padding: 25px; flex: 1; overflow-y: auto; min-height: 0;">
+      <div class="modal-body" style="padding: 25px; flex: 1; overflow-y: auto; overflow-x: hidden;">
         <div class="checkout-yellow-box">
           <div style="color: var(--primary); font-size: 14px; margin-bottom: 5px;">Total Payable</div>
           <div id="checkoutTotalPayable" style="font-size: 32px; font-weight: bold; color: #333;">₱0.00</div>
@@ -1386,8 +1393,8 @@
           <div class="shift-row"><span>Time</span><span class="receipt-value" id="rcptTime">: 10:18 PM</span></div>
           <div class="shift-row"><span class="shift-val" style="font-size:16px;">Net Total</span><span
               class="receipt-value shift-val" id="rcptTotal" style="font-size:16px;">: ₱0.00</span></div>
-          <div class="shift-row" style="margin-top: 8px;"><span>Amount Paid</span><span class="receipt-value" id="rcptPaid" style="font-weight:bold; color:#10b981;">: ₱0.00</span></div>
-          <div class="shift-row"><span>Change</span><span class="receipt-value" id="rcptChange" style="font-weight:bold; color:#dc2626;">: ₱0.00</span></div>
+          <div class="shift-row" style="margin-top: 5px; color: #666;"><span>Amount Paid</span><span class="receipt-value" id="rcptPaid">: ₱0.00</span></div>
+          <div class="shift-row" style="color: #dc2626; font-weight: bold;"><span>Change</span><span class="receipt-value" id="rcptChange">: ₱0.00</span></div>
         </div>
       </div>
       <div class="modal-foot"
@@ -2725,9 +2732,13 @@ window.adjustMixMatchQty = function(flavor, delta) {
 function selectRealVariant(realName, price, btn) { window.selectRealVariant(realName, price, btn); }
 
     // --- 8. CHECKOUT SYSTEM ---
-    function openCheckoutModal() { if (cart.length === 0) return; document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
-  if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
-  if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';}
+    function openCheckoutModal() { 
+        if (cart.length === 0) return; 
+        if (!document.getElementById('mainOrderType').value) {
+            return Swal.fire('Order Type Required', 'Please select an Order Type (e.g., Dine-In, Take-Out) at the top of the Current Orders list before checking out.', 'warning');
+        } document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
+    if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
+    if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';}
     function appendNumpad(num) { if (amountReceivedStr === "0" && num !== ".") amountReceivedStr = num; else if (num === "." && amountReceivedStr.includes(".")) return; else amountReceivedStr += num; updateNumpadDisplay(); }
     function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
     function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
@@ -3106,15 +3117,14 @@ window.currentParkedOrdersList = [];
 
 window.parkOrder = async function() {
     if (typeof cart === 'undefined' || cart.length === 0) return;
+    let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : '';
+    if (!currentOrderType) return Swal.fire('Order Type Required', 'Please select an Order Type before parking.', 'warning');
     
     // 🔥 NEW: Auto-pull the name from the Customer Name box!
     let defaultName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : '';
     
     let customerName = prompt("Enter Customer Name or Table Number:", defaultName); 
     if (!customerName) return;
-    
-    // Also save the order type so it stays when un-parked!
-    let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : 'Dine-In';
     
     let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     let cashier = localStorage.getItem('cashierName') || 'Unknown';
