@@ -163,19 +163,27 @@ onAuthStateChanged(auth, async (user) => {
 window.checkManagerPin = function() {
     let pinInput = document.getElementById('managerPinInput');
     let pinVal = pinInput.value.trim();
+    let err = document.getElementById('pinErrorMsg');
     
-    if (pinVal.length === 4) {
+    // Check if it is at least 4 characters
+    if (pinVal.length >= 4) {
         if (pinVal === window.tempAuthData.pin) {
             pinInput.value = '';
             pinInput.style.borderColor = '#cbd5e1';
-            document.getElementById('pinErrorMsg').style.display = 'none';
+            err.style.display = 'none';
             window.finalizeManagerLogin();
         } else {
-            let err = document.getElementById('pinErrorMsg');
+            err.innerText = '❌ ACCESS DENIED. INVALID PIN.';
             err.style.display = 'block';
             pinInput.value = '';
             pinInput.style.borderColor = '#ef4444';
+            pinInput.focus();
         }
+    } else {
+        err.innerText = '❌ PIN must be at least 4 characters long.';
+        err.style.display = 'block';
+        pinInput.style.borderColor = '#ef4444';
+        pinInput.focus();
     }
 };
 
@@ -351,8 +359,8 @@ window.addHqManager = async function () {
                     <input type="text" id="swal-phone" class="input-box" placeholder="09XX XXX XXXX" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
 
                     <!-- 🛡️ NEW SECURE PIN BOX -->
-                    <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Security PIN (4 Digits) *:</label>
-                    <input type="password" id="swal-pin" class="input-box" placeholder="1234" maxlength="4" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #bae6fd; background: #f0f9ff; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 8px; font-weight: bold; font-size: 18px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Security PIN / Password (Min 4 Chars) *:</label>
+                    <input type="password" id="swal-pin" class="input-box" placeholder="1234" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #bae6fd; background: #f0f9ff; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 8px; font-weight: bold; font-size: 18px;">
 
                     <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Role:</label>
                     <select id="swal-role" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="document.getElementById('swal-branch-container').style.display = this.value === 'Franchisee' ? 'block' : 'none'">
@@ -376,7 +384,7 @@ window.addHqManager = async function () {
             preConfirm: () => {
                 let pinVal = document.getElementById('swal-pin').value;
                 if (!pinVal || pinVal.length < 4) {
-                    Swal.showValidationMessage('A 4-Digit Security PIN is strictly required.');
+                    Swal.showValidationMessage('A Security PIN/Password (Minimum 4 characters) is strictly required.');
                     return false;
                 }
                 return { 
@@ -434,7 +442,7 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
                 
                 <!-- 🛡️ EDIT PIN BOX -->
                 <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Update Security PIN:</label>
-                <input type="password" id="edit-profile-pin" class="input-box" placeholder="Leave blank to keep current PIN" maxlength="4" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px dashed #bae6fd; background: #f8fafc; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 2px;">
+                <input type="password" id="edit-profile-pin" class="input-box" placeholder="Leave blank to keep current PIN" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px dashed #bae6fd; background: #f8fafc; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 2px;">
             </div>
         `,
         focusConfirm: false,
@@ -445,7 +453,7 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
         preConfirm: () => {
             let newPin = document.getElementById('edit-profile-pin').value.trim();
             if (newPin && newPin.length < 4) {
-                Swal.showValidationMessage('If changing the PIN, it must be exactly 4 digits.');
+                Swal.showValidationMessage('If changing the PIN, it must be at least 4 characters long.');
                 return false;
             }
             return { 
