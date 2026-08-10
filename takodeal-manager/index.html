@@ -414,16 +414,27 @@
     </div>
 
     <!-- STAGE 2: FAST PIN ENTRY -->
-    <div id="loginStage2" style="display: none; background: white; padding: 35px 25px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 360px; box-sizing: border-box;">
-      <h3 id="authWelcomeName" style="margin: 0 0 5px 0; color: #0f172a; font-size: 18px;">Welcome, Owner</h3>
-      <p style="color: #10b981; font-size: 12px; margin-bottom: 25px; font-weight: bold;">[✓] Identity Verified</p>
+    <div id="loginStage2" style="display: none; background: white; padding: 40px 30px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 400px; box-sizing: border-box;">
       
-      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 10px;">ENTER SECURITY PIN</label>
-      <input type="password" id="managerPinInput" placeholder="****" maxlength="4" onkeyup="window.checkManagerPin()" style="width: 100%; max-width: 180px; padding: 15px; font-size: 28px; text-align: center; letter-spacing: 15px; border: 2px solid #cbd5e1; border-radius: 10px; outline: none; font-family: monospace; color: #0f172a; transition: border-color 0.2s;">
+      <div style="width: 60px; height: 60px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px auto; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.2);">
+          <span style="font-size: 30px;">🛡️</span>
+      </div>
+
+      <h3 id="authWelcomeName" style="margin: 0 0 5px 0; color: #0f172a; font-size: 22px; font-weight: 900;">Welcome, Owner</h3>
+      <div style="margin-bottom: 25px;">
+          <span style="color: #16a34a; font-size: 12px; font-weight: bold; background: #f0fdf4; padding: 6px 12px; border-radius: 20px; border: 1px solid #bbf7d0;">[✓] Identity Verified</span>
+      </div>
       
-      <div id="pinErrorMsg" style="color: #ef4444; font-size: 12px; margin-top: 12px; font-weight: bold; display: none;">ACCESS DENIED. INVALID PIN.</div>
+      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Enter Security PIN / Password</label>
       
-      <button onclick="window.cancelLoginAndSignOut()" style="background: transparent; color: #94a3b8; border: none; margin-top: 25px; font-size: 12px; cursor: pointer; text-decoration: underline;">Cancel & Sign Out</button>
+      <!-- Removed maxlength so you can type as long of a password as you want! -->
+      <input type="password" id="managerPinInput" placeholder="••••" onkeypress="if(event.key === 'Enter') window.checkManagerPin()" style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 8px; border: 2px solid #cbd5e1; border-radius: 10px; outline: none; font-family: monospace; color: #0f172a; transition: border-color 0.2s; box-sizing: border-box; background: #f8fafc;">
+      
+      <div id="pinErrorMsg" style="color: #ef4444; font-size: 13px; margin-top: 12px; font-weight: bold; display: none;">❌ ACCESS DENIED. INVALID PIN.</div>
+      
+      <button onclick="window.checkManagerPin()" style="width: 100%; padding: 16px; margin-top: 20px; background: #0ea5e9; color: white; border: none; border-radius: 10px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">🔓 Unlock System</button>
+
+      <button onclick="window.cancelLoginAndSignOut()" style="width: 100%; padding: 12px; margin-top: 15px; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; transition: 0.2s;">Cancel & Sign Out</button>
     </div>
 
   </div>
