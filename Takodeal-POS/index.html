@@ -1060,46 +1060,47 @@
         </div>
     </div>
 
-  </div> <div class="overlay" id="variantModal">
+  </div> 
+  <div class="overlay" id="variantModal">
     <div class="modal variant-modal">
       <div class="modal-head"><span>Add Order</span><span class="close-modal"
           onclick="closeModal('variantModal')">✖</span></div>
       <div class="modal-body">
+        
         <div style="font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom:15px;">
           <div style="display:flex;"><span style="width:100px; color:#666;">Description:</span> <strong
               id="modalItemName">Cheesy Takoyaki</strong></div>
           <div style="display:flex;"><span style="width:100px; color:#666;">Base Price:</span> <strong
               id="modalItemPrice" style="color:var(--primary);">₱ 0.00</strong></div>
         </div>
+
         <div style="display: none;">
           <div class="section-title">Select Variant</div>
           <div class="variant-grid" id="variantOptions"></div>
         </div>
-        <div style="margin-bottom:15px;">
-          <div style="margin-bottom:15px; display: flex; gap: 15px;">
-            <div style="flex: 1;">
-              <div class="section-title">Order Type</div>
-              <select id="modalItemOrderType" class="input-box" style="padding: 10px; font-weight: bold; color: var(--primary); border: 1px solid var(--primary); cursor: pointer;">
-                  <option value="Take-Out">Take-Out</option>
-                  <option value="Dine-In">Dine-In</option>
-              </select>
+
+        <!-- 🔥 PERFECTLY BALANCED ROW FOR ORDER TYPE & QUANTITY 🔥 -->
+        <div style="display: flex; gap: 15px; margin-bottom: 15px; align-items: stretch;">
+            
+            <div style="flex: 1; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; display: flex; flex-direction: column; justify-content: center;">
+                <div class="section-title" style="color: #0f766e; margin-bottom: 8px;">Item Order Type</div>
+                <select id="modalItemOrderType" class="input-box" style="width: 100%; padding: 8px; font-weight: bold; cursor: pointer; border-color: #0ea5e9; color: #0284c7; background: #e0f2fe; outline: none; margin: 0;">
+                    <option value="Take-Out">🛍️ Take-Out</option>
+                    <option value="Dine-In">🍽️ Dine-In</option>
+                </select>
             </div>
-            <div style="flex: 1;">
-              <div class="section-title">Set Quantity</div>
-          <div class="qty-controls"><button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;"
-              onclick="adjustModalMainQty(-1)">-</button>
-            <div id="modalMainQty" class="qty-display-box">1</div>
-            <button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;"
-              onclick="adjustModalMainQty(1)">+</button>
-          </div>
+
+            <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+              <div class="section-title" style="margin-bottom: 8px;">Set Quantity</div>
+              <div class="qty-controls" style="margin-top: 0; width: 100%; display: flex;">
+                  <button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;" onclick="adjustModalMainQty(-1)">-</button>
+                  <div id="modalMainQty" class="qty-display-box" style="flex: 1; height:45px;">1</div>
+                  <button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;" onclick="adjustModalMainQty(1)">+</button>
+              </div>
+            </div>
+
         </div>
-        <div style="margin-bottom:15px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
-            <div class="section-title" style="color: #0f766e; margin-bottom: 0;">Item Order Type</div>
-            <select id="modalItemOrderType" class="input-box" style="width: 150px; padding: 8px; font-weight: bold; cursor: pointer; border-color: #0ea5e9; color: #0284c7; background: #e0f2fe; outline: none;">
-                <option value="Take-Out">🛍️ Take-Out</option>
-                <option value="Dine-In">🍽️ Dine-In</option>
-            </select>
-        </div>
+
         <div id="takoyakiCustomizationArea" style="display: none; margin-bottom: 15px;">
           <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
               <span>🐙 Customize Fillings (Mix & Match)</span>
@@ -1114,6 +1115,7 @@
               <div id="mixMatchList" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
         </div>
+
         <div style="margin-bottom:15px;">
           <div class="section-title">Apply Discount</div>
           <div class="discount-grid">
@@ -1124,6 +1126,7 @@
           <input type="number" id="discountValueInput" class="input-box" placeholder="Enter discount amount..."
             style="display:none; margin-top:10px;" oninput="updateModalTotals()">
         </div>
+        
         <div style="margin-top: 5px;">
           <div class="section-title" style="margin-bottom: 8px;">Select Add-Ons</div>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -1132,11 +1135,13 @@
           </div>
           <div id="activeAddonsContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"></div>
         </div>
+        
         <div style="margin-top: 15px;">
           <div class="section-title" style="margin-bottom: 8px;">✎ Notes</div><input type="text" id="orderNotesInput"
             class="input-box" placeholder="e.g., Spicy, No Mayo">
         </div>
       </div>
+      
       <div class="modal-foot">
         <button class="btn-clear" onclick="closeModal('variantModal')"
           style="padding:15px; flex:1; order: 2;">Cancel</button>
