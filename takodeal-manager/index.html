@@ -1912,8 +1912,13 @@
 
         <!-- 🗑️ SECTION 3: WASTE -->
         <div id="invSectionWaste" style="display: none;">
-            <div id="wasteBranchTabs" style="display: flex; gap: 15px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px;">
-                <!-- Javascript will inject the Branch Boxes here! -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                <div id="wasteBranchTabs" style="display: flex; gap: 15px; overflow-x: auto; padding-bottom: 5px; flex: 1;">
+                    <!-- Javascript will inject the Branch Boxes here! -->
+                </div>
+                <button onclick="window.openManagerWasteModal()" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); font-size: 14px; display: flex; align-items: center; gap: 8px; white-space: nowrap;">
+                    <span style="font-size: 16px;">🗑️</span> Log Direct Waste
+                </button>
             </div>
             <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 20px;">
                 <div style="background: #fffcf0; padding: 20px; border-radius: 12px; border: 1px solid #fde68a;"><div style="font-size: 12px; color: #b45309; font-weight: bold;">Total Waste Instances</div><div id="wasteTotalCount" style="font-size: 32px; font-weight: 900; color: #d97706;">0</div></div>
@@ -3666,6 +3671,83 @@
     </div>
   </div>
 
+  <!-- 🗑️ MANAGER DIRECT WASTE MODAL -->
+  <div id="managerWasteModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10050; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+      <div style="background: white; width: 650px; max-width: 95%; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 90vh;">
+          
+          <div style="background: #dc2626; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">🗑️ Log Direct Waste & Spoilage</h2>
+              <span onclick="document.getElementById('managerWasteModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+          </div>
+          
+          <div style="padding: 25px; overflow-y: auto; flex: 1; background: #f8fafc;">
+              <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Manager logs instantly deduct from live inventory without requiring HQ inbox approval.</p>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Select Branch</label>
+                      <select id="mgrWasteBranch" onchange="window.loadManagerWasteInventory()" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #1e293b; background: white; cursor: pointer;"></select>
+                  </div>
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Reason for Loss</label>
+                      <select id="mgrWasteReason" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #b91c1c; background: white; cursor: pointer;">
+                          <option value="Dropped / Spilled">⬇️ Dropped / Spilled</option>
+                          <option value="Burnt / Overcooked">🔥 Burnt / Overcooked</option>
+                          <option value="Spoiled / Expired">🤢 Spoiled / Expired</option>
+                          <option value="Customer Replacement">🔄 Customer Replacement</option>
+                          <option value="Pest Damage">🐀 Pest Damage</option>
+                          <option value="Manager Manual Adjustment">🛠️ Manager Manual Adjustment</option>
+                          <option value="Other">📝 Other</option>
+                      </select>
+                  </div>
+              </div>
+
+              <div style="margin-bottom: 15px;">
+                  <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Search Inventory Item</label>
+                  <div style="display: flex; gap: 10px;">
+                      <input type="text" id="mgrWasteItem" list="mgrWasteDatalist" onchange="window.updateMgrWasteUom()" onkeyup="window.updateMgrWasteUom()" placeholder="Type to search..." style="flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; color: #0ea5e9;">
+                      <datalist id="mgrWasteDatalist"></datalist>
+                  </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Quantity Lost</label>
+                      <input type="number" id="mgrWasteQty" placeholder="0" style="width: 100%; padding: 12px; border-radius: 6px; border: 2px solid #fca5a5; background: #fef2f2; color: #dc2626; font-weight: 900; font-size: 16px; outline: none; box-sizing: border-box;">
+                  </div>
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Unit</label>
+                      <select id="mgrWasteUom" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; background: white; cursor: pointer; color: #0f766e;">
+                          <option value="base" data-conv="1">Units</option>
+                      </select>
+                  </div>
+              </div>
+
+              <div style="margin-bottom: 20px;">
+                  <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Upload Photo (Optional)</label>
+                  <input type="file" id="mgrWastePhoto" accept="image/*" style="width: 100%; padding: 10px; border: 1px dashed #cbd5e1; border-radius: 6px; background: white; outline: none; color: #64748b; cursor: pointer;">
+              </div>
+
+              <button onclick="window.addMgrWasteToCart()" style="width: 100%; background: #475569; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 20px; font-size: 14px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: 0.2s;">➕ Add to Waste List</button>
+
+              <table class="data-table" style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+                  <thead style="background: #f1f5f9;">
+                      <tr><th style="padding: 10px; text-align: left;">Item & Reason</th><th style="padding: 10px; text-align: center;">Qty & Cost Hit</th><th style="padding: 10px; text-align: right;">Action</th></tr>
+                  </thead>
+                  <tbody id="mgrWasteCartBody">
+                      <tr><td colspan="3" class="text-center" style="padding: 15px; color: #94a3b8;">Cart is empty.</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <div style="padding: 15px 25px; background: white; border-top: 1px solid #e2e8f0; display: flex; gap: 10px;">
+              <button onclick="document.getElementById('managerWasteModal').style.display='none'" style="flex: 1; padding: 14px; background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-weight: bold; border-radius: 8px; cursor: pointer;">Cancel</button>
+              <button id="btnSubmitMgrWaste" onclick="window.submitMgrWasteCart()" style="flex: 2; padding: 14px; background: #dc2626; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);">🗑️ Permanently Deduct Waste</button>
+          </div>
+          
+      </div>
+  </div>
+ 
   <div id="batchModal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
     <div
