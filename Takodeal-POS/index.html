@@ -2732,13 +2732,26 @@ window.adjustMixMatchQty = function(flavor, delta) {
 function selectRealVariant(realName, price, btn) { window.selectRealVariant(realName, price, btn); }
 
     // --- 8. CHECKOUT SYSTEM ---
-    function openCheckoutModal() { 
-        if (cart.length === 0) return; 
-        if (!document.getElementById('mainOrderType').value) {
-            return Swal.fire('Order Type Required', 'Please select an Order Type (e.g., Dine-In, Take-Out) at the top of the Current Orders list before checking out.', 'warning');
-        } document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); document.getElementById('finalCustomerName').value = ''; amountReceivedStr = "0"; updateNumpadDisplay(); document.getElementById('checkoutModal').style.display = 'flex'; if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
-    if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
-    if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';}
+    window.openCheckoutModal = function() { 
+        if (window.cart.length === 0) return; 
+        
+        let mainType = document.getElementById('mainOrderType').value;
+        if (!mainType) {
+            Swal.fire('Order Type Required', 'Please select an Order Type (Dine-In, Take-Out, etc.) at the top right before placing the order.', 'warning');
+            return;
+        }
+
+        document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); 
+        document.getElementById('finalCustomerName').value = ''; 
+        window.amountReceivedStr = "0"; 
+        window.updateNumpadDisplay(); 
+        document.getElementById('checkoutModal').style.display = 'flex'; 
+        
+        if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
+        if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
+        if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';
+    };
+    function openCheckoutModal() { window.openCheckoutModal(); }
     function appendNumpad(num) { if (amountReceivedStr === "0" && num !== ".") amountReceivedStr = num; else if (num === "." && amountReceivedStr.includes(".")) return; else amountReceivedStr += num; updateNumpadDisplay(); }
     function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
     function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
@@ -2881,6 +2894,11 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
         let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
+        let amountRec = parseFloat(amountReceivedStr) || 0;
+        let change = amountRec - (window.finalCheckoutAmount || window.currentGrandTotal);
+        if (change < 0) change = 0;
+        document.getElementById('rcptPaid').innerText = `: ₱${amountRec.toFixed(2)}`;
+        document.getElementById('rcptChange').innerText = `: ₱${change.toFixed(2)}`;
         cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete checkout"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
       } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete checkout"; btn.disabled = false; }
     }
