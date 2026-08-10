@@ -21190,7 +21190,7 @@ window.togglePreviewDevice = function(deviceType) {
 };
 
 // ========================================================
-// ⚖️ YIELD COST CALCULATOR ENGINE
+// ⚖️ YIELD COST CALCULATOR ENGINE (PURCHASE UOM MATH)
 // ========================================================
 window.yieldInventoryList = [];
 
@@ -21201,7 +21201,6 @@ window.loadYieldCalculator = async function() {
     select.innerHTML = '<option value="">⏳ Scanning inventory...</option>';
     
     try {
-        // Load distinct ingredients from Main Office
         const q = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
         const snap = await getDocs(q);
         
@@ -21215,7 +21214,7 @@ window.loadYieldCalculator = async function() {
         });
         
         window.yieldInventoryList.sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
-            html += `<option value="${item.id}">${item.name} (Current Base Cost: ₱${parseFloat(item.baseCost || 0).toFixed(2)} / ${item.uom})</option>`;
+            html += `<option value="${item.id}">${item.name} (Current Base Cost: ₱${parseFloat(item.baseCost || 0).toFixed(4)} / ${item.uom})</option>`;
         });
         
         select.innerHTML = html;
@@ -21230,7 +21229,16 @@ window.handleYieldItemSelect = function() {
     let id = document.getElementById('yieldItemSelect').value;
     let item = window.yieldInventoryList.find(i => i.id === id);
     if (item) {
-        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${item.uom}</span>`;
+        let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+        let bUom = item.baseUom || item.uom || 'units';
+
+        // 🔥 THE FIX: Inject the Purchase UOM exactly next to the input boxes!
+        let rawUomEl = document.getElementById('yieldRawUom');
+        let netUomEl = document.getElementById('yieldNetUom');
+        if (rawUomEl) rawUomEl.innerText = pUom;
+        if (netUomEl) netUomEl.innerText = pUom;
+
+        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${bUom}</span>`;
         window.calcYieldMath();
     }
 };
@@ -21238,31 +21246,49 @@ window.handleYieldItemSelect = function() {
 window.calcYieldMath = function() {
     let id = document.getElementById('yieldItemSelect').value;
     let item = window.yieldInventoryList.find(i => i.id === id);
-    let uom = item ? item.uom : 'unit';
+    let bUom = item ? (item.baseUom || item.uom || 'unit') : 'unit';
+    
+    // Grab the true conversion rate from memory
+    let conv = item ? (parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1) : 1;
 
     let totalCost = parseFloat(document.getElementById('yieldTotalCost').value) || 0;
-    let netYield = parseFloat(document.getElementById('yieldNetQty').value) || 0;
-    
-    if (netYield > 0 && totalCost > 0) {
-        let costPerUnit = totalCost / netYield;
-        document.getElementById('yieldResultCost').innerHTML = `₱${costPerUnit.toFixed(4)} <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${uom}</span>`;
+    let netYieldPurch = parseFloat(document.getElementById('yieldNetQty').value) || 0;
+
+    // 🔥 THE FIX: Multiply their Purchase UOM input by the Conversion Rate to get Total Grams/Base!
+    let netYieldBase = netYieldPurch * conv; 
+
+    if (netYieldBase > 0 && totalCost > 0) {
+        let costPerBaseUnit = totalCost / netYieldBase;
+        document.getElementById('yieldResultCost').innerHTML = `₱${costPerBaseUnit.toFixed(4)} <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${bUom}</span>`;
     } else {
-        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${uom}</span>`;
+        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${bUom}</span>`;
     }
 };
 
 window.saveYieldCost = async function() {
     let id = document.getElementById('yieldItemSelect').value;
     let totalCost = parseFloat(document.getElementById('yieldTotalCost').value) || 0;
-    let rawQty = parseFloat(document.getElementById('yieldRawQty').value) || 0;
-    let netYield = parseFloat(document.getElementById('yieldNetQty').value) || 0;
     
-    if (!id || totalCost <= 0 || rawQty <= 0 || netYield <= 0) {
+    // These inputs are now mathematically logged as Purchase UOM
+    let rawQtyPurch = parseFloat(document.getElementById('yieldRawQty').value) || 0;
+    let netYieldPurch = parseFloat(document.getElementById('yieldNetQty').value) || 0;
+    
+    if (!id || totalCost <= 0 || rawQtyPurch <= 0 || netYieldPurch <= 0) {
         return Swal.fire('Missing Data', 'Please fill out all fields with valid numbers.', 'warning');
     }
 
-    let costPerUnit = totalCost / netYield;
     let item = window.yieldInventoryList.find(i => i.id === id);
+    let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+    let bUom = item.baseUom || item.uom || 'units';
+    let pUom = item.purchaseUom || item.purchUom || 'units';
+
+    // 🔥 Calculate the True Base Cost!
+    let netYieldBase = netYieldPurch * conv;
+    let costPerBaseUnit = totalCost / netYieldBase;
+    
+    // Determine the True Purchase Cost as well to keep Inventory accurate
+    let costPerPurchUnit = costPerBaseUnit * conv;
+
     let cashier = window.sessionUser ? window.sessionUser.cashierName : "Manager";
 
     try {
@@ -21270,7 +21296,10 @@ window.saveYieldCost = async function() {
         
         // 1. Update this specific item in Main Office
         await updateDoc(doc(db, "inventory", id), {
-            baseCost: costPerUnit
+            baseCost: costPerBaseUnit,
+            purchaseCost: costPerPurchUnit,
+            purchCost: costPerPurchUnit,
+            cost: costPerPurchUnit
         });
 
         // 2. Cascade update to all OTHER branches for this item!
@@ -21278,25 +21307,31 @@ window.saveYieldCost = async function() {
         const syncSnap = await getDocs(syncQ);
         let promises = [];
         syncSnap.forEach(d => {
-            if (d.id !== id) promises.push(updateDoc(doc(db, "inventory", d.id), { baseCost: costPerUnit }));
+            if (d.id !== id) promises.push(updateDoc(doc(db, "inventory", d.id), { 
+                baseCost: costPerBaseUnit,
+                purchaseCost: costPerPurchUnit,
+                purchCost: costPerPurchUnit,
+                cost: costPerPurchUnit 
+            }));
         });
         await Promise.all(promises);
 
-        // 3. Log the Yield Test
+        // 3. Log the Yield Test with explicit UOM indicators
         await addDoc(collection(db, "yield_logs"), {
             itemName: item.name,
             totalCost: totalCost,
-            rawQty: rawQty,
-            netYield: netYield,
-            newBaseCost: costPerUnit,
-            uom: item.uom,
+            rawQty: rawQtyPurch, 
+            netYield: netYieldPurch, 
+            newBaseCost: costPerBaseUnit,
+            purchUom: pUom, 
+            baseUom: bUom,
             loggedBy: cashier,
             timestamp: serverTimestamp()
         });
 
         Swal.fire({
             title: '✅ Yield Applied!', 
-            text: `The base cost for ${item.name} is now ₱${costPerUnit.toFixed(4)}/${item.uom}. All recipes using this ingredient will automatically recalculate.`, 
+            text: `The base cost for ${item.name} is now ₱${costPerBaseUnit.toFixed(4)}/${bUom}. All recipes using this ingredient will automatically recalculate.`, 
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
@@ -21305,7 +21340,7 @@ window.saveYieldCost = async function() {
         document.getElementById('yieldTotalCost').value = '';
         document.getElementById('yieldRawQty').value = '';
         document.getElementById('yieldNetQty').value = '';
-        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${item.uom}</span>`;
+        document.getElementById('yieldResultCost').innerHTML = `₱0.00 <span style="font-size: 14px; font-weight: normal; color: #64748b;">/ ${bUom}</span>`;
         
         window.loadYieldLogs();
         
@@ -21329,6 +21364,10 @@ window.loadYieldLogs = async function() {
             let d = docSnap.data();
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             let wastePct = (((d.rawQty - d.netYield) / d.rawQty) * 100).toFixed(1);
+            
+            // Use the saved UOMs so the history looks perfect
+            let pUomDisp = d.purchUom || 'units';
+            let bUomDisp = d.baseUom || 'units';
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: white;">
@@ -21336,13 +21375,13 @@ window.loadYieldLogs = async function() {
                     <td style="padding: 15px; font-weight: bold; color: #0f172a; font-size: 15px;">${d.itemName}</td>
                     <td style="padding: 15px;">
                         <div style="font-size: 14px; font-weight: bold; color: #dc2626;">Cost: ₱${d.totalCost.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Raw: ${d.rawQty} ${d.uom}</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Raw: ${d.rawQty} ${pUomDisp}</div>
                     </td>
                     <td style="padding: 15px; font-weight: bold; color: #16a34a; font-size: 15px;">
-                        ${d.netYield} ${d.uom} <br>
+                        ${d.netYield} ${pUomDisp} <br>
                         <span style="font-size: 11px; color: #ef4444; font-weight: normal;">(Waste: ${wastePct}%)</span>
                     </td>
-                    <td style="padding: 15px; font-weight: 900; color: #0ea5e9; font-size: 16px;">₱${d.newBaseCost.toFixed(4)} <span style="font-size:11px; font-weight:normal; color:#64748b;">/${d.uom}</span></td>
+                    <td style="padding: 15px; font-weight: 900; color: #0ea5e9; font-size: 16px;">₱${d.newBaseCost.toFixed(4)} <span style="font-size:11px; font-weight:normal; color:#64748b;">/${bUomDisp}</span></td>
                     <td style="padding: 15px; color: #475569; font-size: 13px;">👤 ${d.loggedBy}</td>
                 </tr>
             `;
