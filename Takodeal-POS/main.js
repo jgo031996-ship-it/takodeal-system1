@@ -6642,11 +6642,36 @@ window.loadConsumablesView = async function() {
         let activeCats = [...new Set(items.map(i => i.category || 'Uncategorized'))];
         let catHtml = `<button class="cat-btn active" onclick="window.filterConsumables('All', this)">All Supplies</button>`;
         activeCats.forEach(c => {
-            catHtml += `<button class="cat-btn" onclick="window.filterConsumables('${c}', this)">${c.toUpperCase()}</button>`;
+            let safeC = c.replace(/'/g, "\\'");
+            catHtml += `<button class="cat-btn" onclick="window.filterConsumables('${safeC}', this)">${c.toUpperCase()}</button>`;
         });
         header.innerHTML = catHtml;
 
         window.consumablesData = items;
+        
+        // 🔥 ULTRA MODE: BUILD CONSUMABLES GRID ONCE 🔥
+        let html = '';
+        items.forEach(item => {
+            let stock = parseFloat(item.currentStock) || 0;
+            let bUom = item.uom || item.baseUom || 'units';
+            let pUom = item.purchaseUom || item.purchUom || bUom;
+            let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
+            let safeName = item.name.replace(/'/g, "\\'");
+            let catSafe = (item.category || '').replace(/'/g, "\\'");
+            
+            // Background preloader
+            if (item.image) { let img = new Image(); img.src = item.image; }
+
+            html += `
+                <div class="item-card cons-ultra-card" data-category="${catSafe}" onclick="window.addToConsumablesCart('${item.id}', '${safeName}', '${bUom}', '${pUom}', ${conv})" style="display: flex;">
+                    <div class="item-card-bg" style="${bgStyle}"></div>
+                    <div class="item-name-overlay">${item.name}<br><span style="color:#10b981; font-size: 11px;">Stock: ${stock.toFixed(1)} ${bUom}</span></div>
+                </div>
+            `;
+        });
+        grid.innerHTML = html;
+
         window.filterConsumables('All', header.firstElementChild);
 
     } catch (e) {
@@ -6661,32 +6686,13 @@ window.filterConsumables = function(category, btn) {
         btn.classList.add('active');
     }
     
-    let grid = document.getElementById('consumablesItemGrid');
-    grid.innerHTML = '';
-    
-    let filtered = category === 'All' ? window.consumablesData : window.consumablesData.filter(i => i.category === category);
-    
-    if (filtered.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #94a3b8;">No items found.</div>';
-        return;
-    }
-
-    filtered.forEach(item => {
-        let stock = parseFloat(item.currentStock) || 0;
-        
-        // 🔥 THE FIX: GRAB ALL THE UOMS AND CONVERSION RATES!
-        let bUom = item.uom || item.baseUom || 'units';
-        let pUom = item.purchaseUom || item.purchUom || bUom;
-        let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-
-        let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
-
-        grid.innerHTML += `
-            <div class="item-card" onclick="window.addToConsumablesCart('${item.id}', '${item.name.replace(/'/g, "\\'")}', '${bUom}', '${pUom}', ${conv})">
-                <div class="item-card-bg" style="${bgStyle}"></div>
-                <div class="item-name-overlay">${item.name}<br><span style="color:#10b981; font-size: 11px;">Stock: ${stock.toFixed(1)} ${bUom}</span></div>
-            </div>
-        `;
+    let cards = document.querySelectorAll('.cons-ultra-card');
+    cards.forEach(card => {
+        if (category === 'All' || card.getAttribute('data-category') === category) {
+            card.style.display = 'flex'; // Instantly show
+        } else {
+            card.style.display = 'none'; // Instantly hide
+        }
     });
 };
 
