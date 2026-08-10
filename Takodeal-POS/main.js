@@ -844,14 +844,18 @@ window.renderCart = function() {
                     let addon = item.addons[key];
                     if (addon.qty > 0) {
                         let priceText = (addon.price && addon.price > 0) ? `(₱${(addon.price * addon.qty).toFixed(2)})` : '';
-                        addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addon.name || key} <span style="color:#64748b;">${priceText}</span></div>`;
+                        // Fix: Fallback to dictionary key if addon.name is undefined
+                        let addonName = addon.name || key;
+                        addonsText += `<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ${addon.qty}x ${addonName} <span style="color:#64748b;">${priceText}</span></div>`;
                     }
                 }
             }
 
+            // 🔥 THE FIX: The badge logic is now safely processed BEFORE we build the HTML!
+            let typeBadge = item.orderType ? `<span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px;">${item.orderType}</span>` : '';
+
             list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
                 <div class="cart-item-desc">
-                    let typeBadge = item.orderType ? `<span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px;">${item.orderType}</span>` : '';
                     <span class="cart-item-name">${item.name} ${typeBadge}</span>
                     <div class="cart-item-subtext">${addonsText}${notesText}</div>
                 </div>
