@@ -453,6 +453,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
     document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
     document.getElementById('orderNotesInput').value = window.pendingItem.notes;
+    document.getElementById('modalItemOrderType').value = existingItem ? (existingItem.orderType || 'Take-Out') : (document.getElementById('mainOrderType').value || 'Take-Out');
     document.getElementById('variantModal').style.display = 'flex';
 
     let oldDropdown = document.getElementById('addonSelectDropdown');
@@ -554,7 +555,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                         if (existingItem && existingItem.addons && existingItem.addons[bf.name]) {
                             window.baseFlavorState[bf.name] = existingItem.addons[bf.name].qty;
                         } else {
-                            window.baseFlavorState[bf.name] = (bfIdx === 0) ? defaultQty : 0;
+                            window.baseFlavorState[bf.name] = 0; // 🔥 STRICT LOCK: No longer defaults to the first one!
                         }
                     });
 
@@ -736,12 +737,24 @@ window.confirmAddOrUpdateToCart = function() {
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
     window.pendingItem.notes = document.getElementById('orderNotesInput').value;
     window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
+    window.pendingItem.orderType = document.getElementById('modalItemOrderType').value; // Save item order type!
     window.pendingItem.addons = {}; 
 
     if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
         let totalBase = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
         if (totalBase !== qty) {
-            Swal.fire('Incomplete Flavors', `Please select exactly ${qty} base flavor(s). You have currently selected ${totalBase}.`, 'warning');
+            // 🔥 FLASH THE BOX RED TO WARN THE CASHIER
+            let bfContainer = document.getElementById('baseFlavorList');
+            if (bfContainer) {
+                bfContainer.style.transition = "background-color 0.3s, border-color 0.3s";
+                bfContainer.style.backgroundColor = "#fef2f2";
+                bfContainer.style.borderColor = "#dc2626";
+                setTimeout(() => {
+                    bfContainer.style.backgroundColor = "#fffbeb";
+                    bfContainer.style.borderColor = "#fde68a";
+                }, 1000);
+            }
+            Swal.fire('Base Flavor Required', `Please ask the customer for their sauce! You need exactly ${qty} base flavor(s). You currently selected ${totalBase}.`, 'warning');
             return;
         }
         
@@ -838,7 +851,8 @@ window.renderCart = function() {
 
             list.innerHTML += `<li class="cart-item" onclick="window.openAddOrderModal('${item.name}', ${item.basePrice}, window.cart[${index}])">
                 <div class="cart-item-desc">
-                    <span class="cart-item-name">${item.name}</span>
+                    let typeBadge = item.orderType ? `<span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px;">${item.orderType}</span>` : '';
+                    <span class="cart-item-name">${item.name} ${typeBadge}</span>
                     <div class="cart-item-subtext">${addonsText}${notesText}</div>
                 </div>
                 <div class="cart-item-price">₱${item.variantPrice.toFixed(2)}</div>
