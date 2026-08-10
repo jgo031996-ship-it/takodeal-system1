@@ -1857,73 +1857,57 @@
         });
     
         // 🔥 THE WIPER BLADE FIX: Build all HTML first, then stamp it down ONCE!
-        let html = `<button class="cat-btn active" onclick="filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
+        let html = `<button class="cat-btn active" onclick="window.filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
         
         catsToRender.forEach(cat => {
-            html += `<button class="cat-btn" onclick="filterMenu('${cat}', this)">${cat.toUpperCase()}</button>`;
+            let safeCat = cat.replace(/'/g, "\\'");
+            html += `<button class="cat-btn" onclick="window.filterMenu('${safeCat}', this)">${cat.toUpperCase()}</button>`;
         });
     
         // Instantly overwrites anything on the screen to prevent duplicates
         catContainer.innerHTML = html; 
         
-        filterMenu('All', catContainer.firstElementChild);
-    };
-    
-    function filterMenu(category, clickedBtn) {
-        if (clickedBtn) { 
-            document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); 
-            clickedBtn.classList.add('active'); 
-        }
+        // 🔥 ULTRA MODE: BUILD THE DOM ONCE & CACHE IT! 🔥
+        window.buildUltraGridDOM();
         
+        window.filterMenu('All', catContainer.firstElementChild);
+    };
+
+    window.buildUltraGridDOM = function() {
         const grid = document.querySelector('.item-grid'); 
         if(!grid) return;
-        grid.innerHTML = '';
         
-        // 🛡️ Remove backend items from the main center grid
         let safeItems = masterPOSData.items.filter(item => !hiddenCategories.includes(item.category));
         let filteredItems = safeItems;
     
-        // Filter by bottom tab if 'All' is selected on top
-        if (category === 'All') {
-            if (window.currentDepartment === "CONSUMABLES") {
-                filteredItems = safeItems.filter(item => premixCategories.includes(item.category));
-            } else if (window.currentDepartment === "MAIN MENU") {
-                filteredItems = safeItems.filter(item => !premixCategories.includes(item.category));
-            }
-        } else {
-            // Otherwise, filter strictly by the top category clicked
-            filteredItems = safeItems.filter(item => item.category === category);
-            // 🔥 THE CUSTOM SORTER FIX: Follows the Manager's Layout first, falls back to A-Z
-            filteredItems.sort((a, b) => {
-                let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
-                let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
-                
-                if (idxA !== -1 && idxB !== -1) return idxA - idxB; // Both in layout = sort by layout
-                if (idxA !== -1) return -1; // Only A in layout = push A up
-                if (idxB !== -1) return 1;  // Only B in layout = push B up
-                
-                // Fallback to alphabetical A-Z
-                return (a.name || '').localeCompare(b.name || '');
-            });
+        if (window.currentDepartment === "CONSUMABLES") {
+            filteredItems = safeItems.filter(item => premixCategories.includes(item.category));
+        } else if (window.currentDepartment === "MAIN MENU") {
+            filteredItems = safeItems.filter(item => !premixCategories.includes(item.category));
         }
     
+        filteredItems.sort((a, b) => {
+            let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
+            let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB; 
+            if (idxA !== -1) return -1; 
+            if (idxB !== -1) return 1;  
+            return (a.name || '').localeCompare(b.name || '');
+        });
+    
+        let html = '';
         filteredItems.forEach((item, index) => {
             let safePrice = parseFloat(item.price) || 0;
-            
-            // 🔥 CALCULATE LOW STOCK BADGE
             let possibleOrders = Infinity;
             
             if (masterPOSData.bom && masterPOSData.stockLevels) {
                 let recipe = masterPOSData.bom.filter(b => b.menuItem === item.name);
-                
                 if (recipe.length > 0) {
                     recipe.forEach(r => {
                         let stock = masterPOSData.stockLevels[r.ingredientName] || 0;
                         let orders = stock / (r.qty || 1);
                         if (orders < possibleOrders) possibleOrders = orders;
                     });
-                } else {
-                    possibleOrders = Infinity; // No recipe attached, so it can't run out
                 }
             }
 
@@ -1934,27 +1918,52 @@
                 badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
             }
             
-            // 🔥 THE FIX: bgStyle is safely locked INSIDE the loop!
             let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
-            
-            // 🔥 THE NEW PRICE LABEL LOGIC
             let priceLabel = item.isGrouped ? `<span style="color: #10b981; font-weight: bold;">Select Size ➡</span>` : `₱${safePrice.toFixed(2)}`;
+            let safeName = item.name.replace(/'/g, "\\'");
+            let catSafe = (item.category || '').replace(/'/g, "\\'");
+
+            // 🔥 ULTRA MODE: PRELOAD IMAGE INTO BROWSER RAM 🔥
+            if (item.image) { let img = new Image(); img.src = item.image; }
     
-            grid.innerHTML += `
-                <div class="item-card" onclick="if(systemReady) openAddOrderModal('${item.name}', ${safePrice})" style="height: 140px; border: none;">
+            html += `
+                <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady) openAddOrderModal('${safeName}', ${safePrice})" style="height: 140px; border: none; display: flex;">
                     ${badgeHtml}
                     <div class="item-card-bg" style="${bgStyle}"></div>
                     <div class="item-name-overlay">${item.name}<br><span style="color:#fcd34d; font-size: 11px;">${priceLabel}</span></div>
                 </div>
             `;
         });
-    }
+        
+        // Inject into DOM ONCE. Never destroyed again!
+        grid.innerHTML = html; 
+    };
+
+    window.filterMenu = function(category, clickedBtn) {
+        if (clickedBtn) { 
+            document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active')); 
+            clickedBtn.classList.add('active'); 
+        }
+        
+        let cards = document.querySelectorAll('.ultra-card');
+        cards.forEach(card => {
+            if (category === 'All' || card.getAttribute('data-category') === category) {
+                card.style.display = 'flex'; // Instantly Unhide
+            } else {
+                card.style.display = 'none'; // Instantly Hide
+            }
+        });
+    };
 
     function searchMenuItems() {
       let input = document.getElementById('posSearchInput').value.toLowerCase();
-      let cards = document.querySelector('.item-grid').children;
+      let cards = document.querySelectorAll('.ultra-card');
+      
       for (let i = 0; i < cards.length; i++) {
-        cards[i].style.display = cards[i].innerText.toLowerCase().includes(input) ? "" : "none";
+        let name = cards[i].getAttribute('data-name');
+        if (name) {
+            cards[i].style.display = name.includes(input) ? "flex" : "none";
+        }
       }
     }
 
