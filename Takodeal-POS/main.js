@@ -8569,10 +8569,22 @@ window.processBluetoothQueue = async function() {
     
     try {
         let buffer = (job.data instanceof Uint8Array) ? job.data : window.stringToBuffer(job.data);
-        const CHUNK_SIZE = 64;
+        
+        // 🔥 THE SPEED UPGRADE: Massive 512-byte chunks (8x faster than before!)
+        const CHUNK_SIZE = 512; 
+        
         for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
-            await job.activeChar.writeValue(buffer.slice(i, i + CHUNK_SIZE));
-            await new Promise(resolve => setTimeout(resolve, 40)); 
+            let chunk = buffer.slice(i, i + CHUNK_SIZE);
+            
+            // Try the instant-write method first if the modern printer supports it
+            if (job.activeChar.properties.writeWithoutResponse) {
+                await job.activeChar.writeValueWithoutResponse(chunk);
+            } else {
+                await job.activeChar.writeValue(chunk);
+            }
+            
+            // 🔥 THE SPEED UPGRADE: Dropped delay from 40ms to a lightning-fast 10ms
+            await new Promise(resolve => setTimeout(resolve, 10)); 
         }
     } catch(e) {
         console.error("Print Error:", e);
@@ -8581,8 +8593,8 @@ window.processBluetoothQueue = async function() {
         else window.mainPrinterChar = null;
     } finally {
         window.isBluetoothPrinting = false; // Unlock the door!
-        // Wait half a second for the printer hardware to breathe, then process the next one!
-        setTimeout(window.processBluetoothQueue, 500); 
+        // Process the next receipt almost instantly
+        setTimeout(window.processBluetoothQueue, 100); 
     }
 };
 
@@ -8807,15 +8819,19 @@ window.autoConnectPrinters = async function() {
                 const permittedDevices = await navigator.bluetooth.getDevices();
                 let device = permittedDevices.find(d => d.id === savedDeviceId);
                 
-                if (device) {
+                // Only try to connect if we have permission AND it isn't already connected
+                if (device && (!device.gatt || !device.gatt.connected)) {
                     console.log(`Auto-connecting to ${target} printer in background...`);
                     
                     // We must add an event listener to handle accidental disconnects!
                     device.addEventListener('gattserverdisconnected', () => {
-                        console.warn(`${target.toUpperCase()} Printer disconnected.`);
+                        console.warn(`${target.toUpperCase()} Printer disconnected. Will auto-retry...`);
                         if (target === 'main') window.mainPrinterChar = null;
                         else if (target === 'kitchen') window.kitchenPrinterChar = null;
                         else if (target === 'bar') window.barPrinterChar = null;
+                        
+                        // 🔥 PERSISTENT RECONNECT FIX: If it sleeps, try to wake it up every 5 seconds!
+                        setTimeout(() => window.autoConnectPrinters(), 5000);
                     });
 
                     const server = await device.gatt.connect();
@@ -8840,7 +8856,9 @@ window.autoConnectPrinters = async function() {
                     }
                 }
             } catch (e) {
-                console.warn(`Failed to auto-connect ${target} printer:`, e);
+                console.warn(`Failed to auto-connect ${target} printer. Retrying shortly...`, e);
+                // If it fails because printer is powered off, try again in 10 seconds!
+                setTimeout(() => window.autoConnectPrinters(), 10000);
             }
         }
     }
