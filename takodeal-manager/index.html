@@ -4501,7 +4501,7 @@
               </div>
           </div>
 
-          <div id="printablePayslip" style="padding: 30px; background: white; color: black; overflow-y: auto; font-family: 'Segoe UI', Arial, sans-serif;">
+          <div id="printablePayslip" style="padding: 30px; background: white; color: black; overflow: visible; font-family: 'Segoe UI', Arial, sans-serif;">
               
               <div style="border: 3px solid black; padding: 2px;">
                   <div style="border: 1px solid black; padding: 20px;">
@@ -4518,16 +4518,16 @@
                       </div>
 
                       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
-                          <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px;">
-                              <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span id="psName" style="border-bottom: 1px solid black; font-weight: bold;">Loading...</span>
-                              <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span id="psBranch" style="border-bottom: 1px solid black;">Loading...</span>
-                              <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span id="psDateHired">---</span>
+                          <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px; align-items: end;">
+                              <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span id="psName" style="border-bottom: 1px solid black; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 2px;">Loading...</span>
+                              <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span id="psBranch" style="border-bottom: 1px solid black; padding-bottom: 2px;">Loading...</span>
+                              <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span id="psDateHired" style="border-bottom: 1px solid black; padding-bottom: 2px;">---</span>
                           </div>
-                          <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px;">
-                              <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span id="psStart" style="border-bottom: 1px solid black;">---</span>
-                              <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span id="psEnd" style="border-bottom: 1px solid black;">---</span>
+                          <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px; align-items: end;">
+                              <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span id="psStart" style="border-bottom: 1px solid black; padding-bottom: 2px;">---</span>
+                              <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span id="psEnd" style="border-bottom: 1px solid black; padding-bottom: 2px;">---</span>
                               <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> 
-                              <input type="date" id="psPayDistributed" class="ps-input" style="width: 130px; text-align: left; font-size: 14px; border-bottom: 1px solid black !important; padding: 0;">
+                              <input type="date" id="psPayDistributed" class="ps-input" style="width: 100%; text-align: left; font-size: 14px; border-bottom: 1px solid black !important; padding: 0 0 2px 0; background: transparent; font-family: inherit;">
                           </div>
                       </div>
 
@@ -4594,16 +4594,17 @@
                           </div>
                       </div>
 
-                      <div style="margin-top: 25px; border-top: 2px dashed black; padding-top: 15px;">
-                          <h4 style="margin: 0 0 10px 0; text-align: center; font-size: 12px; color: #334155;">ATTENDANCE SUMMARY (CURRENT CUTOFF)</h4>
-                          <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 11px;">
+                      <!-- 🔥 FIXED LAYOUT: Forces columns to stay rigid and text to wrap cleanly -->
+                      <div style="margin-top: 25px; border-top: 2px dashed black; padding-top: 15px; width: 100%; box-sizing: border-box;">
+                          <h4 style="margin: 0 0 10px 0; text-align: center; font-size: 12px; color: #334155; text-transform: uppercase;">Attendance Summary (Current Cutoff)</h4>
+                          <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; table-layout: fixed;">
                               <thead style="border-bottom: 1px solid black;">
                                   <tr>
-                                      <th style="padding: 4px;">Date</th>
-                                      <th style="padding: 4px;">Time In</th>
-                                      <th style="padding: 4px;">Time Out</th>
-                                      <th style="padding: 4px;">Hours</th>
-                                      <th style="padding: 4px;">Remarks</th>
+                                      <th style="padding: 6px 2px; width: 15%;">Date</th>
+                                      <th style="padding: 6px 2px; width: 22%;">Time In</th>
+                                      <th style="padding: 6px 2px; width: 22%;">Time Out</th>
+                                      <th style="padding: 6px 2px; width: 13%;">Hours</th>
+                                      <th style="padding: 6px 2px; width: 28%;">Remarks</th>
                                   </tr>
                               </thead>
                               <tbody id="psAttendanceBody">
