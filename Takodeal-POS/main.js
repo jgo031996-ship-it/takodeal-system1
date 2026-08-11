@@ -5352,7 +5352,7 @@ window.viewStockRequestItems = function(itemsJson) {
             <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 <tr>
                     <th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1;">Item Description</th>
-                    <th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1; text-align: center;">Qty Requested</th>
+                    <th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1; text-align: center;">Actual Count</th>
                     <th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1;">HQ Status</th>
                 </tr>
             </thead>
@@ -5397,6 +5397,15 @@ window.loadStockRequestUI = async function() {
     container = document.getElementById('stockReqList');
 
     try {
+        // 🔥 THE DUPLICATE LOCK: Fetch already pending items!
+        const pendingQ = query(collection(db, "purchase_orders"), where("branch", "==", branch), where("status", "in", ["Pending", "Drafting", "Delayed"]));
+        const pendingSnap = await getDocs(pendingQ);
+        let pendingItemNames = [];
+        pendingSnap.forEach(doc => {
+            let po = doc.data();
+            if (po.items) po.items.forEach(i => pendingItemNames.push((i.itemName || i.name).toLowerCase()));
+        });
+
         const qBranch = query(collection(db, "inventory"), where("branch", "==", branch));
         const snapBranch = await getDocs(qBranch);
 
@@ -5446,18 +5455,42 @@ window.loadStockRequestUI = async function() {
                 }
                 uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
 
-                // 🔥 THE FIX: Accurately display the Reorder Level in Purchase UOM to the Cashier!
                 let reorderLevelBase = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
                 let reorderLevelPurch = reorderLevelBase / conv;
-                
-                // Check if current Purch Stock is lower than or equal to the Reorder Purch Stock
                 let isCriticallyLow = purchStock <= reorderLevelPurch;
                 let stockColor = isCriticallyLow ? '#ef4444' : '#334155';
                 
                 let reorderBadge = `<span style="font-size: 9px; color: ${isCriticallyLow ? '#dc2626' : '#d97706'}; margin-top: 4px; font-weight: bold; background: ${isCriticallyLow ? '#fef2f2' : '#fffbeb'}; border: 1px dashed ${isCriticallyLow ? '#fca5a5' : '#fcd34d'}; padding: 2px 4px; border-radius: 4px;">⚠️ Reorder Lvl: ${reorderLevelPurch.toFixed(2)} ${pUom}</span>`;
 
+                // 🔥 THE DUPLICATE LOCK: Disable inputs if already requested!
+                let isAlreadyPending = pendingItemNames.includes(item.name.toLowerCase());
+                let inputControlsHtml = '';
+
+                if (isAlreadyPending) {
+                    inputControlsHtml = `<div style="grid-column: span 2; text-align: center;"><span style="background: #fffbeb; color: #d97706; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 12px; border: 1px solid #fcd34d;">⏳ Already Reported (Pending HQ)</span></div>`;
+                } else {
+                    inputControlsHtml = `
+                        <div>
+                            <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" data-sys="${item.currentStock || 0}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="if(typeof window.toggleActualCount === 'function') window.toggleActualCount('${item.id}'); window.saveReqDraft();">
+                                <option value="None">-- No Report --</option>
+                                <option value="Low Stock">⚠️ Low Stock</option>
+                                <option value="Out of Stock">❌ Out of Stock</option>
+                                <option value="Stock Request">General Request</option>
+                            </select>
+                        </div>
+                        <div>
+                            <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
+                                <input type="number" id="actualCount_${item.id}" placeholder="Actual Count?" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 12px; width: 100%; box-sizing: border-box; outline: none;" oninput="window.saveReqDraft()">
+                                <select id="actualUom_${item.id}" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; outline: none; cursor: pointer; font-size: 11px;" onchange="window.saveReqDraft()">
+                                    ${uomOptions}
+                                </select>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 html += `
-                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9;">
+                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1.5fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; ${isAlreadyPending ? 'opacity: 0.6; background: #f8fafc;' : ''}">
                     <div style="font-weight: bold; color: #334155; font-size: 14px;">
                         ${item.name} <br>
                         ${hqStatus}
@@ -5467,49 +5500,16 @@ window.loadStockRequestUI = async function() {
                         <span style="font-size: 10px; color: #94a3b8;">${displayUomLabel}</span>
                         ${reorderBadge}
                     </div>
-                    <div>
-                        <select id="reqType_${item.id}" class="input-box req-type-select" data-id="${item.id}" data-sys="${item.currentStock || 0}" style="border-color: #cbd5e1; font-weight: bold; color: #475569; padding: 8px; font-size: 12px; cursor: pointer; width: 100%; outline: none;" onchange="if(typeof window.toggleActualCount === 'function') window.toggleActualCount('${item.id}'); window.saveReqDraft();">
-                            <option value="None">-- No Request --</option>
-                            <option value="Low Stock">⚠️ Low Stock</option>
-                            <option value="Out of Stock">❌ Out of Stock</option>
-                            <option value="Stock Request">General Request</option>
-                        </select>
-                    </div>
-                    <div>
-                        <div id="actualCountContainer_${item.id}" style="display: none; align-items: center; gap: 5px;">
-                            <input type="number" id="actualCount_${item.id}" placeholder="Count?" class="input-box" style="flex: 1; text-align: center; border-color: #fcd34d; background: #fffbeb; font-weight: bold; color: #d97706; padding: 8px; font-size: 13px; width: 100%; box-sizing: border-box; outline: none;" oninput="window.saveReqDraft()">
-                            <select id="actualUom_${item.id}" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; color: #64748b; font-weight: bold; outline: none; cursor: pointer;" onchange="window.saveReqDraft()">
-                                ${uomOptions}
-                            </select>
-                        </div>
-                    </div>
+                    ${inputControlsHtml}
                 </div>`;
             });
         });
         
         if (container) container.innerHTML = html;
 
-        try {
-            let savedDraft = JSON.parse(localStorage.getItem('takodeal_stock_req_draft'));
-            if (savedDraft) {
-                for (let id in savedDraft) {
-                    let select = document.getElementById(`reqType_${id}`);
-                    let countEl = document.getElementById(`actualCount_${id}`);
-                    let uomEl = document.getElementById(`actualUom_${id}`);
-                    
-                    if (select && savedDraft[id].type && savedDraft[id].type !== "None") {
-                        select.value = savedDraft[id].type;
-                        if (typeof window.toggleActualCount === 'function') window.toggleActualCount(id);
-                    }
-                    if (countEl && savedDraft[id].count !== "") countEl.value = savedDraft[id].count;
-                    if (uomEl && savedDraft[id].uom) uomEl.value = savedDraft[id].uom;
-                }
-            }
-        } catch(e) {}
-
     } catch (e) {
         console.error(e); 
-        if(container) container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load request data. Check console.</div>';
+        if(container) container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load data. Check console.</div>';
     }
 };
 
