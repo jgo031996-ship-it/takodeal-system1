@@ -609,7 +609,18 @@ window.loadGlobalDashboard = async function() {
       globalGross += branchGross; globalNet += branchNet; globalExp += branchExp;
 
       if (branchGross === 0 && branchExp === 0 && !shiftData) {
-        tableHtml += `<tr><td><strong style="cursor:pointer; color:var(--primary); text-decoration:underline;" onclick="openBranchDetails('${branch}')">${branch} </strong></td><td><span class="badge badge-closed"><span class="status-dot gray"></span> No Data</span></td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td></tr>`;
+        tableHtml += `
+          <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+            <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
+            <td style="padding: 15px 25px;"><span style="background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold;">⚪ No Data</span></td>
+            <td style="padding: 15px 25px; font-weight: bold; color: #cbd5e1;">-</td>
+            <td style="padding: 15px 25px; color: #cbd5e1; font-weight: 600;">-</td>
+            <td style="padding: 15px 25px; font-weight: 900; color: #cbd5e1;">-</td>
+            <td style="padding: 15px 25px; color: #cbd5e1; font-weight: bold;">-</td>
+            <td style="padding: 15px 25px; font-weight: 900; color: #cbd5e1;">-</td>
+            <td style="padding: 15px 25px; color: #cbd5e1;">-</td>
+          </tr>
+        `;
         continue;
       }
 
