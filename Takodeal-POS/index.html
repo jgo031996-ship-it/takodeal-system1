@@ -1628,7 +1628,7 @@
                   <option value="">-- Loading Staff --</option>
               </select>
               
-              <input type="password" id="clockStaffPin" placeholder="Enter PIN (Leave blank if Face ID is registered)" maxlength="4" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; text-align: center; letter-spacing: 2px; font-size: 14px; outline: none;">
+              <input type="password" id="clockStaffPin" placeholder="Enter PIN (Leave blank if Face ID is registered)" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; text-align: center; letter-spacing: 2px; font-size: 14px; outline: none;">
   
               <div style="display: flex; gap: 10px;">
                   <button onclick="submitAttendance('TIME IN')" style="flex: 1; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;">TIME IN</button>
@@ -3226,10 +3226,44 @@ window.resumeOrder = async function(docId) {
 };
 
 window.deleteParkedOrderManually = async function(docId) {
-      if(!confirm("Are you sure you want to permanently delete this parked order?")) return;
-      await window.deleteParkedOrder(docId);
-      window.showParkedOrders();
-      window.updateParkedBadge();
+      let order = window.currentParkedOrdersList.find(o => o.id === docId);
+      if(!confirm("⚠️ Are you sure you want to permanently delete this parked order? Management will be notified and it will be recorded as Voided in Shift Sales.")) return;
+      
+      try {
+          // 1. Log as a Voided Transaction for accountability
+          await addDoc(collection(db, "transactions"), {
+              branch: order.branch,
+              cashier: localStorage.getItem('cashierName') || 'Staff',
+              shiftId: localStorage.getItem('currentShiftId') || 'Unknown',
+              receiptId: "PRK-VOID-" + Math.floor(Math.random()*10000),
+              netTotal: order.total || 0,
+              status: "Voided",
+              orderType: (order.orderType || "DINE-IN") + " (PARKED)",
+              paymentMethod: "Unpaid / Deleted",
+              customerName: order.name,
+              cart: order.items,
+              timestamp: serverTimestamp()
+          });
+
+          // 2. Fire an alert to the Manager
+          await addDoc(collection(db, "manager_alerts"), {
+              type: "PARKED_VOID_ALERT",
+              branch: order.branch,
+              cashier: localStorage.getItem('cashierName') || 'Staff',
+              message: `🚨 PARKED ORDER DELETED: Cashier removed a parked order for ${order.name} totaling ₱${(order.total || 0).toFixed(2)}. It has been logged as Voided.`,
+              timestamp: serverTimestamp(),
+              isRead: false
+          });
+
+          // 3. Delete it from the database and refresh UI
+          await window.deleteParkedOrder(docId);
+          window.showParkedOrders();
+          window.updateParkedBadge();
+          
+          Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Parked order voided.', showConfirmButton: false, timer: 2000});
+      } catch(e) {
+          console.error(e); alert("Failed to delete.");
+      }
 };
 
 // ==========================================
