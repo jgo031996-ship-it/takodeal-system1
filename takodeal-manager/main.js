@@ -18782,26 +18782,89 @@ window.downloadExcel = async function(tbodyId, fileName) {
 };
 
 // ========================================================
-// 🤝 FRANCHISE SIMULATOR & P&L ANALYTICS ENGINE
+// 🤝 ENTERPRISE FRANCHISE PROSPECTUS GENERATOR
 // ========================================================
-window.runFranchiseSimulator = async function() {
+
+window.updateSimDefaults = function() {
+    let type = document.getElementById('simStoreType').value;
+    let fab = document.getElementById('simFabOption').value;
+    
+    let sqmInput = document.getElementById('simSqm');
+    let costInput = document.getElementById('simCostPerSqm');
+    let feeInput = document.getElementById('simFranFee');
+    let termInput = document.getElementById('simTermYears');
+    
+    // Set smart defaults based on the store type they select
+    if (type === 'Food Cart') {
+        sqmInput.value = 5;
+        costInput.value = 20000;
+        feeInput.value = 150000;
+        termInput.value = 3;
+    } else if (type === 'Mall Kiosk') {
+        sqmInput.value = 12;
+        costInput.value = 25000;
+        feeInput.value = 250000;
+        termInput.value = 3;
+    } else { // Standalone
+        sqmInput.value = 25;
+        costInput.value = 30000;
+        feeInput.value = 350000;
+        termInput.value = 5;
+    }
+    
+    // If Franchisee builds it, our fabrication cost drops to 0, but we charge a Design Approval Fee
+    if (fab === 'Franchisee') {
+        costInput.value = 1500; // Flat Design Approval Fee per SQM
+    }
+};
+
+window.generateFranchiseProposal = async function() {
+    let btn = document.getElementById('btnGenerateProposal');
+    btn.innerHTML = "⏳ Scanning Database & Crunching Numbers...";
+    btn.disabled = true;
+
+    // 1. GATHER INPUTS
     let branch = document.getElementById('simBranchSelect').value;
     let days = parseInt(document.getElementById('simDaysSelect').value);
     
-    let btn = document.querySelector('button[onclick="runFranchiseSimulator()"]');
-    btn.innerText = "⏳ Crunching..."; btn.disabled = true;
+    let modTako = document.getElementById('simModTako').checked; // Always true
+    let modTea = document.getElementById('simModTea').checked;
+    let modCoffee = document.getElementById('simModCoffee').checked;
+    let modPremium = document.getElementById('simModPremium').checked;
+    
+    let franFee = parseFloat(document.getElementById('simFranFee').value) || 0;
+    let royaltyPct = parseFloat(document.getElementById('simRoyaltyPct').value) || 5;
+    let termYears = parseInt(document.getElementById('simTermYears').value) || 3;
+    let renewalPct = document.getElementById('simRenewalPct').value;
+    
+    let storeType = document.getElementById('simStoreType').value;
+    let fabOption = document.getElementById('simFabOption').value;
+    let sqm = parseFloat(document.getElementById('simSqm').value) || 0;
+    let costPerSqm = parseFloat(document.getElementById('simCostPerSqm').value) || 0;
 
     let startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0,0,0,0);
 
     try {
+        // 2. FETCH REAL HISTORICAL DATA
         const menuSnap = await getDocs(collection(db, "menu"));
-        let menuCategories = {};
+        let itemMap = {}; 
+        
+        // Categorize the entire menu into our 4 Modules!
         menuSnap.forEach(doc => {
             let item = doc.data();
+            let name = item.name.toLowerCase();
             let cat = (item.category || "Takoyaki").toLowerCase(); 
-            menuCategories[item.name] = cat;
+            
+            let module = "None";
+            if (cat.includes("takoyaki")) module = "Tako";
+            else if (cat.includes("tea") && !name.includes("matcha")) module = "Tea";
+            else if (cat.includes("coffee") && !name.includes("biscoff") && !name.includes("tiramisu")) module = "Coffee";
+            else if (name.includes("matcha") || name.includes("biscoff") || name.includes("tiramisu") || name.includes("premium")) module = "Premium";
+            else module = "Other"; // Fallback to ensure we capture sales
+            
+            itemMap[item.name] = module;
         });
 
         // Fetch Transactions
@@ -18810,124 +18873,167 @@ window.runFranchiseSimulator = async function() {
             : query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startDate));
         const txSnap = await getDocs(txQ);
 
-        // Fetch Actual Expenses!
+        // Fetch Expenses (To calculate true operating expenses)
         let expQ = branch === "All"
             ? query(collection(db, "expenses"), where("timestamp", ">=", startDate))
             : query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startDate));
         const expSnap = await getDocs(expQ);
 
-        window.simulatedData = { tako: 0, tea: 0, coffee: 0, totalSales: 0, totalOpEx: 0, days: days };
+        // 3. CRUNCH THE NUMBERS
+        let rawGrossSales = 0;
+        let rawCogs = 0;
+        let totalOpEx = 0;
         let activeBranchesFound = new Set();
 
-        // Tally Sales
         txSnap.forEach(docSnap => {
             let tx = docSnap.data();
             if (tx.status === "Voided") return;
             activeBranchesFound.add(tx.branch);
 
-            let txTotal = 0;
             if (tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let itemName = item.name || item.itemName;
-                    let lineTotal = (item.variantPrice || item.basePrice || 0) * (item.qty || 1);
-                    txTotal += lineTotal;
+                    let module = itemMap[itemName] || "Other";
                     
-                    let cat = menuCategories[itemName] || "takoyaki";
-                    if (cat.includes("tea") || cat.includes("beverage") || cat.includes("drinks")) window.simulatedData.tea += lineTotal;
-                    else if (cat.includes("coffee") || cat.includes("espresso")) window.simulatedData.coffee += lineTotal;
-                    else window.simulatedData.tako += lineTotal;
+                    // ONLY TALLY SALES IF THEY BOUGHT THE RIGHTS TO THAT MODULE!
+                    let isAllowed = false;
+                    if (module === "Tako" && modTako) isAllowed = true;
+                    if (module === "Tea" && modTea) isAllowed = true;
+                    if (module === "Coffee" && modCoffee) isAllowed = true;
+                    if (module === "Premium" && modPremium) isAllowed = true;
+                    if (module === "Other") isAllowed = true; // Always count basic extras like water
+
+                    if (isAllowed) {
+                        let lineTotal = (item.variantPrice || item.basePrice || 0) * (item.qty || 1);
+                        rawGrossSales += lineTotal;
+                        
+                        // Roughly estimate COGS at 35% if we don't have the exact recipe data pulled
+                        let lineCogs = item.lineTotalFinal ? (item.lineTotalFinal * 0.35) : (lineTotal * 0.35); 
+                        rawCogs += lineCogs;
+                    }
                 });
             }
-            window.simulatedData.totalSales += txTotal;
         });
 
-        // Tally Expenses (Exclude Remittances/Store Use so we get true Operating Expenses)
         expSnap.forEach(docSnap => {
             let exp = docSnap.data();
             let cat = (exp.category || "").toLowerCase();
             let desc = (exp.description || "").toLowerCase();
-            if (!desc.includes("remittance") && cat !== "store consumables") {
-                window.simulatedData.totalOpEx += (parseFloat(exp.amount) || 0);
+            if (!desc.includes("remittance") && cat !== "store consumables" && !cat.includes("royalty")) {
+                totalOpEx += (parseFloat(exp.amount) || 0);
             }
         });
 
         let branchDivisor = (branch === "All" && activeBranchesFound.size > 0) ? activeBranchesFound.size : 1;
         
-        // Averages per branch
-        window.simulatedData.tako /= branchDivisor;
-        window.simulatedData.tea /= branchDivisor;
-        window.simulatedData.coffee /= branchDivisor;
-        window.simulatedData.totalSales /= branchDivisor;
-        window.simulatedData.totalOpEx /= branchDivisor;
+        // Average it down to ONE branch, and scale it to ONE FULL MONTH (30 days)
+        let monthlyGross = (rawGrossSales / branchDivisor / days) * 30;
+        let monthlyCogs = (rawCogs / branchDivisor / days) * 30;
+        let monthlyOpex = (totalOpEx / branchDivisor / days) * 30;
 
-        document.getElementById('simTakoSales').innerText = `₱${window.simulatedData.tako.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-        document.getElementById('simTeaSales').innerText = `₱${window.simulatedData.tea.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-        document.getElementById('simCoffeeSales').innerText = `₱${window.simulatedData.coffee.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        // Calculate Royalty
+        let monthlyRoyalty = monthlyGross * (royaltyPct / 100);
+        let monthlyNet = monthlyGross - monthlyCogs - monthlyOpex - monthlyRoyalty;
 
-        document.getElementById('simTakoAvg').innerText = `₱${(window.simulatedData.tako / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
-        document.getElementById('simTeaAvg').innerText = `₱${(window.simulatedData.tea / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
-        document.getElementById('simCoffeeAvg').innerText = `₱${(window.simulatedData.coffee / days).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+        // 4. CALCULATE CAPEX & ROI
+        let totalFabCost = sqm * costPerSqm;
+        let initInventory = 50000; // Flat estimate
+        let totalCapEx = franFee + totalFabCost + initInventory;
+        
+        let roiMonths = monthlyNet > 0 ? (totalCapEx / monthlyNet) : 0;
 
-        document.getElementById('simResultsContainer').style.display = 'block';
-        window.calculateSimulatedRoyalty(); 
+        // 5. INJECT INTO THE PITCH DECK UI!
+        let d = new Date();
+        document.getElementById('propDateGenerated').innerText = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        document.getElementById('propStoreFormat').innerText = `${storeType} (${sqm} sqm)`;
+        document.getElementById('propTerm').innerText = `${termYears} Years`;
+
+        let rightsArr = ["🐙 Takoyaki"];
+        if (modTea) rightsArr.push("🧋 Milk Tea");
+        if (modCoffee) rightsArr.push("☕ Coffee");
+        if (modPremium) rightsArr.push("✨ Premium");
+        document.getElementById('propMenuRights').innerText = rightsArr.join(" + ");
+
+        document.getElementById('propTotalInvestment').innerText = `₱${totalCapEx.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        
+        document.getElementById('propCapFee').innerText = `₱${franFee.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('propFabDetails').innerText = fabOption === 'TAKODEAL' ? `Turnkey Build: ${sqm}sqm @ ₱${costPerSqm}/sqm` : `Design Approval Fee Only (${sqm}sqm)`;
+        document.getElementById('propCapFab').innerText = `₱${totalFabCost.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('propCapInv').innerText = `₱${initInventory.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('propCapTotal').innerText = `₱${totalCapEx.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+
+        // Timelines
+        let tTotal = 4; let tTrain = 3; let tOpen = 4;
+        if (storeType === 'Mall Kiosk') { tTotal = 8; tTrain = 7; tOpen = 8; }
+        if (storeType === 'Standalone') { tTotal = 12; tTrain = 11; tOpen = 12; }
+        document.getElementById('propTimeline').innerText = `${tTotal} Weeks`;
+        document.getElementById('propTimeTrain').innerText = tTrain;
+        document.getElementById('propTimeOpen').innerText = tOpen;
+
+        // Financials
+        document.getElementById('propModelBranch').innerText = branch === 'All' ? 'Network Average' : branch;
+        document.getElementById('propModelDays').innerText = days;
+
+        document.getElementById('propRev').innerText = `₱${monthlyGross.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        
+        let cPct = monthlyGross > 0 ? (monthlyCogs/monthlyGross)*100 : 0;
+        document.getElementById('propCogs').innerText = `-₱${monthlyCogs.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('propCogsPct').innerText = `(${cPct.toFixed(1)}%)`;
+
+        let oPct = monthlyGross > 0 ? (monthlyOpex/monthlyGross)*100 : 0;
+        document.getElementById('propOpex').innerText = `-₱${monthlyOpex.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('propOpexPct').innerText = `(${oPct.toFixed(1)}%)`;
+
+        document.getElementById('propRoyalty').innerText = `-₱${monthlyRoyalty.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('propRoyaltyPct').innerText = `(${royaltyPct}%)`;
+
+        document.getElementById('propNet').innerText = `₱${monthlyNet.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('propNet').style.color = monthlyNet > 0 ? '#15803d' : '#dc2626';
+
+        let roiEl = document.getElementById('propRoi');
+        if (roiMonths > 0) {
+            roiEl.innerText = `${roiMonths.toFixed(1)} Months`;
+            roiEl.style.color = roiMonths <= 18 ? '#0284c7' : '#dc2626';
+        } else {
+            roiEl.innerText = "N/A (Losing)";
+            roiEl.style.color = '#dc2626';
+        }
+
+        document.getElementById('propRenYear').innerText = termYears;
+        document.getElementById('propRenFee').innerText = renewalPct;
+
+        // Show the Pitch Deck!
+        document.getElementById('proposalContainer').style.display = 'block';
+
+        // Scroll down to it smoothly
+        setTimeout(() => {
+            document.getElementById('proposalContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
 
     } catch(e) {
-        console.error("Simulator Error:", e);
-        alert("Failed to run simulation. Check connection.");
+        console.error("Generator Error:", e);
+        Swal.fire('Error', 'Failed to generate proposal. Check connection.', 'error');
     } finally {
-        btn.innerText = "📊 Crunch Numbers"; btn.disabled = false;
+        btn.innerHTML = "📊 Generate Franchise Prospectus";
+        btn.disabled = false;
     }
 };
 
-window.calculateSimulatedRoyalty = function() {
-    if (!window.simulatedData) return;
-
-    let takoPct = parseFloat(document.getElementById('simTakoPct').value) || 0;
-    let teaPct = parseFloat(document.getElementById('simTeaPct').value) || 0;
-    let coffeePct = parseFloat(document.getElementById('simCoffeePct').value) || 0;
-    let foodCostPct = parseFloat(document.getElementById('simFoodCostPct').value) || 35; // Default 35%
-    let franchiseCost = parseFloat(document.getElementById('simFranchiseCost').value) || 350000;
-
-    let takoFee = window.simulatedData.tako * (takoPct / 100);
-    let teaFee = window.simulatedData.tea * (teaPct / 100);
-    let coffeeFee = window.simulatedData.coffee * (coffeePct / 100);
-    let totalRoyaltyFee = takoFee + teaFee + coffeeFee;
-
-    document.getElementById('simTakoFee').innerText = `₱${takoFee.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-    document.getElementById('simTeaFee').innerText = `₱${teaFee.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-    document.getElementById('simCoffeeFee').innerText = `₱${coffeeFee.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+window.printElement = function(elementId) {
+    let printContents = document.getElementById(elementId).innerHTML;
+    let originalContents = document.body.innerHTML;
     
-    // --- P&L MATH ---
-    let grossSales = window.simulatedData.totalSales;
-    let estCogs = grossSales * (foodCostPct / 100);
-    // Net Profit = Gross - COGS - Real Expenses - Simulated Royalty
-    let netProfit = grossSales - estCogs - window.simulatedData.totalOpEx - totalRoyaltyFee;
-    let netMargin = grossSales > 0 ? (netProfit / grossSales) * 100 : 0;
+    // Hide print button in the print view!
+    printContents = printContents.replace(/<button class="no-print".*?<\/button>/g, '');
 
-    document.getElementById('simPlSales').innerText = `₱${grossSales.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-    document.getElementById('simPlCogs').innerText = `- ₱${estCogs.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-    document.getElementById('simPlOpex').innerText = `- ₱${window.simulatedData.totalOpEx.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-    
-    let netEl = document.getElementById('simPlNet');
-    netEl.innerText = `₱${netProfit.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-    netEl.style.color = netProfit >= 0 ? '#0f766e' : '#dc2626'; // Red if losing money!
-    
-    document.getElementById('simPlMargin').innerText = `${netMargin.toFixed(1)}%`;
-    document.getElementById('simPlMargin').style.color = netMargin >= 15 ? '#16a34a' : (netMargin > 0 ? '#d97706' : '#dc2626');
-
-    // --- ROI MATH ---
-    // Convert the selected period profit into a Monthly average to calculate ROI
-    let monthlyAvgProfit = (netProfit / window.simulatedData.days) * 30;
-    let roiMonths = monthlyAvgProfit > 0 ? (franchiseCost / monthlyAvgProfit) : 0;
-    
-    let roiEl = document.getElementById('simRoiMonths');
-    if (roiMonths > 0) {
-        roiEl.innerText = `${roiMonths.toFixed(1)} Months`;
-        roiEl.style.color = roiMonths <= 18 ? '#0284c7' : '#dc2626'; // Warning if it takes too long
-    } else {
-        roiEl.innerText = "Never (Losing Money)";
-        roiEl.style.color = '#dc2626';
-    }
+    document.body.innerHTML = `
+        <div style="padding: 20px; font-family: 'Segoe UI', sans-serif;">
+            ${printContents}
+        </div>
+    `;
+    window.print();
+    document.body.innerHTML = originalContents;
+    location.reload(); // Reload to restore event listeners
 };
 
 // ========================================================
