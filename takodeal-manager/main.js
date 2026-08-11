@@ -624,8 +624,16 @@ window.loadGlobalDashboard = async function() {
         continue;
       }
 
+      // 🚨 PARKED ORDER DETECTOR
+      const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch));
+      const parkedSnap = await getDocs(parkedQ);
+      let parkedAlert = '';
+      if (!parkedSnap.empty) {
+          parkedAlert = `<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">⚠️ ${parkedSnap.size} Parked</span>`;
+      }
+
       let shiftBadge = isActive
-        ? '<span class="badge badge-active"><span class="status-dot green"></span> Active</span>'
+        ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span> ${parkedAlert}`
         : (isClosed ? '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>' : '<span class="badge badge-closed">No Shift</span>');
 
       // Grab the starting cash safely
@@ -2004,8 +2012,12 @@ window.reviewPurchaseOrder = async function(poId) {
                     let physBase = item.physicalStock !== undefined ? parseFloat(item.physicalStock) : (parseFloat(item.qty) || 0);
                     let sysBase = item.systemStock !== undefined ? parseFloat(item.systemStock) : '---';
 
-                    let physCount = physBase / masterCRate;
+                    // 🔥 THE FIX: Prioritize the exact display numbers the cashier typed!
+                    let physCount = item.displayQty !== undefined ? parseFloat(item.displayQty) : (physBase / masterCRate);
                     let sysCount = sysBase !== '---' ? (sysBase / masterCRate) : '---';
+                    
+                    // Force the UOM to match what they selected
+                    printUom = item.displayUom || printUom;
 
                     // 🔥 THE FIX: Right-aligned the text so it hugs the badge
                     qtyDisplay = `
