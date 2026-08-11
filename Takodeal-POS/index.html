@@ -3233,18 +3233,21 @@ window.deleteParkedOrderManually = async function(docId) {
       if(!confirm("⚠️ Are you sure you want to permanently delete this parked order? Management will be notified and it will be recorded as Voided in Shift Sales.")) return;
       
       try {
+          // 🔥 THE SHIFT SALES FIX: Grab the EXACT active shift ID!
+          let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) ? currentShift.shiftId : "UNKNOWN";
+          
           // 1. Log as a Voided Transaction for accountability
           await addDoc(collection(db, "transactions"), {
               branch: order.branch,
               cashier: localStorage.getItem('cashierName') || 'Staff',
-              shiftId: localStorage.getItem('currentShiftId') || 'Unknown',
+              shiftId: exactShiftId, // Now it attaches perfectly to the Shift Sales tab!
               receiptId: "PRK-VOID-" + Math.floor(Math.random()*10000),
               netTotal: order.total || 0,
               status: "Voided",
               orderType: (order.orderType || "DINE-IN") + " (PARKED)",
               paymentMethod: "Unpaid / Deleted",
-              customerName: order.name,
-              cart: order.items,
+              customerName: order.name || order.customerName || "Guest",
+              cart: order.items || order.cart || [],
               timestamp: serverTimestamp()
           });
 
@@ -3253,7 +3256,7 @@ window.deleteParkedOrderManually = async function(docId) {
               type: "PARKED_VOID_ALERT",
               branch: order.branch,
               cashier: localStorage.getItem('cashierName') || 'Staff',
-              message: `🚨 PARKED ORDER DELETED: Cashier removed a parked order for ${order.name} totaling ₱${(order.total || 0).toFixed(2)}. It has been logged as Voided.`,
+              message: `🚨 PARKED ORDER DELETED: Cashier removed a parked order for ${order.name || 'Guest'} totaling ₱${(order.total || 0).toFixed(2)}. It has been logged as Voided.`,
               timestamp: serverTimestamp(),
               isRead: false
           });
@@ -3262,6 +3265,9 @@ window.deleteParkedOrderManually = async function(docId) {
           await window.deleteParkedOrder(docId);
           window.showParkedOrders();
           window.updateParkedBadge();
+          
+          // 🔥 Instantly refresh the Shift Sales dashboard so they see the Void!
+          if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
           
           Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Parked order voided.', showConfirmButton: false, timer: 2000});
       } catch(e) {
