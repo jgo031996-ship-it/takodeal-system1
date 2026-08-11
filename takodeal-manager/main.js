@@ -4004,7 +4004,31 @@ window.openBranchDetails = async function (branch) {
     // Sort transactions by time (newest first)
     let allTx = [];
     txSnap.forEach(doc => allTx.push({ id: doc.id, ...doc.data() }));
-    allTx.sort((a, b) => b.timestamp - a.timestamp);
+    // 🔥 NEW: FETCH PARKED ORDERS AND INJECT THEM INTO THE RECEIPT LOG
+    const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
+    const parkedSnap = await getDocs(parkedQ);
+    parkedSnap.forEach(doc => {
+        let p = doc.data();
+        allTx.push({
+            id: doc.id,
+            receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(),
+            customerName: p.name || p.customerName || "Guest",
+            netTotal: p.total || p.netTotal || 0,
+            status: "Parked",
+            paymentMethod: "Unpaid",
+            cart: p.items || p.cart || [],
+            timestamp: p.timestamp,
+            cashier: p.cashier || 'Unknown',
+            orderType: p.orderType || 'Dine-In'
+        });
+    });
+
+    // Sort transactions by time (newest first)
+    allTx.sort((a, b) => {
+        let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp)) : 0;
+        let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp)) : 0;
+        return tB - tA;
+    });
 
     // 🔥 NEW: Fetch Inventory Base Costs
     const invSnap = await getDocs(collection(db, "inventory"));
@@ -4105,7 +4129,9 @@ window.openBranchDetails = async function (branch) {
         let minutesElapsed = Math.floor((Date.now() - txTimeMs) / 60000);
         
         let statusDisplay = '';
-        if (minutesElapsed < 10) {
+        if (tx.status === "Parked") {
+            statusDisplay = `<span style="background: #fef3c7; color: #d97706; border: 1px solid #fcd34d; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 11px;">⏸️ PARKED (Unpaid)</span>`;
+        } else if (minutesElapsed < 10) {
             let timeLeft = 10 - minutesElapsed;
             statusDisplay = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
         } else {
@@ -13028,6 +13054,25 @@ window.loadSalesHistoryTab = async function() {
         let allTxArray = [];
         snap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
         rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
+        // 🔥 NEW: FETCH PARKED ORDERS AND INJECT THEM INTO SALES HISTORY
+        const parkedQ = query(collection(db, "parked_orders"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        const parkedSnap = await getDocs(parkedQ);
+        parkedSnap.forEach(doc => {
+            let p = doc.data();
+            allTxArray.push({
+                id: doc.id,
+                receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(),
+                customerName: p.name || p.customerName || "Guest",
+                netTotal: p.total || p.netTotal || 0,
+                status: "Parked",
+                paymentMethod: "Unpaid",
+                cart: p.items || p.cart || [],
+                timestamp: p.timestamp,
+                cashier: p.cashier || 'Unknown',
+                orderType: p.orderType || 'Dine-In',
+                branch: p.branch
+            });
+        });
         allTxArray.sort((a,b) => b.timestamp - a.timestamp);
 
         let txHtml = '';
@@ -13182,6 +13227,8 @@ window.loadSalesHistoryTab = async function() {
             let statusBadge = '';
             if (isVoid) {
                 statusBadge = `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>`;
+            } else if (tx.status === "Parked") {
+                statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:2px 8px; border-radius:12px; font-size:11px;">Parked (Unpaid)</span>`;
             } else if (minutesElapsed < 10) {
                 let timeLeft = 10 - minutesElapsed;
                 statusBadge = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 12px; font-weight: 900; font-size: 11px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
