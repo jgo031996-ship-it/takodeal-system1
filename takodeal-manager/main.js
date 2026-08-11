@@ -10458,11 +10458,11 @@ window.openPayslipModal = async function(staffName) {
             }
 
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px; text-align: center;">${log.date || ''}</td>
-                <td style="padding: 8px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle;">${inTimeHtml}</td>
-                <td style="padding: 8px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle;">${log.out || ''}</td>
-                <td style="padding: 8px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
-                <td style="padding: 8px; font-size:11px; text-align: center; vertical-align: middle;">${log.remark || ''}</td>
+                <td style="padding: 8px 4px; text-align: center; word-wrap: break-word;">${log.date || ''}</td>
+                <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${inTimeHtml}</td>
+                <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.out || ''}</td>
+                <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
+                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}</td>
             </tr>`;
         });
     } else {
@@ -10731,7 +10731,7 @@ window.finalizePayslip = async function() {
 };
 
 // ==========================================
-// 📸 PAYSLIP IMAGE DOWNLOADER (TABLET-FIXED)
+// 📸 PAYSLIP IMAGE DOWNLOADER (SCROLL-BAR FIX)
 // ==========================================
 window.downloadPayslipImage = function() {
     const originalPayslip = document.getElementById('printablePayslip');
@@ -10746,11 +10746,16 @@ window.downloadPayslipImage = function() {
     printWrapper.style.left = '-9999px'; 
     printWrapper.style.top = '0';
     printWrapper.style.background = '#ffffff';
-    printWrapper.style.width = '700px'; // Fixed width for perfect aspect ratio
+    printWrapper.style.width = '800px'; // 🔥 INCREASED WIDTH for a beautiful A4 proportion
     printWrapper.style.padding = '20px';
     printWrapper.style.boxSizing = 'border-box';
     
     const clone = originalPayslip.cloneNode(true);
+    
+    // 🔥 THE FIX: Strip away ANY scrollbar properties before taking the screenshot!
+    clone.style.overflow = 'visible';
+    clone.style.maxHeight = 'none';
+    clone.style.height = 'auto';
     
     // 2. Convert all input boxes into static text so they render perfectly on mobile!
     clone.querySelectorAll('input').forEach(inp => {
