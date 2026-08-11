@@ -157,27 +157,17 @@ window.getClosestBranch = function() {
 };
 
 window.checkNormalLogin = function() {
-    let savedName = localStorage.getItem('takodeal_staff_name');
-    let savedPic = localStorage.getItem('takodeal_staff_pic');
+    // 🔥 SECURITY UPGRADE: Wipe memory on refresh so they MUST enter PIN every time!
+    localStorage.removeItem('takodeal_staff_name');
+    localStorage.removeItem('takodeal_staff_id');
+    localStorage.removeItem('takodeal_staff_pic');
     
-    if (savedName) {
-        document.getElementById('loginOverlay').style.display = 'none';
-        document.getElementById('appContainer').style.display = 'flex';
-        document.getElementById('loggedInName').innerText = savedName;
-        if (savedPic) {
-            document.getElementById('topAvatar').innerText = '';
-            document.getElementById('topAvatar').style.backgroundImage = `url('${savedPic}')`;
-        }
-        
-        if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
-        window.loadAnnouncements();
-        window.startInboxListener();
-        window.checkContractLifecycle(localStorage.getItem('takodeal_staff_id'));
-        window.listenToIncomingSwaps();
-    } else {
-        document.getElementById('loginOverlay').style.display = 'flex';
-        document.getElementById('appContainer').style.display = 'none';
-    }
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('appContainer').style.display = 'none';
+    
+    // Clear the PIN box just in case
+    let pinBox = document.getElementById('loginPin');
+    if (pinBox) pinBox.value = '';
 };
 
 window.loginStaff = async function() {
@@ -210,6 +200,7 @@ window.loginStaff = async function() {
         }
 
         if (staffData) {
+            // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
             localStorage.setItem('takodeal_staff_id', docId);
             localStorage.setItem('takodeal_staff_pic', staffData.profilePicUrl || '');
@@ -232,6 +223,7 @@ window.loginStaff = async function() {
             window.loadAnnouncements();
             window.startInboxListener();
             window.checkContractLifecycle(docId);
+            window.listenToIncomingSwaps(); // 🔥 Ensures the Shift Swapping listener starts!
         } else {
             errorMsg.innerText = "❌ Incorrect PIN. Please try again."; errorMsg.style.display = 'block';
         }
@@ -1975,24 +1967,23 @@ window.loadPayslipVault = async function() {
                 let logDate = safeDate(log.timestamp); 
                 let lateMinutes = 0;
                 let wasScheduled = false;
+                let expectedStartHour = null; // 🔥 THE SCOPE FIX: Moved here so the whole block can see it!
 
                 if (scheduleData && scheduleData.currentSchedule) {
                     let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
                     if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
                         
-                        // 🔥 THE CRASH FIX: Safe branch checking!
                         let branchSafe = log.branch || "Unknown";
                         let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branchSafe] : null;
                         
                         if (branchSched && branchSched.scheduled) {
                             let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
                             
-                            // Prevent undefined branch config crash
                             if (assignedShiftId && scheduleData.branchConfig && scheduleData.branchConfig[branchSafe]) {
                                 wasScheduled = true;
                                 let shiftConfig = scheduleData.branchConfig[branchSafe].find(s => s.id === assignedShiftId);
                                 if (shiftConfig) {
-                                    let expectedStartHour = null;
+                                    // 🔥 We removed 'let' here so it uses the variable we defined at the top!
                                     if (shiftConfig.startTime) {
                                         let parts = String(shiftConfig.startTime).split(':');
                                         expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
