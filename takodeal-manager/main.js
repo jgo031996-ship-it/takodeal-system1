@@ -21887,3 +21887,37 @@ window.submitMgrWasteCart = async function() {
         btn.innerText = origText; btn.disabled = false;
     }
 };
+
+// ========================================================
+// 📢 DELIVERY BROADCAST ALARM ENGINE
+// ========================================================
+window.broadcastDeliveryDate = async function() {
+    let targetDateStr = document.getElementById('fcTargetDate').value;
+    if (!targetDateStr) {
+        return Swal.fire('Missing Date', 'Please select your Target Delivery Date first.', 'warning');
+    }
+    
+    let btn = document.getElementById('btnBroadcastDate');
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Broadcasting..."; btn.disabled = true;
+
+    try {
+        await setDoc(doc(db, "settings", "global_delivery_schedule"), {
+            nextDeliveryDate: targetDateStr,
+            updatedAt: serverTimestamp(),
+            updatedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager'
+        }, { merge: true });
+
+        Swal.fire({
+            title: '📢 Broadcast Sent!', 
+            text: `All branches have been alerted. Their POS systems will instantly run a localized 14-day AI burn rate to calculate exactly what they need to survive until ${targetDateStr}.`, 
+            icon: 'success', 
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } catch(e) {
+        console.error(e); 
+        Swal.fire('Error', 'Failed to broadcast to branches.', 'error');
+    } finally {
+        btn.innerText = origText; btn.disabled = false;
+    }
+};
