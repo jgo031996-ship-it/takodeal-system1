@@ -709,14 +709,16 @@
               <button onclick="window.submitStockRequest()" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);">🚀 Send Request to HQ</button>
             </div>
 
-            <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
+            <!-- 🔥 THE FIX: Perfectly balanced grid columns -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1.5fr; gap: 10px; padding: 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: bold; font-size: 11px; color: #64748b; text-transform: uppercase;">
               <div>Item & HQ Status</div>
               <div style="text-align: center;">Branch Stock</div>
               <div style="text-align: center; color: #d97706;">Report Status</div>
               <div style="text-align: center; color: #0ea5e9;">Actual Count</div>
             </div>
 
-            <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto;">
+            <!-- 🔥 THE FIX: Added padding-bottom: 80px so the last dropdown isn't cut off! -->
+            <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto; padding-bottom: 80px;">
               <div style="text-align: center; color: #94a3b8; padding: 20px;">Loading inventory...</div>
             </div>
         </div>
@@ -726,9 +728,10 @@
                 <thead style="background: #f8fafc;">
                     <tr>
                         <th>Date & Time</th>
-                        <th>Requested By</th>
+                        <!-- 🔥 THE FIX: Changed from Requested to Reported -->
+                        <th>Reported By</th> 
                         <th>Status</th>
-                        <th>Items Requested</th>
+                        <th>Items Reported</th>
                     </tr>
                 </thead>
                 <tbody id="stockReqHistoryBody">
