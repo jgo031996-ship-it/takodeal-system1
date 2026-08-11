@@ -1875,6 +1875,12 @@ window.loadPayslipVault = async function() {
     let staffId = localStorage.getItem('takodeal_staff_id');
     if (!staffName || !staffId) return;
 
+    // 🔥 THE CRASH FIX: This safely handles both Firebase Timestamps AND Manual Manager JS Dates!
+    const safeDate = (fbDate) => {
+        if (!fbDate) return new Date();
+        return fbDate.toDate ? fbDate.toDate() : new Date(fbDate);
+    };
+
     // 1. Calculate Current Cutoff Dates
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -1917,7 +1923,6 @@ window.loadPayslipVault = async function() {
             return hour + (minute / 60);
         };
 
-        // 🔥 THE INDEX CRASH FIX: Fetch by name only, filter and sort manually!
         const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
         const attSnap = await getDocs(attQ);
 
@@ -1925,17 +1930,13 @@ window.loadPayslipVault = async function() {
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
             if (log.timestamp) {
-                let t = log.timestamp.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
+                let t = safeDate(log.timestamp);
                 if (t >= startTimestamp && t <= endTimestamp) {
                     filteredAttLogs.push(log);
                 }
             }
         });
-        filteredAttLogs.sort((a, b) => {
-            let tA = a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
-            let tB = b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
-            return tA - tB;
-        });
+        filteredAttLogs.sort((a, b) => safeDate(a.timestamp) - safeDate(b.timestamp));
 
         const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName));
         const bonusSnap = await getDocs(bonusQ);
@@ -1945,7 +1946,7 @@ window.loadPayslipVault = async function() {
         bonusSnap.forEach(docSnap => { 
             let b = docSnap.data();
             if (b.dateAdded) {
-                let t = b.dateAdded.toDate ? b.dateAdded.toDate() : new Date(b.dateAdded);
+                let t = safeDate(b.dateAdded);
                 if (t >= startTimestamp && t <= endTimestamp) {
                     let amt = parseFloat(b.amount) || 0;
                     totalBonuses += amt; 
@@ -1960,12 +1961,11 @@ window.loadPayslipVault = async function() {
         let activeShifts = {};
         let shiftPairs = [];
         
-        filteredAttLogs.forEach(docSnap => {
-            let log = docSnap; // Data is already extracted in the array
+        filteredAttLogs.forEach(log => {
             let manualPenalty = parseFloat(log.penaltyAmount) || 0;
 
             if (log.type === "TIME IN") {
-                let logDate = log.timestamp.toDate();
+                let logDate = safeDate(log.timestamp); 
                 let lateMinutes = 0;
                 let wasScheduled = false;
 
@@ -2003,15 +2003,14 @@ window.loadPayslipVault = async function() {
                     }
                 }
 
-                // 🔥 THE MATH FIX: Dynamic rate calculation per shift!
                 let effectiveDailyRate = dailyRate;
                 if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) {
                     effectiveDailyRate += 50; 
                 }
-                let ratePerHour = effectiveDailyRate / 8;
+                let currentRatePerHour = effectiveDailyRate / 8;
 
                 let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
-                let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
+                let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
 
                 activeShifts[staffName] = { 
                     time: logDate, 
@@ -2032,7 +2031,7 @@ window.loadPayslipVault = async function() {
                 
                 let totalManualPenaltyForShift = (activeShifts[staffName].manualPenalty || 0) + manualPenalty;
                 
-                let timeOut = log.timestamp.toDate();
+                let timeOut = safeDate(log.timestamp);
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
                 
                 if (hoursWorked > 18) {
@@ -2050,7 +2049,7 @@ window.loadPayslipVault = async function() {
                     remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
                 } else if (hoursWorked >= 13.5) {
                     shiftMultiplier = 2;
-                    totalBonuses += 50; // Straight Duty Bonus
+                    totalBonuses += 50; 
                     remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`;
                 } else if (hoursWorked < 8 && !isAutoClosed) {
                     if (wasScheduled) {
@@ -2061,7 +2060,6 @@ window.loadPayslipVault = async function() {
                     }
                 }
 
-                // 🔥 THE FIX: Auto-calculate Night Diff & Holidays dynamically
                 let outHour = timeOut.getHours();
                 let thisShiftNightBonus = 0;
 
@@ -2117,7 +2115,7 @@ window.loadPayslipVault = async function() {
                 delete activeShifts[staffName];
             } else if (manualPenalty > 0) {
                 totalLatePenalty += manualPenalty;
-                let logTime = log.timestamp ? log.timestamp.toDate() : new Date();
+                let logTime = log.timestamp ? safeDate(log.timestamp) : new Date();
                 shiftPairs.push({ 
                     dateObj: logTime, 
                     in: logTime, 
@@ -2143,7 +2141,7 @@ window.loadPayslipVault = async function() {
 
         bonusesList.forEach(b => {
             let amt = parseFloat(b.amount) || 0;
-            let bDate = b.dateAdded ? (b.dateAdded.toDate ? b.dateAdded.toDate() : new Date(b.dateAdded)) : new Date();
+            let bDate = b.dateAdded ? safeDate(b.dateAdded) : new Date();
             let dateStr = bDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             
             let existingLog = shiftPairs.find(l => l.in && l.in.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr);
@@ -2165,7 +2163,6 @@ window.loadPayslipVault = async function() {
             }
         });
 
-        // 🔥 THE SYNC: Basic pay is calculated identically to the Manager App!
         let estGross = shiftsWorked * dailyRate;
 
         const dedQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
@@ -2182,13 +2179,6 @@ window.loadPayslipVault = async function() {
         let estNet = (estGross + totalBonuses) - totalLatePenalty - unpaidVales;
 
         document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
-        
-        // Dynamically update the UI label to match the Manager App!
-        let grossLabel = document.getElementById('liveEstGross').previousElementSibling;
-        if(grossLabel) {
-            grossLabel.innerText = `Estimated Basic Pay (${shiftsWorked} shifts):`;
-        }
-
         document.getElementById('liveEstLates').innerText = '-₱' + totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -2236,18 +2226,17 @@ window.loadPayslipVault = async function() {
                 let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---');
                 let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : `${parseFloat(p.hrs).toFixed(2)}h`;
                 
-                // 🔥 THE FIX: Color Sync Engine for In/Out Times
-                let inColor = '#16a34a'; // Default Green
+                let inColor = '#16a34a'; 
                 if (p.lateMins && p.lateMins > 0) {
                     inStr += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${p.lateMins}m</span>`;
-                    inColor = '#dc2626'; // Red if late!
+                    inColor = '#dc2626'; 
                 }
 
-                let outColor = '#16a34a'; // Default Green
+                let outColor = '#16a34a'; 
                 if (p.remark && (p.remark.includes('Short') || p.remark.includes('INVALID') || p.remark.includes('Missed'))) {
-                    outColor = '#dc2626'; // Red if undertime/missed
+                    outColor = '#dc2626'; 
                 }
-                if (p.isActive) outColor = '#0ea5e9'; // Blue if active
+                if (p.isActive) outColor = '#0ea5e9'; 
 
                 detailsHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 10px 8px; color: #64748b;">${dateStr}</td>
@@ -2271,7 +2260,7 @@ window.loadPayslipVault = async function() {
         if (activeDeductions.length > 0) {
             activeDeductions.forEach(d => {
                 let dDate = d.dateAdded || d.timestamp;
-                let dateStr = dDate ? dDate.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+                let dateStr = dDate ? safeDate(dDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
                 detailsHtml += `
                     <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0;">
                         <div>
@@ -2289,24 +2278,19 @@ window.loadPayslipVault = async function() {
 
         logsContainer.innerHTML = detailsHtml;
 
-        // 🔥 THE INDEX CRASH FIX: Safe history fetch
         const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName));
         const prSnap = await getDocs(prQ);
 
         let prLogs = [];
         prSnap.forEach(docSnap => prLogs.push(docSnap.data()));
-        prLogs.sort((a, b) => {
-            let tA = a.processedAt ? (a.processedAt.toDate ? a.processedAt.toDate().getTime() : new Date(a.processedAt).getTime()) : 0;
-            let tB = b.processedAt ? (b.processedAt.toDate ? b.processedAt.toDate().getTime() : new Date(b.processedAt).getTime()) : 0;
-            return tB - tA;
-        });
+        prLogs.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
 
         let historyHtml = '';
         prLogs.forEach(d => {
             let pd = d.frozenData || {};
             pd.processedAt = d.processedAt; 
             
-            let dateStr = d.processedAt ? d.processedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
+            let dateStr = d.processedAt ? safeDate(d.processedAt).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
             let safeData = encodeURIComponent(JSON.stringify(pd));
 
             historyHtml += `
@@ -2327,7 +2311,14 @@ window.loadPayslipVault = async function() {
 
     } catch (e) {
         console.error("Payslip Fetch Error:", e);
-        document.getElementById('liveCutoffDates').innerText = "Error loading data.";
+        document.getElementById('liveEstNetPay').innerText = "Error";
+        let parentEl = document.getElementById('liveEstNetPay').parentElement;
+        if(parentEl) {
+            let errorP = parentEl.querySelector('.error-text');
+            if(!errorP) {
+                parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold;">Error loading data.</p>`;
+            }
+        }
         document.getElementById('payslipHistoryList').innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444;">Error connecting to HQ database.</div>';
     }
 };
