@@ -1338,8 +1338,21 @@ window.getParkedOrders = async function (branch) {
   try {
     const q = query(collection(db, "parked_orders"), where("branch", "==", branch));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp);
-  } catch (e) { console.error(e); return []; }
+    
+    let orders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // 🔥 THE VISIBILITY FIX: Safely parse Firebase Timestamps so it never crashes!
+    orders.sort((a, b) => {
+        let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
+        let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
+        return tB - tA; // Newest first
+    });
+    
+    return orders;
+  } catch (e) { 
+    console.error("Error fetching parked orders:", e); 
+    return []; 
+  }
 };
 
 window.deleteParkedOrder = async function (docId) {
