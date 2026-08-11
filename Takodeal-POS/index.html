@@ -2173,6 +2173,40 @@ window.loadSalesDashboard = async function () {
   }
   
   let transactions = await window.getSalesDashboardData(sessionUser.branch, currentShift.startTime);
+  // 🔥 FETCH PARKED ORDERS AND INJECT THEM INTO SHIFT SALES
+  try {
+      const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", sessionUser.branch));
+      const parkedSnap = await getDocs(parkedQ);
+      let validStartTime = currentShift.startTime instanceof Date ? currentShift.startTime : (currentShift.startTime && currentShift.startTime.toDate ? currentShift.startTime.toDate() : new Date(currentShift.startTime));
+      
+      parkedSnap.forEach(doc => {
+          let p = doc.data();
+          let pTime = p.timestamp ? (p.timestamp.toDate ? p.timestamp.toDate() : new Date(p.timestamp)) : new Date();
+          // Only inject if it belongs to the current shift
+          if (pTime >= validStartTime) {
+              transactions.push({
+                  id: doc.id,
+                  receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(),
+                  customerName: p.name || p.customerName || "Guest",
+                  netTotal: p.total || p.netTotal || 0,
+                  status: "Parked",
+                  paymentMethod: "Unpaid",
+                  cart: p.items || p.cart || [],
+                  timestamp: p.timestamp,
+                  cashier: p.cashier || 'Unknown',
+                  orderType: p.orderType || 'Dine-In',
+                  branch: p.branch
+              });
+          }
+      });
+      
+      // Re-sort with parked orders included
+      transactions.sort((a, b) => {
+          let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
+          let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
+          return tB - tA;
+      });
+  } catch(e) { console.error("Error injecting parked orders:", e); }
   let tBody = '';
   
   // 🔥 ONLY TRACK DIGITAL FUNDS FOR THE CASHIER
@@ -2182,7 +2216,7 @@ window.loadSalesDashboard = async function () {
       tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
   } else {
     transactions.forEach((tx, idx) => {
-      let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : '<span class="status-badge status-good">Paid</span>';
+      let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : (tx.status === 'Parked' ? '<span class="status-badge" style="background:#fef3c7; color:#d97706; border:1px solid #fcd34d;">Parked</span>' : '<span class="status-badge status-good">Paid</span>');
       let txDate = "Today"; let txTime = "--:--";
       if (tx.timestamp && tx.timestamp.toDate) { 
           let d = tx.timestamp.toDate(); 
@@ -3230,19 +3264,19 @@ window.resumeOrder = async function(docId) {
 
 window.deleteParkedOrderManually = async function(docId) {
       let order = window.currentParkedOrdersList.find(o => o.id === docId);
-      if(!confirm("⚠️ Are you sure you want to permanently delete this parked order? Management will be notified and it will be recorded as Voided in Shift Sales.")) return;
+      if(!confirm("⚠️ Are you sure you want to permanently delete this parked order?\n\nIt will be recorded as a Voided Receipt in Shift Sales, and all its ingredients will be auto-replenished into the inventory.")) return;
       
       try {
-          // 🔥 THE SHIFT SALES FIX: Grab the EXACT active shift ID!
           let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) ? currentShift.shiftId : "UNKNOWN";
-          
-          // 1. Log as a Voided Transaction for accountability
+          let voidReceiptId = "PRK-VOID-" + Math.floor(Math.random()*10000);
+
+          // 1. Log as a Voided Transaction for Shift Sales accountability
           await addDoc(collection(db, "transactions"), {
               branch: order.branch,
               cashier: localStorage.getItem('cashierName') || 'Staff',
-              shiftId: exactShiftId, // Now it attaches perfectly to the Shift Sales tab!
-              receiptId: "PRK-VOID-" + Math.floor(Math.random()*10000),
-              netTotal: order.total || 0,
+              shiftId: exactShiftId, 
+              receiptId: voidReceiptId,
+              netTotal: order.total || order.netTotal || 0,
               status: "Voided",
               orderType: (order.orderType || "DINE-IN") + " (PARKED)",
               paymentMethod: "Unpaid / Deleted",
@@ -3256,22 +3290,91 @@ window.deleteParkedOrderManually = async function(docId) {
               type: "PARKED_VOID_ALERT",
               branch: order.branch,
               cashier: localStorage.getItem('cashierName') || 'Staff',
-              message: `🚨 PARKED ORDER DELETED: Cashier removed a parked order for ${order.name || 'Guest'} totaling ₱${(order.total || 0).toFixed(2)}. It has been logged as Voided.`,
+              message: `🚨 PARKED ORDER DELETED: Cashier removed a parked order for ${order.name || 'Guest'} totaling ₱${(order.total || 0).toFixed(2)}. It has been logged as Voided and ingredients were replenished.`,
               timestamp: serverTimestamp(),
               isRead: false
           });
 
-          // 3. Delete it from the database and refresh UI
+          // 3. 🔥 REPLENISH INVENTORY ENGINE 🔥
+          let cartItems = order.items || order.cart || [];
+          for (let cartItem of cartItems) {
+              let itemName = cartItem.name || cartItem.itemName;
+              let qtyVoided = parseFloat(cartItem.qty) || 1;
+
+              // A. Replenish Main Recipe (BOM)
+              const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+              const bomSnap = await getDocs(bomQ);
+
+              for (let bomDoc of bomSnap.docs) {
+                  let recipeData = bomDoc.data();
+                  let ingredientName = recipeData.ingredientName;
+                  let totalAmountToReturn = (parseFloat(recipeData.qty) || 0) * qtyVoided;
+
+                  // Dine-In Box Halving Logic
+                  let ingNameLower = (ingredientName || "").toLowerCase();
+                  let orderTypeLower = (order.orderType || 'Dine-In').toLowerCase();
+                  if (ingNameLower.includes("box") && orderTypeLower.includes("dine-in")) {
+                      totalAmountToReturn = totalAmountToReturn / 2;
+                  }
+
+                  const invQ = query(collection(db, "inventory"), where("branch", "==", order.branch), where("name", "==", ingredientName));
+                  const invSnap = await getDocs(invQ);
+
+                  if (!invSnap.empty) {
+                      let invDocRef = invSnap.docs[0].ref;
+                      let invData = invSnap.docs[0].data();
+                      let newStock = (parseFloat(invData.currentStock) || 0) + totalAmountToReturn;
+                      
+                      await updateDoc(invDocRef, { currentStock: newStock });
+
+                      await addDoc(collection(db, "stock_logs"), {
+                          branch: order.branch, item: ingredientName, uom: invData.uom || 'units',
+                          oldQty: invData.currentStock || 0, newQty: newStock, variance: totalAmountToReturn, 
+                          type: "Parked Order Voided", note: `Replenished from deleted parked order: ${order.name || 'Guest'}`,
+                          user: localStorage.getItem('cashierName') || 'Staff', timestamp: serverTimestamp()
+                      });
+                  }
+              }
+
+              // B. Replenish Add-ons
+              if (cartItem.addons) {
+                  for (let addonKey in cartItem.addons) {
+                      let addon = cartItem.addons[addonKey];
+                      if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                          let totalAddonReturn = parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtyVoided;
+
+                          const addonInvQ = query(collection(db, "inventory"), where("branch", "==", order.branch), where("name", "==", addon.linkedIngredient));
+                          const addonInvSnap = await getDocs(addonInvQ);
+
+                          if (!addonInvSnap.empty) {
+                              let invDocRef = addonInvSnap.docs[0].ref;
+                              let invData = addonInvSnap.docs[0].data();
+                              let newStock = (parseFloat(invData.currentStock) || 0) + totalAddonReturn;
+                              
+                              await updateDoc(invDocRef, { currentStock: newStock });
+
+                              await addDoc(collection(db, "stock_logs"), {
+                                  branch: order.branch, item: addon.linkedIngredient, uom: invData.uom || 'units',
+                                  oldQty: invData.currentStock || 0, newQty: newStock, variance: totalAddonReturn, 
+                                  type: "Parked Order Voided (Addon)", note: `Replenished from deleted parked order: ${order.name || 'Guest'}`,
+                                  user: localStorage.getItem('cashierName') || 'Staff', timestamp: serverTimestamp()
+                              });
+                          }
+                      }
+                  }
+              }
+          }
+
+          // 4. Delete it from the database and refresh UI
           await window.deleteParkedOrder(docId);
           window.showParkedOrders();
           window.updateParkedBadge();
           
-          // 🔥 Instantly refresh the Shift Sales dashboard so they see the Void!
           if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
           
-          Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Parked order voided.', showConfirmButton: false, timer: 2000});
+          Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Voided & Replenished!', showConfirmButton: false, timer: 2500});
       } catch(e) {
-          console.error(e); alert("Failed to delete.");
+          console.error(e); alert("Failed to delete and void.");
       }
 };
 
