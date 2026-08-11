@@ -1115,93 +1115,142 @@ window.resetStaffPin = async function (staffId, staffName) {
 };
 
 // --- THE LIVE SECURITY FEED ENGINE ---
+window.activeSecurityBranch = "All";
+window.globalSecurityAlerts = [];
 
-// We start listening the moment the app opens, no matter what tab you are on!
+window.switchSecurityBranch = function(branch) {
+    window.activeSecurityBranch = branch;
+    window.renderSecurityFeed();
+};
+
 onSnapshot(query(collection(db, "manager_alerts"), orderBy("timestamp", "desc")), (snapshot) => {
-  let html = '';
-  let unreadCount = 0;
-  let recentAlerts = new Set(); // 🔥 THE SPAM FILTER: Remembers alerts to prevent UI duplicates!
-
-  if (snapshot.empty) {
-    html = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: var(--success); font-weight: bold;">🛡️ No security alerts. Your empire is safe.</td></tr>';
-  } else {
+    window.globalSecurityAlerts = [];
     snapshot.forEach(docSnap => {
-      let data = docSnap.data();
-      let nowMs = Date.now();
-      let alertMs = data.timestamp ? data.timestamp.toMillis() : nowMs;
-      let ageInDays = (nowMs - alertMs) / (1000 * 60 * 60 * 24);
+        window.globalSecurityAlerts.push({id: docSnap.id, ...docSnap.data()});
+    });
+    window.renderSecurityFeed();
+});
 
-      // 🧹 7-DAY AUTO WIPE: If it is marked Resolved and is older than 7 days, delete it!
-      if (data.isRead && ageInDays > 7) {
-          deleteDoc(doc(db, "manager_alerts", docSnap.id)).catch(e => console.log(e));
-          return; // Skip rendering it on the screen
-      }
+window.renderSecurityFeed = function() {
+    let unreadCountTotal = 0;
+    let branchUnreadCounts = {};
+    let branches = new Set();
+    
+    window.globalSecurityAlerts.forEach(data => {
+        if (!data.isRead) {
+            unreadCountTotal++;
+            branchUnreadCounts[data.branch] = (branchUnreadCounts[data.branch] || 0) + 1;
+        }
+        if (data.branch) branches.add(data.branch);
+    });
+    
+    // 🔥 1. Inject the Branch Tabs Dynamically
+    let tabContainer = document.getElementById('securityBranchTabs');
+    if (!tabContainer) {
+        let viewAlerts = document.getElementById('view-alerts');
+        if (viewAlerts) {
+            let cardHeader = viewAlerts.querySelector('.card-header');
+            if (cardHeader) {
+                let tabHtml = `<div id="securityBranchTabs" style="display: flex; background: #f8fafc; border-bottom: 1px solid #cbd5e1; overflow-x: auto; border-radius: 8px 8px 0 0; margin-bottom: 15px;"></div>`;
+                cardHeader.insertAdjacentHTML('afterend', tabHtml);
+                tabContainer = document.getElementById('securityBranchTabs');
+                cardHeader.style.borderBottom = "none";
+                cardHeader.style.paddingBottom = "15px";
+            }
+        }
+    }
+    
+    if (tabContainer) {
+        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+        let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
+        
+        let tabHtml = '';
+        if (!isFranchisee) {
+            tabHtml += `<button onclick="window.switchSecurityBranch('All')" style="flex: 1; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.activeSecurityBranch === 'All' ? '#dc2626' : 'transparent'}; background: ${window.activeSecurityBranch === 'All' ? 'white' : 'transparent'}; color: ${window.activeSecurityBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s; white-space: nowrap;">🌍 All Branches</button>`;
+        }
+        
+        let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Array.from(branches);
+        if (isFranchisee) { activeBranches = [myBranch]; window.activeSecurityBranch = myBranch; }
 
-      let alertMsg = data.message || "Unknown Alert";
-      
-      // 🛡️ SPAM FILTER: If we already showed this exact message for this branch recently, hide the duplicate!
-      let dupKey = `${data.branch}_${alertMsg}`;
-      if (recentAlerts.has(dupKey)) return; 
-      recentAlerts.add(dupKey);
+        activeBranches.sort().forEach(branch => {
+            let unread = branchUnreadCounts[branch] || 0;
+            // 🔥 RED COUNTER BADGE FOR TABS
+            let badge = unread > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">${unread}</span>` : '';
+            let isActive = window.activeSecurityBranch === branch;
+            tabHtml += `<button onclick="window.switchSecurityBranch('${branch}')" style="flex: 1; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${isActive ? '#dc2626' : 'transparent'}; background: ${isActive ? 'white' : 'transparent'}; color: ${isActive ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s; white-space: nowrap; border-left: 1px solid #e2e8f0;">📍 ${branch} ${badge}</button>`;
+        });
+        tabContainer.innerHTML = tabHtml;
+    }
 
-      if (!data.isRead) unreadCount++;
+    let html = '';
+    let recentAlerts = new Set(); 
+    
+    // Filter alerts based on active tab
+    let filteredAlerts = window.globalSecurityAlerts.filter(data => {
+        if (window.activeSecurityBranch !== "All" && data.branch !== window.activeSecurityBranch) return false;
+        return true;
+    });
 
-      let timeStr = "Just now";
-      if (data.timestamp && data.timestamp.toDate) {
-        // Removed the seconds to make the UI look cleaner
-        timeStr = data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-      }
+    if (filteredAlerts.length === 0) {
+        html = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: var(--success); font-weight: bold;">🛡️ No security alerts. Your empire is safe.</td></tr>';
+    } else {
+        filteredAlerts.forEach(data => {
+            let nowMs = Date.now();
+            let alertMs = data.timestamp ? (data.timestamp.toMillis ? data.timestamp.toMillis() : new Date(data.timestamp).getTime()) : nowMs;
+            let ageInDays = (nowMs - alertMs) / (1000 * 60 * 60 * 24);
 
-      // 🎨 THE COLOR CODER ENGINE
-      let textColor = "var(--danger)";
-      let rowBg = "var(--danger-light)";
-      let icon = "⚠️";
+            if (data.isRead && ageInDays > 7) {
+                deleteDoc(doc(db, "manager_alerts", data.id)).catch(e => console.log(e));
+                return; 
+            }
 
-      if (alertMsg.includes("CASH OVER") || alertMsg.includes("Over") || alertMsg.includes("Overage")) {
-          textColor = "#10b981"; // Success Green
-          rowBg = "#ecfdf5"; 
-          icon = "📈";
-      } else if (alertMsg.includes("CASH SHORT") || alertMsg.includes("Short") || alertMsg.includes("Shortage")) {
-          textColor = "#ef4444"; // Danger Red
-          rowBg = "#fef2f2"; 
-          icon = "📉";
-      }
+            let alertMsg = data.message || "Unknown Alert";
+            let dupKey = `${data.branch}_${alertMsg}`;
+            if (recentAlerts.has(dupKey)) return; 
+            recentAlerts.add(dupKey);
 
-      // If it is read, fade it out to gray
-      if (data.isRead) {
-          rowBg = "transparent";
-          textColor = "var(--text-muted)";
-      }
+            let timeStr = "Just now";
+            if (data.timestamp && data.timestamp.toDate) {
+                timeStr = data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            }
 
-      html += `
+            let textColor = "var(--danger)"; let rowBg = "var(--danger-light)"; let icon = "⚠️";
+
+            if (alertMsg.includes("CASH OVER") || alertMsg.includes("Over") || alertMsg.includes("Overage")) {
+                textColor = "#10b981"; rowBg = "#ecfdf5"; icon = "📈";
+            } else if (alertMsg.includes("CASH SHORT") || alertMsg.includes("Short") || alertMsg.includes("Shortage")) {
+                textColor = "#ef4444"; rowBg = "#fef2f2"; icon = "📉";
+            }
+
+            if (data.isRead) { rowBg = "transparent"; textColor = "var(--text-muted)"; }
+
+            html += `
               <tr style="background: ${rowBg}; opacity: ${data.isRead ? '0.6' : '1'}; transition: 0.2s;">
                 <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px;">${timeStr}</td>
                 <td style="padding: 12px;"><strong>📍 ${data.branch}</strong></td>
                 <td style="padding: 12px;"><span style="color: ${textColor}; font-weight: ${data.isRead ? 'normal' : 'bold'};">${icon} ${alertMsg}</span></td>
                 <td style="padding: 12px; text-align: right;">
                   ${!data.isRead
-          ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="dismissAlert('${docSnap.id}')">✓ Mark Resolved</button>`
+          ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="dismissAlert('${data.id}')">✓ Mark Resolved</button>`
           : '<span style="color: var(--success); font-weight: bold; font-size: 13px;">✓ Resolved</span>'}
                 </td>
               </tr>
             `;
-    });
-  }
-
-  // Inject into the table
-  const tbody = document.getElementById('alertsTableBody');
-  if (tbody) tbody.innerHTML = html;
-
-  // THE MAGIC: Update the Sidebar Notification Badge anywhere in the app!
-  const navAlerts = document.getElementById('nav-alerts');
-  if (navAlerts) {
-    if (unreadCount > 0) {
-      navAlerts.innerHTML = `🚨 Security Alerts <span style="background: var(--danger); color: white; padding: 2px 8px; border-radius: 20px; font-size: 11px; margin-left: 10px; font-weight: bold; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6); animation: pulse 2s infinite;">${unreadCount} New</span>`;
-    } else {
-      navAlerts.innerHTML = `🚨 Security Alerts`;
+        });
     }
-  }
-});
+
+    const tbody = document.getElementById('alertsTableBody');
+    if (tbody) tbody.innerHTML = html;
+
+    const navAlerts = document.getElementById('nav-alerts');
+    if (navAlerts) {
+        if (unreadCountTotal > 0) {
+            navAlerts.innerHTML = `<span class="nav-icon">🚨</span> <span class="nav-text">Security Alerts</span> <span class="nav-badge" style="background: var(--danger); color: white; padding: 2px 8px; border-radius: 20px; font-size: 10px; margin-left: auto; font-weight: bold; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6); animation: pulse 2s infinite;">${unreadCountTotal}</span>`;
+        } else {
+            navAlerts.innerHTML = `<span class="nav-icon">🚨</span> <span class="nav-text">Security Alerts</span>`;
+        }
+    }
+};
 
 window.dismissAlert = async function (docId) {
   try {
@@ -4185,10 +4234,26 @@ window.refreshInventoryView = function() { window.loadInventoryData(); };
 window.toggleActionMenu = function(menuId) {
     // Close all other open menus first
     document.querySelectorAll('.action-menu-content').forEach(menu => {
-        if (menu.id !== menuId) menu.classList.remove('show-action-menu');
+        if (menu.id !== menuId) {
+            menu.classList.remove('show-action-menu');
+            let oldContainer = menu.closest('.table-responsive');
+            if (oldContainer) oldContainer.style.paddingBottom = "0px";
+        }
     });
+    
     // Toggle the clicked one
-    document.getElementById(menuId).classList.toggle('show-action-menu');
+    let targetMenu = document.getElementById(menuId);
+    targetMenu.classList.toggle('show-action-menu');
+    
+    // 🔥 THE FIX: Add temporary padding to the table so it doesn't clip!
+    let tableContainer = targetMenu.closest('.table-responsive');
+    if (tableContainer) {
+        if (targetMenu.classList.contains('show-action-menu')) {
+            tableContainer.style.paddingBottom = "150px";
+        } else {
+            tableContainer.style.paddingBottom = "0px";
+        }
+    }
 };
 
 // Auto-close dropdowns when clicking anywhere else on the screen
@@ -4197,6 +4262,8 @@ window.addEventListener('click', function(e) {
         document.querySelectorAll('.action-menu-content').forEach(menu => {
             if (menu.classList.contains('show-action-menu')) {
                 menu.classList.remove('show-action-menu');
+                let tableContainer = menu.closest('.table-responsive');
+                if (tableContainer) tableContainer.style.paddingBottom = "0px";
             }
         });
     }
@@ -6925,6 +6992,15 @@ window.loadCashFlowHub = async function() {
         let branchHtml = '';
         let totalDrawerCash = 0;
 
+        // 🔥 PRE-FETCH PENDING REMITTANCES TO BUILD THE COUNTER BADGES
+        const pendingRemitsQ = query(collection(db, "remittances"), where("status", "==", "Pending"));
+        const pendingRemitsSnap = await getDocs(pendingRemitsQ);
+        let pendingByBranch = {};
+        pendingRemitsSnap.forEach(d => {
+            let r = d.data();
+            pendingByBranch[r.branch] = (pendingByBranch[r.branch] || 0) + 1;
+        });
+
         for (let branch of window.globalActiveBranches) {
             if (branch === "Main Office") continue;
 
@@ -6978,9 +7054,13 @@ window.loadCashFlowHub = async function() {
 
             totalDrawerCash += drawerAmount;
 
-            // 🔥 HERE IS THE HARDCODED CLICK! IT WORKS INSTANTLY NOW.
+            // 🔥 INJECT THE RED PULSATING COUNTER
+            let pendingCount = pendingByBranch[branch] || 0;
+            let badgeHtml = pendingCount > 0 ? `<div style="position: absolute; top: -10px; right: -10px; background: #ef4444; color: white; width: 26px; height: 26px; border-radius: 50%; font-size: 13px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 2px solid white; animation: pulse 1.5s infinite;">${pendingCount}</div>` : '';
+
             branchHtml += `
-                <div onclick="window.openBranchTransferHistory('${branch}')" style="background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)';">
+                <div onclick="window.openBranchTransferHistory('${branch}')" style="position: relative; background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)';">
+                    ${badgeHtml}
                     <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
                     <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${drawerAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     <div style="margin-top: 4px;">${drawerStatus}</div>
@@ -13670,13 +13750,21 @@ window.syncGlobalAddonsToMenu = async function() {
             let currentAddons = menuItem.addons || [];
             let modified = false;
 
-            // 🔥 THE SMART MATCHING UPGRADE
             // "saucy" will now accurately match "Bonito Takoyaki" (the item) OR "Takoyaki" (the category)!
+            // 🔥 THE SMART MATCHING UPGRADE (CRASH-PROOF)
             let matchingGlobals = globalAddons.filter(ga => {
-                if (ga.category === "All") return true;
-                let globalCatLower = (ga.category || "").toLowerCase();
+                let gaCatList = Array.isArray(ga.category) ? ga.category : [ga.category || "All"];
+                if (gaCatList.includes("All")) return true;
+                
+                let isMatch = false;
                 let itemNameLower = (menuItem.name || "").toLowerCase();
-                return menuCat.includes(globalCatLower) || itemNameLower.includes(globalCatLower); 
+                
+                gaCatList.forEach(c => {
+                    let cLower = c.toLowerCase();
+                    if (menuCat.includes(cLower) || itemNameLower.includes(cLower)) isMatch = true;
+                });
+                
+                return isMatch;
             });
 
             matchingGlobals.forEach(ga => {
