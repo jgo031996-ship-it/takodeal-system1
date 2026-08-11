@@ -5483,6 +5483,22 @@ window.loadStockRequestUI = async function() {
         window.stockReqItemsFlat = [];
         let html = '';
 
+        // 🔥 INJECT THE TOP AI WARNING BANNER 🔥
+        if (window.globalDeliveryTarget && window.predictedCriticalItems) {
+            let critCount = Object.keys(window.predictedCriticalItems).length;
+            if (critCount > 0) {
+                html += `
+                    <div style="background: #fff1f2; border: 2px dashed #fca5a5; padding: 15px; border-radius: 8px; margin-bottom: 20px; animation: pulse 2s infinite; box-shadow: 0 4px 6px rgba(220,38,38,0.1);">
+                        <strong style="color: #b91c1c; font-size: 16px; display: flex; align-items: center; gap: 8px;"><span style="font-size: 20px;">🚨</span> AI DELIVERY PREDICTION ALARM</strong>
+                        <div style="color: #ef4444; font-size: 14px; margin-top: 5px; font-weight: bold;">
+                            HQ has scheduled the next delivery for <b>${window.globalDeliveryTarget}</b>.<br>
+                            Based on your exact 14-day sales volume, <b style="font-size: 18px; color: #b91c1c;">${critCount} items</b> will completely run out before the truck arrives. Please report them immediately!
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
         Object.keys(itemsByCategory).sort().forEach(category => {
             html += `<div class="stock-req-category" style="background: #e2e8f0; padding: 10px 15px; font-weight: bold; color: #334155; margin-top: 10px; font-size: 14px; text-transform: uppercase; border-radius: 6px;">📁 ${category}</div>`;
 
@@ -5511,13 +5527,23 @@ window.loadStockRequestUI = async function() {
                 }
                 uomOptions += `<option value="base" data-conv="1">${bUom}</option>`;
 
-                let reorderLevelBase = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
-                let reorderLevelPurch = reorderLevelBase / conv;
-                let isCriticallyLow = purchStock <= reorderLevelPurch;
-                let stockColor = isCriticallyLow ? '#ef4444' : '#334155';
-                
-                let reorderBadge = `<span style="font-size: 9px; color: ${isCriticallyLow ? '#dc2626' : '#d97706'}; margin-top: 4px; font-weight: bold; background: ${isCriticallyLow ? '#fef2f2' : '#fffbeb'}; border: 1px dashed ${isCriticallyLow ? '#fca5a5' : '#fcd34d'}; padding: 2px 4px; border-radius: 4px;">⚠️ Reorder Lvl: ${reorderLevelPurch.toFixed(2)} ${pUom}</span>`;
+                // 🔥 THE AI BADGE OVERRIDE 🔥
+                let aiPrediction = window.predictedCriticalItems ? window.predictedCriticalItems[item.name] : null;
 
+                let reorderBadge = '';
+                let stockColor = '#334155';
+
+                if (aiPrediction) {
+                    stockColor = '#ef4444';
+                    let daysLeftStr = aiPrediction.daysLeft === Infinity ? '∞' : aiPrediction.daysLeft.toFixed(1);
+                    reorderBadge = `<span style="font-size: 10px; color: #b91c1c; margin-top: 6px; font-weight: 900; background: #fef2f2; border: 2px dashed #fca5a5; padding: 4px 6px; border-radius: 4px; animation: pulse 1.5s infinite; display: inline-block; box-shadow: 0 0 5px rgba(239,68,68,0.3);">⚠️ AI ALERT: EMPTIES IN ${daysLeftStr} DAYS!</span>`;
+                } else {
+                    let reorderLevelBase = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
+                    let reorderLevelPurch = reorderLevelBase / conv;
+                    let isCriticallyLow = purchStock <= reorderLevelPurch;
+                    stockColor = isCriticallyLow ? '#ef4444' : '#334155';
+                    reorderBadge = `<span style="font-size: 9px; color: ${isCriticallyLow ? '#dc2626' : '#d97706'}; margin-top: 4px; font-weight: bold; background: ${isCriticallyLow ? '#fef2f2' : '#fffbeb'}; border: 1px dashed ${isCriticallyLow ? '#fca5a5' : '#fcd34d'}; padding: 2px 4px; border-radius: 4px;">⚠️ Reorder Lvl: ${reorderLevelPurch.toFixed(2)} ${pUom}</span>`;
+                }
                 // 🔥 THE NEW UI: Extracts exactly what they previously requested!
                 let pendingData = pendingItemsMap[item.name.toLowerCase()];
                 let isAlreadyPending = !!pendingData;
@@ -9009,3 +9035,123 @@ setTimeout(() => {
         window.autoConnectPrinters();
     }
 }, 3000);
+
+// ========================================================
+// 🧠 LOCAL AI DELIVERY SURVIVAL PREDICTOR
+// ========================================================
+window.predictedCriticalItems = {};
+window.globalDeliveryTarget = null;
+
+window.startSmartReorderListener = function() {
+    onSnapshot(doc(db, "settings", "global_delivery_schedule"), (docSnap) => {
+        if (docSnap.exists()) {
+            window.globalDeliveryTarget = docSnap.data().nextDeliveryDate;
+            window.checkPredictiveStockLevels(); 
+        }
+    });
+};
+
+window.checkPredictiveStockLevels = async function() {
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch || !window.globalDeliveryTarget) return;
+
+    let targetDateStr = window.globalDeliveryTarget;
+    let targetDate = new Date(targetDateStr + 'T00:00:00');
+    let today = new Date();
+    today.setHours(0,0,0,0);
+    
+    let daysUntilDelivery = Math.ceil((targetDate - today) / (1000 * 3600 * 24));
+    if (daysUntilDelivery < 0) daysUntilDelivery = 0;
+
+    // 🔥 THE WEEKEND BUFFER FIX: If today is Saturday (6), add 2 days!
+    let buffer = 0;
+    if (today.getDay() === 6) { 
+        buffer = 2;
+    }
+    
+    let totalDaysToCover = daysUntilDelivery + buffer;
+    if (totalDaysToCover < 1) totalDaysToCover = 1;
+
+    try {
+        let fourteenDaysAgo = new Date();
+        fourteenDaysAgo.setDate(today.getDate() - 14);
+        
+        // 1. Calculate Local Burn Rate (Last 14 Days)
+        const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", fourteenDaysAgo));
+        const logsSnap = await getDocs(logsQ);
+
+        let burnData = {};
+        logsSnap.forEach(docSnap => {
+            let log = docSnap.data();
+            let v = parseFloat(log.variance) || 0;
+            let t = (log.type || "").toLowerCase();
+            let itemName = (log.item || "").trim().toLowerCase(); 
+            
+            if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                if (!burnData[itemName]) burnData[itemName] = 0;
+                burnData[itemName] += Math.abs(v);
+            }
+        });
+
+        // 2. Fetch Live Stock and compare against the timeline!
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
+        const invSnap = await getDocs(invQ);
+        
+        let criticalCount = 0;
+        window.predictedCriticalItems = {}; 
+
+        invSnap.forEach(docSnap => {
+            let item = docSnap.data();
+            if (item.allowRequest === false) return;
+
+            let normalizedName = (item.name || "").trim().toLowerCase();
+            let totalBurn = burnData[normalizedName] || 0;
+            let dailyBurn = totalBurn / 14;
+            
+            let stockBase = parseFloat(item.currentStock) || 0;
+            let predictedNeedBase = dailyBurn * totalDaysToCover;
+
+            // 🚨 TRIGGER: Will we run out before the truck arrives?
+            if (dailyBurn > 0 && stockBase <= predictedNeedBase) {
+                criticalCount++;
+                window.predictedCriticalItems[item.name] = {
+                    dailyBurn: dailyBurn,
+                    predictedNeed: predictedNeedBase,
+                    daysLeft: dailyBurn > 0 ? (stockBase / dailyBurn) : Infinity
+                };
+            }
+        });
+
+        // 3. Spawns the Red Pulsating Sidebar Badge!
+        let badge = document.getElementById('stockReqSidebarBadge');
+        if (!badge) {
+            let navStockReq = document.getElementById('nav-stockreq');
+            if (navStockReq) {
+                let textDiv = navStockReq.querySelector('.nav-item-text');
+                if (textDiv) {
+                    textDiv.innerHTML = `Stock Report <span id="stockReqSidebarBadge" style="display:none; background:#ef4444; color:white; border-radius:50%; padding:2px 6px; font-size:10px; font-weight:bold; margin-left:5px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">0</span>`;
+                    badge = document.getElementById('stockReqSidebarBadge');
+                }
+            }
+        }
+
+        if (badge) {
+            if (criticalCount > 0) {
+                badge.innerText = criticalCount;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+        
+        // If they are staring at the Stock Report screen, auto-refresh it to show the alarms!
+        let viewEl = document.getElementById('view-stockreq');
+        if (viewEl && viewEl.classList.contains('active')) {
+            window.loadStockRequestUI();
+        }
+
+    } catch(e) { console.error("Predictive Check Error:", e); }
+};
+
+// Wake up the scanner 4 seconds after the app boots!
+setTimeout(window.startSmartReorderListener, 4000);
