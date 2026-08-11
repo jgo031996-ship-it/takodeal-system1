@@ -1875,10 +1875,12 @@ window.loadPayslipVault = async function() {
     let staffId = localStorage.getItem('takodeal_staff_id');
     if (!staffName || !staffId) return;
 
-    // 🔥 THE CRASH FIX: This safely handles both Firebase Timestamps AND Manual Manager JS Dates!
+    // 🔥 THE CRASH FIX: Indestructible Date Converter
     const safeDate = (fbDate) => {
         if (!fbDate) return new Date();
-        return fbDate.toDate ? fbDate.toDate() : new Date(fbDate);
+        if (fbDate.toDate) return fbDate.toDate();
+        let d = new Date(fbDate);
+        return isNaN(d.getTime()) ? new Date() : d; // Defaults to now if the date is corrupted
     };
 
     // 1. Calculate Current Cutoff Dates
@@ -1936,7 +1938,9 @@ window.loadPayslipVault = async function() {
                 }
             }
         });
-        filteredAttLogs.sort((a, b) => safeDate(a.timestamp) - safeDate(b.timestamp));
+        
+        // 🔥 THE CRASH FIX: Use .getTime() to prevent NaN sorting errors
+        filteredAttLogs.sort((a, b) => safeDate(a.timestamp).getTime() - safeDate(b.timestamp).getTime());
 
         const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName));
         const bonusSnap = await getDocs(bonusQ);
@@ -1963,8 +1967,11 @@ window.loadPayslipVault = async function() {
         
         filteredAttLogs.forEach(log => {
             let manualPenalty = parseFloat(log.penaltyAmount) || 0;
+            
+            // 🔥 THE CRASH FIX: Ensure logType is ALWAYS a string before checking it!
+            let logType = typeof log.type === 'string' ? log.type.toUpperCase() : "UNKNOWN";
 
-            if (log.type === "TIME IN") {
+            if (logType === "TIME IN") {
                 let logDate = safeDate(log.timestamp); 
                 let lateMinutes = 0;
                 let wasScheduled = false;
@@ -1972,19 +1979,24 @@ window.loadPayslipVault = async function() {
                 if (scheduleData && scheduleData.currentSchedule) {
                     let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
                     if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-                        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][log.branch] : null;
+                        
+                        // 🔥 THE CRASH FIX: Safe branch checking!
+                        let branchSafe = log.branch || "Unknown";
+                        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branchSafe] : null;
+                        
                         if (branchSched && branchSched.scheduled) {
                             let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
                             
-                            if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
+                            // Prevent undefined branch config crash
+                            if (assignedShiftId && scheduleData.branchConfig && scheduleData.branchConfig[branchSafe]) {
                                 wasScheduled = true;
-                                let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
+                                let shiftConfig = scheduleData.branchConfig[branchSafe].find(s => s.id === assignedShiftId);
                                 if (shiftConfig) {
                                     let expectedStartHour = null;
                                     if (shiftConfig.startTime) {
-                                        let parts = shiftConfig.startTime.split(':');
+                                        let parts = String(shiftConfig.startTime).split(':');
                                         expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                                    } else {
+                                    } else if (shiftConfig.name) {
                                         let match = shiftConfig.name.match(/\((.*?)-/);
                                         if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
                                     }
@@ -2022,7 +2034,7 @@ window.loadPayslipVault = async function() {
                     wasScheduled: wasScheduled 
                 };
 
-            } else if (log.type.includes("TIME OUT") && activeShifts[staffName]) {
+            } else if (logType.includes("TIME OUT") && activeShifts[staffName]) {
                 let timeIn = activeShifts[staffName].time;
                 let lMins = activeShifts[staffName].lateMinutes;
                 let lAmt = activeShifts[staffName].lateAmount;
@@ -2032,14 +2044,14 @@ window.loadPayslipVault = async function() {
                 let totalManualPenaltyForShift = (activeShifts[staffName].manualPenalty || 0) + manualPenalty;
                 
                 let timeOut = safeDate(log.timestamp);
-                let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
+                let hoursWorked = (timeOut.getTime() - timeIn.getTime()) / (1000 * 60 * 60);
                 
                 if (hoursWorked > 18) {
                     shiftPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h)</span>` });
                     delete activeShifts[staffName]; return; 
                 }
 
-                let isAutoClosed = log.type === "TIME OUT (AUTO)";
+                let isAutoClosed = logType === "TIME OUT (AUTO)";
                 let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
                 
                 let shiftMultiplier = 1; 
@@ -2220,11 +2232,15 @@ window.loadPayslipVault = async function() {
         `;
 
         if (shiftPairs.length > 0) {
-            shiftPairs.sort((a,b) => b.dateObj - a.dateObj).forEach(p => {
+            // 🔥 THE CRASH FIX: Safe sorting via getTime()
+            shiftPairs.sort((a,b) => b.dateObj.getTime() - a.dateObj.getTime()).forEach(p => {
                 let dateStr = p.dateObj.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
                 let inStr = p.in ? p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : '---';
                 let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---');
-                let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : `${parseFloat(p.hrs).toFixed(2)}h`;
+                
+                // 🔥 THE CRASH FIX: Safe parseFloat
+                let safeHrs = parseFloat(p.hrs);
+                let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : (isNaN(safeHrs) ? '0.00h' : `${safeHrs.toFixed(2)}h`);
                 
                 let inColor = '#16a34a'; 
                 if (p.lateMins && p.lateMins > 0) {
@@ -2233,7 +2249,7 @@ window.loadPayslipVault = async function() {
                 }
 
                 let outColor = '#16a34a'; 
-                if (p.remark && (p.remark.includes('Short') || p.remark.includes('INVALID') || p.remark.includes('Missed'))) {
+                if (p.remark && (p.remark.includes('Short') || p.remark.includes('INVALID') || p.remark.includes('Missed') || p.remark.includes('Ignored'))) {
                     outColor = '#dc2626'; 
                 }
                 if (p.isActive) outColor = '#0ea5e9'; 
@@ -2283,6 +2299,7 @@ window.loadPayslipVault = async function() {
 
         let prLogs = [];
         prSnap.forEach(docSnap => prLogs.push(docSnap.data()));
+        // 🔥 THE CRASH FIX: Safe sorting for processed records
         prLogs.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
 
         let historyHtml = '';
@@ -2316,7 +2333,7 @@ window.loadPayslipVault = async function() {
         if(parentEl) {
             let errorP = parentEl.querySelector('.error-text');
             if(!errorP) {
-                parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold;">Error loading data.</p>`;
+                parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
             }
         }
         document.getElementById('payslipHistoryList').innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444;">Error connecting to HQ database.</div>';
