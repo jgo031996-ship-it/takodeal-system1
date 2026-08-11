@@ -621,15 +621,15 @@ window.loadGlobalDashboard = async function() {
       let displayStartingCash = (isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-';
 
       tableHtml += `
-        <tr>
-          <td><strong style="cursor:pointer; color:var(--primary); text-decoration:underline;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
-          <td>${shiftBadge}</td>
-          <td>${displayCashier}</td>
-          <td style="color: #64748b; font-weight: 500;">${displayStartingCash}</td>
-          <td style="font-weight: 600; color: var(--primary);">${formatMoney(branchNet)}</td>
-          <td style="color: var(--danger);">${formatMoney(branchExp)}</td>
-          <td style="font-weight: 700;">${(isActive || isClosed) ? formatMoney(expectedCash) : '-'}</td>
-          <td>${varianceHtml}</td>
+        <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+          <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
+          <td style="padding: 15px 25px;">${shiftBadge}</td>
+          <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${displayCashier}</td>
+          <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${displayStartingCash}</td>
+          <td style="padding: 15px 25px; font-weight: 900; color: #0f766e;">${formatMoney(branchNet)}</td>
+          <td style="padding: 15px 25px; color: #dc2626; font-weight: bold;">${formatMoney(branchExp)}</td>
+          <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${(isActive || isClosed) ? formatMoney(expectedCash) : '-'}</td>
+          <td style="padding: 15px 25px;">${varianceHtml}</td>
         </tr>
       `;
     }
@@ -12470,14 +12470,14 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
             let cogsColor = cogsPct > 50 ? '#b91c1c' : (cogsPct < 35 ? '#15803d' : '#d97706');
 
             html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="font-weight: bold; color: #0f172a; font-size: 14px;">${name}</td>
-                    <td style="font-weight: 900; color: #475569;">${stats.qty}</td>
-                    <td style="font-weight: bold; color: var(--primary);">₱${stats.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="color: var(--danger); font-weight: 500;">₱${stats.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="font-weight: 900; color: ${cogsColor};">${cogsPct.toFixed(1)}%</td>
-                    <td style="color: #15803d; font-weight: 900; font-size: 15px;">₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td>${statusBadge}</td>
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px 25px; font-weight: 800; color: #0f172a; font-size: 13px;">${name}</td>
+                    <td style="padding: 15px 25px; font-weight: 900; color: #475569;">${stats.qty}</td>
+                    <td style="padding: 15px 25px; font-weight: 800; color: #0ea5e9;">₱${stats.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 25px; color: #dc2626; font-weight: 600;">₱${stats.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 25px; font-weight: 900; color: ${cogsColor};">${cogsPct.toFixed(1)}%</td>
+                    <td style="padding: 15px 25px; color: #16a34a; font-weight: 900; font-size: 14px;">₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="padding: 15px 25px;">${statusBadge}</td>
                 </tr>
             `;
         });
@@ -19480,10 +19480,10 @@ window.fetchLiveStaffOnDuty = async function() {
                     });
                     
                     html += `
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 18px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-                            <h4 style="margin: 0 0 10px 0; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                                <span style="font-size: 15px;">📍 ${branch}</span>
-                                <span style="background: #0f766e; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px;">${activeStaffByBranch[branch].length} Active</span>
+                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
+                            <h4 style="margin: 0 0 15px 0; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 15px; font-weight: 900;">📍 ${branch}</span>
+                                <span style="background: #0f766e; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold;">${activeStaffByBranch[branch].length} Active</span>
                             </h4>
                             <div style="display: flex; flex-direction: column;">
                                 ${staffListHtml}
