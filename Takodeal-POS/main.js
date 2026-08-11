@@ -5159,7 +5159,7 @@ window.submitStockRequest = async function() {
     let cashier = localStorage.getItem('cashierName') || 'Staff';
     let itemsToRequest = [];
     let fraudAlerts = []; 
-    let uniqueItemCheck = new Set(); // 🛡️ Duplicate Prevention Engine
+    let uniqueItemCheck = new Set(); 
 
     let selects = document.querySelectorAll('.req-type-select');
     let hasMissingCount = false;
@@ -5169,18 +5169,16 @@ window.submitStockRequest = async function() {
             let id = select.getAttribute('data-id');
             let actualCountEl = document.getElementById(`actualCount_${id}`);
             
-            // 🚨 VALIDATION 1: Prevent Missing Counts for Low Stock
             if (select.value === "Low Stock") {
                 if (!actualCountEl || actualCountEl.value.trim() === "") {
                     hasMissingCount = true;
-                    return; // Skip processing this item for now
+                    return; 
                 }
             }
 
             let itemData = window.stockReqItemsFlat.find(i => i.id === id);
             if (!itemData) return; 
 
-            // 🚨 VALIDATION 2: Duplicate Interceptor
             if (uniqueItemCheck.has(itemData.id)) return;
             uniqueItemCheck.add(itemData.id);
 
@@ -5216,9 +5214,8 @@ window.submitStockRequest = async function() {
     if (hasMissingCount) {
         return Swal.fire({
             title: 'Missing Count Detected 🚨', 
-            text: 'You marked an item as "Low Stock" but forgot to enter the physical quantity. Please enter the count or remove it from the cart.', 
-            icon: 'error',
-            customClass: { popup: 'rounded-2xl' }
+            text: 'You marked an item as "Low Stock" but forgot to enter the physical quantity.', 
+            icon: 'error', customClass: { popup: 'rounded-2xl' }
         });
     }
 
@@ -5228,31 +5225,62 @@ window.submitStockRequest = async function() {
 
     let btn = document.querySelector('button[onclick="window.submitStockRequest()"]') || document.querySelector('.swal2-confirm');
     let origText = btn ? btn.innerText : "🚀 Send Request to HQ";
-    if (btn) { btn.innerText = "⏳ Sending..."; btn.disabled = true; }
+    if (btn) { btn.innerText = "⏳ Merging & Sending..."; btn.disabled = true; }
 
     try {
-        await addDoc(collection(db, "purchase_orders"), {
-            branch: branch, 
-            type: "Internal Request", 
-            items: itemsToRequest, 
-            status: "Pending", 
-            requestedBy: cashier, 
-            timestamp: new Date() 
-        });
+        // 🔥 THE AUTO-MERGE ENGINE 🔥
+        // Look for a Pending report made by THIS EXACT CASHIER at THIS EXACT BRANCH
+        const pendingQ = query(collection(db, "purchase_orders"), 
+            where("branch", "==", branch), 
+            where("status", "==", "Pending"),
+            where("requestedBy", "==", cashier)
+        );
+        const pendingSnap = await getDocs(pendingQ);
 
+        if (!pendingSnap.empty) {
+            let existingDoc = pendingSnap.docs[0];
+            let existingItems = existingDoc.data().items || [];
+
+            // Merge new items into existing list, overwriting if they update the same item
+            itemsToRequest.forEach(newItem => {
+                let matchIdx = existingItems.findIndex(i => (i.itemName || i.name) === (newItem.itemName || newItem.name));
+                if (matchIdx !== -1) {
+                    existingItems[matchIdx] = newItem; // Update existing
+                } else {
+                    existingItems.push(newItem); // Append new
+                }
+            });
+
+            await updateDoc(existingDoc.ref, {
+                items: existingItems,
+                timestamp: new Date() // Refresh timestamp so it jumps to the top of HQ's inbox!
+            });
+        } else {
+            // No pending reports found, create a brand new one
+            await addDoc(collection(db, "purchase_orders"), {
+                branch: branch, 
+                type: "Internal Request", 
+                items: itemsToRequest, 
+                status: "Pending", 
+                requestedBy: cashier, 
+                timestamp: new Date() 
+            });
+        }
+
+        // Fire Fraud Alerts Separately
         for (let alert of fraudAlerts) {
             await addDoc(collection(db, "manager_alerts"), {
                 type: "STOCK_REQUEST_FRAUD", branch: branch, cashier: cashier,
-                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} requested ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(2)} ${alert.uom}. Possible missing stock!`,
+                message: `🕵️‍♂️ FRAUD ALERT: ${cashier} reported ${alert.name}. They declared they have ${alert.declared} ${alert.uom}, but the system expects ${alert.expected.toFixed(2)} ${alert.uom}. Possible missing stock!`,
                 timestamp: new Date(), isRead: false
             });
         }
 
         localStorage.removeItem('takodeal_stock_req_draft');
-        Swal.fire('✅ Sent to HQ!', 'Your stock request has been submitted securely.', 'success');
+        Swal.fire('✅ Report Sent!', 'Your stock report has been submitted and securely merged to HQ.', 'success');
         window.loadStockRequestUI(); 
     } catch(e) {
-        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
+        console.error(e); Swal.fire('Error', 'Failed to send report.', 'error');
     } finally {
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
