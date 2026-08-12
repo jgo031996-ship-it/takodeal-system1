@@ -22207,12 +22207,20 @@ window.loadFranchiseWallet = async function() {
     if (isOwner) {
         branchSelect.style.display = 'block';
         btnManual.style.display = 'block';
-        if (branchSelect.options.length <= 1) {
-            const bSnap = await getDocs(query(collection(db, "branches"), where("isFranchise", "==", true)));
-            let html = '<option value="">Select Franchise Branch...</option>';
-            bSnap.forEach(doc => { html += `<option value="${doc.data().name}">${doc.data().name}</option>`; });
-            branchSelect.innerHTML = html;
-        }
+        if (isOwner) {
+            branchSelect.style.display = 'block';
+            btnManual.style.display = 'block';
+            if (branchSelect.options.length <= 1) {
+                // 🔥 THE FIX: We use your already-loaded Active Branches list instead of querying a missing tag!
+                let html = '<option value="">Select Franchise Branch...</option>';
+                if (window.globalActiveBranches) {
+                    window.globalActiveBranches.forEach(b => { 
+                        if (b !== "Main Office") html += `<option value="${b}">${b}</option>`; 
+                    });
+                }
+                branchSelect.innerHTML = html;
+            }
+        } else if (isFranchisee) {
     } else if (isFranchisee) {
         branchSelect.style.display = 'none';
         btnManual.style.display = 'none';
