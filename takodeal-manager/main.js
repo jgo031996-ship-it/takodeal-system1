@@ -11403,80 +11403,98 @@ window.calculateGrabFinancials = async function() {
         });
         if (actualGrabPayout === 0) payoutLogsHtml = `<div style="color:#94a3b8; font-size:11px; font-style:italic;">No payouts logged for this period.</div>`;
 
-        // 3. Build UI
+        // 3. Mathematical Calculations
+        let globalCommission = totalGrabGross * grabCommissionPercent;
+        let expectedNetEarnings = totalGrabGross - globalCommission;
+        let globalLoanCut = totalGrabGross > 0 ? (grabDailyDeductionAmount * daysDiff) : 0; 
+        let finalExpectedPayout = expectedNetEarnings - globalLoanCut;
+
+        // 🔥 THE NEW GRAB MERCHANT UI 🔥
         let breakdownHtml = `
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                <thead>
-                    <tr style="border-bottom: 2px solid #e2e8f0; color: #64748b; text-align: left;">
-                        <th style="padding: 8px 0;">Branch</th>
-                        <th style="padding: 8px 0; text-align: right;">System Gross</th>
-                        <th style="padding: 8px 0; text-align: right;">Comm (-${(grabCommissionPercent*100).toFixed(0)}%)</th>
-                        <th style="padding: 8px 0; text-align: right; color: #00b14f;">Expected Net</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div style="display: flex; gap: 25px; flex-wrap: wrap; align-items: flex-start;">
+                
+                <!-- Left Side: The Beautiful Summary Card -->
+                <div style="flex: 1.5; min-width: 350px; background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 30px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.08);">
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 30px;">
+                        <div style="background: #00b14f; padding: 15px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0, 177, 79, 0.3);">
+                            <span style="font-size: 28px; color: white; line-height: 1;">🛍️</span>
+                        </div>
+                        <div>
+                            <h3 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 900;">Grab Finance Summary</h3>
+                            <span style="font-size: 13px; color: #64748b; font-weight: bold;">Consolidated Data for Selected Date Range</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 25px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
+                            <span style="font-size: 16px; color: #334155; font-weight: bold;">Net Sales (System Gross)</span>
+                            <span style="font-size: 18px; color: #0f172a; font-weight: 900;">₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
+                            <span style="font-size: 16px; color: #64748b;">Deduction (Commission -${(grabCommissionPercent*100).toFixed(0)}%)</span>
+                            <span style="font-size: 17px; color: #dc2626; font-weight: 900;">- ₱${globalCommission.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #cbd5e1;">
+                            <span style="font-size: 17px; color: #0f172a; font-weight: 900;">Net Earnings</span>
+                            <span style="font-size: 18px; color: #16a34a; font-weight: 900;">+ ₱${expectedNetEarnings.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                        </div>
+                    </div>
+
+                    <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px dashed #cbd5e1; margin-top: 15px; margin-bottom: 25px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 15px; color: #475569; font-weight: bold;">Loans (Daily Fixed Repayment)</span>
+                            <span style="font-size: 16px; color: #dc2626; font-weight: 900;">- ₱${globalLoanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 20px; border-top: 3px solid #e2e8f0;">
+                        <span style="font-size: 18px; color: #0f172a; font-weight: 900;">Total Payout Expected:</span>
+                        <span style="font-size: 32px; color: #00b14f; font-weight: 900;">₱${finalExpectedPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </div>
+                </div>
+
+                <!-- Right Side: Audit Actions and Logs -->
+                <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 20px;">
+                    
+                    <button onclick="window.auditGrabSales(${totalGrabGross})" style="width: 100%; padding: 25px; background: #0f172a; color: white; border: none; border-radius: 16px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 10px 25px rgba(0,0,0,0.2); transition: transform 0.2s ease, box-shadow 0.2s ease;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 15px 30px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 10px 25px rgba(0,0,0,0.2)';">
+                        <span style="font-size: 28px; display: block; margin-bottom: 8px;">🕵️</span> Audit System vs Actual Grab App
+                    </button>
+
+                    <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                        <h4 style="margin: 0 0 15px 0; color: #334155; font-size: 14px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">Branch Sales Breakdown</h4>
         `;
 
         if (Object.keys(branchData).length === 0) {
-            breakdownHtml += `<tr><td colspan="4" style="padding: 10px 0; text-align: center; color: #94a3b8;">No Grab sales found.</td></tr>`;
+            breakdownHtml += `<div style="text-align: center; color: #94a3b8; padding: 10px 0; font-size: 13px;">No Grab sales found.</div>`;
         } else {
             for (let branch in branchData) {
                 let gross = branchData[branch];
                 let comm = gross * grabCommissionPercent;
                 let net = gross - comm;
                 breakdownHtml += `
-                    <tr style="border-bottom: 1px dashed #e2e8f0;">
-                        <td style="padding: 8px 0; font-weight: 600; color: #334155;">${branch}</td>
-                        <td style="padding: 8px 0; text-align: right;">₱${gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                        <td style="padding: 8px 0; text-align: right; color: #ef4444;">-₱${comm.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #00b14f;">₱${net.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    </tr>
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0;">
+                        <span style="font-weight: 600; color: #334155; font-size: 14px;">📍 ${branch}</span>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 900; color: #00b14f; font-size: 16px;">₱${net.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                            <div style="font-size: 11px; color: #94a3b8; font-weight: bold;">(Gross: ₱${gross.toLocaleString(undefined, {minimumFractionDigits: 2})})</div>
+                        </div>
+                    </div>
                 `;
             }
         }
-        breakdownHtml += `</tbody></table>`;
-        
-        if(document.getElementById('grabBranchBreakdown')) document.getElementById('grabBranchBreakdown').innerHTML = breakdownHtml;
 
-        // 4. Calculate Final Variances
-        let globalCommission = totalGrabGross * grabCommissionPercent;
-        let globalLoanCut = totalGrabGross > 0 ? (grabDailyDeductionAmount * daysDiff) : 0; 
-        let finalExpectedPayout = totalGrabGross - globalCommission - globalLoanCut;
-        
-        let variance = actualGrabPayout - finalExpectedPayout;
-        // Allowing a generous 5 peso tolerance for floating point rounding issues!
-        let varianceColor = variance < -5 ? '#dc2626' : (variance > 5 ? '#10b981' : '#475569');
-        let varianceText = Math.abs(variance) <= 5 ? "Perfect Match" : `₱${variance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-
-        // Inject data into the cards
-        if (document.getElementById('grabTotalGross')) document.getElementById('grabTotalGross').innerText = `₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        if (document.getElementById('grabTotalLoanCut')) document.getElementById('grabTotalLoanCut').innerText = `- ₱${globalLoanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        
-        let netPayoutEl = document.getElementById('grabTotalNetPayout');
-        if (netPayoutEl) {
-            // We rewrite this entire bottom section to include the Reconciliation UI
-            netPayoutEl.parentElement.innerHTML = `
-                <div style="display: flex; flex-direction: column; width: 100%;">
-                    <div style="display: flex; justify-content: space-between; padding-top: 8px; margin-bottom: 10px;">
-                        <span style="font-weight: bold; color: #0f172a; font-size: 14px;">Calculated Expected Payout:</span>
-                        <span style="font-weight: bold; color: #00b14f; font-size: 15px;">₱${finalExpectedPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                    </div>
-                    
-                    <div style="background: #f1f5f9; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px;">
-                        <div style="font-size: 11px; font-weight: bold; color: #475569; margin-bottom: 5px;">ACTUAL PAYOUTS LOGGED BY CASHIER:</div>
-                        ${payoutLogsHtml}
-                        <div style="display: flex; justify-content: space-between; margin-top: 5px; padding-top: 5px; border-top: 1px solid #cbd5e1;">
-                            <span style="font-weight: bold; font-size: 13px; color: #0f172a;">Total Actual Remittance:</span>
-                            <span style="font-weight: bold; font-size: 14px; color: #0f172a;">₱${actualGrabPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; justify-content: space-between; background: ${variance < -5 ? '#fef2f2' : (variance > 5 ? '#f0fdf4' : '#f8fafc')}; padding: 10px; border-radius: 6px; border: 1px solid ${variance < -5 ? '#fecaca' : (variance > 5 ? '#bbf7d0' : '#e2e8f0')};">
-                        <span style="font-weight: bold; color: ${varianceColor}; font-size: 15px;">RECONCILIATION VARIANCE:</span>
-                        <span style="font-weight: 900; color: ${varianceColor}; font-size: 16px;">${varianceText}</span>
+        breakdownHtml += `
                     </div>
                 </div>
-            `;
+            </div>
+        `;
+
+        if(document.getElementById('grabBranchBreakdown')) document.getElementById('grabBranchBreakdown').innerHTML = breakdownHtml;
+
+        // 🔥 Clean up the old unused variance UI from the HTML dynamically to make it perfectly clean!
+        let netPayoutEl = document.getElementById('grabTotalNetPayout');
+        if (netPayoutEl && netPayoutEl.parentElement) {
+            netPayoutEl.parentElement.innerHTML = ``; 
         }
 
     } catch (error) {
@@ -22013,5 +22031,53 @@ window.broadcastDeliveryDate = async function() {
         Swal.fire('Error', 'Failed to broadcast to branches.', 'error');
     } finally {
         btn.innerText = origText; btn.disabled = false;
+    }
+};
+
+// ========================================================
+// 🕵️ GRAB VS SYSTEM AUDIT ENGINE
+// ========================================================
+window.auditGrabSales = async function(systemGross) {
+    const { value: actualSales } = await Swal.fire({
+        title: '🕵️ Audit Grab Sales',
+        html: `Open your Grab Merchant App and enter the <b>Net Sales</b> for the exact same date range.<br><br>The POS System recorded <b style="color: #0ea5e9;">₱${systemGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</b> in Grab sales.`,
+        input: 'number',
+        inputPlaceholder: 'Enter amount from Grab App...',
+        showCancelButton: true,
+        confirmButtonColor: '#00b14f',
+        confirmButtonText: 'Run Audit Compare',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (actualSales) {
+        let actual = parseFloat(actualSales) || 0;
+        let diff = actual - systemGross;
+        let color = diff < -5 ? '#dc2626' : '#16a34a'; // Red if short, Green if perfect
+        let bg = diff < -5 ? '#fef2f2' : '#f0fdf4';
+        
+        let msg = diff < -5 
+            ? `🚨 <b>WARNING:</b> The staff missed encoding <b style="color:#b91c1c;">₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits: 2})}</b> of Grab sales in the POS! Suspected un-encoded orders.` 
+            : `✅ <b>PERFECT:</b> The POS matches the Grab app perfectly (or is slightly over by ₱${diff.toLocaleString(undefined, {minimumFractionDigits: 2})}). No missing transactions detected.`;
+
+        Swal.fire({
+            title: 'Audit Result',
+            html: `
+                <div style="text-align: left; padding: 10px;">
+                    <div style="font-size: 16px; margin-bottom: 10px; color: #334155; display: flex; justify-content: space-between;">
+                        <span>Actual Grab App Sales:</span> <b style="color: #00b14f; font-size: 18px;">₱${actual.toLocaleString(undefined, {minimumFractionDigits: 2})}</b>
+                    </div>
+                    <div style="font-size: 16px; margin-bottom: 20px; color: #334155; display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 15px;">
+                        <span>System POS Sales:</span> <b style="color: #0ea5e9; font-size: 18px;">₱${systemGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</b>
+                    </div>
+                    <div style="font-size: 18px; font-weight: bold; color: ${color}; padding: 20px; background: ${bg}; border-radius: 8px; border: 2px dashed ${color}; text-align: center;">
+                        <span style="font-size: 12px; color: #64748b; display: block; text-transform: uppercase;">Variance Detected</span>
+                        ${diff < 0 ? '-' : '+'} ₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits: 2})}<br>
+                        <span style="font-size: 13px; font-weight: normal; margin-top: 15px; display: block; color: #334155;">${msg}</span>
+                    </div>
+                </div>
+            `,
+            icon: diff < -5 ? 'warning' : 'success',
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
     }
 };
