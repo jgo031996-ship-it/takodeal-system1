@@ -458,8 +458,19 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
     document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
     document.getElementById('orderNotesInput').value = window.pendingItem.notes;
-    // 🔥 THE FIX: Forces the dropdown to be blank so they MUST choose!
-    document.getElementById('modalItemOrderType').value = existingItem ? (existingItem.orderType || '') : '';
+    
+    // 🔥 THE FIX: Auto-Takeout & Dropdown Locker
+    let itemOrderTypeSelect = document.getElementById('modalItemOrderType');
+    if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
+        itemOrderTypeSelect.value = 'Take-Out';
+        itemOrderTypeSelect.disabled = true; // Locks the dropdown!
+        itemOrderTypeSelect.style.background = '#e2e8f0'; // Turns it gray so they know it's locked
+    } else {
+        itemOrderTypeSelect.value = existingItem ? (existingItem.orderType || '') : '';
+        itemOrderTypeSelect.disabled = false; // Unlocks it for normal POS
+        itemOrderTypeSelect.style.background = '#e0f2fe'; // Restores normal color
+    }
+
     document.getElementById('variantModal').style.display = 'flex';
 
     let oldDropdown = document.getElementById('addonSelectDropdown');
@@ -745,8 +756,15 @@ window.updateModalTotals = function() {
 };
 
 window.confirmAddOrUpdateToCart = function() {
-    // 🔥 THE FIX: Strict Order Type Enforcer!
-    let itemOrderType = document.getElementById('modalItemOrderType').value;
+    let itemOrderTypeEl = document.getElementById('modalItemOrderType');
+    let itemOrderType = itemOrderTypeEl ? itemOrderTypeEl.value : '';
+    
+    // 🔥 PLATFORM AUTO-TAKEOUT ENGINE: Bypasses the alert completely! 🔥
+    if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
+        itemOrderType = 'Take-Out'; 
+    }
+
+    // Strict Order Type Enforcer
     if (!itemOrderType) {
         Swal.fire({
             title: 'Order Type Required', 
@@ -756,12 +774,12 @@ window.confirmAddOrUpdateToCart = function() {
         });
         return;
     }
+
     window.pendingItem.orderType = itemOrderType;
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
     window.pendingItem.notes = document.getElementById('orderNotesInput').value;
     window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
-    window.pendingItem.orderType = document.getElementById('modalItemOrderType').value; // Save item order type!
-    window.pendingItem.addons = {}; 
+    window.pendingItem.addons = {};
 
     if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
         let totalBase = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
