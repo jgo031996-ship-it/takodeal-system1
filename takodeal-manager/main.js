@@ -236,15 +236,40 @@ window.cancelLoginAndSignOut = async function() {
     document.getElementById('pinErrorMsg').style.display = 'none';
 };
 
+// ==========================================
+// 👑 FRANCHISEE DATA ISOLATION ENGINE
+// ==========================================
+window.isBranchAllowed = function(branchName) {
+    if (!window.sessionUser || window.sessionUser.isOwner || !window.sessionUser.isFranchisee) return true;
+    return window.sessionUser.allowedBranches.includes(branchName);
+};
+
 window.finalizeManagerLogin = function() {
+    let isFranchisee = window.tempAuthData.role === 'Franchisee';
+    let branchStr = window.tempAuthData.assignedBranch || 'Main Office';
+    
+    // 🔥 Supports Multi-Branch Franchisees (e.g., "Pampanga, Pampanga 2")
+    let allowedArr = branchStr.split(',').map(b => b.trim());
+
     window.sessionUser = {
         email: window.tempAuthUser.email,
-        branch: window.tempAuthData.assignedBranch || 'Main Office',
-        isFranchisee: window.tempAuthData.role === 'Franchisee',
+        branch: allowedArr[0], 
+        allowedBranches: allowedArr, 
+        isFranchisee: isFranchisee,
         cashierName: window.tempAuthUser.displayName || 'Manager',
-        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!window.tempAuthData.role === 'Franchisee' && window.tempAuthData.permissions.includes('all'))),
+        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && window.tempAuthData.permissions.includes('all'))),
         permissions: window.tempAuthData.permissions || ['all']
     };
+
+    // 🎨 DYNAMIC UI BRANDING
+    let logoTxt = document.getElementById('sidebarLogoBranchText');
+    if (logoTxt) logoTxt.innerText = isFranchisee ? allowedArr.join(' & ').toUpperCase() : "MAIN OFFICE";
+    
+    let profName = document.getElementById('sidebarProfileName');
+    if (profName) profName.innerText = window.sessionUser.cashierName;
+    
+    let profRole = document.getElementById('sidebarProfileRole');
+    if (profRole) profRole.innerText = isFranchisee ? "Franchise Owner" : "Admin Access";
 
     document.getElementById('loginOverlay').style.display = 'none';
     window.applyPermissions();
@@ -578,10 +603,12 @@ window.loadGlobalDashboard = async function() {
 
     let globalGross = 0; let globalNet = 0; let globalExp = 0;
     
-    // 🔥 SCAN ONLY THE SELECTED BRANCH (OR ALL)
+    // 🔥 SCAN ONLY THE SELECTED BRANCH (OR THEIR ALLOWED BRANCHES)
     let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
     if (selectedBranch !== "All") {
         branches = [selectedBranch];
+    } else if (isFranchisee) {
+        branches = window.sessionUser.allowedBranches; // Only scan THEIR branches!
     }
 
     let tableHtml = '';
@@ -819,6 +846,7 @@ window.loadHRModule = async function() {
       staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
 
       staffList.forEach(data => {
+        if (!window.isBranchAllowed(data.branch)) return; // 🔥 SECURITY LOCK
         // 🛑 THE ARCHIVE FILTER
         if (!window.showArchivedStaff && data.status === 'Resigned') return; 
         if (window.showArchivedStaff && data.status !== 'Resigned') return;  
@@ -4827,7 +4855,8 @@ window.loadAccountsAndBudget = async function() {
                 let data = docSnap.data();
                 data.id = docSnap.id;
                 let branch = data.branch || "Unassigned";
-
+              
+                if (!window.isBranchAllowed(branch)) return; // 🔥 SECURITY LOCK
                 window.liveAccounts.push(data); // Save to memory
 
                 if (!accountsByBranch[branch]) accountsByBranch[branch] = [];
@@ -4888,6 +4917,7 @@ window.loadAccountsAndBudget = async function() {
 
         let budgetItems = [];
         budgetSnap.forEach(doc => { budgetItems.push({id: doc.id, ...doc.data()}) });
+        if (!window.isBranchAllowed(b.branch)) return; // 🔥 SECURITY LOCK
 
         let budgetsByBranch = {};
 
@@ -5718,6 +5748,7 @@ window.loadPayrollDashboard = async function() {
       html = '<tr><td colspan="6" class="text-center">No shifts logged yet.</td></tr>';
     } else {
       shifts.forEach(shift => {
+        if (!window.isBranchAllowed(shift.branch)) return; // 🔥 SECURITY LOCK
         let start = shift.startTime ? shift.startTime.toDate() : new Date();
         let end = shift.endTime ? shift.endTime.toDate() : null;
         let dateStr = start.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
@@ -7092,7 +7123,8 @@ window.loadCashFlowHub = async function() {
 
         for (let branch of window.globalActiveBranches) {
             if (branch === "Main Office") continue;
-
+            if (!window.isBranchAllowed(branch)) continue; // 🔥 SECURITY LOCK
+          
             let drawerAmount = 0;
             let drawerStatus = "";
             let alertColor = "#0f766e";
@@ -7502,6 +7534,7 @@ window.loadDeviceFleet = async function () {
     devices.sort((a, b) => (b.registeredAt?.toDate() || 0) - (a.registeredAt?.toDate() || 0));
 
     devices.forEach(d => {
+      if (!window.isBranchAllowed(d.branch)) return; // 🔥 SECURITY LOCK
       let statusBadge = '';
       if (d.status === 'Blocked') {
           statusBadge = `<span class="badge" style="background: var(--danger); color: white; padding: 4px 8px; border-radius: 6px;">🚫 Blocked</span>`;
@@ -8750,6 +8783,7 @@ window.loadAttendanceLogs = async function () {
 
         let html = '';
         logsArray.forEach(data => {
+            if (!window.isBranchAllowed(data.branch)) return; // 🔥 SECURITY LOCK
             let timeStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH') : 'Just now';
             let badgeColor = data.type === "TIME IN" ? "#dcfce7" : "#fee2e2";
             let textColor = data.type === "TIME IN" ? "#16a34a" : "#b91c1c";
@@ -9064,6 +9098,7 @@ window.renderConfigUI = function() {
     
     let html = '';
     for (const branch in branchConfig) {
+        if (!window.isBranchAllowed(branch)) continue; // 🔥 SECURITY LOCK
         html += `<div class="shift-config-box" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                     <h4 style="margin:0 0 15px 0; color:#0f766e; text-transform:uppercase; font-size: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📍 ${branch} Shifts</h4>`;
         
@@ -9730,6 +9765,7 @@ window.renderTables = function() {
     container.appendChild(tabBox); container.appendChild(contentWrap);
 
     for (const branch in branchConfig) {
+        if (!window.isBranchAllowed(branch)) continue; // 🔥 SECURITY LOCK
         const isAct = (branch === currentActiveTab); // Check memory!
         const btn = document.createElement("button");
         btn.className = `tab-btn ${isAct ? 'active' : ''}`; btn.innerText = `${branch} Schedule`; btn.id = `btn-${branch}`;
@@ -11038,6 +11074,7 @@ window.loadLedger = async function() {
         let html = '';
 
         staffList.forEach(staff => {
+            if (!window.isBranchAllowed(staff.branch)) return; // 🔥 SECURITY LOCK
             let name = staff.cashierName;
             
             let record = ledgerData[name] || { totalLoaned: 0, totalPaid: 0, cutoffDeduction: 0 };
@@ -15753,46 +15790,41 @@ window.deleteBranch = async function(docId, name) {
 // 💉 THE DOM INJECTOR (FRANCHISE LOCK UPGRADE)
 window.injectDynamicBranchDropdowns = function() {
     const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
-    const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect'];
+    // 🔥 FlowBranchFilter added here to automatically lock the Financial Flow tab!
+    const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect', 'sanctionBranchFilter', 'expenseBranchFilter', 'flowBranchFilter']; 
     
     let stdHtml = '';
     let filterHtml = '<option value="All">🌐 All Branches</option>';
     let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; 
 
-    // 🔥 PHASE 2: FRANCHISEE ISOLATION PROTOCOL
     let isFranchiseMode = window.sessionUser && window.sessionUser.isFranchisee;
-    let franchiseBranch = window.sessionUser ? window.sessionUser.branch : null;
+    let allowedBranches = isFranchiseMode ? window.sessionUser.allowedBranches : window.globalActiveBranches;
 
-    if (isFranchiseMode && franchiseBranch) {
-        // Build the HTML to ONLY contain their assigned branch
-        let icon = "📍";
-        let label = `${icon} ${franchiseBranch}`;
-        stdHtml = `<option value="${franchiseBranch}">${franchiseBranch}</option>`;
-        filterHtml = `<option value="${franchiseBranch}">${label}</option>`;
-        plainFilterHtml = `<option value="${franchiseBranch}">${franchiseBranch}</option>`;
+    if (isFranchiseMode) {
+        filterHtml = allowedBranches.length > 1 ? '<option value="All">🌐 All My Branches</option>' : '';
+        allowedBranches.forEach(b => {
+            stdHtml += `<option value="${b}">${b}</option>`;
+            filterHtml += `<option value="${b}">📍 ${b}</option>`;
+            plainFilterHtml += `<option value="${b}">${b}</option>`;
+        });
     } else {
-        // Standard HQ view (builds all branches)
         window.globalActiveBranches.forEach(b => {
             let icon = b === "Main Office" ? "🏢" : "📍";
-            let label = `${icon} ${b}`;
             stdHtml += `<option value="${b}">${b}</option>`;
-            filterHtml += `<option value="${b}">${label}</option>`;
+            filterHtml += `<option value="${b}">${icon} ${b}</option>`;
             plainFilterHtml += `<option value="${b}">${b}</option>`;
         });
     }
 
-    // Inject into standard dropdowns and lock them if needed
     standardSelects.forEach(id => {
         let el = document.getElementById(id);
         if (el) { 
-            let oldVal = el.value; 
-            el.innerHTML = stdHtml; 
-            if (!isFranchiseMode && oldVal) el.value = oldVal; 
-            if (isFranchiseMode) { el.value = franchiseBranch; el.disabled = true; } // LOCK
+            let oldVal = el.value; el.innerHTML = stdHtml; 
+            if (oldVal && allowedBranches.includes(oldVal)) el.value = oldVal; 
+            if (isFranchiseMode && allowedBranches.length === 1) { el.value = allowedBranches[0]; el.disabled = true; } 
         }
     });
 
-    // Inject into filter dropdowns and lock them if needed
     filterSelects.forEach(id => {
         let el = document.getElementById(id);
         if (el) {
@@ -15800,18 +15832,10 @@ window.injectDynamicBranchDropdowns = function() {
             if (id === 'burnRateBranch' || id === 'auditModalBranch' || id === 'forecasterBranchSelect') el.innerHTML = plainFilterHtml;
             else el.innerHTML = filterHtml;
             
-            if (!isFranchiseMode && oldVal) el.value = oldVal;
-            if (isFranchiseMode) { el.value = franchiseBranch; el.disabled = true; } // LOCK
+            if (oldVal && (allowedBranches.includes(oldVal) || oldVal === "All")) el.value = oldVal;
+            if (isFranchiseMode && allowedBranches.length === 1) { el.value = allowedBranches[0]; el.disabled = true; } 
         }
     });
-
-    if (typeof branchConfig !== 'undefined') {
-        window.globalActiveBranches.forEach(b => {
-            if (b !== "Main Office" && !branchConfig[b]) {
-                branchConfig[b] = JSON.parse(JSON.stringify(defaultSchedConfig["Cabantian"] || [])); 
-            }
-        });
-    }
 };
 
 // Hook the Branch Manager to open when you visit the "Staff & Security" tab
@@ -16618,6 +16642,7 @@ window.loadSanctionsDashboard = async function() {
 
         snap.forEach(docSnap => {
             let d = docSnap.data();
+            if (!window.isBranchAllowed(d.branch)) return; // 🔥 SECURITY LOCK
             d.id = docSnap.id; // Save ID for the printer
             
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
@@ -20232,6 +20257,9 @@ window.renderDashboardCharts = async function() {
         };
 
         let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
+        if (window.sessionUser && window.sessionUser.isFranchisee) {
+            activeBranches = window.sessionUser.allowedBranches;
+        }
         let branchSalesData = {};
         activeBranches.forEach(b => { branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 }; });
 
@@ -20272,15 +20300,15 @@ window.renderDashboardCharts = async function() {
 
             // Today's Sales Mix Logic
             if (txDate === todayStr && pieCanvas && tx.cart) {
-                tx.cart.forEach(item => {
-                    let itemName = item.name || item.itemName;
-                    // 🔥 USE THE TRUE MENU MAP TO IDENTIFY CATEGORY!
-                    let cat = menuCategories[itemName] || item.category || "Uncategorized";
-                    
-                    let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
-                    if (!categorySales[cat]) categorySales[cat] = 0;
-                    categorySales[cat] += lineTotal;
-                });
+                if (window.isBranchAllowed(txBranch)) { // 🔥 Protect Pie Chart!
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let cat = menuCategories[itemName] || item.category || "Uncategorized";
+                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
+                        if (!categorySales[cat]) categorySales[cat] = 0;
+                        categorySales[cat] += lineTotal;
+                    });
+                }
             }
         });
 
