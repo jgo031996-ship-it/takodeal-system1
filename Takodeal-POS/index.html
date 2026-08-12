@@ -1905,7 +1905,7 @@
         window.filterMenu('All', catContainer.firstElementChild);
     };
 
-    // ==========================================
+// ==========================================
 // 📱 MULTI-PLATFORM POS ENGINE (GRAB / FOODPANDA)
 // ==========================================
 window.posPlatform = 'Standard';
@@ -1924,12 +1924,19 @@ window.switchPosPlatform = function(platform) {
     let platformDropdown = document.getElementById('posPlatformSelect');
     let otSelect = document.getElementById('mainOrderType');
     
+    // 🔥 NEW: Grab the action buttons at the bottom of the cart!
+    let btnPlace = document.getElementById('btnMainPlaceOrder');
+    let btnPark = document.querySelector('button[onclick="window.parkOrder()"]');
+    
     if (platform === 'Grab') {
         if(header) { header.style.background = '#00b14f'; header.style.color = 'white'; }
         if(platformDropdown) { platformDropdown.style.background = '#00b14f'; platformDropdown.style.color = 'white'; }
+        if(btnPlace) { btnPlace.style.background = '#00b14f'; }
+        if(btnPark) { btnPark.style.background = '#00b14f'; }
         
         if (otSelect) {
-            otSelect.value = Array.from(otSelect.options).some(o => o.value.toLowerCase().includes('grab')) ? otSelect.options[Array.from(otSelect.options).findIndex(o => o.value.toLowerCase().includes('grab'))].value : '';
+            let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('grab'));
+            if (opt) otSelect.value = opt.value;
         }
         let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
         if(payBtn) payBtn.click();
@@ -1937,13 +1944,15 @@ window.switchPosPlatform = function(platform) {
     } else if (platform === 'Foodpanda') {
         if(header) { header.style.background = '#d70f64'; header.style.color = 'white'; }
         if(platformDropdown) { platformDropdown.style.background = '#d70f64'; platformDropdown.style.color = 'white'; }
+        if(btnPlace) { btnPlace.style.background = '#d70f64'; }
+        if(btnPark) { btnPark.style.background = '#d70f64'; }
         
         if (otSelect) {
-            otSelect.value = Array.from(otSelect.options).some(o => o.value.toLowerCase().includes('grab')) ? otSelect.options[Array.from(otSelect.options).findIndex(o => o.value.toLowerCase().includes('grab'))].value : '';
+            let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda'));
+            if (opt) otSelect.value = opt.value;
         }
-        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
+        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
         
-        // 🔥 SECOND CRASH FIX: Only auto-click payment if they actually have items in the cart!
         let total = window.cart.reduce((sum, item) => sum + (item.lineTotalFinal || 0), 0);
         window.currentGrandTotal = total; 
         if(payBtn && total > 0) payBtn.click();
@@ -1951,6 +1960,8 @@ window.switchPosPlatform = function(platform) {
     } else {
         if(header) { header.style.background = '#fafafa'; header.style.color = '#333'; }
         if(platformDropdown) { platformDropdown.style.background = '#f39c12'; platformDropdown.style.color = 'white'; }
+        if(btnPlace) { btnPlace.style.background = 'var(--primary)'; }
+        if(btnPark) { btnPark.style.background = '#f39c12'; }
         
         if (otSelect) otSelect.value = '';
         let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase() === 'cash');
@@ -2409,6 +2420,13 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
     document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
     document.getElementById('orderNotesInput').value = window.pendingItem.notes;
+    // 🔥 THE FIX: Automatically forces "Take-Out" if they are in Grab/Foodpanda mode!
+    let itemOrderTypeSelect = document.getElementById('modalItemOrderType');
+    if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
+        itemOrderTypeSelect.value = 'Take-Out';
+    } else {
+        itemOrderTypeSelect.value = existingItem ? (existingItem.orderType || '') : '';
+    }
     document.getElementById('variantModal').style.display = 'flex';
 
     let oldDropdown = document.getElementById('addonSelectDropdown');
