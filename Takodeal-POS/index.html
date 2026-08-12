@@ -1900,71 +1900,139 @@
         window.filterMenu('All', catContainer.firstElementChild);
     };
 
-    window.buildUltraGridDOM = function() {
-        const grid = document.querySelector('.item-grid'); 
-        if(!grid) return;
-        
-        let safeItems = masterPOSData.items.filter(item => !hiddenCategories.includes(item.category));
-        let filteredItems = safeItems;
+    // ==========================================
+// 📱 MULTI-PLATFORM POS ENGINE (GRAB / FOODPANDA)
+// ==========================================
+window.posPlatform = 'Standard';
+window.platformCarts = { 'Standard': [], 'Grab': [], 'Foodpanda': [] };
+
+window.switchPosPlatform = function(platform) {
+    // 1. Save Current Cart to Memory
+    window.platformCarts[window.posPlatform] = window.cart;
     
-        if (window.currentDepartment === "CONSUMABLES") {
-            filteredItems = safeItems.filter(item => premixCategories.includes(item.category));
-        } else if (window.currentDepartment === "MAIN MENU") {
-            filteredItems = safeItems.filter(item => !premixCategories.includes(item.category));
+    // 2. Switch State
+    window.posPlatform = platform;
+    window.cart = window.platformCarts[platform] || [];
+    
+    // 3. UI Color & Auto-Selection Morphing
+    let header = document.querySelector('.ticket-header');
+    let platformDropdown = document.getElementById('posPlatformSelect');
+    let otSelect = document.getElementById('mainOrderType');
+    
+    if (platform === 'Grab') {
+        if(header) { header.style.background = '#00b14f'; header.style.color = 'white'; }
+        if(platformDropdown) { platformDropdown.style.background = '#00b14f'; platformDropdown.style.color = 'white'; }
+        
+        if (otSelect) {
+            otSelect.value = Array.from(otSelect.options).some(o => o.value.toLowerCase().includes('grab')) ? otSelect.options[Array.from(otSelect.options).findIndex(o => o.value.toLowerCase().includes('grab'))].value : '';
         }
-    
-        filteredItems.sort((a, b) => {
-            let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
-            let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
-            if (idxA !== -1 && idxB !== -1) return idxA - idxB; 
-            if (idxA !== -1) return -1; 
-            if (idxB !== -1) return 1;  
-            return (a.name || '').localeCompare(b.name || '');
-        });
-    
-        let html = '';
-        filteredItems.forEach((item, index) => {
-            let safePrice = parseFloat(item.price) || 0;
-            let possibleOrders = Infinity;
-            
-            if (masterPOSData.bom && masterPOSData.stockLevels) {
-                let recipe = masterPOSData.bom.filter(b => b.menuItem === item.name);
-                if (recipe.length > 0) {
-                    recipe.forEach(r => {
-                        let stock = masterPOSData.stockLevels[r.ingredientName] || 0;
-                        let orders = stock / (r.qty || 1);
-                        if (orders < possibleOrders) possibleOrders = orders;
-                    });
-                }
-            }
-
-            let badgeHtml = '';
-            if (possibleOrders <= 0) {
-                badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #dc2626; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10;">SOLD OUT</div>`;
-            } else if (possibleOrders <= 5) {
-                badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
-            }
-            
-            let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
-            let priceLabel = item.isGrouped ? `<span style="color: #10b981; font-weight: bold;">Select Size ➡</span>` : `₱${safePrice.toFixed(2)}`;
-            let safeName = item.name.replace(/'/g, "\\'");
-            let catSafe = (item.category || '').replace(/'/g, "\\'");
-
-            // 🔥 ULTRA MODE: PRELOAD IMAGE INTO BROWSER RAM 🔥
-            if (item.image) { let img = new Image(); img.src = item.image; }
-    
-            html += `
-                <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady) openAddOrderModal('${safeName}', ${safePrice})" style="height: 140px; border: none; display: flex;">
-                    ${badgeHtml}
-                    <div class="item-card-bg" style="${bgStyle}"></div>
-                    <div class="item-name-overlay">${item.name}<br><span style="color:#fcd34d; font-size: 11px;">${priceLabel}</span></div>
-                </div>
-            `;
-        });
+        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
+        if(payBtn) payBtn.click();
         
-        // Inject into DOM ONCE. Never destroyed again!
-        grid.innerHTML = html; 
-    };
+    } else if (platform === 'Foodpanda') {
+        if(header) { header.style.background = '#d70f64'; header.style.color = 'white'; }
+        if(platformDropdown) { platformDropdown.style.background = '#d70f64'; platformDropdown.style.color = 'white'; }
+        
+        if (otSelect) {
+            otSelect.value = Array.from(otSelect.options).some(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda')) ? otSelect.options[Array.from(otSelect.options).findIndex(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda'))].value : '';
+        }
+        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
+        if(payBtn) payBtn.click();
+        
+    } else {
+        if(header) { header.style.background = '#fafafa'; header.style.color = '#333'; }
+        if(platformDropdown) { platformDropdown.style.background = '#f39c12'; platformDropdown.style.color = 'white'; }
+        
+        if (otSelect) otSelect.value = '';
+        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase() === 'cash');
+        if(payBtn) payBtn.click();
+    }
+    
+    // 4. Force Grid and Cart to Redraw Instantly
+    if(typeof window.renderTopCategories === 'function') window.renderTopCategories();
+    window.renderCart();
+};
+
+window.buildUltraGridDOM = function() {
+    const grid = document.querySelector('.item-grid'); 
+    if(!grid) return;
+    
+    // 🔥 INJECT THE DROPDOWN IF IT IS MISSING!
+    let ticketHeader = document.querySelector('.ticket-header h2');
+    if (ticketHeader && !document.getElementById('posPlatformSelect')) {
+        ticketHeader.outerHTML = `
+            <select id="posPlatformSelect" onchange="window.switchPosPlatform(this.value)" style="background: #f39c12; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; padding: 10px 15px; outline: none; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+                <option value="Standard">🏪 POS Register</option>
+                <option value="Grab">🟢 Grab Delivery</option>
+                <option value="Foodpanda">🐼 Foodpanda</option>
+            </select>
+        `;
+    }
+
+    let safeItems = masterPOSData.items.filter(item => !hiddenCategories.includes(item.category));
+    let filteredItems = safeItems;
+
+    if (window.currentDepartment === "CONSUMABLES") {
+        filteredItems = safeItems.filter(item => premixCategories.includes(item.category));
+    } else if (window.currentDepartment === "MAIN MENU") {
+        filteredItems = safeItems.filter(item => !premixCategories.includes(item.category));
+    }
+
+    filteredItems.sort((a, b) => {
+        let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
+        let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB; 
+        if (idxA !== -1) return -1; 
+        if (idxB !== -1) return 1;  
+        return (a.name || '').localeCompare(b.name || '');
+    });
+
+    let html = '';
+    filteredItems.forEach((item, index) => {
+        
+        // 🔥 MULTI-PLATFORM PRICE ENGINE 🔥
+        let safePrice = parseFloat(item.price) || 0;
+        if (window.posPlatform === 'Grab' && item.grabPrice) safePrice = parseFloat(item.grabPrice) || safePrice;
+        if (window.posPlatform === 'Foodpanda' && item.foodpandaPrice) safePrice = parseFloat(item.foodpandaPrice) || safePrice;
+        
+        let possibleOrders = Infinity;
+        if (masterPOSData.bom && masterPOSData.stockLevels) {
+            let recipe = masterPOSData.bom.filter(b => b.menuItem === item.name);
+            if (recipe.length > 0) {
+                recipe.forEach(r => {
+                    let stock = masterPOSData.stockLevels[r.ingredientName] || 0;
+                    let orders = stock / (r.qty || 1);
+                    if (orders < possibleOrders) possibleOrders = orders;
+                });
+            }
+        }
+
+        let badgeHtml = '';
+        if (possibleOrders <= 0) {
+            badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #dc2626; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10;">SOLD OUT</div>`;
+        } else if (possibleOrders <= 5) {
+            badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
+        }
+        
+        let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
+        let priceLabel = item.isGrouped ? `<span style="color: #10b981; font-weight: bold;">Select Size ➡</span>` : `₱${safePrice.toFixed(2)}`;
+        let safeName = item.name.replace(/'/g, "\\'");
+        let catSafe = (item.category || '').replace(/'/g, "\\'");
+
+        if (item.image) { let img = new Image(); img.src = item.image; }
+
+        // 🔥 Pass the dynamically selected platform price to the modal!
+        html += `
+            <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady) openAddOrderModal('${safeName}', ${safePrice})" style="height: 140px; border: none; display: flex;">
+                ${badgeHtml}
+                <div class="item-card-bg" style="${bgStyle}"></div>
+                <div class="item-name-overlay">${item.name}<br><span style="color:#fcd34d; font-size: 11px;">${priceLabel}</span></div>
+            </div>
+        `;
+    });
+    
+    grid.innerHTML = html; 
+};
 
     window.filterMenu = function(category, clickedBtn) {
         if (clickedBtn) { 
