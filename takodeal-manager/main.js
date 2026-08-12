@@ -4916,8 +4916,12 @@ window.loadAccountsAndBudget = async function() {
         let displayMonth = `${monthNames[today.getMonth()]} ${today.getFullYear()}`;
 
         let budgetItems = [];
-        budgetSnap.forEach(doc => { budgetItems.push({id: doc.id, ...doc.data()}) });
-        if (!window.isBranchAllowed(b.branch)) return; // 🔥 SECURITY LOCK
+        budgetSnap.forEach(doc => { 
+            let b = {id: doc.id, ...doc.data()};
+            // 🔥 THE CRASH-PROOF SECURITY LOCK:
+            if (!window.isBranchAllowed(b.branch)) return; 
+            budgetItems.push(b);
+        });
 
         let budgetsByBranch = {};
 
@@ -20930,9 +20934,9 @@ window.saveBranchMenuRestrictions = async function() {
     }
 };
 
-// ========================================================
+// ==========================================
 // 🌊 FINANCIAL FLOW & P&L WATERFALL ENGINE
-// ========================================================
+// ==========================================
 window.flowSpendChartInstance = null;
 window.flowBudgetChartInstance = null;
 
@@ -20955,11 +20959,20 @@ window.loadFinancialFlow = async function() {
     let branchSelect = document.getElementById('flowBranchFilter');
     let timeType = document.getElementById('flowTimeFilter').value;
     
-    // Auto-populate branch dropdown if empty
-    if (branchSelect.options.length <= 1 && window.globalActiveBranches) {
-        let opts = '<option value="All">🌐 All Branches</option>';
-        window.globalActiveBranches.forEach(b => { if(b !== "Main Office") opts += `<option value="${b}">${b}</option>`; });
-        branchSelect.innerHTML = opts;
+    // 🔥 THE FRANCHISEE DROPDOWN FIX: Lock it to their specific branch!
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    
+    if (branchSelect.options.length <= 1 || isFranchisee) {
+        if (isFranchisee) {
+            branchSelect.innerHTML = `<option value="${window.sessionUser.branch}">${window.sessionUser.branch}</option>`;
+            branchSelect.disabled = true;
+        } else {
+            let opts = '<option value="All">🌐 All Branches</option>';
+            if (window.globalActiveBranches) {
+                window.globalActiveBranches.forEach(b => { if(b !== "Main Office") opts += `<option value="${b}">${b}</option>`; });
+            }
+            branchSelect.innerHTML = opts;
+        }
     }
 
     let branch = branchSelect.value;
@@ -20992,11 +21005,10 @@ window.loadFinancialFlow = async function() {
         // 1. FETCH REVENUE & COGS
         let totalRevenue = 0;
         let totalCOGS = 0;
-        window.tempCogsBreakdown = {}; // Store for the clickable modal
+        window.tempCogsBreakdown = {}; 
 
+        // 🔥 THE INDEX-FREE FIX: We ask Firebase ONLY for the timestamp, then filter the branch using Javascript!
         let txQ = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        if (branch !== "All") txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        
         const txSnap = await getDocs(txQ);
         
         // Fetch Live Inventory Costs for COGS math
@@ -21015,6 +21027,8 @@ window.loadFinancialFlow = async function() {
         txSnap.forEach(doc => {
             let tx = doc.data();
             if (tx.status === "Voided") return;
+            if (branch !== "All" && tx.branch !== branch) return; // 🔥 Javascript Branch Filter!
+
             totalRevenue += (parseFloat(tx.netTotal) || 0);
 
             if (tx.cart && Array.isArray(tx.cart)) {
@@ -21051,21 +21065,22 @@ window.loadFinancialFlow = async function() {
         // 2. FETCH EXPENSES (Payroll & Budgets)
         let totalPayroll = 0;
         let totalExpenses = 0;
-        let expenseBreakdown = {}; // Used for the charts and tree
+        let expenseBreakdown = {}; 
 
+        // 🔥 THE INDEX-FREE FIX: Timestamp only!
         let expQ = query(collection(db, "expenses"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        if (branch !== "All") expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        
         const expSnap = await getDocs(expQ);
 
         expSnap.forEach(doc => {
             let exp = doc.data();
+            if (branch !== "All" && exp.branch !== branch) return; // 🔥 Javascript Branch Filter!
+
             let amt = parseFloat(exp.amount) || 0;
             let cat = exp.category || 'Uncategorized';
             
             if (cat.toLowerCase().includes('payroll')) {
                 totalPayroll += amt;
-            } else if (!cat.toLowerCase().includes('royalty')) { // Exclude system royalty from operating expenses
+            } else if (!cat.toLowerCase().includes('royalty')) { 
                 totalExpenses += amt;
                 if (!expenseBreakdown[cat]) expenseBreakdown[cat] = 0;
                 expenseBreakdown[cat] += amt;
@@ -21220,14 +21235,10 @@ window.loadFinancialFlow = async function() {
             let opexPct = totalRevenue > 0 ? (totalExpenses / totalRevenue) * 100 : 0;
             let marginPct = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
-            // F&B Industry Standard Benchmarks
-            let cogsTarget = 35;
-            let laborTarget = 20;
-            let opexTarget = 25;
+            let cogsTarget = 35; let laborTarget = 20; let opexTarget = 25;
 
             let html = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px;">`;
 
-            // 1. COGS Diagnostic
             if (cogsPct > cogsTarget) {
                 html += `<div style="background: #fff1f2; padding: 15px; border-radius: 8px; border-left: 4px solid #e11d48;">
                     <strong style="color: #be123c;">🥩 Food Cost Leakage (${cogsPct.toFixed(1)}%)</strong><br>
@@ -21240,7 +21251,6 @@ window.loadFinancialFlow = async function() {
                 </div>`;
             }
 
-            // 2. Labor Diagnostic
             if (laborPct > laborTarget) {
                 html += `<div style="background: #fff1f2; padding: 15px; border-radius: 8px; border-left: 4px solid #e11d48;">
                     <strong style="color: #be123c;">👥 High Labor Ratio (${laborPct.toFixed(1)}%)</strong><br>
@@ -21253,11 +21263,10 @@ window.loadFinancialFlow = async function() {
                 </div>`;
             }
 
-            // 3. OpEx Diagnostic
             if (opexPct > opexTarget) {
                 html += `<div style="background: #fffbeb; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
                     <strong style="color: #b45309;">💡 Heavy Operating Expenses (${opexPct.toFixed(1)}%)</strong><br>
-                    Overhead is eating your profit. You are spending <b>₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits:0})}</b> on non-food/labor costs. Ensure these are categorized properly in your Budget Tracker to spot the exact leak (e.g., Rent, Utilities, Consumables).
+                    Overhead is eating your profit. You are spending <b>₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits:0})}</b> on non-food/labor costs. Ensure these are categorized properly in your Budget Tracker to spot the exact leak.
                 </div>`;
             } else {
                 html += `<div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #16a34a;">
@@ -21268,8 +21277,7 @@ window.loadFinancialFlow = async function() {
 
             html += `</div>`;
 
-            // 4. The Final Executive Summary
-            let summaryClass = marginPct >= 15 ? 'bg-[#f0fdf4] border-[#bbf7d0] text-[#16a34a]' : (marginPct > 0 ? 'bg-[#fffbeb] border-[#fde68a] text-[#d97706]' : 'bg-[#fef2f2] border-[#fecaca] text-[#dc2626]');
+            let summaryClass = marginPct >= 15 ? 'background-color: #f0fdf4; border-color: #bbf7d0; color: #16a34a;' : (marginPct > 0 ? 'background-color: #fffbeb; border-color: #fde68a; color: #d97706;' : 'background-color: #fef2f2; border-color: #fecaca; color: #dc2626;');
             
             let summaryText = "";
             if (marginPct >= 15) {
@@ -21281,16 +21289,11 @@ window.loadFinancialFlow = async function() {
             }
 
             html += `
-                <div style="padding: 15px; border-radius: 8px; border: 1px solid; margin-top: 10px;" class="${summaryClass.split(' ').map(c => c.replace(/\[|\]/g, '')).join(' ')}">
+                <div style="padding: 15px; border-radius: 8px; border: 1px solid; margin-top: 10px; ${summaryClass}">
                     <strong style="font-size: 16px;">CEO Executive Summary:</strong><br>
                     ${summaryText}
                 </div>
             `;
-            
-            // Clean up Tailwind classes for standard inline CSS
-            html = html.replace(/bg-#f0fdf4/g, 'background-color: #f0fdf4').replace(/border-#bbf7d0/g, 'border-color: #bbf7d0').replace(/text-#16a34a/g, 'color: #16a34a')
-                       .replace(/bg-#fffbeb/g, 'background-color: #fffbeb').replace(/border-#fde68a/g, 'border-color: #fde68a').replace(/text-#d97706/g, 'color: #d97706')
-                       .replace(/bg-#fef2f2/g, 'background-color: #fef2f2').replace(/border-#fecaca/g, 'border-color: #fecaca').replace(/text-#dc2626/g, 'color: #dc2626');
 
             aiContainer.innerHTML = html;
         }
