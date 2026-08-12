@@ -9196,3 +9196,51 @@ window.checkPredictiveStockLevels = async function() {
 
 // Wake up the scanner 4 seconds after the app boots!
 setTimeout(window.startSmartReorderListener, 4000);
+
+// ========================================================
+// 🕵️ GRAB VS SYSTEM AUDIT ENGINE
+// ========================================================
+window.auditGrabSales = async function(systemGross) {
+    const { value: actualSales } = await Swal.fire({
+        title: '🕵️ Audit Grab Sales',
+        html: `Open your Grab Merchant App and enter the <b>Net Sales</b> for the exact same date range.<br><br>The POS System recorded <b style="color: #0ea5e9;">₱${systemGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</b> in Grab sales.`,
+        input: 'number',
+        inputPlaceholder: 'Enter amount from Grab App...',
+        showCancelButton: true,
+        confirmButtonColor: '#00b14f',
+        confirmButtonText: 'Run Audit Compare',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (actualSales) {
+        let actual = parseFloat(actualSales) || 0;
+        let diff = actual - systemGross;
+        let color = diff < -5 ? '#dc2626' : '#16a34a'; // Red if short, Green if perfect
+        let bg = diff < -5 ? '#fef2f2' : '#f0fdf4';
+        
+        let msg = diff < -5 
+            ? `🚨 <b>WARNING:</b> The staff missed encoding <b style="color:#b91c1c;">₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits: 2})}</b> of Grab sales in the POS! Suspected un-encoded orders.` 
+            : `✅ <b>PERFECT:</b> The POS matches the Grab app perfectly (or is slightly over by ₱${diff.toLocaleString(undefined, {minimumFractionDigits: 2})}). No missing transactions detected.`;
+
+        Swal.fire({
+            title: 'Audit Result',
+            html: `
+                <div style="text-align: left; padding: 10px;">
+                    <div style="font-size: 16px; margin-bottom: 10px; color: #334155; display: flex; justify-content: space-between;">
+                        <span>Actual Grab App Sales:</span> <b style="color: #00b14f; font-size: 18px;">₱${actual.toLocaleString(undefined, {minimumFractionDigits: 2})}</b>
+                    </div>
+                    <div style="font-size: 16px; margin-bottom: 20px; color: #334155; display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 15px;">
+                        <span>System POS Sales:</span> <b style="color: #0ea5e9; font-size: 18px;">₱${systemGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</b>
+                    </div>
+                    <div style="font-size: 18px; font-weight: bold; color: ${color}; padding: 20px; background: ${bg}; border-radius: 8px; border: 2px dashed ${color}; text-align: center;">
+                        <span style="font-size: 12px; color: #64748b; display: block; text-transform: uppercase;">Variance Detected</span>
+                        ${diff < 0 ? '-' : '+'} ₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits: 2})}<br>
+                        <span style="font-size: 13px; font-weight: normal; margin-top: 15px; display: block; color: #334155;">${msg}</span>
+                    </div>
+                </div>
+            `,
+            icon: diff < -5 ? 'warning' : 'success',
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
+    }
+};
