@@ -252,10 +252,13 @@ window.processRawItemsIntoMenu = function(rawItems) {
                 window.masterPOSData.phantomVariants[baseName] = [];
             }
             
+            // 🔥 PLATFORM PRICING FIX: Store Grab/FP prices inside the variant memory!
             window.masterPOSData.phantomVariants[baseName].push({
                 realName: item.name,
                 sizeLabel: sizeName,
-                price: parseFloat(item.price || item.basePrice) || 0, // 🔥 FORCE THE TRUE PRICE
+                price: parseFloat(item.price || item.basePrice) || 0,
+                grabPrice: parseFloat(item.grabPrice) || parseFloat(item.price || item.basePrice) || 0,
+                foodpandaPrice: parseFloat(item.foodpandaPrice) || parseFloat(item.price || item.basePrice) || 0,
                 id: item.id
             });
             window.masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
