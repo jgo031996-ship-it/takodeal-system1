@@ -9105,8 +9105,10 @@ window.renderConfigUI = function() {
             `;
             
             dayNames.forEach((name, i) => {
+                // 🔥 THE CRASH FIX: If 'days' is missing, default to all days instead of crashing!
+                let safeDays = Array.isArray(shift.days) ? shift.days : [0, 1, 2, 3, 4, 5, 6];
                 html += `<label style="font-size: 12px; font-weight: bold; color: #475569; display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                            <input type="checkbox" value="${i}" class="day-chk-${branch}-${index}" ${shift.days.includes(i) ? 'checked' : ''} style="accent-color: #0f766e; width: 14px; height: 14px;">${name}
+                            <input type="checkbox" value="${i}" class="day-chk-${branch}-${index}" ${safeDays.includes(i) ? 'checked' : ''} style="accent-color: #0f766e; width: 14px; height: 14px;">${name}
                          </label>`;
             });
             
@@ -20067,9 +20069,10 @@ window.autoSetupNewBranch = async function(branchName) {
             if (!data.branchConfig) data.branchConfig = {};
             if (!data.branchConfig[branchName]) {
                 data.branchConfig[branchName] = [
-                    { id: 'shift_1', name: 'Morning (9am-5:30pm)' },
-                    { id: 'shift_2', name: 'Mid (4:30pm-12:30am)' },
-                    { id: 'shift_3', name: 'Night 1 (6:30pm-3am)' }
+                    // 🔥 THE FIX: Added the 'active' and 'days' arrays so the calendar doesn't crash!
+                    { id: 'shift_1', name: 'Morning (9am-5:30pm)', active: true, days: [0,1,2,3,4,5,6] },
+                    { id: 'shift_2', name: 'Mid (4:30pm-12:30am)', active: true, days: [0,1,2,3,4,5,6] },
+                    { id: 'shift_3', name: 'Night 1 (6:30pm-3am)', active: true, days: [0,1,2,3,4,5,6] }
                 ];
                 await updateDoc(schedRef, { branchConfig: data.branchConfig });
             }
