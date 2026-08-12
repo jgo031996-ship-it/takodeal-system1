@@ -702,9 +702,9 @@ window.loadGlobalDashboard = async function() {
         }
     } catch(e) { console.log("Tracker still waiting for first sale."); }
 
-    // 🔥 FIX: WAKE UP THE GRAB ENGINE WHEN DASHBOARD LOADS!
-    if (typeof window.calculateGrabFinancials === 'function') {
-        window.calculateGrabFinancials();
+    // 🔥 FIX: WAKE UP THE NEW UNIVERSAL PLATFORM ENGINE!
+    if (typeof window.calculatePlatformFinancials === 'function') {
+        window.calculatePlatformFinancials();
     }
 
     // 🔥 NEW: WAKE UP THE PRODUCT ANALYTICS ENGINE!
@@ -11316,228 +11316,6 @@ window.adjustStaffLoan = async function(ledgerId, staffName, currentLoan, curren
     }
 };
 
-// ==========================================
-// 🟢 GRAB PERFORMANCE & LOAN RECONCILIATION ENGINE
-// ==========================================
-window.calculateGrabFinancials = async function() {
-    let grabCommissionPercent = 0.20; 
-    let grabDailyDeductionAmount = 0; 
-    let currentLoanBalance = 0;
-
-    try {
-        const grabSettingsDoc = await getDoc(doc(db, "settings", "grab_financials"));
-        if (grabSettingsDoc.exists()) {
-            let data = grabSettingsDoc.data();
-            grabCommissionPercent = data.commissionRate !== undefined ? data.commissionRate : 0.20;
-            grabDailyDeductionAmount = data.dailyLoanDeduction || 0; 
-            currentLoanBalance = data.remainingLoanBalance || 0;
-        }
-    } catch (e) { console.warn("Could not load Grab settings", e); }
-
-    if(document.getElementById('grabRemainingLoan')) document.getElementById('grabRemainingLoan').innerText = `₱${currentLoanBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-
-    try {
-        // 🔥 THE FIX 1: Safely define the Start and End dates for the query!
-        let startDateInputEl = document.getElementById('dashStartDate');
-        let endDateInputEl = document.getElementById('dashEndDate');
-        
-        let startDateInput = startDateInputEl ? startDateInputEl.value : null;
-        let endDateInput = endDateInputEl ? endDateInputEl.value : null;
-        
-        if (!startDateInput || !endDateInput) {
-            let todayStr = new Date().toISOString().split('T')[0];
-            startDateInput = todayStr; endDateInput = todayStr;
-        }
-
-        let startOfDay = new Date(startDateInput + 'T00:00:00');
-        let endOfDay = new Date(endDateInput + 'T23:59:59');
-        
-        // 🔥 THE FIX 2: Calculate how many days they selected to compute the Loan Cut!
-        let daysDiff = Math.round((endOfDay - startOfDay) / (1000 * 60 * 60 * 24));
-        if (daysDiff < 1) daysDiff = 1;
-
-        let dashFilter = document.getElementById('dashBranchFilter');
-        let selectedBranch = dashFilter ? dashFilter.value : "All";
-        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-        if (isFranchisee) selectedBranch = window.sessionUser.branch;
-
-        // 1. Fetch Sales 🔒 (Filtered by Branch)
-        let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        if (selectedBranch !== "All") {
-            q = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        }
-        const snap = await getDocs(q);
-        
-        let branchData = {}; 
-        let totalGrabGross = 0;
-
-        snap.forEach(docSnap => {
-            let tx = docSnap.data();
-            if (tx.status !== 'Voided' && tx.paymentMethod === 'Grab') {
-                let branch = tx.branch || "Unknown";
-                let amount = tx.netTotal || 0;
-                if(!branchData[branch]) branchData[branch] = 0;
-                branchData[branch] += amount;
-                totalGrabGross += amount;
-            }
-        });
-
-        // 2. Fetch Actual Payouts Logged by Cashier 🔒 (Filtered by Branch)
-        let payoutQ = query(collection(db, "grab_payouts"), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
-        if (selectedBranch !== "All") {
-            payoutQ = query(collection(db, "grab_payouts"), where("branch", "==", selectedBranch), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
-        }
-        const payoutSnap = await getDocs(payoutQ);
-
-        // 🔥 THE FIX 3: Calculate the ACTUAL payouts logged by the cashiers!
-        let actualGrabPayout = 0;
-        let payoutLogsHtml = '';
-        payoutSnap.forEach(docSnap => {
-            let p = docSnap.data();
-            let pAmt = parseFloat(p.amount) || 0;
-            actualGrabPayout += pAmt;
-            payoutLogsHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:2px 0;">
-                <span style="color:#64748b; font-size:12px;">${p.dateStr} (${p.branch})</span>
-                <strong style="color:#0f172a; font-size:12px;">₱${pAmt.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
-            </div>`;
-        });
-        if (actualGrabPayout === 0) payoutLogsHtml = `<div style="color:#94a3b8; font-size:11px; font-style:italic;">No payouts logged for this period.</div>`;
-
-        // 3. Mathematical Calculations
-        let globalCommission = totalGrabGross * grabCommissionPercent;
-        let expectedNetEarnings = totalGrabGross - globalCommission;
-        let globalLoanCut = totalGrabGross > 0 ? (grabDailyDeductionAmount * daysDiff) : 0; 
-        let finalExpectedPayout = expectedNetEarnings - globalLoanCut;
-
-        // 🔥 THE NEW GRAB MERCHANT UI 🔥
-        let breakdownHtml = `
-            <div style="display: flex; gap: 25px; flex-wrap: wrap; align-items: flex-start;">
-                
-                <!-- Left Side: The Beautiful Summary Card -->
-                <div style="flex: 1.5; min-width: 350px; background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 30px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.08);">
-                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 30px;">
-                        <div style="background: #00b14f; padding: 15px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0, 177, 79, 0.3);">
-                            <span style="font-size: 28px; color: white; line-height: 1;">🛍️</span>
-                        </div>
-                        <div>
-                            <h3 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 900;">Grab Finance Summary</h3>
-                            <span style="font-size: 13px; color: #64748b; font-weight: bold;">Consolidated Data for Selected Date Range</span>
-                        </div>
-                    </div>
-
-                    <div style="margin-bottom: 25px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
-                            <span style="font-size: 16px; color: #334155; font-weight: bold;">Net Sales (System Gross)</span>
-                            <span style="font-size: 18px; color: #0f172a; font-weight: 900;">₱${totalGrabGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
-                            <span style="font-size: 16px; color: #64748b;">Deduction (Commission -${(grabCommissionPercent*100).toFixed(0)}%)</span>
-                            <span style="font-size: 17px; color: #dc2626; font-weight: 900;">- ₱${globalCommission.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #cbd5e1;">
-                            <span style="font-size: 17px; color: #0f172a; font-weight: 900;">Net Earnings</span>
-                            <span style="font-size: 18px; color: #16a34a; font-weight: 900;">+ ₱${expectedNetEarnings.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                        </div>
-                    </div>
-
-                    <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px dashed #cbd5e1; margin-top: 15px; margin-bottom: 25px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 15px; color: #475569; font-weight: bold;">Loans (Daily Fixed Repayment)</span>
-                            <span style="font-size: 16px; color: #dc2626; font-weight: 900;">- ₱${globalLoanCut.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 20px; border-top: 3px solid #e2e8f0;">
-                        <span style="font-size: 18px; color: #0f172a; font-weight: 900;">Total Payout Expected:</span>
-                        <span style="font-size: 32px; color: #00b14f; font-weight: 900;">₱${finalExpectedPayout.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-                    </div>
-                </div>
-
-                <!-- Right Side: Audit Actions and Logs -->
-                <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 20px;">
-                    
-                    <button onclick="window.auditGrabSales(${totalGrabGross})" style="width: 100%; padding: 25px; background: #0f172a; color: white; border: none; border-radius: 16px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 10px 25px rgba(0,0,0,0.2); transition: transform 0.2s ease, box-shadow 0.2s ease;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 15px 30px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 10px 25px rgba(0,0,0,0.2)';">
-                        <span style="font-size: 28px; display: block; margin-bottom: 8px;">🕵️</span> Audit System vs Actual Grab App
-                    </button>
-
-                    <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                        <h4 style="margin: 0 0 15px 0; color: #334155; font-size: 14px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">Branch Sales Breakdown</h4>
-        `;
-
-        if (Object.keys(branchData).length === 0) {
-            breakdownHtml += `<div style="text-align: center; color: #94a3b8; padding: 10px 0; font-size: 13px;">No Grab sales found.</div>`;
-        } else {
-            for (let branch in branchData) {
-                let gross = branchData[branch];
-                let comm = gross * grabCommissionPercent;
-                let net = gross - comm;
-                breakdownHtml += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0;">
-                        <span style="font-weight: 600; color: #334155; font-size: 14px;">📍 ${branch}</span>
-                        <div style="text-align: right;">
-                            <div style="font-weight: 900; color: #00b14f; font-size: 16px;">₱${net.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                            <div style="font-size: 11px; color: #94a3b8; font-weight: bold;">(Gross: ₱${gross.toLocaleString(undefined, {minimumFractionDigits: 2})})</div>
-                        </div>
-                    </div>
-                `;
-            }
-        }
-
-        breakdownHtml += `
-                    </div>
-                </div>
-            </div>
-        `;
-
-        if(document.getElementById('grabBranchBreakdown')) document.getElementById('grabBranchBreakdown').innerHTML = breakdownHtml;
-
-        // 🔥 Clean up the old unused variance UI from the HTML dynamically to make it perfectly clean!
-        let netPayoutEl = document.getElementById('grabTotalNetPayout');
-        if (netPayoutEl && netPayoutEl.parentElement) {
-            netPayoutEl.parentElement.innerHTML = ``; 
-        }
-
-    } catch (error) {
-        console.error("Error calculating Grab financials:", error);
-    }
-};
-
-// ==========================================
-// ⚙️ GRAB LOAN SETTINGS EDITOR
-// ==========================================
-window.editGrabLoanSettings = async function() {
-    let newLoanAmount = prompt("Enter your current remaining GRAB LOAN BALANCE (₱):");
-    if (newLoanAmount === null) return; 
-    
-    // CHANGED TO FLAT AMOUNT
-    let newDeductionAmount = prompt("Enter the FIXED DAILY LOAN DEDUCTION AMOUNT (₱):", "500");
-    if (newDeductionAmount === null) return; 
-
-    let newCommissionRate = prompt("Enter Grab's STANDARD COMMISSION PERCENTAGE (e.g., 20 for 20%):", "20");
-    if (newCommissionRate === null) return; 
-
-    let loanNum = parseFloat(newLoanAmount) || 0;
-    let dedAmountNum = parseFloat(newDeductionAmount) || 0; // Flat number
-    let commRateNum = (parseFloat(newCommissionRate) || 0) / 100;
-
-    try {
-        await setDoc(doc(db, "settings", "grab_financials"), {
-            remainingLoanBalance: loanNum,
-            dailyLoanDeduction: dedAmountNum, // Saving the flat amount
-            commissionRate: commRateNum,
-            lastUpdated: window.serverTimestamp()
-        }, { merge: true }); 
-
-        alert(`✅ Grab Settings Successfully Updated!\n\nRemaining Loan: ₱${loanNum.toFixed(2)}\nFixed Daily Deduction: ₱${dedAmountNum.toFixed(2)}\nGrab Commission: ${commRateNum*100}%`);
-        
-        window.calculateGrabFinancials();
-
-    } catch (error) {
-        console.error("Error saving Grab settings:", error);
-        alert("❌ Failed to save settings. Please ensure setDoc is initialized in your main.js.");
-    }
-};
-
 window.globalPayrollCache = {};
 
 // ==========================================
@@ -22043,16 +21821,236 @@ window.broadcastDeliveryDate = async function() {
 };
 
 // ========================================================
-// 🕵️ GRAB VS SYSTEM AUDIT ENGINE
+// 🟢 🐼 UNIVERSAL ONLINE PLATFORM FINANCE ENGINE
 // ========================================================
-window.auditGrabSales = async function(systemGross) {
+window.platformFinancialData = {
+    Grab: { gross: 0, commissionRate: 0.25, dailyLoanDeduction: 0, remainingLoanBalance: 0, actualPayout: 0, branchData: {}, payoutLogsHtml: '', daysDiff: 1 },
+    Foodpanda: { gross: 0, commissionRate: 0.20, dailyLoanDeduction: 0, remainingLoanBalance: 0, actualPayout: 0, branchData: {}, payoutLogsHtml: '', daysDiff: 1 }
+};
+window.currentOpenPlatform = null;
+
+window.calculatePlatformFinancials = async function() {
+    // 1. Fetch Dynamic Settings from Cloud
+    try {
+        const grabDoc = await getDoc(doc(db, "settings", "grab_financials"));
+        if (grabDoc.exists()) {
+            let d = grabDoc.data();
+            window.platformFinancialData.Grab.commissionRate = d.commissionRate !== undefined ? d.commissionRate : 0.25;
+            window.platformFinancialData.Grab.dailyLoanDeduction = d.dailyLoanDeduction || 0;
+            window.platformFinancialData.Grab.remainingLoanBalance = d.remainingLoanBalance || 0;
+        }
+        const fpDoc = await getDoc(doc(db, "settings", "foodpanda_financials"));
+        if (fpDoc.exists()) {
+            let d = fpDoc.data();
+            window.platformFinancialData.Foodpanda.commissionRate = d.commissionRate !== undefined ? d.commissionRate : 0.20;
+            window.platformFinancialData.Foodpanda.dailyLoanDeduction = d.dailyLoanDeduction || 0;
+            window.platformFinancialData.Foodpanda.remainingLoanBalance = d.remainingLoanBalance || 0;
+        }
+    } catch(e) {}
+
+    // 2. Date Mathematics
+    let startDateInput = document.getElementById('dashStartDate')?.value;
+    let endDateInput = document.getElementById('dashEndDate')?.value;
+    if (!startDateInput || !endDateInput) {
+        let todayStr = new Date().toISOString().split('T')[0];
+        startDateInput = todayStr; endDateInput = todayStr;
+    }
+    let startOfDay = new Date(startDateInput + 'T00:00:00');
+    let endOfDay = new Date(endDateInput + 'T23:59:59');
+    
+    let daysDiff = Math.round((endOfDay - startOfDay) / (1000 * 60 * 60 * 24));
+    if (daysDiff < 1) daysDiff = 1;
+    window.platformFinancialData.Grab.daysDiff = daysDiff;
+    window.platformFinancialData.Foodpanda.daysDiff = daysDiff;
+
+    // Reset Tracking
+    window.platformFinancialData.Grab.gross = 0;
+    window.platformFinancialData.Grab.branchData = {};
+    window.platformFinancialData.Foodpanda.gross = 0;
+    window.platformFinancialData.Foodpanda.branchData = {};
+
+    let selectedBranch = document.getElementById('dashBranchFilter')?.value || "All";
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee) selectedBranch = window.sessionUser.branch;
+
+    // 3. Fetch Transactions
+    let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+    if (selectedBranch !== "All") q = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+    const snap = await getDocs(q);
+
+    snap.forEach(docSnap => {
+        let tx = docSnap.data();
+        if (tx.status !== 'Voided') {
+            let branch = tx.branch || "Unknown";
+            let amount = tx.netTotal || 0;
+            let method = tx.paymentMethod || "";
+            
+            if (method === 'Grab' || tx.orderType === 'Grab') {
+                if (!window.platformFinancialData.Grab.branchData[branch]) window.platformFinancialData.Grab.branchData[branch] = 0;
+                window.platformFinancialData.Grab.branchData[branch] += amount;
+                window.platformFinancialData.Grab.gross += amount;
+            } else if (method === 'Foodpanda' || tx.orderType === 'Foodpanda') {
+                if (!window.platformFinancialData.Foodpanda.branchData[branch]) window.platformFinancialData.Foodpanda.branchData[branch] = 0;
+                window.platformFinancialData.Foodpanda.branchData[branch] += amount;
+                window.platformFinancialData.Foodpanda.gross += amount;
+            }
+        }
+    });
+
+    // 4. Fetch Cashier Logged Payouts (Grab & Foodpanda)
+    let fetchPayouts = async (platformName, collectionName) => {
+        let pQ = query(collection(db, collectionName), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
+        if (selectedBranch !== "All") pQ = query(collection(db, collectionName), where("branch", "==", selectedBranch), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
+        
+        const pSnap = await getDocs(pQ);
+        window.platformFinancialData[platformName].actualPayout = 0;
+        window.platformFinancialData[platformName].payoutLogsHtml = '';
+        
+        pSnap.forEach(d => {
+            let p = d.data(); let pAmt = parseFloat(p.amount)||0;
+            window.platformFinancialData[platformName].actualPayout += pAmt;
+            window.platformFinancialData[platformName].payoutLogsHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:4px 0;"><span style="color:#64748b; font-size:12px;">${p.dateStr} (${p.branch})</span><strong style="color:#0f172a; font-size:12px;">₱${pAmt.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>`;
+        });
+        
+        if (window.platformFinancialData[platformName].actualPayout === 0) {
+            window.platformFinancialData[platformName].payoutLogsHtml = `<div style="color:#94a3b8; font-size:11px; font-style:italic;">No payouts logged by cashiers.</div>`;
+        }
+    };
+
+    await fetchPayouts('Grab', 'grab_payouts');
+    await fetchPayouts('Foodpanda', 'foodpanda_payouts');
+
+    // 5. Update UI Dashboard Cards
+    let grabEl = document.getElementById('dashGrabGross');
+    if (grabEl) grabEl.innerText = `₱${window.platformFinancialData.Grab.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    
+    let fpEl = document.getElementById('dashFpGross');
+    if (fpEl) fpEl.innerText = `₱${window.platformFinancialData.Foodpanda.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    // 6. Refresh Modal if it happens to be open!
+    if (window.currentOpenPlatform && document.getElementById('platformFinanceModal')) {
+        window.openPlatformFinanceModal(window.currentOpenPlatform);
+    }
+};
+
+window.openPlatformFinanceModal = function(platform) {
+    window.currentOpenPlatform = platform;
+    let data = window.platformFinancialData[platform];
+    
+    let themeColor = platform === 'Grab' ? '#00b14f' : '#d70f64';
+    let icon = platform === 'Grab' ? '🟢' : '🐼';
+    let logoHtml = platform === 'Grab' ? `<span style="font-size:36px;">🛍️</span>` : `<span style="font-size:36px;">🐼</span>`;
+
+    let globalComm = data.gross * data.commissionRate;
+    let expectedNet = data.gross - globalComm;
+    let globalLoanCut = data.gross > 0 ? (data.dailyLoanDeduction * data.daysDiff) : 0;
+    let finalExpectedPayout = expectedNet - globalLoanCut;
+
+    let branchBreakdownHtml = '';
+    for (let branch in data.branchData) {
+        let bGross = data.branchData[branch];
+        let bNet = bGross - (bGross * data.commissionRate);
+        branchBreakdownHtml += `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px dashed #e2e8f0;">
+                <span style="font-size:14px; font-weight:bold; color:#334155;">📍 ${branch}</span>
+                <div style="text-align:right;">
+                    <div style="font-weight:900; color:${themeColor}; font-size:16px;">₱${bNet.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                    <div style="font-size:11px; color:#94a3b8; font-weight:bold;">(Gross: ₱${bGross.toLocaleString(undefined, {minimumFractionDigits:2})})</div>
+                </div>
+            </div>
+        `;
+    }
+    if(!branchBreakdownHtml) branchBreakdownHtml = '<div style="text-align: center; color: #94a3b8; padding: 20px 0; font-size: 13px;">No sales found for this period.</div>';
+
+    let modalHtml = `
+        <div id="platformFinanceModal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.8); z-index: 10000; justify-content: center; align-items: center; display: flex; backdrop-filter: blur(4px);">
+            <div style="background: #f8fafc; width: 1050px; max-width: 95%; border-radius: 16px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); display: flex; flex-direction: column; max-height: 95vh;">
+                
+                <div style="background: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0;">
+                    <h2 style="margin: 0; font-size: 22px; color: #0f172a; font-weight: 900;">${icon} ${platform.toUpperCase()} PERFORMANCE</h2>
+                    <button onclick="document.getElementById('platformFinanceModal').remove(); window.currentOpenPlatform = null;" style="background: none; border: none; font-size: 32px; cursor: pointer; color: #64748b; line-height: 1;">&times;</button>
+                </div>
+
+                <div style="padding: 30px; overflow-y: auto; flex: 1; display: grid; grid-template-columns: 1.5fr 1fr; gap: 25px;">
+                    
+                    <!-- Left Side: Summary Card -->
+                    <div style="background: white; border-radius: 12px; padding: 30px; border: 1px solid #e2e8f0; box-shadow: 0 4px 10px rgba(0,0,0,0.03); display: flex; flex-direction: column;">
+                        <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 35px;">
+                            <div style="background: ${themeColor}; padding: 15px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px ${themeColor}60;">
+                                ${logoHtml}
+                            </div>
+                            <div>
+                                <h3 style="margin: 0; color: #0f172a; font-size: 24px; font-weight: 900;">${platform} Finance Summary</h3>
+                                <span style="font-size: 13px; color: #64748b; font-weight: bold;">Consolidated Data for Selected Date Range</span>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 25px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
+                                <span style="font-size: 16px; color: #334155; font-weight: bold;">Net Sales (System Gross)</span>
+                                <span style="font-size: 18px; color: #0f172a; font-weight: 900;">₱${data.gross.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
+                                <span style="font-size: 16px; color: #64748b;">Deduction (Commission -${(data.commissionRate*100).toFixed(0)}%)</span>
+                                <span style="font-size: 17px; color: #dc2626; font-weight: 900;">- ₱${globalComm.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #e2e8f0;">
+                                <span style="font-size: 17px; color: #0f172a; font-weight: 900;">Net Earnings</span>
+                                <span style="font-size: 18px; color: ${themeColor}; font-weight: 900;">+ ₱${expectedNet.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                            </div>
+                        </div>
+
+                        <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px dashed #cbd5e1; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 15px; color: #475569; font-weight: bold;">Loans (Daily Fixed Repayment)</span>
+                            <span style="font-size: 16px; color: #dc2626; font-weight: 900;">- ₱${globalLoanCut.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 25px; border-top: 3px solid #e2e8f0;">
+                            <span style="font-size: 20px; color: #0f172a; font-weight: 900;">Total Payout Expected:</span>
+                            <span style="font-size: 38px; color: ${themeColor}; font-weight: 900; line-height: 1;">₱${finalExpectedPayout.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                        </div>
+                    </div>
+
+                    <!-- Right Side: Action & Branch Breakdown -->
+                    <div style="display: flex; flex-direction: column; gap: 20px;">
+                        
+                        <button onclick="window.auditPlatformSales('${platform}', ${data.gross})" style="width: 100%; padding: 25px; background: #0f172a; color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 10px 25px rgba(0,0,0,0.15); transition: transform 0.2s ease, box-shadow 0.2s ease;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 15px 30px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 10px 25px rgba(0,0,0,0.15)';">
+                            <span style="font-size: 28px; display: block; margin-bottom: 8px;">🕵️</span> Audit System vs Actual App
+                        </button>
+
+                        <div style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); flex: 1; overflow-y: auto;">
+                            <h4 style="margin: 0 0 15px 0; color: #334155; font-size: 14px; text-transform: uppercase; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px;">Branch Sales Breakdown</h4>
+                            ${branchBreakdownHtml}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Bar -->
+                <div style="padding: 20px 30px; background: #fffcf0; border-top: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 11px; font-weight: 900; color: #b45309; text-transform: uppercase; letter-spacing: 0.5px;">Current ${platform} Loan Balance</div>
+                        <div style="font-size: 24px; font-weight: 900; color: #d97706; margin-top: 2px;">₱${data.remainingLoanBalance.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                    </div>
+                    <button onclick="window.editPlatformSettings('${platform}')" style="background: white; border: 1px solid #fcd34d; color: #d97706; padding: 12px 25px; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.1); transition: 0.2s;">
+                        ⚙️ Edit Settings & Commission
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+};
+
+window.auditPlatformSales = async function(platform, systemGross) {
     const { value: actualSales } = await Swal.fire({
-        title: '🕵️ Audit Grab Sales',
-        html: `Open your Grab Merchant App and enter the <b>Net Sales</b> for the exact same date range.<br><br>The POS System recorded <b style="color: #0ea5e9;">₱${systemGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</b> in Grab sales.`,
+        title: `🕵️ Audit ${platform} Sales`,
+        html: `Open your <b>${platform} Merchant App</b> and enter the <b>Net Sales</b> for the exact same date range.<br><br>The POS System recorded <b style="color: #0ea5e9;">₱${systemGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</b> in ${platform} sales.`,
         input: 'number',
-        inputPlaceholder: 'Enter amount from Grab App...',
+        inputPlaceholder: `Enter amount from ${platform} App...`,
         showCancelButton: true,
-        confirmButtonColor: '#00b14f',
+        confirmButtonColor: platform === 'Grab' ? '#00b14f' : '#d70f64',
         confirmButtonText: 'Run Audit Compare',
         customClass: { popup: 'rounded-2xl shadow-xl' }
     });
@@ -22060,19 +22058,19 @@ window.auditGrabSales = async function(systemGross) {
     if (actualSales) {
         let actual = parseFloat(actualSales) || 0;
         let diff = actual - systemGross;
-        let color = diff < -5 ? '#dc2626' : '#16a34a'; // Red if short, Green if perfect
+        let color = diff < -5 ? '#dc2626' : '#16a34a'; 
         let bg = diff < -5 ? '#fef2f2' : '#f0fdf4';
         
         let msg = diff < -5 
-            ? `🚨 <b>WARNING:</b> The staff missed encoding <b style="color:#b91c1c;">₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits: 2})}</b> of Grab sales in the POS! Suspected un-encoded orders.` 
-            : `✅ <b>PERFECT:</b> The POS matches the Grab app perfectly (or is slightly over by ₱${diff.toLocaleString(undefined, {minimumFractionDigits: 2})}). No missing transactions detected.`;
+            ? `🚨 <b>WARNING:</b> The staff missed encoding <b style="color:#b91c1c;">₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits: 2})}</b> of ${platform} sales in the POS! Suspected un-encoded orders.` 
+            : `✅ <b>PERFECT:</b> The POS matches the ${platform} app perfectly (or is slightly over by ₱${diff.toLocaleString(undefined, {minimumFractionDigits: 2})}). No missing transactions detected.`;
 
         Swal.fire({
             title: 'Audit Result',
             html: `
                 <div style="text-align: left; padding: 10px;">
                     <div style="font-size: 16px; margin-bottom: 10px; color: #334155; display: flex; justify-content: space-between;">
-                        <span>Actual Grab App Sales:</span> <b style="color: #00b14f; font-size: 18px;">₱${actual.toLocaleString(undefined, {minimumFractionDigits: 2})}</b>
+                        <span>Actual ${platform} App Sales:</span> <b style="color: ${platform === 'Grab' ? '#00b14f' : '#d70f64'}; font-size: 18px;">₱${actual.toLocaleString(undefined, {minimumFractionDigits: 2})}</b>
                     </div>
                     <div style="font-size: 16px; margin-bottom: 20px; color: #334155; display: flex; justify-content: space-between; border-bottom: 1px solid #cbd5e1; padding-bottom: 15px;">
                         <span>System POS Sales:</span> <b style="color: #0ea5e9; font-size: 18px;">₱${systemGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</b>
@@ -22087,5 +22085,54 @@ window.auditGrabSales = async function(systemGross) {
             icon: diff < -5 ? 'warning' : 'success',
             customClass: { popup: 'rounded-2xl shadow-2xl' }
         });
+    }
+};
+
+window.editPlatformSettings = async function(platform) {
+    let currentData = window.platformFinancialData[platform];
+    
+    const { value: formValues } = await Swal.fire({
+        title: `⚙️ ${platform} Settings`,
+        html: `
+            <div style="text-align:left; margin-top: 15px;">
+                <label style="font-size:12px; font-weight:bold; color:#475569;">Remaining Loan Balance (₱):</label>
+                <input type="number" id="swalPLoanBal" value="${currentData.remainingLoanBalance}" class="swal2-input" style="margin:5px 0 15px; width:100%; box-sizing:border-box;">
+                
+                <label style="font-size:12px; font-weight:bold; color:#475569;">Fixed Daily Deduction (₱):</label>
+                <input type="number" id="swalPLoanDed" value="${currentData.dailyLoanDeduction}" class="swal2-input" style="margin:5px 0 15px; width:100%; box-sizing:border-box;">
+                
+                <label style="font-size:12px; font-weight:bold; color:#475569;">Commission Rate (%):</label>
+                <input type="number" id="swalPComm" value="${currentData.commissionRate * 100}" class="swal2-input" style="margin:5px 0 15px; width:100%; box-sizing:border-box;" placeholder="e.g. 20 or 25">
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Save Settings',
+        confirmButtonColor: platform === 'Grab' ? '#00b14f' : '#d70f64',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return {
+                bal: parseFloat(document.getElementById('swalPLoanBal').value) || 0,
+                ded: parseFloat(document.getElementById('swalPLoanDed').value) || 0,
+                comm: (parseFloat(document.getElementById('swalPComm').value) || 0) / 100
+            };
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: ()=>Swal.showLoading()});
+        try {
+            let docId = platform === 'Grab' ? "grab_financials" : "foodpanda_financials";
+            await setDoc(doc(db, "settings", docId), {
+                remainingLoanBalance: formValues.bal,
+                dailyLoanDeduction: formValues.ded,
+                commissionRate: formValues.comm,
+                lastUpdated: serverTimestamp()
+            }, { merge: true });
+            
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Settings saved!', showConfirmButton: false, timer: 2000});
+            window.calculatePlatformFinancials();
+        } catch(e) {
+            console.error(e); Swal.fire('Error', 'Failed to save settings.', 'error');
+        }
     }
 };
