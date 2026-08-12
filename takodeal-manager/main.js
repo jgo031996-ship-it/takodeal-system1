@@ -22178,3 +22178,210 @@ window.editPlatformSettings = async function(platform) {
         }
     }
 };
+
+// ========================================================
+// 💳 FRANCHISE WALLET & B2B BILLING ENGINE
+// ========================================================
+
+window.loadFranchiseWallet = async function() {
+    let isOwner = window.sessionUser && window.sessionUser.isOwner;
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let myBranch = window.sessionUser ? window.sessionUser.branch : null;
+
+    let branchSelect = document.getElementById('walletBranchSelect');
+    let btnManual = document.getElementById('btnManualLedgerEntry');
+    let tbody = document.getElementById('walletLedgerBody');
+
+    // 1. Configure UI based on Role
+    if (isOwner) {
+        branchSelect.style.display = 'block';
+        btnManual.style.display = 'block';
+        if (branchSelect.options.length <= 1) {
+            const bSnap = await getDocs(query(collection(db, "branches"), where("isFranchise", "==", true)));
+            let html = '<option value="">Select Franchise Branch...</option>';
+            bSnap.forEach(doc => { html += `<option value="${doc.data().name}">${doc.data().name}</option>`; });
+            branchSelect.innerHTML = html;
+        }
+    } else if (isFranchisee) {
+        branchSelect.style.display = 'none';
+        btnManual.style.display = 'none';
+    }
+
+    let targetBranch = isOwner ? branchSelect.value : myBranch;
+
+    if (!targetBranch) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">Please select a branch above.</td></tr>';
+        document.getElementById('walletTotalBalance').innerText = '₱0.00';
+        document.getElementById('walletStatusText').innerText = 'Awaiting Selection';
+        document.getElementById('walletStatusText').style.background = '#334155';
+        return;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">⏳ Calculating live ledger...</td></tr>';
+
+    try {
+        const q = query(collection(db, "franchise_ledger"), where("branch", "==", targetBranch), orderBy("timestamp", "asc"));
+        const snap = await getDocs(q);
+
+        let runningBalance = 0;
+        let html = '';
+        let logs = [];
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let amt = parseFloat(data.amount) || 0;
+            
+            if (data.type === 'Credit') {
+                runningBalance += amt;
+            } else if (data.type === 'Debit') {
+                runningBalance -= amt;
+            }
+
+            logs.push({ ...data, runningBalance: runningBalance });
+        });
+
+        // Reverse the array so the newest transactions are at the top of the table
+        logs.reverse().forEach(log => {
+            let dateStr = log.timestamp ? log.timestamp.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let amtColor = log.type === 'Credit' ? '#16a34a' : '#dc2626';
+            let amtSign = log.type === 'Credit' ? '+' : '-';
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 15px 12px;">
+                        <strong style="color: #1e293b; font-size: 14px; display: block;">${log.category}</strong>
+                        <span style="color: #64748b; font-size: 12px; font-style: italic;">${log.description}</span>
+                    </td>
+                    <td style="padding: 15px 12px; text-align: right; font-weight: 900; color: ${amtColor}; font-size: 15px;">
+                        ${amtSign} ₱${parseFloat(log.amount).toLocaleString(undefined, {minimumFractionDigits:2})}
+                    </td>
+                    <td style="padding: 15px 12px; text-align: right; font-weight: bold; color: #334155; font-size: 15px;">
+                        ₱${log.runningBalance.toLocaleString(undefined, {minimumFractionDigits:2})}
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">No ledger entries found.</td></tr>';
+        
+        // Update the massive header card!
+        document.getElementById('walletTotalBalance').innerText = `₱${runningBalance.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        
+        let statusEl = document.getElementById('walletStatusText');
+        if (runningBalance > 0) {
+            statusEl.innerText = "HQ owes this Franchisee";
+            statusEl.style.background = "rgba(22, 163, 74, 0.2)";
+            statusEl.style.color = "#4ade80";
+        } else if (runningBalance < 0) {
+            statusEl.innerText = "Franchisee owes HQ";
+            statusEl.style.background = "rgba(220, 38, 38, 0.2)";
+            statusEl.style.color = "#fca5a5";
+        } else {
+            statusEl.innerText = "Account Settled (Zero Balance)";
+            statusEl.style.background = "rgba(255, 255, 255, 0.1)";
+            statusEl.style.color = "white";
+        }
+
+    } catch (e) {
+        console.error("Ledger Load Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #dc2626;">Error loading ledger.</td></tr>';
+    }
+};
+
+window.openManualLedgerEntry = async function() {
+    let targetBranch = document.getElementById('walletBranchSelect').value;
+    if (!targetBranch) return Swal.fire('Error', 'Please select a branch first.', 'error');
+
+    const { value: formValues } = await Swal.fire({
+        title: '➕ Manual Ledger Entry',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Transaction Type:</label>
+                <select id="swalLedgerType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; font-weight: bold;">
+                    <option value="Credit">Credit (Add to Wallet / HQ Owes Them)</option>
+                    <option value="Debit">Debit (Deduct from Wallet / They Owe HQ)</option>
+                </select>
+
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Category:</label>
+                <select id="swalLedgerCat" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px;">
+                    <option value="Cash Payout (Settlement)">Cash Payout (Settlement)</option>
+                    <option value="B2B Supply Order">B2B Supply Order</option>
+                    <option value="Penalty / Fine">Penalty / Fine</option>
+                    <option value="Misc Adjustment">Misc Adjustment</option>
+                </select>
+
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Amount (₱):</label>
+                <input type="number" id="swalLedgerAmt" class="input-box" placeholder="0.00" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; font-size: 16px; font-weight: bold;">
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Description / Note:</label>
+                <input type="text" id="swalLedgerDesc" class="input-box" placeholder="e.g. Paid via Bank Transfer" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonColor: '#0f766e',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return {
+                type: document.getElementById('swalLedgerType').value,
+                category: document.getElementById('swalLedgerCat').value,
+                amount: parseFloat(document.getElementById('swalLedgerAmt').value),
+                desc: document.getElementById('swalLedgerDesc').value.trim()
+            };
+        }
+    });
+
+    if (formValues && formValues.amount > 0) {
+        Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            await addDoc(collection(db, "franchise_ledger"), {
+                branch: targetBranch,
+                type: formValues.type,
+                category: formValues.category,
+                amount: formValues.amount,
+                description: formValues.desc,
+                loggedBy: window.sessionUser.cashierName || 'HQ Admin',
+                timestamp: serverTimestamp()
+            });
+            Swal.fire('✅ Success!', 'Manual entry added to the ledger.', 'success');
+            window.loadFranchiseWallet();
+        } catch(e) {
+            console.error(e); Swal.fire('Error', 'Failed to save entry.', 'error');
+        }
+    }
+};
+
+// Override the old HTML button reference
+window.openManualLedgerModal = window.openManualLedgerEntry;
+
+// ========================================================
+// 📦 B2B BILLING INTERCEPTOR (AUTO-BILLS UPON DISPATCH)
+// ========================================================
+// Place this inside your existing dispatch logic in Manager App!
+window.billFranchiseForStock = async function(branchName, itemsDispatched, dispatchId) {
+    try {
+        const bQ = query(collection(db, "branches"), where("name", "==", branchName));
+        const bSnap = await getDocs(bQ);
+        if (bSnap.empty || bSnap.docs[0].data().isFranchise !== true) return; // Ignore company-owned branches
+
+        let totalInvoiceCost = 0;
+        itemsDispatched.forEach(item => {
+            // Calculates based on the base price/cost set in HQ Inventory!
+            let cost = parseFloat(item.cost || item.baseCost) || 0; 
+            totalInvoiceCost += (cost * item.qty);
+        });
+
+        if (totalInvoiceCost > 0) {
+            await addDoc(collection(db, "franchise_ledger"), {
+                branch: branchName,
+                type: "Debit",
+                category: "B2B Supply Dispatch",
+                amount: totalInvoiceCost,
+                description: `Auto-Billed for Dispatch #${dispatchId.substring(0,6).toUpperCase()}`,
+                loggedBy: window.sessionUser.cashierName || 'System',
+                timestamp: serverTimestamp()
+            });
+        }
+    } catch(e) { console.error("B2B Billing Error:", e); }
+};
