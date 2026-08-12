@@ -9745,14 +9745,22 @@ window.renderTables = function() {
         for (let day in currentSchedule) {
             const dStr = new Date(currentYear, currentMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             tableHTML += `<tr><td class="date-col">${dStr}</td>`;
+            
+            // 🔥 THE CRASH FIX: Safely fallback if a branch was newly added and doesn't have schedule data for this day yet!
+            let dayData = currentSchedule[day][branch] || { scheduled: {}, rest: [], unavailable: [] };
+
             activeShifts.forEach(s => {
-                const val = currentSchedule[day][branch].scheduled[s.id];
-                if (val === "N/A") tableHTML += `<td style="background:#f1f5f9; color:#94a3b8;">-</td>`;
+                const val = dayData.scheduled[s.id];
+                if (val === "N/A" || !val) tableHTML += `<td style="background:#f1f5f9; color:#94a3b8;">-</td>`;
                 else if (val === "UNFILLED") tableHTML += `<td><span class="empty-shift" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span></td>`;
                 else tableHTML += `<td><span class="clickable" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span></td>`;
             });
-            tableHTML += `<td class="rest-day">${currentSchedule[day][branch].rest.join(", ") || "-"}</td>`;
-            const un = currentSchedule[day][branch].unavailable.map(u => `${u.name} (${u.status})`).join("<br>");
+            
+            let restArr = dayData.rest || [];
+            tableHTML += `<td class="rest-day">${restArr.join(", ") || "-"}</td>`;
+            
+            let unArr = dayData.unavailable || [];
+            const un = unArr.map(u => `${u.name} (${u.status})`).join("<br>");
             tableHTML += `<td>${un || "-"}</td></tr>`;
         }
         cBox.innerHTML = tableHTML + `</tbody></table>`;
