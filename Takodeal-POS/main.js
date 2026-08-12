@@ -476,11 +476,16 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             let sizeHtml = '<div style="display: flex; flex-wrap: wrap; gap: 12px; width: 100%; margin-bottom: 15px;">';
             
             phantomSizes.forEach((sizeObj, idx) => {
+                // 🔥 THE FIX: Route the correct price to the button based on the active platform!
+                let sizePriceToUse = sizeObj.price;
+                if (window.posPlatform === 'Grab') sizePriceToUse = sizeObj.grabPrice;
+                if (window.posPlatform === 'Foodpanda') sizePriceToUse = sizeObj.foodpandaPrice;
+
                 let isActive = (window.pendingItem.realName === sizeObj.realName) ? 'active' : '';
                 sizeHtml += `
-                    <div class="size-btn ${isActive}" onclick="window.selectRealVariant('${sizeObj.realName}', ${sizeObj.price}, this)" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
+                    <div class="size-btn ${isActive}" onclick="if(typeof window.selectRealVariant==='function') window.selectRealVariant('${sizeObj.realName}', ${sizePriceToUse}, this); else selectRealVariant('${sizeObj.realName}', ${sizePriceToUse}, this);" style="flex: 1 1 calc(50% - 12px); min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
                         <div class="sz-name" style="margin-bottom: 5px;">${sizeObj.sizeLabel}</div>
-                        <div class="sz-price">₱${sizeObj.price.toFixed(2)}</div>
+                        <div class="sz-price">₱${sizePriceToUse.toFixed(2)}</div>
                     </div>
                 `;
             });
