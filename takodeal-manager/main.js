@@ -22846,13 +22846,8 @@ window.generateFranchiseSOA = async function() {
 };
 
 // ========================================================
-// 🛡️ THE ULTIMATE FRANCHISEE WALLED GARDEN OVERRIDE (V2) 🛡️
+// 🛡️ THE ULTIMATE FRANCHISEE WALLED GARDEN (V3 INTERCEPTOR) 🛡️
 // ========================================================
-
-window.isBranchAllowed = function(branchName) {
-    if (!window.sessionUser || window.sessionUser.isOwner || !window.sessionUser.isFranchisee) return true;
-    return window.sessionUser.allowedBranches.includes(branchName);
-};
 
 window.applyFranchiseUIProtections = function() {
     let isF = window.sessionUser && window.sessionUser.isFranchisee;
@@ -22860,7 +22855,7 @@ window.applyFranchiseUIProtections = function() {
 
     let myBranches = window.sessionUser.allowedBranches;
 
-    // 1. Branding
+    // 1. Branding Updates
     let logoText = document.querySelector('.logo-text span:nth-child(2)');
     if (logoText) logoText.innerText = myBranches.join(' & ').toUpperCase();
     
@@ -22869,7 +22864,7 @@ window.applyFranchiseUIProtections = function() {
     if (profName) profName.innerText = window.sessionUser.cashierName;
     if (profRole) profRole.innerText = "Franchise Owner";
 
-    // 2. Hide Prohibited UI (SOP Builder, Yield Calc, Toggles)
+    // 2. Hide Prohibited Buttons & Tabs
     let yieldCalcBox = document.querySelector('#invSectionYield > div:first-child');
     if (yieldCalcBox) yieldCalcBox.style.display = 'none';
 
@@ -22882,12 +22877,12 @@ window.applyFranchiseUIProtections = function() {
     let yieldTab = document.getElementById('subnav-Yield');
     if (yieldTab) yieldTab.style.display = 'none';
     
-    let btnSopBuilder = document.querySelector('button[onclick="window.switchSopTab(\\'Builder\\')"]');
+    let btnSopBuilder = document.querySelector('button[onclick*="Builder"]');
     if (btnSopBuilder) btnSopBuilder.style.display = 'none';
 };
 
 // 🔐 CORE 1: Multi-Branch Login Hook
-const originalFinalizeManagerLogin = window.finalizeManagerLogin;
+if (typeof window.originalFinalizeManagerLogin === 'undefined') window.originalFinalizeManagerLogin = window.finalizeManagerLogin;
 window.finalizeManagerLogin = function() {
     let isFranchisee = window.tempAuthData.role === 'Franchisee';
     let branchStr = window.tempAuthData.assignedBranch || 'Main Office';
@@ -22911,451 +22906,112 @@ window.finalizeManagerLogin = function() {
     if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
 };
 
-// 🔐 CORE 2: Fix Add Staff & Budget Dropdowns
-const originalAddNewStaff = window.addNewStaff;
-window.addNewStaff = function() {
-    originalAddNewStaff();
+// 🔐 CORE 2: Smart Dropdown Lock
+if (typeof window.originalInjectDynamicBranchDropdowns === 'undefined') window.originalInjectDynamicBranchDropdowns = window.injectDynamicBranchDropdowns;
+window.injectDynamicBranchDropdowns = function() {
+    window.originalInjectDynamicBranchDropdowns();
+    
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        let myBranches = window.sessionUser.allowedBranches;
+        
+        // Loop through every dropdown in the app and lock it!
+        const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect', 'sanctionBranchFilter', 'expenseBranchFilter', 'flowBranchFilter', 'empBranchAssign', 'newAccBranch', 'newBudgetBranch']; 
+        
+        filterSelects.forEach(id => {
+            let el = document.getElementById(id);
+            if (el) {
+                let html = '';
+                myBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+                el.innerHTML = html;
+                if (myBranches.length === 1) el.disabled = true;
+            }
+        });
+    }
+};
+
+// 🔐 CORE 3: Dashboard & Cash Flow Interceptor
+if (typeof window.originalRenderDashboardCharts === 'undefined') window.originalRenderDashboardCharts = window.renderDashboardCharts;
+window.renderDashboardCharts = async function() {
+    let backup = window.globalActiveBranches;
+    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = window.sessionUser.allowedBranches;
+    await window.originalRenderDashboardCharts();
+    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = backup;
+};
+
+if (typeof window.originalLoadCashFlowHub === 'undefined') window.originalLoadCashFlowHub = window.loadCashFlowHub;
+window.loadCashFlowHub = async function() {
+    let backup = window.globalActiveBranches;
+    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = window.sessionUser.allowedBranches;
+    await window.originalLoadCashFlowHub();
+    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = backup;
+};
+
+// 🔐 CORE 4: Data Eraser (Hides rows belonging to other branches)
+window.wipeAlienData = function(selector) {
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        let myBranches = window.sessionUser.allowedBranches;
+        document.querySelectorAll(selector).forEach(row => {
+            let text = row.innerText || "";
+            let isMine = myBranches.some(b => text.includes(b));
+            let isSafe = text.includes('Loading') || text.includes('No ') || text.includes('empty') || text.includes('caught up');
+            if (!isMine && !isSafe) row.style.display = 'none';
+        });
+    }
+};
+
+// Intercept standard table loads and wipe alien data!
+const tableLoaders = [
+    { func: 'loadHRModule', target: '#staffTableBody tr' },
+    { func: 'loadAccountsAndBudget', target: '#accTableBody tr, #budgetListBody > div' },
+    { func: 'loadUnverifiedHistory', target: '#unverifiedHistoryBody tr' },
+    { func: 'loadExpenseLogs', target: '#expenseLogsTableBody tr' },
+    { func: 'loadInventoryAudits', target: '#auditLogsBody tr' },
+    { func: 'loadEquipmentDashboard', target: '#equipmentTableBody tr' },
+    { func: 'loadSopLogs', target: '#sopLogsBody tr' },
+    { func: 'renderSecurityFeed', target: '#alertsTableBody tr' }
+];
+
+tableLoaders.forEach(loader => {
+    if (window[loader.func] && typeof window['original_' + loader.func] === 'undefined') {
+        window['original_' + loader.func] = window[loader.func];
+        window[loader.func] = async function(...args) {
+            await window['original_' + loader.func](...args);
+            window.wipeAlienData(loader.target);
+        };
+    }
+});
+
+// 🔐 CORE 5: Logistics Strict Filter
+if (typeof window.originalRenderLogisticsUI === 'undefined') window.originalRenderLogisticsUI = window.renderLogisticsUI;
+window.renderLogisticsUI = function() {
+    if (window.sessionUser && window.sessionUser.isFranchisee && window.logisticsState) {
+        window.logisticsState.requests = window.logisticsState.requests.filter(r => window.sessionUser.allowedBranches.includes(r.branch));
+        window.logisticsState.deliveries = window.logisticsState.deliveries.filter(d => window.sessionUser.allowedBranches.includes(d.toBranch));
+        
+        let branchContainer = document.getElementById('logisticsBranchTabs');
+        if (branchContainer) branchContainer.style.display = 'none'; // Hide the branch tabs completely for franchisees
+    }
+    window.originalRenderLogisticsUI();
+};
+
+// 🔐 CORE 6: Save Profile Fix (Unlocks dropdown briefly so value passes)
+if (typeof window.originalSaveEmployeeProfile === 'undefined') window.originalSaveEmployeeProfile = window.saveEmployeeProfile;
+window.saveEmployeeProfile = async function() {
     let bAssign = document.getElementById('empBranchAssign');
-    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) {
-        let html = '';
-        window.sessionUser.allowedBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
-        bAssign.innerHTML = html;
-    }
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false; 
+    await window.originalSaveEmployeeProfile();
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true; 
 };
 
-const originalOpenAddBudgetModal = window.openAddBudgetModal;
-window.openAddBudgetModal = function() {
-    originalOpenAddBudgetModal();
-    let bSelect = document.getElementById('newBudgetBranch');
-    if (window.sessionUser && window.sessionUser.isFranchisee && bSelect) {
-        let html = '';
-        window.sessionUser.allowedBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
-        bSelect.innerHTML = html;
-    }
-};
-
-// 🔐 CORE 3: Accounts & Budget Visual Cleanup
-const originalLoadAccountsAndBudget = window.loadAccountsAndBudget;
-window.loadAccountsAndBudget = async function() {
-    await originalLoadAccountsAndBudget();
+// 🔐 CORE 7: Hide SOP Builder completely
+if (typeof window.originalSwitchView === 'undefined') window.originalSwitchView = window.switchView;
+window.switchView = function(viewId) {
+    window.originalSwitchView(viewId);
     if (window.sessionUser && window.sessionUser.isFranchisee) {
-        document.querySelectorAll('#accTableBody tr').forEach(tr => {
-            let isMine = window.sessionUser.allowedBranches.some(b => tr.innerText.includes(b));
-            if (!isMine && !tr.innerText.includes('Loading')) tr.style.display = 'none';
-        });
-        document.querySelectorAll('#budgetListBody > div').forEach(div => {
-            let isMine = window.sessionUser.allowedBranches.some(b => div.innerText.includes(b));
-            if (!isMine && !div.innerText.includes('Loading')) div.style.display = 'none';
-        });
-    }
-};
-
-// 🔐 CORE 4: HR Module Data Isolation (Fixes disappearing staff)
-window.loadHRModule = async function() {
-    const tbody = document.getElementById('staffTableBody');
-    if (!tbody) return;
-    window.showArchivedStaff = window.showArchivedStaff || false;
-    
-    let archiveBtnHtml = `<button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">${window.showArchivedStaff ? '📂 Hide Archived Staff' : '📁 View Archived / Resigned Staff'}</button>`;
-    if (!document.getElementById('archiveToggleBtn')) {
-        let btnWrapper = document.createElement('div'); btnWrapper.id = 'archiveToggleBtn'; btnWrapper.innerHTML = archiveBtnHtml;
-        tbody.closest('table').parentNode.insertBefore(btnWrapper, tbody.closest('table'));
-    } else document.getElementById('archiveToggleBtn').innerHTML = archiveBtnHtml;
-
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
-
-    try {
-        const snap = await getDocs(collection(db, "cashiers")); // Fetch all, filter safely
-        let html = '';
-        window.globalStaffData = {};
-        let staffList = [];
-        
-        snap.forEach(docSnap => { 
-            let d = docSnap.data();
-            if (window.isBranchAllowed(d.branch)) staffList.push({ id: docSnap.id, ...d }); 
-        });
-        
-        staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
-
-        staffList.forEach(data => {
-            if (!window.showArchivedStaff && data.status === 'Resigned') return; 
-            if (window.showArchivedStaff && data.status !== 'Resigned') return;  
-
-            window.globalStaffData[data.id] = data; 
-            let pinDisplay = window.sessionUser.isOwner ? (data.pin || '0000') : '****';
-            if (data.pin === 'REVOKED') pinDisplay = 'REVOKED'; 
-            let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/day` : `<span style="color:#ef4444; font-size:11px;">Rate Missing</span>`;
-
-            html += `<tr>
-                <td><strong style="font-size: 15px; color: var(--primary);">👤 ${data.cashierName || 'Unknown'}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${data.phone || 'No Phone'}</span></td>
-                <td>📍 ${data.branch || 'Unassigned'}</td>
-                <td><span class="badge badge-active">${data.role || 'Crew'}</span><br><span style="font-size: 12px; font-weight: bold; color: #16a34a; margin-top: 4px; display: inline-block;">${rateDisplay}</span></td>
-                <td style="font-family: monospace; font-size: 18px; letter-spacing: 2px; color: var(--danger); font-weight: bold;">${pinDisplay}</td>
-                <td><button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 8px 12px; font-weight: bold; border-radius: 6px;" onclick="window.openEmployeeProfile('${data.id}')">📂 Open Profile</button></td>
-            </tr>`;
-        });
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No staff found. Click "Add New Staff" to create one.</td></tr>';
-    } catch (error) { console.error(error); }
-};
-
-// 🔐 CORE 5: Inventory Audits (Fixes 153k Variance Data Bleed)
-window.loadInventoryAudits = async function() {
-    const tbody = document.getElementById('auditLogsBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Fetching audit logs...</td></tr>';
-
-    let durationFilterEl = document.getElementById('auditDurationFilter');
-    let exactDateFilterEl = document.getElementById('auditExactDate');
-    let durationFilter = durationFilterEl ? durationFilterEl.value : 'all';
-    let exactDateFilter = exactDateFilterEl ? exactDateFilterEl.value : '';
-    let startDate = new Date(); startDate.setHours(0,0,0,0);
-    
-    if (exactDateFilter) startDate = new Date(exactDateFilter + 'T00:00:00');
-    else if (durationFilter === '7days') startDate.setDate(startDate.getDate() - 7);
-    else if (durationFilter === '30days') startDate.setDate(startDate.getDate() - 30);
-    else if (durationFilter === 'all') startDate = new Date('2020-01-01');
-
-    try {
-        const q = query(collection(db, "stock_counts"), where("timestamp", ">=", startDate), orderBy("timestamp", "desc"));
-        const snap = await getDocs(q);
-        const invSnap = await getDocs(collection(db, "inventory"));
-        let invDb = {};
-        invSnap.forEach(d => { let item = d.data(); invDb[`${item.branch}_${item.name}`] = parseFloat(item.baseCost) || 0; });
-
-        let html = '';
-        let globalLoss = 0; let globalPerfectItems = 0; let globalTotalItems = 0;
-
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
-            
-            // 🔥 THE MATH SHIELD: Completely ignores branches they don't own!
-            if (!window.isBranchAllowed(data.branch)) return;
-
-            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
-            let counts = data.counts || [];
-            let rowLoss = 0; let rowPerfect = 0;
-
-            counts.forEach(c => {
-                let cost = invDb[`${data.branch}_${c.name}`] || 0;
-                let physQty = parseFloat(c.physicalQty !== undefined ? c.physicalQty : c.actualQty) || 0;
-                let sysQty = parseFloat(c.systemQty);
-                let savedVariance = parseFloat(c.variance);
-
-                if (isNaN(sysQty)) {
-                    if (!isNaN(savedVariance)) sysQty = physQty - savedVariance; 
-                    else sysQty = physQty; 
-                }
-
-                let variance = physQty - sysQty;
-                if (variance < 0) rowLoss += (Math.abs(variance) * cost);
-                if (variance === 0) rowPerfect++;
-                globalTotalItems++;
-            });
-            
-            globalLoss += rowLoss;
-            globalPerfectItems += rowPerfect;
-            let countsEncoded = encodeURIComponent(JSON.stringify(counts));
-
-            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 12px; color: #64748b;">${dateStr}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #0f766e;">${data.branch}</td>
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.cashier}</td>
-                    <td style="padding: 12px;"><span style="background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">${counts.length} Items</span></td>
-                    <td style="padding: 12px; font-weight: bold; color: #dc2626;">${rowLoss > 0 ? `₱${rowLoss.toFixed(2)}` : '₱0.00'}</td>
-                    <td style="padding: 12px;"><button onclick="window.viewAuditDetails('${dateStr}', '${data.branch}', '${data.cashier}', '${countsEncoded}')" style="background: white; border: 1px solid #0f766e; color: #0f766e; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;">🔍 View Details</button></td>
-                </tr>`;
-        });
-
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No stock counts submitted.</td></tr>';
-
-        let accuracy = globalTotalItems > 0 ? (globalPerfectItems / globalTotalItems) * 100 : 100;
-        if (document.getElementById('auditKpiAccuracy')) document.getElementById('auditKpiAccuracy').innerText = `${accuracy.toFixed(1)}%`;
-        if (document.getElementById('auditKpiLoss')) document.getElementById('auditKpiLoss').innerText = `₱${globalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-
-    } catch(e) { console.error(e); }
-};
-
-// 🔐 CORE 6: Equipment Dashboard Isolation
-window.loadEquipmentDashboard = async function() {
-    const tbody = document.getElementById('equipmentTableBody');
-    if (!tbody) return;
-    
-    let branchFilterEl = document.getElementById('equipBranchFilter');
-    let branchFilter = branchFilterEl ? branchFilterEl.value : "All";
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Scanning registered hardware...</td></tr>';
-
-    try {
-        const snap = await getDocs(query(collection(db, "equipment_assets"), orderBy("purchaseDate", "desc")));
-        let html = ''; let activeValue = 0; let brokenValue = 0;
-
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
-            
-            // 🔥 SECURITY LOCK
-            if (!window.isBranchAllowed(d.branch)) return;
-            if (branchFilter !== "All" && d.branch !== branchFilter) return;
-
-            let cost = parseFloat(d.cost) || 0;
-            if (d.status === "Active") activeValue += cost; else brokenValue += cost;
-
-            let pDate = d.purchaseDate ? new Date(d.purchaseDate).toLocaleDateString() : '-';
-            let oDate = d.operateDate ? new Date(d.operateDate).toLocaleDateString() : '-';
-            let timelineHtml = `<div style="font-size: 11px; color: #64748b;"><div><strong style="color:#0f172a;">Purchased:</strong> ${pDate}</div><div><strong style="color:#16a34a;">Operating:</strong> ${oDate}</div></div>`;
-            let statusBadge = d.status === "Active" ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🟢 Active</span>` : `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🔴 ${d.status}</span>`;
-
-            let actionHtml = `<div style="display:flex; gap: 5px; flex-direction:column;">`;
-            let safeDataStr = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
-            actionHtml += `<button onclick="window.editEquipmentModal('${safeDataStr}')" style="background: #eff6ff; color: #0ea5e9; border: 1px solid #bae6fd; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">✏️ Edit</button>`;
-            
-            if (d.status === "Active") actionHtml += `<button onclick="window.markEquipmentBroken('${docSnap.id}', '${d.name.replace(/'/g, "\\'")}', '${d.branch}')" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⚠️ Breakdown</button>`;
-            actionHtml += `<button onclick="window.deleteEquipment('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">🗑️ Delete</button></div>`;
-          
-            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px;"><strong style="color: #1e293b; font-size: 14px;">${d.name}</strong><br><span style="font-size: 11px; color: #64748b;">${d.details || 'No details'}</span></td>
-                    <td style="padding: 15px;"><span class="badge badge-open">${d.branch}</span></td>
-                    <td style="padding: 15px; font-weight: bold; color: ${d.status === 'Active' ? '#0f766e' : '#94a3b8'};">₱${cost.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                    <td style="padding: 15px;">${timelineHtml}</td>
-                    <td style="padding: 15px;">${statusBadge}</td>
-                    <td style="padding: 15px; text-align: center;">${actionHtml}</td>
-                </tr>`;
-        });
-
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8;">No equipment registered yet.</td></tr>';
-        document.getElementById('equipTotalValue').innerText = `₱${activeValue.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('equipBrokenValue').innerText = `₱${brokenValue.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-
-    } catch (e) { console.error(e); }
-};
-
-// 🔐 CORE 7: Dispatch Logs Isolation (Hide Delete/Recall for Franchisees)
-window.loadDispatchLogs = async function() {
-    const tbody = document.getElementById('dispatchLogBody');
-    if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 20px;">⏳ Loading logistics data...</td></tr>';
-
-    try {
-        const poSnap = await getDocs(query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting", "Delayed"]), orderBy("timestamp", "desc")));
-        let poHtml = ''; let poCount = 0;
-        
-        poSnap.forEach(docSnap => {
-            let po = docSnap.data();
-            if (!window.isBranchAllowed(po.branch)) return; // 🔥 SECURITY LOCK
-            
-            poCount++;
-            let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
-            let isDelayed = po.status === "Delayed" || (po.requestedBy && po.requestedBy.includes("Backlogged"));
-            
-            let statusBadge = isDelayed ? `<span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">⏳ Delayed (HQ Out of Stock)</span>` : (po.status === "Drafting" ? `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>` : `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`);
-            
-            let actionBtn = (window.sessionUser && window.sessionUser.isFranchisee) 
-                ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
-                : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
-            
-            poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
-                <td style="padding:15px;">
-                    <div style="font-weight:900; color:#d97706; font-size:15px;">📝 Request from ${po.branch}</div>
-                    <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
-                </td>
-                <td style="padding:15px; text-align:center;">${statusBadge}</td>
-                <td style="padding:15px; text-align:right;">${actionBtn}</td>
-            </tr>`;
-        });
-
-        const dSnap = await getDocs(query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc")));
-        let deliveries = {};
-        
-        dSnap.forEach(doc => {
-            let d = doc.data(); 
-            if (!window.isBranchAllowed(d.toBranch)) return; // 🔥 SECURITY LOCK
-            
-            let groupKey = `${d.date}_${d.toBranch}_${d.driver || 'Unknown'}`;
-            if(!deliveries[groupKey]) deliveries[groupKey] = { date: d.date, time: d.time, toBranch: d.toBranch, driver: d.driver || 'Unknown', items: [], status: 'In Transit', timestamp: d.timestamp };
-            deliveries[groupKey].items.push({id: doc.id, ...d});
-            if(d.status === "Received") deliveries[groupKey].status = "Received";
-            if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
-            if(d.status === "Backloaded") deliveries[groupKey].status = "Backloaded";
-        });
-
-        let deliveryHtml = '';
-        let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
-
-        sortedKeys.slice(0, 20).forEach(key => {
-            let del = deliveries[key];
-            let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : (del.status === 'Backloaded' ? '#475569' : '#f59e0b'));
-            let safeItemsJson = encodeURIComponent(JSON.stringify(del.items));
-
-            deliveryHtml += `<tr style="border-bottom:1px solid #e2e8f0; background: white; transition: 0.2s;">
-                <td style="padding:15px;">
-                    <div style="font-weight:bold; color:#0f172a; font-size:14px;">📍 To: ${del.toBranch}</div>
-                    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">📅 ${del.date} at ${del.time}</div>
-                </td>
-                <td style="padding:15px; text-align:center;"><span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span></td>
-                <td style="padding:15px; text-align:right;"><button onclick="window.viewDeliveryDetails('${safeItemsJson}')" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">🔍 Full Details</button></td>
-            </tr>`;
-        });
-
-        window.globalPoHtml = poHtml;
-        window.globalDeliveryHtml = deliveryHtml;
-        window.globalPoCount = poCount;
-        window.globalDeliveryCount = sortedKeys.length;
-        window.renderLogisticsUI();
-
-    } catch (e) { console.error(e); }
-};
-
-const origViewDeliveryDetails = window.viewDeliveryDetails;
-window.viewDeliveryDetails = function(encodedGroup) {
-    origViewDeliveryDetails(encodedGroup);
-    let footerEl = document.getElementById('dispatchDetailsFooter');
-    if (footerEl && window.sessionUser && window.sessionUser.isFranchisee) {
-        // Hides Backload and Requeue buttons so Franchisees can't edit transit logic
-        Array.from(footerEl.children).forEach(child => {
-            if (child.tagName === 'BUTTON' && !child.innerText.includes('Mark Arrived')) {
-                child.style.display = 'none';
-            }
-        });
-    }
-};
-
-// 🔐 CORE 8: Unverified Payments Isolation
-window.loadUnverifiedHistory = async function() {
-    let tbody = document.getElementById('unverifiedHistoryBody');
-    if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; font-weight: bold; color: #64748b;">⏳ Scanning database...</td></tr>';
-    
-    try {
-        let lookBack = new Date(); lookBack.setDate(lookBack.getDate() - 7);
-        const snap = await getDocs(query(collection(db, "transactions"), where("timestamp", ">=", lookBack)));
-        
-        let html = ''; window.pendingVerifications = []; let count = 0;
-        let txArray = []; let seenReceipts = {}; 
-
-        snap.forEach(doc => {
-            let tx = doc.data();
-            if (!window.isBranchAllowed(tx.branch)) return; // 🔥 SECURITY LOCK
-            
-            let method = (tx.paymentMethod || '').toLowerCase();
-            if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
-                let rId = tx.receiptId || tx.id;
-                if (!seenReceipts[rId]) { seenReceipts[rId] = true; txArray.push({id: doc.id, ...tx}); }
-            }
-        });
-
-        txArray.sort((a, b) => b.timestamp - a.timestamp).forEach(tx => {
-            count++; window.pendingVerifications.push(tx.id);
-            let dateStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-            let safeCashier = tx.cashier || 'Unknown';
-            
-            html += `<tr style="border-bottom: 1px solid #e2e8f0; background: white;">
-                    <td style="padding: 15px; font-weight: bold; color: #334155;">${dateStr}</td>
-                    <td style="padding: 15px; font-weight: bold; color: #0f172a;">${tx.branch}</td>
-                    <td style="padding: 15px;"><div style="font-weight: bold; color: #0284c7;">👤 ${safeCashier}</div></td>
-                    <td style="padding: 15px; font-weight: 900; color: #ea580c;">${tx.paymentMethod}</td>
-                    <td style="padding: 15px; font-weight: 900; color: #16a34a; text-align: right; font-size: 16px;">₱${parseFloat(tx.netTotal).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                    <td style="padding: 15px; text-align: center;"><button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✅ Verify</button></td>
-                </tr>`;
-        });
-
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; font-weight: bold; color: #16a34a; font-size: 16px;">🎉 All caught up! No pending digital payments.</td></tr>';
-        window.updateUnverifiedBadges(count);
-    } catch(e) { console.error(e); }
-};
-
-// 🔐 CORE 9: Expense Feed Data Shield
-window.loadExpenseLogs = async function() {
-    const tbody = document.getElementById('expenseLogsTableBody');
-    if (!tbody) return;
-
-    let branchFilter = document.getElementById('expenseBranchFilter') ? document.getElementById('expenseBranchFilter').value : "All";
-    let totalExp = 0; let countExp = 0;
-
-    try {
-        const snap = await getDocs(query(collection(db, "expenses"), orderBy("timestamp", "desc")));
-        let html = '';
-
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
-            
-            // 🔥 SECURITY LOCK
-            if (!window.isBranchAllowed(data.branch)) return;
-            if (branchFilter !== "All" && data.branch !== branchFilter) return;
-
-            let jsDate = data.timestamp ? data.timestamp.toDate() : new Date();
-            let category = data.category || 'Expense';
-            let desc = data.description || data.note || category;
-            
-            let isPayroll = category.toLowerCase().includes('payroll');
-            let isRestock = (desc && desc.includes('(Qty:')) || category.toLowerCase().includes('restock');
-
-            if (window.activeExpenseTab === 'Payroll' && !isPayroll) return;
-            if (window.activeExpenseTab === 'Restocks' && !isRestock) return;
-            if (window.activeExpenseTab === 'Expenses' && (isPayroll || isRestock)) return;
-
-            let amount = parseFloat(data.amount) || 0;
-            totalExp += amount; countExp++;
-
-            let dateStr = jsDate.toLocaleString('en-PH');
-            html += `<tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                    <td style="padding: 15px 20px; color: #64748b; font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 15px 20px;"><span class="badge badge-open">${data.branch}</span></td>
-                    <td style="padding: 15px 20px; color: #475569;">${desc}</td>
-                    <td style="padding: 15px 20px; text-align: right; color: #dc2626; font-weight: bold; font-size: 15px;">₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                </tr>`;
-        });
-
-        tbody.innerHTML = html || `<tr><td colspan="4" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No logs found for ${window.activeExpenseTab}.</td></tr>`;
-        if(document.getElementById('expSumTotal')) document.getElementById('expSumTotal').innerText = `₱${totalExp.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        if(document.getElementById('expSumCount')) document.getElementById('expSumCount').innerText = countExp;
-    } catch (e) { console.error(e); }
-};
-
-// 🔐 CORE 10: Live Security Alerts Lock
-window.renderSecurityFeed = function() {
-    let html = '';
-    let filteredAlerts = window.globalSecurityAlerts.filter(data => {
-        if (!window.isBranchAllowed(data.branch)) return false; // 🔥 SECURITY LOCK
-        if (window.activeSecurityBranch !== "All" && data.branch !== window.activeSecurityBranch) return false;
-        return true;
-    });
-
-    if (filteredAlerts.length === 0) {
-        html = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: var(--success); font-weight: bold;">🛡️ No security alerts. Your empire is safe.</td></tr>';
-    } else {
-        filteredAlerts.forEach(data => {
-            let timeStr = data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
-            html += `<tr style="background: ${data.isRead ? 'transparent' : 'var(--danger-light)'}; opacity: ${data.isRead ? '0.6' : '1'};">
-                <td style="font-size: 12px; color: var(--text-muted); padding: 12px;">${timeStr}</td>
-                <td style="padding: 12px;"><strong>📍 ${data.branch}</strong></td>
-                <td style="padding: 12px;"><span style="color: ${data.isRead ? 'var(--text-muted)' : 'var(--danger)'}; font-weight: ${data.isRead ? 'normal' : 'bold'};">⚠️ ${data.message}</span></td>
-                <td style="padding: 12px; text-align: right;">${!data.isRead ? `<button onclick="dismissAlert('${data.id}')">✓ Mark Resolved</button>` : '✓ Resolved'}</td>
-            </tr>`;
-        });
-    }
-    const tbody = document.getElementById('alertsTableBody');
-    if (tbody) tbody.innerHTML = html;
-};
-
-// 🔐 CORE 11: SOP Manager Privacy
-const origLoadSopManager = window.loadSopManager;
-window.loadSopManager = async function() {
-    await origLoadSopManager();
-    if (window.sessionUser && window.sessionUser.isFranchisee) {
-        let lSelect = document.getElementById('sopLogBranch');
-        if (lSelect) {
-            let html = '';
-            window.sessionUser.allowedBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
-            lSelect.innerHTML = html;
+        if (viewId === 'sop') {
+            window.switchSopTab('Logs');
+            let builderBtn = document.querySelector('button[onclick*="Builder"]');
+            if (builderBtn) builderBtn.style.display = 'none';
         }
-    }
-};
-
-const origLoadSopLogs = window.loadSopLogs;
-window.loadSopLogs = async function() {
-    await origLoadSopLogs();
-    if (window.sessionUser && window.sessionUser.isFranchisee) {
-        document.querySelectorAll('#sopLogsBody tr').forEach(tr => {
-            let isMine = window.sessionUser.allowedBranches.some(b => tr.innerText.includes(b));
-            if (!isMine && !tr.innerText.includes('No checklists')) tr.style.display = 'none';
-        });
     }
 };
