@@ -1845,8 +1845,12 @@
         if (!catContainer) return;
     
         let layoutOrder = [];
+        let layoutDocName = "pos_layout";
+        if (window.posPlatform === 'Grab') layoutDocName = "pos_layout_grab";
+        if (window.posPlatform === 'Foodpanda') layoutDocName = "pos_layout_foodpanda";
+
         try {
-            const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
+            const layoutSnap = await window.getDoc(window.doc(window.db, "settings", layoutDocName));
             if (layoutSnap.exists() && layoutSnap.data().categories) {
                 layoutOrder = layoutSnap.data().categories || [];
             }
