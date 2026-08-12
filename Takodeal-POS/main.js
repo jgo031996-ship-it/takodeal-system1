@@ -1547,45 +1547,45 @@ window.viewReceiptDetails = async function (receiptId) {
     `;
 
     if (tx.cart && tx.cart.length > 0) {
-        tx.cart.forEach(item => {
+        tx.cart.forEach(cartItem => {
             let addonsText = '';
-            if (item.addons) {
-                for(let key in item.addons) {
-                    if(item.addons[key].qty > 0) {
-                        // 🔥 THE FIX: Fallback to the dictionary key if addon.name is undefined!
-                        let addonName = item.addons[key].name || key; 
-                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${item.addons[key].qty}x ${addonName}</span>`;
+            if (cartItem.addons) {
+                for(let key in cartItem.addons) {
+                    if(cartItem.addons[key].qty > 0) {
+                        let addonName = cartItem.addons[key].name || key; 
+                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${cartItem.addons[key].qty}x ${addonName}</span>`;
                     }
                 }
             }
             
-            let lineTotalDisplay = isCashTx ? '***' : (item.lineTotalFinal || 0).toFixed(2);
+            let lineTotalDisplay = isCashTx ? '***' : (cartItem.lineTotalFinal || 0).toFixed(2);
+
+            // 🔥 THE CRASH FIX: Safely extract the item name first!
+            let safeItemName = cartItem.name || cartItem.itemName || "Item";
+            let variantName = (cartItem.variantName && cartItem.variantName !== 'Standard') ? cartItem.variantName : '';
+            
+            if (variantName && (safeItemName.toLowerCase().includes(variantName.toLowerCase()) || (safeItemName.endsWith("(L)") && variantName === "L"))) {
+                variantName = ''; 
+            }
+            let varHtml = variantName ? `<br><span style="font-size:11px; color:#888;">${variantName}</span>` : '';
+
+            let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 5px;">${cartItem.orderType}</span>` : '';
 
             modalHtml += `
                 <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
-                    <div><strong>${item.qty}x ${item.name}</strong><br><span style="font-size:11px; color:#888;">${item.variantName !== 'Standard' ? item.variantName : ''}</span>${addonsText}</div>
+                    <div><strong>${cartItem.qty}x ${safeItemName}</strong>${itemTypeBadge}${varHtml}${addonsText}</div>
                     <div style="font-weight: bold; color: ${isCashTx ? '#94a3b8' : '#333'}">₱${lineTotalDisplay}</div>
                 </div>
             `;
         });
     }
 
-    // 🔥 THE FIX: Suppress redundant variant sizes (e.g. "6 Pcs") if it is already in the item name!
-            let variantName = (item.variantName && item.variantName !== 'Standard') ? item.variantName : '';
-            if (variantName && (item.name.toLowerCase().includes(variantName.toLowerCase()) || (item.name.endsWith("(L)") && variantName === "L"))) {
-                variantName = ''; 
-            }
-            let varHtml = variantName ? `<br><span style="font-size:11px; color:#888;">${variantName}</span>` : '';
-
-            // 🔥 Show the Item Order Type if it's different from the main order!
-            let itemTypeBadge = item.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 5px;">${item.orderType}</span>` : '';
-
-            modalHtml += `
-                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
-                    <div><strong>${item.qty}x ${item.name}</strong>${itemTypeBadge}${varHtml}${addonsText}</div>
-                    <div style="font-weight: bold; color: ${isCashTx ? '#94a3b8' : '#333'}">₱${lineTotalDisplay}</div>
-                </div>
-            `;
+    modalHtml += `
+        </div>
+        <div style="border-top: 1px solid #eee; padding-top: 15px; font-size: 18px; font-weight: bold; text-align: right; color: var(--primary);">
+            TOTAL: ₱${displayTotal}
+        </div>
+    `;
 
     document.getElementById('txDetailBody').innerHTML = modalHtml;
     document.getElementById('txDetailModal').style.display = 'flex';
