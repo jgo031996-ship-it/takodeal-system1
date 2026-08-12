@@ -22846,14 +22846,20 @@ window.generateFranchiseSOA = async function() {
 };
 
 // ========================================================
-// 🛡️ THE ULTIMATE FRANCHISEE WALLED GARDEN (V3 INTERCEPTOR) 🛡️
+// 🛡️ THE ULTIMATE FRANCHISEE WALLED GARDEN (V4.1 INTERCEPTOR) 🛡️
 // ========================================================
+
+window.isBranchAllowed = function(branchName) {
+    if (!window.sessionUser || window.sessionUser.isOwner || !window.sessionUser.isFranchisee) return true;
+    let myBranches = window.sessionUser.allowedBranches || [];
+    return myBranches.includes(branchName);
+};
 
 window.applyFranchiseUIProtections = function() {
     let isF = window.sessionUser && window.sessionUser.isFranchisee;
     if (!isF) return;
 
-    let myBranches = window.sessionUser.allowedBranches;
+    let myBranches = window.sessionUser.allowedBranches || [];
 
     // 1. Branding Updates
     let logoText = document.querySelector('.logo-text span:nth-child(2)');
@@ -22868,25 +22874,42 @@ window.applyFranchiseUIProtections = function() {
     let yieldCalcBox = document.querySelector('#invSectionYield > div:first-child');
     if (yieldCalcBox) yieldCalcBox.style.display = 'none';
 
-    document.querySelectorAll('button').forEach(b => { 
-        if(b.innerText.includes('SOP Builder') || b.innerText.includes('Add New Role') || b.innerText.includes('Toggle Status')) {
+    let yieldTab = document.getElementById('subnav-Yield');
+    if (yieldTab) yieldTab.style.display = 'none';
+
+    document.querySelectorAll('button').forEach(function(b) { 
+        let txt = b.innerText || "";
+        let oc = b.getAttribute('onclick') || "";
+        if(txt.includes('SOP Builder') || txt.includes('Add New Role') || txt.includes('Toggle Status') || oc.includes('Builder')) {
             b.style.display = 'none'; 
         }
     });
 
-    let yieldTab = document.getElementById('subnav-Yield');
-    if (yieldTab) yieldTab.style.display = 'none';
-    
-    let btnSopBuilder = document.querySelector('button[onclick*="Builder"]');
-    if (btnSopBuilder) btnSopBuilder.style.display = 'none';
+    // 3. CSS Injection to physically erase Schedule Generation tools
+    let styleId = 'franchisee-protections-css';
+    if (!document.getElementById(styleId)) {
+        let style = document.createElement('style');
+        style.id = styleId;
+        style.innerHTML = `
+            /* Hide Global Schedule Control Buttons */
+            button[onclick*="autoGenerateSchedule"],
+            button[onclick*="saveShiftRules"],
+            button[onclick*="addHoliday"],
+            button[onclick*="applyLeave"],
+            button[onclick*="removeLeave"] { display: none !important; }
+        `;
+        document.head.appendChild(style);
+    }
 };
 
 // 🔐 CORE 1: Multi-Branch Login Hook
-if (typeof window.originalFinalizeManagerLogin === 'undefined') window.originalFinalizeManagerLogin = window.finalizeManagerLogin;
+if (typeof window.originalFinalizeManagerLogin === 'undefined') {
+    window.originalFinalizeManagerLogin = window.finalizeManagerLogin;
+}
 window.finalizeManagerLogin = function() {
     let isFranchisee = window.tempAuthData.role === 'Franchisee';
     let branchStr = window.tempAuthData.assignedBranch || 'Main Office';
-    let allowedArr = branchStr.split(',').map(b => b.trim());
+    let allowedArr = branchStr.split(',').map(function(b) { return b.trim(); });
 
     window.sessionUser = {
         email: window.tempAuthUser.email,
@@ -22907,21 +22930,21 @@ window.finalizeManagerLogin = function() {
 };
 
 // 🔐 CORE 2: Smart Dropdown Lock
-if (typeof window.originalInjectDynamicBranchDropdowns === 'undefined') window.originalInjectDynamicBranchDropdowns = window.injectDynamicBranchDropdowns;
+if (typeof window.originalInjectDynamicBranchDropdowns === 'undefined') {
+    window.originalInjectDynamicBranchDropdowns = window.injectDynamicBranchDropdowns;
+}
 window.injectDynamicBranchDropdowns = function() {
     window.originalInjectDynamicBranchDropdowns();
     
     if (window.sessionUser && window.sessionUser.isFranchisee) {
-        let myBranches = window.sessionUser.allowedBranches;
-        
-        // Loop through every dropdown in the app and lock it!
+        let myBranches = window.sessionUser.allowedBranches || [];
         const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect', 'sanctionBranchFilter', 'expenseBranchFilter', 'flowBranchFilter', 'empBranchAssign', 'newAccBranch', 'newBudgetBranch']; 
         
-        filterSelects.forEach(id => {
+        filterSelects.forEach(function(id) {
             let el = document.getElementById(id);
             if (el) {
                 let html = '';
-                myBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+                myBranches.forEach(function(b) { html += '<option value="' + b + '">' + b + '</option>'; });
                 el.innerHTML = html;
                 if (myBranches.length === 1) el.disabled = true;
             }
@@ -22929,8 +22952,10 @@ window.injectDynamicBranchDropdowns = function() {
     }
 };
 
-// 🔐 CORE 3: Dashboard & Cash Flow Interceptor
-if (typeof window.originalRenderDashboardCharts === 'undefined') window.originalRenderDashboardCharts = window.renderDashboardCharts;
+// 🔐 CORE 3: Dashboard Interceptor
+if (typeof window.originalRenderDashboardCharts === 'undefined') {
+    window.originalRenderDashboardCharts = window.renderDashboardCharts;
+}
 window.renderDashboardCharts = async function() {
     let backup = window.globalActiveBranches;
     if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = window.sessionUser.allowedBranches;
@@ -22938,80 +22963,148 @@ window.renderDashboardCharts = async function() {
     if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = backup;
 };
 
-if (typeof window.originalLoadCashFlowHub === 'undefined') window.originalLoadCashFlowHub = window.loadCashFlowHub;
-window.loadCashFlowHub = async function() {
-    let backup = window.globalActiveBranches;
-    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = window.sessionUser.allowedBranches;
-    await window.originalLoadCashFlowHub();
-    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = backup;
-};
-
 // 🔐 CORE 4: Data Eraser (Hides rows belonging to other branches)
 window.wipeAlienData = function(selector) {
     if (window.sessionUser && window.sessionUser.isFranchisee) {
-        let myBranches = window.sessionUser.allowedBranches;
-        document.querySelectorAll(selector).forEach(row => {
+        let myBranches = window.sessionUser.allowedBranches || [];
+        document.querySelectorAll(selector).forEach(function(row) {
             let text = row.innerText || "";
-            let isMine = myBranches.some(b => text.includes(b));
+            let isMine = false;
+            for (let i = 0; i < myBranches.length; i++) {
+                if (text.includes(myBranches[i])) { isMine = true; break; }
+            }
             let isSafe = text.includes('Loading') || text.includes('No ') || text.includes('empty') || text.includes('caught up');
             if (!isMine && !isSafe) row.style.display = 'none';
         });
     }
 };
 
-// Intercept standard table loads and wipe alien data!
-const tableLoaders = [
-    { func: 'loadHRModule', target: '#staffTableBody tr' },
-    { func: 'loadAccountsAndBudget', target: '#accTableBody tr, #budgetListBody > div' },
-    { func: 'loadUnverifiedHistory', target: '#unverifiedHistoryBody tr' },
-    { func: 'loadExpenseLogs', target: '#expenseLogsTableBody tr' },
-    { func: 'loadInventoryAudits', target: '#auditLogsBody tr' },
-    { func: 'loadEquipmentDashboard', target: '#equipmentTableBody tr' },
-    { func: 'loadSopLogs', target: '#sopLogsBody tr' },
-    { func: 'renderSecurityFeed', target: '#alertsTableBody tr' }
-];
-
-tableLoaders.forEach(loader => {
-    if (window[loader.func] && typeof window['original_' + loader.func] === 'undefined') {
-        window['original_' + loader.func] = window[loader.func];
-        window[loader.func] = async function(...args) {
-            await window['original_' + loader.func](...args);
-            window.wipeAlienData(loader.target);
+function injectFilter(funcName, selector) {
+    if (typeof window[funcName] === 'function' && typeof window['orig_' + funcName] === 'undefined') {
+        window['orig_' + funcName] = window[funcName];
+        window[funcName] = async function() {
+            await window['orig_' + funcName].apply(this, arguments);
+            window.wipeAlienData(selector);
         };
     }
-});
+}
+
+injectFilter('loadHRModule', '#staffTableBody tr');
+injectFilter('loadAccountsAndBudget', '#accTableBody tr, #budgetListBody > div');
+injectFilter('loadUnverifiedHistory', '#unverifiedHistoryBody tr');
+injectFilter('loadExpenseLogs', '#expenseLogsTableBody tr');
+injectFilter('loadInventoryAudits', '#auditLogsBody tr');
+injectFilter('loadEquipmentDashboard', '#equipmentTableBody tr');
+injectFilter('loadSopLogs', '#sopLogsBody tr');
+injectFilter('renderSecurityFeed', '#alertsTableBody tr');
+injectFilter('loadPayrollDashboard', '#payrollGeneratorBody tr');
 
 // 🔐 CORE 5: Logistics Strict Filter
-if (typeof window.originalRenderLogisticsUI === 'undefined') window.originalRenderLogisticsUI = window.renderLogisticsUI;
+if (typeof window.originalRenderLogisticsUI === 'undefined') {
+    window.originalRenderLogisticsUI = window.renderLogisticsUI;
+}
 window.renderLogisticsUI = function() {
     if (window.sessionUser && window.sessionUser.isFranchisee && window.logisticsState) {
-        window.logisticsState.requests = window.logisticsState.requests.filter(r => window.sessionUser.allowedBranches.includes(r.branch));
-        window.logisticsState.deliveries = window.logisticsState.deliveries.filter(d => window.sessionUser.allowedBranches.includes(d.toBranch));
-        
+        let myBranches = window.sessionUser.allowedBranches || [];
+        if (window.logisticsState.requests) {
+            window.logisticsState.requests = window.logisticsState.requests.filter(function(r) { return myBranches.includes(r.branch); });
+        }
+        if (window.logisticsState.deliveries) {
+            window.logisticsState.deliveries = window.logisticsState.deliveries.filter(function(d) { return myBranches.includes(d.toBranch); });
+        }
         let branchContainer = document.getElementById('logisticsBranchTabs');
-        if (branchContainer) branchContainer.style.display = 'none'; // Hide the branch tabs completely for franchisees
+        if (branchContainer) branchContainer.style.display = 'none';
     }
     window.originalRenderLogisticsUI();
+    
+    // Hide delete buttons on logistics feed for franchisees
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        document.querySelectorAll('button').forEach(function(b) {
+            if (b.innerText.includes('Delete Selected')) b.style.display = 'none';
+        });
+    }
 };
 
 // 🔐 CORE 6: Save Profile Fix (Unlocks dropdown briefly so value passes)
-if (typeof window.originalSaveEmployeeProfile === 'undefined') window.originalSaveEmployeeProfile = window.saveEmployeeProfile;
+if (typeof window.originalSaveEmployeeProfile === 'undefined') {
+    window.originalSaveEmployeeProfile = window.saveEmployeeProfile;
+}
 window.saveEmployeeProfile = async function() {
     let bAssign = document.getElementById('empBranchAssign');
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false; 
-    await window.originalSaveEmployeeProfile();
+    await window.originalSaveEmployeeProfile.apply(this, arguments);
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true; 
 };
 
 // 🔐 CORE 7: Hide SOP Builder completely
-if (typeof window.originalSwitchView === 'undefined') window.originalSwitchView = window.switchView;
+if (typeof window.originalSwitchView === 'undefined') {
+    window.originalSwitchView = window.switchView;
+}
 window.switchView = function(viewId) {
-    window.originalSwitchView(viewId);
+    window.originalSwitchView.apply(this, arguments);
     if (window.sessionUser && window.sessionUser.isFranchisee) {
         if (viewId === 'sop') {
-            window.switchSopTab('Logs');
-            let builderBtn = document.querySelector('button[onclick*="Builder"]');
-            if (builderBtn) builderBtn.style.display = 'none';
+            if (typeof window.switchSopTab === 'function') window.switchSopTab('Logs');
         }
+        window.applyFranchiseUIProtections(); 
     }
 };
+
+// 🔐 CORE 8: Schedule Manager Lock (Prevents Wiping Global Schedule)
+if (typeof window.originalRenderConfigUI === 'undefined' && typeof window.renderConfigUI === 'function') {
+    window.originalRenderConfigUI = window.renderConfigUI;
+    window.renderConfigUI = function(config) {
+        if (window.sessionUser && window.sessionUser.isFranchisee) {
+            let myBranches = window.sessionUser.allowedBranches || [];
+            let filteredConfig = {};
+            for (let b in config) {
+                if (myBranches.includes(b)) {
+                    filteredConfig[b] = config[b];
+                }
+            }
+            window.originalRenderConfigUI(filteredConfig);
+            window.applyFranchiseUIProtections(); // Triggers CSS hide
+        } else {
+            window.originalRenderConfigUI(config);
+        }
+    };
+}
+
+if (typeof window.originalRenderTables === 'undefined' && typeof window.renderTables === 'function') {
+    window.originalRenderTables = window.renderTables;
+    window.renderTables = function(schedule, year, month) {
+        window.originalRenderTables(schedule, year, month);
+        
+        if (window.sessionUser && window.sessionUser.isFranchisee) {
+            let myBranches = window.sessionUser.allowedBranches || [];
+            
+            // 1. Hide alien branch tabs
+            document.querySelectorAll('button').forEach(b => {
+                let txt = b.innerText || "";
+                if (txt.includes('Schedule') && !txt.includes('Manager')) {
+                    let isMine = false;
+                    for (let i = 0; i < myBranches.length; i++) {
+                        if (txt.includes(myBranches[i])) isMine = true;
+                    }
+                    if (!isMine) {
+                        b.style.display = 'none';
+                    } else {
+                        // Automatically select their first allowed tab
+                        if (txt.includes(myBranches[0])) b.click(); 
+                    }
+                }
+            });
+            
+            // 2. Hide alien schedule table containers
+            document.querySelectorAll('div[id$="Schedule"]').forEach(div => {
+                let id = div.id || "";
+                let isMine = false;
+                for (let i = 0; i < myBranches.length; i++) {
+                    let safeName = myBranches[i].replace(/\s+/g, '');
+                    if (id.includes(safeName)) isMine = true;
+                }
+                if (!isMine) div.style.display = 'none';
+            });
+        }
+    };
+}
