@@ -3839,9 +3839,25 @@ window.addMenuItem = async function () {
 };
 
 // ==========================================
-// ✏️ EDIT MENU ITEM (WITH AUTO-SYNC RECIPES)
+// ✏️ EDIT MENU ITEM (WITH GRAB & FOODPANDA)
 // ==========================================
 window.editMenuItem = async function (docId, currentName, currentCat, currentPrice) {
+    Swal.fire({title: 'Loading Pricing Data...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    
+    // Fetch existing platform prices
+    let grabPrice = currentPrice;
+    let fpPrice = currentPrice;
+    try {
+        const itemRef = doc(db, "menu", docId);
+        const itemSnap = await getDoc(itemRef);
+        if (itemSnap.exists()) {
+            grabPrice = itemSnap.data().grabPrice || currentPrice;
+            fpPrice = itemSnap.data().foodpandaPrice || currentPrice;
+        }
+    } catch(e) { console.error("Error fetching prices:", e); }
+    
+    Swal.close();
+
     const { value: formValues, isConfirmed } = await Swal.fire({
         title: '✏️ Edit Menu Item',
         html: `
@@ -3853,7 +3869,15 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
                 <input type="text" id="swal-menu-cat" class="input-box" value="${currentCat}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
 
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Base Price (₱):</label>
-                <input type="number" id="swal-menu-price" class="input-box" value="${currentPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+                <input type="number" id="swal-menu-price" class="input-box" value="${currentPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; font-weight: bold;">
+                
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                    <label style="font-size: 12px; font-weight: 900; color: #16a34a; display: block; margin-bottom: 5px;">🟢 GRAB Price (₱):</label>
+                    <input type="number" id="swal-menu-grab" class="input-box" value="${grabPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #bbf7d0; background: #f0fdf4; color: #16a34a; margin-bottom: 10px; outline: none; font-weight: 900;">
+
+                    <label style="font-size: 12px; font-weight: 900; color: #d70f64; display: block; margin-bottom: 5px;">🐼 Foodpanda Price (₱):</label>
+                    <input type="number" id="swal-menu-fp" class="input-box" value="${fpPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #fbcfe8; background: #fdf2f8; color: #d70f64; outline: none; font-weight: 900;">
+                </div>
             </div>
         `,
         focusConfirm: false,
@@ -3865,7 +3889,9 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
             return {
                 name: document.getElementById('swal-menu-name').value.trim(),
                 category: document.getElementById('swal-menu-cat').value.trim(),
-                price: parseFloat(document.getElementById('swal-menu-price').value)
+                price: parseFloat(document.getElementById('swal-menu-price').value),
+                grabPrice: parseFloat(document.getElementById('swal-menu-grab').value),
+                foodpandaPrice: parseFloat(document.getElementById('swal-menu-fp').value)
             };
         }
     });
@@ -3879,10 +3905,11 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
             name: formValues.name, 
             category: formValues.category, 
             price: formValues.price, 
-            basePrice: formValues.price 
+            basePrice: formValues.price,
+            grabPrice: formValues.grabPrice,
+            foodpandaPrice: formValues.foodpandaPrice
         });
 
-        // 🔥 THE MAGIC FIX: CASCADE RENAME RECIPES SO INVENTORY KEEPS DEDUCTING!
         if (currentName !== formValues.name) {
             const bomQ = query(collection(db, "bom"), where("menuItem", "==", currentName));
             const bomSnap = await getDocs(bomQ);
@@ -3891,12 +3918,11 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
                 updatePromises.push(updateDoc(doc(db, "bom", bDoc.id), { menuItem: formValues.name }));
             });
             await Promise.all(updatePromises);
-            console.log(`✅ Synced recipes from ${currentName} to ${formValues.name}`);
         }
         
         Swal.fire({
             title: '✅ Saved!',
-            text: `${formValues.name} has been successfully updated.`,
+            text: `${formValues.name} pricing has been updated globally.`,
             icon: 'success',
             timer: 1500,
             showConfirmButton: false,
@@ -15964,16 +15990,31 @@ document.addEventListener("DOMContentLoaded", () => {
 // ========================================================
 // 📐 CENTRALIZED POS LAYOUT MANAGER
 // ========================================================
-window.currentLayout = [];
-window.categoryImages = {}; // Memory to store the category photos!
+window.currentLayoutPlatform = 'Standard';
+
+window.switchPosLayoutMode = function(mode) {
+    window.currentLayoutPlatform = mode;
+    window.loadPosLayout();
+};
 
 window.loadPosLayout = async function() {
     const listDiv = document.getElementById('posCategoryArrangementList');
     if (!listDiv) return;
     listDiv.innerHTML = '<div style="color: #64748b; text-align: center; padding: 20px;">Loading live menu categories...</div>';
     
+    // 🔥 INJECT THE PLATFORM SELECTOR DYNAMICALLY
+    let headerDiv = listDiv.closest('.card').querySelector('.card-header > div:first-child');
+    if (headerDiv && !document.getElementById('posLayoutModeSelect')) {
+        headerDiv.insertAdjacentHTML('beforeend', `
+            <select id="posLayoutModeSelect" onchange="window.switchPosLayoutMode(this.value)" style="margin-top: 10px; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #6d28d9; cursor: pointer;">
+                <option value="Standard">🏪 Standard POS Layout</option>
+                <option value="Grab">🟢 Grab POS Layout</option>
+                <option value="Foodpanda">🐼 Foodpanda POS Layout</option>
+            </select>
+        `);
+    }
+
     try {
-        // 1. Fetch all categories AND grab their images!
         const menuSnap = await getDocs(collection(db, "menu"));
         let categories = new Set();
         
@@ -15983,30 +16024,27 @@ window.loadPosLayout = async function() {
             if (cat) {
                 let catTrimmed = cat.trim();
                 categories.add(catTrimmed);
-                // Save the first image we find for this category to act as its Thumbnail!
                 if (data.image && !window.categoryImages[catTrimmed]) {
                     window.categoryImages[catTrimmed] = data.image;
                 }
             }
         });
         
-        // 2. Fetch the saved arrangement order from Settings
-        const layoutSnap = await getDoc(doc(db, "settings", "pos_layout"));
+        // Fetch the specific layout based on the dropdown
+        let layoutDocName = "pos_layout";
+        if (window.currentLayoutPlatform === 'Grab') layoutDocName = "pos_layout_grab";
+        if (window.currentLayoutPlatform === 'Foodpanda') layoutDocName = "pos_layout_foodpanda";
+
+        const layoutSnap = await getDoc(doc(db, "settings", layoutDocName));
         let layout = layoutSnap.exists() ? layoutSnap.data().categories || [] : Array.from(categories);
 
-        // 3. Smart Merge: Add new categories that aren't in the saved layout yet
-        categories.forEach(c => { 
-            if (!layout.includes(c)) layout.push(c); 
-        });
-
-        // 4. Cleanup: Remove old categories that no longer exist in the menu
+        categories.forEach(c => { if (!layout.includes(c)) layout.push(c); });
         layout = layout.filter(c => categories.has(c));
 
         window.currentLayout = layout;
         window.renderLayoutEditor();
     } catch(e) { 
         console.error("Layout Load Error:", e); 
-        listDiv.innerHTML = '<div style="color: red; text-align: center;">Error loading layout data.</div>';
     }
 };
 
@@ -16051,11 +16089,20 @@ window.renderLayoutEditor = function() {
 
 window.savePosLayout = async function() {
     try {
-        await setDoc(doc(db, "settings", "pos_layout"), { categories: window.currentLayout }, { merge: true });
-        alert("✅ Tab arrangement saved successfully!\n\nAll Cashier Apps will reflect this exact order immediately upon refresh.");
+        let layoutDocName = "pos_layout";
+        if (window.currentLayoutPlatform === 'Grab') layoutDocName = "pos_layout_grab";
+        if (window.currentLayoutPlatform === 'Foodpanda') layoutDocName = "pos_layout_foodpanda";
+
+        await setDoc(doc(db, "settings", layoutDocName), { categories: window.currentLayout }, { merge: true });
+        Swal.fire({
+            title: '✅ Tab Arrangement Saved!',
+            text: `Layout for ${window.currentLayoutPlatform} has been pushed to the Cashier POS successfully.`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
     } catch(e) { 
         console.error(e);
-        alert("❌ Failed to save layout to cloud."); 
+        Swal.fire('Error', 'Failed to save layout to cloud.', 'error'); 
     }
 };
 
