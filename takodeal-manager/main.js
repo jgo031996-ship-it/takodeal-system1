@@ -22841,3 +22841,377 @@ window.generateFranchiseSOA = async function() {
         Swal.fire('Error', 'Failed to generate Statement of Account.', 'error');
     }
 };
+
+// ========================================================
+// 🛡️ THE ULTIMATE FRANCHISEE WALLED GARDEN OVERRIDE 🛡️
+// ========================================================
+
+window.applyFranchiseUIProtections = function() {
+    let isF = window.sessionUser && window.sessionUser.isFranchisee;
+    if (!isF) return;
+
+    let myBranch = window.sessionUser.branch;
+
+    // 1. Sidebar Branding (Logo & Profile)
+    let logoText = document.querySelector('.logo-text span:nth-child(2)');
+    if (logoText) logoText.innerText = myBranch.toUpperCase();
+    
+    let profName = document.querySelector('.user-profile .name');
+    let profRole = document.querySelector('.user-profile .role');
+    if (profName) profName.innerText = window.sessionUser.cashierName;
+    if (profRole) profRole.innerText = "Franchise Owner";
+
+    // 2. Hide SOP Builder & Yield Costing
+    document.querySelectorAll('button').forEach(b => { 
+        if(b.innerText.includes('SOP Builder') || b.innerText.includes('Add New Role')) b.style.display = 'none'; 
+    });
+    let yieldTab = document.getElementById('subnav-Yield');
+    if (yieldTab) yieldTab.style.display = 'none';
+
+    // 3. Lock All Dropdowns Globally to their Branch
+    const lockDropdown = (id) => {
+        let el = document.getElementById(id);
+        if (el) { 
+            // Fallback: Inject the option if it doesn't exist
+            if(!Array.from(el.options).some(opt => opt.value === myBranch)){
+                el.innerHTML += `<option value="${myBranch}">${myBranch}</option>`;
+            }
+            el.value = myBranch; 
+            el.disabled = true; 
+        }
+    };
+    ['dashBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'expenseBranchFilter', 'histBranchFilter', 'equipBranchFilter', 'invBranchFilter', 'sanctionBranchFilter'].forEach(lockDropdown);
+};
+
+// OVERRIDE 1: Trigger the Firewall on Login
+const originalFinalizeManagerLogin = window.finalizeManagerLogin;
+window.finalizeManagerLogin = function() {
+    originalFinalizeManagerLogin();
+    window.applyFranchiseUIProtections(); 
+};
+
+// OVERRIDE 2: Fix Add Staff Bug (Forces new staff into Franchisee's branch)
+const originalAddNewStaff = window.addNewStaff;
+window.addNewStaff = function() {
+    originalAddNewStaff();
+    let bAssign = document.getElementById('empBranchAssign');
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) {
+        bAssign.value = window.sessionUser.branch;
+        bAssign.disabled = true;
+    }
+};
+
+// OVERRIDE 3: Fix Add Cash Account Bug
+const originalAddCashAccount = window.addCashAccount;
+window.addCashAccount = function() {
+    originalAddCashAccount();
+    let bSelect = document.getElementById('newAccBranch');
+    if (window.sessionUser && window.sessionUser.isFranchisee && bSelect) {
+        bSelect.value = window.sessionUser.branch;
+        bSelect.disabled = true;
+    }
+};
+
+// OVERRIDE 4: Fix Add Budget Bug
+const originalOpenAddBudgetModal = window.openAddBudgetModal;
+window.openAddBudgetModal = function() {
+    originalOpenAddBudgetModal();
+    let bSelect = document.getElementById('newBudgetBranch');
+    if (window.sessionUser && window.sessionUser.isFranchisee && bSelect) {
+        bSelect.value = window.sessionUser.branch;
+        bSelect.disabled = true;
+    }
+};
+
+// OVERRIDE 5: Clean Up Accounts & Budget Display
+const originalLoadAccountsAndBudget = window.loadAccountsAndBudget;
+window.loadAccountsAndBudget = async function() {
+    await originalLoadAccountsAndBudget();
+    
+    // Force DOM cleanup for visual isolation
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        let myBranch = window.sessionUser.branch;
+        
+        // Hide accounts not belonging to franchise
+        document.querySelectorAll('#accTableBody tr').forEach(tr => {
+            if (!tr.innerText.includes(myBranch) && !tr.innerText.includes('Loading')) tr.style.display = 'none';
+        });
+        
+        // Hide budgets not belonging to franchise
+        document.querySelectorAll('#budgetListBody > div').forEach(div => {
+            if (!div.innerText.includes(myBranch) && !div.innerText.includes('Loading')) div.style.display = 'none';
+        });
+    }
+};
+
+// OVERRIDE 6: Floating Cash / EOD Hub Isolation
+window.loadCashFlowHub = async function() {
+    try {
+        let safeCash = 0;
+        const accSnap = await getDocs(collection(db, "cash_accounts"));
+        accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
+
+        let branchHtml = '';
+        let totalDrawerCash = 0;
+
+        const pendingRemitsQ = query(collection(db, "remittances"), where("status", "==", "Pending"));
+        const pendingRemitsSnap = await getDocs(pendingRemitsQ);
+        let pendingByBranch = {};
+        pendingRemitsSnap.forEach(d => {
+            let r = d.data();
+            pendingByBranch[r.branch] = (pendingByBranch[r.branch] || 0) + 1;
+        });
+
+        // 🔥 ISOLATION ALGORITHM
+        let branchesToScan = (window.sessionUser && window.sessionUser.isFranchisee) 
+            ? [window.sessionUser.branch] 
+            : window.globalActiveBranches;
+
+        for (let branch of branchesToScan) {
+            if (branch === "Main Office") continue;
+
+            let drawerAmount = 0;
+            let drawerStatus = "";
+            let alertColor = "#0f766e";
+            let alertBg = "#f0fdfa";
+            let alertBorder = "#bbf7d0";
+
+            const activeQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
+            const activeSnap = await getDocs(activeQ);
+
+            if (!activeSnap.empty) {
+                let sData = activeSnap.docs[0].data();
+                let sTime = sData.startTime.toDate();
+                drawerAmount = parseFloat(sData.startingCash) || 0;
+
+                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime));
+                const txSnap = await getDocs(txQ);
+                txSnap.forEach(t => {
+                    let tx = t.data();
+                    if (tx.status !== 'Voided') {
+                        if (tx.splitDetails) {
+                            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
+                            if (cashSplit) drawerAmount += cashSplit.amount;
+                        } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
+                            drawerAmount += (parseFloat(tx.netTotal) || 0);
+                        }
+                    }
+                });
+
+                const expQ = query(collection(db, "expenses"), where("shiftId", "==", activeSnap.docs[0].id));
+                const expSnap = await getDocs(expQ);
+                expSnap.forEach(e => { drawerAmount -= (parseFloat(e.data().amount) || 0); });
+
+                drawerStatus = '<span style="color:#16a34a; font-weight:bold; font-size:11px;">🟢 Register Open</span>';
+            } else {
+                const closedQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+                const closedSnap = await getDocs(closedQ);
+                if (!closedSnap.empty) {
+                    drawerAmount = parseFloat(closedSnap.docs[0].data().declaredCash) || 0;
+                    drawerStatus = '<span style="color:#64748b; font-weight:bold; font-size:11px;">⚪ Register Closed</span>';
+                } else {
+                    drawerStatus = '<span style="color:#94a3b8; font-weight:bold; font-size:11px;">No Data</span>';
+                }
+            }
+
+            if (drawerAmount > 5000) { alertColor = "#dc2626"; alertBg = "#fef2f2"; alertBorder = "#fecaca"; }
+            totalDrawerCash += drawerAmount;
+
+            let pendingCount = pendingByBranch[branch] || 0;
+            let badgeHtml = pendingCount > 0 ? `<div style="position: absolute; top: -10px; right: -10px; background: #ef4444; color: white; width: 26px; height: 26px; border-radius: 50%; font-size: 13px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 2px solid white; animation: pulse 1.5s infinite;">${pendingCount}</div>` : '';
+
+            branchHtml += `
+                <div onclick="window.openBranchTransferHistory('${branch}')" style="position: relative; background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)';">
+                    ${badgeHtml}
+                    <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
+                    <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${drawerAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="margin-top: 4px;">${drawerStatus}</div>
+                </div>
+            `;
+        }
+
+        document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'flex';
+        
+        document.querySelectorAll('div, span, h3').forEach(el => {
+            if (el.innerText === "FLOATING CASH (AT BRANCHES)") el.innerText = "LIVE CASH IN DRAWERS";
+            if (el.innerText === "Expected Z-Reading Cash not yet remitted") el.innerText = "Total physical cash sitting in branches right now";
+        });
+
+        document.getElementById('branchFloatingContainer').innerHTML = branchHtml;
+
+    } catch (e) { console.error("Cash Flow Hub Error:", e); }
+};
+
+// OVERRIDE 7: Logistics Feed Tabs Isolation
+const originalRenderLogisticsUI = window.renderLogisticsUI;
+window.renderLogisticsUI = function() {
+    originalRenderLogisticsUI();
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        let branchContainer = document.getElementById('logisticsBranchTabs');
+        if (branchContainer) {
+            branchContainer.innerHTML = `<button style="flex: 1; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid #10b981; background: white; color: #0f172a; cursor: default;">📍 ${window.sessionUser.branch}</button>`;
+        }
+    }
+};
+
+// OVERRIDE 8: Pending Verifications Leak Fix
+const originalLoadUnverifiedHistory = window.loadUnverifiedHistory;
+window.loadUnverifiedHistory = async function() {
+    await originalLoadUnverifiedHistory();
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        document.querySelectorAll('#unverifiedHistoryBody tr').forEach(tr => {
+            if (!tr.innerText.includes(window.sessionUser.branch) && !tr.innerText.includes('caught up')) tr.style.display = 'none';
+        });
+    }
+};
+
+// OVERRIDE 9: Hide Toggle Status Button for Franchisees
+const originalLoadAnnouncementHistory = window.loadAnnouncementHistory;
+window.loadAnnouncementHistory = async function() {
+    await originalLoadAnnouncementHistory();
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        document.querySelectorAll('button').forEach(btn => {
+            if (btn.innerText.includes('Toggle Status')) btn.style.display = 'none';
+        });
+    }
+};
+
+// OVERRIDE 10: Inventory Audits Data Lock
+const originalLoadInventoryAudits = window.loadInventoryAudits;
+window.loadInventoryAudits = async function() {
+    await originalLoadInventoryAudits();
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        document.querySelectorAll('#auditLogsBody tr').forEach(tr => {
+            if (!tr.innerText.includes(window.sessionUser.branch) && !tr.innerText.includes('No stock counts')) tr.style.display = 'none';
+        });
+    }
+};
+
+// OVERRIDE 11: Protect the Dashboard Pie Chart & Line Chart
+window.renderDashboardCharts = async function() {
+    const lineCanvas = document.getElementById('revenueTrendChart');
+    const pieCanvas = document.getElementById('categoryMixChart');
+    if (!lineCanvas) return;
+
+    try {
+        const toLocalISODate = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+        
+        let labels = []; let dateKeys = [];
+        let today = new Date(); let todayStr = toLocalISODate(today);
+
+        for (let i = 6; i >= 0; i--) {
+            let d = new Date(); d.setDate(today.getDate() - i);
+            dateKeys.push(toLocalISODate(d));
+            labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        }
+
+        let startDate = new Date();
+        startDate.setDate(today.getDate() - 6);
+        startDate.setHours(0, 0, 0, 0);
+
+        const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
+        const snap = await getDocs(q);
+
+        const menuSnap = await getDocs(collection(db, "menu"));
+        let menuCategories = {};
+        menuSnap.forEach(doc => { menuCategories[doc.data().name] = doc.data().category || 'Uncategorized'; });
+
+        const branchColors = {
+            "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
+            "Citygate":  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" },
+            "Maa":       { border: "#0284c7", bg: "rgba(2, 132, 199, 0.1)" },
+            "Main Office": { border: "#10b981", bg: "rgba(16, 185, 129, 0.1)" }
+        };
+
+        // 🔥 ISOLATION LOCK
+        let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
+        if (window.sessionUser && window.sessionUser.isFranchisee) {
+            activeBranches = [window.sessionUser.branch];
+        }
+
+        let branchSalesData = {};
+        activeBranches.forEach(b => { branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 }; });
+        let categorySales = {}; 
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status === "Voided") return;
+
+            let txBranch = tx.branch || "Unknown";
+            let txDateObj = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : null;
+            let txDate = txDateObj ? toLocalISODate(txDateObj) : null;
+
+            if (branchSalesData[txBranch]) {
+                let dayIndex = dateKeys.indexOf(txDate);
+                if (dayIndex !== -1) {
+                    if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
+                        tx.splitDetails.forEach(split => {
+                            let method = (split.method || '').toLowerCase();
+                            if ((method === 'cash' && window.chartFilters.cash) || (method.includes('gcash') && window.chartFilters.gcash) || (method.includes('grab') && window.chartFilters.grab)) {
+                                branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
+                            }
+                        });
+                    } else {
+                        let method = (tx.paymentMethod || 'cash').toLowerCase();
+                        let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
+                        let isGcash = method.includes('gcash') && window.chartFilters.gcash;
+                        let isGrab = method.includes('grab') && window.chartFilters.grab;
+                        let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; 
+
+                        if (isCash || isGcash || isGrab || isOtherDigital) {
+                            branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
+                        }
+                    }
+                }
+            }
+
+            if (txDate === todayStr && pieCanvas && tx.cart) {
+                // 🔥 SECURITY LOCK: Only add to Pie Chart if it belongs to the Franchisee's allowed branches!
+                if (activeBranches.includes(txBranch)) {
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let cat = menuCategories[itemName] || item.category || "Uncategorized";
+                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
+                        if (!categorySales[cat]) categorySales[cat] = 0;
+                        categorySales[cat] += lineTotal;
+                    });
+                }
+            }
+        });
+
+        let lineDatasets = [];
+        activeBranches.forEach(branch => {
+            let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
+            lineDatasets.push({
+                label: branch, data: dateKeys.map((_, idx) => branchSalesData[branch][idx]),
+                borderColor: color.border, backgroundColor: color.bg, borderWidth: 3, tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6
+            });
+        });
+
+        if (window.revenueChartInstance) window.revenueChartInstance.destroy();
+        window.revenueChartInstance = new Chart(lineCanvas.getContext('2d'), {
+            type: 'line', data: { labels: labels, datasets: lineDatasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } }, scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return '₱' + value.toLocaleString(); } } } } }
+        });
+
+        if (pieCanvas) {
+            let sortedCats = Object.keys(categorySales).map(cat => ({ name: cat, sales: categorySales[cat] })).sort((a, b) => b.sales - a.sales);
+            let top5 = sortedCats.slice(0, 5); 
+            
+            if (window.categoryMixChartInstance) window.categoryMixChartInstance.destroy();
+            const ctxPie = pieCanvas.getContext('2d');
+            
+            if (top5.length === 0) {
+                window.categoryMixChartInstance = new Chart(ctxPie, { type: 'doughnut', data: { labels: ["No Sales Today"], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } } } });
+            } else {
+                window.categoryMixChartInstance = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: { labels: top5.map(c => c.name), datasets: [{ data: top5.map(c => c.sales), backgroundColor: ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444'], borderWidth: 2, borderColor: '#ffffff' }] },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { font: { weight: 'bold', size: 11 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.label}: ₱${context.parsed.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } } }
+                });
+            }
+        }
+    } catch(e) { console.error("Chart Error:", e); }
+};
