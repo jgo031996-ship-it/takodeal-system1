@@ -458,7 +458,8 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
     document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
     document.getElementById('orderNotesInput').value = window.pendingItem.notes;
-    document.getElementById('modalItemOrderType').value = existingItem ? (existingItem.orderType || 'Take-Out') : (document.getElementById('mainOrderType').value || 'Take-Out');
+    // 🔥 THE FIX: Forces the dropdown to be blank so they MUST choose!
+    document.getElementById('modalItemOrderType').value = existingItem ? (existingItem.orderType || '') : '';
     document.getElementById('variantModal').style.display = 'flex';
 
     let oldDropdown = document.getElementById('addonSelectDropdown');
@@ -744,6 +745,18 @@ window.updateModalTotals = function() {
 };
 
 window.confirmAddOrUpdateToCart = function() {
+    // 🔥 THE FIX: Strict Order Type Enforcer!
+    let itemOrderType = document.getElementById('modalItemOrderType').value;
+    if (!itemOrderType) {
+        Swal.fire({
+            title: 'Order Type Required', 
+            text: 'Please select Dine-In or Take-Out for this item before adding it to the cart.', 
+            icon: 'warning',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        return;
+    }
+    window.pendingItem.orderType = itemOrderType;
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
     window.pendingItem.notes = document.getElementById('orderNotesInput').value;
     window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
@@ -1534,7 +1547,7 @@ window.getReceiptDetails = async function (receiptId) {
   } catch (e) { console.error(e); return null; }
 };
 
-// --- RECEIPT DETAILS ENGINE (UNDEFINED FIX APPLIED) ---
+// --- RECEIPT DETAILS ENGINE (ULTRA MODERN DESIGN) ---
 window.viewReceiptDetails = async function (receiptId) {
     let tx = await window.getReceiptDetails(receiptId);
     if (!tx) { alert("Receipt not found!"); return; }
@@ -1542,18 +1555,7 @@ window.viewReceiptDetails = async function (receiptId) {
     let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
     let displayTotal = isCashTx ? '***' : (tx.netTotal || 0).toFixed(2);
 
-    let modalHtml = `
-        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #ccc;">
-            <div style="font-weight: bold; font-size: 16px;">OR# ${tx.receiptId}</div>
-            <div style="font-size: 12px; color: #666;">Date: ${tx.timestamp ? tx.timestamp.toDate().toLocaleString() : 'Unknown'}</div>
-            <div style="font-size: 12px; color: #666;">Cashier: ${tx.cashier || 'Unknown'}</div>
-            <div style="font-size: 12px; color: #666;">Order Type: <strong style="color:var(--primary);">${tx.orderType || 'N/A'}</strong></div>
-            <div style="font-size: 12px; color: #666;">Method: ${tx.paymentMethod || 'Cash'}</div>
-            <div style="font-size: 12px; color: #666; margin-top:5px; font-weight:bold;">Status: <span style="color:${tx.status==='Voided' ? 'red' : 'green'};">${tx.status || 'Paid'}</span></div>
-        </div>
-        <div style="max-height: 250px; overflow-y: auto; margin-bottom: 15px;">
-    `;
-
+    let itemsHtml = '';
     if (tx.cart && tx.cart.length > 0) {
         tx.cart.forEach(cartItem => {
             let addonsText = '';
@@ -1561,42 +1563,85 @@ window.viewReceiptDetails = async function (receiptId) {
                 for(let key in cartItem.addons) {
                     if(cartItem.addons[key].qty > 0) {
                         let addonName = cartItem.addons[key].name || key; 
-                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px;">+ ${cartItem.addons[key].qty}x ${addonName}</span>`;
+                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px; font-weight:bold;">+ ${cartItem.addons[key].qty}x ${addonName}</span>`;
                     }
                 }
             }
             
             let lineTotalDisplay = isCashTx ? '***' : (cartItem.lineTotalFinal || 0).toFixed(2);
 
-            // 🔥 THE CRASH FIX: Safely extract the item name first!
             let safeItemName = cartItem.name || cartItem.itemName || "Item";
             let variantName = (cartItem.variantName && cartItem.variantName !== 'Standard') ? cartItem.variantName : '';
             
+            // Clean up redundant sizes (e.g. Takoyaki 6 Pcs 6 Pcs)
             if (variantName && (safeItemName.toLowerCase().includes(variantName.toLowerCase()) || (safeItemName.endsWith("(L)") && variantName === "L"))) {
                 variantName = ''; 
             }
-            let varHtml = variantName ? `<br><span style="font-size:11px; color:#888;">${variantName}</span>` : '';
+            let varHtml = variantName ? `<br><span style="font-size:11px; color:#64748b; font-style:italic; margin-left:10px;">Size: ${variantName}</span>` : '';
 
-            let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 5px;">${cartItem.orderType}</span>` : '';
+            // Clean, pill-shaped order type badge
+            let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${cartItem.orderType}</span>` : '';
 
-            modalHtml += `
-                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
-                    <div><strong>${cartItem.qty}x ${safeItemName}</strong>${itemTypeBadge}${varHtml}${addonsText}</div>
-                    <div style="font-weight: bold; color: ${isCashTx ? '#94a3b8' : '#333'}">₱${lineTotalDisplay}</div>
+            itemsHtml += `
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 10px 0;">
+                    <div>
+                        <strong style="color: #334155; font-size: 13px;">${cartItem.qty}x ${safeItemName}</strong>${itemTypeBadge}
+                        ${varHtml}
+                        ${addonsText}
+                    </div>
+                    <strong style="color: #0f766e; font-size: 13px;">₱${lineTotalDisplay}</strong>
                 </div>
             `;
         });
     }
 
-    modalHtml += `
-        </div>
-        <div style="border-top: 1px solid #eee; padding-top: 15px; font-size: 18px; font-weight: bold; text-align: right; color: var(--primary);">
-            TOTAL: ₱${displayTotal}
+    let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+    let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
+    let statusBadge = tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
+
+    // Remove old modal if it exists so they don't stack!
+    let oldModal = document.getElementById('dynamicReceiptModal');
+    if (oldModal) oldModal.remove();
+
+    let modalHtml = `
+        <div id="dynamicReceiptModal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.7); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(5px);">
+            <div style="background: white; padding: 25px; border-radius: 16px; width: 420px; max-width: 95%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 85vh; display: flex; flex-direction: column;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900;">🧾 Receipt Details</h3>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; font-weight: bold;">${tx.receiptId}</div>
+                    </div>
+                    <button onclick="document.getElementById('dynamicReceiptModal').remove()" style="background: #f1f5f9; border: none; font-size: 18px; font-weight: bold; color: #475569; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✖</button>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <div>
+                        <div style="font-size: 10px; color: #64748b; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">Customer & Status</div>
+                        <div style="font-size: 14px; font-weight: 900; color: #0284c7; margin-top: 4px; margin-bottom: 6px;">${safeCustomer}</div>
+                        ${statusBadge}
+                    </div>
+                    <div>
+                        <div style="font-size: 10px; color: #64748b; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">Time & Payment</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #334155; margin-top: 4px;">${timeStr}</div>
+                        <div style="font-size: 13px; font-weight: 900; color: #d97706; margin-top: 4px;">${tx.paymentMethod || 'Cash'}</div>
+                    </div>
+                </div>
+
+                <div style="flex: 1; overflow-y: auto; margin-bottom: 15px; padding-right: 5px;">
+                    <div style="font-size: 11px; font-weight: 900; color: #94a3b8; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px; text-transform: uppercase;">Order Items</div>
+                    ${itemsHtml || '<div style="color: #94a3b8; font-size: 12px; text-align: center; padding: 20px; font-style: italic;">No items recorded.</div>'}
+                </div>
+
+                <div style="border-top: 2px dashed #cbd5e1; padding-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 15px; font-weight: 900; color: #334155;">TOTAL PAID</span>
+                    <span style="font-size: 26px; font-weight: 900; color: #16a34a;">₱${displayTotal}</span>
+                </div>
+                
+            </div>
         </div>
     `;
-
-    document.getElementById('txDetailBody').innerHTML = modalHtml;
-    document.getElementById('txDetailModal').style.display = 'flex';
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
 };
 
 // ========================================================
@@ -8767,8 +8812,9 @@ window.processBluetoothQueue = async function() {
     try {
         let buffer = (job.data instanceof Uint8Array) ? job.data : window.stringToBuffer(job.data);
         
-        // 🔥 THE SPEED UPGRADE: Massive 512-byte chunks (8x faster than before!)
-        const CHUNK_SIZE = 512; 
+        // 🔥 THE UNIVERSAL HARDWARE FIX: 
+        // Reduced from 512 to 100 bytes to prevent buffer overflows on older/smaller printer models.
+        const CHUNK_SIZE = 100; 
         
         for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
             let chunk = buffer.slice(i, i + CHUNK_SIZE);
@@ -8780,8 +8826,8 @@ window.processBluetoothQueue = async function() {
                 await job.activeChar.writeValue(chunk);
             }
             
-            // 🔥 THE SPEED UPGRADE: Dropped delay from 40ms to a lightning-fast 10ms
-            await new Promise(resolve => setTimeout(resolve, 10)); 
+            // 🔥 THE STABILITY FIX: Increased delay from 10ms to 30ms so the printer has time to digest the data!
+            await new Promise(resolve => setTimeout(resolve, 30)); 
         }
     } catch(e) {
         console.error("Print Error:", e);
@@ -8790,8 +8836,8 @@ window.processBluetoothQueue = async function() {
         else window.mainPrinterChar = null;
     } finally {
         window.isBluetoothPrinting = false; // Unlock the door!
-        // Process the next receipt almost instantly
-        setTimeout(window.processBluetoothQueue, 100); 
+        // Process the next receipt after a safe 200ms cooldown
+        setTimeout(window.processBluetoothQueue, 200); 
     }
 };
 
