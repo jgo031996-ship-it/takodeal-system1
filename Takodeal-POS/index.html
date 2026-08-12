@@ -1923,50 +1923,42 @@ window.switchPosPlatform = function(platform) {
     let header = document.querySelector('.ticket-header');
     let platformDropdown = document.getElementById('posPlatformSelect');
     let otSelect = document.getElementById('mainOrderType');
-    
-    // 🔥 NEW: Grab the action buttons at the bottom of the cart!
     let btnPlace = document.getElementById('btnMainPlaceOrder');
     let btnPark = document.querySelector('button[onclick="window.parkOrder()"]');
     
     if (platform === 'Grab') {
+        window.selectedPaymentMethod = 'Grab'; // 🔥 THE FIX: Explicitly set memory!
         if(header) { header.style.background = '#00b14f'; header.style.color = 'white'; }
         if(platformDropdown) { platformDropdown.style.background = '#00b14f'; platformDropdown.style.color = 'white'; }
         if(btnPlace) { btnPlace.style.background = '#00b14f'; }
         if(btnPark) { btnPark.style.background = '#00b14f'; }
-        
         if (otSelect) {
             let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('grab'));
             if (opt) otSelect.value = opt.value;
         }
-        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
-        if(payBtn) payBtn.click();
-        
     } else if (platform === 'Foodpanda') {
+        window.selectedPaymentMethod = 'Foodpanda'; // 🔥 THE FIX: Explicitly set memory!
         if(header) { header.style.background = '#d70f64'; header.style.color = 'white'; }
         if(platformDropdown) { platformDropdown.style.background = '#d70f64'; platformDropdown.style.color = 'white'; }
         if(btnPlace) { btnPlace.style.background = '#d70f64'; }
         if(btnPark) { btnPark.style.background = '#d70f64'; }
-        
         if (otSelect) {
             let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda'));
             if (opt) otSelect.value = opt.value;
         }
-        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
-        
-        let total = window.cart.reduce((sum, item) => sum + (item.lineTotalFinal || 0), 0);
-        window.currentGrandTotal = total; 
-        if(payBtn && total > 0) payBtn.click();
-        
     } else {
+        window.selectedPaymentMethod = 'Cash'; // Default back to cash
         if(header) { header.style.background = '#fafafa'; header.style.color = '#333'; }
         if(platformDropdown) { platformDropdown.style.background = '#f39c12'; platformDropdown.style.color = 'white'; }
         if(btnPlace) { btnPlace.style.background = 'var(--primary)'; }
         if(btnPark) { btnPark.style.background = '#f39c12'; }
-        
         if (otSelect) otSelect.value = '';
         let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase() === 'cash');
         if(payBtn) payBtn.click();
     }
+    
+    let total = window.cart.reduce((sum, item) => sum + (item.lineTotalFinal || 0), 0);
+    window.currentGrandTotal = total; 
     
     // 4. Force Grid and Cart to Redraw Instantly
     if(typeof window.renderTopCategories === 'function') window.renderTopCategories();
@@ -2298,7 +2290,7 @@ window.loadSalesDashboard = async function () {
   let tBody = '';
   
   // 🔥 ONLY TRACK DIGITAL FUNDS FOR THE CASHIER
-  let totalGrab = 0; let totalGCash = 0;
+  let totalGrab = 0; let totalGCash = 0; let totalFoodpanda = 0;
 
   if (!transactions || transactions.length === 0) { 
       tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
@@ -2317,6 +2309,7 @@ window.loadSalesDashboard = async function () {
           let payMethod = (tx.paymentMethod || '').toLowerCase();
           if (payMethod === 'grab') totalGrab += (tx.netTotal || 0);
           else if (payMethod === 'gcash') totalGCash += (tx.netTotal || 0);
+          else if (payMethod === 'foodpanda' || payMethod === 'panda') totalFoodpanda += (tx.netTotal || 0);
       }
 
       // 🚨 THE FIX: MASK CASH TRANSACTIONS SO THEY CANNOT CALCULATE THE DRAWER TOTAL!
@@ -2354,13 +2347,14 @@ window.loadSalesDashboard = async function () {
     });
   }
   
-  // 🔥 🚨 ANTI-THEFT: "BLIND COUNT" UI.
+  // 🔥 🚨 ANTI-THEFT: "BLIND COUNT" UI + FOODPANDA
   let auditHeader = `
       <tr style="background: #f8fafc; font-size: 16px;">
         <td colspan="8" style="padding: 15px; text-align: center; border-bottom: 3px solid #cbd5e1;">
-            <span style="color: #64748b; font-size: 15px; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 6px;">🔒 Cash Drawer: Blind Count</span> &nbsp;&nbsp; | &nbsp;&nbsp;
-            <strong style="color: #00b14f; font-size: 18px;">🟢 Grab: ₱${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
-            <strong style="color: #3b82f6; font-size: 18px;">🔵 GCash: ₱${totalGCash.toFixed(2)}</strong>
+            <span style="color: #64748b; font-size: 14px; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 6px;">🔒 Cash Drawer: Blind Count</span> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <strong style="color: #00b14f; font-size: 16px;">🟢 Grab: ₱${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <strong style="color: #d70f64; font-size: 16px;">🐼 Panda: ₱${totalFoodpanda.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
+            <strong style="color: #3b82f6; font-size: 16px;">🔵 GCash: ₱${totalGCash.toFixed(2)}</strong>
         </td>
       </tr>
   `;
@@ -2998,8 +2992,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
       // 🚨 ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
       let custName = document.getElementById('finalCustomerName').value.trim();
-      if ((selectedPaymentMethod === 'Grab' || selectedPaymentMethod === 'GCash') && custName === "") {
-          alert(`🚨 SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact Grab Order ID or GCash Ref Number in the Customer Name box to prevent phantom orders.`);
+      if ((selectedPaymentMethod === 'Grab' || selectedPaymentMethod === 'Foodpanda' || selectedPaymentMethod === 'GCash') && custName === "") {
+          let reqStr = selectedPaymentMethod === 'GCash' ? 'GCash Ref Number' : `${selectedPaymentMethod} Order ID`;
+          alert(`🚨 SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact ${reqStr} in the Customer Name box to prevent phantom orders.`);
           btn.innerText = "Complete checkout"; 
           btn.disabled = false;
           return;
