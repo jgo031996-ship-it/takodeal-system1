@@ -22191,53 +22191,185 @@ window.editPlatformSettings = async function(platform) {
 };
 
 // ========================================================
-// 💳 FRANCHISE WALLET & B2B BILLING ENGINE
+// 🤝 THE ENTERPRISE FRANCHISE HUB ENGINE
 // ========================================================
-window.loadFranchiseWallet = async function() {
-    let isOwner = window.sessionUser && window.sessionUser.isOwner;
+window.franSalesChartInstance = null;
+window.franRoyaltyChartInstance = null;
+window.activeFranThreadId = null;
+
+// 1. HUB ROUTER & SECURITY LOCK
+window.loadFranchiseHub = function() {
+    let titleEl = document.getElementById('pageTitle');
+    if (titleEl) titleEl.innerText = "🤝 Franchise HQ Hub";
+
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    
+    if (isFranchisee) {
+        // Lock out the Performance tab
+        document.getElementById('tabFranPerf').style.display = 'none';
+        document.getElementById('btnFranManualLog').style.display = 'none'; // Only HQ can log payments received
+        window.switchFranTab('Ledger');
+    } else {
+        document.getElementById('tabFranPerf').style.display = 'block';
+        document.getElementById('btnFranManualLog').style.display = 'block';
+        window.switchFranTab('Performance');
+    }
+};
+
+window.switchFranTab = function(tabName) {
+    document.getElementById('franSecPerformance').style.display = 'none';
+    document.getElementById('franSecLedger').style.display = 'none';
+    document.getElementById('franSecChat').style.display = 'none';
+
+    document.getElementById('tabFranPerf').style.borderBottomColor = 'transparent';
+    document.getElementById('tabFranPerf').style.color = '#64748b';
+    document.getElementById('tabFranLedger').style.borderBottomColor = 'transparent';
+    document.getElementById('tabFranLedger').style.color = '#64748b';
+    document.getElementById('tabFranChat').style.borderBottomColor = 'transparent';
+    document.getElementById('tabFranChat').style.color = '#64748b';
+
+    let activeColor = '#0ea5e9';
+    if (tabName === 'Performance') {
+        document.getElementById('franSecPerformance').style.display = 'block';
+        document.getElementById('tabFranPerf').style.borderBottomColor = activeColor;
+        document.getElementById('tabFranPerf').style.color = activeColor;
+        window.loadFranPerformance();
+    } else if (tabName === 'Ledger') {
+        document.getElementById('franSecLedger').style.display = 'block';
+        document.getElementById('tabFranLedger').style.borderBottomColor = activeColor;
+        document.getElementById('tabFranLedger').style.color = activeColor;
+        window.loadFranLedger();
+    } else if (tabName === 'Chat') {
+        document.getElementById('franSecChat').style.display = 'block';
+        document.getElementById('tabFranChat').style.borderBottomColor = activeColor;
+        document.getElementById('tabFranChat').style.color = activeColor;
+        window.loadFranChat();
+    }
+};
+
+// ==========================================
+// 📊 TAB 1: FRANCHISEE PERFORMANCE (HQ ONLY)
+// ==========================================
+window.loadFranPerformance = async function() {
+    try {
+        // 1. Identify which branches are franchises by checking the hq_managers database
+        const mgrSnap = await getDocs(query(collection(db, "hq_managers"), where("role", "==", "Franchisee")));
+        let franchisedBranches = [];
+        mgrSnap.forEach(d => {
+            let branch = d.data().assignedBranch;
+            if (branch && branch !== "All" && !franchisedBranches.includes(branch)) {
+                franchisedBranches.push(branch);
+            }
+        });
+
+        if (franchisedBranches.length === 0) {
+            console.warn("No franchisees registered in the system yet.");
+            return;
+        }
+
+        // 2. Fetch last 30 days of data
+        let thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        thirtyDaysAgo.setHours(0,0,0,0);
+
+        let branchSalesData = {};
+        let branchRoyaltyData = {};
+        franchisedBranches.forEach(b => { branchSalesData[b] = 0; branchRoyaltyData[b] = 0; });
+
+        // Tally Gross Sales
+        const shiftQ = query(collection(db, "shifts"), where("status", "==", "Closed"), where("endTime", ">=", thirtyDaysAgo));
+        const shiftSnap = await getDocs(shiftQ);
+        
+        shiftSnap.forEach(d => {
+            let shift = d.data();
+            if (franchisedBranches.includes(shift.branch)) {
+                branchSalesData[shift.branch] += ((parseFloat(shift.totalCashSales) || 0) + (parseFloat(shift.totalDigitalSales) || 0));
+            }
+        });
+
+        // Tally Royalties Owed
+        const ledgerQ = query(collection(db, "franchise_ledger"), where("category", "==", "Daily Franchise Royalty"), where("timestamp", ">=", thirtyDaysAgo));
+        const ledgerSnap = await getDocs(ledgerQ);
+
+        ledgerSnap.forEach(d => {
+            let log = d.data();
+            if (franchisedBranches.includes(log.branch)) {
+                branchRoyaltyData[log.branch] += (parseFloat(log.amount) || 0);
+            }
+        });
+
+        // 3. Render the Bar Charts!
+        let labels = franchisedBranches;
+        let salesData = labels.map(b => branchSalesData[b]);
+        let royaltyData = labels.map(b => branchRoyaltyData[b]);
+
+        if (window.franSalesChartInstance) window.franSalesChartInstance.destroy();
+        if (window.franRoyaltyChartInstance) window.franRoyaltyChartInstance.destroy();
+
+        const salesCtx = document.getElementById('franSalesChart').getContext('2d');
+        window.franSalesChartInstance = new Chart(salesCtx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{ label: 'Gross Sales (₱)', data: salesData, backgroundColor: '#16a34a', borderRadius: 6 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+
+        const royCtx = document.getElementById('franRoyaltyChart').getContext('2d');
+        window.franRoyaltyChartInstance = new Chart(royCtx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{ label: 'Royalties Owed (₱)', data: royaltyData, backgroundColor: '#d97706', borderRadius: 6 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+
+    } catch(e) { console.error("Performance Chart Error:", e); }
+};
+
+// ==========================================
+// 💳 TAB 2: BILLING & LEDGER (A/R)
+// ==========================================
+window.loadFranLedger = async function() {
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     let myBranch = window.sessionUser ? window.sessionUser.branch : null;
 
-    let branchSelect = document.getElementById('walletBranchSelect');
-    let btnManual = document.getElementById('btnManualLedgerEntry');
-    let tbody = document.getElementById('walletLedgerBody');
+    let branchSelect = document.getElementById('franLedgerBranch');
+    let tbody = document.getElementById('franLedgerBody');
 
-    // 1. Configure UI based on Role
-    if (isOwner) {
-        branchSelect.style.display = 'block';
-        btnManual.style.display = 'block';
-        if (branchSelect.options.length <= 1) {
-            // 🔥 THE FIX: We use your already-loaded Active Branches list!
-            let html = '<option value="">Select Franchise Branch...</option>';
-            if (window.globalActiveBranches) {
-                window.globalActiveBranches.forEach(b => { 
-                    if (b !== "Main Office") html += `<option value="${b}">${b}</option>`; 
-                });
-            }
-            branchSelect.innerHTML = html;
-        }
-    } else if (isFranchisee) {
-        branchSelect.style.display = 'none';
-        btnManual.style.display = 'none';
+    // Setup the dropdown dynamically
+    if (!isFranchisee && branchSelect.options.length <= 1) {
+        const mgrSnap = await getDocs(query(collection(db, "hq_managers"), where("role", "==", "Franchisee")));
+        let html = '<option value="">-- Select Franchise --</option>';
+        mgrSnap.forEach(d => {
+            let b = d.data().assignedBranch;
+            if (b && b !== "All") html += `<option value="${b}">${b}</option>`;
+        });
+        branchSelect.innerHTML = html;
     }
 
-    let targetBranch = isOwner ? branchSelect.value : myBranch;
+    let targetBranch = isFranchisee ? myBranch : branchSelect.value;
+
+    if (isFranchisee) {
+        branchSelect.innerHTML = `<option value="${myBranch}">${myBranch}</option>`;
+        branchSelect.disabled = true;
+    }
 
     if (!targetBranch) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">Please select a branch above.</td></tr>';
-        document.getElementById('walletTotalBalance').innerText = '₱0.00';
-        document.getElementById('walletStatusText').innerText = 'Awaiting Selection';
-        document.getElementById('walletStatusText').style.background = '#334155';
+        document.getElementById('franTotalBalance').innerText = '₱0.00';
         return;
     }
 
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">⏳ Calculating live ledger...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #0ea5e9; font-weight: bold;">⏳ Calculating ledger...</td></tr>';
 
     try {
         const q = query(collection(db, "franchise_ledger"), where("branch", "==", targetBranch), orderBy("timestamp", "asc"));
         const snap = await getDocs(q);
 
-        let runningBalance = 0;
+        let runningBalance = 0; // POSITIVE means Franchisee OWES HQ.
         let html = '';
         let logs = [];
 
@@ -22245,30 +22377,28 @@ window.loadFranchiseWallet = async function() {
             let data = docSnap.data();
             let amt = parseFloat(data.amount) || 0;
             
-            if (data.type === 'Credit') {
-                runningBalance += amt;
-            } else if (data.type === 'Debit') {
-                runningBalance -= amt;
+            if (data.type === 'Charge') {
+                runningBalance += amt; // Adds to debt
+            } else if (data.type === 'Payment') {
+                runningBalance -= amt; // Reduces debt
             }
-
             logs.push({ ...data, runningBalance: runningBalance });
         });
 
-        // Reverse the array so the newest transactions are at the top of the table
         logs.reverse().forEach(log => {
             let dateStr = log.timestamp ? log.timestamp.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
-            let amtColor = log.type === 'Credit' ? '#16a34a' : '#dc2626';
-            let amtSign = log.type === 'Credit' ? '+' : '-';
+            let amtColor = log.type === 'Payment' ? '#16a34a' : '#dc2626';
+            let amtSign = log.type === 'Payment' ? '-' : '+';
             
             html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
+                <tr style="border-bottom: 1px solid #f1f5f9; background: white;">
                     <td style="padding: 15px 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 15px 12px;">
                         <strong style="color: #1e293b; font-size: 14px; display: block;">${log.category}</strong>
                         <span style="color: #64748b; font-size: 12px; font-style: italic;">${log.description}</span>
                     </td>
                     <td style="padding: 15px 12px; text-align: right; font-weight: 900; color: ${amtColor}; font-size: 15px;">
-                        ${amtSign} ₱${parseFloat(log.amount).toLocaleString(undefined, {minimumFractionDigits:2})}
+                        ${amtSign}₱${parseFloat(log.amount).toLocaleString(undefined, {minimumFractionDigits:2})}
                     </td>
                     <td style="padding: 15px 12px; text-align: right; font-weight: bold; color: #334155; font-size: 15px;">
                         ₱${log.runningBalance.toLocaleString(undefined, {minimumFractionDigits:2})}
@@ -22279,23 +22409,9 @@ window.loadFranchiseWallet = async function() {
 
         tbody.innerHTML = html || '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">No ledger entries found.</td></tr>';
         
-        // Update the massive header card!
-        document.getElementById('walletTotalBalance').innerText = `₱${runningBalance.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        
-        let statusEl = document.getElementById('walletStatusText');
-        if (runningBalance > 0) {
-            statusEl.innerText = "HQ owes this Franchisee";
-            statusEl.style.background = "rgba(22, 163, 74, 0.2)";
-            statusEl.style.color = "#4ade80";
-        } else if (runningBalance < 0) {
-            statusEl.innerText = "Franchisee owes HQ";
-            statusEl.style.background = "rgba(220, 38, 38, 0.2)";
-            statusEl.style.color = "#fca5a5";
-        } else {
-            statusEl.innerText = "Account Settled (Zero Balance)";
-            statusEl.style.background = "rgba(255, 255, 255, 0.1)";
-            statusEl.style.color = "white";
-        }
+        let balColor = runningBalance > 0 ? '#b91c1c' : (runningBalance < 0 ? '#15803d' : '#334155');
+        document.getElementById('franTotalBalance').innerText = `₱${runningBalance.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('franTotalBalance').style.color = balColor;
 
     } catch (e) {
         console.error("Ledger Load Error:", e);
@@ -22303,45 +22419,36 @@ window.loadFranchiseWallet = async function() {
     }
 };
 
-window.openManualLedgerEntry = async function() {
-    let targetBranch = document.getElementById('walletBranchSelect').value;
-    if (!targetBranch) return Swal.fire('Error', 'Please select a branch first.', 'error');
+window.openFranManualLedger = async function() {
+    let targetBranch = document.getElementById('franLedgerBranch').value;
+    if (!targetBranch) return Swal.fire('Error', 'Please select a franchise branch first.', 'error');
 
     const { value: formValues } = await Swal.fire({
-        title: '➕ Manual Ledger Entry',
+        title: '💳 Log Franchise Payment',
         html: `
             <div style="text-align: left; margin-top: 10px;">
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Transaction Type:</label>
-                <select id="swalLedgerType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; font-weight: bold;">
-                    <option value="Credit">Credit (Add to Wallet / HQ Owes Them)</option>
-                    <option value="Debit">Debit (Deduct from Wallet / They Owe HQ)</option>
-                </select>
-
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Category:</label>
-                <select id="swalLedgerCat" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px;">
-                    <option value="Cash Payout (Settlement)">Cash Payout (Settlement)</option>
-                    <option value="B2B Supply Order">B2B Supply Order</option>
-                    <option value="Penalty / Fine">Penalty / Fine</option>
-                    <option value="Misc Adjustment">Misc Adjustment</option>
+                <select id="swalFranType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; font-weight: bold; color: #16a34a; background: #f0fdf4;">
+                    <option value="Payment">Payment Received (Reduces Debt)</option>
+                    <option value="Charge">Charge / Fee (Increases Debt)</option>
                 </select>
 
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Amount (₱):</label>
-                <input type="number" id="swalLedgerAmt" class="input-box" placeholder="0.00" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; font-size: 16px; font-weight: bold;">
+                <input type="number" id="swalFranAmt" class="input-box" placeholder="0.00" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; font-size: 16px; font-weight: bold;">
                 
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Description / Note:</label>
-                <input type="text" id="swalLedgerDesc" class="input-box" placeholder="e.g. Paid via Bank Transfer" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Payment Method / Note:</label>
+                <input type="text" id="swalFranDesc" class="input-box" placeholder="e.g. Bank Transfer from Metrobank" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
             </div>
         `,
         focusConfirm: false,
         showCancelButton: true,
-        confirmButtonColor: '#0f766e',
+        confirmButtonColor: '#0ea5e9',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
             return {
-                type: document.getElementById('swalLedgerType').value,
-                category: document.getElementById('swalLedgerCat').value,
-                amount: parseFloat(document.getElementById('swalLedgerAmt').value),
-                desc: document.getElementById('swalLedgerDesc').value.trim()
+                type: document.getElementById('swalFranType').value,
+                amount: parseFloat(document.getElementById('swalFranAmt').value),
+                desc: document.getElementById('swalFranDesc').value.trim()
             };
         }
     });
@@ -22352,36 +22459,230 @@ window.openManualLedgerEntry = async function() {
             await addDoc(collection(db, "franchise_ledger"), {
                 branch: targetBranch,
                 type: formValues.type,
-                category: formValues.category,
+                category: formValues.type === "Payment" ? "Account Settlement" : "Manual Adjustment",
                 amount: formValues.amount,
                 description: formValues.desc,
                 loggedBy: window.sessionUser.cashierName || 'HQ Admin',
                 timestamp: serverTimestamp()
             });
-            Swal.fire('✅ Success!', 'Manual entry added to the ledger.', 'success');
-            window.loadFranchiseWallet();
+            Swal.fire('✅ Success!', 'Transaction logged securely.', 'success');
+            window.loadFranLedger();
         } catch(e) {
             console.error(e); Swal.fire('Error', 'Failed to save entry.', 'error');
         }
     }
 };
 
-// Override the old HTML button reference
-window.openManualLedgerModal = window.openManualLedgerEntry;
+// ==========================================
+// 💬 TAB 3: CORPORATE COMMS & CHAT ENGINE
+// ==========================================
+window.franChatUnsubscribe = null;
+
+window.loadFranChat = async function() {
+    let listEl = document.getElementById('franThreadList');
+    if (!listEl) return;
+    
+    if (window.franChatUnsubscribe) window.franChatUnsubscribe();
+
+    try {
+        const q = query(collection(db, "franchise_comms"), orderBy("timestamp", "desc"), limit(50));
+        
+        window.franChatUnsubscribe = onSnapshot(q, (snap) => {
+            let html = '';
+            
+            snap.forEach(docSnap => {
+                let data = docSnap.data();
+                let dateStr = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent') : 'Just now';
+                let replyCount = data.replies ? data.replies.length : 0;
+                let isActive = window.activeFranThreadId === docSnap.id;
+
+                let icon = data.type === 'Announcement' ? '📢' : (data.type === 'Help' ? '🆘' : '💬');
+                
+                html += `
+                    <div onclick="window.openFranThread('${docSnap.id}')" style="padding: 15px; border-bottom: 1px solid #e2e8f0; cursor: pointer; transition: 0.2s; background: ${isActive ? '#f1f5f9' : 'white'}; border-left: 4px solid ${isActive ? '#8b5cf6' : 'transparent'};">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <strong style="color: #0f172a; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;">${icon} ${data.title}</strong>
+                            <span style="font-size: 11px; color: #64748b;">${dateStr}</span>
+                        </div>
+                        <div style="font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${data.message}</div>
+                        <div style="font-size: 10px; color: #8b5cf6; font-weight: bold; margin-top: 5px;">${replyCount} Replies</div>
+                    </div>
+                `;
+            });
+            
+            listEl.innerHTML = html || '<div style="padding: 20px; text-align: center; color: #94a3b8; font-style: italic;">No discussions found. Click New to start one!</div>';
+            
+            // Auto-refresh the active thread if it's currently open!
+            if (window.activeFranThreadId) window.openFranThread(window.activeFranThreadId);
+        });
+    } catch(e) { console.error("Chat Error:", e); }
+};
+
+window.openNewThreadModal = async function() {
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    let typeOptions = isFranchisee 
+        ? `<option value="Help">🆘 Request Help / Support</option><option value="Discussion">💬 General Discussion</option>`
+        : `<option value="Announcement">📢 HQ Announcement</option><option value="Discussion">💬 General Discussion</option>`;
+
+    const { value: formVals } = await Swal.fire({
+        title: '✏️ Start New Thread',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <select id="swalThreadType" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none; font-weight: bold;">
+                    ${typeOptions}
+                </select>
+                <input type="text" id="swalThreadTitle" placeholder="Thread Title (e.g. Promo Update)" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none; font-weight: bold; box-sizing: border-box;">
+                <textarea id="swalThreadMsg" placeholder="Write your message here..." style="width: 100%; height: 100px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; resize: none; font-family: inherit; box-sizing: border-box;"></textarea>
+                <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; margin-top: 10px;">📧 An email notification will be automatically triggered to the network.</div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Post Thread',
+        confirmButtonColor: '#8b5cf6',
+        customClass: { popup: 'rounded-2xl' },
+        preConfirm: () => {
+            return {
+                type: document.getElementById('swalThreadType').value,
+                title: document.getElementById('swalThreadTitle').value.trim(),
+                message: document.getElementById('swalThreadMsg').value.trim()
+            }
+        }
+    });
+
+    if (formVals && formVals.title && formVals.message) {
+        Swal.fire({title: 'Posting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            let authorName = window.sessionUser.cashierName || 'User';
+            let authorBranch = window.sessionUser.isOwner ? 'HQ Main Office' : window.sessionUser.branch;
+
+            await addDoc(collection(db, "franchise_comms"), {
+                type: formVals.type,
+                title: formVals.title,
+                message: formVals.message,
+                author: authorName,
+                branch: authorBranch,
+                replies: [],
+                timestamp: serverTimestamp()
+            });
+
+            // 📧 SIMULATED WEBHOOK FOR EMAIL
+            console.log(`[SIMULATED WEBHOOK] Triggering Email API -> Subject: New ${formVals.type} in TAKODEAL Hub. Title: ${formVals.title}`);
+
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Posted successfully!', showConfirmButton: false, timer: 2000 });
+        } catch(e) { console.error(e); Swal.fire('Error', 'Failed to post.', 'error'); }
+    }
+};
+
+window.openFranThread = async function(docId) {
+    window.activeFranThreadId = docId;
+    document.getElementById('franChatHeader').style.display = 'block';
+    document.getElementById('franChatInputArea').style.display = 'flex';
+    
+    // Highlight active thread in sidebar
+    document.querySelectorAll('#franThreadList > div').forEach(el => {
+        el.style.background = 'white'; el.style.borderLeftColor = 'transparent';
+    });
+    // Let the live listener handle the blue highlight automatically
+
+    let msgArea = document.getElementById('franChatMessages');
+
+    try {
+        const docSnap = await getDoc(doc(db, "franchise_comms", docId));
+        if (!docSnap.exists()) return;
+
+        let data = docSnap.data();
+        let dateStr = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '') : '';
+
+        document.getElementById('franChatTitle').innerText = data.title;
+        document.getElementById('franChatAuthor').innerText = `${data.author} (${data.branch})`;
+
+        let html = `
+            <!-- The Original Post -->
+            <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <strong style="color: #0f172a;">${data.author} <span style="font-size:11px; color:#64748b;">(${data.branch})</span></strong>
+                    <span style="font-size: 11px; color: #94a3b8;">${dateStr}</span>
+                </div>
+                <div style="color: #334155; font-size: 14px; line-height: 1.5; white-space: pre-wrap;">${data.message}</div>
+            </div>
+            <div style="font-size: 11px; font-weight: bold; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 5px;">Replies</div>
+        `;
+
+        if (data.replies && data.replies.length > 0) {
+            data.replies.forEach(reply => {
+                let isMe = reply.author === window.sessionUser.cashierName;
+                let align = isMe ? 'flex-end' : 'flex-start';
+                let bg = isMe ? '#dcfce7' : 'white';
+                let border = isMe ? '#bbf7d0' : '#e2e8f0';
+                
+                let rDate = reply.timestamp ? new Date(reply.timestamp).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+                html += `
+                    <div style="display: flex; flex-direction: column; align-items: ${align}; margin-bottom: 10px;">
+                        <div style="background: ${bg}; border: 1px solid ${border}; padding: 12px 15px; border-radius: 12px; max-width: 80%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                            <div style="font-size: 10px; color: #64748b; font-weight: bold; margin-bottom: 4px;">${reply.author} <span style="font-weight:normal;">(${reply.branch})</span></div>
+                            <div style="font-size: 14px; color: #1e293b; white-space: pre-wrap;">${reply.message}</div>
+                            <div style="font-size: 9px; color: #94a3b8; text-align: right; margin-top: 4px;">${rDate}</div>
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            html += `<div style="text-align: center; color: #cbd5e1; font-style: italic; margin-top: 20px;">No replies yet. Be the first!</div>`;
+        }
+
+        msgArea.innerHTML = html;
+        // Auto scroll to bottom!
+        setTimeout(() => { msgArea.scrollTop = msgArea.scrollHeight; }, 100);
+
+    } catch(e) { console.error("Thread Load Error:", e); }
+};
+
+window.sendFranReply = async function() {
+    let docId = window.activeFranThreadId;
+    let inputEl = document.getElementById('franChatInput');
+    let message = inputEl.value.trim();
+
+    if (!docId || !message) return;
+
+    try {
+        const docRef = doc(db, "franchise_comms", docId);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+            let replies = docSnap.data().replies || [];
+            
+            let authorName = window.sessionUser.cashierName || 'User';
+            let authorBranch = window.sessionUser.isOwner ? 'HQ Main Office' : window.sessionUser.branch;
+
+            replies.push({
+                author: authorName,
+                branch: authorBranch,
+                message: message,
+                timestamp: new Date().toISOString() // Save as string so it doesn't crash the array
+            });
+
+            await updateDoc(docRef, { replies: replies, lastActivity: serverTimestamp() });
+            inputEl.value = '';
+            
+            // 📧 SIMULATED WEBHOOK
+            console.log(`[SIMULATED WEBHOOK] Triggering Email API -> Subject: New reply in thread from ${authorBranch}.`);
+        }
+    } catch(e) { console.error("Reply Error:", e); }
+};
 
 // ========================================================
 // 📦 B2B BILLING INTERCEPTOR (AUTO-BILLS UPON DISPATCH)
 // ========================================================
-// Place this inside your existing dispatch logic in Manager App!
+// We integrate this inside the existing submitMultiDispatch function!
 window.billFranchiseForStock = async function(branchName, itemsDispatched, dispatchId) {
     try {
         const bQ = query(collection(db, "branches"), where("name", "==", branchName));
         const bSnap = await getDocs(bQ);
-        if (bSnap.empty || bSnap.docs[0].data().isFranchise !== true) return; // Ignore company-owned branches
+        if (bSnap.empty || bSnap.docs[0].data().isFranchise !== true) return; 
 
         let totalInvoiceCost = 0;
         itemsDispatched.forEach(item => {
-            // Calculates based on the base price/cost set in HQ Inventory!
             let cost = parseFloat(item.cost || item.baseCost) || 0; 
             totalInvoiceCost += (cost * item.qty);
         });
@@ -22389,13 +22690,34 @@ window.billFranchiseForStock = async function(branchName, itemsDispatched, dispa
         if (totalInvoiceCost > 0) {
             await addDoc(collection(db, "franchise_ledger"), {
                 branch: branchName,
-                type: "Debit",
+                type: "Charge",
                 category: "B2B Supply Dispatch",
                 amount: totalInvoiceCost,
-                description: `Auto-Billed for Dispatch #${dispatchId.substring(0,6).toUpperCase()}`,
+                description: `Auto-Billed for Supplies dispatched on ${new Date().toLocaleDateString()}`,
                 loggedBy: window.sessionUser.cashierName || 'System',
                 timestamp: serverTimestamp()
             });
         }
     } catch(e) { console.error("B2B Billing Error:", e); }
 };
+
+// 🔌 Hooking into the existing dispatcher
+setTimeout(() => {
+    if (typeof window.submitMultiDispatch === 'function') {
+        const originalDispatch = window.submitMultiDispatch;
+        window.submitMultiDispatch = async function() {
+            // Let the original function run first
+            await originalDispatch();
+            
+            // Check if cart was emptied (meaning it was successful)
+            if (window.dispatchCart.length === 0) {
+                let toBranch = document.getElementById('dispTo').value;
+                let oldCartData = JSON.parse(localStorage.getItem('takodeal_dispatch_cart') || '[]');
+                
+                if (oldCartData.length > 0) {
+                    window.billFranchiseForStock(toBranch, oldCartData, "DISP-" + Date.now());
+                }
+            }
+        };
+    }
+}, 3000);
