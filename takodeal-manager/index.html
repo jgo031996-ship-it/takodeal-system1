@@ -3517,6 +3517,7 @@
                   </div>
                   <div style="display: flex; gap: 10px;">
                       <button onclick="window.loadFranLedger()" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer;">🔄 Refresh</button>
+                      <button onclick="window.generateFranchiseSOA()" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);">📄 Export SOA (PDF)</button>
                       <button id="btnFranManualLog" onclick="window.openFranManualLedger()" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.3);">💳 Log Payment Received</button>
                   </div>
               </div>
@@ -3579,6 +3580,67 @@
 
       </div>
     </div>
+
+   <!-- 📄 OFFICIAL STATEMENT OF ACCOUNT (SOA) TEMPLATE -->
+  <div id="soaTemplate" style="display: none; width: 800px; padding: 60px; background: white; font-family: 'Segoe UI', Tahoma, sans-serif; color: #0f172a; position: absolute; left: -9999px; border: 10px solid #f8fafc; box-sizing: border-box;">
+      
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 4px solid #0f172a; padding-bottom: 20px; margin-bottom: 30px;">
+          <div>
+              <h1 style="margin: 0; color: #0f172a; font-size: 42px; font-weight: 900; letter-spacing: 3px;">TAKODEÁL</h1>
+              <p style="margin: 5px 0 0 0; color: #64748b; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Davao City, Philippines</p>
+          </div>
+          <div style="text-align: right;">
+              <h2 style="margin: 0; color: #b91c1c; font-size: 28px; font-weight: 900; text-transform: uppercase;">Statement of Account</h2>
+              <div style="font-size: 14px; color: #475569; font-weight: bold; margin-top: 5px;">Date Generated: <span id="soaDateGenerated">--</span></div>
+              <div style="font-size: 14px; color: #475569; font-weight: bold; margin-top: 5px;">SOA Ref: <span id="soaRefNum">--</span></div>
+          </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; margin-bottom: 40px; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div>
+              <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Bill To:</div>
+              <div id="soaFranchiseName" style="font-size: 20px; font-weight: 900; color: #0f172a; margin-top: 5px;">[Franchise Name]</div>
+              <div style="font-size: 14px; color: #475569; margin-top: 5px;">Franchise Partner</div>
+          </div>
+          <div style="text-align: right;">
+              <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Amount Due:</div>
+              <div id="soaTotalDue" style="font-size: 32px; font-weight: 900; color: #dc2626; margin-top: 5px;">₱0.00</div>
+          </div>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; margin-bottom: 40px;">
+          <thead style="background: #0f172a; color: white;">
+              <tr>
+                  <th style="padding: 12px 15px;">Date</th>
+                  <th style="padding: 12px 15px;">Description / Category</th>
+                  <th style="padding: 12px 15px; text-align: right;">Charges (Debit)</th>
+                  <th style="padding: 12px 15px; text-align: right;">Payments (Credit)</th>
+              </tr>
+          </thead>
+          <tbody id="soaTableBody">
+              <!-- JS Injects Rows Here -->
+          </tbody>
+          <tfoot style="background: #f1f5f9; border-top: 2px solid #0f172a;">
+              <tr>
+                  <td colspan="2" style="padding: 15px; font-weight: 900; text-align: right; font-size: 16px;">TOTAL BALANCE DUE:</td>
+                  <td colspan="2" id="soaFooterTotal" style="padding: 15px; font-weight: 900; text-align: right; font-size: 18px; color: #b91c1c;">₱0.00</td>
+              </tr>
+          </tfoot>
+      </table>
+
+      <div style="margin-top: 40px; padding: 20px; border: 2px dashed #cbd5e1; border-radius: 8px; background: #f8fafc;">
+          <h4 style="margin: 0 0 10px 0; color: #0f172a; font-size: 16px;">Remittance Instructions</h4>
+          <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.6;">
+              Please remit the total balance due within 3 business days of receiving this statement.<br>
+              Make all payments payable to: <strong>TAKODEAL MAIN OFFICE</strong><br>
+              Send proof of payment via the Corporate Comms chat or directly to the HQ Admin.
+          </p>
+      </div>
+      
+      <div style="margin-top: 50px; text-align: center; font-size: 11px; color: #94a3b8;">
+          This is a system-generated statement. No physical signature is required.
+      </div>
+  </div>
   </main>
 
   <div id="transferModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
