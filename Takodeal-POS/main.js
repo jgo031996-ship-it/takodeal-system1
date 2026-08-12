@@ -353,6 +353,8 @@ window.loadPOSData = async function() {
     window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
     let otSelect = document.getElementById('mainOrderType');
     otSelect.innerHTML = otHtml;
+    // 🔥 THE FIX: Force the dropdown to reset to blank so they MUST select an option!
+    otSelect.value = "";
 
     // 🔥 NEW: Auto-sync Payment Method when Grab/Foodpanda is selected 🔥
     otSelect.addEventListener('change', function() {
@@ -855,8 +857,13 @@ window.renderCart = function() {
                 }
             }
 
-            // Safe Badge HTML
-            let typeBadge = item.orderType ? '<span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px;">' + item.orderType + '</span>' : '';
+            // 🔥 THE FIX: Beautiful Color-Coded Badges for Item Order Types!
+            let badgeBg = '#f1f5f9'; let badgeCol = '#64748b'; let badgeBrd = '#cbd5e1';
+            if (item.orderType === 'Dine-In') { badgeBg = '#f0fdf4'; badgeCol = '#16a34a'; badgeBrd = '#bbf7d0'; }
+            else if (item.orderType === 'Take-Out') { badgeBg = '#fffbeb'; badgeCol = '#d97706'; badgeBrd = '#fde68a'; }
+            else if (item.orderType) { badgeBg = '#e0f2fe'; badgeCol = '#0284c7'; badgeBrd = '#bae6fd'; }
+            
+            let typeBadge = item.orderType ? `<span style="background: ${badgeBg}; color: ${badgeCol}; border: 1px solid ${badgeBrd}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${item.orderType}</span>` : '';
 
             // Protect against apostrophes in item names breaking the click event
             let safeItemName = item.name.replace(/'/g, "\\'");
@@ -1072,15 +1079,16 @@ window.syncOfflineQueue = async function() {
                     let qtySold = parseFloat(cartItem.qty) || 1;
 
                     let recipe = (window.masterPOSData && window.masterPOSData.bom) ? window.masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
-                    let orderType = payload.orderType || 'Dine-In'; 
+                    
+                    // 🔥 THE MATH FIX: Prioritize the INDIVIDUAL ITEM's order type for mixed orders!
+                    let itemOrderType = cartItem.orderType || payload.orderType || 'Dine-In'; 
                     
                     recipe.forEach(r => {
                         let deductAmount = (parseFloat(r.qty) || 0) * qtySold;
                         
-                        // 🔥 THE SMART DINE-IN PACKAGING ENGINE
                         let ingName = (r.ingredientName || "").toLowerCase();
                         if (ingName.includes("box")) {
-                            if (orderType.toLowerCase().includes("dine-in")) {
+                            if (itemOrderType.toLowerCase().includes("dine-in")) {
                                 deductAmount = deductAmount / 2; // Deduct exactly half a box!
                             }
                         }
@@ -1400,9 +1408,10 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
 
           // 🔥 THE SMART DINE-IN PACKAGING ENGINE (FOR VOIDS)
           let ingName = (ingredientName || "").toLowerCase();
-          let orderType = txData.orderType || 'Dine-In';
+          // 🔥 THE MATH FIX: Prioritize the INDIVIDUAL ITEM's order type!
+          let itemOrderType = cartItem.orderType || txData.orderType || 'Dine-In';
           if (ingName.includes("box")) {
-              if (orderType.toLowerCase().includes("dine-in")) {
+              if (itemOrderType.toLowerCase().includes("dine-in")) {
                   totalAmountToReturn = totalAmountToReturn / 2; // Return exactly half a box!
               }
           }
@@ -1561,12 +1570,22 @@ window.viewReceiptDetails = async function (receiptId) {
         });
     }
 
-    modalHtml += `
-        </div>
-        <div style="border-top: 1px solid #eee; padding-top: 15px; font-size: 18px; font-weight: bold; text-align: right; color: var(--primary);">
-            TOTAL: ₱${displayTotal}
-        </div>
-    `;
+    // 🔥 THE FIX: Suppress redundant variant sizes (e.g. "6 Pcs") if it is already in the item name!
+            let variantName = (item.variantName && item.variantName !== 'Standard') ? item.variantName : '';
+            if (variantName && (item.name.toLowerCase().includes(variantName.toLowerCase()) || (item.name.endsWith("(L)") && variantName === "L"))) {
+                variantName = ''; 
+            }
+            let varHtml = variantName ? `<br><span style="font-size:11px; color:#888;">${variantName}</span>` : '';
+
+            // 🔥 Show the Item Order Type if it's different from the main order!
+            let itemTypeBadge = item.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 5px;">${item.orderType}</span>` : '';
+
+            modalHtml += `
+                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
+                    <div><strong>${item.qty}x ${item.name}</strong>${itemTypeBadge}${varHtml}${addonsText}</div>
+                    <div style="font-weight: bold; color: ${isCashTx ? '#94a3b8' : '#333'}">₱${lineTotalDisplay}</div>
+                </div>
+            `;
 
     document.getElementById('txDetailBody').innerHTML = modalHtml;
     document.getElementById('txDetailModal').style.display = 'flex';
@@ -1780,15 +1799,16 @@ window.submitComprehensiveCloseShift = async function () {
                         let itemName = item.name || item.itemName;
                         let qty = parseFloat(item.qty) || 1;
                         let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
-                        let orderType = tx.orderType || 'Dine-In';
+                        
+                        // 🔥 THE MATH FIX: Prioritize the INDIVIDUAL ITEM's order type!
+                        let itemOrderType = item.orderType || tx.orderType || 'Dine-In';
 
                         recipe.forEach(r => {
                             let deductAmount = (parseFloat(r.qty) || 0) * qty;
                             
-                            // 🔥 THE SMART DINE-IN PACKAGING ENGINE
                             let ingName = (r.ingredientName || "").toLowerCase();
                             if (ingName.includes("box")) {
-                                if (orderType.toLowerCase().includes("dine-in")) {
+                                if (itemOrderType.toLowerCase().includes("dine-in")) {
                                     deductAmount = deductAmount / 2; // Exact half deduction!
                                 }
                             }
