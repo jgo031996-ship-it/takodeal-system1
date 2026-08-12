@@ -141,9 +141,19 @@
     .nav-item:hover { background: #1e293b; color: #f8fafc; border-left-color: #475569; }
     .nav-item.active { background: #1e293b; color: #38bdf8; border-left-color: #38bdf8; }
 
-    /* The Emojis/Icons */
-    .nav-icon { font-size: 17px; min-width: 32px; text-align: left; transition: transform 0.2s ease; }
-    .nav-item:hover .nav-icon { transform: scale(1.15); }
+    @keyframes iconWave {
+        0% { transform: scale(1) rotate(0deg); }
+        25% { transform: scale(1.25) rotate(-15deg); }
+        50% { transform: scale(1.25) rotate(12deg); }
+        75% { transform: scale(1.25) rotate(-10deg); }
+        100% { transform: scale(1.15) rotate(0deg); }
+    }
+
+    .nav-icon { font-size: 17px; min-width: 32px; text-align: left; transition: all 0.2s ease; display: inline-block; }
+    .nav-item:hover .nav-icon { animation: iconWave 0.4s ease forwards; }
+    
+    /* 🔥 This permanently stops the ugly blue text highlighting across the whole sidebar! */
+    .nav-item { user-select: none; -webkit-user-select: none; }
 
     /* The Badge */
     .nav-badge {
@@ -341,10 +351,10 @@
       <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')"><span class="nav-icon">📊</span> <span class="nav-text">Global Dashboard</span></a>
       <a href="#" class="nav-item" id="nav-accounts" onclick="switchView('accounts')"><span class="nav-icon">💼</span> <span class="nav-text">Cash & Budget</span></a>
       <a href="#" class="nav-item" id="nav-financial-flow" onclick="switchView('financial-flow')"><span class="nav-icon">🌊</span> <span class="nav-text">Financial Flow</span></a>
-      <div class="nav-item" id="nav-franchise-hub" onclick="switchView('franchise-hub'); window.loadFranchiseHub();">
+      <a href="#" class="nav-item" id="nav-franchise-hub" onclick="switchView('franchise-hub'); window.loadFranchiseHub();">
           <span class="nav-icon">🤝</span>
-          <div class="nav-item-text">Franchise HQ Hub</div>
-      </div>
+          <span class="nav-text">Franchise HQ Hub</span>
+      </a>
       <a href="#" class="nav-item" id="nav-transfers" onclick="switchView('transfers'); loadCashExplorer(); window.loadCashFlowHub();"><span class="nav-icon">🏦</span> <span class="nav-text">EOD Remittance Hub</span></a>
       <a href="#" class="nav-item" id="nav-payables" onclick="switchView('payables'); loadPayablesDashboard();"><span class="nav-icon">🚚</span> <span class="nav-text">Supplier Payables</span></a>
       <a href="#" class="nav-item" id="nav-devices" onclick="switchView('devices'); loadDeviceFleet();"><span class="nav-icon">💻</span> <span class="nav-text">Device Fleet</span></a>
