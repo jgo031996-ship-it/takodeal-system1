@@ -81,7 +81,7 @@ window.applyPermissions = function() {
             'dashboard', 'accounts', 'financial-flow', 'transfers', 
             'devices', 'payroll', 'inbox', 'dispatch', 'zreadings', 
             'history', 'expenses', 'branches', 'sop', 'equipment', 
-            'inventory', 'alerts', 'bulletin'
+            'inventory', 'alerts', 'bulletin', 'franchise-hub'
         ];
         
         allowedTabs.forEach(tab => {
@@ -22342,12 +22342,12 @@ window.loadFranLedger = async function() {
 
     // Setup the dropdown dynamically
     if (!isFranchisee && branchSelect.options.length <= 1) {
-        const mgrSnap = await getDocs(query(collection(db, "hq_managers"), where("role", "==", "Franchisee")));
         let html = '<option value="">-- Select Franchise --</option>';
-        mgrSnap.forEach(d => {
-            let b = d.data().assignedBranch;
-            if (b && b !== "All") html += `<option value="${b}">${b}</option>`;
-        });
+        if (window.globalActiveBranches) {
+            window.globalActiveBranches.forEach(b => { 
+                if (b !== "Main Office") html += `<option value="${b}">${b}</option>`; 
+            });
+        }
         branchSelect.innerHTML = html;
     }
 
@@ -22367,29 +22367,39 @@ window.loadFranLedger = async function() {
     tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #0ea5e9; font-weight: bold;">⏳ Calculating ledger...</td></tr>';
 
     try {
-        const q = query(collection(db, "franchise_ledger"), where("branch", "==", targetBranch), orderBy("timestamp", "asc"));
+        // 🔥 THE INDEX-FREE FIX: Query by Branch, sort in Javascript!
+        const q = query(collection(db, "franchise_ledger"), where("branch", "==", targetBranch));
         const snap = await getDocs(q);
+
+        let rawLogs = [];
+        snap.forEach(docSnap => rawLogs.push(docSnap.data()));
+
+        // Mathematically sort ascending by timestamp
+        rawLogs.sort((a,b) => {
+            let tA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+            let tB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+            return tA - tB;
+        });
 
         let runningBalance = 0; // POSITIVE means Franchisee OWES HQ.
         let html = '';
         let logs = [];
 
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
+        rawLogs.forEach(data => {
             let amt = parseFloat(data.amount) || 0;
             
-            if (data.type === 'Charge') {
+            if (data.type === 'Charge' || data.type === 'Debit') {
                 runningBalance += amt; // Adds to debt
-            } else if (data.type === 'Payment') {
+            } else if (data.type === 'Payment' || data.type === 'Credit') {
                 runningBalance -= amt; // Reduces debt
             }
             logs.push({ ...data, runningBalance: runningBalance });
         });
 
         logs.reverse().forEach(log => {
-            let dateStr = log.timestamp ? log.timestamp.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
-            let amtColor = log.type === 'Payment' ? '#16a34a' : '#dc2626';
-            let amtSign = log.type === 'Payment' ? '-' : '+';
+            let dateStr = log.timestamp ? (log.timestamp.toDate ? log.timestamp.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(log.timestamp).toLocaleString()) : 'Unknown';
+            let amtColor = (log.type === 'Payment' || log.type === 'Credit') ? '#16a34a' : '#dc2626';
+            let amtSign = (log.type === 'Payment' || log.type === 'Credit') ? '-' : '+';
             
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background: white;">
