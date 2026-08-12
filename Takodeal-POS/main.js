@@ -1990,7 +1990,7 @@ window.submitComprehensiveCloseShift = async function () {
         }
 
         // ========================================================
-        // 💳 7.7 FRANCHISE WALLET LEDGER ENGINE (AUTO-SYNC)
+        // 💳 7.7 FRANCHISE BILLING ENGINE (AUTO-SYNC)
         // ========================================================
         try {
             const bQ = query(collection(db, "branches"), where("name", "==", branchName));
@@ -1999,41 +1999,30 @@ window.submitComprehensiveCloseShift = async function () {
             let royaltyPct = 0;
             
             if (!bSnap.empty) {
-                isFranchise = bSnap.docs[0].data().isFranchise === true || bSnap.docs[0].data().royaltyPercent > 0;
+                // Assume it's a franchise if the royalty is greater than 0
+                isFranchise = bSnap.docs[0].data().isFranchise === true || parseFloat(bSnap.docs[0].data().royaltyPercent) > 0;
                 royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
             }
 
             if (isFranchise) {
-                // 1. CREDIT: HQ owes the Franchisee for the GCash/Grab sales HQ collected
-                if (totalDigitalSales > 0) {
-                    await addDoc(collection(db, "franchise_ledger"), {
-                        branch: branchName,
-                        type: "Credit",
-                        category: "Digital Sales (Collected by HQ)",
-                        amount: totalDigitalSales,
-                        description: `Shift Close: Auto-Credit for GCash/Grab Sales`,
-                        loggedBy: "System Z-Reading",
-                        timestamp: serverTimestamp()
-                    });
-                }
-
-                // 2. DEBIT: Franchisee owes HQ for the Royalty Fee
+                // DEBIT: Franchisee owes HQ for the Royalty Fee
+                // Calculated against BOTH Cash and Digital Sales since the Franchisee keeps all the money!
                 let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
                 let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
                 
                 if (royaltyAmount > 0) {
                     await addDoc(collection(db, "franchise_ledger"), {
                         branch: branchName,
-                        type: "Debit",
-                        category: "Franchise Royalty",
+                        type: "Charge", // "Charge" means they owe HQ money
+                        category: "Daily Franchise Royalty",
                         amount: royaltyAmount,
-                        description: `Shift Close: Auto-Deduct ${royaltyPct}% Royalty`,
+                        description: `Shift Close: Auto-Billed ${royaltyPct}% Royalty on ₱${totalGrossForRoyalty.toLocaleString(undefined, {minimumFractionDigits: 2})} Gross Sales`,
                         loggedBy: "System Z-Reading",
                         timestamp: serverTimestamp()
                     });
                 }
             }
-        } catch(e) { console.error("Franchise Wallet Engine Error:", e); }
+        } catch(e) { console.error("Franchise Billing Engine Error:", e); }
 
         // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
         try {
