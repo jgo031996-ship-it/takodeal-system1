@@ -16008,7 +16008,8 @@ document.addEventListener("DOMContentLoaded", () => {
 // ========================================================
 // 📐 CENTRALIZED POS LAYOUT MANAGER
 // ========================================================
-window.currentLayoutPlatform = 'Standard';
+window.currentLayout = [];
+window.categoryImages = {}; // Global initialization
 
 window.switchPosLayoutMode = function(mode) {
     window.currentLayoutPlatform = mode;
@@ -16019,9 +16020,12 @@ window.loadPosLayout = async function() {
     const listDiv = document.getElementById('posCategoryArrangementList');
     if (!listDiv) return;
     listDiv.innerHTML = '<div style="color: #64748b; text-align: center; padding: 20px;">Loading live menu categories...</div>';
-    
-    // 🔥 INJECT THE PLATFORM SELECTOR DYNAMICALLY
-    let headerDiv = listDiv.closest('.card').querySelector('.card-header > div:first-child');
+
+    // 🔥 SAFETY INITIALIZATION: Prevents undefined categoryImages crash!
+    if (!window.categoryImages) window.categoryImages = {};
+
+    // Inject Platform Selector
+    let headerDiv = listDiv.closest('.card')?.querySelector('.card-header > div:first-child');
     if (headerDiv && !document.getElementById('posLayoutModeSelect')) {
         headerDiv.insertAdjacentHTML('beforeend', `
             <select id="posLayoutModeSelect" onchange="window.switchPosLayoutMode(this.value)" style="margin-top: 10px; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #6d28d9; cursor: pointer;">
@@ -16035,7 +16039,7 @@ window.loadPosLayout = async function() {
     try {
         const menuSnap = await getDocs(collection(db, "menu"));
         let categories = new Set();
-        
+
         menuSnap.forEach(d => {
             let data = d.data();
             let cat = data.category;
@@ -16047,7 +16051,7 @@ window.loadPosLayout = async function() {
                 }
             }
         });
-        
+
         // Fetch the specific layout based on the dropdown
         let layoutDocName = "pos_layout";
         if (window.currentLayoutPlatform === 'Grab') layoutDocName = "pos_layout_grab";
@@ -16061,8 +16065,9 @@ window.loadPosLayout = async function() {
 
         window.currentLayout = layout;
         window.renderLayoutEditor();
-    } catch(e) { 
-        console.error("Layout Load Error:", e); 
+    } catch(e) {
+        console.error("Layout Load Error:", e);
+        listDiv.innerHTML = '<div style="color: red; text-align: center;">Error loading layout data.</div>';
     }
 };
 
@@ -16082,10 +16087,13 @@ window.moveLayout = function(index, direction) {
 
 window.renderLayoutEditor = function() {
     let listDiv = document.getElementById('posCategoryArrangementList');
+    if (!listDiv) return;
     let html = '';
-    
-    window.currentLayout.forEach((cat, index) => {
-        // Find the image, or use a beautiful default burger icon!
+
+    // 🔥 SAFETY GUARD
+    if (!window.categoryImages) window.categoryImages = {};
+
+    (window.currentLayout || []).forEach((cat, index) => {
         let imgSrc = window.categoryImages[cat];
         let imgHtml = imgSrc 
             ? `<img src="${imgSrc}" style="width: 45px; height: 45px; border-radius: 8px; object-fit: cover; border: 1px solid #cbd5e1; flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">` 
