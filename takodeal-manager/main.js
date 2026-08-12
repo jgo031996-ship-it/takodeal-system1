@@ -22846,375 +22846,516 @@ window.generateFranchiseSOA = async function() {
 };
 
 // ========================================================
-// 🛡️ THE ULTIMATE FRANCHISEE WALLED GARDEN OVERRIDE 🛡️
+// 🛡️ THE ULTIMATE FRANCHISEE WALLED GARDEN OVERRIDE (V2) 🛡️
 // ========================================================
+
+window.isBranchAllowed = function(branchName) {
+    if (!window.sessionUser || window.sessionUser.isOwner || !window.sessionUser.isFranchisee) return true;
+    return window.sessionUser.allowedBranches.includes(branchName);
+};
 
 window.applyFranchiseUIProtections = function() {
     let isF = window.sessionUser && window.sessionUser.isFranchisee;
     if (!isF) return;
 
-    let myBranch = window.sessionUser.branch;
+    let myBranches = window.sessionUser.allowedBranches;
 
-    // 1. Sidebar Branding (Logo & Profile)
+    // 1. Branding
     let logoText = document.querySelector('.logo-text span:nth-child(2)');
-    if (logoText) logoText.innerText = myBranch.toUpperCase();
+    if (logoText) logoText.innerText = myBranches.join(' & ').toUpperCase();
     
     let profName = document.querySelector('.user-profile .name');
     let profRole = document.querySelector('.user-profile .role');
     if (profName) profName.innerText = window.sessionUser.cashierName;
     if (profRole) profRole.innerText = "Franchise Owner";
 
-    // 2. Hide SOP Builder & Yield Costing
+    // 2. Hide Prohibited UI (SOP Builder, Yield Calc, Toggles)
+    let yieldCalcBox = document.querySelector('#invSectionYield > div:first-child');
+    if (yieldCalcBox) yieldCalcBox.style.display = 'none';
+
     document.querySelectorAll('button').forEach(b => { 
-        if(b.innerText.includes('SOP Builder') || b.innerText.includes('Add New Role')) b.style.display = 'none'; 
+        if(b.innerText.includes('SOP Builder') || b.innerText.includes('Add New Role') || b.innerText.includes('Toggle Status')) {
+            b.style.display = 'none'; 
+        }
     });
+
     let yieldTab = document.getElementById('subnav-Yield');
     if (yieldTab) yieldTab.style.display = 'none';
-
-    // 3. Lock All Dropdowns Globally to their Branch
-    const lockDropdown = (id) => {
-        let el = document.getElementById(id);
-        if (el) { 
-            // Fallback: Inject the option if it doesn't exist
-            if(!Array.from(el.options).some(opt => opt.value === myBranch)){
-                el.innerHTML += `<option value="${myBranch}">${myBranch}</option>`;
-            }
-            el.value = myBranch; 
-            el.disabled = true; 
-        }
-    };
-    ['dashBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'expenseBranchFilter', 'histBranchFilter', 'equipBranchFilter', 'invBranchFilter', 'sanctionBranchFilter'].forEach(lockDropdown);
+    
+    let btnSopBuilder = document.querySelector('button[onclick="window.switchSopTab(\\'Builder\\')"]');
+    if (btnSopBuilder) btnSopBuilder.style.display = 'none';
 };
 
-// OVERRIDE 1: Trigger the Firewall on Login
+// 🔐 CORE 1: Multi-Branch Login Hook
 const originalFinalizeManagerLogin = window.finalizeManagerLogin;
 window.finalizeManagerLogin = function() {
-    originalFinalizeManagerLogin();
+    let isFranchisee = window.tempAuthData.role === 'Franchisee';
+    let branchStr = window.tempAuthData.assignedBranch || 'Main Office';
+    let allowedArr = branchStr.split(',').map(b => b.trim());
+
+    window.sessionUser = {
+        email: window.tempAuthUser.email,
+        branch: allowedArr[0], 
+        allowedBranches: allowedArr, 
+        isFranchisee: isFranchisee,
+        cashierName: window.tempAuthUser.displayName || 'Manager',
+        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && window.tempAuthData.permissions.includes('all'))),
+        permissions: window.tempAuthData.permissions || ['all']
+    };
+
+    document.getElementById('loginOverlay').style.display = 'none';
+    window.applyPermissions();
     window.applyFranchiseUIProtections(); 
+    
+    if (typeof window.switchView === 'function') window.switchView('dashboard');
+    if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
 };
 
-// OVERRIDE 2: Fix Add Staff Bug (Forces new staff into Franchisee's branch)
+// 🔐 CORE 2: Fix Add Staff & Budget Dropdowns
 const originalAddNewStaff = window.addNewStaff;
 window.addNewStaff = function() {
     originalAddNewStaff();
     let bAssign = document.getElementById('empBranchAssign');
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) {
-        bAssign.value = window.sessionUser.branch;
-        bAssign.disabled = true;
+        let html = '';
+        window.sessionUser.allowedBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+        bAssign.innerHTML = html;
     }
 };
 
-// OVERRIDE 3: Fix Add Cash Account Bug
-const originalAddCashAccount = window.addCashAccount;
-window.addCashAccount = function() {
-    originalAddCashAccount();
-    let bSelect = document.getElementById('newAccBranch');
-    if (window.sessionUser && window.sessionUser.isFranchisee && bSelect) {
-        bSelect.value = window.sessionUser.branch;
-        bSelect.disabled = true;
-    }
-};
-
-// OVERRIDE 4: Fix Add Budget Bug
 const originalOpenAddBudgetModal = window.openAddBudgetModal;
 window.openAddBudgetModal = function() {
     originalOpenAddBudgetModal();
     let bSelect = document.getElementById('newBudgetBranch');
     if (window.sessionUser && window.sessionUser.isFranchisee && bSelect) {
-        bSelect.value = window.sessionUser.branch;
-        bSelect.disabled = true;
+        let html = '';
+        window.sessionUser.allowedBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+        bSelect.innerHTML = html;
     }
 };
 
-// OVERRIDE 5: Clean Up Accounts & Budget Display
+// 🔐 CORE 3: Accounts & Budget Visual Cleanup
 const originalLoadAccountsAndBudget = window.loadAccountsAndBudget;
 window.loadAccountsAndBudget = async function() {
     await originalLoadAccountsAndBudget();
-    
-    // Force DOM cleanup for visual isolation
     if (window.sessionUser && window.sessionUser.isFranchisee) {
-        let myBranch = window.sessionUser.branch;
-        
-        // Hide accounts not belonging to franchise
         document.querySelectorAll('#accTableBody tr').forEach(tr => {
-            if (!tr.innerText.includes(myBranch) && !tr.innerText.includes('Loading')) tr.style.display = 'none';
+            let isMine = window.sessionUser.allowedBranches.some(b => tr.innerText.includes(b));
+            if (!isMine && !tr.innerText.includes('Loading')) tr.style.display = 'none';
         });
-        
-        // Hide budgets not belonging to franchise
         document.querySelectorAll('#budgetListBody > div').forEach(div => {
-            if (!div.innerText.includes(myBranch) && !div.innerText.includes('Loading')) div.style.display = 'none';
+            let isMine = window.sessionUser.allowedBranches.some(b => div.innerText.includes(b));
+            if (!isMine && !div.innerText.includes('Loading')) div.style.display = 'none';
         });
     }
 };
 
-// OVERRIDE 6: Floating Cash / EOD Hub Isolation
-window.loadCashFlowHub = async function() {
+// 🔐 CORE 4: HR Module Data Isolation (Fixes disappearing staff)
+window.loadHRModule = async function() {
+    const tbody = document.getElementById('staffTableBody');
+    if (!tbody) return;
+    window.showArchivedStaff = window.showArchivedStaff || false;
+    
+    let archiveBtnHtml = `<button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">${window.showArchivedStaff ? '📂 Hide Archived Staff' : '📁 View Archived / Resigned Staff'}</button>`;
+    if (!document.getElementById('archiveToggleBtn')) {
+        let btnWrapper = document.createElement('div'); btnWrapper.id = 'archiveToggleBtn'; btnWrapper.innerHTML = archiveBtnHtml;
+        tbody.closest('table').parentNode.insertBefore(btnWrapper, tbody.closest('table'));
+    } else document.getElementById('archiveToggleBtn').innerHTML = archiveBtnHtml;
+
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
+
     try {
-        let safeCash = 0;
-        const accSnap = await getDocs(collection(db, "cash_accounts"));
-        accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
-
-        let branchHtml = '';
-        let totalDrawerCash = 0;
-
-        const pendingRemitsQ = query(collection(db, "remittances"), where("status", "==", "Pending"));
-        const pendingRemitsSnap = await getDocs(pendingRemitsQ);
-        let pendingByBranch = {};
-        pendingRemitsSnap.forEach(d => {
-            let r = d.data();
-            pendingByBranch[r.branch] = (pendingByBranch[r.branch] || 0) + 1;
-        });
-
-        // 🔥 ISOLATION ALGORITHM
-        let branchesToScan = (window.sessionUser && window.sessionUser.isFranchisee) 
-            ? [window.sessionUser.branch] 
-            : window.globalActiveBranches;
-
-        for (let branch of branchesToScan) {
-            if (branch === "Main Office") continue;
-
-            let drawerAmount = 0;
-            let drawerStatus = "";
-            let alertColor = "#0f766e";
-            let alertBg = "#f0fdfa";
-            let alertBorder = "#bbf7d0";
-
-            const activeQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
-            const activeSnap = await getDocs(activeQ);
-
-            if (!activeSnap.empty) {
-                let sData = activeSnap.docs[0].data();
-                let sTime = sData.startTime.toDate();
-                drawerAmount = parseFloat(sData.startingCash) || 0;
-
-                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime));
-                const txSnap = await getDocs(txQ);
-                txSnap.forEach(t => {
-                    let tx = t.data();
-                    if (tx.status !== 'Voided') {
-                        if (tx.splitDetails) {
-                            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                            if (cashSplit) drawerAmount += cashSplit.amount;
-                        } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                            drawerAmount += (parseFloat(tx.netTotal) || 0);
-                        }
-                    }
-                });
-
-                const expQ = query(collection(db, "expenses"), where("shiftId", "==", activeSnap.docs[0].id));
-                const expSnap = await getDocs(expQ);
-                expSnap.forEach(e => { drawerAmount -= (parseFloat(e.data().amount) || 0); });
-
-                drawerStatus = '<span style="color:#16a34a; font-weight:bold; font-size:11px;">🟢 Register Open</span>';
-            } else {
-                const closedQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
-                const closedSnap = await getDocs(closedQ);
-                if (!closedSnap.empty) {
-                    drawerAmount = parseFloat(closedSnap.docs[0].data().declaredCash) || 0;
-                    drawerStatus = '<span style="color:#64748b; font-weight:bold; font-size:11px;">⚪ Register Closed</span>';
-                } else {
-                    drawerStatus = '<span style="color:#94a3b8; font-weight:bold; font-size:11px;">No Data</span>';
-                }
-            }
-
-            if (drawerAmount > 5000) { alertColor = "#dc2626"; alertBg = "#fef2f2"; alertBorder = "#fecaca"; }
-            totalDrawerCash += drawerAmount;
-
-            let pendingCount = pendingByBranch[branch] || 0;
-            let badgeHtml = pendingCount > 0 ? `<div style="position: absolute; top: -10px; right: -10px; background: #ef4444; color: white; width: 26px; height: 26px; border-radius: 50%; font-size: 13px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 2px solid white; animation: pulse 1.5s infinite;">${pendingCount}</div>` : '';
-
-            branchHtml += `
-                <div onclick="window.openBranchTransferHistory('${branch}')" style="position: relative; background: ${alertBg}; border: 1px solid ${alertBorder}; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)';">
-                    ${badgeHtml}
-                    <div style="font-weight: bold; color: #334155; margin-bottom: 5px; font-size: 14px;">📍 ${branch}</div>
-                    <div style="font-size: 20px; font-weight: 900; color: ${alertColor};">₱${drawerAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div style="margin-top: 4px;">${drawerStatus}</div>
-                </div>
-            `;
-        }
-
-        document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'flex';
+        const snap = await getDocs(collection(db, "cashiers")); // Fetch all, filter safely
+        let html = '';
+        window.globalStaffData = {};
+        let staffList = [];
         
-        document.querySelectorAll('div, span, h3').forEach(el => {
-            if (el.innerText === "FLOATING CASH (AT BRANCHES)") el.innerText = "LIVE CASH IN DRAWERS";
-            if (el.innerText === "Expected Z-Reading Cash not yet remitted") el.innerText = "Total physical cash sitting in branches right now";
+        snap.forEach(docSnap => { 
+            let d = docSnap.data();
+            if (window.isBranchAllowed(d.branch)) staffList.push({ id: docSnap.id, ...d }); 
         });
+        
+        staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
 
-        document.getElementById('branchFloatingContainer').innerHTML = branchHtml;
+        staffList.forEach(data => {
+            if (!window.showArchivedStaff && data.status === 'Resigned') return; 
+            if (window.showArchivedStaff && data.status !== 'Resigned') return;  
 
-    } catch (e) { console.error("Cash Flow Hub Error:", e); }
-};
+            window.globalStaffData[data.id] = data; 
+            let pinDisplay = window.sessionUser.isOwner ? (data.pin || '0000') : '****';
+            if (data.pin === 'REVOKED') pinDisplay = 'REVOKED'; 
+            let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/day` : `<span style="color:#ef4444; font-size:11px;">Rate Missing</span>`;
 
-// OVERRIDE 7: Logistics Feed Tabs Isolation
-const originalRenderLogisticsUI = window.renderLogisticsUI;
-window.renderLogisticsUI = function() {
-    originalRenderLogisticsUI();
-    if (window.sessionUser && window.sessionUser.isFranchisee) {
-        let branchContainer = document.getElementById('logisticsBranchTabs');
-        if (branchContainer) {
-            branchContainer.innerHTML = `<button style="flex: 1; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid #10b981; background: white; color: #0f172a; cursor: default;">📍 ${window.sessionUser.branch}</button>`;
-        }
-    }
-};
-
-// OVERRIDE 8: Pending Verifications Leak Fix
-const originalLoadUnverifiedHistory = window.loadUnverifiedHistory;
-window.loadUnverifiedHistory = async function() {
-    await originalLoadUnverifiedHistory();
-    if (window.sessionUser && window.sessionUser.isFranchisee) {
-        document.querySelectorAll('#unverifiedHistoryBody tr').forEach(tr => {
-            if (!tr.innerText.includes(window.sessionUser.branch) && !tr.innerText.includes('caught up')) tr.style.display = 'none';
+            html += `<tr>
+                <td><strong style="font-size: 15px; color: var(--primary);">👤 ${data.cashierName || 'Unknown'}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${data.phone || 'No Phone'}</span></td>
+                <td>📍 ${data.branch || 'Unassigned'}</td>
+                <td><span class="badge badge-active">${data.role || 'Crew'}</span><br><span style="font-size: 12px; font-weight: bold; color: #16a34a; margin-top: 4px; display: inline-block;">${rateDisplay}</span></td>
+                <td style="font-family: monospace; font-size: 18px; letter-spacing: 2px; color: var(--danger); font-weight: bold;">${pinDisplay}</td>
+                <td><button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 8px 12px; font-weight: bold; border-radius: 6px;" onclick="window.openEmployeeProfile('${data.id}')">📂 Open Profile</button></td>
+            </tr>`;
         });
-    }
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No staff found. Click "Add New Staff" to create one.</td></tr>';
+    } catch (error) { console.error(error); }
 };
 
-// OVERRIDE 9: Hide Toggle Status Button for Franchisees
-const originalLoadAnnouncementHistory = window.loadAnnouncementHistory;
-window.loadAnnouncementHistory = async function() {
-    await originalLoadAnnouncementHistory();
-    if (window.sessionUser && window.sessionUser.isFranchisee) {
-        document.querySelectorAll('button').forEach(btn => {
-            if (btn.innerText.includes('Toggle Status')) btn.style.display = 'none';
-        });
-    }
-};
-
-// OVERRIDE 10: Inventory Audits Data Lock
-const originalLoadInventoryAudits = window.loadInventoryAudits;
+// 🔐 CORE 5: Inventory Audits (Fixes 153k Variance Data Bleed)
 window.loadInventoryAudits = async function() {
-    await originalLoadInventoryAudits();
-    if (window.sessionUser && window.sessionUser.isFranchisee) {
-        document.querySelectorAll('#auditLogsBody tr').forEach(tr => {
-            if (!tr.innerText.includes(window.sessionUser.branch) && !tr.innerText.includes('No stock counts')) tr.style.display = 'none';
-        });
-    }
-};
+    const tbody = document.getElementById('auditLogsBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Fetching audit logs...</td></tr>';
 
-// OVERRIDE 11: Protect the Dashboard Pie Chart & Line Chart
-window.renderDashboardCharts = async function() {
-    const lineCanvas = document.getElementById('revenueTrendChart');
-    const pieCanvas = document.getElementById('categoryMixChart');
-    if (!lineCanvas) return;
+    let durationFilterEl = document.getElementById('auditDurationFilter');
+    let exactDateFilterEl = document.getElementById('auditExactDate');
+    let durationFilter = durationFilterEl ? durationFilterEl.value : 'all';
+    let exactDateFilter = exactDateFilterEl ? exactDateFilterEl.value : '';
+    let startDate = new Date(); startDate.setHours(0,0,0,0);
+    
+    if (exactDateFilter) startDate = new Date(exactDateFilter + 'T00:00:00');
+    else if (durationFilter === '7days') startDate.setDate(startDate.getDate() - 7);
+    else if (durationFilter === '30days') startDate.setDate(startDate.getDate() - 30);
+    else if (durationFilter === 'all') startDate = new Date('2020-01-01');
 
     try {
-        const toLocalISODate = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-        
-        let labels = []; let dateKeys = [];
-        let today = new Date(); let todayStr = toLocalISODate(today);
-
-        for (let i = 6; i >= 0; i--) {
-            let d = new Date(); d.setDate(today.getDate() - i);
-            dateKeys.push(toLocalISODate(d));
-            labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-        }
-
-        let startDate = new Date();
-        startDate.setDate(today.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
-
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
+        const q = query(collection(db, "stock_counts"), where("timestamp", ">=", startDate), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
+        const invSnap = await getDocs(collection(db, "inventory"));
+        let invDb = {};
+        invSnap.forEach(d => { let item = d.data(); invDb[`${item.branch}_${item.name}`] = parseFloat(item.baseCost) || 0; });
 
-        const menuSnap = await getDocs(collection(db, "menu"));
-        let menuCategories = {};
-        menuSnap.forEach(doc => { menuCategories[doc.data().name] = doc.data().category || 'Uncategorized'; });
-
-        const branchColors = {
-            "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
-            "Citygate":  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" },
-            "Maa":       { border: "#0284c7", bg: "rgba(2, 132, 199, 0.1)" },
-            "Main Office": { border: "#10b981", bg: "rgba(16, 185, 129, 0.1)" }
-        };
-
-        // 🔥 ISOLATION LOCK
-        let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
-        if (window.sessionUser && window.sessionUser.isFranchisee) {
-            activeBranches = [window.sessionUser.branch];
-        }
-
-        let branchSalesData = {};
-        activeBranches.forEach(b => { branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 }; });
-        let categorySales = {}; 
+        let html = '';
+        let globalLoss = 0; let globalPerfectItems = 0; let globalTotalItems = 0;
 
         snap.forEach(docSnap => {
-            let tx = docSnap.data();
-            if (tx.status === "Voided") return;
+            let data = docSnap.data();
+            
+            // 🔥 THE MATH SHIELD: Completely ignores branches they don't own!
+            if (!window.isBranchAllowed(data.branch)) return;
 
-            let txBranch = tx.branch || "Unknown";
-            let txDateObj = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : null;
-            let txDate = txDateObj ? toLocalISODate(txDateObj) : null;
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let counts = data.counts || [];
+            let rowLoss = 0; let rowPerfect = 0;
 
-            if (branchSalesData[txBranch]) {
-                let dayIndex = dateKeys.indexOf(txDate);
-                if (dayIndex !== -1) {
-                    if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
-                        tx.splitDetails.forEach(split => {
-                            let method = (split.method || '').toLowerCase();
-                            if ((method === 'cash' && window.chartFilters.cash) || (method.includes('gcash') && window.chartFilters.gcash) || (method.includes('grab') && window.chartFilters.grab)) {
-                                branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
-                            }
-                        });
-                    } else {
-                        let method = (tx.paymentMethod || 'cash').toLowerCase();
-                        let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
-                        let isGcash = method.includes('gcash') && window.chartFilters.gcash;
-                        let isGrab = method.includes('grab') && window.chartFilters.grab;
-                        let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; 
+            counts.forEach(c => {
+                let cost = invDb[`${data.branch}_${c.name}`] || 0;
+                let physQty = parseFloat(c.physicalQty !== undefined ? c.physicalQty : c.actualQty) || 0;
+                let sysQty = parseFloat(c.systemQty);
+                let savedVariance = parseFloat(c.variance);
 
-                        if (isCash || isGcash || isGrab || isOtherDigital) {
-                            branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
-                        }
-                    }
+                if (isNaN(sysQty)) {
+                    if (!isNaN(savedVariance)) sysQty = physQty - savedVariance; 
+                    else sysQty = physQty; 
                 }
-            }
 
-            if (txDate === todayStr && pieCanvas && tx.cart) {
-                // 🔥 SECURITY LOCK: Only add to Pie Chart if it belongs to the Franchisee's allowed branches!
-                if (activeBranches.includes(txBranch)) {
-                    tx.cart.forEach(item => {
-                        let itemName = item.name || item.itemName;
-                        let cat = menuCategories[itemName] || item.category || "Uncategorized";
-                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
-                        if (!categorySales[cat]) categorySales[cat] = 0;
-                        categorySales[cat] += lineTotal;
-                    });
-                }
-            }
-        });
-
-        let lineDatasets = [];
-        activeBranches.forEach(branch => {
-            let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
-            lineDatasets.push({
-                label: branch, data: dateKeys.map((_, idx) => branchSalesData[branch][idx]),
-                borderColor: color.border, backgroundColor: color.bg, borderWidth: 3, tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6
+                let variance = physQty - sysQty;
+                if (variance < 0) rowLoss += (Math.abs(variance) * cost);
+                if (variance === 0) rowPerfect++;
+                globalTotalItems++;
             });
+            
+            globalLoss += rowLoss;
+            globalPerfectItems += rowPerfect;
+            let countsEncoded = encodeURIComponent(JSON.stringify(counts));
+
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #0f766e;">${data.branch}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">${data.cashier}</td>
+                    <td style="padding: 12px;"><span style="background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">${counts.length} Items</span></td>
+                    <td style="padding: 12px; font-weight: bold; color: #dc2626;">${rowLoss > 0 ? `₱${rowLoss.toFixed(2)}` : '₱0.00'}</td>
+                    <td style="padding: 12px;"><button onclick="window.viewAuditDetails('${dateStr}', '${data.branch}', '${data.cashier}', '${countsEncoded}')" style="background: white; border: 1px solid #0f766e; color: #0f766e; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;">🔍 View Details</button></td>
+                </tr>`;
         });
 
-        if (window.revenueChartInstance) window.revenueChartInstance.destroy();
-        window.revenueChartInstance = new Chart(lineCanvas.getContext('2d'), {
-            type: 'line', data: { labels: labels, datasets: lineDatasets },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } }, scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return '₱' + value.toLocaleString(); } } } } }
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No stock counts submitted.</td></tr>';
+
+        let accuracy = globalTotalItems > 0 ? (globalPerfectItems / globalTotalItems) * 100 : 100;
+        if (document.getElementById('auditKpiAccuracy')) document.getElementById('auditKpiAccuracy').innerText = `${accuracy.toFixed(1)}%`;
+        if (document.getElementById('auditKpiLoss')) document.getElementById('auditKpiLoss').innerText = `₱${globalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    } catch(e) { console.error(e); }
+};
+
+// 🔐 CORE 6: Equipment Dashboard Isolation
+window.loadEquipmentDashboard = async function() {
+    const tbody = document.getElementById('equipmentTableBody');
+    if (!tbody) return;
+    
+    let branchFilterEl = document.getElementById('equipBranchFilter');
+    let branchFilter = branchFilterEl ? branchFilterEl.value : "All";
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px;">⏳ Scanning registered hardware...</td></tr>';
+
+    try {
+        const snap = await getDocs(query(collection(db, "equipment_assets"), orderBy("purchaseDate", "desc")));
+        let html = ''; let activeValue = 0; let brokenValue = 0;
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            
+            // 🔥 SECURITY LOCK
+            if (!window.isBranchAllowed(d.branch)) return;
+            if (branchFilter !== "All" && d.branch !== branchFilter) return;
+
+            let cost = parseFloat(d.cost) || 0;
+            if (d.status === "Active") activeValue += cost; else brokenValue += cost;
+
+            let pDate = d.purchaseDate ? new Date(d.purchaseDate).toLocaleDateString() : '-';
+            let oDate = d.operateDate ? new Date(d.operateDate).toLocaleDateString() : '-';
+            let timelineHtml = `<div style="font-size: 11px; color: #64748b;"><div><strong style="color:#0f172a;">Purchased:</strong> ${pDate}</div><div><strong style="color:#16a34a;">Operating:</strong> ${oDate}</div></div>`;
+            let statusBadge = d.status === "Active" ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🟢 Active</span>` : `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🔴 ${d.status}</span>`;
+
+            let actionHtml = `<div style="display:flex; gap: 5px; flex-direction:column;">`;
+            let safeDataStr = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
+            actionHtml += `<button onclick="window.editEquipmentModal('${safeDataStr}')" style="background: #eff6ff; color: #0ea5e9; border: 1px solid #bae6fd; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">✏️ Edit</button>`;
+            
+            if (d.status === "Active") actionHtml += `<button onclick="window.markEquipmentBroken('${docSnap.id}', '${d.name.replace(/'/g, "\\'")}', '${d.branch}')" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⚠️ Breakdown</button>`;
+            actionHtml += `<button onclick="window.deleteEquipment('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">🗑️ Delete</button></div>`;
+          
+            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px;"><strong style="color: #1e293b; font-size: 14px;">${d.name}</strong><br><span style="font-size: 11px; color: #64748b;">${d.details || 'No details'}</span></td>
+                    <td style="padding: 15px;"><span class="badge badge-open">${d.branch}</span></td>
+                    <td style="padding: 15px; font-weight: bold; color: ${d.status === 'Active' ? '#0f766e' : '#94a3b8'};">₱${cost.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px;">${timelineHtml}</td>
+                    <td style="padding: 15px;">${statusBadge}</td>
+                    <td style="padding: 15px; text-align: center;">${actionHtml}</td>
+                </tr>`;
         });
 
-        if (pieCanvas) {
-            let sortedCats = Object.keys(categorySales).map(cat => ({ name: cat, sales: categorySales[cat] })).sort((a, b) => b.sales - a.sales);
-            let top5 = sortedCats.slice(0, 5); 
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #94a3b8;">No equipment registered yet.</td></tr>';
+        document.getElementById('equipTotalValue').innerText = `₱${activeValue.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('equipBrokenValue').innerText = `₱${brokenValue.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    } catch (e) { console.error(e); }
+};
+
+// 🔐 CORE 7: Dispatch Logs Isolation (Hide Delete/Recall for Franchisees)
+window.loadDispatchLogs = async function() {
+    const tbody = document.getElementById('dispatchLogBody');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 20px;">⏳ Loading logistics data...</td></tr>';
+
+    try {
+        const poSnap = await getDocs(query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Drafting", "Delayed"]), orderBy("timestamp", "desc")));
+        let poHtml = ''; let poCount = 0;
+        
+        poSnap.forEach(docSnap => {
+            let po = docSnap.data();
+            if (!window.isBranchAllowed(po.branch)) return; // 🔥 SECURITY LOCK
             
-            if (window.categoryMixChartInstance) window.categoryMixChartInstance.destroy();
-            const ctxPie = pieCanvas.getContext('2d');
+            poCount++;
+            let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            let isDelayed = po.status === "Delayed" || (po.requestedBy && po.requestedBy.includes("Backlogged"));
             
-            if (top5.length === 0) {
-                window.categoryMixChartInstance = new Chart(ctxPie, { type: 'doughnut', data: { labels: ["No Sales Today"], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } } } });
-            } else {
-                window.categoryMixChartInstance = new Chart(ctxPie, {
-                    type: 'doughnut',
-                    data: { labels: top5.map(c => c.name), datasets: [{ data: top5.map(c => c.sales), backgroundColor: ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444'], borderWidth: 2, borderColor: '#ffffff' }] },
-                    options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { font: { weight: 'bold', size: 11 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.label}: ₱${context.parsed.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } } }
-                });
+            let statusBadge = isDelayed ? `<span style="background:#fef2f2; color:#b91c1c; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">⏳ Delayed (HQ Out of Stock)</span>` : (po.status === "Drafting" ? `<span style="background:#bae6fd; color:#0369a1; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Drafting in Cart</span>` : `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Pending</span>`);
+            
+            let actionBtn = (window.sessionUser && window.sessionUser.isFranchisee) 
+                ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
+                : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
+            
+            poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
+                <td style="padding:15px;">
+                    <div style="font-weight:900; color:#d97706; font-size:15px;">📝 Request from ${po.branch}</div>
+                    <div style="font-size:11px; color:#d97706; margin-top:4px;">📅 ${dateStr} • <strong style="font-size:13px;">${po.items.length} items</strong></div>
+                </td>
+                <td style="padding:15px; text-align:center;">${statusBadge}</td>
+                <td style="padding:15px; text-align:right;">${actionBtn}</td>
+            </tr>`;
+        });
+
+        const dSnap = await getDocs(query(collection(db, "dispatch_logs"), orderBy("timestamp", "desc")));
+        let deliveries = {};
+        
+        dSnap.forEach(doc => {
+            let d = doc.data(); 
+            if (!window.isBranchAllowed(d.toBranch)) return; // 🔥 SECURITY LOCK
+            
+            let groupKey = `${d.date}_${d.toBranch}_${d.driver || 'Unknown'}`;
+            if(!deliveries[groupKey]) deliveries[groupKey] = { date: d.date, time: d.time, toBranch: d.toBranch, driver: d.driver || 'Unknown', items: [], status: 'In Transit', timestamp: d.timestamp };
+            deliveries[groupKey].items.push({id: doc.id, ...d});
+            if(d.status === "Received") deliveries[groupKey].status = "Received";
+            if(d.status === "Variance") deliveries[groupKey].status = "Variance Detected";
+            if(d.status === "Backloaded") deliveries[groupKey].status = "Backloaded";
+        });
+
+        let deliveryHtml = '';
+        let sortedKeys = Object.keys(deliveries).sort((a,b) => deliveries[b].timestamp - deliveries[a].timestamp);
+
+        sortedKeys.slice(0, 20).forEach(key => {
+            let del = deliveries[key];
+            let badgeColor = del.status === 'Received' ? '#16a34a' : (del.status === 'Variance Detected' ? '#dc2626' : (del.status === 'Backloaded' ? '#475569' : '#f59e0b'));
+            let safeItemsJson = encodeURIComponent(JSON.stringify(del.items));
+
+            deliveryHtml += `<tr style="border-bottom:1px solid #e2e8f0; background: white; transition: 0.2s;">
+                <td style="padding:15px;">
+                    <div style="font-weight:bold; color:#0f172a; font-size:14px;">📍 To: ${del.toBranch}</div>
+                    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">📅 ${del.date} at ${del.time}</div>
+                </td>
+                <td style="padding:15px; text-align:center;"><span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span></td>
+                <td style="padding:15px; text-align:right;"><button onclick="window.viewDeliveryDetails('${safeItemsJson}')" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">🔍 Full Details</button></td>
+            </tr>`;
+        });
+
+        window.globalPoHtml = poHtml;
+        window.globalDeliveryHtml = deliveryHtml;
+        window.globalPoCount = poCount;
+        window.globalDeliveryCount = sortedKeys.length;
+        window.renderLogisticsUI();
+
+    } catch (e) { console.error(e); }
+};
+
+const origViewDeliveryDetails = window.viewDeliveryDetails;
+window.viewDeliveryDetails = function(encodedGroup) {
+    origViewDeliveryDetails(encodedGroup);
+    let footerEl = document.getElementById('dispatchDetailsFooter');
+    if (footerEl && window.sessionUser && window.sessionUser.isFranchisee) {
+        // Hides Backload and Requeue buttons so Franchisees can't edit transit logic
+        Array.from(footerEl.children).forEach(child => {
+            if (child.tagName === 'BUTTON' && !child.innerText.includes('Mark Arrived')) {
+                child.style.display = 'none';
             }
+        });
+    }
+};
+
+// 🔐 CORE 8: Unverified Payments Isolation
+window.loadUnverifiedHistory = async function() {
+    let tbody = document.getElementById('unverifiedHistoryBody');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; font-weight: bold; color: #64748b;">⏳ Scanning database...</td></tr>';
+    
+    try {
+        let lookBack = new Date(); lookBack.setDate(lookBack.getDate() - 7);
+        const snap = await getDocs(query(collection(db, "transactions"), where("timestamp", ">=", lookBack)));
+        
+        let html = ''; window.pendingVerifications = []; let count = 0;
+        let txArray = []; let seenReceipts = {}; 
+
+        snap.forEach(doc => {
+            let tx = doc.data();
+            if (!window.isBranchAllowed(tx.branch)) return; // 🔥 SECURITY LOCK
+            
+            let method = (tx.paymentMethod || '').toLowerCase();
+            if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
+                let rId = tx.receiptId || tx.id;
+                if (!seenReceipts[rId]) { seenReceipts[rId] = true; txArray.push({id: doc.id, ...tx}); }
+            }
+        });
+
+        txArray.sort((a, b) => b.timestamp - a.timestamp).forEach(tx => {
+            count++; window.pendingVerifications.push(tx.id);
+            let dateStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+            let safeCashier = tx.cashier || 'Unknown';
+            
+            html += `<tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                    <td style="padding: 15px; font-weight: bold; color: #334155;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #0f172a;">${tx.branch}</td>
+                    <td style="padding: 15px;"><div style="font-weight: bold; color: #0284c7;">👤 ${safeCashier}</div></td>
+                    <td style="padding: 15px; font-weight: 900; color: #ea580c;">${tx.paymentMethod}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #16a34a; text-align: right; font-size: 16px;">₱${parseFloat(tx.netTotal).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px; text-align: center;"><button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✅ Verify</button></td>
+                </tr>`;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; font-weight: bold; color: #16a34a; font-size: 16px;">🎉 All caught up! No pending digital payments.</td></tr>';
+        window.updateUnverifiedBadges(count);
+    } catch(e) { console.error(e); }
+};
+
+// 🔐 CORE 9: Expense Feed Data Shield
+window.loadExpenseLogs = async function() {
+    const tbody = document.getElementById('expenseLogsTableBody');
+    if (!tbody) return;
+
+    let branchFilter = document.getElementById('expenseBranchFilter') ? document.getElementById('expenseBranchFilter').value : "All";
+    let totalExp = 0; let countExp = 0;
+
+    try {
+        const snap = await getDocs(query(collection(db, "expenses"), orderBy("timestamp", "desc")));
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            
+            // 🔥 SECURITY LOCK
+            if (!window.isBranchAllowed(data.branch)) return;
+            if (branchFilter !== "All" && data.branch !== branchFilter) return;
+
+            let jsDate = data.timestamp ? data.timestamp.toDate() : new Date();
+            let category = data.category || 'Expense';
+            let desc = data.description || data.note || category;
+            
+            let isPayroll = category.toLowerCase().includes('payroll');
+            let isRestock = (desc && desc.includes('(Qty:')) || category.toLowerCase().includes('restock');
+
+            if (window.activeExpenseTab === 'Payroll' && !isPayroll) return;
+            if (window.activeExpenseTab === 'Restocks' && !isRestock) return;
+            if (window.activeExpenseTab === 'Expenses' && (isPayroll || isRestock)) return;
+
+            let amount = parseFloat(data.amount) || 0;
+            totalExp += amount; countExp++;
+
+            let dateStr = jsDate.toLocaleString('en-PH');
+            html += `<tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 15px 20px; color: #64748b; font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 15px 20px;"><span class="badge badge-open">${data.branch}</span></td>
+                    <td style="padding: 15px 20px; color: #475569;">${desc}</td>
+                    <td style="padding: 15px 20px; text-align: right; color: #dc2626; font-weight: bold; font-size: 15px;">₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                </tr>`;
+        });
+
+        tbody.innerHTML = html || `<tr><td colspan="4" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No logs found for ${window.activeExpenseTab}.</td></tr>`;
+        if(document.getElementById('expSumTotal')) document.getElementById('expSumTotal').innerText = `₱${totalExp.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        if(document.getElementById('expSumCount')) document.getElementById('expSumCount').innerText = countExp;
+    } catch (e) { console.error(e); }
+};
+
+// 🔐 CORE 10: Live Security Alerts Lock
+window.renderSecurityFeed = function() {
+    let html = '';
+    let filteredAlerts = window.globalSecurityAlerts.filter(data => {
+        if (!window.isBranchAllowed(data.branch)) return false; // 🔥 SECURITY LOCK
+        if (window.activeSecurityBranch !== "All" && data.branch !== window.activeSecurityBranch) return false;
+        return true;
+    });
+
+    if (filteredAlerts.length === 0) {
+        html = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: var(--success); font-weight: bold;">🛡️ No security alerts. Your empire is safe.</td></tr>';
+    } else {
+        filteredAlerts.forEach(data => {
+            let timeStr = data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            html += `<tr style="background: ${data.isRead ? 'transparent' : 'var(--danger-light)'}; opacity: ${data.isRead ? '0.6' : '1'};">
+                <td style="font-size: 12px; color: var(--text-muted); padding: 12px;">${timeStr}</td>
+                <td style="padding: 12px;"><strong>📍 ${data.branch}</strong></td>
+                <td style="padding: 12px;"><span style="color: ${data.isRead ? 'var(--text-muted)' : 'var(--danger)'}; font-weight: ${data.isRead ? 'normal' : 'bold'};">⚠️ ${data.message}</span></td>
+                <td style="padding: 12px; text-align: right;">${!data.isRead ? `<button onclick="dismissAlert('${data.id}')">✓ Mark Resolved</button>` : '✓ Resolved'}</td>
+            </tr>`;
+        });
+    }
+    const tbody = document.getElementById('alertsTableBody');
+    if (tbody) tbody.innerHTML = html;
+};
+
+// 🔐 CORE 11: SOP Manager Privacy
+const origLoadSopManager = window.loadSopManager;
+window.loadSopManager = async function() {
+    await origLoadSopManager();
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        let lSelect = document.getElementById('sopLogBranch');
+        if (lSelect) {
+            let html = '';
+            window.sessionUser.allowedBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+            lSelect.innerHTML = html;
         }
-    } catch(e) { console.error("Chart Error:", e); }
+    }
+};
+
+const origLoadSopLogs = window.loadSopLogs;
+window.loadSopLogs = async function() {
+    await origLoadSopLogs();
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        document.querySelectorAll('#sopLogsBody tr').forEach(tr => {
+            let isMine = window.sessionUser.allowedBranches.some(b => tr.innerText.includes(b));
+            if (!isMine && !tr.innerText.includes('No checklists')) tr.style.display = 'none';
+        });
+    }
 };
