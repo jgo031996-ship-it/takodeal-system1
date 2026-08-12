@@ -1989,38 +1989,51 @@ window.submitComprehensiveCloseShift = async function () {
             }
         }
 
-        // 👑 7.5 FRANCHISE ROYALTY & PROFIT SHARING ENGINE
+        // ========================================================
+        // 💳 7.7 FRANCHISE WALLET LEDGER ENGINE (AUTO-SYNC)
+        // ========================================================
         try {
             const bQ = query(collection(db, "branches"), where("name", "==", branchName));
             const bSnap = await getDocs(bQ);
+            let isFranchise = false;
             let royaltyPct = 0;
-            if (!bSnap.empty) royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
+            
+            if (!bSnap.empty) {
+                isFranchise = bSnap.docs[0].data().isFranchise === true || bSnap.docs[0].data().royaltyPercent > 0;
+                royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
+            }
 
-            if (royaltyPct > 0) {
+            if (isFranchise) {
+                // 1. CREDIT: HQ owes the Franchisee for the GCash/Grab sales HQ collected
+                if (totalDigitalSales > 0) {
+                    await addDoc(collection(db, "franchise_ledger"), {
+                        branch: branchName,
+                        type: "Credit",
+                        category: "Digital Sales (Collected by HQ)",
+                        amount: totalDigitalSales,
+                        description: `Shift Close: Auto-Credit for GCash/Grab Sales`,
+                        loggedBy: "System Z-Reading",
+                        timestamp: serverTimestamp()
+                    });
+                }
+
+                // 2. DEBIT: Franchisee owes HQ for the Royalty Fee
                 let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
                 let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
-
+                
                 if (royaltyAmount > 0) {
-                    await addDoc(collection(db, "expenses"), {
-                        branch: branchName, amount: royaltyAmount, category: "Franchise Royalty Fee", account: "System Auto-Deduct", 
-                        note: `Auto-Deducted ${royaltyPct}% Royalty from ₱${totalGrossForRoyalty.toFixed(2)} Total Sales`, timestamp: serverTimestamp()
+                    await addDoc(collection(db, "franchise_ledger"), {
+                        branch: branchName,
+                        type: "Debit",
+                        category: "Franchise Royalty",
+                        amount: royaltyAmount,
+                        description: `Shift Close: Auto-Deduct ${royaltyPct}% Royalty`,
+                        loggedBy: "System Z-Reading",
+                        timestamp: serverTimestamp()
                     });
-
-                    const eqQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", "Owner's Equity"));
-                    const eqSnap = await getDocs(eqQ);
-                    
-                    if (!eqSnap.empty) {
-                        let eqDoc = eqSnap.docs[0];
-                        let newBal = (parseFloat(eqDoc.data().balance) || 0) + royaltyAmount;
-                        await updateDoc(eqDoc.ref, { balance: newBal });
-                        await addDoc(collection(db, "account_logs"), { accountId: eqDoc.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection", amount: royaltyAmount, newBalance: newBal, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading` });
-                    } else {
-                        const newEqRef = await addDoc(collection(db, "cash_accounts"), { branch: "Main Office", name: "Owner's Equity", balance: royaltyAmount, createdAt: serverTimestamp() });
-                        await addDoc(collection(db, "account_logs"), { accountId: newEqRef.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection (Account Created)", amount: royaltyAmount, newBalance: royaltyAmount, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading` });
-                    }
                 }
             }
-        } catch(e) { console.error("Royalty Engine Error:", e); }
+        } catch(e) { console.error("Franchise Wallet Engine Error:", e); }
 
         // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
         try {
