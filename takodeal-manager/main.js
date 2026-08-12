@@ -22732,3 +22732,84 @@ setTimeout(() => {
         };
     }
 }, 3000);
+
+// ========================================================
+// 📄 FRANCHISE STATEMENT OF ACCOUNT (SOA) GENERATOR
+// ========================================================
+window.generateFranchiseSOA = async function() {
+    let branchSelect = document.getElementById('franLedgerBranch');
+    let targetBranch = branchSelect ? branchSelect.value : null;
+
+    if (!targetBranch) {
+        return Swal.fire('Error', 'Please select a Franchise branch first.', 'error');
+    }
+
+    Swal.fire({title: 'Generating SOA...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // 1. Fetch the exact ledger data
+        const q = query(collection(db, "franchise_ledger"), where("branch", "==", targetBranch), orderBy("timestamp", "asc"));
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            return Swal.fire('No Data', 'This branch has no billing history yet.', 'info');
+        }
+
+        let runningBalance = 0;
+        let tableHtml = '';
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            let amt = parseFloat(data.amount) || 0;
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
+            
+            let chargeText = '-';
+            let paymentText = '-';
+
+            if (data.type === 'Charge' || data.type === 'Debit') {
+                runningBalance += amt;
+                chargeText = `₱${amt.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+            } else if (data.type === 'Payment' || data.type === 'Credit') {
+                runningBalance -= amt;
+                paymentText = `₱${amt.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+            }
+
+            tableHtml += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 10px 15px; color: #475569;">${dateStr}</td>
+                    <td style="padding: 10px 15px; color: #0f172a; font-weight: bold;">${data.category} <br><span style="font-size: 11px; color: #64748b; font-weight: normal;">${data.description || ''}</span></td>
+                    <td style="padding: 10px 15px; text-align: right; color: #dc2626; font-weight: bold;">${chargeText}</td>
+                    <td style="padding: 10px 15px; text-align: right; color: #16a34a; font-weight: bold;">${paymentText}</td>
+                </tr>
+            `;
+        });
+
+        // 2. Inject data into the hidden HTML template
+        document.getElementById('soaDateGenerated').innerText = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        document.getElementById('soaRefNum').innerText = `SOA-${targetBranch.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-5)}`;
+        document.getElementById('soaFranchiseName').innerText = targetBranch;
+        
+        document.getElementById('soaTotalDue').innerText = `₱${runningBalance.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('soaFooterTotal').innerText = `₱${runningBalance.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('soaTableBody').innerHTML = tableHtml;
+
+        // 3. Temporarily display it to the camera
+        let template = document.getElementById('soaTemplate');
+        template.style.display = 'block';
+
+        // 4. Take the Ultra-HD screenshot and download!
+        html2canvas(template, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+            let link = document.createElement('a');
+            link.download = `Statement_of_Account_${targetBranch.replace(/\s+/g, '_')}.png`;
+            link.href = canvas.toDataURL("image/png");
+            link.click();
+            
+            template.style.display = 'none'; // Hide it again
+            Swal.close();
+        });
+
+    } catch(e) {
+        console.error("SOA Error:", e);
+        Swal.fire('Error', 'Failed to generate Statement of Account.', 'error');
+    }
+};
