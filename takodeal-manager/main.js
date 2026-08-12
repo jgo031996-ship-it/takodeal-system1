@@ -65,21 +65,58 @@ const formatMoney = window.formatMoney;
 window.applyPermissions = function() {
     if (!window.sessionUser) return;
     
-    if (window.sessionUser.isOwner || window.sessionUser.permissions.includes('all')) {
+    // 1. 👑 OWNER / MASTER KEY ACCESS
+    if (window.sessionUser.isOwner) {
         document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
         return;
     }
     
+    // 2. 🤝 FRANCHISEE ISOLATION PROTOCOL (THE WALLED GARDEN)
+    if (window.sessionUser.isFranchisee) {
+        // Hide EVERYTHING first
+        document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'none');
+        
+        // Expose ONLY the safe operational tabs
+        const allowedTabs = [
+            'dashboard', 'accounts', 'financial-flow', 'transfers', 
+            'devices', 'payroll', 'inbox', 'dispatch', 'zreadings', 
+            'history', 'expenses', 'branches', 'sop', 'equipment', 
+            'inventory', 'alerts', 'bulletin'
+        ];
+        
+        allowedTabs.forEach(tab => {
+            let el = document.getElementById('nav-' + tab);
+            if (el) el.style.display = 'flex'; // Use flex to preserve your sidebar icon layouts!
+        });
+
+        // 🛑 UI MORPHING: Hide HQ-Specific Metrics from Franchisees
+        setTimeout(() => {
+            // Hide HQ Bank Cash on Cash Flow & Accounts Tabs
+            let safeCashCards = document.querySelectorAll('#hubSafeCash');
+            safeCashCards.forEach(c => { if(c.parentElement) c.parentElement.style.display = 'none'; });
+            
+            // Hide the "Publish Announcement" boxes on the Bulletin Board
+            let publisherDiv = document.getElementById('announceTitle')?.parentElement;
+            if (publisherDiv) publisherDiv.style.display = 'none';
+            let aiPromptDiv = document.getElementById('aiRoughIdea')?.parentElement;
+            if (aiPromptDiv) aiPromptDiv.style.display = 'none';
+        }, 1000);
+
+        return;
+    }
+    
+    // 3. 👔 STANDARD MANAGER ACCESS
     document.querySelectorAll('.nav-item').forEach(el => {
         if (el.id !== 'nav-dashboard') el.style.display = 'none';
     });
     
     window.sessionUser.permissions.forEach(tabName => {
         let el = document.getElementById('nav-' + tabName);
-        if (el) el.style.display = 'block';
+        if (el) el.style.display = 'flex';
     });
 
-    document.getElementById('nav-admin').style.display = 'none'; 
+    let adminEl = document.getElementById('nav-admin');
+    if (adminEl) adminEl.style.display = 'none'; 
 };
 
 // ========================================================
@@ -403,7 +440,7 @@ window.addHqManager = async function () {
         let branchStr = formValues.role === 'Franchisee' ? formValues.branch : 'All';
         
         let permissions = formValues.role === 'Franchisee' 
-            ? ['dashboard', 'inventory', 'purchases', 'zreadings', 'history', 'payroll', 'schedule', 'ledger', 'inbox', 'branches'] 
+            ? ['dashboard', 'accounts', 'financial-flow', 'transfers', 'devices', 'payroll', 'inbox', 'dispatch', 'zreadings', 'history', 'expenses', 'branches', 'sop', 'equipment', 'inventory', 'alerts', 'bulletin'] 
             : ['all'];
 
         await addDoc(collection(db, "hq_managers"), {
@@ -1292,7 +1329,7 @@ window.switchView = function (viewId) {
   }
 
   // Change the top title safely using 'var'
-  var title = "Global Dashboard";
+  var title = (window.sessionUser && window.sessionUser.isFranchisee) ? `🏢 ${window.sessionUser.branch} Dashboard` : "Global Dashboard";
   if (viewId === 'transfers') title = "Cash Transfers Explorer";
   if (viewId === 'financial-flow') title = "Financial Flow & Revenue Distribution";
   if (viewId === 'devices') title = "Device Fleet Management";
@@ -18407,7 +18444,12 @@ window.loadRemittanceAnalytics = async function() {
             // 🔥 THE FIX: Aggressively search for the branch name using every possible variable
             let branchName = d.branch || d.fromBranch || d.senderBranch || (d.fromAccount ? d.fromAccount.split(' - ')[0] : null);
             
-            if (isApproved && branchName && branchName !== 'Main Office' && branchName !== 'HQ') {
+            // 🔥 THE PRIVACY LOCK: Hide other branches if a Franchisee is viewing this!
+            let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+            let myBranch = window.sessionUser ? window.sessionUser.branch : null;
+            let branchIsAllowed = isFranchisee ? (branchName === myBranch) : (branchName !== 'Main Office' && branchName !== 'HQ');
+
+            if (isApproved && branchName && branchIsAllowed) {
                 // 🔥 THE FIX: Aggressively search for the amount using every possible variable
                 let amt = parseFloat(d.amount) || parseFloat(d.remittedAmount) || parseFloat(d.total) || parseFloat(d.cashAmount) || 0;
                 
