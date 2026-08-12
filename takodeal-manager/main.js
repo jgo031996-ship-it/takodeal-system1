@@ -22276,24 +22276,25 @@ window.loadFranPerformance = async function() {
         let branchRoyaltyData = {};
         franchisedBranches.forEach(b => { branchSalesData[b] = 0; branchRoyaltyData[b] = 0; });
 
+        // 🔥 THE INDEX-FREE FIX: Query by Time only, filter the rest in Javascript!
         // Tally Gross Sales
-        const shiftQ = query(collection(db, "shifts"), where("status", "==", "Closed"), where("endTime", ">=", thirtyDaysAgo));
+        const shiftQ = query(collection(db, "shifts"), where("endTime", ">=", thirtyDaysAgo));
         const shiftSnap = await getDocs(shiftQ);
         
         shiftSnap.forEach(d => {
             let shift = d.data();
-            if (franchisedBranches.includes(shift.branch)) {
+            if (shift.status === "Closed" && franchisedBranches.includes(shift.branch)) {
                 branchSalesData[shift.branch] += ((parseFloat(shift.totalCashSales) || 0) + (parseFloat(shift.totalDigitalSales) || 0));
             }
         });
 
         // Tally Royalties Owed
-        const ledgerQ = query(collection(db, "franchise_ledger"), where("category", "==", "Daily Franchise Royalty"), where("timestamp", ">=", thirtyDaysAgo));
+        const ledgerQ = query(collection(db, "franchise_ledger"), where("timestamp", ">=", thirtyDaysAgo));
         const ledgerSnap = await getDocs(ledgerQ);
 
         ledgerSnap.forEach(d => {
             let log = d.data();
-            if (franchisedBranches.includes(log.branch)) {
+            if (log.category === "Daily Franchise Royalty" && franchisedBranches.includes(log.branch)) {
                 branchRoyaltyData[log.branch] += (parseFloat(log.amount) || 0);
             }
         });
