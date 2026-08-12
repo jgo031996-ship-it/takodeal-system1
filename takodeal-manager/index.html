@@ -341,7 +341,7 @@
           <img src="logo.jpg" alt="Logo" style="width: 35px; height: 35px; border-radius: 8px; object-fit: cover; border: 2px solid var(--primary); flex-shrink: 0;">
           <div class="logo-text" style="display: flex; flex-direction: column; white-space: nowrap;">
               <span style="font-weight: 900; font-size: 14px; letter-spacing: 1px; line-height: 1;">TAKODEÁL</span>
-              <span style="font-size: 10px; color: var(--primary); font-weight: bold;">MAIN OFFICE</span>
+              <span id="sidebarLogoBranchText" style="font-size: 10px; color: var(--primary); font-weight: bold;">MAIN OFFICE</span>
           </div>
       </div>
       <span class="hamburger-icon" onclick="document.getElementById('sidebar').classList.toggle('collapsed')" style="cursor: pointer; font-size: 20px; color: #94a3b8; flex-shrink: 0;">☰</span>
@@ -416,8 +416,8 @@
     <div class="user-profile">
       <div class="avatar">👨‍💼</div>
       <div class="details">
-        <span class="name">Owner</span>
-        <span class="role">Admin Access</span>
+        <span class="name" id="sidebarProfileName">Owner</span>
+        <span class="role" id="sidebarProfileRole">Admin Access</span>
       </div>
     </div>
   </nav>
