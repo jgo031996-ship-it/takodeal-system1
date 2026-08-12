@@ -341,6 +341,10 @@
       <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')"><span class="nav-icon">📊</span> <span class="nav-text">Global Dashboard</span></a>
       <a href="#" class="nav-item" id="nav-accounts" onclick="switchView('accounts')"><span class="nav-icon">💼</span> <span class="nav-text">Cash & Budget</span></a>
       <a href="#" class="nav-item" id="nav-financial-flow" onclick="switchView('financial-flow')"><span class="nav-icon">🌊</span> <span class="nav-text">Financial Flow</span></a>
+      <div class="nav-item" id="nav-wallet" onclick="switchView('wallet'); window.loadFranchiseWallet();">
+          <span class="nav-icon">💳</span>
+          <div class="nav-item-text">Franchise Wallet</div>
+      </div>
       <a href="#" class="nav-item" id="nav-transfers" onclick="switchView('transfers'); loadCashExplorer(); window.loadCashFlowHub();"><span class="nav-icon">🏦</span> <span class="nav-text">EOD Remittance Hub</span></a>
       <a href="#" class="nav-item" id="nav-payables" onclick="switchView('payables'); loadPayablesDashboard();"><span class="nav-icon">🚚</span> <span class="nav-text">Supplier Payables</span></a>
       <a href="#" class="nav-item" id="nav-devices" onclick="switchView('devices'); loadDeviceFleet();"><span class="nav-icon">💻</span> <span class="nav-text">Device Fleet</span></a>
@@ -715,6 +719,47 @@
                   <div style="text-align: center; color: #94a3b8; font-weight: bold;">⏳ Analyzing financial diagnostics...</div>
               </div>
           </div>
+      </div>
+    </div>
+
+    <!-- 💳 FRANCHISE WALLET & B2B BILLING VIEW -->
+    <div class="view-container" id="view-wallet" style="padding: 20px; background: #f8fafc; width: 100%; overflow-y: auto;">
+      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1000px; margin: 0 auto; border: 1px solid #e2e8f0;">
+          
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
+              <div>
+                  <h2 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 900;">💳 Franchise Wallet Ledger</h2>
+                  <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Live tracking of HQ Debits (Supplies/Royalties) and Credits (Digital Sales/Payouts).</p>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                  <select id="walletBranchSelect" onchange="window.loadFranchiseWallet()" style="padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #334155; display: none;">
+                      <option value="">Select Franchise Branch...</option>
+                  </select>
+                  <button onclick="window.loadFranchiseWallet()" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">🔄 Refresh</button>
+                  <button id="btnManualLedgerEntry" onclick="window.openManualLedgerModal()" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3); display: none;">➕ Manual Entry</button>
+              </div>
+          </div>
+
+          <div id="walletBalanceCard" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 12px; padding: 30px; color: white; margin-bottom: 20px; text-align: center; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.3);">
+              <div style="font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8;">Current Wallet Balance</div>
+              <div id="walletTotalBalance" style="font-size: 48px; font-weight: 900; margin: 10px 0; letter-spacing: -1px;">₱0.00</div>
+              <div id="walletStatusText" style="font-size: 14px; font-weight: bold; padding: 6px 15px; border-radius: 20px; display: inline-block;">Select a branch to view ledger</div>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+              <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                  <tr>
+                      <th style="padding: 12px; color: #475569;">Date & Time</th>
+                      <th style="padding: 12px; color: #475569;">Description</th>
+                      <th style="padding: 12px; color: #475569; text-align: right;">Amount</th>
+                      <th style="padding: 12px; color: #475569; text-align: right;">Running Balance</th>
+                  </tr>
+              </thead>
+              <tbody id="walletLedgerBody">
+                  <tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">Select a branch to load the ledger.</td></tr>
+              </tbody>
+          </table>
+
       </div>
     </div>
 
