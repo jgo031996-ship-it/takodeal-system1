@@ -1938,10 +1938,14 @@ window.switchPosPlatform = function(platform) {
         if(platformDropdown) { platformDropdown.style.background = '#d70f64'; platformDropdown.style.color = 'white'; }
         
         if (otSelect) {
-            otSelect.value = Array.from(otSelect.options).some(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda')) ? otSelect.options[Array.from(otSelect.options).findIndex(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda'))].value : '';
+            otSelect.value = Array.from(otSelect.options).some(o => o.value.toLowerCase().includes('grab')) ? otSelect.options[Array.from(otSelect.options).findIndex(o => o.value.toLowerCase().includes('grab'))].value : '';
         }
-        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
-        if(payBtn) payBtn.click();
+        let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
+        
+        // 🔥 SECOND CRASH FIX: Only auto-click payment if they actually have items in the cart!
+        let total = window.cart.reduce((sum, item) => sum + (item.lineTotalFinal || 0), 0);
+        window.currentGrandTotal = total; 
+        if(payBtn && total > 0) payBtn.click();
         
     } else {
         if(header) { header.style.background = '#fafafa'; header.style.color = '#333'; }
@@ -2849,7 +2853,17 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
     window.openCheckoutModal = function() { 
         if (window.cart.length === 0) return; 
         
-        let mainType = document.getElementById('mainOrderType').value;
+        // 🔥 PLATFORM AUTO-SELECTION ENGINE
+        let otSelect = document.getElementById('mainOrderType');
+        if (window.posPlatform === 'Grab') {
+            let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('grab'));
+            if (opt) otSelect.value = opt.value;
+        } else if (window.posPlatform === 'Foodpanda') {
+            let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda'));
+            if (opt) otSelect.value = opt.value;
+        }
+
+        let mainType = otSelect.value;
         if (!mainType) {
             Swal.fire('Order Type Required', 'Please select an Order Type (Dine-In, Take-Out, etc.) at the top right before placing the order.', 'warning');
             return;
@@ -2858,6 +2872,21 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); 
         document.getElementById('finalCustomerName').value = ''; 
         window.amountReceivedStr = "0"; 
+
+        // 🔥 STRICT PLATFORM LOCKOUT ENGINE
+        let paymentGrid = document.querySelector('.payment-grid');
+        let numpadGrid = document.querySelector('.numpad-grid');
+        
+        if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
+            if (paymentGrid) paymentGrid.style.display = 'none'; // Lock Payment Method
+            if (numpadGrid) numpadGrid.style.display = 'none';   // Lock Numpad
+            let exactTotal = window.currentGrandTotal || 0;
+            window.amountReceivedStr = exactTotal.toString(); // Auto-Fill Exact Amount!
+        } else {
+            if (paymentGrid) paymentGrid.style.display = 'grid'; // Unlock Payment Method
+            if (numpadGrid) numpadGrid.style.display = 'grid';   // Unlock Numpad
+        }
+
         window.updateNumpadDisplay(); 
         document.getElementById('checkoutModal').style.display = 'flex'; 
         
@@ -2870,7 +2899,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
     function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
     function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
     function setExactAmount() { 
-        amountReceivedStr = window.currentGrandTotal.toString(); 
+        let total = window.currentGrandTotal || 0; // 🔥 THE CRASH FIX: Safe fallback to 0!
+        amountReceivedStr = total.toString(); 
         updateNumpadDisplay(); 
     }
 
