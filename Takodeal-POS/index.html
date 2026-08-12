@@ -1088,6 +1088,7 @@
             <div style="flex: 1; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; display: flex; flex-direction: column; justify-content: center;">
                 <div class="section-title" style="color: #0f766e; margin-bottom: 8px;">Item Order Type</div>
                 <select id="modalItemOrderType" class="input-box" style="width: 100%; padding: 8px; font-weight: bold; cursor: pointer; border-color: #0ea5e9; color: #0284c7; background: #e0f2fe; outline: none; margin: 0;">
+                    <option value="" disabled selected>-- Select Type --</option>
                     <option value="Take-Out">🛍️ Take-Out</option>
                     <option value="Dine-In">🍽️ Dine-In</option>
                 </select>
@@ -2899,7 +2900,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
     function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
     function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
     function setExactAmount() { 
-        let total = window.currentGrandTotal || 0; // 🔥 THE CRASH FIX: Safe fallback to 0!
+        let total = window.currentGrandTotal || 0; // 🔥 CRASH FIX: Safe fallback to 0!
         amountReceivedStr = total.toString(); 
         updateNumpadDisplay(); 
     }
