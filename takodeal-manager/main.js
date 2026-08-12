@@ -22193,7 +22193,6 @@ window.editPlatformSettings = async function(platform) {
 // ========================================================
 // 💳 FRANCHISE WALLET & B2B BILLING ENGINE
 // ========================================================
-
 window.loadFranchiseWallet = async function() {
     let isOwner = window.sessionUser && window.sessionUser.isOwner;
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
@@ -22207,20 +22206,16 @@ window.loadFranchiseWallet = async function() {
     if (isOwner) {
         branchSelect.style.display = 'block';
         btnManual.style.display = 'block';
-        if (isOwner) {
-            branchSelect.style.display = 'block';
-            btnManual.style.display = 'block';
-            if (branchSelect.options.length <= 1) {
-                // 🔥 THE FIX: We use your already-loaded Active Branches list instead of querying a missing tag!
-                let html = '<option value="">Select Franchise Branch...</option>';
-                if (window.globalActiveBranches) {
-                    window.globalActiveBranches.forEach(b => { 
-                        if (b !== "Main Office") html += `<option value="${b}">${b}</option>`; 
-                    });
-                }
-                branchSelect.innerHTML = html;
+        if (branchSelect.options.length <= 1) {
+            // 🔥 THE FIX: We use your already-loaded Active Branches list!
+            let html = '<option value="">Select Franchise Branch...</option>';
+            if (window.globalActiveBranches) {
+                window.globalActiveBranches.forEach(b => { 
+                    if (b !== "Main Office") html += `<option value="${b}">${b}</option>`; 
+                });
             }
-        } else if (isFranchisee) {
+            branchSelect.innerHTML = html;
+        }
     } else if (isFranchisee) {
         branchSelect.style.display = 'none';
         btnManual.style.display = 'none';
