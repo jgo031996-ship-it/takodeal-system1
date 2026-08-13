@@ -23108,3 +23108,25 @@ if (typeof window.originalRenderTables === 'undefined' && typeof window.renderTa
         }
     };
 }
+
+// 🔐 CORE 9: Bulletproof PIN & UI Auto-Corrector
+if (typeof window.originalCheckManagerPin === 'undefined' && typeof window.checkManagerPin === 'function') {
+    window.originalCheckManagerPin = window.checkManagerPin;
+    window.checkManagerPin = function() {
+        
+        // 1. Force the database PIN to act as a String so the strict match never fails!
+        if (window.tempAuthData && window.tempAuthData.pin) {
+            window.tempAuthData.pin = String(window.tempAuthData.pin);
+        }
+        
+        // 2. Instantly erase the ugly "undefined" glitch if the role is missing in Firebase
+        document.querySelectorAll('h2, h3, div, span').forEach(function(el) {
+            if (el.innerText && el.innerText.includes('undefined:')) {
+                el.innerText = el.innerText.replace('undefined:', 'Manager:');
+            }
+        });
+
+        // 3. Run the original secure login now that the data is sanitized
+        window.originalCheckManagerPin();
+    };
+}
