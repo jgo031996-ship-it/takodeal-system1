@@ -251,14 +251,17 @@ window.finalizeManagerLogin = function() {
     // 🔥 Supports Multi-Branch Franchisees (e.g., "Pampanga, Pampanga 2")
     let allowedArr = branchStr.split(',').map(b => b.trim());
 
+    // 🔥 THE CRASH FIX: Safely fallback to a default array if permissions are missing in Firebase!
+    let safePermissions = window.tempAuthData.permissions || ['all'];
+
     window.sessionUser = {
         email: window.tempAuthUser.email,
         branch: allowedArr[0], 
         allowedBranches: allowedArr, 
         isFranchisee: isFranchisee,
-        cashierName: window.tempAuthUser.displayName || 'Manager',
-        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && window.tempAuthData.permissions.includes('all'))),
-        permissions: window.tempAuthData.permissions || ['all']
+        cashierName: window.tempAuthUser.displayName || window.tempAuthData.fullName || window.tempAuthData.name || 'Manager',
+        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && safePermissions.includes('all'))),
+        permissions: safePermissions
     };
 
     // 🎨 DYNAMIC UI BRANDING
@@ -271,8 +274,11 @@ window.finalizeManagerLogin = function() {
     let profRole = document.getElementById('sidebarProfileRole');
     if (profRole) profRole.innerText = isFranchisee ? "Franchise Owner" : "Admin Access";
 
-    document.getElementById('loginOverlay').style.display = 'none';
-    window.applyPermissions();
+    let overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.style.display = 'none';
+    
+    if (typeof window.applyPermissions === 'function') window.applyPermissions();
+    if (typeof window.applyFranchiseUIProtections === 'function') window.applyFranchiseUIProtections(); 
     if (typeof window.switchView === 'function') window.switchView('dashboard');
     if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
 };
