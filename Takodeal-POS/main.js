@@ -3314,7 +3314,25 @@ window.submitAttendance = async function(type) {
 
         // 🔥 THE FIX: Smart GPS Bypass for the Main Office!
         if (deviceBranch !== "Main Office") {
-            const targetZone = window.BRANCH_ZONES ? window.BRANCH_ZONES[deviceBranch] : null;
+            let targetZone = null;
+            
+            // 1. Ask Firebase for the live GPS coordinates from the Manager App
+            try {
+                const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", deviceBranch));
+                const bSnap = await window.getDocs(bQ);
+                if (!bSnap.empty) {
+                    let bData = bSnap.docs[0].data();
+                    if (bData.lat && bData.lng) {
+                        targetZone = { lat: parseFloat(bData.lat), lng: parseFloat(bData.lng) };
+                    }
+                }
+            } catch(e) { console.error("GPS Cloud Fetch Error", e); }
+
+            // 2. Fallback to hardcoded list if the cloud is unreachable
+            if (!targetZone) {
+                targetZone = window.BRANCH_ZONES ? window.BRANCH_ZONES[deviceBranch] : null;
+            }
+
             if (!targetZone) { 
                 Swal.fire({
                     title: 'GPS Error',
@@ -9367,7 +9385,7 @@ window.submitScheduleAck = async function(announcementId) {
 window.fetchLiveBranchesForSetup = async function() {
     // Looks for the Branch Dropdown on your Cashier App's registration screen
     // We check the 3 most common IDs used for this box
-    let branchDropdown = document.getElementById('regBranch') || document.getElementById('deviceBranch') || document.getElementById('setupBranchSelect');
+    let branchDropdown = document.getElementById('setupBranchSelect');
     
     // If the tablet is already registered, this box won't exist, so we safely stop!
     if (!branchDropdown) return;
