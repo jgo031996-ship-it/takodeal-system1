@@ -15816,6 +15816,8 @@ window.openBranchSettings = function(docId) {
     document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;
     document.getElementById('settingAddress').value = d.address || '';
     document.getElementById('settingContact').value = d.contact || '';
+    document.getElementById('settingLat').value = d.lat || '';
+    document.getElementById('settingLng').value = d.lng || '';
     document.getElementById('settingWifi').value = d.wifi || '';
     
     // Default to 58mm to fix the squished text bug!
@@ -15842,6 +15844,9 @@ window.openBranchSettings = function(docId) {
 
 window.saveBranchSettings = async function() {
     let docId = document.getElementById('settingBranchId').value;
+    let latVal = document.getElementById('settingLat').value;
+    let lngVal = document.getElementById('settingLng').value;
+
     let payload = {
         address: document.getElementById('settingAddress').value.trim(),
         contact: document.getElementById('settingContact').value.trim(),
@@ -15852,8 +15857,10 @@ window.saveBranchSettings = async function() {
         royaltyPercent: parseFloat(document.getElementById('settingRoyalty').value) || 0,
         receiptLogoBase64: window.uploadedLogoBase64, 
         logoWidthScale: parseFloat(document.getElementById('logoWidthScale').value) || 1,
-        logoHeightScale: parseFloat(document.getElementById('logoHeightScale').value) || 1, // 🔥 THE MISSING COMMA IS HERE!
-        isMallBranch: document.getElementById('settingMallBranch') ? document.getElementById('settingMallBranch').checked : false
+        logoHeightScale: parseFloat(document.getElementById('logoHeightScale').value) || 1,
+        isMallBranch: document.getElementById('settingMallBranch') ? document.getElementById('settingMallBranch').checked : false,
+        lat: latVal ? parseFloat(latVal) : null,
+        lng: lngVal ? parseFloat(lngVal) : null
     };
 
     try {
