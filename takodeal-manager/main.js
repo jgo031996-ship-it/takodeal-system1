@@ -19972,136 +19972,77 @@ setInterval(() => {
     });
 }, 15000); // Ticks every 15 seconds!
 
-// ==========================================
-// 🖨️ UNIVERSAL HR DOCUMENT PRINTER
-// ==========================================
+// ========================================================
+// 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR
+// ========================================================
 window.reprintContract = function(type, encodedData, signDate) {
     let data = JSON.parse(decodeURIComponent(encodedData));
-    let printWin = window.open('', '', 'width=850,height=900');
-    printWin.document.write(window.getContractPrintHTML(type, data, signDate));
+    window.downloadContractPDF(type, data, signDate, false);
 };
 
-window.getContractPrintHTML = function(type, data, signDate) {
-    let title = ""; let content = "";
-    
-    // 🔥 LOGO FIX: Use absolute Vercel URL to prevent "about:blank" broken images during print!
-    let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
-    
-    // 🔥 ADDRESS FIX: Automatically match the assigned branch!
-    let branchAddress = "Davao City, Philippines";
-    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City, Philippines";
-    if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City, Philippines";
-    if (data.branch === 'Maa') branchAddress = "Maa, Davao City, Philippines";
-
-    // 🔥 SALARY FIX: Removed the '* 8' because the input is already a Daily Rate!
+window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) {
     let dailySalary = parseFloat(data.hourlyRate || 0).toFixed(2);
+    let branchAddress = "Davao City, Philippines";
+    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Cabantian, Davao City";
+    if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
+    if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
+
+    let title = type === 'Initial' ? "Employment Contract" : (type === 'Extension' ? "Contract Renewal & Extension" : "Regularization of Employment");
+    let cEnd = new Date(signDate); cEnd.setMonth(cEnd.getMonth() + 6);
+    let extEnd = cEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+
+    let content = type === 'Initial' ? 
+        `<p><b>1. POSITION:</b> Employed as a <b>${data.role}</b>. Commences on <b>${data.dateHired || signDate}</b> for six (6) months.</p>
+        <p><b>2. COMPENSATION:</b> Daily basic salary of <b>₱${dailySalary}</b> with 1 day off per week.</p>
+        <p><b>3. POLICIES:</b> Unexcused absences/tardiness are subject to progressive disciplinary action.</p>
+        <p><b>4. CONFIDENTIALITY:</b> Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
+        <p><b>5. RESIGNATION:</b> Mandatory 30-day notice prior to voluntary resignation.</p>` : 
+        (type === 'Extension' ? 
+        `<p><b>1. EXTENSION:</b> Extended as <b>${data.role}</b> from <b>${signDate}</b> to <b>${extEnd}</b> (final probation).</p>
+        <p><b>2. COMPENSATION:</b> Daily salary remains <b>₱${dailySalary}</b>. All policies remain in full force.</p>` : 
+        `<p><b>1. REGULARIZATION:</b> Effective <b>${signDate}</b>, granted <b>REGULAR (PERMANENT)</b> employment status.</p>
+        <p><b>2. COMPENSATION:</b> Daily basic salary of <b>₱${dailySalary}</b>. All policies remain in full force.</p>`);
+
+    let container = document.createElement('div');
+    container.innerHTML = `
+        <div style="padding: 40px; font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; background: white; width: 800px; box-sizing: border-box;">
+            <div style="text-align: center; border-bottom: 3px solid #0f172a; padding-bottom: 20px; margin-bottom: 30px;">
+                <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
+                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
+            </div>
+            <h2 style="text-align: center; color: #b45309; text-transform: uppercase; margin-bottom: 30px;">${title}</h2>
+            <p style="margin-bottom: 20px; line-height: 1.6;">Executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> at ${branchAddress}, and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
+            <div style="line-height: 1.6; text-align: justify; margin-bottom: 60px;">${content}</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                <div><div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${data.cashierName.toUpperCase()}</b></div><span style="font-size: 14px; color: #64748b;">Employee Digitally Accepted</span></div>
+                <div><div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div><span style="font-size: 14px; color: #64748b;">CEO & General Manager</span></div>
+            </div>
+        </div>`;
     
-    if (type === 'Initial') {
-        title = "Employment Contract";
-        content = `
-            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role}</b>. Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months.</p>
-            <p><b>2. WORK SCHEDULE AND COMPENSATION</b><br>The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>. Entitled to one (1) day off per week.</p>
-            <p><b>3. ATTENDANCE AND ABSENCES POLICY</b><br>Unexcused absences and tardiness are subject to progressive disciplinary action (Verbal Warning, Written Warning, Suspension, Termination).</p>
-            <p><b>4. CONFIDENTIALITY AGREEMENT</b><br>Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
-            <p><b>5. HEALTH DECLARATION</b><br>Employee affirms physical fitness for a food-handling environment.</p>
-            <p><b>6. NOTICE OF RESIGNATION</b><br>Mandatory 30-day notice prior to voluntary resignation.</p>
-            <p><b>7. COMPANY UNIFORM AND PROPERTY</b><br>Obligation to care for and return provided items to avoid payroll deductions.</p>
-        `;
-    } else if (type === 'Extension') {
-        title = "Contract Renewal & Extension";
-        let contractEnd = new Date(signDate); contractEnd.setMonth(contractEnd.getMonth() + 6);
-        content = `
-            <p><b>1. EXTENSION OF EMPLOYMENT</b><br>Employment is extended as <b>${data.role}</b> for an additional six (6) months from <b>${signDate}</b> to <b>${contractEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</b>. This is the final probationary phase.</p>
-            <p><b>2. COMPENSATION</b><br>Daily basic salary remains <b>₱${dailySalary}</b>.</p>
-            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
-            <p><b>4. PATHWAY TO REGULARIZATION</b><br>Upon successful completion, the Employee may be offered a regularized contract.</p>
-        `;
-    } else if (type === 'Regularization') {
-        title = "Regularization of Employment";
-        content = `
-            <p><b>1. REGULARIZATION</b><br>Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
-            <p><b>2. COMPENSATION</b><br>Daily basic salary of <b>₱${dailySalary}</b>.</p>
-            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
-            <p><b>4. TERMINATION</b><br>Employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code.</p>
-        `;
-    }
-
-    return `
-        <html><head><title>${title} - ${data.cashierName}</title></head>
-        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.6; position: relative;">
-            <img src="${logoUrl}" style="position: absolute; left: 40px; top: 30px; width: 100px; height: 100px; object-fit: contain;">
-            <div style="text-align: center; margin-bottom: 30px; padding-top: 10px;">
-                <h1 style="margin: 0; font-size: 38px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
-                <p style="margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
-            </div>
-            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 40px;">
-            <h2 style="text-align: center; color: #b45309; text-transform: uppercase;">${title}</h2>
-            <p>This Agreement is executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer"), with principal place of business located at ${branchAddress}, and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
-            ${content}
-            <div style="margin-top: 80px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
-                <div>
-                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${data.cashierName.toUpperCase()}</b></div>
-                    <span style="font-size: 14px; color: #64748b;">Employee Signature / Digitally Accepted</span>
-                </div>
-                <div>
-                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
-                    <!-- 🔥 CEO TITLE FIX -->
-                    <span style="font-size: 14px; color: #64748b;">CEO</span>
-                </div>
-            </div>
-            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
-        </body></html>
-    `;
-};
-
-// Update Manager App COE generation to include Position History
-window.generateManagerCOE = function(data) {
-    let role = data.role || 'Staff Crew';
-    let dHiredRaw = data.dateHired ? new Date(data.dateHired) : new Date();
-    let dHired = dHiredRaw.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    let dEnded = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
-
-    // 🔥 Inject Position Records
-    let historyHtml = "";
-    if (data.roleHistory && data.roleHistory.length > 1) {
-        historyHtml = `<div style="margin-top: 15px; padding: 15px; background: #f8fafc; border-left: 4px solid #0f172a;">
-            <p style="margin: 0 0 10px 0; font-size: 15px;"><b>Position & Promotion History:</b></p>
-            <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6;">`;
-        data.roleHistory.forEach(h => {
-            historyHtml += `<li>Promoted to <b>${h.role}</b> (Effective: ${h.date})</li>`;
-        });
-        historyHtml += `</ul></div>`;
-    }
-
-    let printWin = window.open('', '', 'width=850,height=900');
-    printWin.document.write(`
-        <html><head><title>COE - ${data.cashierName}</title></head>
-        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 60px; color: #1e293b; max-width: 800px; margin: 0 auto; position: relative;">
-            <img src="${logoUrl}" style="position: absolute; left: 60px; top: 50px; width: 120px; height: 120px; object-fit: contain;">
-            <div style="text-align: center; margin-bottom: 25px; padding-top: 20px;">
-                <h1 style="margin: 0; color: #0f172a; font-size: 52px; font-weight: 900; letter-spacing: 4px;">TAKODEÁL</h1>
-                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">Davao City, Philippines</p>
-            </div>
-            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 50px;">
-            <div style="text-align: center; margin-bottom: 50px;">
-                <h2 style="margin: 0; color: #c2410c; font-size: 32px; font-weight: bold; text-transform: uppercase;">Certificate of Employment</h2>
-            </div>
-            <div style="font-size: 18px; line-height: 2.2; color: #1e293b; text-align: justify; margin-bottom: 40px;">
-                <p style="margin-bottom: 20px;">To Whom It May Concern,</p>
-                <p style="margin-bottom: 20px;">This is to certify that <b>${data.cashierName.toUpperCase()}</b> has been employed at TAKODEÁL.</p>
-                <p style="margin-bottom: 20px;">They served in the capacity of <b>${role}</b> from <b>${dHired}</b> up until <b>${dEnded}</b>.</p>
-                ${historyHtml}
-                <p style="margin-top: 20px;">This certification is being issued upon the request of the employee for whatever legal purpose it may serve them best.</p>
-            </div>
-            <div style="margin-top: 80px;">
-                <div style="width: 350px; border-bottom: 1px solid #1e293b; margin-bottom: 10px;"></div>
-                <strong style="font-size: 18px; color: #0f172a; display: block;">Chery Ann R. Fonda</strong>
-                <span style="font-size: 15px; color: #64748b; display: block; margin-top: 2px;">CEO and Founder of TAKODEÁL<br>General Manager</span>
-            </div>
-            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
-        </body></html>
-    `);
+    Swal.fire({title: 'Generating PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    
+    let opt = {
+        margin: 0.5,
+        filename: `${title.replace(/\s+/g, '_')}_${data.cashierName.replace(/\s+/g, '_')}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+    
+    html2pdf().set(opt).from(container).save().then(() => {
+        if (isStaffApp) {
+            Swal.fire({
+                title: '<div style="font-size: 32px; animation: bounce 1s infinite;">🎉 CONGRATULATIONS! 🎉</div>',
+                html: `<b>Welcome to the next chapter of your journey at TAKODEÁL!</b> 🐙<br><br>Your contract has been officially signed and a PDF soft copy has been downloaded to your device for your records.`,
+                icon: 'success',
+                confirmButtonText: 'Awesome! 🚀',
+                confirmButtonColor: '#10b981',
+                customClass: { popup: 'rounded-2xl shadow-2xl p-6' }
+            });
+        } else {
+            Swal.close();
+        }
+    });
 };
 
 // ==========================================
