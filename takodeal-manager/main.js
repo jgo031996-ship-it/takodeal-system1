@@ -23180,3 +23180,125 @@ window.checkManagerPin = function() {
         if (pinBox) pinBox.value = "";
     }
 };
+
+// ========================================================
+// 📅 SCHEDULE PROTECTION & PUBLISHING ENGINE
+// ========================================================
+
+// 1. Inject the Publish Button into the UI automatically
+setInterval(function() {
+    let autoGenBtn = document.querySelector('button[onclick*="autoGenerateSchedule"]');
+    if (autoGenBtn && !document.getElementById('btnPublishSchedule')) {
+        let pubBtn = document.createElement('button');
+        pubBtn.id = 'btnPublishSchedule';
+        pubBtn.innerHTML = '📢 Publish Schedule';
+        pubBtn.style.cssText = 'background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-left: 10px; box-shadow: 0 4px 6px rgba(139,92,246,0.3);';
+        pubBtn.onclick = window.publishScheduleToApps;
+        autoGenBtn.parentNode.insertBefore(pubBtn, autoGenBtn.nextSibling);
+    }
+}, 2000);
+
+// 2. Protect the Reshuffle Button (Force Single-Branch Selection)
+if (typeof window.originalAutoGenerate === 'undefined' && typeof window.autoGenerateSchedule === 'function') {
+    window.originalAutoGenerate = window.autoGenerateSchedule;
+    
+    window.autoGenerateSchedule = async function() {
+        let branchOpts = {};
+        if (window.globalActiveBranches) {
+            window.globalActiveBranches.forEach(b => {
+                if (b !== "Main Office") branchOpts[b] = b;
+            });
+        }
+
+        const { value: selectedBranch } = await Swal.fire({
+            title: '⚠️ Auto-Generate Schedule',
+            text: 'Which branch do you want to reshuffle? (All other branches will be locked and protected)',
+            input: 'select',
+            inputOptions: branchOpts,
+            inputPlaceholder: 'Select a branch',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            confirmButtonText: 'Reshuffle Selected Branch',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        if (selectedBranch) {
+            Swal.fire({title: 'Reshuffling...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            
+            // Temporarily trick the system into thinking ONLY the selected branch exists!
+            let backup = window.globalActiveBranches;
+            window.globalActiveBranches = [selectedBranch];
+            
+            await window.originalAutoGenerate();
+            
+            // Restore global branches so the UI goes back to normal
+            window.globalActiveBranches = backup;
+            
+            Swal.fire('✅ Protected & Saved', `The schedule for ${selectedBranch} was regenerated. All other branches were untouched.`, 'success');
+        }
+    };
+}
+
+// 3. The Publish Engine (Beams the Image to the Cashier/Staff Apps)
+window.publishScheduleToApps = async function() {
+    const { value: formValues } = await Swal.fire({
+        title: '📢 Publish to Apps',
+        html: `
+            <div style="text-align: left; font-size: 13px;">
+                <p style="color: #64748b; margin-bottom: 15px;">This will trigger a full-screen pop-up on the Cashier & Staff apps requiring their signature.</p>
+                
+                <label style="font-weight: bold; color: #334155;">Target Branch:</label>
+                <select id="pubBranch" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; font-weight: bold;">
+                    <option value="All">🌐 All Branches</option>
+                    ${window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office").map(b => `<option value="${b}">${b}</option>`).join('') : ''}
+                </select>
+
+                <label style="font-weight: bold; color: #334155;">GitHub Notification Image URL:</label>
+                <input type="text" id="pubImage" placeholder="https://raw.githubusercontent.com/..." style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; box-sizing: border-box;">
+
+                <label style="font-weight: bold; color: #334155;">Message:</label>
+                <textarea id="pubMsg" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; height: 80px; outline: none; font-family: inherit; box-sizing: border-box;">The official schedule for this month has been published! Please check your shifts and acknowledge this message.</textarea>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '🚀 Publish Now',
+        confirmButtonColor: '#8b5cf6',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return {
+                branch: document.getElementById('pubBranch').value,
+                image: document.getElementById('pubImage').value.trim(),
+                message: document.getElementById('pubMsg').value.trim()
+            }
+        }
+    });
+
+    if (formValues) {
+        if (!formValues.image) {
+            return Swal.fire('Image Required', 'Please paste your GitHub image URL so the staff has a visual notification!', 'error');
+        }
+
+        Swal.fire({title: 'Publishing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+        try {
+            let titleStr = formValues.branch === "All" ? "📅 New Global Schedule Published!" : `📅 New Schedule: ${formValues.branch}`;
+
+            // Push to the announcements database! The Cashier App is already listening for this!
+            await addDoc(collection(db, "announcements"), {
+                title: titleStr,
+                message: formValues.message,
+                images: [formValues.image], // Binds your GitHub image!
+                branchTarget: formValues.branch,
+                active: true,
+                timestamp: serverTimestamp(),
+                author: window.sessionUser ? window.sessionUser.cashierName : 'Management'
+            });
+
+            Swal.fire('✅ Published!', 'The schedule notification has been pushed to the tablets. Staff will be forced to sign and acknowledge it.', 'success');
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to publish. Check connection.', 'error');
+        }
+    }
+};
