@@ -9262,3 +9262,101 @@ window.checkPredictiveStockLevels = async function() {
 
 // Wake up the scanner 4 seconds after the app boots!
 setTimeout(window.startSmartReorderListener, 4000);
+
+// ========================================================
+// 📅 DYNAMIC SCHEDULE IMAGE NOTIFICATION ENGINE
+// ========================================================
+
+if (typeof window.originalViewAnnouncement === 'undefined') {
+    window.originalViewAnnouncement = window.viewAnnouncement;
+}
+
+window.viewAnnouncement = async function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    
+    // Quick fetch to check if it has the secret "isSchedule" flag!
+    let isSchedule = false;
+    try {
+        const docSnap = await window.getDoc(window.doc(window.db, "announcements", data.id));
+        if (docSnap.exists() && docSnap.data().isSchedule) {
+            isSchedule = true;
+        }
+    } catch(e) {}
+
+    // 🔥 THE NEW SCHEDULE IMAGE POPUP ENGINE 🔥
+    if (isSchedule) {
+        let imgUrl = data.images && data.images.length > 0 ? data.images[0] : '';
+        
+        let ackBtnHtml = data.hasSignature 
+            ? `<div style="width: 100%; background: #dcfce7; color: #16a34a; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 16px; text-align: center; border: 2px solid #bbf7d0;">✅ You acknowledged this schedule on ${data.signatureDate}</div>`
+            : `<button onclick="window.submitScheduleAck('${data.id}')" id="btnAckSched" style="width: 100%; background: #10b981; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 18px; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 163, 74, 0.3);">✅ I ACKNOWLEDGE MY SHIFTS</button>`;
+
+        let modalHtml = `
+            <div id="schedulePopupOverlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 100000; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+                <div style="background: white; padding: 15px; border-radius: 12px; width: 95vw; max-width: 700px; max-height: 95vh; display: flex; flex-direction: column; align-items: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+                    <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h2 style="margin: 0; color: #0f172a; text-transform: uppercase; font-size: 18px;">📅 New Schedule Posted</h2>
+                        ${data.hasSignature ? `<button onclick="document.getElementById('schedulePopupOverlay').remove()" style="background: #ef4444; color: white; border: none; width: 30px; height: 30px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖</button>` : ''}
+                    </div>
+                    <div style="flex: 1; overflow-y: auto; width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; background: #f8fafc;">
+                        <img src="${imgUrl}" style="width: 100%; height: auto; display: block;">
+                    </div>
+                    ${ackBtnHtml}
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        return; // Intercepts and stops the normal Bulletin Board from opening!
+    }
+
+    // If it's a normal memo announcement, run the standard code!
+    window.originalViewAnnouncement(encodedData);
+};
+
+window.submitScheduleAck = async function(announcementId) {
+    let btn = document.getElementById('btnAckSched');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    let cashierName = localStorage.getItem('cashierName') || localStorage.getItem('takodeal_staff_name') || 'Staff';
+
+    // A visual trick so the Manager App sees a text graphic instead of a broken signature image!
+    let quickSigImg = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='50'%3E%3Ctext x='10' y='30' font-family='Arial' font-size='18' font-weight='bold' fill='%2316a34a'%3E%E2%9C%85 1-Click Acknowledged%3C/text%3E%3C/svg%3E";
+
+    try {
+        await window.addDoc(window.collection(window.db, "acknowledgments"), {
+            announcementId: announcementId,
+            staffName: cashierName,
+            signature: quickSigImg,
+            timestamp: window.serverTimestamp()
+        });
+
+        document.getElementById('schedulePopupOverlay').remove();
+        
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Schedule Acknowledged!', 
+            showConfirmButton: false, timer: 2500
+        });
+
+        // If there's another unread announcement in the queue, automatically show it!
+        if (typeof window.currentBulletinIndex !== 'undefined' && window.activeAnnouncements) {
+            window.currentBulletinIndex++;
+            if (window.currentBulletinIndex < window.activeAnnouncements.length) {
+                let nextData = window.activeAnnouncements[window.currentBulletinIndex];
+                let encoded = encodeURIComponent(JSON.stringify(nextData));
+                window.viewAnnouncement(encoded);
+            } else {
+                window.hasAutoShownBulletin = true;
+            }
+        }
+
+        // Refresh the backend lists
+        if (typeof window.loadBulletinHistory === 'function') window.loadBulletinHistory();
+        if (typeof window.loadAnnouncements === 'function') window.loadAnnouncements();
+
+    } catch (e) {
+        console.error("Ack Error:", e);
+        Swal.fire("Error", "Failed to acknowledge schedule.", "error");
+        btn.innerText = "✅ I ACKNOWLEDGE MY SHIFTS"; btn.disabled = false;
+    }
+};
