@@ -19973,27 +19973,17 @@ setInterval(() => {
 }, 15000); // Ticks every 15 seconds!
 
 // ========================================================
-// 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR
-// ========================================================
-window.reprintContract = function(type, encodedData, signDate) {
-    let data = JSON.parse(decodeURIComponent(encodedData));
-    window.downloadContractPDF(type, data, signDate, false);
-};
-
-// ========================================================
-// 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR (WITH ID ATTACHMENT)
+// 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR (WITH SIGNATURE & IDs)
 // ========================================================
 window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) {
-    // 1. Calculate standard 8-hour shift rate based on hourly memory
     let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
     if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
 
     let branchAddress = "Davao City, Philippines";
-    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subd, Cabantian, Davao City";
+    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City";
     if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
     if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
 
-    // 2. Map "Extension" to "Regularization" as requested
     let isRegular = (type === 'Regularization' || type === 'Extension');
     let title = isRegular ? "REGULARIZATION OF EMPLOYMENT AGREEMENT" : "EMPLOYMENT CONTRACT";
 
@@ -20001,7 +19991,6 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         ? `Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.`
         : `Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months, subject to the terms and conditions of this Agreement.`;
 
-    // 3. Build the strict Legal Content (Matching the Official Takodeal Document)
     let content = `
         <div style="font-size: 13px; line-height: 1.5; text-align: justify; color: #1e293b;">
             <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">1. Position and Commencement</h4>
@@ -20043,10 +20032,15 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         idImagesHtml += `<h3 style="text-align: center; color: #0f172a; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 30px;">ATTACHED VALID IDs</h3>`;
         idImagesHtml += `<div style="display: flex; flex-direction: column; gap: 30px; align-items: center;">`;
         ids.forEach(url => {
-            idImagesHtml += `<img src="${url}" style="max-width: 90%; max-height: 400px; border: 2px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">`;
+            idImagesHtml += `<img src="${url}" style="max-width: 90%; max-height: 350px; border: 2px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">`;
         });
         idImagesHtml += `</div></div>`;
     }
+
+    // 🔥 THE SIGNATURE INJECTOR 🔥
+    let employeeSignatureHtml = data.contractSignature 
+        ? `<img src="${data.contractSignature}" style="height: 60px; display: block; margin-bottom: -10px;">` 
+        : `<div style="height: 50px; display: block; margin-bottom: 5px;"></div>`;
 
     // 5. Combine into Final PDF Container
     let container = document.createElement('div');
@@ -20063,10 +20057,12 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; font-size: 13px;">
                 <div>
+                    ${employeeSignatureHtml}
                     <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px; padding-bottom: 5px;"><b>${(data.cashierName || 'Employee').toUpperCase()}</b></div>
                     <span style="color: #64748b;">Employee Digitally Accepted</span>
                 </div>
                 <div>
+                    <div style="height: 50px; display: block; margin-bottom: 5px;"></div>
                     <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px; padding-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
                     <span style="color: #64748b;">Owner / Employer</span>
                 </div>
@@ -20081,7 +20077,7 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         margin: 0,
         filename: `${title.replace(/\s+/g, '_')}_${(data.cashierName || 'Employee').replace(/\s+/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true }, // 🔥 useCORS pulls the ID images from Firebase securely
+        html2canvas: { scale: 2, useCORS: true }, 
         jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
     
