@@ -9360,3 +9360,51 @@ window.submitScheduleAck = async function(announcementId) {
         btn.innerText = "✅ I ACKNOWLEDGE MY SHIFTS"; btn.disabled = false;
     }
 };
+
+// ==========================================
+// 🌍 DYNAMIC BRANCH FETCHER FOR TABLET REGISTRATION
+// ==========================================
+window.fetchLiveBranchesForSetup = async function() {
+    // Looks for the Branch Dropdown on your Cashier App's registration screen
+    // We check the 3 most common IDs used for this box
+    let branchDropdown = document.getElementById('regBranch') || document.getElementById('deviceBranch') || document.getElementById('setupBranch');
+    
+    // If the tablet is already registered, this box won't exist, so we safely stop!
+    if (!branchDropdown) return;
+
+    try {
+        // Failsafe: Wait for Firebase to be ready
+        if (typeof window.getDocs !== 'function') return;
+
+        branchDropdown.innerHTML = '<option value="">⏳ Fetching live branches...</option>';
+        
+        // Ask Firebase for the official list of branches you created in the Manager App
+        const snap = await window.getDocs(window.collection(window.db, "branches"));
+        let html = '<option value="">-- Select Branch --</option>';
+        let branches = [];
+        
+        snap.forEach(doc => {
+            let name = doc.data().name;
+            if (name !== "Main Office") branches.push(name);
+        });
+
+        // Sort them alphabetically and shove them into the dropdown HTML!
+        branches.sort().forEach(b => {
+            html += `<option value="${b}">${b}</option>`;
+        });
+
+        branchDropdown.innerHTML = html;
+    } catch (e) {
+        console.error("Error fetching branches for setup:", e);
+        branchDropdown.innerHTML = '<option value="">❌ Error connecting to cloud</option>';
+    }
+};
+
+// Auto-run this Engine 1.5 seconds after the Cashier App boots up!
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        if (typeof window.fetchLiveBranchesForSetup === 'function') {
+            window.fetchLiveBranchesForSetup();
+        }
+    }, 1500);
+});
