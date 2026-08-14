@@ -9367,7 +9367,7 @@ window.submitScheduleAck = async function(announcementId) {
 window.fetchLiveBranchesForSetup = async function() {
     // Looks for the Branch Dropdown on your Cashier App's registration screen
     // We check the 3 most common IDs used for this box
-    let branchDropdown = document.getElementById('regBranch') || document.getElementById('deviceBranch') || document.getElementById('setupBranch');
+    let branchDropdown = document.getElementById('regBranch') || document.getElementById('deviceBranch') || document.getElementById('setupBranchSelect');
     
     // If the tablet is already registered, this box won't exist, so we safely stop!
     if (!branchDropdown) return;
