@@ -5240,37 +5240,6 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- 🚀 UPGRADED DYNAMIC BRANCH CREATOR WITH MAP -->
-  <!-- ========================================== -->
-  <div id="addBranchModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
-      <div style="background: white; width: 500px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
-          <div style="background: #8b5cf6; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 18px;">🏢 Register New Branch</h2>
-              <span onclick="document.getElementById('addBranchModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
-          </div>
-          <div style="padding: 25px; background: #f8fafc; max-height: 75vh; overflow-y: auto;">
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Branch Name *</label>
-              <input type="text" id="newBranchName" placeholder="e.g. Ecoland, SM Lanang" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #1e293b; box-sizing: border-box;">
-              
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Exact Pin Location *</label>
-              <p style="font-size: 11px; color: #64748b; margin: 2px 0 10px 0;">Drag the pin to the exact location of the new store.</p>
-              
-              <div id="branchMap" style="height: 250px; width: 100%; margin-bottom: 15px; border-radius: 6px; border: 1px solid #cbd5e1; z-index: 1;"></div>
-              
-              <input type="hidden" id="newBranchLat">
-              <input type="hidden" id="newBranchLng">
-
-              <div style="background: #fef2f2; border: 1px dashed #fca5a5; padding: 12px; border-radius: 6px; margin-bottom: 20px;">
-                  <span style="font-size: 12px; font-weight: bold; color: #b91c1c;">⚠️ System Scaling Note:</span>
-                  <p style="font-size: 11px; color: #991b1b; margin: 5px 0 0 0;">Adding a branch will instantly reprogram all dropdowns across the system to include this new location.</p>
-              </div>
-
-              <button id="btnSaveNewBranch" onclick="window.saveNewBranch()" style="width: 100%; background: #8b5cf6; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">🚀 Launch Branch</button>
-          </div>
-      </div>
-  </div>
-
-  <!-- ========================================== -->
   <!-- ⚙️ PREMIUM RECEIPT STUDIO & SETTINGS -->
   <!-- ========================================== -->
   <div id="branchSettingsModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(5px);">
@@ -5299,6 +5268,17 @@
                       <div>
                           <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number</label>
                           <input type="text" id="settingContact" placeholder="09xxxxxxxxx" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;">
+                      </div>
+                  </div>
+                  <!-- NEW GPS FIELDS -->
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; background: #f0fdf4; padding: 10px; border: 1px dashed #16a34a; border-radius: 6px;">
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #16a34a;">📍 GPS Latitude</label>
+                          <input type="number" id="settingLat" placeholder="e.g. 7.130415" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #bbf7d0; border-radius: 6px; outline: none; box-sizing: border-box; background: white; color: #15803d; font-weight: bold;">
+                      </div>
+                      <div>
+                          <label style="font-size: 12px; font-weight: bold; color: #16a34a;">📍 GPS Longitude</label>
+                          <input type="number" id="settingLng" placeholder="e.g. 125.617306" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #bbf7d0; border-radius: 6px; outline: none; box-sizing: border-box; background: white; color: #15803d; font-weight: bold;">
                       </div>
                   </div>
                   
