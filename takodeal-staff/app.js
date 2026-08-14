@@ -526,9 +526,9 @@ window.showInitialContract = function(staffId, data) {
     let dailySalary = parseFloat(data.hourlyRate || 0).toFixed(2);
     
     let branchAddress = "Davao City, Philippines";
-    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City, Philippines";
-    if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City, Philippines";
-    if (data.branch === 'Maa') branchAddress = "Maa, Davao City, Philippines";
+    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City";
+    if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
+    if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
 
     let contractHtml = `
         <h2 style="text-align: center; color: #0f766e; text-transform: uppercase; margin-bottom: 20px;">Employment Contract</h2>
@@ -541,57 +541,32 @@ window.showInitialContract = function(staffId, data) {
         <p>The Employer hereby employs the Employee as a <b>${data.role}</b>. Employment shall commence on <b>${dateHired}</b> and shall be valid for a period of six (6) months.</p>
 
         <h4 style="color: #0f172a;">2. WORK SCHEDULE AND COMPENSATION</h4>
-        <p>The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>. The Employee is entitled to one (1) day off per week. Working hours shall be determined by the Employer.</p>
+        <p>The Employee shall receive a daily basic salary of <b>₱${(dailySalary * 8).toFixed(2)}</b>. The Employee is entitled to one (1) day off per week. Working hours shall be determined by the Employer.</p>
 
-        <h4 style="color: #0f172a;">3. ATTENDANCE AND ABSENCES POLICY</h4>
-        <p><b>Absences:</b> An absence is defined as failure to report for work during a scheduled workday without prior approval or valid reason.<br>
-        <b>Tardiness:</b> Repeated tardiness shall be subject to disciplinary action.<br>
-        <b>Sanctions:</b> 1. Verbal Warning | 2. Written Warning | 3. Suspension | 4. Termination</p>
+        <h4 style="color: #0f172a;">3. ATTENDANCE, ABSENCES AND TARDINESS POLICY</h4>
+        <p><b>Absences:</b> Failure to notify management before the start of the scheduled shift shall be considered an unexcused absence.<br>
+        <b>Tardiness:</b> Repeated tardiness shall be subject to disciplinary action. Management reserves the right to deduct corresponding time or wages for late arrivals.<br>
+        <b>Sanctions for Violations:</b> 1st Offense (Verbal Warning) • 2nd Offense (Written Warning) • 3rd Offense (1-Day Suspension) • 4th Offense (3-Day Suspension) • 5th Offense (7-Day Suspension) • 6th Offense (14-Day Suspension) • 7th Offense (Termination / Dismissal).</p>
 
         <h4 style="color: #0f172a;">4. CONFIDENTIALITY AGREEMENT</h4>
         <p>The Employee agrees to keep all proprietary information strictly confidential. Disclosure to outside parties shall incur a <b>One Million Pesos (₱1,000,000.00)</b> penalty.</p>
 
-        <h4 style="color: #0f172a;">5. NOTICE OF RESIGNATION</h4>
-        <p>The Employee agrees to render a 30-day notice prior to voluntarily resigning to avoid financial damages equivalent to unserved days.</p>
+        <h4 style="color: #0f172a;">5. HEALTH DECLARATION</h4>
+        <p>The Employee affirms they are physically fit for a food-handling environment. The Employer is not responsible for medical expenses related to concealed critical illnesses.</p>
 
-        <h4 style="color: #0f172a;">6. COMPANY UNIFORM</h4>
-        <p>Items provided on a borrowed basis must be returned upon resignation to avoid payroll deductions.</p>
+        <h4 style="color: #0f172a;">6. NOTICE OF RESIGNATION</h4>
+        <p>The Employee agrees to render a 30-day notice prior to voluntarily resigning to avoid financial damages equivalent to the cost incurred due to the unserved notice period.</p>
 
-        <div style="background: #f0fdf4; border: 2px dashed #16a34a; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
-            <h3 style="margin: 0 0 10px 0; color: #15803d;">Digital Acceptance</h3>
-            <p style="font-size: 12px; color: #166534; margin-bottom: 15px;">By clicking the button below, I, <b>${data.cashierName}</b>, digitally sign and accept the terms of this Employment Contract.</p>
-            <button onclick="window.acceptContract('${staffId}', 'Initial')" style="background: #16a34a; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3);">📝 Accept & Download PDF</button>
-        </div>
+        <h4 style="color: #0f172a;">7. COMPANY UNIFORM AND PROPERTY</h4>
+        <p>Items provided on a borrowed basis must be cared for and returned upon resignation to avoid payroll deductions.</p>
+
+        ${window.getSignaturePadHTML(staffId, 'Initial')}
     `;
     window.renderContractOverlay(contractHtml, data);
 };
 
-// 📄 2. 6-MONTH RENEWAL CONTRACT UI
-window.showRenewalContract = function(staffId, data) {
-    let today = new Date();
-    let options = { month: 'long', day: 'numeric', year: 'numeric' };
-    let dateToday = today.toLocaleDateString('en-US', options);
-    let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', options) : dateToday;
-    let contractEnd = new Date(today); contractEnd.setMonth(contractEnd.getMonth() + 6);
-    let endDate = contractEnd.toLocaleDateString('en-US', options);
-    let dailySalary = parseFloat(data.hourlyRate || 0).toFixed(2);
-
-    let contractHtml = `
-        <h2 style="text-align: center; color: #b45309; text-transform: uppercase; margin-bottom: 20px;">Contract Renewal and Extension Agreement</h2>
-        <p>This Renewal Agreement is made and entered into this <b>${dateToday}</b>, by and between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
-        <p><b>WHEREAS</b>, the initial contract entered on <b>${dateHired}</b> has expired, the Employer extends employment for an additional six (6) months (<b>${dateToday}</b> to <b>${endDate}</b>) as a final probationary phase.</p>
-        <h4 style="color: #0f172a;">COMPENSATION & REAFFIRMATION OF TERMS</h4>
-        <p>The daily basic salary remains <b>₱${dailySalary}</b>. All original policies (Attendance, ₱1,000,000.00 Confidentiality penalty, 30-Day Notice) remain in full force.</p>
-        <div style="background: #fffbeb; border: 2px dashed #f59e0b; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
-            <h3 style="margin: 0 0 10px 0; color: #b45309;">Digital Acceptance</h3>
-            <button onclick="window.acceptContract('${staffId}', 'Extension')" style="background: #0f766e; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">📝 Accept & Download PDF</button>
-        </div>
-    `;
-    window.renderContractOverlay(contractHtml, data);
-};
-
-// 🌟 3. REGULARIZATION CONTRACT UI
-window.showRegularizationContract = function(staffId, data) {
+// 📄 2. REGULARIZATION CONTRACT UI (Replaces the old Extension UI)
+window.showRenewalContract = window.showRegularizationContract = function(staffId, data) {
     let dateToday = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     let dailySalary = parseFloat(data.hourlyRate || 0).toFixed(2);
 
@@ -601,16 +576,30 @@ window.showRegularizationContract = function(staffId, data) {
         <h4 style="color: #0f172a;">1. REGULARIZATION OF EMPLOYMENT</h4>
         <p>Effective <b>${dateToday}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
         <h4 style="color: #0f172a;">2. COMPENSATION & REAFFIRMATION</h4>
-        <p>The daily basic salary is <b>₱${dailySalary}</b>. All original policies (Attendance, ₱1,000,000.00 Confidentiality penalty, 30-Day Notice) remain in full force.</p>
-        <div style="background: #ecfdf5; border: 2px dashed #10b981; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
-            <h3 style="margin: 0 0 10px 0; color: #065f46;">Digital Acceptance</h3>
-            <button onclick="window.acceptContract('${staffId}', 'Regularization')" style="background: #10b981; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">🌟 Accept Regularization & Download PDF</button>
-        </div>
+        <p>The daily basic salary is <b>₱${(dailySalary * 8).toFixed(2)}</b>. All original policies (Attendance, ₱1,000,000.00 Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+        
+        ${window.getSignaturePadHTML(staffId, 'Regularization')}
     `;
     window.renderContractOverlay(contractHtml, data);
 };
 
-// ⚙️ OVERLAY RENDERER
+// ⚙️ OVERLAY RENDERER & SIGNATURE UI
+window.getSignaturePadHTML = function(staffId, type) {
+    return `
+        <div style="background: #f8fafc; border: 2px dashed #0f766e; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
+            <h3 style="margin: 0 0 10px 0; color: #0f766e;">Required Digital Signature</h3>
+            <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Please sign your name inside the box below to legally accept this contract.</p>
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; touch-action: none; position: relative; margin-bottom: 15px;">
+                <canvas id="contractSigCanvas" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="window.clearContractSignature()" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear Signature</button>
+                <button onclick="window.acceptContract('${staffId}', '${type}')" style="flex: 2; background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">📝 Sign & Accept Contract</button>
+            </div>
+        </div>
+    `;
+};
+
 window.renderContractOverlay = function(contractHtml, data) {
     window.coePendingData = data; 
     let overlay = document.getElementById('renewalContractOverlay');
@@ -624,16 +613,98 @@ window.renderContractOverlay = function(contractHtml, data) {
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('appContainer').style.display = 'none';
     overlay.style.display = 'flex';
+
+    // Wake up the signature pad once the HTML is injected!
+    setTimeout(() => { window.initContractSignaturePad(); }, 300);
 };
 
-// ✅ UNIVERSAL CONTRACT ACCEPTOR (AUTO-PDF DOWNLOADER)
+// ✍️ SIGNATURE PAD LOGIC
+window.isContractSignatureBlank = true;
+
+window.initContractSignaturePad = function() {
+    let canvas = document.getElementById('contractSigCanvas');
+    if (!canvas) return;
+    
+    // Fix scaling for crisp lines on mobile screens
+    canvas.width = canvas.offsetWidth || 400;
+    canvas.height = canvas.offsetHeight || 150;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0f172a';
+    window.isContractSignatureBlank = true;
+
+    let drawing = false;
+
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    };
+
+    const startDraw = (e) => { 
+        drawing = true; 
+        window.isContractSignatureBlank = false;
+        const pos = getPos(e); 
+        ctx.beginPath(); 
+        ctx.moveTo(pos.x, pos.y); 
+        e.preventDefault(); 
+    };
+
+    const draw = (e) => { 
+        if (!drawing) return; 
+        const pos = getPos(e); 
+        ctx.lineTo(pos.x, pos.y); 
+        ctx.stroke(); 
+        e.preventDefault(); 
+    };
+
+    const stopDraw = (e) => { drawing = false; ctx.closePath(); };
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDraw);
+    canvas.addEventListener('mouseout', stopDraw);
+    canvas.addEventListener('touchstart', startDraw, {passive: false});
+    canvas.addEventListener('touchmove', draw, {passive: false});
+    canvas.addEventListener('touchend', stopDraw, {passive: false});
+};
+
+window.clearContractSignature = function() {
+    const canvas = document.getElementById('contractSigCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        window.isContractSignatureBlank = true;
+    }
+};
+
+// ✅ UNIVERSAL CONTRACT ACCEPTOR (SAVES SIGNATURE)
 window.acceptContract = async function(staffId, type) {
-    Swal.fire({title: 'Signing & Generating PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    if (window.isContractSignatureBlank) {
+        return Swal.fire('Signature Required', 'Please sign your name in the box to legally accept this contract.', 'warning');
+    }
+
+    Swal.fire({title: 'Signing & Generating PDF...', text: 'Please wait while we attach your signature and government IDs...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     try {
+        const canvas = document.getElementById('contractSigCanvas');
+        const signatureBase64 = canvas.toDataURL('image/png');
+
         let todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         
         let newStatus = 'Active';
-        let updatePayload = { contractStatus: newStatus };
+        let updatePayload = { 
+            contractStatus: newStatus,
+            contractSignature: signatureBase64 // Save the signature drawing to Firebase!
+        };
         
         if (type === 'Initial') { updatePayload.contractStatus = 'Active'; updatePayload['signedContracts.initial'] = todayStr; }
         if (type === 'Extension') { 
@@ -644,10 +715,13 @@ window.acceptContract = async function(staffId, type) {
 
         await updateDoc(doc(db, "cashiers", staffId), updatePayload);
         
+        // Pass the signature into local memory so the PDF generator can use it instantly!
+        window.coePendingData.contractSignature = signatureBase64;
+
         document.getElementById('renewalContractOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         
-        // 🔥 TRIGGER THE AUTOMATIC SILENT PDF DOWNLOAD!
+        // Trigger the automatic PDF download!
         window.downloadContractPDF(type, window.coePendingData, todayStr, true);
 
     } catch(e) {
@@ -656,19 +730,17 @@ window.acceptContract = async function(staffId, type) {
 };
 
 // ========================================================
-// 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR (WITH ID ATTACHMENT)
+// 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR (WITH SIGNATURE & IDs)
 // ========================================================
 window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) {
-    // 1. Calculate standard 8-hour shift rate based on hourly memory
     let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
     if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
 
     let branchAddress = "Davao City, Philippines";
-    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subd, Cabantian, Davao City";
+    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City";
     if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
     if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
 
-    // 2. Map "Extension" to "Regularization" as requested
     let isRegular = (type === 'Regularization' || type === 'Extension');
     let title = isRegular ? "REGULARIZATION OF EMPLOYMENT AGREEMENT" : "EMPLOYMENT CONTRACT";
 
@@ -676,7 +748,6 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         ? `Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.`
         : `Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months, subject to the terms and conditions of this Agreement.`;
 
-    // 3. Build the strict Legal Content (Matching the Official Takodeal Document)
     let content = `
         <div style="font-size: 13px; line-height: 1.5; text-align: justify; color: #1e293b;">
             <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">1. Position and Commencement</h4>
@@ -718,10 +789,15 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         idImagesHtml += `<h3 style="text-align: center; color: #0f172a; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 30px;">ATTACHED VALID IDs</h3>`;
         idImagesHtml += `<div style="display: flex; flex-direction: column; gap: 30px; align-items: center;">`;
         ids.forEach(url => {
-            idImagesHtml += `<img src="${url}" style="max-width: 90%; max-height: 400px; border: 2px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">`;
+            idImagesHtml += `<img src="${url}" style="max-width: 90%; max-height: 350px; border: 2px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">`;
         });
         idImagesHtml += `</div></div>`;
     }
+
+    // 🔥 THE SIGNATURE INJECTOR 🔥
+    let employeeSignatureHtml = data.contractSignature 
+        ? `<img src="${data.contractSignature}" style="height: 60px; display: block; margin-bottom: -10px;">` 
+        : `<div style="height: 50px; display: block; margin-bottom: 5px;"></div>`;
 
     // 5. Combine into Final PDF Container
     let container = document.createElement('div');
@@ -738,10 +814,12 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; font-size: 13px;">
                 <div>
+                    ${employeeSignatureHtml}
                     <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px; padding-bottom: 5px;"><b>${(data.cashierName || 'Employee').toUpperCase()}</b></div>
                     <span style="color: #64748b;">Employee Digitally Accepted</span>
                 </div>
                 <div>
+                    <div style="height: 50px; display: block; margin-bottom: 5px;"></div>
                     <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px; padding-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
                     <span style="color: #64748b;">Owner / Employer</span>
                 </div>
@@ -756,7 +834,7 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         margin: 0,
         filename: `${title.replace(/\s+/g, '_')}_${(data.cashierName || 'Employee').replace(/\s+/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true }, // 🔥 useCORS pulls the ID images from Firebase securely
+        html2canvas: { scale: 2, useCORS: true }, 
         jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
     
