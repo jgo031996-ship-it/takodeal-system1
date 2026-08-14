@@ -14799,16 +14799,21 @@ window.loadMonthlyTarget = async function() {
     try {
         let dashFilter = document.getElementById('dashBranchFilter');
         let selectedBranch = dashFilter ? dashFilter.value : "All";
+        
         let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
         if (isFranchisee) selectedBranch = window.sessionUser.branch;
 
         const snap = await getDoc(doc(db, "settings", "sales_target"));
         
-        // Grab the specific branch target, or fallback to the global 'amount'
+        // 🔥 THE FIX: Strictly separate the Global Target from the Branch Target so they never mix!
         let targetAmount = 0;
         if (snap.exists()) {
             let data = snap.data();
-            targetAmount = (selectedBranch !== "All" && data[selectedBranch] !== undefined) ? parseFloat(data[selectedBranch]) : (parseFloat(data.amount) || 0);
+            if (selectedBranch === "All") {
+                targetAmount = parseFloat(data.amount) || 0; // The 1M Global Target
+            } else {
+                targetAmount = parseFloat(data[selectedBranch]) || 0; // The Branch Specific Target (Defaults to 0 if not set!)
+            }
         }
         
         let now = new Date();
@@ -19598,7 +19603,7 @@ window.fetchLiveStaffOnDuty = async function() {
                 if (!latestPunches[staff] || punchTime > latestPunches[staff].time) {
                     latestPunches[staff] = {
                         branch: data.branch,
-                        type: data.type, // "TIME IN" or "TIME OUT"
+                        type: data.type, 
                         time: punchTime,
                         lateExempted: data.lateExempted || false
                     };
@@ -19609,6 +19614,10 @@ window.fetchLiveStaffOnDuty = async function() {
             let activeStaffByBranch = {};
             for (let staff in latestPunches) {
                 let punch = latestPunches[staff];
+                
+                // 🔥 THE FIX: Strict Franchisee Firewall! Only process branches they own!
+                if (!window.isBranchAllowed(punch.branch)) continue;
+
                 if (punch.type === "TIME IN") {
                     if (!activeStaffByBranch[punch.branch]) {
                         activeStaffByBranch[punch.branch] = [];
@@ -19643,7 +19652,7 @@ window.fetchLiveStaffOnDuty = async function() {
                                             let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
                                             let diffHours = actualHour - expectedStartHour;
                                             
-                                            // 3 minutes grace period (0.05 hours)
+                                            // 3 minutes grace period
                                             if (diffHours > 0.05 && diffHours < 4) {
                                                 lateMinutes = Math.floor(diffHours * 60);
                                             }
@@ -19673,13 +19682,11 @@ window.fetchLiveStaffOnDuty = async function() {
                 branches.forEach(branch => {
                     let staffListHtml = '';
                     
-                    // Sort staff by who timed in earliest
                     activeStaffByBranch[branch].sort((a,b) => a.timeIn - b.timeIn);
                     
                     activeStaffByBranch[branch].forEach(s => {
                         let timeStr = s.timeIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                         
-                        // 🔥 INJECT THE LATE BADGE UNDER THE NAME
                         let lateBadge = '';
                         if (s.lateMinutes > 0) {
                             if (s.lateExempted) {
