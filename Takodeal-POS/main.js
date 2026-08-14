@@ -9408,3 +9408,117 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }, 1500);
 });
+
+// ==========================================
+// 🌍 DYNAMIC DEVICE SETUP & GEOFENCE ENGINE
+// ==========================================
+window.loadSetupBranches = async function() {
+    // 🔥 Aggressive Scanner: Finds ANY dropdown inside your Setup Screen
+    let selectEl = document.getElementById('regBranch') || document.getElementById('setupBranch') || document.getElementById('deviceBranch') || document.querySelector('#setupScreen select') || document.querySelector('.setup-container select');
+    
+    if (!selectEl) return; // If the setup screen isn't visible, do nothing safely
+
+    try {
+        selectEl.innerHTML = '<option value="">⏳ Fetching live branches...</option>';
+        
+        // Ask Firebase for the official list of branches
+        const snap = await window.getDocs(window.collection(window.db, "branches"));
+        let html = '<option value="">-- Select Branch --</option>';
+        let branches = [];
+        
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            branches.push({
+                name: d.name,
+                lat: d.lat || d.latitude || '', // Grab the saved GPS from Fix 1!
+                lng: d.lng || d.longitude || ''
+            });
+        });
+
+        // Sort alphabetically, pushing Main Office to the top
+        branches.sort((a, b) => a.name.localeCompare(b.name));
+
+        branches.forEach(b => {
+            // Secretly embed the GPS coordinates into the HTML options!
+            html += `<option value="${b.name}" data-lat="${b.lat}" data-lng="${b.lng}">${b.name}</option>`;
+        });
+
+        selectEl.innerHTML = html;
+        
+        // 🛑 Hijack the Register Button so it uses our new Geofence logic
+        let setupBtn = document.getElementById('btnRegisterDevice') || document.querySelector('#setupScreen button') || document.querySelector('.setup-container button');
+        if (setupBtn) {
+            // Remove old onclick events and force it to use ours
+            setupBtn.removeAttribute("onclick");
+            setupBtn.onclick = window.registerNewDeviceWithGeofence;
+        }
+
+    } catch (e) {
+        console.error("Setup Fetch Error:", e);
+        selectEl.innerHTML = '<option value="">❌ Database Connection Error</option>';
+    }
+};
+
+window.registerNewDeviceWithGeofence = async function() {
+    let selectEl = document.getElementById('regBranch') || document.getElementById('setupBranch') || document.getElementById('deviceBranch') || document.querySelector('#setupScreen select') || document.querySelector('.setup-container select');
+    
+    let branchName = selectEl ? selectEl.value : null;
+    if (!branchName) {
+        return alert("❌ Please select a branch from the dropdown first.");
+    }
+
+    let deviceName = prompt(`Enter a name for this tablet at ${branchName}:\n(e.g., Register 1, Kitchen Tablet)`);
+    if (!deviceName) return;
+
+    // 🗺️ Extract the GPS Coordinates from the option they selected
+    let selectedOption = selectEl.options[selectEl.selectedIndex];
+    let branchLat = selectedOption.getAttribute('data-lat');
+    let branchLng = selectedOption.getAttribute('data-lng');
+
+    let btn = event.target;
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Registering..."; btn.disabled = true;
+
+    try {
+        // 1. Save to Firebase Devices Fleet
+        const newDevice = await window.addDoc(window.collection(window.db, "pos_devices"), {
+            deviceName: deviceName,
+            branch: branchName,
+            status: "Pending", // Needs Manager Approval
+            registeredAt: window.serverTimestamp()
+        });
+
+        // 2. Lock the device into the specific branch
+        localStorage.setItem('takodeal_branch', branchName);
+        localStorage.setItem('takodeal_device_id', newDevice.id);
+        localStorage.setItem('takodeal_device_name', deviceName);
+        
+        // 3. 🗺️ SAVE GEOFENCE COORDS LOCALLY FOR THE TIME CLOCK
+        if (branchLat && branchLng) {
+            localStorage.setItem('takodeal_branch_lat', branchLat);
+            localStorage.setItem('takodeal_branch_lng', branchLng);
+            console.log(`Geofence Locked: Lat ${branchLat}, Lng ${branchLng}`);
+        } else {
+            console.warn("No GPS coordinates were found for this branch in Firebase.");
+        }
+
+        alert(`✅ Tablet successfully registered to ${branchName}!\n\nStatus: PENDING APPROVAL.\nPlease ask the Franchisee or HQ to approve this device in the Control Center.`);
+        
+        // Reload the app to apply the lockdown
+        location.reload();
+    } catch (e) {
+        console.error(e);
+        alert("❌ Failed to register device. Check connection.");
+        btn.innerText = origText; btn.disabled = false;
+    }
+};
+
+// Auto-run the scanner exactly 1.5 seconds after the Cashier App boots up
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        // Only run if the tablet is NOT registered yet
+        if (!localStorage.getItem('takodeal_branch')) {
+            window.loadSetupBranches();
+        }
+    }, 1500);
+});
