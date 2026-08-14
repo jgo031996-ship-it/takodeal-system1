@@ -9383,30 +9383,29 @@ window.submitScheduleAck = async function(announcementId) {
 // 🌍 DYNAMIC BRANCH FETCHER FOR TABLET REGISTRATION
 // ==========================================
 window.fetchLiveBranchesForSetup = async function() {
-    // Looks for the Branch Dropdown on your Cashier App's registration screen
-    // We check the 3 most common IDs used for this box
     let branchDropdown = document.getElementById('setupBranchSelect');
-    
-    // If the tablet is already registered, this box won't exist, so we safely stop!
     if (!branchDropdown) return;
 
+    // 🛡️ BULLETPROOF FALLBACK: If the tablet has no Wi-Fi, use this emergency list!
+    let fallbackBranches = ["Cabantian", "Citygate", "Maa", "PAMPANGA", "INDANGAN"];
+
     try {
-        // Failsafe: Wait for Firebase to be ready
-        if (typeof window.getDocs !== 'function') return;
+        if (typeof window.getDocs !== 'function') throw new Error("Firebase not loaded yet");
 
         branchDropdown.innerHTML = '<option value="">⏳ Fetching live branches...</option>';
         
-        // Ask Firebase for the official list of branches you created in the Manager App
+        // Ask Firebase for the official list of branches
         const snap = await window.getDocs(window.collection(window.db, "branches"));
         let html = '<option value="">-- Select Branch --</option>';
         let branches = [];
         
         snap.forEach(doc => {
             let name = doc.data().name;
-            if (name !== "Main Office") branches.push(name);
+            if (name && name !== "Main Office") branches.push(name);
         });
 
-        // Sort them alphabetically and shove them into the dropdown HTML!
+        if (branches.length === 0) throw new Error("Cloud returned empty");
+
         branches.sort().forEach(b => {
             html += `<option value="${b}">${b}</option>`;
         });
@@ -9414,7 +9413,12 @@ window.fetchLiveBranchesForSetup = async function() {
         branchDropdown.innerHTML = html;
     } catch (e) {
         console.error("Error fetching branches for setup:", e);
-        branchDropdown.innerHTML = '<option value="">❌ Error connecting to cloud</option>';
+        // 🚨 IF OFFLINE OR BLOCKED: Load the fallback list so you are never locked out!
+        let html = '<option value="">⚠️ Offline: Select Branch --</option>';
+        fallbackBranches.forEach(b => {
+            html += `<option value="${b}">${b}</option>`;
+        });
+        branchDropdown.innerHTML = html;
     }
 };
 
