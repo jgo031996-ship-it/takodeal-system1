@@ -22942,19 +22942,25 @@ window.finalizeManagerLogin = function() {
     let branchStr = window.tempAuthData.assignedBranch || 'Main Office';
     let allowedArr = branchStr.split(',').map(function(b) { return b.trim(); });
 
+    // 🔥 THE CRASH FIX: Added the safety fallback here too!
+    let safePermissions = window.tempAuthData.permissions || ['all'];
+
     window.sessionUser = {
         email: window.tempAuthUser.email,
         branch: allowedArr[0], 
         allowedBranches: allowedArr, 
         isFranchisee: isFranchisee,
-        cashierName: window.tempAuthUser.displayName || 'Manager',
-        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && window.tempAuthData.permissions.includes('all'))),
-        permissions: window.tempAuthData.permissions || ['all']
+        cashierName: window.tempAuthUser.displayName || window.tempAuthData.fullName || window.tempAuthData.name || 'Manager',
+        // 🔥 Now it safely reads from the fallback array!
+        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && safePermissions.includes('all'))),
+        permissions: safePermissions
     };
 
-    document.getElementById('loginOverlay').style.display = 'none';
-    window.applyPermissions();
-    window.applyFranchiseUIProtections(); 
+    let overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.style.display = 'none';
+
+    if (typeof window.applyPermissions === 'function') window.applyPermissions();
+    if (typeof window.applyFranchiseUIProtections === 'function') window.applyFranchiseUIProtections(); 
     
     if (typeof window.switchView === 'function') window.switchView('dashboard');
     if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
