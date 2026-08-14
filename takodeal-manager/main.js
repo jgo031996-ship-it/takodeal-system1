@@ -20253,11 +20253,10 @@ window.renderDashboardCharts = async function() {
         const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
         const snap = await getDocs(q);
 
-        // 2. 🔥 FETCH TRUE MENU CATEGORIES (To fix "Uncategorized" bug)
+        // 2. FETCH TRUE MENU CATEGORIES
         const menuSnap = await getDocs(collection(db, "menu"));
         let menuCategories = {};
         menuSnap.forEach(doc => {
-            // Maps the exact item name to its actual category
             menuCategories[doc.data().name] = doc.data().category || 'Uncategorized';
         });
 
@@ -20289,11 +20288,28 @@ window.renderDashboardCharts = async function() {
             if (branchSalesData[txBranch]) {
                 let dayIndex = dateKeys.indexOf(txDate);
                 if (dayIndex !== -1) {
+                    
+                    // 🔥 THE GROSS SALES UPGRADE 🔥
+                    // Calculate raw Gross Sales before discounts instead of netTotal
+                    let txGross = parseFloat(tx.subTotalBeforeDiscount);
+                    if (isNaN(txGross) || txGross <= 0) {
+                        txGross = 0;
+                        if (tx.cart && Array.isArray(tx.cart)) {
+                            tx.cart.forEach(item => { 
+                                txGross += ((parseFloat(item.variantPrice) || parseFloat(item.basePrice) || parseFloat(item.price) || 0) * (parseFloat(item.qty) || 1)); 
+                            });
+                        } else {
+                            txGross = parseFloat(tx.netTotal) || 0;
+                        }
+                    }
+
                     if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
                         tx.splitDetails.forEach(split => {
                             let method = (split.method || '').toLowerCase();
                             if ((method === 'cash' && window.chartFilters.cash) || (method.includes('gcash') && window.chartFilters.gcash) || (method.includes('grab') && window.chartFilters.grab)) {
-                                branchSalesData[txBranch][dayIndex] += (parseFloat(split.amount) || 0);
+                                // Use mathematical ratio to split the gross amount perfectly!
+                                let ratio = (tx.netTotal > 0) ? (parseFloat(split.amount) / parseFloat(tx.netTotal)) : 0;
+                                branchSalesData[txBranch][dayIndex] += (txGross * ratio);
                             }
                         });
                     } else {
@@ -20304,7 +20320,7 @@ window.renderDashboardCharts = async function() {
                         let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; 
 
                         if (isCash || isGcash || isGrab || isOtherDigital) {
-                            branchSalesData[txBranch][dayIndex] += (parseFloat(tx.netTotal) || 0);
+                            branchSalesData[txBranch][dayIndex] += txGross;
                         }
                     }
                 }
@@ -20312,7 +20328,7 @@ window.renderDashboardCharts = async function() {
 
             // Today's Sales Mix Logic
             if (txDate === todayStr && pieCanvas && tx.cart) {
-                if (window.isBranchAllowed(txBranch)) { // 🔥 Protect Pie Chart!
+                if (window.isBranchAllowed(txBranch)) { 
                     tx.cart.forEach(item => {
                         let itemName = item.name || item.itemName;
                         let cat = menuCategories[itemName] || item.category || "Uncategorized";
@@ -20343,7 +20359,7 @@ window.renderDashboardCharts = async function() {
         // Draw Top 5 Sales Mix
         if (pieCanvas) {
             let sortedCats = Object.keys(categorySales).map(cat => ({ name: cat, sales: categorySales[cat] })).sort((a, b) => b.sales - a.sales);
-            let top5 = sortedCats.slice(0, 5); // Takes only the Top 5!
+            let top5 = sortedCats.slice(0, 5); 
             
             if (window.categoryMixChartInstance) window.categoryMixChartInstance.destroy();
             const ctxPie = pieCanvas.getContext('2d');
