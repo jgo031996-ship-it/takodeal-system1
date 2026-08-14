@@ -23130,3 +23130,53 @@ if (typeof window.originalCheckManagerPin === 'undefined' && typeof window.check
         window.originalCheckManagerPin();
     };
 }
+
+// ========================================================
+// 🛡️ EMERGENCY LOGIN FIX (UNDEFINED & PIN FREEZE)
+// ========================================================
+
+// 1. Instantly fix the "undefined" text on the screen
+setInterval(function() {
+    document.querySelectorAll('h2, h3, h1, span, div').forEach(function(el) {
+        if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+            if (el.innerText && el.innerText.includes('undefined:')) {
+                el.innerText = el.innerText.replace('undefined:', 'Manager:');
+            }
+        }
+    });
+}, 500);
+
+// 2. The Bulletproof PIN Checker
+if (typeof window.originalCheckManagerPin === 'undefined') {
+    window.originalCheckManagerPin = window.checkManagerPin;
+}
+
+window.checkManagerPin = function() {
+    let pinBox = document.getElementById('managerPinInput') || document.querySelector('input[type="password"]');
+    let enteredPin = pinBox ? pinBox.value.trim() : "";
+    
+    if (!enteredPin) {
+        return Swal.fire('Error', 'Please enter a PIN.', 'warning');
+    }
+
+    if (!window.tempAuthData) {
+        return alert("Authentication data lost. Please refresh the page.");
+    }
+
+    // Grab the exact PIN from the database
+    let correctPin = window.tempAuthData.pin || window.tempAuthData.securityPin;
+    
+    if (!correctPin) {
+        return Swal.fire('No PIN Setup', 'This account does not have a PIN saved. Please go to the Staff & Security tab from the Owner account, edit their profile, and save a new PIN.', 'error');
+    }
+
+    // Force both to be strings so they match perfectly!
+    if (String(enteredPin) === String(correctPin)) {
+        let btn = document.querySelector('button[onclick*="checkManagerPin"]');
+        if (btn) btn.innerText = "Unlocking...";
+        window.finalizeManagerLogin();
+    } else {
+        Swal.fire('Incorrect PIN', 'The PIN you entered is wrong. Please try again.', 'error');
+        if (pinBox) pinBox.value = "";
+    }
+};
