@@ -19980,52 +19980,108 @@ window.reprintContract = function(type, encodedData, signDate) {
     window.downloadContractPDF(type, data, signDate, false);
 };
 
+// ========================================================
+// 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR (WITH ID ATTACHMENT)
+// ========================================================
 window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) {
-    let dailySalary = parseFloat(data.hourlyRate || 0).toFixed(2);
+    // 1. Calculate standard 8-hour shift rate based on hourly memory
+    let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
+    if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
+
     let branchAddress = "Davao City, Philippines";
-    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Cabantian, Davao City";
+    if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subd, Cabantian, Davao City";
     if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
     if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
 
-    let title = type === 'Initial' ? "Employment Contract" : (type === 'Extension' ? "Contract Renewal & Extension" : "Regularization of Employment");
-    let cEnd = new Date(signDate); cEnd.setMonth(cEnd.getMonth() + 6);
-    let extEnd = cEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+    // 2. Map "Extension" to "Regularization" as requested
+    let isRegular = (type === 'Regularization' || type === 'Extension');
+    let title = isRegular ? "REGULARIZATION OF EMPLOYMENT AGREEMENT" : "EMPLOYMENT CONTRACT";
 
-    let content = type === 'Initial' ? 
-        `<p><b>1. POSITION:</b> Employed as a <b>${data.role}</b>. Commences on <b>${data.dateHired || signDate}</b> for six (6) months.</p>
-        <p><b>2. COMPENSATION:</b> Daily basic salary of <b>₱${dailySalary}</b> with 1 day off per week.</p>
-        <p><b>3. POLICIES:</b> Unexcused absences/tardiness are subject to progressive disciplinary action.</p>
-        <p><b>4. CONFIDENTIALITY:</b> Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
-        <p><b>5. RESIGNATION:</b> Mandatory 30-day notice prior to voluntary resignation.</p>` : 
-        (type === 'Extension' ? 
-        `<p><b>1. EXTENSION:</b> Extended as <b>${data.role}</b> from <b>${signDate}</b> to <b>${extEnd}</b> (final probation).</p>
-        <p><b>2. COMPENSATION:</b> Daily salary remains <b>₱${dailySalary}</b>. All policies remain in full force.</p>` : 
-        `<p><b>1. REGULARIZATION:</b> Effective <b>${signDate}</b>, granted <b>REGULAR (PERMANENT)</b> employment status.</p>
-        <p><b>2. COMPENSATION:</b> Daily basic salary of <b>₱${dailySalary}</b>. All policies remain in full force.</p>`);
+    let durationText = isRegular 
+        ? `Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.`
+        : `Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months, subject to the terms and conditions of this Agreement.`;
 
+    // 3. Build the strict Legal Content (Matching the Official Takodeal Document)
+    let content = `
+        <div style="font-size: 13px; line-height: 1.5; text-align: justify; color: #1e293b;">
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">1. Position and Commencement</h4>
+            <p style="margin: 0 0 10px 0;">The Employer hereby employs the Employee as a <b>${data.role || 'Service Crew'}</b> for Takodeal. The Employee agrees to faithfully and diligently perform duties assigned by the Employer. ${durationText}</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">2. Work Schedule and Compensation</h4>
+            <p style="margin: 0 0 10px 0;">The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>. The Employee is scheduled to work up to six (6) days per week, subject to operational needs. Working hours shall be determined by the Employer.</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">3. Attendance, Absences and Tardiness Policy</h4>
+            <p style="margin: 0 0 10px 0;">
+                <b>Absences:</b> Failure to notify management before the start of the scheduled shift shall be considered an unexcused absence.<br>
+                <b>Tardiness:</b> Repeated tardiness shall be subject to disciplinary action. Management reserves the right to deduct corresponding time or wages for late arrivals.<br>
+                <b>Sanctions for Violations:</b> 1st Offense (Verbal Warning) • 2nd Offense (Written Warning) • 3rd Offense (1-Day Suspension) • 4th Offense (3-Day Suspension) • 5th Offense (7-Day Suspension) • 6th Offense (14-Day Suspension) • 7th Offense (Termination / Dismissal).
+            </p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">4. Confidentiality Agreement</h4>
+            <p style="margin: 0 0 10px 0;">The Employee agrees to keep all proprietary information strictly confidential (recipes, processes, suppliers). Disclosure to outside parties is a serious breach, making the Employee liable to pay a <b>One Million Pesos (₱1,000,000.00)</b> penalty to the Employer.</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">5. Health Declaration</h4>
+            <p style="margin: 0 0 10px 0;">The Employee affirms they are physically fit for a food-handling environment. The Employer is not responsible for medical expenses related to concealed critical illnesses.</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">6. Notice of Resignation</h4>
+            <p style="margin: 0 0 10px 0;">The Employee agrees to render a <b>30-day notice</b> prior to voluntarily resigning to avoid financial damages equivalent to the cost incurred due to the unserved notice period.</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">7. Company Uniform and Property</h4>
+            <p style="margin: 0 0 10px 0;">Items provided on a borrowed basis (cap, apron, t-shirt) must be cared for and returned upon resignation to avoid payroll deductions.</p>
+        </div>
+    `;
+
+    // 4. Gather Uploaded IDs from Database for Page 2
+    let idImagesHtml = "";
+    let ids = [];
+    if (data.sssIdUrl) ids.push(data.sssIdUrl);
+    if (data.philhealthIdUrl) ids.push(data.philhealthIdUrl);
+    if (data.pagibigIdUrl) ids.push(data.pagibigIdUrl);
+
+    if (ids.length > 0) {
+        idImagesHtml += `<div style="page-break-before: always; padding-top: 40px;">`;
+        idImagesHtml += `<h3 style="text-align: center; color: #0f172a; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 30px;">ATTACHED VALID IDs</h3>`;
+        idImagesHtml += `<div style="display: flex; flex-direction: column; gap: 30px; align-items: center;">`;
+        ids.forEach(url => {
+            idImagesHtml += `<img src="${url}" style="max-width: 90%; max-height: 400px; border: 2px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">`;
+        });
+        idImagesHtml += `</div></div>`;
+    }
+
+    // 5. Combine into Final PDF Container
     let container = document.createElement('div');
     container.innerHTML = `
-        <div style="padding: 40px; font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; background: white; width: 800px; box-sizing: border-box;">
-            <div style="text-align: center; border-bottom: 3px solid #0f172a; padding-bottom: 20px; margin-bottom: 30px;">
+        <div style="padding: 40px 50px; font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; background: white; width: 800px; box-sizing: border-box;">
+            <div style="text-align: center; border-bottom: 3px solid #0f172a; padding-bottom: 15px; margin-bottom: 20px;">
                 <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
-                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
+                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 12px; text-transform: uppercase;">${branchAddress}</p>
             </div>
-            <h2 style="text-align: center; color: #b45309; text-transform: uppercase; margin-bottom: 30px;">${title}</h2>
-            <p style="margin-bottom: 20px; line-height: 1.6;">Executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> at ${branchAddress}, and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
-            <div style="line-height: 1.6; text-align: justify; margin-bottom: 60px;">${content}</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
-                <div><div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${data.cashierName.toUpperCase()}</b></div><span style="font-size: 14px; color: #64748b;">Employee Digitally Accepted</span></div>
-                <div><div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div><span style="font-size: 14px; color: #64748b;">CEO & General Manager</span></div>
+            <h2 style="text-align: center; color: #b45309; font-size: 18px; text-transform: uppercase; margin-bottom: 20px;">${title}</h2>
+            <p style="margin-bottom: 15px; font-size: 13px; line-height: 1.5;">This Agreement is executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${(data.cashierName || 'Employee').toUpperCase()}</b> ("Employee").</p>
+            
+            ${content}
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; font-size: 13px;">
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px; padding-bottom: 5px;"><b>${(data.cashierName || 'Employee').toUpperCase()}</b></div>
+                    <span style="color: #64748b;">Employee Digitally Accepted</span>
+                </div>
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px; padding-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
+                    <span style="color: #64748b;">Owner / Employer</span>
+                </div>
             </div>
+            ${idImagesHtml}
         </div>`;
     
-    Swal.fire({title: 'Generating PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    Swal.fire({title: 'Generating PDF...', text: 'Attaching IDs and formatting contract...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     
+    // 6. Execute PDF Engine
     let opt = {
-        margin: 0.5,
-        filename: `${title.replace(/\s+/g, '_')}_${data.cashierName.replace(/\s+/g, '_')}.pdf`,
+        margin: 0,
+        filename: `${title.replace(/\s+/g, '_')}_${(data.cashierName || 'Employee').replace(/\s+/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
+        html2canvas: { scale: 2, useCORS: true }, // 🔥 useCORS pulls the ID images from Firebase securely
         jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
     
@@ -20042,6 +20098,9 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         } else {
             Swal.close();
         }
+    }).catch(err => {
+        console.error("PDF Gen Error:", err);
+        Swal.fire('Warning', 'Contract generated, but there was an issue attaching the ID photos. Please ensure IDs are uploaded in the Staff Profile.', 'warning');
     });
 };
 
