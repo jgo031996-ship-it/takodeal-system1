@@ -15691,8 +15691,15 @@ window.openAddBranchModal = function() {
     }, 300);
 };
 
+// ==========================================
+// 🏢 BRANCH CREATION ENGINE (WITH TRUE GPS SYNC)
+// ==========================================
 window.saveNewBranch = async function() {
     let name = document.getElementById('newBranchName').value.trim();
+    // 🔥 Grab the hidden GPS coordinates from the Leaflet Map!
+    let lat = document.getElementById('newBranchLat') ? document.getElementById('newBranchLat').value : null;
+    let lng = document.getElementById('newBranchLng') ? document.getElementById('newBranchLng').value : null;
+    
     if (!name) return Swal.fire('Error', 'Branch name is required!', 'error');
     
     if (window.globalActiveBranches.includes(name)) {
@@ -15703,18 +15710,28 @@ window.saveNewBranch = async function() {
     btn.innerText = "⏳ Provisioning..."; btn.disabled = true;
 
     try {
-        await addDoc(collection(db, "branches"), { name: name, isCore: false, createdAt: serverTimestamp() });
+        let payload = { 
+            name: name, 
+            isCore: false, 
+            createdAt: serverTimestamp() 
+        };
         
-        // 🔥 UI UPGRADE: Beautiful Success Modal
+        // 🔥 Inject the exact map coordinates into the payload!
+        if (lat && lng) {
+            payload.lat = parseFloat(lat);
+            payload.lng = parseFloat(lng);
+        }
+
+        await addDoc(collection(db, "branches"), payload);
+        
         Swal.fire({
             title: '🎉 Branch Online!',
-            text: `${name} is now officially integrated into the TAKODEÁL system!`,
+            text: `${name} is now officially integrated into the TAKODEÁL system with GPS tracking!`,
             icon: 'success',
             confirmButtonColor: '#8b5cf6', 
             customClass: { popup: 'rounded-2xl shadow-xl' }
         });
         
-        // 🔥 THE FIX: Passed the 'name' variable directly into the Automator!
         window.autoSetupNewBranch(name); 
         
         document.getElementById('addBranchModal').style.display = 'none';
@@ -15864,7 +15881,7 @@ window.deleteBranch = async function(docId, name) {
 
     try {
         await deleteDoc(doc(db, "branches", docId));
-        window.autoCleanupDeletedBranch(branchNameVariable);
+        window.autoCleanupDeletedBranch(name);
         alert(`🗑️ ${name} has been taken offline.`);
         window.loadBranchManager();
     } catch (e) { console.error(e); alert("Failed to delete branch."); }
