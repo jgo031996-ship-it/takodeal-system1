@@ -2985,7 +2985,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
     }
 
-    async function submitFinalOrder() {
+      async function submitFinalOrder() {
       const btn = document.getElementById('btnSubmitFinal'); 
       btn.innerText = "Processing Payment..."; 
       btn.disabled = true;
@@ -3005,7 +3005,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                          ? currentShift.shiftId 
                          : "UNKNOWN";
 
-      // 🚨 GRAB DISCOUNT DATA (THIS IS WHAT WAS MISSING!)
+      // 🚨 GRAB DISCOUNT DATA
       let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
       let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
       let dReason = document.getElementById('checkoutDiscountReason') ? document.getElementById('checkoutDiscountReason').value.trim() : '';
@@ -3049,6 +3049,28 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             });
             window.activeMobileOrderId = null; 
         }
+
+        // 🐙 THE 1 MILLION BALLS RESTORATION FIX 🐙
+        let totalBallsSold = 0;
+        cart.forEach(item => {
+            let itemName = item.name || item.itemName;
+            let match = itemName.match(/(\d+)\s*Pcs/i);
+            if (match) {
+                let ballsInBox = parseInt(match[1]);
+                totalBallsSold += (ballsInBox * (item.qty || 1));
+            }
+        });
+
+        if (totalBallsSold > 0) {
+            let statsPayload = {
+                totalTakoyakiBalls: window.increment(totalBallsSold)
+            };
+            // Dynamically increment the specific branch's tracker too!
+            statsPayload[`balls_${sessionUser.branch}`] = window.increment(totalBallsSold);
+            
+            window.setDoc(window.doc(window.db, "settings", "global_stats"), statsPayload, { merge: true }).catch(e => console.log(e));
+        }
+
         lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
         let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
