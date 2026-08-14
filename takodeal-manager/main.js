@@ -21994,14 +21994,14 @@ window.currentOpenPlatform = null;
 window.calculatePlatformFinancials = async function() {
     // 1. Fetch Dynamic Settings from Cloud
     try {
-        const grabDoc = await getDoc(doc(db, "settings", "grab_financials"));
+        const grabDoc = await window.getDoc(window.doc(window.db, "settings", "grab_financials"));
         if (grabDoc.exists()) {
             let d = grabDoc.data();
             window.platformFinancialData.Grab.commissionRate = d.commissionRate !== undefined ? d.commissionRate : 0.25;
             window.platformFinancialData.Grab.dailyLoanDeduction = d.dailyLoanDeduction || 0;
             window.platformFinancialData.Grab.remainingLoanBalance = d.remainingLoanBalance || 0;
         }
-        const fpDoc = await getDoc(doc(db, "settings", "foodpanda_financials"));
+        const fpDoc = await window.getDoc(window.doc(window.db, "settings", "foodpanda_financials"));
         if (fpDoc.exists()) {
             let d = fpDoc.data();
             window.platformFinancialData.Foodpanda.commissionRate = d.commissionRate !== undefined ? d.commissionRate : 0.20;
@@ -22033,25 +22033,33 @@ window.calculatePlatformFinancials = async function() {
 
     let selectedBranch = document.getElementById('dashBranchFilter')?.value || "All";
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-    if (isFranchisee) selectedBranch = window.sessionUser.branch;
 
     // 3. Fetch Transactions
-    let q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-    if (selectedBranch !== "All") q = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-    const snap = await getDocs(q);
+    // 🔥 THE FIX: Using a single, bulletproof query and filtering branches in Javascript
+    // so multi-branch Franchisees don't get locked out!
+    let q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+    const snap = await window.getDocs(q);
 
     snap.forEach(docSnap => {
         let tx = docSnap.data();
         if (tx.status !== 'Voided') {
             let branch = tx.branch || "Unknown";
-            let amount = tx.netTotal || 0;
-            let method = tx.paymentMethod || "";
             
-            if (method === 'Grab' || tx.orderType === 'Grab') {
+            // 🛡️ Apply Franchisee Branch Filter strictly
+            if (isFranchisee && !window.sessionUser.allowedBranches.includes(branch)) return;
+            if (!isFranchisee && selectedBranch !== "All" && branch !== selectedBranch) return;
+
+            let amount = tx.netTotal || 0;
+            
+            // 🔥 THE CORE FIX: Completely case-insensitive and space-proof matching for both Platform and Order Type!
+            let method = (tx.paymentMethod || "").toLowerCase().trim();
+            let orderType = (tx.orderType || "").toLowerCase().trim();
+            
+            if (method.includes('grab') || orderType.includes('grab')) {
                 if (!window.platformFinancialData.Grab.branchData[branch]) window.platformFinancialData.Grab.branchData[branch] = 0;
                 window.platformFinancialData.Grab.branchData[branch] += amount;
                 window.platformFinancialData.Grab.gross += amount;
-            } else if (method === 'Foodpanda' || tx.orderType === 'Foodpanda') {
+            } else if (method.includes('foodpanda') || method.includes('panda') || orderType.includes('foodpanda') || orderType.includes('panda')) {
                 if (!window.platformFinancialData.Foodpanda.branchData[branch]) window.platformFinancialData.Foodpanda.branchData[branch] = 0;
                 window.platformFinancialData.Foodpanda.branchData[branch] += amount;
                 window.platformFinancialData.Foodpanda.gross += amount;
@@ -22061,15 +22069,20 @@ window.calculatePlatformFinancials = async function() {
 
     // 4. Fetch Cashier Logged Payouts (Grab & Foodpanda)
     let fetchPayouts = async (platformName, collectionName) => {
-        let pQ = query(collection(db, collectionName), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
-        if (selectedBranch !== "All") pQ = query(collection(db, collectionName), where("branch", "==", selectedBranch), where("dateStr", ">=", startDateInput), where("dateStr", "<=", endDateInput));
+        let pQ = window.query(window.collection(window.db, collectionName), window.where("dateStr", ">=", startDateInput), window.where("dateStr", "<=", endDateInput));
+        const pSnap = await window.getDocs(pQ);
         
-        const pSnap = await getDocs(pQ);
         window.platformFinancialData[platformName].actualPayout = 0;
         window.platformFinancialData[platformName].payoutLogsHtml = '';
         
         pSnap.forEach(d => {
-            let p = d.data(); let pAmt = parseFloat(p.amount)||0;
+            let p = d.data(); 
+            
+            // 🛡️ Apply Franchisee Branch Filter to Payouts too!
+            if (isFranchisee && !window.sessionUser.allowedBranches.includes(p.branch)) return;
+            if (!isFranchisee && selectedBranch !== "All" && p.branch !== selectedBranch) return;
+
+            let pAmt = parseFloat(p.amount)||0;
             window.platformFinancialData[platformName].actualPayout += pAmt;
             window.platformFinancialData[platformName].payoutLogsHtml += `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #cbd5e1; padding:4px 0;"><span style="color:#64748b; font-size:12px;">${p.dateStr} (${p.branch})</span><strong style="color:#0f172a; font-size:12px;">₱${pAmt.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></div>`;
         });
