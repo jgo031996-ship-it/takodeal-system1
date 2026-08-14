@@ -1880,6 +1880,11 @@
             catsToRender = safeCategories.filter(c => !premixCategories.includes(c));
         }
     
+        // 🔥 ADD THIS NEW BLOCK HERE TO HIDE RESTRICTED TABS:
+        if (window.branchAllowedCategories && window.branchAllowedCategories.length > 0) {
+            catsToRender = catsToRender.filter(c => window.branchAllowedCategories.includes(c));
+        }
+    
         catsToRender.sort((a, b) => {
             let idxA = layoutOrder.indexOf(a);
             let idxB = layoutOrder.indexOf(b);
