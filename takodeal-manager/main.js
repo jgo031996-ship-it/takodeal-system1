@@ -9466,19 +9466,34 @@ window.removeUnavailable = function(date, emp) {
     window.saveToCloud();
 };
 
-window.generateSchedule = function() {
+window.generateSchedule = async function() {
     const monthVal = document.getElementById("monthSelector").value;
-    if (!monthVal) return alert("Select month.");
+    if (!monthVal) return Swal.fire('Missing Data', 'Please select a month first.', 'warning');
+    
     [currentYear, currentMonth] = monthVal.split('-').map(Number);
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     
-    // 🔥 THE BULLETPROOF ACTIVE TAB FIX: Read the actual highlighted button on the screen!
     let activeTabBtn = document.querySelector('.tab-container .tab-btn.active');
     let targetBranch = 'Cabantian'; // Safe fallback
     if (activeTabBtn) {
-        // The button text is "Maa Schedule", so we strip " Schedule" to get just the branch name!
         targetBranch = activeTabBtn.innerText.replace(' Schedule', '').trim();
     }
+
+    // 🚨 STRICT CONFIRMATION MODAL TO PREVENT ACCIDENTAL WIPES
+    const confirm = await Swal.fire({
+        title: `Reshuffle ${targetBranch}?`,
+        html: `You are about to Auto-Generate the entire month's schedule for <b>${targetBranch}</b>.<br><br><span style="color:#dc2626; font-weight:bold;">Warning: This will overwrite any manual swaps, leaves, or changes you made for this branch this month!</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Reshuffle It!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({title: 'Generating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     
     // If the calendar is totally empty, build the shell first so we don't crash
     if (Object.keys(currentSchedule).length === 0) {
@@ -9537,9 +9552,10 @@ window.generateSchedule = function() {
     window.saveToCloud();
     
     Swal.fire({
-        toast: true, position: 'top-end', icon: 'success', 
         title: `Reshuffled ${targetBranch}!`, 
-        showConfirmButton: false, timer: 2000
+        text: `The new schedule for ${targetBranch} has been generated and saved.`,
+        icon: 'success', 
+        customClass: { popup: 'rounded-2xl' }
     });
 };
 
