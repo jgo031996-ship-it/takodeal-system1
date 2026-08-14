@@ -23318,3 +23318,65 @@ window.publishScheduleToApps = async function() {
         }
     }
 };
+
+// ========================================================
+// 📅 SCHEDULE PUBLISHING ENGINE (1-CLICK IMAGE ALARM)
+// ========================================================
+
+// 1. Inject the Publish Button Next to the Download Button Automatically
+setInterval(function() {
+    let btnDownload = document.getElementById('btnDownloadSched');
+    if (btnDownload && !document.getElementById('btnPublishSchedule')) {
+        let pubBtn = document.createElement('button');
+        pubBtn.id = 'btnPublishSchedule';
+        pubBtn.innerHTML = '<span style="font-size: 16px;">📢</span> Publish Schedule';
+        pubBtn.style.cssText = 'background: #8b5cf6; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.2); display: flex; align-items: center; gap: 8px; transition: 0.2s; margin-left: 12px;';
+        pubBtn.onclick = window.publishScheduleToApps;
+        btnDownload.parentNode.insertBefore(pubBtn, btnDownload.nextSibling);
+    }
+}, 1500);
+
+// 2. The Custom Publishing Function
+window.publishScheduleToApps = async function() {
+    const { value: imageUrl } = await Swal.fire({
+        title: '📢 Publish Schedule Image',
+        html: `
+            <div style="text-align: left; font-size: 13px;">
+                <p style="color: #64748b; margin-bottom: 15px;">Paste your GitHub Image URL here. The apps will detect this as a Schedule, skip the memo screen, and show a pure full-screen image with a 1-click Acknowledge button.</p>
+                <label style="font-weight: bold; color: #334155;">GitHub "Raw" Image URL:</label>
+                <input type="text" id="pubImage" placeholder="https://raw.githubusercontent.com/..." style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; color: #0ea5e9;">
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '🚀 Push to Tablets',
+        confirmButtonColor: '#8b5cf6',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return document.getElementById('pubImage').value.trim();
+        }
+    });
+
+    if (imageUrl) {
+        Swal.fire({title: 'Publishing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            let activeTabBtn = document.querySelector('.tab-container .tab-btn.active');
+            let targetBranch = activeTabBtn ? activeTabBtn.innerText.replace(' Schedule', '').trim() : 'All Branches';
+
+            await window.addDoc(window.collection(window.db, "announcements"), {
+                title: `Official Schedule: ${targetBranch}`,
+                message: "", // Intentionally blank!
+                images: [imageUrl],
+                branchTarget: targetBranch,
+                active: true,
+                isSchedule: true, // 🔥 THE MAGIC FLAG THAT TELLS THE TABLETS TO SHOW JUST THE IMAGE!
+                timestamp: window.serverTimestamp(),
+                author: window.sessionUser ? window.sessionUser.cashierName : 'Management'
+            });
+
+            Swal.fire('✅ Published!', 'The schedule image has been pushed to the tablets.', 'success');
+        } catch (e) {
+            console.error(e); Swal.fire('Error', 'Failed to publish. Check connection.', 'error');
+        }
+    }
+};
