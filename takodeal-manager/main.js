@@ -15448,39 +15448,51 @@ window.globalActiveBranches = ["Main Office", "Cabantian", "Citygate", "Maa"];
 window.branchMapInstance = null;
 window.branchMarker = null;
 
+// ========================================================
+// 🏢 MULTI-TENANT BRANCH EXPANSION ENGINE (WITH MAP & SETTINGS)
+// ========================================================
 window.loadBranchManager = async function() {
     const tbody = document.getElementById('branchManagerListBody');
     if(!tbody) return;
     
     try {
-        // 🔥 1. Fetch the exact timestamp of the newest code update!
+        // 1. Fetch the exact timestamp of the newest code update
         const vSnap = await getDoc(doc(db, "settings", "global_app_version"));
         let globalVersion = vSnap.exists() ? (parseFloat(vSnap.data().latestVersion) || 0) : 0;
 
-        const q = query(collection(db, "branches"), orderBy("createdAt", "asc"));
-        const snap = await getDocs(q);
+        // 🔥 THE FIX: Removed orderBy() from Firebase query so older branches without timestamps don't vanish!
+        const snap = await getDocs(collection(db, "branches"));
         
         let html = '';
         let branches = [];
-        window.globalBranchData = {}; // Memory cache for settings
+        window.globalBranchData = {}; 
         
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
-            branches.push(d.name);
-            window.globalBranchData[docSnap.id] = d;
+        // Extract into a Javascript array so we can sort safely without crashing Firebase
+        let branchList = [];
+        snap.forEach(docSnap => branchList.push({ id: docSnap.id, ...docSnap.data() }));
 
-            let dateStr = d.createdAt ? d.createdAt.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Core System';
+        // Safely sort by createdAt in memory (putting older/missing ones at the top safely)
+        branchList.sort((a,b) => {
+            let tA = a.createdAt ? (a.createdAt.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt).getTime()) : 0;
+            let tB = b.createdAt ? (b.createdAt.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime()) : 0;
+            return tA - tB;
+        });
+
+        branchList.forEach(d => {
+            branches.push(d.name);
+            window.globalBranchData[d.id] = d;
+
+            let dateStr = d.createdAt ? (d.createdAt.toDate ? d.createdAt.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(d.createdAt).toLocaleDateString()) : 'Core System';
             
             let delBtn = d.isCore 
                 ? `<span style="color:#94a3b8; font-size: 11px; font-style: italic;">Protected</span>` 
-                : `<button onclick="window.deleteBranch('${docSnap.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>`;
+                : `<button onclick="window.deleteBranch('${d.id}', '${d.name}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>`;
 
-            // 🔥 2. Compare the Branch's timestamp to the Global timestamp
             let approvedVer = parseFloat(d.approvedVersion) || 0;
             let updateBtnHtml = '';
             
             if (approvedVer < globalVersion) {
-                updateBtnHtml = `<button onclick="window.pushBranchUpdate('${docSnap.id}', '${d.name}', ${globalVersion})" style="background:#dc2626; color:white; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow: 0 2px 4px rgba(220,38,38,0.3); font-size:11px;">🚀 UPDATE NOW!</button>`;
+                updateBtnHtml = `<button onclick="window.pushBranchUpdate('${d.id}', '${d.name}', ${globalVersion})" style="background:#dc2626; color:white; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow: 0 2px 4px rgba(220,38,38,0.3); font-size:11px;">🚀 UPDATE NOW!</button>`;
             } else {
                 updateBtnHtml = `<button disabled style="background:#dcfce7; color:#16a34a; border:1px solid #bbf7d0; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:not-allowed; font-size:11px;">✅ Branch UPDATED</button>`;
             }
@@ -15491,7 +15503,7 @@ window.loadBranchManager = async function() {
                     <td style="padding: 12px;"><span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Online</span></td>
                     <td style="padding: 12px; color: #64748b; font-size: 13px;">${dateStr}</td>
                     <td style="padding: 12px; display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
-                        <button onclick="window.openBranchSettings('${docSnap.id}')" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:8px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">⚙️ Settings</button>
+                        <button onclick="window.openBranchSettings('${d.id}')" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:8px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">⚙️ Settings</button>
                         ${updateBtnHtml}
                         ${delBtn}
                     </td>
@@ -15499,19 +15511,74 @@ window.loadBranchManager = async function() {
             `;
         });
         
-        if (snap.empty) {
+        if (branchList.length === 0) {
             await window.initializeCoreBranches();
             return;
         }
 
         tbody.innerHTML = html;
-        window.globalActiveBranches = branches;
-        window.injectDynamicBranchDropdowns(); 
+        window.globalActiveBranches = branches; // Populates the global array safely!
+        
+        if (typeof window.injectDynamicBranchDropdowns === 'function') {
+            window.injectDynamicBranchDropdowns(); 
+        }
         
     } catch (e) {
         console.error("Branch Manager Error:", e);
         tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red;">Error loading branches.</td></tr>';
     }
+};
+
+// 💉 THE DOM INJECTOR (FRANCHISE LOCK UPGRADE)
+window.injectDynamicBranchDropdowns = function() {
+    const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
+    const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect', 'sanctionBranchFilter', 'expenseBranchFilter', 'flowBranchFilter']; 
+    
+    let stdHtml = '';
+    let filterHtml = '<option value="All">🌐 All Branches</option>';
+    let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; 
+
+    let isFranchiseMode = window.sessionUser && window.sessionUser.isFranchisee;
+    
+    // 🔥 THE FIX: Bulletproof fallback (|| []) ensures it never crashes even if data is still loading!
+    let allowedBranches = isFranchiseMode ? (window.sessionUser.allowedBranches || []) : (window.globalActiveBranches || []);
+
+    if (isFranchiseMode) {
+        filterHtml = allowedBranches.length > 1 ? '<option value="All">🌐 All My Branches</option>' : '';
+        allowedBranches.forEach(b => {
+            stdHtml += `<option value="${b}">${b}</option>`;
+            filterHtml += `<option value="${b}">📍 ${b}</option>`;
+            plainFilterHtml += `<option value="${b}">${b}</option>`;
+        });
+    } else {
+        (window.globalActiveBranches || []).forEach(b => {
+            let icon = b === "Main Office" ? "🏢" : "📍";
+            stdHtml += `<option value="${b}">${b}</option>`;
+            filterHtml += `<option value="${b}">${icon} ${b}</option>`;
+            plainFilterHtml += `<option value="${b}">${b}</option>`;
+        });
+    }
+
+    standardSelects.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) { 
+            let oldVal = el.value; el.innerHTML = stdHtml; 
+            if (oldVal && allowedBranches.includes(oldVal)) el.value = oldVal; 
+            if (isFranchiseMode && allowedBranches.length === 1) { el.value = allowedBranches[0]; el.disabled = true; } 
+        }
+    });
+
+    filterSelects.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) {
+            let oldVal = el.value;
+            if (id === 'burnRateBranch' || id === 'auditModalBranch' || id === 'forecasterBranchSelect') el.innerHTML = plainFilterHtml;
+            else el.innerHTML = filterHtml;
+            
+            if (oldVal && (allowedBranches.includes(oldVal) || oldVal === "All")) el.value = oldVal;
+            if (isFranchiseMode && allowedBranches.length === 1) { el.value = allowedBranches[0]; el.disabled = true; } 
+        }
+    });
 };
 
 // 🔥 MASTER BUTTON: Tells the entire system that a new update exists!
@@ -15796,57 +15863,6 @@ window.deleteBranch = async function(docId, name) {
         alert(`🗑️ ${name} has been taken offline.`);
         window.loadBranchManager();
     } catch (e) { console.error(e); alert("Failed to delete branch."); }
-};
-
-// 💉 THE DOM INJECTOR (FRANCHISE LOCK UPGRADE)
-window.injectDynamicBranchDropdowns = function() {
-    const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
-    // 🔥 FlowBranchFilter added here to automatically lock the Financial Flow tab!
-    const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect', 'sanctionBranchFilter', 'expenseBranchFilter', 'flowBranchFilter']; 
-    
-    let stdHtml = '';
-    let filterHtml = '<option value="All">🌐 All Branches</option>';
-    let plainFilterHtml = '<option value="">-- Choose Branch --</option>'; 
-
-    let isFranchiseMode = window.sessionUser && window.sessionUser.isFranchisee;
-    let allowedBranches = isFranchiseMode ? window.sessionUser.allowedBranches : window.globalActiveBranches;
-
-    if (isFranchiseMode) {
-        filterHtml = allowedBranches.length > 1 ? '<option value="All">🌐 All My Branches</option>' : '';
-        allowedBranches.forEach(b => {
-            stdHtml += `<option value="${b}">${b}</option>`;
-            filterHtml += `<option value="${b}">📍 ${b}</option>`;
-            plainFilterHtml += `<option value="${b}">${b}</option>`;
-        });
-    } else {
-        window.globalActiveBranches.forEach(b => {
-            let icon = b === "Main Office" ? "🏢" : "📍";
-            stdHtml += `<option value="${b}">${b}</option>`;
-            filterHtml += `<option value="${b}">${icon} ${b}</option>`;
-            plainFilterHtml += `<option value="${b}">${b}</option>`;
-        });
-    }
-
-    standardSelects.forEach(id => {
-        let el = document.getElementById(id);
-        if (el) { 
-            let oldVal = el.value; el.innerHTML = stdHtml; 
-            if (oldVal && allowedBranches.includes(oldVal)) el.value = oldVal; 
-            if (isFranchiseMode && allowedBranches.length === 1) { el.value = allowedBranches[0]; el.disabled = true; } 
-        }
-    });
-
-    filterSelects.forEach(id => {
-        let el = document.getElementById(id);
-        if (el) {
-            let oldVal = el.value;
-            if (id === 'burnRateBranch' || id === 'auditModalBranch' || id === 'forecasterBranchSelect') el.innerHTML = plainFilterHtml;
-            else el.innerHTML = filterHtml;
-            
-            if (oldVal && (allowedBranches.includes(oldVal) || oldVal === "All")) el.value = oldVal;
-            if (isFranchiseMode && allowedBranches.length === 1) { el.value = allowedBranches[0]; el.disabled = true; } 
-        }
-    });
 };
 
 // Hook the Branch Manager to open when you visit the "Staff & Security" tab
