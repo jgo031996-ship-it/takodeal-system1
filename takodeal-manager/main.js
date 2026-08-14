@@ -673,18 +673,7 @@ window.loadGlobalDashboard = async function() {
       globalGross += branchGross; globalNet += branchNet; globalExp += branchExp;
 
       if (branchGross === 0 && branchExp === 0 && !shiftData) {
-        tableHtml += `
-          <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-            <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
-            <td style="padding: 15px 25px;"><span style="background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold;">⚪ No Data</span></td>
-            <td style="padding: 15px 25px; font-weight: bold; color: #cbd5e1;">-</td>
-            <td style="padding: 15px 25px; color: #cbd5e1; font-weight: 600;">-</td>
-            <td style="padding: 15px 25px; font-weight: 900; color: #cbd5e1;">-</td>
-            <td style="padding: 15px 25px; color: #cbd5e1; font-weight: bold;">-</td>
-            <td style="padding: 15px 25px; font-weight: 900; color: #cbd5e1;">-</td>
-            <td style="padding: 15px 25px; color: #cbd5e1;">-</td>
-          </tr>
-        `;
+        // 🔥 THE FIX: Completely hide branches that have absolutely zero activity for the day!
         continue;
       }
 
@@ -21090,6 +21079,7 @@ window.loadFinancialFlow = async function() {
         let totalPayroll = 0;
         let totalExpenses = 0;
         let expenseBreakdown = {}; 
+        window.tempOpExBreakdown = {}; // 🔥 NEW: Store exact logs for the modal!
 
         // 🔥 THE INDEX-FREE FIX: Timestamp only!
         let expQ = query(collection(db, "expenses"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
@@ -21108,6 +21098,15 @@ window.loadFinancialFlow = async function() {
                 totalExpenses += amt;
                 if (!expenseBreakdown[cat]) expenseBreakdown[cat] = 0;
                 expenseBreakdown[cat] += amt;
+
+                // 🔥 NEW: Store the actual logs for clicking!
+                if (!window.tempOpExBreakdown[cat]) window.tempOpExBreakdown[cat] = [];
+                window.tempOpExBreakdown[cat].push({
+                    date: exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(),
+                    note: exp.note || exp.description || '-',
+                    amount: amt,
+                    account: exp.account || 'Unknown'
+                });
             }
         });
 
@@ -21128,10 +21127,12 @@ window.loadFinancialFlow = async function() {
         // 🌊 5. BUILD THE WATERFALL TREE UI
         let opExBoxes = '';
         Object.keys(expenseBreakdown).sort((a,b) => expenseBreakdown[b] - expenseBreakdown[a]).forEach(cat => {
+            let safeCat = cat.replace(/'/g, "\\'");
             opExBoxes += `
-                <div style="background: white; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); min-width: 120px;">
+                <div onclick="window.openFlowOpExModal('${safeCat}')" style="background: white; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); min-width: 120px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.borderColor='#0ea5e9'; this.style.boxShadow='0 4px 6px rgba(14,165,233,0.2)';" onmouseout="this.style.borderColor='#cbd5e1'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.02)';">
                     <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">${cat}</div>
                     <div style="font-size: 14px; font-weight: 900; color: #0f172a;">₱${expenseBreakdown[cat].toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="font-size: 10px; color: #0ea5e9; margin-top: 5px; font-weight: bold;">🔍 Click to see trace logs</div>
                 </div>
             `;
         });
@@ -21328,30 +21329,30 @@ window.loadFinancialFlow = async function() {
     }
 };
 
-window.openFlowCogsModal = function() {
-    let items = window.tempCogsBreakdown || {};
+// 🔥 NEW: OpEx Trace Breakdown Modal
+window.openFlowOpExModal = function(catName) {
+    let items = window.tempOpExBreakdown[catName] || [];
     let html = '';
     
-    let sortedItems = Object.keys(items).sort((a,b) => items[b].cogs - items[a].cogs);
+    // Sort newest first
+    items.sort((a,b) => b.date - a.date);
     
-    sortedItems.forEach(name => {
-        let d = items[name];
-        if (d.cogs > 0) {
-            html += `
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding: 10px 0;">
-                    <div>
-                        <strong style="color: #334155; font-size: 14px;">${name}</strong><br>
-                        <span style="font-size: 11px; color: #64748b;">${d.qty} items sold</span>
-                    </div>
-                    <strong style="color: #dc2626; font-size: 15px;">₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+    items.forEach(d => {
+        let dateStr = d.date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        html += `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding: 12px 0;">
+                <div>
+                    <strong style="color: #334155; font-size: 13px;">${d.note}</strong><br>
+                    <span style="font-size: 11px; color: #64748b;">${dateStr} • Account Hit: ${d.account}</span>
                 </div>
-            `;
-        }
+                <strong style="color: #dc2626; font-size: 15px;">-₱${d.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>
+        `;
     });
 
     Swal.fire({
-        title: '📦 COGS Trace Breakdown',
-        html: `<div style="max-height: 50vh; overflow-y: auto; text-align: left; padding-right: 10px;">${html || '<i>No COGS data found for this period.</i>'}</div>`,
+        title: `📑 Trace: ${catName}`,
+        html: `<div style="max-height: 50vh; overflow-y: auto; text-align: left; padding-right: 10px;">${html || '<i>No details found.</i>'}</div>`,
         confirmButtonText: 'Close',
         confirmButtonColor: '#0f766e',
         customClass: { popup: 'rounded-2xl shadow-xl' }
