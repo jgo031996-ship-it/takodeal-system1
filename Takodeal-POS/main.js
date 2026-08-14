@@ -325,6 +325,9 @@ window.loadPOSData = async function() {
         }
     } catch(e) {}
 
+    // 🔥 ADD THIS NEW LINE RIGHT HERE:
+    window.branchAllowedCategories = allowedCats;
+
     const menuQ = window.query(window.collection(window.db, "menu"));
     
     window.menuListenerUnsubscribe = window.onSnapshot(menuQ, async (snapshot) => {
