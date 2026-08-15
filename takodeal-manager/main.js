@@ -6682,6 +6682,10 @@ window.openEditInvModal = async function(id) {
         if (docSnap.exists()) {
             let itemData = docSnap.data();
             
+            // 🔥 THE GHOST FILE FIX: Wipe the photo uploader memory so it doesn't cross-contaminate!
+            let fileInput = document.getElementById('editInvPhoto');
+            if (fileInput) fileInput.value = '';
+
             document.getElementById('editInvId').value = id;
             document.getElementById('editInvBranch').value = itemData.branch || 'Main Office';
             document.getElementById('editInvCat').value = itemData.category || '';
