@@ -4507,10 +4507,26 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
                 let oldStockForLog = 0;
 
                 if (targetSnap.empty) {
+                    // 🔥 THE NEW ITEM CLONE FIX: Fetch HQ Master Data to perfectly copy the image and settings!
+                    const hqQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("name", "==", item.item));
+                    const hqSnap = await getDocs(hqQ);
+                    let hqData = hqSnap.empty ? {} : hqSnap.docs[0].data();
+
                     await addDoc(collection(db, "inventory"), { 
-                        branch: safeBranch, name: item.item, uom: baseUom, currentStock: actualBaseQty, 
-                        category: item.category || "Ingredients", purchaseUom: item.purchaseUom || baseUom,
-                        conversionOriginal: convRate, conversionRate: convRate, cost: item.cost || 0, reorderLevel: item.reorderLevel || 10, showInPrep: true
+                        branch: safeBranch, 
+                        name: item.item, 
+                        uom: hqData.uom || baseUom, 
+                        currentStock: actualBaseQty, 
+                        category: hqData.category || item.category || "Ingredients", 
+                        purchaseUom: hqData.purchaseUom || item.purchaseUom || baseUom,
+                        conversionOriginal: convRate, 
+                        conversionRate: convRate, 
+                        cost: item.cost || 0, 
+                        baseCost: hqData.baseCost || 0,
+                        reorderLevel: item.reorderLevel || 10, 
+                        showInPrep: hqData.showInPrep !== undefined ? hqData.showInPrep : true,
+                        allowRequest: hqData.allowRequest !== undefined ? hqData.allowRequest : true,
+                        image: hqData.image || null // 🔥 Securely copies the picture!
                     });
                 } else {
                     let tRef = targetSnap.docs[0].ref;
