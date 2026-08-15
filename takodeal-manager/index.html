@@ -1692,6 +1692,16 @@
                 </div>
             </div>
 
+            <!-- 9. Shift Handover Audit Items -->
+            <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 8px;">🔄 Shift Handover Audit Items</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="configShiftAudit" placeholder="e.g. Paper Bowl, Plastic Cup" style="border: 1px solid #cbd5e1; width: 100%; padding: 10px; border-radius: 6px; outline: none; box-sizing: border-box; font-size: 13px; font-weight: bold; color: #1e293b;">
+                    <button onclick="window.saveSinglePosConfig('shiftAuditItems', 'configShiftAudit', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 4px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
+                </div>
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Items the Cashier must blind-count before Z-Reading.</div>
+            </div>
+
         </div>
       </div>
 
@@ -2018,11 +2028,10 @@
                 <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
                         <h3 style="margin:0; color: #0f172a;">📜 Daily Stock Counts</h3>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <div style="display: flex; gap: 10px;">
                             <button onclick="window.openGeneralAuditModal()" style="background: #ea580c; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.3);">📝 Start General Audit</button>
-                            <!-- 🔥 NEW: Shift Handover Button -->
-                            <button onclick="window.openShiftHandoverModal()" style="background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);">🤝 View Shift Handovers</button>
                             <button onclick="window.loadInventoryAudits()" class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold;">🔄 Refresh</button>
+                            <button onclick="window.loadShiftHandovers()" style="background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);">🔄 Shift Handovers</button>
                         </div>
                     </div>
                     <button onclick="window.loadInventoryAudits()" class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 6px 12px; border-radius: 6px;">🔄 Refresh Audits</button>
