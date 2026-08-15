@@ -5084,75 +5084,166 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ========================================================
-// 🤖 ULTRA AI: AUTONOMOUS RESTOCK ENGINE & TRACKER
+// 🤖 ULTRA AI: AUTONOMOUS 7-DAY FORECASTER & RESTOCK ENGINE
 // ========================================================
 window.stockReqItemsFlat = [];
+window.itemVelocityCache = {};
+
+window.calculateBranchVelocity = async function(branch) {
+    let fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+    try {
+        const logsQ = window.query(
+            window.collection(window.db, "stock_logs"),
+            window.where("branch", "==", branch),
+            window.where("timestamp", ">=", fourteenDaysAgo)
+        );
+        const logsSnap = await window.getDocs(logsQ);
+
+        let burnData = {};
+        logsSnap.forEach(docSnap => {
+            let log = docSnap.data();
+            let v = parseFloat(log.variance) || 0;
+            let t = (log.type || "").toLowerCase();
+            let itemName = (log.item || "").trim().toLowerCase();
+
+            if (v < 0 && (
+                t.includes("sales") || t.includes("deduction") || 
+                t.includes("waste") || t.includes("spoilage") || 
+                t.includes("store use") || t.includes("prep") || 
+                t.includes("adjustment")
+            )) {
+                if (!burnData[itemName]) burnData[itemName] = 0;
+                burnData[itemName] += Math.abs(v);
+            }
+        });
+
+        window.itemVelocityCache = {};
+        for (let item in burnData) {
+            window.itemVelocityCache[item] = burnData[item] / 14; // Average Daily Burn Rate
+        }
+        return window.itemVelocityCache;
+    } catch (e) {
+        console.error("Velocity Calculation Error:", e);
+        return {};
+    }
+};
 
 window.runAutonomousRestockAI = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
 
     try {
+        // 1. Fetch live velocity & inventory
+        await window.calculateBranchVelocity(branch);
+        
         const qBranch = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
         const snapBranch = await window.getDocs(qBranch);
 
-        const pendingQ = window.query(window.collection(window.db, "purchase_orders"), window.where("branch", "==", branch), window.where("status", "in", ["Pending", "Drafting", "Delayed"]));
+        // 2. Fetch delivery schedule to determine timeline
+        let cycleDays = 7; 
+        try {
+            const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_delivery_schedule"));
+            if (schedSnap.exists() && schedSnap.data().nextDeliveryDate) {
+                let targetDate = new Date(schedSnap.data().nextDeliveryDate + 'T00:00:00');
+                let today = new Date(); today.setHours(0,0,0,0);
+                let diffDays = Math.ceil((targetDate - today) / (1000 * 3600 * 24));
+                if (diffDays > 0) cycleDays = diffDays + 7; // Cover until delivery + full cycle
+            }
+        } catch(e) {}
+
+        // 3. Avoid duplicate pending POs
+        const pendingQ = window.query(
+            window.collection(window.db, "purchase_orders"),
+            window.where("branch", "==", branch),
+            window.where("status", "in", ["Pending", "Drafting", "Delayed"])
+        );
         const pendingSnap = await window.getDocs(pendingQ);
-        
-        let alreadyRequestedItems = new Set();
-        pendingSnap.forEach(doc => {
-            let po = doc.data();
-            if (po.items) po.items.forEach(i => alreadyRequestedItems.add((i.itemName || i.name).toLowerCase()));
-        });
+        if (!pendingSnap.empty) return; // Wait until HQ fulfills active PO batch
 
         let aiDraftCart = [];
+        let hasCriticalTrigger = false;
 
         snapBranch.forEach(docSnap => {
             let item = docSnap.data();
             if (item.allowRequest === false) return;
 
             let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-            let purchStock = parseFloat(item.currentStock || 0) / conv;
-            let reorderLevelPurch = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
+            let currentStockBase = parseFloat(item.currentStock || 0);
+            let currentStockPurch = currentStockBase / conv;
 
-            if (purchStock <= reorderLevelPurch && !alreadyRequestedItems.has(item.name.toLowerCase())) {
-                let deficitPurch = (reorderLevelPurch * 2) - purchStock;
-                if (deficitPurch <= 0) deficitPurch = reorderLevelPurch; 
-                let orderQtyPurch = Math.ceil(deficitPurch);
+            let normName = (item.name || "").trim().toLowerCase();
+            let dailyBurnBase = window.itemVelocityCache[normName] || 0;
+            let dailyBurnPurch = dailyBurnBase / conv;
 
+            // Dynamic 3-day safety threshold
+            let dynamicThresholdPurch = dailyBurnPurch > 0 
+                ? (dailyBurnPurch * 3) 
+                : ((parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv);
+
+            // 7-day target stock
+            let targetStockPurch = (dailyBurnPurch * cycleDays) + dynamicThresholdPurch;
+            if (targetStockPurch <= 0) targetStockPurch = dynamicThresholdPurch * 2;
+
+            if (currentStockPurch <= dynamicThresholdPurch) {
+                hasCriticalTrigger = true;
+            }
+
+            let deficitPurch = Math.ceil(targetStockPurch - currentStockPurch);
+
+            if (deficitPurch > 0 && currentStockPurch <= dynamicThresholdPurch * 1.5) {
                 let pUom = item.purchaseUom || item.uom || 'units';
                 let bUom = item.uom || 'units';
 
                 aiDraftCart.push({
                     itemName: item.name, name: item.name, sourceId: docSnap.id,
-                    qty: orderQtyPurch * conv, rawQty: orderQtyPurch,
-                    origRawQty: orderQtyPurch, origBaseQty: orderQtyPurch * conv,
+                    qty: deficitPurch * conv, rawQty: deficitPurch,
+                    origRawQty: deficitPurch, origBaseQty: deficitPurch * conv,
                     uom: bUom, baseUom: bUom, purchaseUom: pUom, friendlyUom: pUom, displayUom: pUom,
                     selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
                     convRate: conv, conversionRate: conv, category: item.category || "Ingredients",
-                    requestType: purchStock <= 0 ? "Out of Stock (AI Auto)" : "Low Stock (AI Auto)",
-                    systemStock: item.currentStock, physicalStock: item.currentStock, displayQty: orderQtyPurch
+                    requestType: currentStockPurch <= 0 ? "Out of Stock (AI Auto)" : "Weekly Restock (AI Forecast)",
+                    systemStock: currentStockBase, physicalStock: currentStockBase, displayQty: deficitPurch,
+                    dailyBurnPurch: dailyBurnPurch.toFixed(2), runwayDays: dailyBurnPurch > 0 ? (currentStockPurch / dailyBurnPurch).toFixed(1) : "N/A"
                 });
             }
         });
 
-        if (aiDraftCart.length > 0) {
+        // 4. Auto-submit PO batch if triggered
+        if (hasCriticalTrigger && aiDraftCart.length > 0) {
             await window.addDoc(window.collection(window.db, "purchase_orders"), {
-                branch: branch, type: "AI Auto-Restock", items: aiDraftCart, status: "Pending", requestedBy: "TAKODEÁL AI SYSTEM", timestamp: window.serverTimestamp()
+                branch: branch,
+                type: "AI 7-Day Auto Forecast",
+                items: aiDraftCart,
+                status: "Pending",
+                requestedBy: "TAKODEÁL AI FORECASTER",
+                timestamp: window.serverTimestamp()
             });
-            
+
             if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
                 if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
             }
-            
-            if (typeof Swal !== 'undefined') Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: '🤖 AI Auto-Requested Low Stock Items!', showConfirmButton: false, timer: 3000 });
+
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    toast: true, position: 'top-end', icon: 'info',
+                    title: '🤖 AI Forecaster: Weekly Restock PO Dispatched!',
+                    showConfirmButton: false, timer: 3500
+                });
+            }
         }
-    } catch(e) { console.error("AI Restock Error:", e); }
+    } catch (e) {
+        console.error("AI Forecaster Error:", e);
+    }
 };
 
-// Start the Autonomous Engine! Runs a check every 15 minutes in the background.
+// Periodic Background Evaluation (Every 15 minutes)
 setInterval(window.runAutonomousRestockAI, 15 * 60 * 1000);
 
+// ========================================================
+// 📦 READ-ONLY STOCK TRACKER UI
+// ========================================================
 window.loadStockRequestUI = async function() {
     let container = document.getElementById('stockReqList');
     let branch = localStorage.getItem('takodeal_device_branch');
@@ -5164,27 +5255,32 @@ window.loadStockRequestUI = async function() {
 
     if (typeof window.listenToStockRequests === 'function') window.listenToStockRequests(branch);
 
-    // REWRITE THE HTML HEADERS DYNAMICALLY TO DESTROY THE "ACTUAL COUNT" INPUT
     let headerGrid = document.querySelector('#stockReqTabNew > div:nth-child(2)');
     if (headerGrid) {
         headerGrid.style.gridTemplateColumns = "2fr 1fr 1fr 1.5fr";
-        headerGrid.innerHTML = `<div>Item & HQ Status</div><div style="text-align: center;">System Stock</div><div style="text-align: center; color: #d97706;">Reorder Threshold</div><div style="text-align: center; color: #0ea5e9;">System Status</div>`;
+        headerGrid.innerHTML = `
+            <div>Item & HQ Status</div>
+            <div style="text-align: center;">Live Stock</div>
+            <div style="text-align: center; color: #d97706;">7-Day Dynamic Need</div>
+            <div style="text-align: center; color: #0ea5e9;">Restock Status</div>
+        `;
     }
 
-    // Morph the old submit button into an AI Force-Scan button
     let sendBtn = document.querySelector('button[onclick="window.submitStockRequest()"]');
     if (sendBtn) {
-        sendBtn.innerHTML = "🤖 Run AI Stock Scanner";
+        sendBtn.innerHTML = "🤖 Run AI 7-Day Forecaster";
         sendBtn.setAttribute("onclick", "window.runAutonomousRestockAI()");
-        sendBtn.style.background = "#8b5cf6"; 
+        sendBtn.style.background = "#8b5cf6";
         sendBtn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
     }
 
     try {
+        await window.calculateBranchVelocity(branch);
+
         const pendingQ = window.query(window.collection(window.db, "purchase_orders"), window.where("branch", "==", branch));
         const pendingSnap = await window.getDocs(pendingQ);
         let pendingItemsMap = {};
-        
+
         pendingSnap.forEach(doc => {
             let po = doc.data();
             if (po.status === "Pending" || po.status === "Drafting" || po.status === "Delayed") {
@@ -5213,16 +5309,6 @@ window.loadStockRequestUI = async function() {
         window.stockReqItemsFlat = [];
         let html = '';
 
-        if (window.globalDeliveryTarget && window.predictedCriticalItems) {
-            let critCount = Object.keys(window.predictedCriticalItems).length;
-            if (critCount > 0) {
-                html += `<div style="background: #fff1f2; border: 2px dashed #fca5a5; padding: 15px; border-radius: 8px; margin-bottom: 20px; animation: pulse 2s infinite; box-shadow: 0 4px 6px rgba(220,38,38,0.1);">
-                        <strong style="color: #b91c1c; font-size: 16px; display: flex; align-items: center; gap: 8px;"><span style="font-size: 20px;">🚨</span> AI DELIVERY PREDICTION ALARM</strong>
-                        <div style="color: #ef4444; font-size: 14px; margin-top: 5px; font-weight: bold;">HQ has scheduled the next delivery for <b>${window.globalDeliveryTarget}</b>.<br>Based on your exact 14-day sales volume, <b style="font-size: 18px; color: #b91c1c;">${critCount} items</b> will completely run out before the truck arrives!</div>
-                    </div>`;
-            }
-        }
-
         Object.keys(itemsByCategory).sort().forEach(category => {
             html += `<div class="stock-req-category" style="background: #e2e8f0; padding: 10px 15px; font-weight: bold; color: #334155; margin-top: 10px; font-size: 14px; text-transform: uppercase; border-radius: 6px;">📁 ${category}</div>`;
 
@@ -5232,34 +5318,30 @@ window.loadStockRequestUI = async function() {
             items.forEach((item) => {
                 window.stockReqItemsFlat.push(item);
                 let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-                let purchStock = parseFloat(item.currentStock || 0) / conv;
-                let safeStockDisplay = purchStock.toFixed(2);
+                let currentStockPurch = parseFloat(item.currentStock || 0) / conv;
+                let safeStockDisplay = currentStockPurch.toFixed(2);
                 let displayUomLabel = item.purchaseUom || item.purchUom || item.uom || 'units';
+
+                let normName = (item.name || "").trim().toLowerCase();
+                let dailyBurnBase = window.itemVelocityCache[normName] || 0;
+                let dailyBurnPurch = dailyBurnBase / conv;
+
+                let dynamicThresholdPurch = dailyBurnPurch > 0 
+                    ? (dailyBurnPurch * 3) 
+                    : ((parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv);
+
+                let isCriticallyLow = currentStockPurch <= dynamicThresholdPurch;
+                let stockColor = isCriticallyLow ? '#ef4444' : '#334155';
+
+                let runwayDays = dailyBurnPurch > 0 ? (currentStockPurch / dailyBurnPurch).toFixed(1) : '∞';
+                let velocityBadge = dailyBurnPurch > 0 
+                    ? `<span style="font-size: 9px; color: #0284c7; background: #e0f2fe; padding: 2px 4px; border-radius: 4px;">⚡ Velocity: ${dailyBurnPurch.toFixed(2)}/day (Runway: ${runwayDays}d)</span>`
+                    : `<span style="font-size: 9px; color: #64748b;">⚡ Minimal Movement</span>`;
 
                 let hqStock = hqStockMap[item.name] || 0;
                 let hqStatus = hqStock > 0
                     ? `<span style="color: #16a34a; font-weight: bold; font-size: 10px; background: #dcfce7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🟢 HQ HAS STOCK</span>`
                     : `<span style="color: #dc2626; font-weight: bold; font-size: 10px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🔴 HQ OUT OF STOCK</span>`;
-
-                let pUom = item.purchaseUom || item.uom || 'units';
-                let bUom = item.uom || 'units';
-
-                let aiPrediction = window.predictedCriticalItems ? window.predictedCriticalItems[item.name] : null;
-                let reorderLevelBase = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
-                let reorderLevelPurch = reorderLevelBase / conv;
-                let isCriticallyLow = purchStock <= reorderLevelPurch;
-                
-                let stockColor = '#334155';
-                let reorderBadge = '';
-
-                if (aiPrediction) {
-                    stockColor = '#ef4444';
-                    let daysLeftStr = aiPrediction.daysLeft === Infinity ? '∞' : aiPrediction.daysLeft.toFixed(1);
-                    reorderBadge = `<span style="font-size: 10px; color: #b91c1c; margin-top: 6px; font-weight: 900; background: #fef2f2; border: 2px dashed #fca5a5; padding: 4px 6px; border-radius: 4px; animation: pulse 1.5s infinite; display: inline-block; box-shadow: 0 0 5px rgba(239,68,68,0.3);">⚠️ AI ALERT: EMPTIES IN ${daysLeftStr} DAYS!</span>`;
-                } else {
-                    stockColor = isCriticallyLow ? '#ef4444' : '#334155';
-                    reorderBadge = `<span style="font-size: 9px; color: ${isCriticallyLow ? '#dc2626' : '#d97706'}; margin-top: 4px; font-weight: bold; background: ${isCriticallyLow ? '#fef2f2' : '#fffbeb'}; border: 1px dashed ${isCriticallyLow ? '#fca5a5' : '#fcd34d'}; padding: 2px 4px; border-radius: 4px;">⚠️ Reorder Lvl: ${reorderLevelPurch.toFixed(2)} ${pUom}</span>`;
-                }
 
                 let pendingData = pendingItemsMap[item.name.toLowerCase()];
                 let isAlreadyPending = !!pendingData;
@@ -5272,29 +5354,39 @@ window.loadStockRequestUI = async function() {
                     let displayUomText = pendingData.displayUom || pendingData.uom || 'units';
 
                     actionHtml = `
-                        <div style="text-align: center;"><span style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder}; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">${pendingData.requestType}</span></div>
-                        <div style="text-align: center; color: #0284c7; font-weight: 900; font-size: 18px; background: #f0f9ff; border: 1px dashed #bae6fd; padding: 6px; border-radius: 8px;">${pendingData.displayQty} <span style="font-size: 11px; color: #64748b; font-weight: normal;">${displayUomText}</span></div>
+                        <div style="text-align: center;"><span style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder}; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">${pendingData.requestType}</span></div>
+                        <div style="text-align: center; color: #0284c7; font-weight: 900; font-size: 16px; background: #f0f9ff; border: 1px dashed #bae6fd; padding: 4px; border-radius: 6px; margin-top: 4px;">${pendingData.displayQty} ${displayUomText} Ordered</div>
                     `;
                 } else if (isCriticallyLow) {
-                    actionHtml = `<div style="text-align: center;"><span style="background: #dcfce7; color: #16a34a; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">🤖 AI Monitoring...</span></div>`;
+                    actionHtml = `<div style="text-align: center;"><span style="background: #dcfce7; color: #16a34a; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">🤖 Scheduled in Next Cycle</span></div>`;
                 } else {
                     let safeItemStr = encodeURIComponent(JSON.stringify(item));
-                    actionHtml = `<div style="text-align: center;"><button onclick="window.triggerEmergencyRequest('${safeItemStr}')" style="background: white; border: 1px solid #ef4444; color: #ef4444; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; transition: 0.2s; box-shadow: 0 1px 2px rgba(239, 68, 68, 0.1);">🚨 Emergency Req</button></div>`;
+                    actionHtml = `<div style="text-align: center;"><button onclick="window.triggerEmergencyRequest('${safeItemStr}')" style="background: white; border: 1px solid #ef4444; color: #ef4444; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 1px 2px rgba(239, 68, 68, 0.1);">🚨 Emergency Req</button></div>`;
                 }
 
                 html += `
-                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1.5fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; ${isAlreadyPending ? 'opacity: 0.7; background: #f8fafc;' : 'background: white;'}">
-                    <div style="font-weight: bold; color: #334155; font-size: 14px;">${item.name} <br>${hqStatus}</div>
-                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column;"><strong style="font-size: 15px; color: ${stockColor};">${safeStockDisplay}</strong><span style="font-size: 10px; color: #94a3b8;">${displayUomLabel}</span>${reorderBadge}</div>
-                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #d97706; display: flex; flex-direction: column;"><strong style="font-size: 14px;">${reorderLevelPurch.toFixed(2)}</strong><span style="font-size: 10px; color: #94a3b8;">${displayUomLabel}</span></div>
+                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1.5fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; ${isAlreadyPending ? 'opacity: 0.75; background: #f8fafc;' : 'background: white;'}">
+                    <div style="font-weight: bold; color: #334155; font-size: 14px;">
+                        ${item.name} <br>
+                        ${hqStatus}
+                    </div>
+                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column; gap: 2px;">
+                        <strong style="font-size: 15px; color: ${stockColor};">${safeStockDisplay} ${displayUomLabel}</strong>
+                        ${velocityBadge}
+                    </div>
+                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #d97706; display: flex; flex-direction: column;">
+                        <strong style="font-size: 14px;">${(dynamicThresholdPurch * 2.3).toFixed(1)} ${displayUomLabel}</strong>
+                        <span style="font-size: 10px; color: #94a3b8;">Min Safety: ${dynamicThresholdPurch.toFixed(1)}</span>
+                    </div>
                     ${actionHtml}
                 </div>`;
             });
         });
+
         if (container) container.innerHTML = html;
     } catch (e) {
-        console.error(e); 
-        if(container) container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load data. Check console.</div>';
+        console.error(e);
+        if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to calculate stock forecasts. Check console.</div>';
     }
 };
 
