@@ -23343,3 +23343,102 @@ window.publishScheduleToApps = async function() {
         }
     }
 };
+
+// ========================================================
+// 🔄 SHIFT HANDOVER AUDIT VIEWER
+// ========================================================
+window.loadShiftHandovers = async function() {
+    document.getElementById('shiftHandoverModal').style.display = 'flex';
+    let tbody = document.getElementById('shiftHandoverBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #3b82f6; font-weight: bold;">⏳ Fetching shift handovers...</td></tr>';
+
+    try {
+        // We fetch closed shifts that contain physical stock counts
+        const q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(50));
+        const snap = await getDocs(q);
+
+        let html = '';
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            if (!data.physicalStockCount || data.physicalStockCount.length === 0) return; // Skip shifts that didn't run the blind count
+            if (!window.isBranchAllowed(data.branch)) return; // Franchise security lock
+
+            let dateStr = data.endTime ? data.endTime.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            
+            // Calculate total financial loss for this specific handover
+            let totalLoss = 0;
+            data.physicalStockCount.forEach(item => {
+                let expected = parseFloat(item.systemExpected) || 0;
+                let actual = parseFloat(item.actualCount) || 0;
+                let variance = actual - expected;
+                if (variance < 0) {
+                    totalLoss += Math.abs(variance) * (parseFloat(item.baseCost) || 0);
+                }
+            });
+
+            let lossColor = totalLoss > 0 ? '#dc2626' : '#16a34a';
+            let lossText = totalLoss > 0 ? `₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}` : 'Perfect Match';
+            let safeData = encodeURIComponent(JSON.stringify(data.physicalStockCount));
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; color: #64748b; font-weight: bold;">${dateStr}</td>
+                    <td style="padding: 12px;"><span class="badge badge-open">${data.branch}</span></td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${data.cashier}</td>
+                    <td style="padding: 12px; text-align: right; font-weight: 900; color: ${lossColor}; font-size: 15px;">${lossText}</td>
+                    <td style="padding: 12px; text-align: center;">
+                        <button onclick="window.viewHandoverDetails('${safeData}', '${data.cashier}')" style="background: white; border: 1px solid #3b82f6; color: #3b82f6; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">🔍 View Items</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8;">No handovers recorded yet.</td></tr>';
+    } catch(e) {
+        console.error("Handover Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 40px;">Failed to load handovers. Check console.</td></tr>';
+    }
+};
+
+window.viewHandoverDetails = function(encodedData, cashierName) {
+    let items = JSON.parse(decodeURIComponent(encodedData));
+    let html = `
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+            <thead style="background: #f1f5f9;">
+                <tr>
+                    <th style="padding: 10px;">Item</th>
+                    <th style="padding: 10px;">System Expected</th>
+                    <th style="padding: 10px; color: #0284c7;">Actual Count</th>
+                    <th style="padding: 10px;">Variance</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    items.forEach(item => {
+        let expected = parseFloat(item.systemExpected) || 0;
+        let actual = parseFloat(item.actualCount) || 0;
+        let variance = actual - expected;
+        let varColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#16a34a' : '#64748b');
+        let varText = variance === 0 ? 'Perfect' : `${variance > 0 ? '+' : ''}${variance}`;
+
+        html += `
+            <tr style="border-bottom: 1px dashed #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #334155;">${item.name}</td>
+                <td style="padding: 10px; color: #64748b;">${expected} ${item.uom}</td>
+                <td style="padding: 10px; font-weight: bold; color: #0284c7;">${actual} ${item.uom}</td>
+                <td style="padding: 10px; font-weight: bold; color: ${varColor};">${varText}</td>
+            </tr>
+        `;
+    });
+    html += `</tbody></table>`;
+
+    Swal.fire({
+        title: `🔍 Handover Details: ${cashierName}`,
+        html: html,
+        width: 600,
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#3b82f6',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+};
