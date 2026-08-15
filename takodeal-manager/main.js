@@ -6920,6 +6920,14 @@ window.saveInventoryEdit = async function() {
         const syncSnap = await getDocs(syncQ);
         let syncPromises = [];
         
+        // 🔥 THE MISSING VARIABLES FIX: Calculate both Branch and HQ limits safely before the loop!
+        let convRateForSync = parseFloat(document.getElementById('editInvConversion').value) || 1;
+        let branchLowPurchVal = parseFloat(document.getElementById('editInvLowStock').value) || 0;
+        let hqLowPurchVal = parseFloat(document.getElementById('editInvHqLowStock').value) || 0;
+        
+        let branchLowBase = branchLowPurchVal * convRateForSync;
+        let hqLowBase = hqLowPurchVal * convRateForSync;
+
         syncSnap.forEach(d => {
             // 🔥 THE FIX: Apply the specific limit based on the branch it is updating!
             let isMainOffice = d.data().branch === "Main Office";
