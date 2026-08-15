@@ -3658,6 +3658,32 @@
           This is a system-generated statement. No physical signature is required.
       </div>
   </div>
+
+  <!-- 🔄 SHIFT HANDOVER MODAL -->
+  <div id="shiftHandoverModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
+      <div style="background: white; width: 900px; max-width: 95%; height: 85vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+          <div style="background: #3b82f6; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+              <h2 style="margin: 0; font-size: 18px;">🔄 Shift Handover Audits</h2>
+              <span onclick="document.getElementById('shiftHandoverModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
+          </div>
+          <div style="flex: 1; overflow-y: auto; background: #f8fafc; padding: 20px;">
+              <table class="data-table" style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+                  <thead style="background: #f1f5f9; position: sticky; top: 0; z-index: 10;">
+                      <tr>
+                          <th style="padding: 12px; text-align: left; color: #475569;">Date & Shift</th>
+                          <th style="padding: 12px; text-align: left; color: #475569;">Branch</th>
+                          <th style="padding: 12px; text-align: left; color: #475569;">Closing Cashier</th>
+                          <th style="padding: 12px; text-align: right; color: #ea580c;">Variance Loss</th>
+                          <th style="padding: 12px; text-align: center; color: #475569;">Action</th>
+                      </tr>
+                  </thead>
+                  <tbody id="shiftHandoverBody">
+                      <tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8;">Loading handovers...</td></tr>
+                  </tbody>
+              </table>
+          </div>
+      </div>
+  </div>
   </main>
 
   <div id="transferModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
