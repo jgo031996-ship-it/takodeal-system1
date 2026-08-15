@@ -1707,90 +1707,91 @@ window.calculateDenominations = function() {
     return breakdown;
 };
 
-// Call this when clicking your "End Shift" button to open the new UI
+// ========================================================
+// 💵 CASH DENOMINATION CALCULATOR (WITH MEMORY)
+// ========================================================
+window.cashDrawerMemory = {}; // Global memory to store typed bills
+
 window.openEndShiftClearance = async function() {
     if (typeof closeModal === 'function') closeModal('shiftModal');
     let endModal = document.getElementById('endShiftModal');
     if (endModal) endModal.style.display = 'flex';
 
-    // 1. Render denominations table (Sorted 1000 down to 1)
+    // 1. Render denominations table using Memory!
     let denomHtml = '';
     let denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
+    
     denominations.forEach(val => {
+        let savedQty = window.cashDrawerMemory[val] !== undefined ? window.cashDrawerMemory[val] : '';
+        let rowTotal = savedQty !== '' ? (val * parseInt(savedQty)) : 0;
+        let displayTotal = rowTotal > 0 ? '₱' + rowTotal.toLocaleString(undefined, {minimumFractionDigits: 2}) : '₱0.00';
+
         denomHtml += `
         <tr style="border-bottom: 1px solid #eee;">
             <td style="padding: 8px 5px; font-weight: bold; color: #555;">₱${val}</td>
-            <td style="padding: 8px 5px;"><input type="number" class="denom-input input-box" data-val="${val}" placeholder="0" style="width: 100%; text-align: center; padding: 6px;" onkeyup="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()" onchange="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()"></td>
-            <td style="padding: 8px 5px; text-align: right; font-weight: bold; color: var(--primary);" class="denom-row-total">₱0.00</td>
+            <td style="padding: 8px 5px;">
+                <input type="number" class="denom-input input-box" data-val="${val}" placeholder="0" value="${savedQty}" style="width: 100%; text-align: center; padding: 6px;" onkeyup="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()" onchange="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()">
+            </td>
+            <td style="padding: 8px 5px; text-align: right; font-weight: bold; color: var(--primary);" class="denom-row-total">${displayTotal}</td>
         </tr>`;
     });
     
-    // 🛡️ CRASH-PROOF WRAPPER: Only set innerHTML if the table actually exists!
     let denomTable = document.getElementById('denominationTable');
-    if (denomTable) {
-        denomTable.innerHTML = denomHtml;
-    } else {
-        console.warn("HTML ID 'denominationTable' is missing. Skipping.");
-    }
+    if (denomTable) denomTable.innerHTML = denomHtml;
     
     if (typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash(); 
 
     // 2. FETCH KITCHEN PREP LOGS FOR THIS SHIFT
     let prepContainer = document.getElementById('dynamicShiftPrepLogs');
     
-    // 🛡️ CRASH-PROOF WRAPPER: Only fetch logs if the prep container exists!
     if (prepContainer) {
         prepContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #888; padding: 20px;">Fetching prep logs...</div>';
-        
         try {
             if (typeof currentShift === 'undefined' || !currentShift || !currentShift.startTime) {
                 prepContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">No active shift found.</div>';
-                return;
-            }
-            
-            // Remove "window." prefix for Firebase functions!
-            const q = query(collection(db, "stock_logs"), 
-                where("branch", "==", sessionUser.branch), 
-                where("timestamp", ">=", currentShift.startTime)
-            );
-            const snap = await getDocs(q);
-            
-            let logs = [];
-            snap.forEach(doc => {
-                let d = doc.data();
-                if (d.type && (d.type.toLowerCase().includes("prep") || d.type.toLowerCase().includes("batch"))) {
-                    logs.push(d);
-                }
-            });
-
-            logs.sort((a,b) => b.timestamp - a.timestamp); 
-            
-            let html = '';
-            if (logs.length > 0) {
-                logs.forEach(log => {
-                    let t = log.timestamp.toDate().toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'});
-                    html += `
-                        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #fcd34d; padding: 8px 0;">
-                            <div>
-                                <strong style="color: #92400e; font-size: 13px;">${log.item}</strong><br>
-                                <span style="font-size: 10px; color: #b45309;">${t}</span>
-                            </div>
-                            <strong style="color: #16a34a; font-size: 14px;">+${log.variance} ${log.uom}</strong>
-                        </div>
-                    `;
-                });
             } else {
-                html = '<div style="text-align:center; font-size: 13px; color: #b45309; padding: 20px; font-style: italic;">No kitchen prep logged during this shift.</div>';
+                const q = query(collection(db, "stock_logs"), 
+                    where("branch", "==", sessionUser.branch), 
+                    where("timestamp", ">=", currentShift.startTime)
+                );
+                const snap = await getDocs(q);
+                
+                let logs = [];
+                snap.forEach(doc => {
+                    let d = doc.data();
+                    if (d.type && (d.type.toLowerCase().includes("prep") || d.type.toLowerCase().includes("batch"))) {
+                        logs.push(d);
+                    }
+                });
+
+                logs.sort((a,b) => b.timestamp - a.timestamp); 
+                
+                let html = '';
+                if (logs.length > 0) {
+                    logs.forEach(log => {
+                        let t = log.timestamp.toDate().toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'});
+                        html += `
+                            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #fcd34d; padding: 8px 0;">
+                                <div>
+                                    <strong style="color: #92400e; font-size: 13px;">${log.item}</strong><br>
+                                    <span style="font-size: 10px; color: #b45309;">${t}</span>
+                                </div>
+                                <strong style="color: #16a34a; font-size: 14px;">+${log.variance} ${log.uom}</strong>
+                            </div>
+                        `;
+                    });
+                } else {
+                    html = '<div style="text-align:center; font-size: 13px; color: #b45309; padding: 20px; font-style: italic;">No kitchen prep logged during this shift.</div>';
+                }
+                prepContainer.innerHTML = html;
             }
-            prepContainer.innerHTML = html;
         } catch(e) {
             console.error("Prep Fetch Error:", e);
             prepContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">Error fetching logs. Check console.</div>';
         }
-    } else {
-        console.warn("HTML ID 'dynamicShiftPrepLogs' is missing. Skipping prep fetch.");
     }
- // 3. FETCH MANDATORY BLIND COUNT ITEMS
+
+    // 3. FETCH MANDATORY BLIND COUNT ITEMS
     let blindContainer = document.getElementById('dynamicBlindCountList');
     if (blindContainer) {
         blindContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #888;">Fetching required items...</div>';
@@ -1840,12 +1841,21 @@ window.openEndShiftClearance = async function() {
     }
 };
 
-// Also apply a crash-proof wrapper to the total calculator just in case!
 window.calculateGrandTotalCash = function() {
     let total = 0;
+    
     document.querySelectorAll('.denom-input').forEach(input => {
         let val = parseInt(input.getAttribute('data-val'));
-        let pcs = parseInt(input.value) || 0;
+        let pcs = parseInt(input.value);
+        
+        // Save to memory as they type
+        if (!isNaN(pcs)) {
+            window.cashDrawerMemory[val] = pcs;
+        } else {
+            delete window.cashDrawerMemory[val];
+            pcs = 0;
+        }
+        
         let rowTotal = val * pcs;
         total += rowTotal;
         
@@ -7514,6 +7524,7 @@ window.MASTER_CloseShift = async function () {
         }
 
         // 9. Memory Wipe & Force UI Lockout
+        window.cashDrawerMemory = {};
         localStorage.removeItem('currentShiftId');
         localStorage.removeItem('takodeal_sop_progress');
         if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
