@@ -2998,18 +2998,30 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
     }
 
-      async function submitFinalOrder() {
+      window.isSubmittingOrder = false; // 🛡️ GLOBAL LOCK VARIABLE
+
+    async function submitFinalOrder() {
+      // 🛡️ THE ULTIMATE DOUBLE-TAP SHIELD
+      // If the system is already processing, instantly kill any extra clicks!
+      if (window.isSubmittingOrder) return;
+      window.isSubmittingOrder = true;
+
       const btn = document.getElementById('btnSubmitFinal'); 
-      btn.innerText = "Processing Payment..."; 
+      btn.innerText = "⏳ Processing Payment..."; 
       btn.disabled = true;
+      btn.style.pointerEvents = "none"; // Physically blocks the touchscreen from clicking it
 
       // 🚨 ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
       let custName = document.getElementById('finalCustomerName').value.trim();
       if ((selectedPaymentMethod === 'Grab' || selectedPaymentMethod === 'Foodpanda' || selectedPaymentMethod === 'GCash') && custName === "") {
           let reqStr = selectedPaymentMethod === 'GCash' ? 'GCash Ref Number' : `${selectedPaymentMethod} Order ID`;
           alert(`🚨 SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact ${reqStr} in the Customer Name box to prevent phantom orders.`);
+          
+          // Only unlock the button if they made a mistake so they can fix it
           btn.innerText = "Complete checkout"; 
           btn.disabled = false;
+          btn.style.pointerEvents = "auto";
+          window.isSubmittingOrder = false;
           return;
       }
 
@@ -3028,6 +3040,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
           alert("⚠️ A Discount Reason or ID Number is REQUIRED when applying a total order discount!");
           btn.innerText = "Complete checkout"; 
           btn.disabled = false;
+          btn.style.pointerEvents = "auto";
+          window.isSubmittingOrder = false;
           return;
       }
 
@@ -3037,29 +3051,29 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         shiftId: exactShiftId, 
         orderType: document.getElementById('mainOrderType').value,
         paymentMethod: selectedPaymentMethod,
-        
-        // 🔥 SAVING THE DISCOUNT DETAILS
         subTotalBeforeDiscount: window.currentGrandTotal,
         globalDiscountType: dType,
         globalDiscountValue: dVal,
         globalDiscountAmount: dAmount,
         globalDiscountReason: dReason,
-        
-        netTotal: window.finalCheckoutAmount || window.currentGrandTotal, // Uses discounted amount!
+        netTotal: window.finalCheckoutAmount || window.currentGrandTotal,
         customerName: document.getElementById('finalCustomerName').value,
         amountReceived: amountReceivedStr,
         cart: cart
       };
 
       let receiptId = await window.processCheckout(payload);
+
       if (receiptId) {
         if (window.activeMobileOrderId) {
-            // 🔥 DO NOT DELETE! Update status so the customer's tracker marks it complete!
-            await window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
+            // 🔥 THE HANG FIX: Removed 'await' here! 
+            // The POS will no longer freeze if the Wi-Fi is slow. It syncs silently in the background!
+            window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
                 status: "completed",
                 receiptId: receiptId,
                 completedAt: window.serverTimestamp()
-            });
+            }).catch(e => console.log("Mobile update queued for background sync.", e));
+            
             window.activeMobileOrderId = null; 
         }
 
@@ -3075,25 +3089,45 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         });
 
         if (totalBallsSold > 0) {
-            let statsPayload = {
-                totalTakoyakiBalls: window.increment(totalBallsSold)
-            };
-            // Dynamically increment the specific branch's tracker too!
+            let statsPayload = { totalTakoyakiBalls: window.increment(totalBallsSold) };
             statsPayload[`balls_${sessionUser.branch}`] = window.increment(totalBallsSold);
-            
+            // Non-blocking background sync
             window.setDoc(window.doc(window.db, "settings", "global_stats"), statsPayload, { merge: true }).catch(e => console.log(e));
         }
 
         lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
-        let now = new Date(); document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
+        let now = new Date(); 
+        document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; 
+        document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; 
+        document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
+        
         let amountRec = parseFloat(amountReceivedStr) || 0;
         let change = amountRec - (window.finalCheckoutAmount || window.currentGrandTotal);
         if (change < 0) change = 0;
+        
         document.getElementById('rcptPaid').innerText = `: ₱${amountRec.toFixed(2)}`;
         document.getElementById('rcptChange').innerText = `: ₱${change.toFixed(2)}`;
-        cart = []; renderCart(); closeModal('checkoutModal'); btn.innerText = "Complete checkout"; btn.disabled = false; document.getElementById('receiptModal').style.display = 'flex';
-      } else { alert("Network Error: Could not save to database."); btn.innerText = "Complete checkout"; btn.disabled = false; }
+        
+        cart = []; 
+        renderCart(); 
+        closeModal('checkoutModal'); 
+        
+        // Reset the button for the NEXT order
+        btn.innerText = "Complete checkout"; 
+        btn.disabled = false; 
+        btn.style.pointerEvents = "auto";
+        window.isSubmittingOrder = false;
+
+        document.getElementById('receiptModal').style.display = 'flex';
+      } else { 
+        // Only trigger this if processCheckout genuinely failed, NOT on double taps
+        alert("Network Error: Could not save to database."); 
+        btn.innerText = "Complete checkout"; 
+        btn.disabled = false; 
+        btn.style.pointerEvents = "auto";
+        window.isSubmittingOrder = false;
+      }
     }
 
 // ==========================================
