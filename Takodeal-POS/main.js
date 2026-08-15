@@ -5803,11 +5803,11 @@ window.openShiftModal = function() {
         
         let inputStart = document.getElementById('inputStartingCash');
         inputStart.placeholder = "Enter physical cash count...";
-        inputStart.value = ""; // 🔥 BLIND COUNT: Never auto-fill this box!
+        inputStart.value = ""; 
 
-        // 🔥 THE BEHAVIORAL WARNING: Check the last shift's variance!
-        const q = query(collection(db, "shifts"), where("branch", "==", sessionUser.branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
-        getDocs(q).then(snap => {
+        // 🔥 THE BEHAVIORAL WARNING & HANDOVER ENGINE
+        const q = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", sessionUser.branch), window.where("status", "==", "Closed"), window.orderBy("endTime", "desc"), window.limit(1));
+        window.getDocs(q).then(snap => {
             let noteEl = document.getElementById('lastShiftNote');
             if(!noteEl) {
                 noteEl = document.createElement('div');
@@ -5818,31 +5818,33 @@ window.openShiftModal = function() {
 
             if(!snap.empty) {
                 let lastShift = snap.docs[0].data();
-                
-                // Grab the math from the previous shift to see if it was short/over
+                window.lastEndingCash = parseFloat(lastShift.declaredCash) || parseFloat(lastShift.actualCash) || 0;
+                window.lastShiftDataForDispute = lastShift; // 🔥 Save globally to know who to penalize!
+
                 let expected = parseFloat(lastShift.expectedCash) || 0;
-                let declared = parseFloat(lastShift.declaredCash) || parseFloat(lastShift.actualCash) || 0;
-                let diff = declared - expected;
-
-                // Save to memory for the interceptor, but keep it hidden from UI!
-                window.lastEndingCash = declared; 
-
-                // 🔥 THE FIX: Keep it BLIND! Never auto-fill the amount!
+                let diff = window.lastEndingCash - expected;
                 inputStart.value = ""; 
 
-                // 🔥 DISPLAY THE BLIND COUNT HANDOVER TO THE NEXT SHIFT
+                // 🔥 THE NEW EDITABLE BLIND COUNT HANDOVER
                 let stockNotes = '';
                 if (lastShift.physicalStockCount && lastShift.physicalStockCount.length > 0) {
-                    stockNotes = `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #475569; text-align: left;">
-                        <strong style="color: #0f172a; display: block; margin-bottom: 5px;">📦 Stock Handover (Reported by ${lastShift.cashier}):</strong>`;
+                    stockNotes = `<div style="margin-top: 15px; padding-top: 12px; border-top: 2px dashed #cbd5e1; font-size: 11px; color: #475569; text-align: left;">
+                        <strong style="color: #0f172a; display: block; margin-bottom: 5px; font-size: 13px;">📦 Stock Handover (Reported by ${lastShift.cashier}):</strong>
+                        <div style="font-size: 10px; color: #dc2626; margin-bottom: 10px; line-height: 1.3; font-weight: bold; background: #fef2f2; padding: 6px; border-radius: 4px; border: 1px solid #fca5a5;">⚠️ Change these numbers ONLY if items are missing. Doing so will issue a payroll penalty to ${lastShift.cashier}.</div>`;
                     
-                    lastShift.physicalStockCount.forEach(item => {
-                        stockNotes += `<div style="display: flex; justify-content: space-between;"><span>${item.name}</span> <strong style="color: #0284c7;">${item.actualCount} ${item.uom}</strong></div>`;
+                    lastShift.physicalStockCount.forEach((item, idx) => {
+                        stockNotes += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; background: white; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                <span style="font-weight: bold; color: #334155; font-size: 12px;">${item.name}</span> 
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <input type="number" id="handoverDisp_${idx}" data-name="${item.name}" data-uom="${item.uom}" data-prev="${item.actualCount}" data-cost="${item.baseCost}" value="${item.actualCount}" style="width: 70px; padding: 6px; border: 2px solid #7dd3fc; border-radius: 6px; text-align: center; font-weight: 900; color: #0284c7; outline: none; font-size: 14px;">
+                                    <span style="font-size: 10px; color: #94a3b8; font-weight: bold;">${item.uom}</span>
+                                </div>
+                            </div>`;
                     });
                     stockNotes += `</div>`;
                 }
 
-                // We allow a tiny 5 centavo tolerance for floating point math
                 if (Math.abs(diff) <= 0.05) {
                     noteEl.innerHTML = `✅ The previous shift closed with a <b>Perfect Count</b>.${stockNotes}`;
                     noteEl.style.background = "#dcfce7"; noteEl.style.color = "#16a34a"; noteEl.style.border = "1px solid #bbf7d0";
@@ -5882,7 +5884,7 @@ window.submitOpenShift = async function() {
         let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
         let lastEndingCash = window.lastEndingCash || 0;
 
-        // 🔥 THE INTERCEPTOR: If they type less cash than the previous shift left!
+        // 🔥 THE CASH DISPUTE INTERCEPTOR 
         if (startCash !== lastEndingCash && lastEndingCash > 0) {
             let diff = lastEndingCash - startCash;
             if (diff > 0) {
@@ -5901,31 +5903,101 @@ window.submitOpenShift = async function() {
                 });
 
                 if (result.isConfirmed) {
-                    // Auto-log it as a Remittance so it fixes the accounting!
-                    await addDoc(collection(db, "remittances"), {
-                        branch: sessionUser.branch,
-                        cashierName: "Auto-Logged (Shift Start)",
-                        amount: diff,
-                        type: "Cash Collection",
-                        channel: "Owner Collection",
-                        timestamp: serverTimestamp(),
-                        dateStr: new Date().toLocaleDateString('en-CA')
+                    await window.addDoc(window.collection(window.db, "remittances"), {
+                        branch: sessionUser.branch, cashierName: "Auto-Logged (Shift Start)", amount: diff, type: "Cash Collection", channel: "Owner Collection", timestamp: window.serverTimestamp(), dateStr: new Date().toLocaleDateString('en-CA')
                     });
                     Swal.fire('Logged!', `₱${diff} was auto-logged as an Owner Collection.`, 'success');
                 } else if (result.isDenied) {
-                    // Log it as an unexplained missing expense
-                    await addDoc(collection(db, "expenses"), {
-                        branch: sessionUser.branch,
-                        amount: diff,
-                        category: "Unexplained Shortage",
-                        description: `Missing cash between shifts (Expected: ₱${lastEndingCash}, Started With: ₱${startCash})`,
-                        loggedBy: shiftName,
-                        timestamp: serverTimestamp()
+                    await window.addDoc(window.collection(window.db, "expenses"), {
+                        branch: sessionUser.branch, amount: diff, category: "Unexplained Shortage", description: `Missing cash between shifts (Expected: ₱${lastEndingCash}, Started With: ₱${startCash})`, loggedBy: shiftName, timestamp: window.serverTimestamp()
                     });
                     Swal.fire('Logged', `₱${diff} was recorded as an unexplained shortage.`, 'info');
                 } else {
-                    return; // User clicked Cancel
+                    return; 
                 }
+            }
+        }
+
+        // 🔥 THE NEW INVENTORY DISPUTE INTERCEPTOR 🔥
+        let stockDisputes = [];
+        document.querySelectorAll('input[id^="handoverDisp_"]').forEach(inp => {
+            let prevCount = parseFloat(inp.getAttribute('data-prev')) || 0;
+            let newCount = parseFloat(inp.value);
+            let itemName = inp.getAttribute('data-name');
+            let baseCost = parseFloat(inp.getAttribute('data-cost')) || 0;
+            let uom = inp.getAttribute('data-uom');
+
+            if (!isNaN(newCount) && newCount !== prevCount) {
+                stockDisputes.push({
+                    name: itemName, prevCount: prevCount, newCount: newCount,
+                    variance: newCount - prevCount, baseCost: baseCost, uom: uom
+                });
+            }
+        });
+
+        if (stockDisputes.length > 0) {
+            let prevCashier = window.lastShiftDataForDispute ? window.lastShiftDataForDispute.cashier : 'Previous Staff';
+            let totalPenalty = 0;
+            let disputeHtml = '<div style="text-align: left; font-size: 13px; margin-top: 10px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">';
+            
+            stockDisputes.forEach(d => {
+                if (d.variance < 0) {
+                    let costLost = Math.abs(d.variance) * d.baseCost;
+                    totalPenalty += costLost;
+                    disputeHtml += `<div style="margin-bottom: 5px;"><b style="color:#dc2626;">${d.name}:</b> Missing ${Math.abs(d.variance)} ${d.uom} <span style="font-size:11px; color:#64748b;">(Penalty: ₱${costLost.toFixed(2)})</span></div>`;
+                } else {
+                    disputeHtml += `<div style="margin-bottom: 5px;"><b style="color:#16a34a;">${d.name}:</b> Found excess ${Math.abs(d.variance)} ${d.uom}</div>`;
+                }
+            });
+            
+            if (totalPenalty > 0) {
+                disputeHtml += `</div><div style="margin-top: 15px; padding: 10px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 6px;"><strong style="color: #dc2626; font-size: 15px;">Total Penalty for ${prevCashier}: ₱${totalPenalty.toFixed(2)}</strong></div>`;
+            } else {
+                disputeHtml += `</div>`;
+            }
+
+            let result = await Swal.fire({
+                title: '⚠️ Handover Dispute Detected',
+                html: `You are altering the stock count left by <b>${prevCashier}</b>. Are you sure?<br>${disputeHtml}`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: totalPenalty > 0 ? 'Submit Dispute & Charge Them' : 'Submit & Adjust Stock',
+                confirmButtonColor: '#dc2626',
+                customClass: { popup: 'rounded-2xl shadow-xl' }
+            });
+
+            if (!result.isConfirmed) return; // Halt shift opening so they can reconsider
+
+            // Process inventory adjustments and apply penalties!
+            for (let d of stockDisputes) {
+                const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", sessionUser.branch), window.where("name", "==", d.name));
+                const invSnap = await window.getDocs(invQ);
+                
+                if (!invSnap.empty) {
+                    let invDoc = invSnap.docs[0];
+                    await window.updateDoc(invDoc.ref, { currentStock: d.newCount });
+
+                    await window.addDoc(window.collection(window.db, "stock_logs"), {
+                        branch: sessionUser.branch, item: d.name, uom: d.uom,
+                        oldQty: d.prevCount, newQty: d.newCount, variance: d.variance,
+                        type: d.variance < 0 ? "Audit Adjustment (Penalty)" : "Audit Adjustment (Recovery)", 
+                        note: `Disputed Handover by ${shiftName}. ${prevCashier} claimed ${d.prevCount}, actual is ${d.newCount}.`,
+                        user: "System (HQ)", timestamp: window.serverTimestamp()
+                    });
+                }
+            }
+
+            if (totalPenalty > 0) {
+                await window.addDoc(window.collection(window.db, "staff_deductions"), {
+                    staffName: prevCashier, type: "Missing Stock Penalty", amount: totalPenalty,
+                    dateAdded: new Date(), status: "Unpaid", remarks: `Stock missing during handover to ${shiftName}.`
+                });
+
+                await window.addDoc(window.collection(window.db, "manager_alerts"), {
+                    type: "STOCK_PENALTY_APPLIED", branch: sessionUser.branch, cashier: prevCashier,
+                    message: `🚨 HANDOVER PENALTY: ${shiftName} disputed ${prevCashier}'s stock count. ₱${totalPenalty.toFixed(2)} penalty issued to ${prevCashier}.`,
+                    timestamp: window.serverTimestamp(), isRead: false
+                });
             }
         }
 
