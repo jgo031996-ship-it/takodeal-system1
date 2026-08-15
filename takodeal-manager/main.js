@@ -14133,9 +14133,9 @@ window.loadPosConfigHub = async function() {
 };
 
 // ========================================================
-// ⚙️ INDIVIDUAL POS CONFIG SAVER (ZERO DATA LOSS)
+// ⚙️ INDIVIDUAL POS CONFIG SAVER (ZERO DATA LOSS + ANTI-HANG)
 // ========================================================
-window.saveSinglePosConfig = async function(dbFieldKey, inputId, btnElement) {
+window.saveSinglePosConfig = function(dbFieldKey, inputId, btnElement) {
     let inputEl = document.getElementById(inputId);
     if (!inputEl) return;
 
@@ -14152,27 +14152,33 @@ window.saveSinglePosConfig = async function(dbFieldKey, inputId, btnElement) {
     btnElement.disabled = true;
 
     try {
-        // 🔥 The Magic: We use the bracket notation [dbFieldKey] to dynamically tell 
-        // Firebase to ONLY update this exact field, leaving the rest completely untouched!
         let payload = {
             [dbFieldKey]: arrayVal,
             lastUpdatedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: serverTimestamp()
+            timestamp: window.serverTimestamp() // 🛡️ Hardcoded link to prevent disconnects
         };
 
-        await setDoc(doc(db, "settings", "global_pos_config"), payload, { merge: true });
-
-        Swal.fire({
-            toast: true, position: 'top-end', icon: 'success',
-            title: '✅ Saved successfully!',
-            showConfirmButton: false, timer: 2500,
-            customClass: { popup: 'rounded-xl shadow-lg border border-gray-100' }
-        });
+        // 🔥 THE ANTI-HANG FIX: 
+        // We removed "await" so the UI instantly unlocks and you can keep working!
+        // Firebase will securely sync the data in the background.
+        window.setDoc(window.doc(window.db, "settings", "global_pos_config"), payload, { merge: true })
+            .then(() => {
+                Swal.fire({
+                    toast: true, position: 'top-end', icon: 'success',
+                    title: '✅ Saved successfully!',
+                    showConfirmButton: false, timer: 2500,
+                    customClass: { popup: 'rounded-xl shadow-lg border border-gray-100' }
+                });
+            })
+            .catch((error) => {
+                console.error("Error saving config:", error);
+                Swal.fire('Error', 'Failed to save configuration to cloud.', 'error');
+            });
 
     } catch (error) {
-        console.error("Error saving config:", error);
-        Swal.fire('Error', 'Failed to save configuration. Check your internet connection.', 'error');
+        console.error("Payload Error:", error);
     } finally {
+        // Instantly unlock the button so your screen NEVER freezes!
         btnElement.innerText = origText;
         btnElement.disabled = false;
     }
