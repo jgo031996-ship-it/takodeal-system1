@@ -23395,7 +23395,11 @@ window.loadShiftHandovers = async function() {
         let html = '';
         snap.forEach(docSnap => {
             let data = docSnap.data();
-            if (!data.physicalStockCount || data.physicalStockCount.length === 0) return; // Skip shifts that didn't run the blind count
+            
+            // 🔥 THE CRASH FIX: Safely verify that physicalStockCount is actually a valid Array! 
+            // (Older shifts saved this as an empty object {}, which caused the crash)
+            if (!data.physicalStockCount || !Array.isArray(data.physicalStockCount) || data.physicalStockCount.length === 0) return; 
+            
             if (!window.isBranchAllowed(data.branch)) return; // Franchise security lock
 
             let dateStr = data.endTime ? data.endTime.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
