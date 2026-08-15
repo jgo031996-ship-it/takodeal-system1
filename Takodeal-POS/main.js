@@ -9552,7 +9552,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ========================================================
-// 🛡️ OWNER "GOD MODE" BYPASS ENGINE
+// 🛡️ OWNER "GOD MODE" TELEPORTER ENGINE
 // ========================================================
 window.ownerBypassLogin = async function() {
     try {
@@ -9569,26 +9569,66 @@ window.ownerBypassLogin = async function() {
             return Swal.fire('Access Denied', 'This Google account does not have Master Key privileges.', 'error');
         }
 
-        // 3. SUCCESS! Setup the test credentials
-        localStorage.setItem('cashierName', 'Owner (System Test)');
+        // 3. SUCCESS! Fetch active branches to let the Owner choose where to "teleport"
+        Swal.fire({title: 'Fetching Network...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         
-        // 4. Forcefully destroy the login screen UI
-        // (Note: Adjust these IDs if your login container has a different ID)
+        const bSnap = await window.getDocs(window.query(window.collection(window.db, "branches")));
+        let branchOptions = {};
+        
+        bSnap.forEach(doc => {
+            let name = doc.data().name;
+            if (name && name !== "Main Office") {
+                branchOptions[name] = `📍 ${name}`;
+            }
+        });
+
+        // 4. Show the Teleporter Dropdown
+        const { value: selectedBranch } = await Swal.fire({
+            title: '🛡️ God Mode Activated',
+            text: 'Select which branch POS you want to enter:',
+            input: 'select',
+            inputOptions: branchOptions,
+            inputPlaceholder: '-- Choose Branch --',
+            showCancelButton: true,
+            confirmButtonColor: '#0f766e',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: '🚀 Enter POS',
+            cancelButtonText: 'Cancel',
+            customClass: { popup: 'rounded-2xl shadow-xl' },
+            inputValidator: (value) => {
+                return new Promise((resolve) => {
+                    if (value) resolve();
+                    else resolve('You need to select a branch to enter.');
+                });
+            }
+        });
+
+        // If you clicked cancel, sign out and stop.
+        if (!selectedBranch) {
+            await auth.signOut();
+            return;
+        }
+
+        // 5. Setup the test credentials & Teleport!
+        localStorage.setItem('cashierName', 'Owner (System Test)');
+        localStorage.setItem('takodeal_device_branch', selectedBranch); // 🔥 Overwrites the tablet's location!
+        
+        // 6. Forcefully destroy the login screen UI
         let loginScreen = document.getElementById('loginScreen') || document.querySelector('.login-container');
         let pinOverlay = document.getElementById('pinOverlay');
         
         if (loginScreen) loginScreen.style.display = 'none';
         if (pinOverlay) pinOverlay.style.display = 'none';
 
-        // 5. Fire up the POS Engine without calling the GPS Geolocation function!
+        // 7. Fire up the POS Engine without calling the GPS Geolocation function!
         if (typeof window.loadPOSData === 'function') {
             window.loadPOSData();
         }
 
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
-            title: '🛡️ God Mode Activated', 
-            text: 'GPS bypassed. Sales will be tagged as System Tests.',
+            title: `Teleported to ${selectedBranch}`, 
+            text: 'Sales will be tagged as System Tests.',
             showConfirmButton: false, timer: 4000,
             customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }
         });
