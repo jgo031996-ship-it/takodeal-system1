@@ -6846,9 +6846,12 @@ window.saveInventoryEdit = async function() {
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
     
-    // 🔥 Grab Purchase UOM input and multiply it by Conversion to store safely in the Database!
-    let lowStockPurch = parseFloat(document.getElementById('editInvLowStock').value) || 0;
-    let lowStockBase = lowStockPurch * conversion;
+    // 🔥 THE ISOLATION FIX: Extract BOTH limits so we can route them properly!
+    let branchLowPurch = parseFloat(document.getElementById('editInvLowStock').value) || 0;
+    let hqLowPurch = parseFloat(document.getElementById('editInvHqLowStock').value) || 0;
+    
+    let branchLowBase = branchLowPurch * conversion;
+    let hqLowBase = hqLowPurch * conversion;
     
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
     let newQtyRaw = document.getElementById('editInvNewQty').value;
@@ -6888,12 +6891,13 @@ window.saveInventoryEdit = async function() {
         let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
         let allowReqVal = document.getElementById('editInvAllowRequest') ? document.getElementById('editInvAllowRequest').checked : true;
 
-        // 🔥 THE SYNC FIX: Fetch the OLD name before we change it so we can find the siblings!
         const itemRef = doc(db, "inventory", docId);
         const itemSnap = await getDoc(itemRef);
         let oldName = itemSnap.exists() ? itemSnap.data().name : name;
 
-        // 1. Prepare Main Payload
+        // 1. Prepare Payload for the specific item you clicked
+        let targetLowBaseForCurrentItem = (branch === "Main Office") ? hqLowBase : branchLowBase;
+
         let updatePayload = {
             branch: branch, category: category, name: name,
             purchaseUom: purchUom, purchUom: purchUom,
@@ -6901,7 +6905,7 @@ window.saveInventoryEdit = async function() {
             conversion: conversion, conversionRate: conversion, 
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, 
             baseCost: (purchCost / conversion), 
-            lowStockAlert: lowStockBase, reorderLevel: lowStockBase, // 🔥 Saves the Base UOM securely
+            lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
             currentStock: finalQty, 
             showInPrep: showPrepVal,
             allowRequest: allowReqVal,
@@ -6914,25 +6918,19 @@ window.saveInventoryEdit = async function() {
         // Update the Main Item you clicked on
         await updateDoc(itemRef, updatePayload);
 
-        // 🔥 2. GLOBAL RENAME & UOM SYNC 🔥
-        // Use the old name to search the other branches!
+        // 🔥 2. GLOBAL RENAME, PHOTO & UOM SYNC 🔥
         const syncQ = query(collection(db, "inventory"), where("name", "==", oldName));
         const syncSnap = await getDocs(syncQ);
         let syncPromises = [];
         
-        // 🔥 THE MISSING VARIABLES FIX: Calculate both Branch and HQ limits safely before the loop!
-        let convRateForSync = parseFloat(document.getElementById('editInvConversion').value) || 1;
-        let branchLowPurchVal = parseFloat(document.getElementById('editInvLowStock').value) || 0;
-        let hqLowPurchVal = parseFloat(document.getElementById('editInvHqLowStock').value) || 0;
-        
-        let branchLowBase = branchLowPurchVal * convRateForSync;
-        let hqLowBase = hqLowPurchVal * convRateForSync;
-
         syncSnap.forEach(d => {
-            // 🔥 THE FIX: Apply the specific limit based on the branch it is updating!
+            if (d.id === docId) return; // Skip the one we just manually updated!
+
+            // 🔥 SMART ROUTER: Checks if the branch getting synced is HQ or not!
             let isMainOffice = d.data().branch === "Main Office";
             let targetLowBase = isMainOffice ? hqLowBase : branchLowBase;
 
+            // Note: currentStock is specifically EXCLUDED from this payload so branch stock is never touched!
             let syncPayload = {
                 name: name, category: category, 
                 purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
@@ -6948,11 +6946,7 @@ window.saveInventoryEdit = async function() {
                 syncPayload.image = photoUrl;
             }
             
-            if (d.id !== docId) {
-                syncPromises.push(updateDoc(doc(db, "inventory", d.id), syncPayload));
-            } else {
-                updateDoc(itemRef, syncPayload); // Update the item you actually clicked on
-            }
+            syncPromises.push(updateDoc(doc(db, "inventory", d.id), syncPayload));
         });
 
         // 🔥 3. CASCADE RECIPE & ADD-ON RENAME PROTECTOR 🔥
@@ -6970,7 +6964,6 @@ window.saveInventoryEdit = async function() {
             });
         }
 
-        // Wait for all branch and recipe updates to finish
         await Promise.all(syncPromises);
 
         // 4. Log Physical Adjustments
@@ -6987,7 +6980,7 @@ window.saveInventoryEdit = async function() {
 
         Swal.fire({
             title: '✅ Success!',
-            text: 'Item updated, renamed, and synced across all branches & recipes successfully!',
+            text: 'Item updated, photo synced, and limits isolated successfully!',
             icon: 'success',
             confirmButtonColor: '#ea580c',
             customClass: { popup: 'rounded-2xl shadow-2xl' }
