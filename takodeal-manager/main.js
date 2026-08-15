@@ -6720,22 +6720,37 @@ window.openEditInvModal = async function(id) {
             
             // 🔥 THE UOM MATH FIX: Convert the database Base UOM back to Purchase UOM for easy editing!
             // 🔥 THE ROUNDING FIX: Keeps the UI clean by rounding to 2 decimal places max
-            // 🔥 THE FIX: Fetch HQ Limit and Branch Limit separately!
+            // 🔥 THE INDEX-FREE FIX: Fetch HQ Limit and Branch Limit simultaneously!
             let hqLowPurch = 0;
             let branchLowPurch = 0;
+            let foundHq = false;
+            let foundBranch = false;
 
-            if (itemData.branch === "Main Office") {
-                hqLowPurch = parseFloat(((parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate).toFixed(2));
-                const bQ = query(collection(db, "inventory"), where("name", "==", itemData.name), where("branch", "!=", "Main Office"), limit(1));
-                const bSnap = await getDocs(bQ);
-                if (!bSnap.empty) branchLowPurch = parseFloat(((parseFloat(bSnap.docs[0].data().lowStockAlert) || parseFloat(bSnap.docs[0].data().reorderLevel) || 0) / convRate).toFixed(2));
-                else branchLowPurch = hqLowPurch;
-            } else {
-                branchLowPurch = parseFloat(((parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate).toFixed(2));
-                const hQ = query(collection(db, "inventory"), where("name", "==", itemData.name), where("branch", "==", "Main Office"), limit(1));
-                const hSnap = await getDocs(hQ);
-                if (!hSnap.empty) hqLowPurch = parseFloat(((parseFloat(hSnap.docs[0].data().lowStockAlert) || parseFloat(hSnap.docs[0].data().reorderLevel) || 0) / convRate).toFixed(2));
-                else hqLowPurch = branchLowPurch;
+            // We only query by name, bypassing the need for a Firebase Index!
+            const invQ = query(collection(db, "inventory"), where("name", "==", itemData.name));
+            const invSnap = await getDocs(invQ);
+
+            invSnap.forEach(docSnap => {
+                let d = docSnap.data();
+                let limitVal = parseFloat(d.lowStockAlert) || parseFloat(d.reorderLevel) || 0;
+                let valInPurchUom = parseFloat((limitVal / convRate).toFixed(2));
+
+                if (d.branch === "Main Office") {
+                    hqLowPurch = valInPurchUom;
+                    foundHq = true;
+                } else {
+                    branchLowPurch = valInPurchUom;
+                    foundBranch = true;
+                }
+            });
+
+            // Smart fallbacks in case one of the limits hasn't been set yet
+            if (foundHq && !foundBranch) branchLowPurch = hqLowPurch;
+            if (foundBranch && !foundHq) hqLowPurch = branchLowPurch;
+            if (!foundHq && !foundBranch) {
+                let currentLimit = parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0;
+                hqLowPurch = parseFloat((currentLimit / convRate).toFixed(2));
+                branchLowPurch = hqLowPurch;
             }
 
             document.getElementById('editInvLowStock').value = branchLowPurch;
