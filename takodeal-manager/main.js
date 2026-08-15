@@ -4441,7 +4441,7 @@ window.loadInventoryData = async function() {
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
                     <td style="padding: 12px; font-weight:900; color:#0f766e; font-size: 14px;">₱${rowTotalValue.toFixed(2)}</td>
                     <td style="padding: 12px; text-align: center;">
-                        <button class="action-menu-btn" onclick="window.showInventoryActions('${d.id}', '${safeName}', ${stock}, '${bUom}', ${baseCost}, '${d.branch}')">⚙️ Actions ▼</button>
+                        <button class="action-menu-btn" onclick="window.showInventoryActions('${d.id}', '${d.name.replace(/'/g, "\\'")}', ${stock}, '${bUom}', ${baseCost}, '${d.branch}')">⚙️ Actions ▼</button>
                     </td>
                 </tr>
             `;
