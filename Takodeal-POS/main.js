@@ -5,6 +5,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebas
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 // 🔥 NEW: Import Firebase Storage
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 window.onSnapshot = onSnapshot;
  
@@ -9547,3 +9548,54 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }, 1500);
 });
+
+// ========================================================
+// 🛡️ OWNER "GOD MODE" BYPASS ENGINE
+// ========================================================
+window.ownerBypassLogin = async function() {
+    try {
+        // 1. Trigger Google Login
+        provider.setCustomParameters({ prompt: 'select_account' });
+        Swal.fire({title: 'Authenticating Master Key...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
+        
+        // 2. Strict Security Check: Only YOUR email is allowed through this backdoor
+        if (user.email !== 'jgo031996@gmail.com') {
+            await auth.signOut();
+            return Swal.fire('Access Denied', 'This Google account does not have Master Key privileges.', 'error');
+        }
+
+        // 3. SUCCESS! Setup the test credentials
+        localStorage.setItem('cashierName', 'Owner (System Test)');
+        
+        // 4. Forcefully destroy the login screen UI
+        // (Note: Adjust these IDs if your login container has a different ID)
+        let loginScreen = document.getElementById('loginScreen') || document.querySelector('.login-container');
+        let pinOverlay = document.getElementById('pinOverlay');
+        
+        if (loginScreen) loginScreen.style.display = 'none';
+        if (pinOverlay) pinOverlay.style.display = 'none';
+
+        // 5. Fire up the POS Engine without calling the GPS Geolocation function!
+        if (typeof window.loadPOSData === 'function') {
+            window.loadPOSData();
+        }
+
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: '🛡️ God Mode Activated', 
+            text: 'GPS bypassed. Sales will be tagged as System Tests.',
+            showConfirmButton: false, timer: 4000,
+            customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }
+        });
+
+    } catch (error) {
+        console.error("Bypass Error:", error);
+        // Ignore the error if you just closed the popup manually
+        if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+            Swal.fire('Authentication Failed', error.message, 'error');
+        }
+    }
+};
