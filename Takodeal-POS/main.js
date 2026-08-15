@@ -1808,30 +1808,46 @@ window.openEndShiftClearance = async function() {
                 let html = '';
                 window.currentBlindCountItems = []; 
                 
-                for (let itemName of auditItemsList) {
-                    const invQ = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch), where("name", "==", itemName));
-                    const invSnap = await getDocs(invQ);
-                    
-                    if (!invSnap.empty) {
+                if (!invSnap.empty) {
                         let invData = invSnap.docs[0].data();
+                        let bUom = invData.uom || 'units';
+                        let pUom = invData.purchaseUom || invData.purchUom || bUom;
+                        let conv = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
+
                         window.currentBlindCountItems.push({
                             name: itemName,
                             systemExpected: parseFloat(invData.currentStock) || 0,
                             baseCost: parseFloat(invData.baseCost) || parseFloat(invData.cost) || 0,
-                            uom: invData.uom || 'units'
+                            uom: bUom,
+                            purchUom: pUom,
+                            convRate: conv
                         });
                         
+                        let inputHtml = '';
+                        if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                            inputHtml = `
+                                <input type="number" class="blind-count-purch" data-name="${itemName}" placeholder="Packs" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                                <span style="font-size: 10px; color: #64748b; font-weight: bold;">${pUom}</span>
+                                <span style="font-size: 12px; color: #94a3b8; font-weight: bold; margin: 0 2px;">+</span>
+                                <input type="number" class="blind-count-base" data-name="${itemName}" placeholder="Loose" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                                <span style="font-size: 10px; color: #64748b; font-weight: bold;">${bUom}</span>
+                            `;
+                        } else {
+                            inputHtml = `
+                                <input type="number" class="blind-count-base" data-name="${itemName}" placeholder="Qty" style="width: 70px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                                <span style="font-size: 10px; color: #64748b; font-weight: bold;">${bUom}</span>
+                            `;
+                        }
+
                         html += `
                             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #bae6fd; padding: 8px 0;">
-                                <strong style="color: #0369a1; font-size: 14px;">${itemName}</strong>
-                                <div style="display: flex; align-items: center; gap: 5px;">
-                                    <input type="number" class="blind-count-input" data-name="${itemName}" placeholder="Qty" style="width: 70px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none;">
-                                    <span style="font-size: 11px; color: #64748b;">${invData.uom || 'units'}</span>
+                                <strong style="color: #0369a1; font-size: 13px;">${itemName}</strong>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    ${inputHtml}
                                 </div>
                             </div>
                         `;
                     }
-                }
                 blindContainer.innerHTML = html || '<div style="text-align:center; font-size: 13px; color: #dc2626;">Items not found in inventory.</div>';
             }
         } catch(e) {
@@ -5833,12 +5849,33 @@ window.openShiftModal = function() {
                         <div style="font-size: 10px; color: #dc2626; margin-bottom: 10px; line-height: 1.3; font-weight: bold; background: #fef2f2; padding: 6px; border-radius: 4px; border: 1px solid #fca5a5;">⚠️ Change these numbers ONLY if items are missing. Doing so will issue a payroll penalty to ${lastShift.cashier}.</div>`;
                     
                     lastShift.physicalStockCount.forEach((item, idx) => {
+                        let bUom = item.uom || 'units';
+                        let pUom = item.purchUom || bUom;
+                        let conv = parseFloat(item.convRate) || 1;
+                        let prevPurch = item.rawPurchCount || 0;
+                        let prevBase = item.rawBaseCount !== undefined ? item.rawBaseCount : item.actualCount;
+
+                        let inputHtml = '';
+                        if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                            inputHtml = `
+                                <input type="number" id="handoverDispPurch_${idx}" data-name="${item.name}" value="${prevPurch}" style="width: 45px; padding: 6px; border: 2px solid #7dd3fc; border-radius: 6px; text-align: center; font-weight: 900; color: #0284c7; outline: none; font-size: 13px;">
+                                <span style="font-size: 9px; color: #94a3b8; font-weight: bold;">${pUom}</span>
+                                <span style="font-size: 11px; color: #94a3b8; font-weight: bold; margin: 0 2px;">+</span>
+                                <input type="number" id="handoverDispBase_${idx}" data-name="${item.name}" data-uom="${bUom}" data-prev="${item.actualCount}" data-cost="${item.baseCost}" data-conv="${conv}" value="${prevBase}" style="width: 45px; padding: 6px; border: 2px solid #7dd3fc; border-radius: 6px; text-align: center; font-weight: 900; color: #0284c7; outline: none; font-size: 13px;">
+                                <span style="font-size: 9px; color: #94a3b8; font-weight: bold;">${bUom}</span>
+                            `;
+                        } else {
+                            inputHtml = `
+                                <input type="number" id="handoverDispBase_${idx}" data-name="${item.name}" data-uom="${bUom}" data-prev="${item.actualCount}" data-cost="${item.baseCost}" data-conv="1" value="${item.actualCount}" style="width: 60px; padding: 6px; border: 2px solid #7dd3fc; border-radius: 6px; text-align: center; font-weight: 900; color: #0284c7; outline: none; font-size: 14px;">
+                                <span style="font-size: 10px; color: #94a3b8; font-weight: bold;">${bUom}</span>
+                            `;
+                        }
+
                         stockNotes += `
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; background: white; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0;">
                                 <span style="font-weight: bold; color: #334155; font-size: 12px;">${item.name}</span> 
-                                <div style="display: flex; align-items: center; gap: 5px;">
-                                    <input type="number" id="handoverDisp_${idx}" data-name="${item.name}" data-uom="${item.uom}" data-prev="${item.actualCount}" data-cost="${item.baseCost}" value="${item.actualCount}" style="width: 70px; padding: 6px; border: 2px solid #7dd3fc; border-radius: 6px; text-align: center; font-weight: 900; color: #0284c7; outline: none; font-size: 14px;">
-                                    <span style="font-size: 10px; color: #94a3b8; font-weight: bold;">${item.uom}</span>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    ${inputHtml}
                                 </div>
                             </div>`;
                     });
@@ -5920,9 +5957,17 @@ window.submitOpenShift = async function() {
 
         // 🔥 THE NEW INVENTORY DISPUTE INTERCEPTOR 🔥
         let stockDisputes = [];
-        document.querySelectorAll('input[id^="handoverDisp_"]').forEach(inp => {
+        document.querySelectorAll('input[id^="handoverDispBase_"]').forEach(inp => {
+            let idx = inp.id.split('_')[1];
+            let purchInp = document.getElementById(`handoverDispPurch_${idx}`);
+            
+            let pVal = purchInp ? parseFloat(purchInp.value) || 0 : 0;
+            let bVal = parseFloat(inp.value) || 0;
+            let conv = parseFloat(inp.getAttribute('data-conv')) || 1;
+            
+            let newCount = (pVal * conv) + bVal;
+            
             let prevCount = parseFloat(inp.getAttribute('data-prev')) || 0;
-            let newCount = parseFloat(inp.value);
             let itemName = inp.getAttribute('data-name');
             let baseCost = parseFloat(inp.getAttribute('data-cost')) || 0;
             let uom = inp.getAttribute('data-uom');
@@ -7122,37 +7167,45 @@ window.MASTER_CloseShift = async function () {
     }
 
     try {
-        // 0. GATHER AND VALIDATE BLIND COUNT (Must be done before locking the button!)
+        // 6. Execute Blind Count Verification (Whole + Loose Engine)
         let physicalStockCount = [];
-        let missingBlindCounts = false;
-        
-        document.querySelectorAll('.blind-count-input').forEach(input => {
-            let val = input.value.trim();
-            if (val === "") {
-                missingBlindCounts = true;
-            } else {
-                let itemName = input.getAttribute('data-name');
-                let actualCount = parseFloat(val);
-                // Ensure currentBlindCountItems exists before searching
-                if (window.currentBlindCountItems) {
-                    let memItem = window.currentBlindCountItems.find(i => i.name === itemName);
-                    if (memItem) {
-                        physicalStockCount.push({
-                            name: itemName,
-                            systemExpected: memItem.systemExpected,
-                            actualCount: actualCount,
-                            baseCost: memItem.baseCost,
-                            uom: memItem.uom
-                        });
-                    }
-                }
-            }
-        });
+        let missingMandatory = false;
 
-        if (missingBlindCounts) {
-            Swal.fire('⛔ INCOMPLETE COUNT', `You must physically count and enter the quantity for ALL mandatory items before ending your shift.`, 'error');
-            if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
-            return;
+        if (window.currentBlindCountItems && window.currentBlindCountItems.length > 0) {
+            window.currentBlindCountItems.forEach(item => {
+                let purchInput = document.querySelector(`.blind-count-purch[data-name="${item.name}"]`);
+                let baseInput = document.querySelector(`.blind-count-base[data-name="${item.name}"]`);
+                
+                let pValStr = purchInput ? purchInput.value.trim() : "0";
+                let bValStr = baseInput ? baseInput.value.trim() : ""; 
+                
+                // Reject if they left both boxes blank
+                if (bValStr === "" && (!purchInput || pValStr === "")) {
+                    missingMandatory = true;
+                } else {
+                    let pQty = parseFloat(pValStr) || 0;
+                    let bQty = parseFloat(bValStr) || 0;
+                    let totalBaseQty = (pQty * item.convRate) + bQty;
+
+                    physicalStockCount.push({
+                        name: item.name,
+                        systemExpected: item.systemExpected,
+                        actualCount: totalBaseQty,
+                        baseCost: item.baseCost,
+                        uom: item.uom,
+                        purchUom: item.purchUom || item.uom,
+                        convRate: item.convRate || 1,
+                        rawPurchCount: pQty,
+                        rawBaseCount: bQty
+                    });
+                }
+            });
+            
+            if (missingMandatory) {
+                Swal.fire('Missing Count', 'You must blind-count all mandatory items before closing the shift.', 'warning');
+                btn.innerText = "Confirm & End Shift"; btn.disabled = false;
+                return;
+            }
         }
 
         // 1. Read Cash Drawer Securely
