@@ -1155,22 +1155,30 @@ window.syncOfflineQueue = async function() {
                 });
             }
 
-            // 3. Process Live Inventory Deductions
-            for (let ing in ingredientsToDeduct) {
-                let totalDeduct = ingredientsToDeduct[ing];
-                if (totalDeduct > 0) {
-                    if (!localInvCache[ing]) {
-                        const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", payload.branch), window.where("name", "==", ing));
-                        const invSnap = await window.getDocs(invQ);
-                        if (!invSnap.empty) {
-                            localInvCache[ing] = invSnap.docs[0].ref;
+            // 3. Process Live Inventory Deductions (WITH AUDIT PAUSE ENGINE)
+            if (window.isAuditModeActive) {
+                let auditQueue = JSON.parse(localStorage.getItem('takodeal_audit_queue')) || {};
+                for (let ing in ingredientsToDeduct) {
+                    auditQueue[ing] = (auditQueue[ing] || 0) + ingredientsToDeduct[ing];
+                }
+                localStorage.setItem('takodeal_audit_queue', JSON.stringify(auditQueue));
+            } else {
+                for (let ing in ingredientsToDeduct) {
+                    let totalDeduct = ingredientsToDeduct[ing];
+                    if (totalDeduct > 0) {
+                        if (!localInvCache[ing]) {
+                            const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", payload.branch), window.where("name", "==", ing));
+                            const invSnap = await window.getDocs(invQ);
+                            if (!invSnap.empty) {
+                                localInvCache[ing] = invSnap.docs[0].ref;
+                            }
                         }
-                    }
-                    
-                    if (localInvCache[ing]) {
-                        promises.push(window.updateDoc(localInvCache[ing], { 
-                            currentStock: window.increment(-totalDeduct) 
-                        }));
+                        
+                        if (localInvCache[ing]) {
+                            promises.push(window.updateDoc(localInvCache[ing], { 
+                                currentStock: window.increment(-totalDeduct) 
+                            }));
+                        }
                     }
                 }
             }
@@ -9788,3 +9796,88 @@ window.ownerBypassLogin = async function() {
         }
     }
 };
+
+// ========================================================
+// ⏸️ LIVE INVENTORY AUDIT PAUSE ENGINE
+// ========================================================
+window.isAuditModeActive = localStorage.getItem('takodeal_audit_mode') === 'true';
+
+window.toggleAuditMode = async function() {
+    window.isAuditModeActive = !window.isAuditModeActive;
+    localStorage.setItem('takodeal_audit_mode', window.isAuditModeActive);
+    
+    let btn = document.getElementById('btnAuditModeToggle');
+    
+    if (window.isAuditModeActive) {
+        if (btn) {
+            btn.innerHTML = '▶️ Resume Live Deductions';
+            btn.style.background = '#f59e0b';
+        }
+        Swal.fire({
+            title: '⏸️ Inventory Paused',
+            text: 'Live deductions are paused. You can safely count your stock without numbers changing. Customer orders will still process normally, and ingredient deductions will be queued in the background.',
+            icon: 'info',
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } else {
+        if (btn) {
+            btn.innerHTML = '⏸️ Pause Inventory (Audit Mode)';
+            btn.style.background = '#334155';
+        }
+        await window.processAuditQueue();
+    }
+};
+
+window.processAuditQueue = async function() {
+    let auditQueue = JSON.parse(localStorage.getItem('takodeal_audit_queue')) || {};
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let keys = Object.keys(auditQueue);
+    
+    if (keys.length === 0) {
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Live Deductions Resumed!', showConfirmButton: false, timer: 2000});
+        return;
+    }
+    
+    Swal.fire({title: 'Syncing Queue...', text: 'Applying paused deductions to live inventory...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    
+    try {
+        let promises = [];
+        for (let ing in auditQueue) {
+            let totalDeduct = auditQueue[ing];
+            if (totalDeduct > 0) {
+                const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", ing));
+                const invSnap = await window.getDocs(invQ);
+                if (!invSnap.empty) {
+                    promises.push(window.updateDoc(invSnap.docs[0].ref, { 
+                        currentStock: window.increment(-totalDeduct) 
+                    }));
+                }
+            }
+        }
+        await Promise.all(promises);
+        localStorage.removeItem('takodeal_audit_queue');
+        
+        Swal.fire({
+            title: '✅ Resumed & Synced!', 
+            text: 'All orders processed during the pause have now been accurately deducted from your live inventory.', 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } catch(e) {
+        console.error("Audit Queue Sync Error:", e);
+        Swal.fire('Error', 'Failed to sync queued inventory deductions. Please check your connection.', 'error');
+    }
+};
+
+// Ensures the button shows the correct state if they refresh the page!
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        if (window.isAuditModeActive) {
+            let btn = document.getElementById('btnAuditModeToggle');
+            if (btn) {
+                btn.innerHTML = '▶️ Resume Live Deductions';
+                btn.style.background = '#f59e0b';
+            }
+        }
+    }, 1500);
+});
