@@ -2833,6 +2833,9 @@ window.clearDispatchCart = async function() {
     } catch (error) { Swal.fire('Error', 'Failed to consolidate requests.', 'error'); }
 };
 
+// ========================================================
+// 🚚 THE DISPATCH DELIVERY SENDER (CLEANED UP)
+// ========================================================
 window.submitMultiDispatch = async function () {
     let fromBranch = document.getElementById('dispFrom').value;
     let toBranch = document.getElementById('dispTo').value;
@@ -2874,19 +2877,16 @@ window.submitMultiDispatch = async function () {
         let origRaw = parseFloat(item.origRawQty) || 0;
         let origBase = parseFloat(item.origBaseQty) || 0;
 
-        let isAutoAlert = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
+        let isAutoAlert = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.requestType === 'Emergency Override' || item.physicalStock !== undefined);
 
         if (sentBase > 0) validCart.push(item);
 
         let remainingRaw = origRaw - sentRaw;
         let remainingBase = origBase - sentBase;
 
-        // 🔥 THE LOGIC FIX: If it's an auto-alert and you sent 0, OR if there's unfulfilled requested stock, send to Delayed!
         if (remainingBase > 0 || (isAutoAlert && sentBase <= 0)) {
-            
-            // Resurrect the original badge text so it doesn't get corrupted
             let badgeText = item.requestType || 'Request';
-            if (badgeText === 'Delayed / Backlogged' && isAudit) {
+            if (badgeText === 'Delayed / Backlogged' && isAutoAlert) {
                 badgeText = (item.physicalStock <= 0) ? 'Out of Stock' : 'Low Stock';
             }
 
@@ -2895,20 +2895,18 @@ window.submitMultiDispatch = async function () {
                 qty: isAutoAlert ? 0 : remainingBase,
                 displayQty: isAutoAlert ? 0 : remainingRaw,
                 rawQty: isAutoAlert ? 0 : remainingRaw,
-                requestType: badgeText // PROTECT the original badge!
+                requestType: badgeText 
             });
         }
     });
 
     if (validCart.length === 0) return Swal.fire('Empty Dispatch', 'You must send a quantity greater than 0 for at least one item.', 'warning'); 
 
-    btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
+    btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
     try {
         let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
         if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
-
-        let totalPenaltiesIssued = 0;
 
         for (let item of validCart) {
             let itemNameToFind = item.itemName || item.name;
@@ -2924,6 +2922,7 @@ window.submitMultiDispatch = async function () {
                 if (liveSnap.exists()) currentHqStock = parseFloat(liveSnap.data().currentStock) || 0;
             }
 
+            // Deduct from HQ
             await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
 
             await addDoc(collection(db, "stock_logs"), {
@@ -2935,35 +2934,6 @@ window.submitMultiDispatch = async function () {
                 branch: toBranch, item: itemNameToFind, uom: item.baseUom || invItem.uom || 'units', oldQty: 0, newQty: 0, variance: 0,
                 type: "Incoming Dispatch", note: `Dispatched from ${fromBranch} (Driver: ${driverName}). Awaiting receipt by cashier.`, user: "System (In Transit)", timestamp: serverTimestamp()
             });
-
-            if (item.requestType === "Low Stock" || item.requestType === "Out of Stock" || item.physicalStock !== undefined) {
-                const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
-                const branchInvSnap = await getDocs(branchInvQ);
-                
-                if (!branchInvSnap.empty) {
-                    let bDoc = branchInvSnap.docs[0]; let bData = bDoc.data();
-                    let sysStock = parseFloat(bData.currentStock) || 0; let physStock = parseFloat(item.physicalStock) || 0;
-
-                    if (sysStock > 0 && physStock < sysStock) {
-                        let missingQty = sysStock - physStock;
-                        let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(item.cost) || 0;
-                        let penaltyValue = missingQty * costPerUnit;
-
-                        await updateDoc(bDoc.ref, { currentStock: physStock });
-                        await addDoc(collection(db, "stock_logs"), { branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: -missingQty, type: "Audit Adjustment (Penalty)", note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`, user: "System (HQ)", timestamp: serverTimestamp() });
-
-                        if (penaltyValue > 0) {
-                            await addDoc(collection(db, "staff_deductions"), { staffName: `Team ${toBranch}`, type: "Missing Stock Penalty", amount: penaltyValue, dateAdded: new Date(), status: "Unpaid", remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.` });
-                            await addDoc(collection(db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch}.`, timestamp: serverTimestamp(), isRead: false });
-                            totalPenaltiesIssued++;
-                        }
-                    } 
-                    else if (sysStock <= 0) {
-                        await updateDoc(bDoc.ref, { currentStock: physStock });
-                        await addDoc(collection(db, "stock_logs"), { branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: physStock - sysStock, type: "Negative Stock Wipe", note: `Clean slate reset before restock.`, user: "System (HQ)", timestamp: serverTimestamp() });
-                    }
-                }
-            }
 
             await addDoc(collection(db, "dispatch_logs"), {
                 date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -2999,9 +2969,7 @@ window.submitMultiDispatch = async function () {
         if (activePoStr) {
             let poIds = activePoStr.split(',');
             for (let id of poIds) {
-                if (id) {
-                    try { await deleteDoc(doc(db, "purchase_orders", id)); } catch(e){}
-                }
+                if (id) { try { await deleteDoc(doc(db, "purchase_orders", id)); } catch(e){} }
             }
             localStorage.removeItem('takodeal_active_po');
         }
@@ -3010,9 +2978,8 @@ window.submitMultiDispatch = async function () {
         Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
 
         let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) unfulfilled were auto-set aside into the Delayed Items tab).` : '';
-        let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
         
-        Swal.fire({ title: '🚚 Dispatch Successful!', html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`, icon: 'success', customClass: { popup: 'rounded-2xl shadow-xl' } });
+        Swal.fire({ title: '🚚 Dispatch Successful!', html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${extraMessage}`, icon: 'success', customClass: { popup: 'rounded-2xl shadow-xl' } });
         
         window.renderDispatchCart(); if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
     } catch (e) { Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error'); } 
@@ -19425,7 +19392,7 @@ window.switchLogisticsTimeFilter = function(filter) {
 };
 
 // ========================================================
-// 🔍 STOCK REQUEST REVIEW ENGINE (HQ APPROVALS)
+// 🔍 STOCK REQUEST REVIEW ENGINE (INSTANT INVENTORY OVERRIDE)
 // ========================================================
 window.reviewStockRequest = async function(docId) {
     try {
@@ -19437,6 +19404,14 @@ window.reviewStockRequest = async function(docId) {
         let data = snap.data();
         let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
         
+        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+        let hqStock = {};
+        let hqDetails = {}; 
+        hqSnap.forEach(d => {
+            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
+            hqDetails[d.data().name] = d.data(); 
+        });
+
         let itemsHtml = `
             <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; text-align: left;">
                 <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
@@ -19449,7 +19424,7 @@ window.reviewStockRequest = async function(docId) {
                     <thead style="background: #1e293b; color: white; position: sticky; top: 0;">
                         <tr>
                             <th style="padding: 10px; width: 45%;">Item Description</th>
-                            <th style="padding: 10px; text-align: center; width: 35%;">Stock Status / Request</th>
+                            <th style="padding: 10px; text-align: center; width: 35%;">Count / Request</th>
                             <th style="padding: 10px; text-align: center; width: 20%;">Alert Type</th>
                         </tr>
                     </thead>
@@ -19458,7 +19433,7 @@ window.reviewStockRequest = async function(docId) {
         
         if (data.items && data.items.length > 0) {
             data.items.forEach(item => {
-                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
+                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.requestType === 'Emergency Override' || item.physicalStock !== undefined);
                 let badgeText = item.requestType || 'Request';
                 
                 if (badgeText === 'Delayed / Backlogged' && isAudit) {
@@ -19467,12 +19442,17 @@ window.reviewStockRequest = async function(docId) {
                 }
 
                 let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
-                
-                // 🔥 THE FIX: Display Physical Math correctly
+                if (badgeText === 'Emergency Override') alertColor = '#dc2626';
+
                 let qtyDisplay = '';
                 if (isAudit) {
-                    let physCount = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
+                    let physCount = item.displayQty !== undefined ? item.displayQty : (item.physicalStock !== undefined ? item.physicalStock : (item.qty || 0));
                     let sysCount = item.systemStock !== undefined ? item.systemStock : '---';
+
+                    // Convert system stock to Purchase UOM to display cleanly if possible
+                    if (sysCount !== '---' && item.conversionRate) {
+                        sysCount = (parseFloat(sysCount) / parseFloat(item.conversionRate)).toFixed(2);
+                    }
 
                     qtyDisplay = `
                         <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
@@ -19499,7 +19479,7 @@ window.reviewStockRequest = async function(docId) {
             html: itemsHtml,
             showDenyButton: true,
             showCancelButton: true,
-            confirmButtonText: '🛒 Load to Dispatch Cart',
+            confirmButtonText: '🛒 Accept & Load Cart',
             denyButtonText: '❌ Postpone / Set Aside',
             cancelButtonText: 'Close Window',
             confirmButtonColor: '#16a34a',
@@ -19510,27 +19490,79 @@ window.reviewStockRequest = async function(docId) {
         });
 
         if (actionResult.isConfirmed) {
-            if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-            
-            data.items.forEach(reqItem => {
-                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === (reqItem.itemName || reqItem.name));
-                let isAudit = (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock' || reqItem.physicalStock !== undefined);
+            Swal.fire({title: 'Syncing Inventory & Penalties...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-                // 🔥 THE FIX: Extract correct physical and requested values safely
+            if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
+            let storedDest = localStorage.getItem('takodeal_dispatch_to');
+            if (window.dispatchCart.length > 0 && storedDest && storedDest !== data.branch) {
+                await window.clearDispatchCart(); 
+            }
+
+            if (window.dispatchCart.length === 0) {
+                Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
+            }
+
+            let totalPenaltiesIssued = 0;
+
+            // 🔥 LOOP THROUGH REQUESTED ITEMS TO OVERRIDE INVENTORY IMMEDIATELY!
+            for (let reqItem of data.items) {
+                let itemName = reqItem.itemName || reqItem.name;
+                let hqData = hqDetails[itemName] || {}; 
+
+                let pUom = hqData.purchaseUom || hqData.purchUom || reqItem.purchaseUom || reqItem.uom || 'units';
+                let bUom = hqData.uom || hqData.baseUom || reqItem.uom || reqItem.baseUom || 'units';
+                let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(reqItem.convRate) || parseFloat(reqItem.conversionRate) || 1;
+
                 let originalQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
                 let originalBaseQty = parseFloat(reqItem.qty) || 0;
                 
                 let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : originalQty;
                 let sysStockToPass = reqItem.systemStock !== undefined ? reqItem.systemStock : 0;
 
+                let isAudit = (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock' || reqItem.requestType === 'Emergency Override' || reqItem.physicalStock !== undefined);
                 let badgeText = reqItem.requestType || 'Request';
+
                 if (badgeText === 'Delayed / Backlogged' && isAudit) {
                     badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
+                }
+
+                // 🚨 INSTANT INVENTORY OVERRIDE & PENALTY ENGINE 🚨
+                if (isAudit && reqItem.physicalStock !== undefined) {
+                    const branchInvQ = query(collection(db, "inventory"), where("branch", "==", data.branch), where("name", "==", itemName));
+                    const branchInvSnap = await getDocs(branchInvQ);
+                    
+                    if (!branchInvSnap.empty) {
+                        let bDoc = branchInvSnap.docs[0]; 
+                        let bData = bDoc.data();
+                        let sysStock = parseFloat(bData.currentStock) || 0; 
+                        let physStock = parseFloat(reqItem.physicalStock) || 0;
+
+                        if (sysStock > 0 && physStock < sysStock) {
+                            let missingQty = sysStock - physStock;
+                            let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(reqItem.cost) || 0;
+                            let penaltyValue = missingQty * costPerUnit;
+
+                            await updateDoc(bDoc.ref, { currentStock: physStock });
+                            await addDoc(collection(db, "stock_logs"), { branch: data.branch, item: itemName, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: -missingQty, type: "Audit Adjustment (Penalty)", note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`, user: "System (HQ)", timestamp: serverTimestamp() });
+
+                            if (penaltyValue > 0) {
+                                await addDoc(collection(db, "staff_deductions"), { staffName: `Team ${data.branch}`, type: "Missing Stock Penalty", amount: penaltyValue, dateAdded: new Date(), status: "Unpaid", remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemName} before restock.` });
+                                await addDoc(collection(db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: data.branch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemName} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${data.branch}.`, timestamp: serverTimestamp(), isRead: false });
+                                totalPenaltiesIssued++;
+                            }
+                        } 
+                        else if (sysStock <= 0 || physStock >= sysStock) {
+                            await updateDoc(bDoc.ref, { currentStock: physStock });
+                            await addDoc(collection(db, "stock_logs"), { branch: data.branch, item: itemName, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: physStock - sysStock, type: "Baseline Reset", note: `Clean slate reset before restock.`, user: "System (HQ)", timestamp: serverTimestamp() });
+                        }
+                    }
                 }
 
                 // Force the Dispatch Cart to 0 so we don't accidentally ship their counted inventory!
                 let rawReqQty = isAudit ? 0 : originalQty;
                 let baseReqQty = isAudit ? 0 : originalBaseQty;
+                
+                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
                 
                 if (existing) {
                     existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
@@ -19538,24 +19570,20 @@ window.reviewStockRequest = async function(docId) {
                     existing.origRawQty = (parseFloat(existing.origRawQty) || 0) + rawReqQty;
                     existing.origBaseQty = (parseFloat(existing.origBaseQty) || 0) + baseReqQty;
                     existing.requestType = badgeText; 
-                    existing.physicalStock = physStockToPass;
-                    existing.systemStock = sysStockToPass;
                 } else {
                     window.dispatchCart.push({
-                        itemName: reqItem.itemName || reqItem.name, 
-                        name: reqItem.itemName || reqItem.name,
+                        itemName: itemName, name: itemName, sourceId: reqItem.sourceId || reqItem.id,
                         rawQty: rawReqQty, qty: baseReqQty,
                         origRawQty: rawReqQty, origBaseQty: baseReqQty,
                         uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.baseUom || reqItem.uom,
-                        friendlyUom: reqItem.displayUom || reqItem.uom,
+                        purchaseUom: pUom, friendlyUom: reqItem.displayUom || reqItem.uom,
                         selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
-                        convRate: reqItem.convRate || 1, conversionRate: reqItem.conversionRate || 1,
-                        sourceId: reqItem.sourceId || reqItem.id,
-                        requestType: badgeText,
-                        physicalStock: physStockToPass, systemStock: sysStockToPass
+                        convRate: cRate, conversionRate: cRate, category: reqItem.category || "Ingredients",
+                        requestType: badgeText
+                        // Notice: We omit physicalStock and systemStock so it doesn't double-trigger in dispatch!
                     });
                 }
-            });
+            }
 
             localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
             localStorage.setItem('takodeal_dispatch_to', data.branch);
@@ -19570,11 +19598,15 @@ window.reviewStockRequest = async function(docId) {
             
             await updateDoc(docRef, {
                 status: 'Drafting',
-                managerMessage: 'Approved and loaded into Dispatch Cart.',
+                managerMessage: 'Approved. Inventory synced and loaded into Dispatch Cart.',
                 processedAt: serverTimestamp()
             });
+
+            let penaltyMsg = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${data.branch} for missing stock!` : '';
             
-            Swal.fire({title: 'Loaded to Cart! 🛒', text: `Items moved to Dispatch for ${data.branch}.`, icon: 'success', timer: 2000, showConfirmButton: false});
+            Swal.fire({title: 'Loaded to Cart! 🛒', html: `Items moved to Dispatch for ${data.branch}. Branch inventory has been corrected.${penaltyMsg}`, icon: 'success', timer: 4000, showConfirmButton: false});
+            
+            if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
             
         } else if (actionResult.isDenied) {
             const { value: rejectReason } = await Swal.fire({
