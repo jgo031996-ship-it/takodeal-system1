@@ -7182,7 +7182,7 @@ window.submitConsumablesCart = async function() {
 };
 
 // ========================================================
-// 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF & BLIND)
+// 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF & BLIND COUNT SECURED)
 // ========================================================
 window.MASTER_CloseShift = async function () {
     let confirmBtn = document.querySelector('button[onclick*="MASTER_CloseShift"]');
@@ -7194,6 +7194,39 @@ window.MASTER_CloseShift = async function () {
     }
 
     try {
+        // 0. GATHER AND VALIDATE BLIND COUNT (Must be done before locking the button!)
+        let physicalStockCount = [];
+        let missingBlindCounts = false;
+        
+        document.querySelectorAll('.blind-count-input').forEach(input => {
+            let val = input.value.trim();
+            if (val === "") {
+                missingBlindCounts = true;
+            } else {
+                let itemName = input.getAttribute('data-name');
+                let actualCount = parseFloat(val);
+                // Ensure currentBlindCountItems exists before searching
+                if (window.currentBlindCountItems) {
+                    let memItem = window.currentBlindCountItems.find(i => i.name === itemName);
+                    if (memItem) {
+                        physicalStockCount.push({
+                            name: itemName,
+                            systemExpected: memItem.systemExpected,
+                            actualCount: actualCount,
+                            baseCost: memItem.baseCost,
+                            uom: memItem.uom
+                        });
+                    }
+                }
+            }
+        });
+
+        if (missingBlindCounts) {
+            Swal.fire('⛔ INCOMPLETE COUNT', `You must physically count and enter the quantity for ALL mandatory items before ending your shift.`, 'error');
+            if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
+            return;
+        }
+
         // 1. Read Cash Drawer Securely
         let declaredCash = 0;
         let cashBreakdown = {};
@@ -7225,8 +7258,8 @@ window.MASTER_CloseShift = async function () {
         let totalCashSales = 0; let totalDigitalSales = 0;
         let digitalBreakdown = {}; let shiftIngredientBurn = {};
 
-        const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
-        const txSnap = await getDocs(txQ);
+        const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
+        const txSnap = await window.getDocs(txQ);
 
         let unverifiedDigitalCount = 0;
 
@@ -7291,16 +7324,14 @@ window.MASTER_CloseShift = async function () {
                 customClass: { popup: 'rounded-2xl shadow-2xl' }
             });
             
-            // If they click "Wait", abort the closing process
             if (!proceed.isConfirmed) {
-                let confirmBtn = document.querySelector('#endShiftModal .btn-place') || document.querySelector('button[onclick*="MASTER_CloseShift"]');
-                if (confirmBtn) { confirmBtn.innerText = "🛑 Confirm & End Shift"; confirmBtn.disabled = false; }
+                if (confirmBtn) { confirmBtn.innerHTML = origText; confirmBtn.disabled = false; }
                 return;
             }
         }
 
-        const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
-        const expSnap = await getDocs(expQ);
+        const expQ = window.query(window.collection(window.db, "expenses"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
+        const expSnap = await window.getDocs(expQ);
         let cashOut = 0;
         expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
 
@@ -7314,7 +7345,7 @@ window.MASTER_CloseShift = async function () {
             return;
         }
 
-        // 5. The Variance SweetAlert (🔥 100% BLIND COUNT FIX)
+        // 5. The Variance SweetAlert
         let variance = declaredCash - expectedCash;
         if (Math.abs(variance) > 2) {
             let isOver = variance > 0;
@@ -7341,28 +7372,28 @@ window.MASTER_CloseShift = async function () {
                 return; 
             }
 
-            await addDoc(collection(db, "manager_alerts"), {
+            await window.addDoc(window.collection(window.db, "manager_alerts"), {
                 type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                 expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
                 message: `CASH ${isOver ? "OVER" : "SHORT"}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
                 explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
-                timestamp: serverTimestamp(), isRead: false
+                timestamp: window.serverTimestamp(), isRead: false
             });
         }
 
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Saving to Cloud...";
         
-        // 6. FIREBASE: CLOSE SHIFT
-        await updateDoc(doc(db, "shifts", shiftId), {
+        // 6. FIREBASE: CLOSE SHIFT (NOW SAVES BLIND COUNT!)
+        await window.updateDoc(window.doc(window.db, "shifts", shiftId), {
             active: false,
-            endTime: serverTimestamp(),
+            endTime: window.serverTimestamp(),
             declaredCash: declaredCash,
             expectedCash: expectedCash,
             totalCashSales: totalCashSales, 
             totalDigitalSales: totalDigitalSales,
             digitalBreakdown: digitalBreakdown,
             cashBreakdown: cashBreakdown, 
-            physicalStockCount: physicalStockCount,
+            physicalStockCount: physicalStockCount, // 🔥 SAVING THE BLIND COUNT HERE!
             status: "Closed"
         });
 
@@ -7371,20 +7402,20 @@ window.MASTER_CloseShift = async function () {
             if (method.toLowerCase() === "gcash") continue; 
             let amountToDeposit = digitalBreakdown[method];
             if (amountToDeposit > 0) {
-                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
-                const accSnap = await getDocs(accQ);
+                const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", "Main Office"), window.where("name", "==", method));
+                const accSnap = await window.getDocs(accQ);
                 if (!accSnap.empty) {
                     let accDoc = accSnap.docs[0];
                     let currentBal = accDoc.data().balance || 0;
-                    await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
-                    await addDoc(collection(db, "account_logs"), {
+                    await window.updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
+                    await window.addDoc(window.collection(window.db, "account_logs"), {
                         accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
-                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: serverTimestamp(), note: `From ${branchName}`
+                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: window.serverTimestamp(), note: `From ${branchName}`
                     });
                 } else {
-                    const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: serverTimestamp() });
-                    await addDoc(collection(db, "account_logs"), {
-                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
+                    const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: window.serverTimestamp() });
+                    await window.addDoc(window.collection(window.db, "account_logs"), {
+                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: window.serverTimestamp(), note: `From ${branchName}`
                     });
                 }
             }
@@ -7392,72 +7423,92 @@ window.MASTER_CloseShift = async function () {
 
         // 👑 7.5 FRANCHISE ROYALTY & PROFIT SHARING ENGINE
         try {
-            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
-            const bSnap = await getDocs(bQ);
+            const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
+            const bSnap = await window.getDocs(bQ);
+            let isFranchise = false;
             let royaltyPct = 0;
-            if (!bSnap.empty) royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
+            
+            if (!bSnap.empty) {
+                isFranchise = bSnap.docs[0].data().isFranchise === true || parseFloat(bSnap.docs[0].data().royaltyPercent) > 0;
+                royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
+            }
 
-            if (royaltyPct > 0) {
-                // Calculate royalty against total gross digital + cash sales
+            if (isFranchise) {
                 let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
                 let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
-
+                
                 if (royaltyAmount > 0) {
-                    // 1. Log the Expense against the Franchise Branch so their P&L is accurate
-                    await addDoc(collection(db, "expenses"), {
-                        branch: branchName, 
-                        amount: royaltyAmount, 
-                        category: "Franchise Royalty Fee",
-                        account: "System Auto-Deduct", 
-                        note: `Auto-Deducted ${royaltyPct}% Royalty from ₱${totalGrossForRoyalty.toFixed(2)} Total Sales`,
-                        timestamp: serverTimestamp()
+                    await window.addDoc(window.collection(window.db, "franchise_ledger"), {
+                        branch: branchName,
+                        type: "Charge", 
+                        category: "Daily Franchise Royalty",
+                        amount: royaltyAmount,
+                        description: `Shift Close: Auto-Billed ${royaltyPct}% Royalty on ₱${totalGrossForRoyalty.toLocaleString(undefined, {minimumFractionDigits: 2})} Gross Sales`,
+                        loggedBy: "System Z-Reading",
+                        timestamp: window.serverTimestamp()
                     });
+                }
+            }
+        } catch(e) { console.error("Franchise Billing Engine Error:", e); }
 
-                    // 2. Route the funds directly to the Main Office "Owner's Equity" Account!
-                    const eqQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", "Owner's Equity"));
-                    const eqSnap = await getDocs(eqQ);
+        // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
+        try {
+            const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
+            const bSnap = await window.getDocs(bQ);
+            let isMallBranch = false;
+            if (!bSnap.empty) {
+                isMallBranch = bSnap.docs[0].data().isMallBranch === true;
+            }
+
+            if (isMallBranch) {
+                let netCashEarned = declaredCash - startingCash;
+                
+                if (netCashEarned !== 0) {
+                    const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", branchName), window.where("name", "==", "Manager Fund"));
+                    const accSnap = await window.getDocs(accQ);
                     
-                    if (!eqSnap.empty) {
-                        let eqDoc = eqSnap.docs[0];
-                        let newBal = (parseFloat(eqDoc.data().balance) || 0) + royaltyAmount;
-                        await updateDoc(eqDoc.ref, { balance: newBal });
-                        await addDoc(collection(db, "account_logs"), {
-                            accountId: eqDoc.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection",
-                            amount: royaltyAmount, newBalance: newBal, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading`
+                    if (!accSnap.empty) {
+                        let accDoc = accSnap.docs[0];
+                        let currentBal = parseFloat(accDoc.data().balance) || 0;
+                        let newBal = currentBal + netCashEarned;
+                        
+                        await window.updateDoc(accDoc.ref, { balance: newBal });
+                        await window.addDoc(window.collection(window.db, "account_logs"), {
+                            accountId: accDoc.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Net)",
+                            amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
                         });
                     } else {
-                        // Create the account if it's the very first time!
-                        const newEqRef = await addDoc(collection(db, "cash_accounts"), { branch: "Main Office", name: "Owner's Equity", balance: royaltyAmount, createdAt: serverTimestamp() });
-                        await addDoc(collection(db, "account_logs"), {
-                            accountId: newEqRef.id, accountName: "Owner's Equity", branch: "Main Office", action: "Royalty Collection (Account Created)",
-                            amount: royaltyAmount, newBalance: royaltyAmount, user: "System Auto-Sweep", timestamp: serverTimestamp(), note: `From ${branchName} Z-Reading`
+                        const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: window.serverTimestamp() });
+                        await window.addDoc(window.collection(window.db, "account_logs"), {
+                            accountId: newAccRef.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Account Created)",
+                            amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
                         });
                     }
                 }
             }
-        } catch(e) { console.error("Royalty Engine Error:", e); }
+        } catch(e) { console.error("Mall Branch Deposit Error:", e); }
 
-        
-        // 🚨 STOCK VARIANCE ALERTS FOR MANAGER
+        // 🚨 7.8 STOCK VARIANCE ALERTS FOR MANAGER
         for (let item of physicalStockCount) {
             let variance = item.actualCount - item.systemExpected;
             if (variance < 0) {
                 let valueLost = Math.abs(variance) * item.baseCost;
-                await addDoc(collection(db, "manager_alerts"), {
+                await window.addDoc(window.collection(window.db, "manager_alerts"), {
                     type: "STOCK_SHORTAGE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                     message: `STOCK SHORTAGE: ${cashierName} reported ${item.actualCount} ${item.uom} of ${item.name} (System Expected: ${item.systemExpected.toFixed(1)}). Loss Value: ₱${valueLost.toFixed(2)}`,
-                    timestamp: serverTimestamp(), isRead: false
+                    timestamp: window.serverTimestamp(), isRead: false
                 });
             }
         }
+
         // 8. Deduct Ingredient Burn
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
             if (totalBurn > 0) {
-                await addDoc(collection(db, "stock_logs"), {
+                await window.addDoc(window.collection(window.db, "stock_logs"), {
                     branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
                     variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
-                    user: cashierName, timestamp: serverTimestamp()
+                    user: cashierName, timestamp: window.serverTimestamp()
                 });
             }
         }
