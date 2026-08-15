@@ -4338,44 +4338,28 @@ window.openBranchDetails = async function (branch) {
 // --- THE LIVE INVENTORY ENGINE (UPGRADED WITH TOTAL VALUE & ACTION DROPDOWNS) ---
 window.refreshInventoryView = function() { window.loadInventoryData(); };
 
-// 🔥 NEW: Dropdown Helper Functions
-window.toggleActionMenu = function(menuId) {
-    // Close all other open menus first
-    document.querySelectorAll('.action-menu-content').forEach(menu => {
-        if (menu.id !== menuId) {
-            menu.classList.remove('show-action-menu');
-            let oldContainer = menu.closest('.table-responsive');
-            if (oldContainer) oldContainer.style.paddingBottom = "0px";
-        }
-    });
-    
-    // Toggle the clicked one
-    let targetMenu = document.getElementById(menuId);
-    targetMenu.classList.toggle('show-action-menu');
-    
-    // 🔥 THE FIX: Add temporary padding to the table so it doesn't clip!
-    let tableContainer = targetMenu.closest('.table-responsive');
-    if (tableContainer) {
-        if (targetMenu.classList.contains('show-action-menu')) {
-            tableContainer.style.paddingBottom = "150px";
-        } else {
-            tableContainer.style.paddingBottom = "0px";
-        }
-    }
-};
+// ========================================================
+// 🔥 ULTRA AI: SWEETALERT ACTION MENU ENGINE
+// ========================================================
+window.showInventoryActions = function(id, name, stock, uom, baseCost, branch) {
+    let sellBtn = branch === 'Main Office' ? `<button onclick="Swal.close(); setTimeout(() => window.sellMainOfficeStock('${id}', '${name.replace(/'/g, "\\'")}', ${stock}, '${uom}', ${baseCost}), 300);" style="width: 100%; padding: 14px; margin-bottom: 10px; background: #10b981; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2); transition: 0.2s;">💸 Sell Stock (HQ)</button>` : '';
 
-// Auto-close dropdowns when clicking anywhere else on the screen
-window.addEventListener('click', function(e) {
-    if (!e.target.matches('.action-menu-btn')) {
-        document.querySelectorAll('.action-menu-content').forEach(menu => {
-            if (menu.classList.contains('show-action-menu')) {
-                menu.classList.remove('show-action-menu');
-                let tableContainer = menu.closest('.table-responsive');
-                if (tableContainer) tableContainer.style.paddingBottom = "0px";
-            }
-        });
-    }
-});
+    Swal.fire({
+        title: `⚙️ Actions`,
+        html: `
+            <div style="font-size: 18px; font-weight: 900; color: #0f172a; margin-bottom: 20px; border-bottom: 2px dashed #e2e8f0; padding-bottom: 10px;">${name}</div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                ${sellBtn}
+                <button onclick="Swal.close(); setTimeout(() => window.openItemLedger('${branch}', '${name.replace(/'/g, "\\'")}'), 300);" style="width: 100%; padding: 14px; background: #0ea5e9; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.2); transition: 0.2s;">🔍 Trace Ledger</button>
+                <button onclick="Swal.close(); setTimeout(() => window.openEditInvModal('${id}'), 300);" style="width: 100%; padding: 14px; background: #f59e0b; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.2); transition: 0.2s;">✏️ Edit Item Details</button>
+            </div>
+        `,
+        showConfirmButton: false,
+        showCloseButton: true,
+        width: 400,
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+};
 
 window.loadInventoryData = async function() {
     let branchFilter = document.getElementById('invBranchFilter').value;
@@ -4456,16 +4440,8 @@ window.loadInventoryData = async function() {
                     <td style="padding: 12px;">${statusHtml}</td>
                     <td style="padding: 12px; font-weight:bold; color:#64748b;">₱${baseCost.toFixed(2)}</td>
                     <td style="padding: 12px; font-weight:900; color:#0f766e; font-size: 14px;">₱${rowTotalValue.toFixed(2)}</td>
-                    <td style="padding: 12px; text-align: center; position: relative;">
-                        <!-- 🔥 NEW: Clean Action Dropdown -->
-                        <div class="action-menu-container">
-                            <button class="action-menu-btn" onclick="window.toggleActionMenu('menu_${d.id}')">⚙️ Actions ▼</button>
-                            <div id="menu_${d.id}" class="action-menu-content">
-                                ${d.branch === 'Main Office' ? `<button onclick="window.sellMainOfficeStock('${d.id}', '${d.name.replace(/'/g, "\\'")}', ${stock}, '${bUom}', ${baseCost})">💸 Sell Stock</button>` : ''}
-                                <button onclick="window.openItemLedger('${d.branch}', '${d.name.replace(/'/g, "\\'")}')">🔍 Trace Ledger</button>
-                                <button onclick="window.openEditInvModal('${d.id}')">✏️ Edit Item</button>
-                            </div>
-                        </div>
+                    <td style="padding: 12px; text-align: center;">
+                        <button class="action-menu-btn" onclick="window.showInventoryActions('${d.id}', '${safeName}', ${stock}, '${bUom}', ${baseCost}, '${d.branch}')">⚙️ Actions ▼</button>
                     </td>
                 </tr>
             `;
