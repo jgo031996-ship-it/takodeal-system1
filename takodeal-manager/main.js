@@ -14122,6 +14122,7 @@ window.loadPosConfigHub = async function() {
             if(document.getElementById('configMixMatch')) document.getElementById('configMixMatch').value = "Pork, Shrimp, Octopus, Ham & Cheese, Bacon & Cheese";
             if(document.getElementById('configWasteReasons')) document.getElementById('configWasteReasons').value = "Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Customer Replacement, Pest Damage, Other";
             if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = "Consumables, Cleaning Supplies, Packaging";
+            if(document.getElementById('configShiftAudit')) document.getElementById('configShiftAudit').value = "Paper Bowl, Plastic Cup";
         }
     } catch (error) {
         console.error("Error loading config:", error);
