@@ -5430,6 +5430,9 @@ window.filterStockReq = function() {
     });
 };
 
+// ========================================================
+// 🚨 EMERGENCY REQUEST & FRAUD TRAP ENGINE
+// ========================================================
 window.triggerEmergencyRequest = async function(encodedItem) {
     let item = JSON.parse(decodeURIComponent(encodedItem));
     let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
@@ -5443,51 +5446,96 @@ window.triggerEmergencyRequest = async function(encodedItem) {
         title: `🚨 Emergency Request`,
         html: `
             <div style="font-size: 13px; color: #475569; margin-bottom: 15px; text-align: left;">
-                The system calculates you still have <b>${purchStock.toFixed(2)} ${pUom}</b> of <b>${item.name}</b>.<br><br>
-                If you are actually out of stock, you must explain why it is missing before the system will request more from HQ.
+                The system calculates you still have <b style="color:#0ea5e9;">${purchStock.toFixed(2)} ${pUom}</b> of <b>${item.name}</b>.<br><br>
+                If you are actually out of stock, you must enter the exact physical count left in the store and explain the discrepancy. Management will review the variance.
             </div>
             <div style="text-align: left;">
-                <label style="font-size: 11px; font-weight: bold; color: #ef4444;">How many ${pUom}s do you need from HQ?</label>
+                <label style="font-size: 11px; font-weight: bold; color: #ef4444;">How many ${pUom}s are actually left in the store?</label>
                 <input type="number" id="emQty" class="swal2-input" placeholder="0" style="margin: 5px 0 15px 0; width: 100%; box-sizing: border-box;">
                 
                 <label style="font-size: 11px; font-weight: bold; color: #ef4444;">Why is this missing? (Mandatory)</label>
                 <textarea id="emReason" class="swal2-textarea" placeholder="e.g. Dropped it, wasn't logged in waste, previous shift didn't report..." style="margin: 5px 0 0 0; width: 100%; box-sizing: border-box; height: 80px;"></textarea>
             </div>
         `,
-        showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'Send Emergency Alert to HQ',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Send Emergency Alert to HQ',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
-            let qty = document.getElementById('emQty').value;
+            let qtyStr = document.getElementById('emQty').value;
             let reason = document.getElementById('emReason').value;
-            if (!qty || qty <= 0) { Swal.showValidationMessage("Please enter a valid quantity."); return false; }
-            if (!reason.trim()) { Swal.showValidationMessage("A reason is strictly required."); return false; }
-            return { qty: parseFloat(qty), reason: reason.trim() };
+            
+            if (!qtyStr || qtyStr.trim() === "") { 
+                Swal.showValidationMessage("Please enter the physical quantity left."); 
+                return false; 
+            }
+            
+            let qty = parseFloat(qtyStr);
+            if (qty < 0) { 
+                Swal.showValidationMessage("Quantity cannot be negative."); 
+                return false; 
+            }
+            
+            // Prevent them from requesting an emergency if they actually have plenty of stock!
+            if (purchStock > 0 && qty >= purchStock) { 
+                Swal.showValidationMessage(`Quantity must be less than the system stock (${purchStock.toFixed(2)}). If you have enough, no emergency request is needed!`); 
+                return false; 
+            }
+            
+            if (!reason.trim()) { 
+                Swal.showValidationMessage("A reason is strictly required."); 
+                return false; 
+            }
+            
+            return { actualLeft: qty, reason: reason.trim() };
         }
     });
 
     if (formValues) {
         Swal.fire({title: 'Sending to HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
+            let actualLeftPurch = formValues.actualLeft;
+            let actualLeftBase = actualLeftPurch * conv;
+            let missingPurch = purchStock - actualLeftPurch;
+            
+            // 1. Send High-Priority Fraud Alert to Manager
             await window.addDoc(window.collection(window.db, "manager_alerts"), {
                 type: "EMERGENCY_RESTOCK_FRAUD", branch: branch, cashier: cashier,
-                message: `🚨 EMERGENCY REQUEST: ${cashier} requested ${formValues.qty} ${pUom} of ${item.name}. System expected them to still have ${purchStock.toFixed(2)} ${pUom}. Reason given: "${formValues.reason}"`,
+                message: `🚨 EMERGENCY AUDIT: ${cashier} reported only ${actualLeftPurch} ${pUom} of ${item.name} left. System expected ${purchStock.toFixed(2)} ${pUom}. Missing: ${missingPurch.toFixed(2)} ${pUom}. Reason given: "${formValues.reason}"`,
                 timestamp: window.serverTimestamp(), isRead: false
             });
 
+            // 2. Add PO to the Queue
+            // We pass the physicalStock so the Manager App treats it as an Audit and auto-applies penalties!
             let reqItem = {
-                itemName: item.name, name: item.name, sourceId: item.id, qty: formValues.qty * conv, rawQty: formValues.qty,
-                origRawQty: formValues.qty, origBaseQty: formValues.qty * conv, uom: bUom, baseUom: bUom, purchaseUom: pUom, friendlyUom: pUom, displayUom: pUom,
-                selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base', convRate: conv, conversionRate: conv, category: item.category || "Ingredients",
-                requestType: "Emergency Override", systemStock: item.currentStock, physicalStock: item.currentStock, displayQty: formValues.qty
+                itemName: item.name, name: item.name, sourceId: item.id,
+                qty: 0, rawQty: 0, // Requested amounts start at 0, HQ decides how much to send!
+                origRawQty: 0, origBaseQty: 0,
+                uom: bUom, baseUom: bUom, purchaseUom: pUom, friendlyUom: pUom, displayUom: pUom,
+                selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
+                convRate: conv, conversionRate: conv, category: item.category || "Ingredients",
+                requestType: "Emergency Override",
+                systemStock: item.currentStock, 
+                physicalStock: actualLeftBase, 
+                displayQty: actualLeftPurch 
             };
 
             await window.addDoc(window.collection(window.db, "purchase_orders"), {
-                branch: branch, type: "Emergency Request", items: [reqItem], status: "Pending", requestedBy: cashier, managerMessage: `EMERGENCY REASON: ${formValues.reason}`, timestamp: window.serverTimestamp()
+                branch: branch,
+                type: "Emergency Request",
+                items: [reqItem],
+                status: "Pending",
+                requestedBy: cashier,
+                managerMessage: `EMERGENCY AUDIT REASON: ${formValues.reason}`,
+                timestamp: window.serverTimestamp()
             });
 
-            Swal.fire('✅ Sent!', 'Emergency request and explanation sent to HQ.', 'success');
+            Swal.fire('✅ Sent!', 'Emergency audit and explanation sent to HQ. Management will review the missing stock and dispatch replacements.', 'success');
             window.loadStockRequestUI();
-        } catch(e) { console.error(e); Swal.fire('Error', 'Failed to send request.', 'error'); }
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to send request.', 'error');
+        }
     }
 };
 
