@@ -1476,7 +1476,7 @@
   </div>
 
   <div class="overlay" id="endShiftModal" style="display: none;">
-    <div class="modal" style="width: 800px; max-width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+    <div class="modal" style="width: 1100px; max-width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
       
       <div class="modal-head">
         <span id="endShiftTitle">End of Shift Clearance</span>
@@ -1501,6 +1501,14 @@
           <p style="font-size: 12px; color: #92400e; margin-bottom: 15px;">Batches prepared during this specific shift.</p>
           <div id="dynamicShiftPrepLogs" style="display: flex; flex-direction: column; gap: 10px;">
               <div style="text-align:center; font-size: 13px; color: #888;">Loading prep logs...</div>
+          </div>
+        </div>
+       <!-- 🔥 NEW: MANDATORY BLIND COUNT COLUMN -->
+        <div style="flex: 1; background: #f0f9ff; padding: 15px; border-radius: 8px; border: 1px solid #bae6fd; min-width: 250px; max-height: 60vh; overflow-y: auto;">
+          <h3 style="margin-top: 0; color: #0284c7; border-bottom: 2px solid #7dd3fc; padding-bottom: 5px; font-size: 16px;">📦 Mandatory Stock Count</h3>
+          <p style="font-size: 12px; color: #075985; margin-bottom: 15px;">Blind count the following items. You must fill all boxes to close the shift.</p>
+          <div id="dynamicBlindCountList" style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="text-align:center; font-size: 13px; color: #888;">Loading required items...</div>
           </div>
         </div>
       </div>
