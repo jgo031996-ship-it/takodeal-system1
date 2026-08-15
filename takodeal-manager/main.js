@@ -14110,6 +14110,7 @@ window.loadPosConfigHub = async function() {
             if(document.getElementById('configMixMatch')) document.getElementById('configMixMatch').value = (data.mixMatchFlavors || ["Pork", "Shrimp", "Octopus", "Ham & Cheese", "Bacon & Cheese"]).join(', ');
             if(document.getElementById('configWasteReasons')) document.getElementById('configWasteReasons').value = (data.wasteReasons || ["Dropped / Spilled", "Burnt / Overcooked", "Spoiled / Expired", "Customer Replacement", "Pest Damage", "Other"]).join(', ');
             if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = (data.consumableCats || ["Consumables", "Cleaning Supplies", "Packaging"]).join(', ');
+            if(document.getElementById('configShiftAudit')) document.getElementById('configShiftAudit').value = (data.shiftAuditItems || ["Paper Bowl", "Plastic Cup"]).join(', ');
             
         } else {
             // Load Defaults if nothing exists yet
