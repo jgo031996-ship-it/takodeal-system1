@@ -6720,8 +6720,26 @@ window.openEditInvModal = async function(id) {
             
             // 🔥 THE UOM MATH FIX: Convert the database Base UOM back to Purchase UOM for easy editing!
             // 🔥 THE ROUNDING FIX: Keeps the UI clean by rounding to 2 decimal places max
-            let lowStockPurch = parseFloat(((parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate).toFixed(2));
-            document.getElementById('editInvLowStock').value = lowStockPurch;
+            // 🔥 THE FIX: Fetch HQ Limit and Branch Limit separately!
+            let hqLowPurch = 0;
+            let branchLowPurch = 0;
+
+            if (itemData.branch === "Main Office") {
+                hqLowPurch = parseFloat(((parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate).toFixed(2));
+                const bQ = query(collection(db, "inventory"), where("name", "==", itemData.name), where("branch", "!=", "Main Office"), limit(1));
+                const bSnap = await getDocs(bQ);
+                if (!bSnap.empty) branchLowPurch = parseFloat(((parseFloat(bSnap.docs[0].data().lowStockAlert) || parseFloat(bSnap.docs[0].data().reorderLevel) || 0) / convRate).toFixed(2));
+                else branchLowPurch = hqLowPurch;
+            } else {
+                branchLowPurch = parseFloat(((parseFloat(itemData.lowStockAlert) || parseFloat(itemData.reorderLevel) || 0) / convRate).toFixed(2));
+                const hQ = query(collection(db, "inventory"), where("name", "==", itemData.name), where("branch", "==", "Main Office"), limit(1));
+                const hSnap = await getDocs(hQ);
+                if (!hSnap.empty) hqLowPurch = parseFloat(((parseFloat(hSnap.docs[0].data().lowStockAlert) || parseFloat(hSnap.docs[0].data().reorderLevel) || 0) / convRate).toFixed(2));
+                else hqLowPurch = branchLowPurch;
+            }
+
+            document.getElementById('editInvLowStock').value = branchLowPurch;
+            document.getElementById('editInvHqLowStock').value = hqLowPurch;
             
             document.getElementById('editInvOldQty').value = itemData.currentStock || 0;
             
@@ -6912,28 +6930,29 @@ window.saveInventoryEdit = async function() {
         let syncPromises = [];
         
         syncSnap.forEach(d => {
+            // 🔥 THE FIX: Apply the specific limit based on the branch it is updating!
+            let isMainOffice = d.data().branch === "Main Office";
+            let targetLowBase = isMainOffice ? hqLowBase : branchLowBase;
+
+            let syncPayload = {
+                name: name, category: category, 
+                purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
+                conversion: conversion, conversionRate: conversion,
+                purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion),
+                lowStockAlert: targetLowBase, 
+                reorderLevel: targetLowBase,
+                allowRequest: allowReqVal,
+                showInPrep: showPrepVal 
+            };
+            
+            if (photoUrl !== undefined) {
+                syncPayload.image = photoUrl;
+            }
+            
             if (d.id !== docId) {
-                let syncPayload = {
-                    name: name, // 🔥 INJECT THE NEW NAME!
-                    category: category, 
-                    purchaseUom: purchUom, purchUom: purchUom,
-                    baseUom: baseUom, uom: baseUom, 
-                    conversion: conversion, conversionRate: conversion,
-                    purchaseCost: purchCost, purchCost: purchCost, cost: purchCost,
-                    baseCost: (purchCost / conversion),
-                    
-                    // 🔥 THE CRASH FIX: Properly uses lowStockBase now!
-                    lowStockAlert: lowStockBase, 
-                    reorderLevel: lowStockBase,
-                    allowRequest: allowReqVal,
-                    showInPrep: showPrepVal 
-                };
-                
-                if (photoUrl !== undefined) {
-                    syncPayload.image = photoUrl;
-                }
-                
                 syncPromises.push(updateDoc(doc(db, "inventory", d.id), syncPayload));
+            } else {
+                updateDoc(itemRef, syncPayload); // Update the item you actually clicked on
             }
         });
 
@@ -21182,10 +21201,10 @@ window.loadFinancialFlow = async function() {
         Object.keys(expenseBreakdown).sort((a,b) => expenseBreakdown[b] - expenseBreakdown[a]).forEach(cat => {
             let safeCat = cat.replace(/'/g, "\\'");
             opExBoxes += `
-                <div onclick="window.openFlowOpExModal('${safeCat}')" style="background: white; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); min-width: 120px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.borderColor='#0ea5e9'; this.style.boxShadow='0 4px 6px rgba(14,165,233,0.2)';" onmouseout="this.style.borderColor='#cbd5e1'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.02)';">
-                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">${cat}</div>
-                    <div style="font-size: 14px; font-weight: 900; color: #0f172a;">₱${expenseBreakdown[cat].toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div style="font-size: 10px; color: #0ea5e9; margin-top: 5px; font-weight: bold;">🔍 Click to see trace logs</div>
+                <div onclick="window.openFlowOpExModal('${safeCat}')" style="background: white; border: 2px dashed #cbd5e1; padding: 15px; border-radius: 12px; width: 200px; cursor: pointer; transition: 0.2s; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#0ea5e9';" onmouseout="this.style.background='white'; this.style.borderColor='#cbd5e1';">
+                    <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">${cat}</div>
+                    <div style="font-size: 20px; font-weight: 900; color: #0f172a; margin-top: 5px;">-₱${expenseBreakdown[cat].toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="font-size: 10px; color: #0ea5e9; margin-top: 8px; font-weight: bold;">🔍 Click to see trace logs</div>
                 </div>
             `;
         });
@@ -23231,7 +23250,6 @@ if (typeof window.originalCheckManagerPin === 'undefined' && typeof window.check
 // ========================================================
 // 🛡️ EMERGENCY LOGIN FIX (UNDEFINED & PIN FREEZE)
 // ========================================================
-
 // 1. Instantly fix the "undefined" text on the screen
 setInterval(function() {
     document.querySelectorAll('h2, h3, h1, span, div').forEach(function(el) {
@@ -23243,38 +23261,44 @@ setInterval(function() {
     });
 }, 500);
 
-// 2. The Bulletproof PIN Checker
-if (typeof window.originalCheckManagerPin === 'undefined') {
-    window.originalCheckManagerPin = window.checkManagerPin;
-}
-
+// 2. The Bulletproof Debounced PIN Checker
+window.isLoggingIn = false;
 window.checkManagerPin = function() {
+    if (window.isLoggingIn) return; // 🛡️ Prevents double-firing ghost clicks!
+
     let pinBox = document.getElementById('managerPinInput') || document.querySelector('input[type="password"]');
     let enteredPin = pinBox ? pinBox.value.trim() : "";
-    
+    let err = document.getElementById('pinErrorMsg');
+
     if (!enteredPin) {
-        return Swal.fire('Error', 'Please enter a PIN.', 'warning');
+        if (err) { err.innerText = '❌ Please enter a PIN.'; err.style.display = 'block'; }
+        else Swal.fire('Error', 'Please enter a PIN.', 'warning');
+        return;
     }
 
-    if (!window.tempAuthData) {
-        return alert("Authentication data lost. Please refresh the page.");
-    }
+    if (!window.tempAuthData) return alert("Authentication data lost. Please refresh the page.");
 
-    // Grab the exact PIN from the database
-    let correctPin = window.tempAuthData.pin || window.tempAuthData.securityPin;
-    
-    if (!correctPin) {
-        return Swal.fire('No PIN Setup', 'This account does not have a PIN saved. Please go to the Staff & Security tab from the Owner account, edit their profile, and save a new PIN.', 'error');
-    }
+    let correctPin = String(window.tempAuthData.pin || window.tempAuthData.securityPin || "");
 
-    // Force both to be strings so they match perfectly!
-    if (String(enteredPin) === String(correctPin)) {
+    if (String(enteredPin) === correctPin) {
+        window.isLoggingIn = true; // Lock the door
+        if (err) err.style.display = 'none';
+        
         let btn = document.querySelector('button[onclick*="checkManagerPin"]');
         if (btn) btn.innerText = "Unlocking...";
+        
+        if (pinBox) { pinBox.value = ''; pinBox.style.borderColor = '#cbd5e1'; }
+        
         window.finalizeManagerLogin();
+        
+        setTimeout(() => { 
+            window.isLoggingIn = false; // Unlock after transition
+            if (btn) btn.innerText = "🔓 Unlock System";
+        }, 2000);
     } else {
-        Swal.fire('Incorrect PIN', 'The PIN you entered is wrong. Please try again.', 'error');
-        if (pinBox) pinBox.value = "";
+        if (pinBox) { pinBox.value = ""; pinBox.style.borderColor = '#ef4444'; pinBox.focus(); }
+        if (err) { err.innerText = '❌ ACCESS DENIED. INVALID PIN.'; err.style.display = 'block'; }
+        else Swal.fire('Incorrect PIN', 'The PIN you entered is wrong. Please try again.', 'error');
     }
 };
 
@@ -23283,11 +23307,9 @@ window.checkManagerPin = function() {
 // ========================================================
 
 window.publishScheduleToApps = async function() {
-    // 1. Identify which branch tab the Manager is currently looking at
     let activeTabBtn = document.querySelector('.tab-container .tab-btn.active');
     let targetBranch = activeTabBtn ? activeTabBtn.innerText.replace(' Schedule', '').trim() : 'All Branches';
 
-    // 2. 1-Click Confirmation Popup
     const confirm = await Swal.fire({
         title: `📢 Publish ${targetBranch} Schedule?`,
         html: `This will instantly push the <b>Schedule Message.jpg</b> image to all staff tablets at ${targetBranch}.<br><br><span style="color:#0ea5e9; font-weight:bold;">They will be forced to click 'Acknowledge' to clear the screen.</span>`,
@@ -23299,26 +23321,21 @@ window.publishScheduleToApps = async function() {
         customClass: { popup: 'rounded-2xl shadow-xl' }
     });
 
-    // 3. Send to Database
     if (confirm.isConfirmed) {
         Swal.fire({title: 'Publishing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
-            // 🔥 THE FIX: Hardcoded URL! It pulls the image directly from your Vercel/GitHub root folder!
             let fixedImageUrl = "https://takodeal-owner.vercel.app/Schedule%20Message.jpg";
-
             await window.addDoc(window.collection(window.db, "announcements"), {
                 title: `Official Schedule: ${targetBranch}`,
-                message: "", // Intentionally blank so only the image shows!
+                message: "", 
                 images: [fixedImageUrl],
                 branchTarget: targetBranch,
                 active: true,
-                isSchedule: true, // 🔥 THE MAGIC FLAG THAT TRIGGERS THE FULL-SCREEN ALARM
+                isSchedule: true, 
                 timestamp: window.serverTimestamp(),
                 author: window.sessionUser ? window.sessionUser.cashierName : 'Management'
             });
-
             Swal.fire('✅ Published!', `The schedule notification has been securely pushed to ${targetBranch}.`, 'success');
-            
         } catch (e) {
             console.error(e); 
             Swal.fire('Error', 'Failed to publish. Check connection.', 'error');
