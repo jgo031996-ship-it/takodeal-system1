@@ -1790,6 +1790,54 @@ window.openEndShiftClearance = async function() {
     } else {
         console.warn("HTML ID 'dynamicShiftPrepLogs' is missing. Skipping prep fetch.");
     }
+ // 3. FETCH MANDATORY BLIND COUNT ITEMS
+    let blindContainer = document.getElementById('dynamicBlindCountList');
+    if (blindContainer) {
+        blindContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #888;">Fetching required items...</div>';
+        try {
+            const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+            let auditItemsList = [];
+            if (configSnap.exists() && configSnap.data().shiftAuditItems) {
+                auditItemsList = configSnap.data().shiftAuditItems.map(i => i.trim());
+            }
+
+            if (auditItemsList.length === 0) {
+                blindContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #0284c7; font-style: italic;">No mandatory items set by HQ.</div>';
+            } else {
+                let html = '';
+                window.currentBlindCountItems = []; 
+                
+                for (let itemName of auditItemsList) {
+                    const invQ = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch), where("name", "==", itemName));
+                    const invSnap = await getDocs(invQ);
+                    
+                    if (!invSnap.empty) {
+                        let invData = invSnap.docs[0].data();
+                        window.currentBlindCountItems.push({
+                            name: itemName,
+                            systemExpected: parseFloat(invData.currentStock) || 0,
+                            baseCost: parseFloat(invData.baseCost) || parseFloat(invData.cost) || 0,
+                            uom: invData.uom || 'units'
+                        });
+                        
+                        html += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #bae6fd; padding: 8px 0;">
+                                <strong style="color: #0369a1; font-size: 14px;">${itemName}</strong>
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <input type="number" class="blind-count-input" data-name="${itemName}" placeholder="Qty" style="width: 70px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none;">
+                                    <span style="font-size: 11px; color: #64748b;">${invData.uom || 'units'}</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                blindContainer.innerHTML = html || '<div style="text-align:center; font-size: 13px; color: #dc2626;">Items not found in inventory.</div>';
+            }
+        } catch(e) {
+            console.error("Blind Count Fetch Error:", e);
+            blindContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">Error fetching items.</div>';
+        }
+    }
 };
 
 // Also apply a crash-proof wrapper to the total calculator just in case!
@@ -1827,6 +1875,35 @@ window.submitComprehensiveCloseShift = async function () {
     }
 
     try {
+        // 0. GATHER AND VALIDATE BLIND COUNT (Must be done before locking the button!)
+        let physicalStockCount = [];
+        let missingBlindCounts = false;
+        
+        document.querySelectorAll('.blind-count-input').forEach(input => {
+            let val = input.value.trim();
+            if (val === "") {
+                missingBlindCounts = true;
+            } else {
+                let itemName = input.getAttribute('data-name');
+                let actualCount = parseFloat(val);
+                let memItem = window.currentBlindCountItems.find(i => i.name === itemName);
+                
+                if (memItem) {
+                    physicalStockCount.push({
+                        name: itemName,
+                        systemExpected: memItem.systemExpected,
+                        actualCount: actualCount,
+                        baseCost: memItem.baseCost,
+                        uom: memItem.uom
+                    });
+                }
+            }
+        });
+    
+        if (missingBlindCounts) {
+            Swal.fire('⛔ INCOMPLETE COUNT', `You must physically count and enter the quantity for ALL mandatory items before ending your shift.`, 'error');
+            return;
+        }
         // 1. Read Cash Drawer Securely
         let declaredCash = 0;
         let cashBreakdown = {};
@@ -1985,7 +2062,7 @@ window.submitComprehensiveCloseShift = async function () {
             totalDigitalSales: totalDigitalSales,
             digitalBreakdown: digitalBreakdown,
             cashBreakdown: cashBreakdown, 
-            physicalStockCount: {}, 
+            physicalStockCount: physicalStockCount,
             status: "Closed"
         });
 
@@ -2085,7 +2162,19 @@ window.submitComprehensiveCloseShift = async function () {
                 }
             }
         } catch(e) { console.error("Mall Branch Deposit Error:", e); }
-
+        
+        // 🚨 STOCK VARIANCE ALERTS FOR MANAGER
+        for (let item of physicalStockCount) {
+            let variance = item.actualCount - item.systemExpected;
+            if (variance < 0) {
+                let valueLost = Math.abs(variance) * item.baseCost;
+                await addDoc(collection(db, "manager_alerts"), {
+                    type: "STOCK_SHORTAGE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
+                    message: `STOCK SHORTAGE: ${cashierName} reported ${item.actualCount} ${item.uom} of ${item.name} (System Expected: ${item.systemExpected.toFixed(1)}). Loss Value: ₱${valueLost.toFixed(2)}`,
+                    timestamp: serverTimestamp(), isRead: false
+                });
+            }
+        }
         // 8. Deduct Ingredient Burn
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
@@ -5885,15 +5974,27 @@ window.openShiftModal = function() {
                 // 🔥 THE FIX: Keep it BLIND! Never auto-fill the amount!
                 inputStart.value = ""; 
 
+                // 🔥 DISPLAY THE BLIND COUNT HANDOVER TO THE NEXT SHIFT
+                let stockNotes = '';
+                if (lastShift.physicalStockCount && lastShift.physicalStockCount.length > 0) {
+                    stockNotes = `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #475569; text-align: left;">
+                        <strong style="color: #0f172a; display: block; margin-bottom: 5px;">📦 Stock Handover (Reported by ${lastShift.cashier}):</strong>`;
+                    
+                    lastShift.physicalStockCount.forEach(item => {
+                        stockNotes += `<div style="display: flex; justify-content: space-between;"><span>${item.name}</span> <strong style="color: #0284c7;">${item.actualCount} ${item.uom}</strong></div>`;
+                    });
+                    stockNotes += `</div>`;
+                }
+
                 // We allow a tiny 5 centavo tolerance for floating point math
                 if (Math.abs(diff) <= 0.05) {
-                    noteEl.innerHTML = `✅ The previous shift closed with a <b>Perfect Count</b>.`;
+                    noteEl.innerHTML = `✅ The previous shift closed with a <b>Perfect Count</b>.${stockNotes}`;
                     noteEl.style.background = "#dcfce7"; noteEl.style.color = "#16a34a"; noteEl.style.border = "1px solid #bbf7d0";
                 } else if (diff > 0.05) {
-                    noteEl.innerHTML = `⚠️ The previous shift closed with a <b>CASH OVERAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b45309;">Please double-count the drawer carefully.</span>`;
+                    noteEl.innerHTML = `⚠️ The previous shift closed with a <b>CASH OVERAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b45309;">Please double-count the drawer carefully.</span>${stockNotes}`;
                     noteEl.style.background = "#fffbeb"; noteEl.style.color = "#d97706"; noteEl.style.border = "1px solid #fde68a";
                 } else {
-                    noteEl.innerHTML = `🚨 The previous shift closed with a <b>CASH SHORTAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b91c1c;">Please double-count the drawer carefully.</span>`;
+                    noteEl.innerHTML = `🚨 The previous shift closed with a <b>CASH SHORTAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b91c1c;">Please double-count the drawer carefully.</span>${stockNotes}`;
                     noteEl.style.background = "#fef2f2"; noteEl.style.color = "#dc2626"; noteEl.style.border = "1px solid #fecaca";
                 }
                 noteEl.style.display = "block";
@@ -7261,7 +7362,7 @@ window.MASTER_CloseShift = async function () {
             totalDigitalSales: totalDigitalSales,
             digitalBreakdown: digitalBreakdown,
             cashBreakdown: cashBreakdown, 
-            physicalStockCount: {}, 
+            physicalStockCount: physicalStockCount,
             status: "Closed"
         });
 
@@ -7336,6 +7437,19 @@ window.MASTER_CloseShift = async function () {
             }
         } catch(e) { console.error("Royalty Engine Error:", e); }
 
+        
+        // 🚨 STOCK VARIANCE ALERTS FOR MANAGER
+        for (let item of physicalStockCount) {
+            let variance = item.actualCount - item.systemExpected;
+            if (variance < 0) {
+                let valueLost = Math.abs(variance) * item.baseCost;
+                await addDoc(collection(db, "manager_alerts"), {
+                    type: "STOCK_SHORTAGE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
+                    message: `STOCK SHORTAGE: ${cashierName} reported ${item.actualCount} ${item.uom} of ${item.name} (System Expected: ${item.systemExpected.toFixed(1)}). Loss Value: ₱${valueLost.toFixed(2)}`,
+                    timestamp: serverTimestamp(), isRead: false
+                });
+            }
+        }
         // 8. Deduct Ingredient Burn
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
