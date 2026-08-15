@@ -559,6 +559,9 @@
                     🕒 Parked Orders
                     <span id="parkedBadge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">0</span>
                   </button>
+                  <button id="btnAuditModeToggle" onclick="window.toggleAuditMode(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #334155; color: white; border: none; border-radius: 8px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 8px; transition: 0.2s;">
+                    ⏸️ Pause Inventory (Audit Mode)
+                  </button>
 
                   <div style="border-top: 1px dashed #cbd5e1; margin-top: 4px; padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                       <label style="font-size: 13px; font-weight: bold; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center;">
