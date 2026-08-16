@@ -1816,7 +1816,12 @@ window.openEndShiftClearance = async function() {
                 let html = '';
                 window.currentBlindCountItems = []; 
                 
-                if (!invSnap.empty) {
+                for (let itemName of auditItemsList) {
+                    // 🔥 THE FIX: Re-added the missing database query here!
+                    const invQ = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch), where("name", "==", itemName));
+                    const invSnap = await getDocs(invQ);
+                    
+                    if (!invSnap.empty) {
                         let invData = invSnap.docs[0].data();
                         let bUom = invData.uom || 'units';
                         let pUom = invData.purchaseUom || invData.purchUom || bUom;
@@ -1856,11 +1861,12 @@ window.openEndShiftClearance = async function() {
                             </div>
                         `;
                     }
+                }
                 blindContainer.innerHTML = html || '<div style="text-align:center; font-size: 13px; color: #dc2626;">Items not found in inventory.</div>';
             }
         } catch(e) {
             console.error("Blind Count Fetch Error:", e);
-            blindContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">Error fetching items.</div>';
+            blindContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">Error fetching items. Check console.</div>';
         }
     }
 };
