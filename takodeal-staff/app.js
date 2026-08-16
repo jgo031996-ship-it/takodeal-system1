@@ -3165,3 +3165,133 @@ window.submitScheduleAck = async function(announcementId) {
         btn.innerText = "✅ I ACKNOWLEDGE MY SHIFTS"; btn.disabled = false;
     }
 };
+
+// ========================================================
+// 🚨 STAFF APP: HR SANCTION INTERCEPTOR & SIGNATURE ENGINE
+// ========================================================
+window.hasSignedStaffNTE = false;
+
+window.initStaffAppSignaturePad = function() {
+    const canvas = document.getElementById('staffAppSignatureCanvas');
+    if (!canvas) return;
+    
+    // Sync resolution to device width for perfect tracking on phones
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+    window.hasSignedStaffNTE = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#0f172a';
+
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+    };
+
+    const startDraw = (e) => { 
+        isDrawing = true; window.hasSignedStaffNTE = true; 
+        const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); e.preventDefault(); 
+    };
+    const draw = (e) => { 
+        if (!isDrawing) return; 
+        const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); e.preventDefault(); 
+    };
+    const stopDraw = () => { isDrawing = false; ctx.closePath(); };
+
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopDraw);
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDraw);
+};
+
+window.clearStaffAppSignature = function() {
+    const canvas = document.getElementById('staffAppSignatureCanvas');
+    if (canvas) {
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        window.hasSignedStaffNTE = false;
+    }
+};
+
+window.checkActiveSanctions = async function(staffName) {
+    if (!staffName) return;
+    
+    try {
+        // Query Firebase for unresolved sanctions for this specific user
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            let sanction = snap.docs[0].data();
+            let sanctionId = snap.docs[0].id;
+
+            // Inject the details into the lockdown modal
+            document.getElementById('activeSanctionId').value = sanctionId;
+            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
+            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
+            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
+            document.getElementById('sanctionStaffReply').value = ""; 
+
+            // Show the unbreakable overlay
+            document.getElementById('staffAppSanctionModal').style.display = 'flex';
+            
+            // Wake up the signature pad
+            setTimeout(() => { window.initStaffAppSignaturePad(); }, 300);
+        }
+    } catch (e) { console.error("Error checking sanctions:", e); }
+};
+
+window.submitStaffAppSanctionReply = async function() {
+    let sanctionId = document.getElementById('activeSanctionId').value;
+    let replyText = document.getElementById('sanctionStaffReply').value.trim();
+
+    if (!replyText || replyText.length < 15) {
+        Swal.fire('Explanation Too Short', 'You must provide a detailed written explanation (at least 15 characters) before unlocking the app.', 'warning');
+        return;
+    }
+
+    if (!window.hasSignedStaffNTE) {
+        Swal.fire('Signature Required', 'Please sign inside the signature box using your finger to legally acknowledge this notice.', 'error');
+        return;
+    }
+
+    let btn = document.getElementById('btnSubmitAppSanction');
+    btn.innerText = "⏳ Submitting to HQ..."; btn.disabled = true;
+
+    try {
+        const canvas = document.getElementById('staffAppSignatureCanvas');
+        const signatureDataUrl = canvas.toDataURL('image/png');
+
+        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
+            staffReply: replyText,
+            signatureBase64: signatureDataUrl, 
+            status: "Replied",
+            repliedAt: serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '✅ Notice Acknowledged', 
+            text: 'Your explanation and signature have been securely logged to HQ. Your app is now unlocked.', 
+            icon: 'success', 
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        document.getElementById('staffAppSanctionModal').style.display = 'none';
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to submit. Check internet connection.', 'error');
+    } finally {
+        btn.innerText = "Submit & Unlock App"; btn.disabled = false;
+    }
+};
