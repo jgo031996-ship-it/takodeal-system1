@@ -23404,19 +23404,35 @@ window.loadShiftHandovers = async function() {
 
             let dateStr = data.endTime ? data.endTime.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             
-            // Calculate total financial loss for this specific handover
+            // Calculate total financial loss and track any overages/discrepancies
             let totalLoss = 0;
+            let hasOverage = false;
+            let totalItemsWithVariance = 0;
+
             data.physicalStockCount.forEach(item => {
                 let expected = parseFloat(item.systemExpected) || 0;
                 let actual = parseFloat(item.actualCount) || 0;
                 let variance = actual - expected;
+                
                 if (variance < 0) {
                     totalLoss += Math.abs(variance) * (parseFloat(item.baseCost) || 0);
+                    totalItemsWithVariance++;
+                } else if (variance > 0) {
+                    hasOverage = true;
+                    totalItemsWithVariance++;
                 }
             });
 
-            let lossColor = totalLoss > 0 ? '#dc2626' : '#16a34a';
-            let lossText = totalLoss > 0 ? `₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}` : 'Perfect Match';
+            let lossColor = '#16a34a';
+            let lossText = 'Perfect Match';
+
+            if (totalLoss > 0) {
+                lossColor = '#dc2626';
+                lossText = `Loss: ₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            } else if (hasOverage) {
+                lossColor = '#d97706'; // Orange for warning
+                lossText = `Overage (+${totalItemsWithVariance} items)`;
+            }
             let safeData = encodeURIComponent(JSON.stringify(data.physicalStockCount));
 
             html += `
