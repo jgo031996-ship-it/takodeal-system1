@@ -9809,6 +9809,10 @@ window.ownerBypassLogin = async function() {
 window.isAuditModeActive = localStorage.getItem('takodeal_audit_mode') === 'true';
 
 window.toggleAuditMode = async function() {
+    // 🔥 UI FIX: Instantly close the dropdown menu so it doesn't get stuck behind the popup!
+    let dropdown = document.getElementById('posSettingsDropdown');
+    if (dropdown) dropdown.style.display = 'none';
+
     window.isAuditModeActive = !window.isAuditModeActive;
     localStorage.setItem('takodeal_audit_mode', window.isAuditModeActive);
     
