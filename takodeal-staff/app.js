@@ -1557,31 +1557,47 @@ window.submitStaffRequest = async function() {
     let fileToUpload = null;
 
     if (payload.type === 'Leave') {
-        payload.startDate = document.getElementById('reqStart').value; payload.endDate = document.getElementById('reqEnd').value; payload.reason = document.getElementById('reqReason').value.trim();
+        payload.startDate = document.getElementById('reqStart') ? document.getElementById('reqStart').value : ''; 
+        payload.endDate = document.getElementById('reqEnd') ? document.getElementById('reqEnd').value : ''; 
+        payload.reason = document.getElementById('reqReason') ? document.getElementById('reqReason').value.trim() : '';
         if (!payload.startDate || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
     } else if (payload.type === 'Cash Advance') {
-        payload.amount = parseFloat(document.getElementById('reqAmount').value); payload.reason = document.getElementById('reqReason').value.trim();
+        payload.amount = parseFloat(document.getElementById('reqAmount').value); 
+        payload.reason = document.getElementById('reqReason') ? document.getElementById('reqReason').value.trim() : '';
         if (!payload.amount || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
     } else if (payload.type === 'Staff Meal') {
-        payload.item = document.getElementById('reqItem').value.trim(); payload.amount = parseFloat(document.getElementById('reqAmount').value); fileToUpload = document.getElementById('reqMealProof').files[0];
+        payload.item = document.getElementById('reqItem') ? document.getElementById('reqItem').value.trim() : ''; 
+        payload.amount = parseFloat(document.getElementById('reqAmount').value); 
+        fileToUpload = document.getElementById('reqMealProof') ? document.getElementById('reqMealProof').files[0] : null;
         if (!payload.item || !payload.amount || !fileToUpload) return Swal.fire('Incomplete', 'You must attach the receipt photo.', 'warning');
     }
-    // 🛡️ THE FIX: Strip out ANY undefined values to prevent Firebase from crashing!
-    Object.keys(payload).forEach(key => payload[key] === undefined && delete payload[key]);
+
+    // 🛡️ THE BULLETPROOF FIX: Deep clean undefined values before sending to Firebase!
+    let cleanPayload = {};
+    for (let key in payload) {
+        if (payload[key] !== undefined) {
+            cleanPayload[key] = payload[key];
+        }
+    }
+
     let btn = document.getElementById('btnSubmitReq');
     btn.innerText = fileToUpload ? "⏳ Uploading Photo..." : "⏳ Sending..."; btn.disabled = true;
 
     try {
         if (fileToUpload) {
-            const fileName = `staff_requests/meal_${payload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileToUpload.name.split('.').pop()}`;
+            const fileName = `staff_requests/meal_${cleanPayload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileToUpload.name.split('.').pop()}`;
             const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload);
-            payload.proofImageUrl = await getDownloadURL(snapshot.ref);
+            cleanPayload.proofImageUrl = await getDownloadURL(snapshot.ref);
         }
-        await addDoc(collection(db, "staff_requests"), payload);
+        await addDoc(collection(db, "staff_requests"), cleanPayload);
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Submitted to HQ!', showConfirmButton: false, timer: 2000});
         document.getElementById('requestModal').style.display = 'none';
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to send request.', 'error'); } 
-    finally { btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; }
+    } catch(e) { 
+        console.error(e); 
+        Swal.fire('Error', 'Failed to send request.', 'error'); 
+    } finally { 
+        btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; 
+    }
 };
 
 window.playNotificationPing = function() {
@@ -1956,12 +1972,10 @@ window.loadPayslipVault = async function() {
         return isNaN(d.getTime()) ? new Date() : d;
     };
 
-    // 1. Calculate Current AND Previous Cutoff Dates
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
-    let startDateStr, endDateStr;
-    let prevStartStr, prevEndStr; // 🔥 Added for Pending Distribution Logic
+    let startDateStr, endDateStr, prevStartStr, prevEndStr; 
 
     if (today.getDate() <= 15) {
         startDateStr = `${yyyy}-${mm}-01`;
@@ -1997,16 +2011,6 @@ window.loadPayslipVault = async function() {
         let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
-        const parseTimeStr = (timeStr) => {
-            let t = timeStr.toLowerCase().replace(/\s/g, '');
-            let isPM = t.includes('pm'); let isNN = t.includes('nn');
-            let parts = t.replace(/(am|pm|nn)/, '').split(':');
-            let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
-            if ((isPM || isNN) && hour < 12) hour += 12;
-            if (t.includes('am') && hour === 12) hour = 0;
-            return hour + (minute / 60);
-        };
-
         const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
         const attSnap = await getDocs(attQ);
 
@@ -2018,7 +2022,6 @@ window.loadPayslipVault = async function() {
                 if (t >= startTimestamp && t <= endTimestamp) filteredAttLogs.push(log);
             }
         });
-        
         filteredAttLogs.sort((a, b) => safeDate(a.timestamp).getTime() - safeDate(b.timestamp).getTime());
 
         const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName));
@@ -2057,24 +2060,6 @@ window.loadPayslipVault = async function() {
                             let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
                             if (assignedShiftId && scheduleData.branchConfig && scheduleData.branchConfig[branchSafe]) {
                                 wasScheduled = true;
-                                let shiftConfig = scheduleData.branchConfig[branchSafe].find(s => s.id === assignedShiftId);
-                                if (shiftConfig) {
-                                    if (shiftConfig.startTime) {
-                                        let parts = String(shiftConfig.startTime).split(':');
-                                        expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                                    } else if (shiftConfig.name) {
-                                        let match = shiftConfig.name.match(/\((.*?)-/);
-                                        if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
-                                    }
-                                    if (expectedStartHour !== null) {
-                                        let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                        let diffHours = actualHour - expectedStartHour;
-                                        if (diffHours > -1.5 && diffHours < 4) {
-                                            lateMinutes = Math.floor(diffHours * 60);
-                                            if (lateMinutes < 0) lateMinutes = 0;
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -2086,10 +2071,7 @@ window.loadPayslipVault = async function() {
                 let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
                 let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
 
-                activeShifts[staffName] = { 
-                    time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, 
-                    lateExempted: log.lateExempted || false, manualPenalty: manualPenalty, wasScheduled: wasScheduled 
-                };
+                activeShifts[staffName] = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false, manualPenalty: manualPenalty, wasScheduled: wasScheduled };
 
             } else if (logType.includes("TIME OUT") && activeShifts[staffName]) {
                 let timeIn = activeShifts[staffName].time; let lMins = activeShifts[staffName].lateMinutes;
@@ -2109,81 +2091,44 @@ window.loadPayslipVault = async function() {
                 let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
                 let shiftMultiplier = 1; 
         
-                if (hoursWorked < 1 && !isAutoClosed) {
-                    shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
-                } else if (hoursWorked >= 13.5) {
-                    shiftMultiplier = 2; totalBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`;
-                } else if (hoursWorked < 8 && !isAutoClosed) {
-                    if (wasScheduled) {
-                        let missingHours = (8 - hoursWorked).toFixed(1);
-                        remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
-                    } else { remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
-                }
+                if (hoursWorked < 1 && !isAutoClosed) { shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`; } 
+                else if (hoursWorked >= 13.5) { shiftMultiplier = 2; totalBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`; } 
+                else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
 
                 let outHour = timeOut.getHours(); let thisShiftNightBonus = 0;
                 if (outHour >= 0 && outHour <= 4 && isNightEligible) { thisShiftNightBonus = 50; totalBonuses += thisShiftNightBonus; }
 
-                let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
-                let hType = holidaysObj[logDateStr];
-                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
-                let hBonus = 0;
-
-                if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; totalBonuses += hBonus; remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
-                else if (hType === 'Special') { hBonus = baseForHoliday * 0.10; totalBonuses += hBonus; remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Spl Hol: +₱${hBonus.toFixed(2)})</span>`; }
-
-                if (lMins > 0) {
-                    if (lExempt) remark += `<br><span style="color:#16a34a; font-weight:bold;">(Late Exempted)</span>`;
-                    else { remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late ${lMins}m = -₱${lAmt.toFixed(2)})</span>`; totalLatePenalty += lAmt; }
-                }
-
-                if (totalManualPenaltyForShift > 0) {
-                    remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`;
-                    totalLatePenalty += totalManualPenaltyForShift;
-                }
+                if (lMins > 0 && !lExempt) { remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late = -₱${lAmt.toFixed(2)})</span>`; totalLatePenalty += lAmt; }
+                if (totalManualPenaltyForShift > 0) { remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`; totalLatePenalty += totalManualPenaltyForShift; }
 
                 shiftsWorked += shiftMultiplier; totalHours += hoursWorked;
                 shiftPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
                 delete activeShifts[staffName];
-            } else if (manualPenalty > 0) {
-                totalLatePenalty += manualPenalty;
-                let logTime = log.timestamp ? safeDate(log.timestamp) : new Date();
-                shiftPairs.push({ dateObj: logTime, in: logTime, out: null, hrs: 0, remark: `<span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${manualPenalty.toFixed(2)} Manual Penalty</span>`, lateMins: 0 });
             }
         });
 
         if (activeShifts[staffName]) {
             let activeTime = activeShifts[staffName].time;
-            let hoursSince = (new Date() - activeTime) / (1000 * 60 * 60);
-            let isOrphaned = hoursSince > 18; 
-
+            let isOrphaned = ((new Date() - activeTime) / (1000 * 60 * 60)) > 18; 
             shiftPairs.push({ 
                 dateObj: activeTime, in: activeTime, out: isOrphaned ? null : "Active Shift", hrs: 0, 
                 remark: isOrphaned ? `<span style="color:#ef4444; font-weight:bold;">Missing Time Out</span>` : `<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>`,
-                lateMins: (!activeShifts[staffName].lateExempted && activeShifts[staffName].lateMinutes > 0) ? activeShifts[staffName].lateMinutes : 0,
                 isActive: !isOrphaned, isMissingOut: isOrphaned
             });
         }
 
         bonusesList.forEach(b => {
-            let amt = parseFloat(b.amount) || 0; let bDate = b.dateAdded ? safeDate(b.dateAdded) : new Date();
-            let dateStr = bDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            let existingLog = shiftPairs.find(l => l.in && l.in.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr);
-            if (existingLog) {
-                if (existingLog.remark.includes('Complete')) existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
-                existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
-            } else {
-                shiftPairs.push({ dateObj: bDate, in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`, lateMins: 0 });
-            }
+            shiftPairs.push({ dateObj: safeDate(b.dateAdded), in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${(parseFloat(b.amount) || 0).toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`, lateMins: 0 });
         });
 
         let estGross = shiftsWorked * dailyRate;
 
+        // 🔥 THE LOANDATA FIX: Fetching Data BEFORE we use it!
         const dedQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
         const dedSnap = await getDocs(dedQ);
         let unpaidVales = 0; let activeDeductions = [];
         dedSnap.forEach(d => { let val = parseFloat(d.data().amount) || 0; unpaidVales += val; activeDeductions.push(d.data()); });
 
-        // 🔥 FIX 1: Fetch the Loan Ledger Data!
         const ledgerQ = query(collection(db, "staff_ledger"), where("staffName", "==", staffName));
         const ledgerSnap = await getDocs(ledgerQ);
         let loanData = null;
@@ -2196,17 +2141,10 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
 
-        let grossRow = document.getElementById('liveEstGross').parentElement;
-        if (!document.getElementById('liveEstOTRow')) {
-            grossRow.insertAdjacentHTML('afterend', `<div id="liveEstOTRow" style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;"><span style="color: #64748b; font-weight: bold;">Overtime / Bonuses:</span><strong id="liveEstOT" style="color: #0ea5e9;">+₱0.00</strong></div>`);
-        }
-        document.getElementById('liveEstOT').innerText = '+₱' + totalBonuses.toLocaleString(undefined, {minimumFractionDigits: 2});
-
         let logsContainer = document.getElementById('liveCutoffDetailedLogs');
         if (!logsContainer) {
-            let liveSection = document.getElementById('payslipLiveSection');
             logsContainer = document.createElement('div'); logsContainer.id = 'liveCutoffDetailedLogs';
-            liveSection.appendChild(logsContainer);
+            document.getElementById('payslipLiveSection').appendChild(logsContainer);
         }
 
         let detailsHtml = `
@@ -2225,13 +2163,10 @@ window.loadPayslipVault = async function() {
                 let dateStr = p.dateObj.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
                 let inStr = p.in ? p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : '---';
                 let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.isMissingOut ? '<span style="color:#ef4444; font-weight:bold;">No Record</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---'));
-                
                 let safeHrs = parseFloat(p.hrs);
                 let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : (isNaN(safeHrs) ? '0.00h' : `${safeHrs.toFixed(2)}h`);
                 
                 let inColor = '#16a34a'; 
-                if (p.lateMins && p.lateMins > 0) { inStr += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${p.lateMins}m</span>`; inColor = '#dc2626'; }
-
                 let outColor = '#16a34a'; 
                 if (p.remark && (p.remark.includes('Short') || p.remark.includes('INVALID') || p.remark.includes('Missed') || p.remark.includes('Ignored'))) outColor = '#dc2626'; 
                 if (p.isActive) outColor = '#0ea5e9'; 
@@ -2249,7 +2184,7 @@ window.loadPayslipVault = async function() {
                 <div style="max-height: 150px; overflow-y: auto;">
         `;
 
-        // 🔥 INJECT LONG-TERM COMPANY LOAN INTO UI
+        // INJECT LONG-TERM COMPANY LOAN INTO UI
         if (loanData) {
             let remBal = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
             if (remBal > 0) {
@@ -2283,7 +2218,6 @@ window.loadPayslipVault = async function() {
             detailsHtml += `<div style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px;">No short-term vales or meals.</div>`;
         }
         detailsHtml += `</div></div>`;
-
         logsContainer.innerHTML = detailsHtml;
 
         // 🔥 FETCH PAYROLL RECORDS
@@ -2295,7 +2229,6 @@ window.loadPayslipVault = async function() {
         prSnap.forEach(docSnap => allRecords.push({id: docSnap.id, ...docSnap.data()}));
         allRecords.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
 
-        // 🔥 FIX: AWAITING HQ DISTRIBUTION FOR PREVIOUS CUTOFF
         let hasPrevCutoffRecord = allRecords.some(r => r.startDate === prevStartStr || (r.frozenData && r.frozenData.start === prevStartStr));
         
         if (!hasPrevCutoffRecord) {
@@ -2364,10 +2297,6 @@ window.loadPayslipVault = async function() {
     } catch (e) {
         console.error("Payslip Fetch Error:", e);
         document.getElementById('liveEstNetPay').innerText = "Error";
-        let parentEl = document.getElementById('liveEstNetPay').parentElement;
-        if(parentEl && !parentEl.querySelector('.error-text')) {
-            parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
-        }
     }
 };
 
@@ -3495,19 +3424,6 @@ window.loadMyLoanLedger = async function() {
     let container = document.getElementById('staffMyLoansContent');
     let staffName = localStorage.getItem('takodeal_staff_name') || localStorage.getItem('cashierName');
     
-    container.innerHTML = '<div style="text-align:center; padding: 20px; color:#b45309; font-weight:bold;">⏳ Fetching ledger...</div>';
-
-    try {
-        // Fetch Master Ledger
-        let btn = document.getElementById('tabReq' + t); 
-        let form = document.getElementById('formReq' + t);
-        if (form) form.style.display = (t === 'Loans') ? 'block' : 'none';
-        if (btn) {
-            if (t === 'Loans') { btn.style.borderBottom = "3px solid #3b82f6"; btn.style.color = "#0f172a"; btn.style.background = "white"; }
-            else { btn.style.borderBottom = "3px solid transparent"; btn.style.color = "#64748b"; btn.style.background = "transparent"; }
-        }
-    });
-
     document.getElementById('reqModalTitle').innerText = "My Company Loans";
     document.getElementById('requestModal').style.display = 'flex';
     container.innerHTML = '<div style="text-align:center; padding: 20px; color:#b45309; font-weight:bold;">⏳ Fetching ledger...</div>';
