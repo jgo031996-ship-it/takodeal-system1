@@ -10931,7 +10931,8 @@ window.finalizePayslip = async function() {
 
         await addDoc(collection(db, "payroll_records"), {
             staffName: data.name, startDate: data.start, endDate: data.end,
-            frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp()
+            frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp(),
+            acknowledged: false // 🔥 THE FIX: Flags it as unread for the Staff App!
         });
 
         Swal.fire({
@@ -16408,17 +16409,17 @@ window.offerRegularizationContract = async function() {
     if(!docId) return;
 
     let confirm = await Swal.fire({
-        title: 'Offer Regularization? 🌟',
-        text: `This will send the Official Regularization Contract to ${name}'s tablet. They will legally become a permanent employee!`,
+        title: 'Issue Official Contract? 📄',
+        text: `This will send the Official Employment Contract to ${name}'s tablet for their permanent digital signature.`,
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#10b981',
-        confirmButtonText: 'Yes, regularize them!'
+        confirmButtonText: 'Yes, dispatch contract!'
     });
 
     if(confirm.isConfirmed) {
         await updateDoc(doc(db, "cashiers", docId), { contractStatus: 'Pending Regularization' });
-        Swal.fire('Dispatched!', `The Regularization contract is waiting on ${name}'s screen.`, 'success');
+        Swal.fire('Dispatched!', `The contract is waiting on ${name}'s screen.`, 'success');
         document.getElementById('employeeProfileModal').style.display = 'none';
     }
 };
@@ -23583,4 +23584,59 @@ window.viewHandoverDetails = function(encodedData, cashierName) {
         confirmButtonColor: '#3b82f6',
         customClass: { popup: 'rounded-2xl shadow-xl' }
     });
+};
+
+// ========================================================
+// 🧾 MANAGER APP: VIEW SIGNED STAFF PAYSLIPS
+// ========================================================
+window.viewStaffSignedPayslips = async function() {
+    let staffName = document.getElementById('empFullName').value;
+    if (!staffName) return;
+
+    Swal.fire({title: 'Fetching Signed Payslips...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        const q = query(collection(db, "payroll_records"), where("staffName", "==", staffName), where("acknowledged", "==", true));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        let records = [];
+        snap.forEach(doc => records.push({id: doc.id, ...doc.data()}));
+        records.sort((a,b) => b.processedAt.toDate() - a.processedAt.toDate());
+
+        records.forEach(d => {
+            let pd = d.frozenData || {};
+            pd.processedAt = d.processedAt; 
+            pd.staffSignature = d.signatureBase64; // Pass the signature to the viewer!
+            
+            let dateStr = d.processedAt ? d.processedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
+            let signDateStr = d.acknowledgedAt ? d.acknowledgedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+            let safeData = encodeURIComponent(JSON.stringify(pd));
+
+            html += `
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 15px; margin-bottom: 15px; text-align: left; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h3 style="margin: 0 0 5px 0; color: #166534; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
+                        <div style="font-size: 11px; color: #15803d; font-weight: bold;">Signed on: ${signDateStr}</div>
+                        <div style="font-size: 16px; font-weight: 900; color: #16a34a; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                    </div>
+                    <div>
+                        <button onclick="window.viewPastPayslip('${safeData}')" style="background: #16a34a; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">🔍 View Document</button>
+                    </div>
+                </div>
+            `;
+        });
+
+        Swal.fire({
+            title: `🧾 Signed Payslips for ${staffName}`,
+            html: `<div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">${html || '<div style="color:#64748b; font-weight:bold; margin-top: 20px;">No signed payslips on file yet.</div>'}</div>`,
+            showConfirmButton: true,
+            confirmButtonText: 'Close',
+            confirmButtonColor: '#3b82f6',
+            width: 500,
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to fetch payslips.', 'error');
+    }
 };
