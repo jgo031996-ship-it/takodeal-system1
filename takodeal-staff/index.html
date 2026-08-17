@@ -266,6 +266,20 @@
                     <button class="req-card" onclick="window.openReqForm('Staff Meal')">🍔<br>Staff Meal</button>
                     <button class="req-card" onclick="window.openReqForm('Inbox')">📬<br>My Inbox</button>
                 </div>
+                <button onclick="window.loadMySanctionsHistory()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 15px; width: 100%; font-size: 14px; box-shadow: 0 2px 4px rgba(220,38,38,0.1);">
+                    ⚖️ View My Sanctions & NTEs
+                </button>
+
+                <!-- ⚖️ MY SANCTIONS HISTORY CONTAINER -->
+                <div id="staffSanctionsHistorySection" style="display: none; background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #fecaca; padding-bottom: 10px; margin-bottom: 15px;">
+                        <h3 style="margin: 0; color: #b91c1c; font-size: 16px;">⚖️ Disciplinary Records</h3>
+                        <button onclick="document.getElementById('staffSanctionsHistorySection').style.display='none'" style="background: #f1f5f9; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; color: #64748b; cursor: pointer;">Close</button>
+                    </div>
+                    <div id="mySanctionsList" style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
+                        <div style="text-align: center; color: #64748b; padding: 20px;">Loading records...</div>
+                    </div>
+                </div>
                 <div id="reqInboxContainer" style="margin-top: 20px; display: none;">
                     <h3 style="color: #0f766e; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">My Inbox</h3>
                     <div id="reqInboxList"></div>
