@@ -1618,7 +1618,6 @@ window.startInboxListener = function() {
 // ==========================================
 window.loadInbox = async function() {
     let listEl = document.getElementById('reqInboxList');
-    document.getElementById('reqInboxContainer').style.display = 'block';
     listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8;">Loading...</div>';
 
     try {
@@ -3496,9 +3495,10 @@ window.loadMyLoanLedger = async function() {
     let container = document.getElementById('staffMyLoansContent');
     let staffName = localStorage.getItem('takodeal_staff_name') || localStorage.getItem('cashierName');
     
-    // UI Tab switching logic
-    const tabs = ['Advance', 'Leave', 'Meal', 'Reason', 'Inbox', 'Loans'];
-    tabs.forEach(t => {
+    container.innerHTML = '<div style="text-align:center; padding: 20px; color:#b45309; font-weight:bold;">⏳ Fetching ledger...</div>';
+
+    try {
+        // Fetch Master Ledger
         let btn = document.getElementById('tabReq' + t); 
         let form = document.getElementById('formReq' + t);
         if (form) form.style.display = (t === 'Loans') ? 'block' : 'none';
