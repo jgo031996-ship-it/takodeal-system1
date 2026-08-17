@@ -2371,6 +2371,44 @@ window.loadPayslipVault = async function() {
 
         logsContainer.innerHTML = detailsHtml;
 
+        // 🔥 INJECT LONG-TERM COMPANY LOAN INTO DEDUCTIONS UI
+        if (loanData) {
+            let remBal = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
+            if (remBal > 0) {
+                detailsHtml += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 10px; border-radius: 6px; border: 1px dashed #fcd34d; background: #fffbeb; margin-bottom: 10px;">
+                        <div>
+                            <strong style="color: #b45309;">💳 Company Loan Balance</strong><br>
+                            <span style="font-size: 11px; color: #d97706;">Total Remaining Debt (Auto-Deducts ₱${(loanData.cutoffDeduction||0)}/Cutoff)</span>
+                        </div>
+                        <strong style="color: #dc2626; font-size: 16px;">-₱${remBal.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+                    </div>
+                `;
+            }
+        }
+
+        if (activeDeductions.length > 0) {
+            activeDeductions.forEach(d => {
+                let dDate = d.dateAdded || d.timestamp;
+                let dateStr = dDate ? safeDate(dDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+                detailsHtml += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0;">
+                        <div>
+                            <strong style="color: #334155;">${d.type}</strong><br>
+                            <span style="font-size: 11px; color: #64748b;">${dateStr} - <span style="color:#ef4444; font-weight:bold;">Unpaid</span> (${d.remarks || d.item || 'Salary Deduction'})</span>
+                        </div>
+                        <strong style="color: #dc2626;">-₱${parseFloat(d.amount).toFixed(2)}</strong>
+                    </div>
+                `;
+            });
+        } else {
+            detailsHtml += `<div style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px;">No short-term vales or meals.</div>`;
+        }
+        detailsHtml += `</div></div>`;
+
+        logsContainer.innerHTML = detailsHtml;
+
+        // 🔥 THE CRASH FIX: Cleanly routing Pending vs Past records!
         const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName));
         const prSnap = await getDocs(prQ);
 
@@ -2419,7 +2457,9 @@ window.loadPayslipVault = async function() {
         });
 
         document.getElementById('payslipPendingList').innerHTML = pendingHtml || '<div style="text-align:center; padding: 40px; color: #16a34a; font-weight: bold;">🎉 All payslips have been acknowledged!</div>';
-        document.getElementById('payslipHistoryList').innerHTML = pastHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
+        
+        let histList = document.getElementById('payslipHistoryList');
+        if (histList) histList.innerHTML = pastHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
 
         let badge = document.getElementById('pendingPayBadge');
         if (badge) {
@@ -2427,19 +2467,13 @@ window.loadPayslipVault = async function() {
             badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
         }
 
-        document.getElementById('payslipHistoryList').innerHTML = historyHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
-
     } catch (e) {
         console.error("Payslip Fetch Error:", e);
         document.getElementById('liveEstNetPay').innerText = "Error";
         let parentEl = document.getElementById('liveEstNetPay').parentElement;
-        if(parentEl) {
-            let errorP = parentEl.querySelector('.error-text');
-            if(!errorP) {
-                parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
-            }
+        if(parentEl && !parentEl.querySelector('.error-text')) {
+            parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
         }
-        document.getElementById('payslipHistoryList').innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444;">Error connecting to HQ database.</div>';
     }
 };
 
