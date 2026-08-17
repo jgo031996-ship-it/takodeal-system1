@@ -1530,6 +1530,7 @@ window.punchTime = async function(type) {
 // ==========================================
 window.openReqForm = function(type) {
     if (type === 'Inbox') return window.loadInbox();
+    if (type === 'Loans') return window.loadMyLoanLedger();
     let formHtml = ''; window.currentReqType = type;
     document.getElementById('reqModalTitle').innerText = type + " Request";
 
@@ -3592,4 +3593,96 @@ window.viewPastPayslip = function(encodedData) {
             swalHtml.appendChild(sigDiv);
         }
     }, 100);
+};
+
+// ========================================================
+// 💳 STAFF APP: MY LOAN LEDGER VIEWER
+// ========================================================
+window.loadMyLoanLedger = async function() {
+    let container = document.getElementById('staffMyLoansContent');
+    let staffName = localStorage.getItem('takodeal_staff_name') || localStorage.getItem('cashierName');
+    
+    // UI Tab switching logic
+    const tabs = ['Advance', 'Leave', 'Meal', 'Reason', 'Inbox', 'Loans'];
+    tabs.forEach(t => {
+        let btn = document.getElementById('tabReq' + t); 
+        let form = document.getElementById('formReq' + t);
+        if (form) form.style.display = (t === 'Loans') ? 'block' : 'none';
+        if (btn) {
+            if (t === 'Loans') { btn.style.borderBottom = "3px solid #3b82f6"; btn.style.color = "#0f172a"; btn.style.background = "white"; }
+            else { btn.style.borderBottom = "3px solid transparent"; btn.style.color = "#64748b"; btn.style.background = "transparent"; }
+        }
+    });
+
+    document.getElementById('reqModalTitle').innerText = "My Company Loans";
+    document.getElementById('requestModal').style.display = 'flex';
+    container.innerHTML = '<div style="text-align:center; padding: 20px; color:#b45309; font-weight:bold;">⏳ Fetching ledger...</div>';
+
+    try {
+        // Fetch Master Ledger
+        const ledgerQ = query(collection(db, "staff_ledger"), where("staffName", "==", staffName));
+        const ledgerSnap = await getDocs(ledgerQ);
+        
+        let remBal = 0;
+        let totalLoaned = 0;
+        let totalPaid = 0;
+        
+        if (!ledgerSnap.empty) {
+            let lData = ledgerSnap.docs[0].data();
+            totalLoaned = lData.totalLoaned || 0;
+            totalPaid = lData.totalPaid || 0;
+            remBal = totalLoaned - totalPaid;
+        }
+
+        // Fetch Trace Logs
+        const logQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName));
+        const logSnap = await getDocs(logQ);
+        
+        let logs = [];
+        logSnap.forEach(doc => {
+            let d = doc.data();
+            if (d.type && d.type.includes("Company Loan")) {
+                logs.push(d);
+            }
+        });
+
+        logs.sort((a,b) => (b.dateAdded?.toDate() || 0) - (a.dateAdded?.toDate() || 0));
+
+        let html = `
+            <div style="background: #fffbeb; border: 2px dashed #fcd34d; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 12px; font-weight: bold; color: #b45309; text-transform: uppercase;">Total Remaining Balance</div>
+                <div style="font-size: 38px; font-weight: 900; color: #dc2626; margin: 5px 0;">₱${remBal.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                <div style="font-size: 12px; color: #92400e; font-weight: bold;">(Total Loaned: ₱${totalLoaned.toLocaleString()} | Total Paid: ₱${totalPaid.toLocaleString()})</div>
+            </div>
+            <h4 style="color: #334155; margin-bottom: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">📜 Payment & Issuance Trace Logs</h4>
+        `;
+
+        if (logs.length === 0) {
+            html += '<div style="text-align:center; padding: 20px; color:#94a3b8; font-style:italic;">No loan records found.</div>';
+        } else {
+            logs.forEach(d => {
+                let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Unknown') : '';
+                let amt = parseFloat(d.amount) || 0;
+                
+                let isPayment = d.type.includes("Payment");
+                let color = isPayment ? "#16a34a" : "#dc2626";
+                let sign = isPayment ? "+ ₱" : "- ₱";
+                let bg = isPayment ? "#dcfce7" : "#fef2f2";
+
+                html += `
+                    <div style="background: ${bg}; border: 1px solid ${color}50; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong style="color: ${color}; font-size: 13px;">${d.type}</strong><br>
+                            <span style="font-size: 11px; color: #64748b;">${dateStr} - ${d.remarks || 'No notes'}</span>
+                        </div>
+                        <strong style="color: ${color}; font-size: 16px;">${sign}${amt.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+                    </div>
+                `;
+            });
+        }
+        container.innerHTML = html;
+    } catch(e) {
+        console.error(e);
+        container.innerHTML = '<div style="text-align:center; color:red; padding: 20px;">Failed to load ledger.</div>';
+    }
 };
