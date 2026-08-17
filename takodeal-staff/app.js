@@ -3320,3 +3320,90 @@ setInterval(() => {
         }
     }
 }, 5000);
+
+// ========================================================
+// ⚖️ STAFF APP: SANCTION HISTORY VIEWER
+// ========================================================
+window.loadMySanctionsHistory = async function() {
+    // Show the container
+    document.getElementById('staffSanctionsHistorySection').style.display = 'block';
+    
+    let container = document.getElementById('mySanctionsList');
+    let staffName = localStorage.getItem('takodeal_staff_name') || localStorage.getItem('cashierName');
+    
+    if (!staffName) {
+        container.innerHTML = '<div style="text-align:center; color:#dc2626; font-weight:bold;">Error: Not logged in.</div>';
+        return;
+    }
+
+    container.innerHTML = '<div style="text-align:center; color:#64748b; font-weight:bold; padding: 20px;">⏳ Fetching your records from HQ...</div>';
+
+    try {
+        const q = window.query(
+            window.collection(window.db, "hr_sanctions"), 
+            window.where("staffName", "==", staffName)
+        );
+        const snap = await window.getDocs(q);
+
+        let records = [];
+        snap.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+
+        // Sort newest first
+        records.sort((a,b) => {
+            let tA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+            let tB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+            return tB - tA;
+        });
+
+        let html = '';
+        records.forEach(d => {
+            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
+            
+            let statusBadge = '';
+            if (d.status === 'Pending Reply') {
+                statusBadge = `<span style="background: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #fca5a5;">⚠️ Action Required</span>`;
+            } else if (d.status === 'Resolved') {
+                statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #bbf7d0;">✅ Resolved</span>`;
+            } else {
+                statusBadge = `<span style="background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #bae6fd;">📩 Sent to HQ</span>`;
+            }
+
+            let replyHtml = '';
+            if (d.staffReply) {
+                replyHtml = `
+                    <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 6px; border: 1px dashed #cbd5e1;">
+                        <span style="font-size: 11px; font-weight: bold; color: #64748b;">YOUR EXPLANATION:</span>
+                        <div style="font-size: 13px; color: #334155; font-style: italic; margin-top: 4px;">"${d.staffReply}"</div>
+                    </div>
+                `;
+            }
+
+            html += `
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div>
+                            <strong style="color: #b91c1c; font-size: 15px; display: block;">${d.type}</strong>
+                            <span style="font-size: 11px; color: #64748b;">Issued: ${dateStr}</span>
+                        </div>
+                        ${statusBadge}
+                    </div>
+                    
+                    <div style="font-size: 13px; font-weight: bold; color: #ea580c; margin-bottom: 8px;">Penalty: ${d.severity}</div>
+                    
+                    <div style="font-size: 13px; color: #334155; background: white; padding: 10px; border-radius: 6px; border-left: 3px solid #dc2626;">
+                        <span style="font-size: 11px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 4px;">HQ REPORT:</span>
+                        ${d.details}
+                    </div>
+                    
+                    ${replyHtml}
+                </div>
+            `;
+        });
+
+        container.innerHTML = html || '<div style="text-align:center; color:#16a34a; font-weight:bold; padding: 20px;">🎉 Clean Record! You have no sanctions or notices.</div>';
+
+    } catch (e) {
+        console.error("Sanctions History Error:", e);
+        container.innerHTML = '<div style="text-align:center; color:#dc2626; font-weight:bold;">❌ Failed to load records.</div>';
+    }
+};
