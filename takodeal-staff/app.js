@@ -1919,17 +1919,25 @@ window.submitSopChecklist = async function() {
 // ==========================================
 window.switchPayslipTab = function(tabName) {
     let liveBtn = document.getElementById('btnTabLivePay');
+    let pendingBtn = document.getElementById('btnTabPendingPay');
     let pastBtn = document.getElementById('btnTabPastPay');
     
+    [liveBtn, pendingBtn, pastBtn].forEach(b => {
+        b.style.background = 'transparent'; b.style.color = '#64748b';
+    });
+    
+    document.getElementById('payslipLiveSection').style.display = 'none';
+    document.getElementById('payslipPendingSection').style.display = 'none';
+    document.getElementById('payslipPastSection').style.display = 'none';
+
     if (tabName === 'Live') {
-        liveBtn.style.background = '#0f766e'; liveBtn.style.color = 'white'; liveBtn.style.border = 'none';
-        pastBtn.style.background = 'transparent'; pastBtn.style.color = '#64748b'; pastBtn.style.border = 'none';
+        liveBtn.style.background = '#0f766e'; liveBtn.style.color = 'white';
         document.getElementById('payslipLiveSection').style.display = 'block';
-        document.getElementById('payslipPastSection').style.display = 'none';
+    } else if (tabName === 'Pending') {
+        pendingBtn.style.background = '#0f172a'; pendingBtn.style.color = 'white';
+        document.getElementById('payslipPendingSection').style.display = 'block';
     } else {
-        pastBtn.style.background = '#0f172a'; pastBtn.style.color = 'white'; pastBtn.style.border = 'none';
-        liveBtn.style.background = 'transparent'; liveBtn.style.color = '#64748b'; liveBtn.style.border = 'none';
-        document.getElementById('payslipLiveSection').style.display = 'none';
+        pastBtn.style.background = '#0f172a'; pastBtn.style.color = 'white';
         document.getElementById('payslipPastSection').style.display = 'block';
     }
 };
@@ -2366,32 +2374,58 @@ window.loadPayslipVault = async function() {
         const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName));
         const prSnap = await getDocs(prQ);
 
-        let prLogs = [];
-        prSnap.forEach(docSnap => prLogs.push(docSnap.data()));
-        // 🔥 THE CRASH FIX: Safe sorting for processed records
-        prLogs.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
+        let pendingHtml = '';
+        let pastHtml = '';
+        let pendingCount = 0;
 
-        let historyHtml = '';
-        prLogs.forEach(d => {
+        let allRecords = [];
+        prSnap.forEach(docSnap => allRecords.push({id: docSnap.id, ...docSnap.data()}));
+        allRecords.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
+
+        allRecords.forEach(d => {
             let pd = d.frozenData || {};
             pd.processedAt = d.processedAt; 
-            
-            let dateStr = d.processedAt ? safeDate(d.processedAt).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
+            let dateStr = d.processedAt ? safeDate(d.processedAt).toLocaleDateString('en-PH', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
             let safeData = encodeURIComponent(JSON.stringify(pd));
 
-            historyHtml += `
-                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
-                        <div style="font-size: 12px; color: #64748b;">Disbursed: ${dateStr}</div>
-                        <div style="font-size: 16px; font-weight: 900; color: #16a34a; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+            if (d.acknowledged === false) {
+                pendingCount++;
+                pendingHtml += `
+                    <div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
+                            <div style="font-size: 12px; color: #d97706; font-weight: bold;">⚠️ Signature Required</div>
+                            <div style="font-size: 18px; font-weight: 900; color: #dc2626; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                        </div>
+                        <div>
+                            <button onclick="window.openPayslipSignatureModal('${d.id}', '${safeData}')" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.3); transition: 0.2s; animation: pulse 2s infinite;">✍️ Review & Sign</button>
+                        </div>
                     </div>
-                    <div>
-                        <button onclick="window.viewPastPayslip('${safeData}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">🔍 View Record</button>
+                `;
+            } else {
+                pastHtml += `
+                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
+                            <div style="font-size: 12px; color: #16a34a; font-weight: bold;">✅ Acknowledged on ${d.acknowledgedAt ? safeDate(d.acknowledgedAt).toLocaleDateString() : 'Unknown'}</div>
+                            <div style="font-size: 16px; font-weight: 900; color: #16a34a; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                        </div>
+                        <div>
+                            <button onclick="window.viewPastPayslip('${safeData}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">🔍 View Record</button>
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
         });
+
+        document.getElementById('payslipPendingList').innerHTML = pendingHtml || '<div style="text-align:center; padding: 40px; color: #16a34a; font-weight: bold;">🎉 All payslips have been acknowledged!</div>';
+        document.getElementById('payslipHistoryList').innerHTML = pastHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
+
+        let badge = document.getElementById('pendingPayBadge');
+        if (badge) {
+            badge.innerText = pendingCount;
+            badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+        }
 
         document.getElementById('payslipHistoryList').innerHTML = historyHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
 
@@ -3432,4 +3466,96 @@ window.loadMySanctionsHistory = async function() {
         console.error("Sanctions History Error:", e);
         container.innerHTML = '<div style="text-align:center; color:#dc2626; font-weight:bold;">❌ Failed to load records.</div>';
     }
+};
+
+// ========================================================
+// ✍️ STAFF APP: PAYSLIP SIGNATURE ENGINE
+// ========================================================
+window.openPayslipSignatureModal = function(recordId, encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    
+    Swal.fire({
+        title: `<h3 style="margin: 0; color: #b45309; text-transform: uppercase;">Acknowledge Payslip</h3>`,
+        html: `
+            <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                By signing below, you acknowledge that you have received your exact net pay of <strong style="color: #dc2626; font-size: 16px;">₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong> for the period of <b>${d.start || d.startDate}</b> to <b>${d.end || d.endDate}</b>.
+                <br><br>You confirm that all deductions (SSS, Vales, Lates) are correct and legally applied.
+            </div>
+            
+            <div style="border: 2px dashed #d97706; border-radius: 8px; background: white; position: relative; margin-bottom: 10px; overflow: hidden;">
+                <canvas id="payslipSignatureCanvas" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none; display: block;"></canvas>
+                <button onclick="window.clearStaffAppSignature('payslipSignatureCanvas')" style="position: absolute; top: 5px; right: 5px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 10px; font-weight: bold; padding: 6px 10px; cursor: pointer; color: #dc2626;">Clear</button>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '✅ Sign & Accept',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        didOpen: () => {
+            // Re-use our universal signature engine!
+            let canvas = document.getElementById('payslipSignatureCanvas');
+            canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight;
+            let ctx = canvas.getContext('2d');
+            ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#0f172a';
+            let isDrawing = false; window.hasSignedStaffNTE = false;
+            
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: (clientX - rect.left) * (canvas.width/rect.width), y: (clientY - rect.top) * (canvas.height/rect.height) };
+            };
+            const startDraw = (e) => { isDrawing = true; window.hasSignedStaffNTE = true; ctx.beginPath(); ctx.moveTo(getPos(e).x, getPos(e).y); e.preventDefault(); };
+            const draw = (e) => { if (!isDrawing) return; ctx.lineTo(getPos(e).x, getPos(e).y); ctx.stroke(); e.preventDefault(); };
+            const stopDraw = () => { isDrawing = false; ctx.closePath(); };
+
+            canvas.addEventListener('touchstart', startDraw, { passive: false });
+            canvas.addEventListener('touchmove', draw, { passive: false });
+            canvas.addEventListener('touchend', stopDraw);
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDraw);
+        },
+        preConfirm: () => {
+            if (!window.hasSignedStaffNTE) { Swal.showValidationMessage("You must sign inside the box to accept your payslip."); return false; }
+            return document.getElementById('payslipSignatureCanvas').toDataURL('image/png');
+        }
+    }).then(async (res) => {
+        if (res.isConfirmed) {
+            Swal.fire({title: 'Saving Signature...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            try {
+                await updateDoc(doc(db, "payroll_records", recordId), {
+                    acknowledged: true,
+                    acknowledgedAt: serverTimestamp(),
+                    signatureBase64: res.value // Save drawing to Firebase!
+                });
+                Swal.fire({title: '✅ Payslip Acknowledged!', text: 'Your signed record has been securely moved to the Past Payslips vault.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+                window.loadPayslipVault(); // Instantly refresh
+            } catch(e) {
+                console.error(e); Swal.fire('Error', 'Failed to save signature. Check connection.', 'error');
+            }
+        }
+    });
+};
+
+// We intercept the old Past Payslip viewer to inject the signature image!
+const origViewPastPayslip = window.viewPastPayslip;
+window.viewPastPayslip = function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    origViewPastPayslip(encodedData);
+    
+    // Inject the signature at the bottom of the sweetalert modal if it exists!
+    setTimeout(() => {
+        let swalHtml = document.querySelector('.swal2-html-container');
+        if (swalHtml && d.staffSignature) {
+            let sigDiv = document.createElement('div');
+            sigDiv.style.cssText = "margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 15px; text-align: center;";
+            sigDiv.innerHTML = `
+                <span style="font-size: 11px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Digitally Acknowledged & Signed</span>
+                <img src="${d.staffSignature}" style="height: 60px; display: block; margin: 5px auto 0 auto; background: white; border-radius: 6px;">
+            `;
+            swalHtml.appendChild(sigDiv);
+        }
+    }, 100);
 };
