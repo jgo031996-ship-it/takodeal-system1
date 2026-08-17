@@ -16858,12 +16858,28 @@ window.printFormalNTE = function(encodedData) {
     printWindow.document.close();
 };
 
+// ========================================================
+// ⚖️ SMART HR SANCTION ENGINE (AUTO-ESCALATION)
+// ========================================================
 window.openIssueSanctionModal = async function() {
     document.getElementById('issueSanctionModal').style.display = 'flex';
     document.getElementById('sanctionDetails').value = '';
     
     let select = document.getElementById('sanctionStaffSelect');
+    let typeSelect = document.getElementById('sanctionType');
+    
     select.innerHTML = '<option value="">Loading staff...</option>';
+    
+    // 🔥 Attach the Smart Auto-Calculators!
+    select.onchange = window.autoCalculateSeverity;
+    typeSelect.onchange = function() {
+        window.handleCustomDropdown(this);
+        window.autoCalculateSeverity();
+    };
+    
+    // Clean up old helper text if it exists
+    let oldHelper = document.getElementById('autoSanctionHelper');
+    if (oldHelper) oldHelper.innerHTML = '';
     
     try {
         const snap = await getDocs(collection(db, "cashiers"));
@@ -16875,10 +16891,8 @@ window.openIssueSanctionModal = async function() {
         
         snap.forEach(doc => {
             let data = doc.data();
-            // Filter list to only show staff in the relevant branch!
             if (branchFilter !== "All" && data.branch !== branchFilter) return;
             if (isFranchisee && data.branch !== window.sessionUser.branch) return;
-            
             staffList.push({ name: data.cashierName, branch: data.branch });
         });
         
@@ -16890,6 +16904,79 @@ window.openIssueSanctionModal = async function() {
     } catch (e) {
         console.error("Staff Load Error:", e);
         select.innerHTML = '<option value="">Error loading staff.</option>';
+    }
+};
+
+window.autoCalculateSeverity = async function() {
+    let staffSelect = document.getElementById('sanctionStaffSelect');
+    let typeSelect = document.getElementById('sanctionType');
+    let severitySelect = document.getElementById('sanctionSeverity');
+    
+    let staffName = staffSelect.value;
+    let incidentType = typeSelect.value;
+    
+    if (!staffName || !incidentType || incidentType === "ADD_NEW") return;
+    
+    // Show a visual loading indicator
+    let originalColor = severitySelect.style.color;
+    severitySelect.style.color = '#94a3b8';
+    
+    try {
+        // Query all past sanctions for this staff and this specific type
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("type", "==", incidentType));
+        const snap = await getDocs(q);
+        
+        let pastOffenses = snap.size; // How many times they did this before
+        
+        // Map the progression levels
+        const progression = [
+            "1st Offense - Warning",
+            "2nd Offense - Verbal Warning",
+            "3rd Offense - Written Warning",
+            "4th Offense - 1 Day Suspension",
+            "5th Offense - 3 Days Suspension",
+            "6th Offense - 1 Week Suspension",
+            "7th Offense - Termination Notice"
+        ];
+        
+        // Auto-Escalate: If 0 past offenses, index 0 (1st). If 1 past offense, index 1 (2nd).
+        let nextLevelIndex = Math.min(pastOffenses, 6);
+        let nextLevelText = progression[nextLevelIndex];
+        
+        // Auto-select it in the dropdown!
+        for (let i = 0; i < severitySelect.options.length; i++) {
+            if (severitySelect.options[i].value === nextLevelText) {
+                severitySelect.selectedIndex = i;
+                break;
+            }
+        }
+        
+        // Turn it red so the manager notices the auto-selection
+        severitySelect.style.color = '#dc2626';
+        
+        // Add a small helper text below the box to inform the manager
+        let helperText = document.getElementById('autoSanctionHelper');
+        if (!helperText) {
+            helperText = document.createElement('div');
+            helperText.id = 'autoSanctionHelper';
+            helperText.style.cssText = 'font-size: 11px; font-weight: bold; margin-bottom: 15px; margin-top: -10px; padding: 6px; border-radius: 4px;';
+            severitySelect.parentNode.insertBefore(helperText, severitySelect.nextSibling);
+        }
+        
+        if (pastOffenses > 0) {
+            helperText.innerHTML = `⚠️ System detected <b>${pastOffenses} past records</b> of this violation. Auto-escalated to ${nextLevelText}.`;
+            helperText.style.color = '#dc2626';
+            helperText.style.background = '#fef2f2';
+        } else {
+            helperText.innerHTML = `✅ First time offense for this violation.`;
+            helperText.style.color = '#16a34a';
+            helperText.style.background = '#dcfce7';
+            severitySelect.style.color = '#16a34a';
+        }
+        
+    } catch (e) {
+        console.error("Auto Severity Error:", e);
+        severitySelect.style.color = originalColor;
     }
 };
 
