@@ -1972,6 +1972,7 @@ window.loadPayslipVault = async function() {
         return isNaN(d.getTime()) ? new Date() : d;
     };
 
+    // 1. Calculate Current AND Previous Cutoff Dates
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -1996,10 +1997,9 @@ window.loadPayslipVault = async function() {
     }
 
     document.getElementById('liveCutoffDates').innerText = `Cutoff Period: ${startDateStr} to ${endDateStr}`;
-    let startTimestamp = new Date(startDateStr + 'T00:00:00');
-    let endTimestamp = new Date(endDateStr + 'T23:59:59');
 
     try {
+        // Fetch Baseline Data
         const staffRef = await getDoc(doc(db, "cashiers", staffId));
         let staffProfile = staffRef.exists() ? staffRef.data() : {};
         let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
@@ -2011,119 +2011,168 @@ window.loadPayslipVault = async function() {
         let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
+        const parseTimeStr = (timeStr) => {
+            let t = timeStr.toLowerCase().replace(/\s/g, '');
+            let isPM = t.includes('pm'); let isNN = t.includes('nn');
+            let parts = t.replace(/(am|pm|nn)/, '').split(':');
+            let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+            if ((isPM || isNN) && hour < 12) hour += 12;
+            if (t.includes('am') && hour === 12) hour = 0;
+            return hour + (minute / 60);
+        };
+
         const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
         const attSnap = await getDocs(attQ);
-
-        let filteredAttLogs = [];
-        attSnap.forEach(docSnap => {
-            let log = docSnap.data();
-            if (log.timestamp) {
-                let t = safeDate(log.timestamp);
-                if (t >= startTimestamp && t <= endTimestamp) filteredAttLogs.push(log);
-            }
-        });
-        filteredAttLogs.sort((a, b) => safeDate(a.timestamp).getTime() - safeDate(b.timestamp).getTime());
-
+        
         const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName));
         const bonusSnap = await getDocs(bonusQ);
 
-        let totalBonuses = 0; let bonusesList = [];
-        bonusSnap.forEach(docSnap => { 
-            let b = docSnap.data();
-            if (b.dateAdded) {
-                let t = safeDate(b.dateAdded);
-                if (t >= startTimestamp && t <= endTimestamp) {
-                    let amt = parseFloat(b.amount) || 0;
-                    totalBonuses += amt; bonusesList.push(b); 
+        // 🔥 THE SMART CALCULATOR HELPER
+        // We feed it a start and end date, and it calculates EVERYTHING for that exact period!
+        const analyzeCutoff = (startT, endT) => {
+            let fLogs = [];
+            attSnap.forEach(docSnap => {
+                let log = docSnap.data();
+                if (log.timestamp) {
+                    let t = safeDate(log.timestamp);
+                    if (t >= startT && t <= endT) fLogs.push(log);
                 }
-            }
-        });
+            });
+            fLogs.sort((a, b) => safeDate(a.timestamp).getTime() - safeDate(b.timestamp).getTime());
 
-        let totalHours = 0; let shiftsWorked = 0; let totalLatePenalty = 0;
-        let activeShifts = {}; let shiftPairs = [];
-        
-        filteredAttLogs.forEach(log => {
-            let manualPenalty = parseFloat(log.penaltyAmount) || 0;
-            let logType = typeof log.type === 'string' ? log.type.toUpperCase() : "UNKNOWN";
+            let tBonuses = 0; let fBonuses = [];
+            bonusSnap.forEach(docSnap => {
+                let b = docSnap.data();
+                if (b.dateAdded) {
+                    let t = safeDate(b.dateAdded);
+                    if (t >= startT && t <= endT) { tBonuses += (parseFloat(b.amount) || 0); fBonuses.push(b); }
+                }
+            });
 
-            if (logType === "TIME IN") {
-                let logDate = safeDate(log.timestamp); 
-                let lateMinutes = 0; let wasScheduled = false; let expectedStartHour = null;
+            let tShifts = 0; let tLate = 0; let aShifts = {}; let sPairs = [];
+            
+            fLogs.forEach(log => {
+                let manualPenalty = parseFloat(log.penaltyAmount) || 0;
+                let logType = typeof log.type === 'string' ? log.type.toUpperCase() : "UNKNOWN";
 
-                if (scheduleData && scheduleData.currentSchedule) {
-                    let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
-                    if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-                        let branchSafe = log.branch || "Unknown";
-                        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branchSafe] : null;
-                        
-                        if (branchSched && branchSched.scheduled) {
-                            let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
-                            if (assignedShiftId && scheduleData.branchConfig && scheduleData.branchConfig[branchSafe]) {
-                                wasScheduled = true;
+                if (logType === "TIME IN") {
+                    let logDate = safeDate(log.timestamp); 
+                    let lateMinutes = 0; let wasScheduled = false; let expectedStartHour = null;
+
+                    if (scheduleData && scheduleData.currentSchedule) {
+                        let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
+                        if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
+                            let branchSafe = log.branch || "Unknown";
+                            let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branchSafe] : null;
+                            if (branchSched && branchSched.scheduled) {
+                                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
+                                if (assignedShiftId && scheduleData.branchConfig && scheduleData.branchConfig[branchSafe]) {
+                                    wasScheduled = true;
+                                    let shiftConfig = scheduleData.branchConfig[branchSafe].find(s => s.id === assignedShiftId);
+                                    if (shiftConfig) {
+                                        if (shiftConfig.startTime) {
+                                            let parts = String(shiftConfig.startTime).split(':'); expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                        } else if (shiftConfig.name) {
+                                            let match = shiftConfig.name.match(/\((.*?)-/); if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                        }
+                                        if (expectedStartHour !== null) {
+                                            let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                            let diffHours = actualHour - expectedStartHour;
+                                            if (diffHours > -1.5 && diffHours < 4) { lateMinutes = Math.floor(diffHours * 60); if (lateMinutes < 0) lateMinutes = 0; }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+
+                    let effectiveDailyRate = dailyRate;
+                    if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) effectiveDailyRate += 50; 
+                    let currentRatePerHour = effectiveDailyRate / 8;
+                    let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
+                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
+
+                    aShifts[staffName] = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false, manualPenalty: manualPenalty, wasScheduled: wasScheduled };
+
+                } else if (logType.includes("TIME OUT") && aShifts[staffName]) {
+                    let timeIn = aShifts[staffName].time; let lMins = aShifts[staffName].lateMinutes;
+                    let lAmt = aShifts[staffName].lateAmount; let lExempt = aShifts[staffName].lateExempted;
+                    let wasScheduled = aShifts[staffName].wasScheduled; 
+                    let totalManualPenaltyForShift = (aShifts[staffName].manualPenalty || 0) + manualPenalty;
+                    
+                    let timeOut = safeDate(log.timestamp);
+                    let hoursWorked = (timeOut.getTime() - timeIn.getTime()) / (1000 * 60 * 60);
+                    
+                    if (hoursWorked > 18) {
+                        sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h)</span>` });
+                        delete aShifts[staffName]; return; 
+                    }
+
+                    let isAutoClosed = logType === "TIME OUT (AUTO)";
+                    let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                    let shiftMultiplier = 1; 
+            
+                    if (hoursWorked < 1 && !isAutoClosed) { shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`; } 
+                    else if (hoursWorked >= 13.5) { shiftMultiplier = 2; tBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`; } 
+                    else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
+
+                    let outHour = timeOut.getHours(); let thisShiftNightBonus = 0;
+                    if (outHour >= 0 && outHour <= 4 && isNightEligible) { thisShiftNightBonus = 50; tBonuses += thisShiftNightBonus; }
+
+                    let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
+                    let hType = holidaysObj[logDateStr];
+                    let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+                    let hBonus = 0;
+
+                    if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; tBonuses += hBonus; remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
+                    else if (hType === 'Special') { hBonus = baseForHoliday * 0.10; tBonuses += hBonus; remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Spl Hol: +₱${hBonus.toFixed(2)})</span>`; }
+
+                    if (lMins > 0 && !lExempt) { remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late = -₱${lAmt.toFixed(2)})</span>`; tLate += lAmt; }
+                    if (totalManualPenaltyForShift > 0) { remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`; tLate += totalManualPenaltyForShift; }
+
+                    tShifts += shiftMultiplier;
+                    sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
+                    delete aShifts[staffName];
+                } else if (manualPenalty > 0) {
+                    tLate += manualPenalty;
+                    let logTime = log.timestamp ? safeDate(log.timestamp) : new Date();
+                    sPairs.push({ dateObj: logTime, in: logTime, out: null, hrs: 0, remark: `<span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${manualPenalty.toFixed(2)} Manual Penalty</span>`, lateMins: 0 });
                 }
-
-                let effectiveDailyRate = dailyRate;
-                if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) effectiveDailyRate += 50; 
-                let currentRatePerHour = effectiveDailyRate / 8;
-                let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
-                let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
-
-                activeShifts[staffName] = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false, manualPenalty: manualPenalty, wasScheduled: wasScheduled };
-
-            } else if (logType.includes("TIME OUT") && activeShifts[staffName]) {
-                let timeIn = activeShifts[staffName].time; let lMins = activeShifts[staffName].lateMinutes;
-                let lAmt = activeShifts[staffName].lateAmount; let lExempt = activeShifts[staffName].lateExempted;
-                let wasScheduled = activeShifts[staffName].wasScheduled; 
-                let totalManualPenaltyForShift = (activeShifts[staffName].manualPenalty || 0) + manualPenalty;
-                
-                let timeOut = safeDate(log.timestamp);
-                let hoursWorked = (timeOut.getTime() - timeIn.getTime()) / (1000 * 60 * 60);
-                
-                if (hoursWorked > 18) {
-                    shiftPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h)</span>` });
-                    delete activeShifts[staffName]; return; 
-                }
-
-                let isAutoClosed = logType === "TIME OUT (AUTO)";
-                let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
-                let shiftMultiplier = 1; 
-        
-                if (hoursWorked < 1 && !isAutoClosed) { shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`; } 
-                else if (hoursWorked >= 13.5) { shiftMultiplier = 2; totalBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`; } 
-                else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
-
-                let outHour = timeOut.getHours(); let thisShiftNightBonus = 0;
-                if (outHour >= 0 && outHour <= 4 && isNightEligible) { thisShiftNightBonus = 50; totalBonuses += thisShiftNightBonus; }
-
-                if (lMins > 0 && !lExempt) { remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late = -₱${lAmt.toFixed(2)})</span>`; totalLatePenalty += lAmt; }
-                if (totalManualPenaltyForShift > 0) { remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`; totalLatePenalty += totalManualPenaltyForShift; }
-
-                shiftsWorked += shiftMultiplier; totalHours += hoursWorked;
-                shiftPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
-                delete activeShifts[staffName];
-            }
-        });
-
-        if (activeShifts[staffName]) {
-            let activeTime = activeShifts[staffName].time;
-            let isOrphaned = ((new Date() - activeTime) / (1000 * 60 * 60)) > 18; 
-            shiftPairs.push({ 
-                dateObj: activeTime, in: activeTime, out: isOrphaned ? null : "Active Shift", hrs: 0, 
-                remark: isOrphaned ? `<span style="color:#ef4444; font-weight:bold;">Missing Time Out</span>` : `<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>`,
-                isActive: !isOrphaned, isMissingOut: isOrphaned
             });
-        }
 
-        bonusesList.forEach(b => {
-            shiftPairs.push({ dateObj: safeDate(b.dateAdded), in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${(parseFloat(b.amount) || 0).toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`, lateMins: 0 });
-        });
+            if (aShifts[staffName]) {
+                let activeTime = aShifts[staffName].time;
+                let isOrphaned = ((new Date() - activeTime) / (1000 * 60 * 60)) > 18; 
+                sPairs.push({ 
+                    dateObj: activeTime, in: activeTime, out: isOrphaned ? null : "Active Shift", hrs: 0, 
+                    remark: isOrphaned ? `<span style="color:#ef4444; font-weight:bold;">Missing Time Out</span>` : `<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>`,
+                    isActive: !isOrphaned, isMissingOut: isOrphaned
+                });
+            }
 
-        let estGross = shiftsWorked * dailyRate;
+            fBonuses.forEach(b => {
+                let amt = parseFloat(b.amount) || 0; let bDate = b.dateAdded ? safeDate(b.dateAdded) : new Date();
+                let dateStr = bDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                let existingLog = sPairs.find(l => l.in && l.in.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr);
+                if (existingLog) {
+                    if (existingLog.remark.includes('Complete')) existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
+                    existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
+                } else {
+                    sPairs.push({ dateObj: bDate, in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`, lateMins: 0 });
+                }
+            });
 
-        // 🔥 THE LOANDATA FIX: Fetching Data BEFORE we use it!
+            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs };
+        }; // <-- End of Calculator Helper
+
+        // Execute Calculator for Current Cutoff
+        let currentData = analyzeCutoff(new Date(startDateStr + 'T00:00:00'), new Date(endDateStr + 'T23:59:59'));
+        // Execute Calculator for Previous Cutoff
+        let prevData = analyzeCutoff(new Date(prevStartStr + 'T00:00:00'), new Date(prevEndStr + 'T23:59:59'));
+
+        let estGross = currentData.shiftsWorked * dailyRate;
+
+        // Fetch Universal Deductions & Loans (These apply to whatever cutoff is being generated!)
         const dedQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
         const dedSnap = await getDocs(dedQ);
         let unpaidVales = 0; let activeDeductions = [];
@@ -2134,24 +2183,22 @@ window.loadPayslipVault = async function() {
         let loanData = null;
         if (!ledgerSnap.empty) loanData = ledgerSnap.docs[0].data();
 
-        // 🔥 1. CALCULATE EXACT LOAN DEDUCTION FOR THIS CUTOFF
-        let cutoffLoanDeduction = 0;
-        let remBal = 0;
-
+        let cutoffLoanDeduction = 0; let remBal = 0;
         if (loanData) {
             remBal = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
             if (remBal > 0) {
                 cutoffLoanDeduction = parseFloat(loanData.cutoffDeduction) || 0;
-                // Safety net: Never deduct more than they actually owe!
                 if (cutoffLoanDeduction > remBal) cutoffLoanDeduction = remBal; 
             }
         }
 
-        // 🔥 2. SUBTRACT LOAN FROM THE NET PAY MATH
-        let estNet = (estGross + totalBonuses) - totalLatePenalty - unpaidVales - cutoffLoanDeduction;
+        // =====================================
+        // 🔥 BUILD CURRENT CUTOFF (LIVE TAB)
+        // =====================================
+        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - unpaidVales - cutoffLoanDeduction;
 
         document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('liveEstLates').innerText = '-₱' + totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
 
@@ -2159,17 +2206,11 @@ window.loadPayslipVault = async function() {
         if (!document.getElementById('liveEstOTRow')) {
             grossRow.insertAdjacentHTML('afterend', `<div id="liveEstOTRow" style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;"><span style="color: #64748b; font-weight: bold;">Overtime / Bonuses:</span><strong id="liveEstOT" style="color: #0ea5e9;">+₱0.00</strong></div>`);
         }
-        document.getElementById('liveEstOT').innerText = '+₱' + totalBonuses.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstOT').innerText = '+₱' + currentData.totalBonuses.toLocaleString(undefined, {minimumFractionDigits: 2});
 
-        // 🔥 3. ADD LOAN DEDUCTION TO THE BREAKDOWN PREVIEW
         let valesRow = document.getElementById('liveEstVales').parentElement;
         if (!document.getElementById('liveEstLoanRow')) {
-            valesRow.insertAdjacentHTML('afterend', `
-                <div id="liveEstLoanRow" style="display: none; justify-content: space-between; margin-bottom: 10px; font-size: 14px;">
-                    <span style="color: #64748b; font-weight: bold;">Company Loan Deduction:</span>
-                    <strong id="liveEstLoan" style="color: #ef4444;">-₱0.00</strong>
-                </div>
-            `);
+            valesRow.insertAdjacentHTML('afterend', `<div id="liveEstLoanRow" style="display: none; justify-content: space-between; margin-bottom: 10px; font-size: 14px;"><span style="color: #64748b; font-weight: bold;">Company Loan Deduction:</span><strong id="liveEstLoan" style="color: #ef4444;">-₱0.00</strong></div>`);
         }
         
         let loanRow = document.getElementById('liveEstLoanRow');
@@ -2186,6 +2227,31 @@ window.loadPayslipVault = async function() {
             document.getElementById('payslipLiveSection').appendChild(logsContainer);
         }
 
+        // Shared function to render the Attendance Table lines
+        const generateTableRows = (pairs) => {
+            let html = '';
+            if (pairs.length > 0) {
+                pairs.sort((a,b) => b.dateObj.getTime() - a.dateObj.getTime()).forEach(p => {
+                    let dateStr = p.dateObj.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                    let inStr = p.in ? p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : '---';
+                    let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.isMissingOut ? '<span style="color:#ef4444; font-weight:bold;">No Record</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---'));
+                    let safeHrs = parseFloat(p.hrs);
+                    let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : (isNaN(safeHrs) ? '0.00h' : `${safeHrs.toFixed(2)}h`);
+                    
+                    let inColor = '#16a34a'; let outColor = '#16a34a'; 
+                    if (p.lateMins && p.lateMins > 0) { inStr += `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">Late: ${p.lateMins}m</span>`; inColor = '#dc2626'; }
+                    if (p.remark && (p.remark.includes('Short') || p.remark.includes('INVALID') || p.remark.includes('Missed') || p.remark.includes('Ignored'))) outColor = '#dc2626'; 
+                    if (p.isActive) outColor = '#0ea5e9'; 
+
+                    html += `<tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 10px 8px; color: #64748b;">${dateStr}</td><td style="padding: 10px 8px; color: ${inColor}; font-weight: bold; text-align: center; vertical-align: middle;">${inStr}</td><td style="padding: 10px 8px; color: ${outColor}; font-weight: bold; text-align: center; vertical-align: middle;">${outStr}</td><td style="padding: 10px 8px; font-weight: bold; color: #334155; text-align: center; vertical-align: middle;">${hrStr}</td><td style="padding: 10px 8px; font-size: 11px; text-align: center; vertical-align: middle;">${p.remark}</td></tr>`;
+                });
+            } else {
+                html += `<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">No valid Time In/Out pairs found.</td></tr>`;
+            }
+            return html;
+        };
+
+        // Render Current Cutoff Tables
         let detailsHtml = `
             <div style="margin-top: 20px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">⏱️ Attendance Logs (This Cutoff)</h3>
@@ -2194,46 +2260,22 @@ window.loadPayslipVault = async function() {
                         <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 5;">
                             <tr><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">In</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Out</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Hrs</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Remarks</th></tr>
                         </thead>
-                        <tbody>
-        `;
-
-        if (shiftPairs.length > 0) {
-            shiftPairs.sort((a,b) => b.dateObj.getTime() - a.dateObj.getTime()).forEach(p => {
-                let dateStr = p.dateObj.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-                let inStr = p.in ? p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : '---';
-                let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.isMissingOut ? '<span style="color:#ef4444; font-weight:bold;">No Record</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---'));
-                let safeHrs = parseFloat(p.hrs);
-                let hrStr = p.isActive ? '<span style="color:#94a3b8;">--</span>' : (isNaN(safeHrs) ? '0.00h' : `${safeHrs.toFixed(2)}h`);
-                
-                let inColor = '#16a34a'; 
-                let outColor = '#16a34a'; 
-                if (p.remark && (p.remark.includes('Short') || p.remark.includes('INVALID') || p.remark.includes('Missed') || p.remark.includes('Ignored'))) outColor = '#dc2626'; 
-                if (p.isActive) outColor = '#0ea5e9'; 
-
-                detailsHtml += `<tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 10px 8px; color: #64748b;">${dateStr}</td><td style="padding: 10px 8px; color: ${inColor}; font-weight: bold; text-align: center; vertical-align: middle;">${inStr}</td><td style="padding: 10px 8px; color: ${outColor}; font-weight: bold; text-align: center; vertical-align: middle;">${outStr}</td><td style="padding: 10px 8px; font-weight: bold; color: #334155; text-align: center; vertical-align: middle;">${hrStr}</td><td style="padding: 10px 8px; font-size: 11px; text-align: center; vertical-align: middle;">${p.remark}</td></tr>`;
-            });
-        } else {
-            detailsHtml += `<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">No valid Time In/Out pairs found.</td></tr>`;
-        }
-        detailsHtml += `</tbody></table></div></div>`;
-
-        detailsHtml += `
+                        <tbody>${generateTableRows(currentData.shiftPairs)}</tbody>
+                    </table>
+                </div>
+            </div>
+            
             <div style="margin-top: 15px; background: white; border-radius: 12px; border: 1px solid #fca5a5; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 <h3 style="margin-top: 0; color: #b91c1c; font-size: 14px; border-bottom: 2px solid #fecaca; padding-bottom: 8px;">💸 Active Unpaid Deductions</h3>
                 <div style="max-height: 150px; overflow-y: auto;">
         `;
 
-        // 🔥 INJECT LONG-TERM COMPANY LOAN INTO UI
         if (loanData && remBal > 0) {
             detailsHtml += `
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 12px; border-radius: 8px; border: 1px dashed #fcd34d; background: #fffbeb; margin-bottom: 15px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                    <div>
-                        <strong style="color: #b45309; font-size: 14px;">💳 Company Loan Deduction</strong><br>
-                        <span style="font-size: 11px; color: #d97706;">Auto-deducted this cutoff. (Remaining Debt: ₱${remBal.toLocaleString(undefined, {minimumFractionDigits: 2})})</span>
-                    </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 12px; border-radius: 8px; border: 1px dashed #fcd34d; background: #fffbeb; margin-bottom: 15px;">
+                    <div><strong style="color: #b45309; font-size: 14px;">💳 Company Loan Deduction</strong><br><span style="font-size: 11px; color: #d97706;">Auto-deducted this cutoff. (Remaining Debt: ₱${remBal.toLocaleString(undefined, {minimumFractionDigits: 2})})</span></div>
                     <strong style="color: #dc2626; font-size: 16px;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
-                </div>
-            `;
+                </div>`;
         }
 
         if (activeDeductions.length > 0) {
@@ -2242,13 +2284,9 @@ window.loadPayslipVault = async function() {
                 let dateStr = dDate ? safeDate(dDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
                 detailsHtml += `
                     <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0;">
-                        <div>
-                            <strong style="color: #334155;">${d.type}</strong><br>
-                            <span style="font-size: 11px; color: #64748b;">${dateStr} - <span style="color:#ef4444; font-weight:bold;">Unpaid</span> (${d.remarks || d.item || 'Salary Deduction'})</span>
-                        </div>
+                        <div><strong style="color: #334155;">${d.type}</strong><br><span style="font-size: 11px; color: #64748b;">${dateStr} - <span style="color:#ef4444; font-weight:bold;">Unpaid</span> (${d.remarks || d.item || 'Salary Deduction'})</span></div>
                         <strong style="color: #dc2626;">-₱${parseFloat(d.amount).toFixed(2)}</strong>
-                    </div>
-                `;
+                    </div>`;
             });
         } else {
             detailsHtml += `<div style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px;">No short-term vales or meals.</div>`;
@@ -2256,7 +2294,9 @@ window.loadPayslipVault = async function() {
         detailsHtml += `</div></div>`;
         logsContainer.innerHTML = detailsHtml;
 
-        // 🔥 FETCH PAYROLL RECORDS
+        // =====================================
+        // 🔥 BUILD PENDING & PAST PAYSLIPS
+        // =====================================
         const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName));
         const prSnap = await getDocs(prQ);
 
@@ -2265,20 +2305,53 @@ window.loadPayslipVault = async function() {
         prSnap.forEach(docSnap => allRecords.push({id: docSnap.id, ...docSnap.data()}));
         allRecords.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
 
+        // 🔥 THE NEW PREVIEW FEATURE FOR PREVIOUS CUTOFF 🔥
         let hasPrevCutoffRecord = allRecords.some(r => r.startDate === prevStartStr || (r.frozenData && r.frozenData.start === prevStartStr));
         
         if (!hasPrevCutoffRecord) {
             pendingCount++;
+            
+            let prevEstGross = prevData.shiftsWorked * dailyRate;
+            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - unpaidVales - cutoffLoanDeduction;
+
+            // Optional Loan String for Preview
+            let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
+
             pendingHtml += `
-                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; opacity: 0.8;">
-                    <div>
-                        <h3 style="margin: 0 0 5px 0; color: #475569; font-size: 15px;">Cutoff: ${prevStartStr} to ${prevEndStr}</h3>
-                        <div style="font-size: 12px; color: #0284c7; font-weight: bold;">⏳ Processing by HQ</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 5px;">Your manager is currently calculating this payroll.</div>
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); opacity: 0.95;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 12px;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #475569; font-size: 16px;">Cutoff: ${prevStartStr} to ${prevEndStr}</h3>
+                            <div style="font-size: 12px; color: #0284c7; font-weight: bold;">⏳ Processing by HQ</div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 5px; line-height: 1.4;">Your manager is currently calculating this payroll.<br>You can preview your records below.</div>
+                        </div>
+                        <div style="text-align: right; background: white; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                            <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Est. Net Pay</div>
+                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">₱${Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                        </div>
                     </div>
-                    <div>
-                        <button disabled style="background: #e2e8f0; color: #94a3b8; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: not-allowed; box-shadow: none;">Awaiting Distribution</button>
+                    
+                    <div style="font-size: 13px; color: #475569; margin-bottom: 15px; background: white; padding: 10px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Estimated Basic Pay:</span> <strong style="color:#16a34a;">₱${prevEstGross.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Overtime / Bonuses:</span> <strong style="color:#0ea5e9;">+₱${prevData.totalBonuses.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Late Penalties:</span> <strong style="color:#ef4444;">-₱${prevData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Unpaid Vales/Meals:</span> <strong style="color:#ef4444;">-₱${unpaidVales.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
+                        ${prevLoanStr}
                     </div>
+                    
+                    <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                            <span>👀 View Attendance Logs</span>
+                        </summary>
+                        <div style="margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px; max-height: 200px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;">
+                                <thead style="background: #f8fafc; position: sticky; top: 0;">
+                                    <tr><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">In</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Out</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Hrs</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Remarks</th></tr>
+                                </thead>
+                                <tbody>${generateTableRows(prevData.shiftPairs)}</tbody>
+                            </table>
+                        </div>
+                    </details>
                 </div>
             `;
         }
@@ -2333,6 +2406,10 @@ window.loadPayslipVault = async function() {
     } catch (e) {
         console.error("Payslip Fetch Error:", e);
         document.getElementById('liveEstNetPay').innerText = "Error";
+        let parentEl = document.getElementById('liveEstNetPay').parentElement;
+        if(parentEl && !parentEl.querySelector('.error-text')) {
+            parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
+        }
     }
 };
 
