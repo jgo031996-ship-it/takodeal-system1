@@ -3295,3 +3295,28 @@ window.submitStaffAppSanctionReply = async function() {
         btn.innerText = "Submit & Unlock App"; btn.disabled = false;
     }
 };
+
+// ========================================================
+// 🚨 STAFF APP: SANCTION WATCHDOG ENGINE
+// ========================================================
+window.isCheckingSanction = false;
+
+// This watchdog wakes up every 5 seconds and scans the cloud
+setInterval(() => {
+    // Grab the name depending on what your Staff App uses to store the login
+    let staffName = localStorage.getItem('staffName') || localStorage.getItem('cashierName');
+    let sanctionModal = document.getElementById('staffAppSanctionModal');
+    
+    // If they are logged in, and the modal isn't already showing
+    if (staffName && sanctionModal && sanctionModal.style.display === 'none') {
+        if (!window.isCheckingSanction) {
+            window.isCheckingSanction = true;
+            
+            // Check Firebase for active NTEs
+            window.checkActiveSanctions(staffName).finally(() => {
+                // Unlock the checker after 5 seconds so it can scan again
+                setTimeout(() => { window.isCheckingSanction = false; }, 5000); 
+            });
+        }
+    }
+}, 5000);
