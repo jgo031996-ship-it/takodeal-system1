@@ -2134,12 +2134,51 @@ window.loadPayslipVault = async function() {
         let loanData = null;
         if (!ledgerSnap.empty) loanData = ledgerSnap.docs[0].data();
 
-        let estNet = (estGross + totalBonuses) - totalLatePenalty - unpaidVales;
+        // 🔥 1. CALCULATE EXACT LOAN DEDUCTION FOR THIS CUTOFF
+        let cutoffLoanDeduction = 0;
+        let remBal = 0;
+
+        if (loanData) {
+            remBal = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
+            if (remBal > 0) {
+                cutoffLoanDeduction = parseFloat(loanData.cutoffDeduction) || 0;
+                // Safety net: Never deduct more than they actually owe!
+                if (cutoffLoanDeduction > remBal) cutoffLoanDeduction = remBal; 
+            }
+        }
+
+        // 🔥 2. SUBTRACT LOAN FROM THE NET PAY MATH
+        let estNet = (estGross + totalBonuses) - totalLatePenalty - unpaidVales - cutoffLoanDeduction;
 
         document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+
+        let grossRow = document.getElementById('liveEstGross').parentElement;
+        if (!document.getElementById('liveEstOTRow')) {
+            grossRow.insertAdjacentHTML('afterend', `<div id="liveEstOTRow" style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;"><span style="color: #64748b; font-weight: bold;">Overtime / Bonuses:</span><strong id="liveEstOT" style="color: #0ea5e9;">+₱0.00</strong></div>`);
+        }
+        document.getElementById('liveEstOT').innerText = '+₱' + totalBonuses.toLocaleString(undefined, {minimumFractionDigits: 2});
+
+        // 🔥 3. ADD LOAN DEDUCTION TO THE BREAKDOWN PREVIEW
+        let valesRow = document.getElementById('liveEstVales').parentElement;
+        if (!document.getElementById('liveEstLoanRow')) {
+            valesRow.insertAdjacentHTML('afterend', `
+                <div id="liveEstLoanRow" style="display: none; justify-content: space-between; margin-bottom: 10px; font-size: 14px;">
+                    <span style="color: #64748b; font-weight: bold;">Company Loan Deduction:</span>
+                    <strong id="liveEstLoan" style="color: #ef4444;">-₱0.00</strong>
+                </div>
+            `);
+        }
+        
+        let loanRow = document.getElementById('liveEstLoanRow');
+        if (cutoffLoanDeduction > 0) {
+            loanRow.style.display = 'flex';
+            document.getElementById('liveEstLoan').innerText = '-₱' + cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits: 2});
+        } else {
+            loanRow.style.display = 'none';
+        }
 
         let logsContainer = document.getElementById('liveCutoffDetailedLogs');
         if (!logsContainer) {
@@ -2184,20 +2223,17 @@ window.loadPayslipVault = async function() {
                 <div style="max-height: 150px; overflow-y: auto;">
         `;
 
-        // INJECT LONG-TERM COMPANY LOAN INTO UI
-        if (loanData) {
-            let remBal = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
-            if (remBal > 0) {
-                detailsHtml += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 10px; border-radius: 6px; border: 1px dashed #fcd34d; background: #fffbeb; margin-bottom: 10px;">
-                        <div>
-                            <strong style="color: #b45309;">💳 Company Loan Balance</strong><br>
-                            <span style="font-size: 11px; color: #d97706;">Total Remaining Debt (Auto-Deducts ₱${(loanData.cutoffDeduction||0)}/Cutoff)</span>
-                        </div>
-                        <strong style="color: #dc2626; font-size: 16px;">-₱${remBal.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+        // 🔥 INJECT LONG-TERM COMPANY LOAN INTO UI
+        if (loanData && remBal > 0) {
+            detailsHtml += `
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 12px; border-radius: 8px; border: 1px dashed #fcd34d; background: #fffbeb; margin-bottom: 15px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                    <div>
+                        <strong style="color: #b45309; font-size: 14px;">💳 Company Loan Deduction</strong><br>
+                        <span style="font-size: 11px; color: #d97706;">Auto-deducted this cutoff. (Remaining Debt: ₱${remBal.toLocaleString(undefined, {minimumFractionDigits: 2})})</span>
                     </div>
-                `;
-            }
+                    <strong style="color: #dc2626; font-size: 16px;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+                </div>
+            `;
         }
 
         if (activeDeductions.length > 0) {
@@ -3424,8 +3460,6 @@ window.loadMyLoanLedger = async function() {
     let container = document.getElementById('staffMyLoansContent');
     let staffName = localStorage.getItem('takodeal_staff_name') || localStorage.getItem('cashierName');
     
-    document.getElementById('reqModalTitle').innerText = "My Company Loans";
-    document.getElementById('requestModal').style.display = 'flex';
     container.innerHTML = '<div style="text-align:center; padding: 20px; color:#b45309; font-weight:bold;">⏳ Fetching ledger...</div>';
 
     try {
