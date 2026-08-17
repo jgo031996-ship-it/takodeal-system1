@@ -539,11 +539,94 @@ window.checkContractLifecycle = async function(staffId) {
     }
 };
 
-// 📄 1. INITIAL EMPLOYMENT CONTRACT UI
-window.showInitialContract = function(staffId, data) {
+// ========================================================
+// 📄 UNIFIED DOLE CONTRACT CONTENT GENERATOR
+// ========================================================
+window.getUnifiedContractContent = function(data, signDate) {
+    let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
+    if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
+    if (dailySalary === "0.00") dailySalary = "400.00"; // Fallback to template standard
+
+    return `
+        <div style="font-size: 13px; line-height: 1.5; text-align: justify; color: #1e293b;">
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">1. Position and Probationary Status</h4>
+            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
+                <li>The Employer hereby employs the Employee as a <b>${data.role || 'Service Crew'}</b> for Takodeal. The Employee agrees to faithfully and diligently perform duties and responsibilities assigned by the Employer.</li>
+                <li>Employment shall commence on <b>${data.dateHired || signDate}</b>, and shall be on a probationary basis for a period not exceeding six (6) months. During this period, the Employee's performance will be evaluated based on the standards of the Employer. Upon satisfactory completion of the probationary period, the Employee shall automatically attain regular employment status.</li>
+            </ul>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">2. Work Schedule and Compensation</h4>
+            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
+                <li><b>Basic Wage:</b> The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>.</li>
+                <li><b>Work Schedule:</b> The Employee shall be scheduled to work for five (5) days per week, subject to the scheduling and operational needs of the business.</li>
+                <li><b>Working Hours:</b> Working hours shall be determined by the Employer and may vary depending on business requirements.</li>
+                <li><b>Payroll Cut-off & Distribution:</b>
+                    <ul style="margin: 5px 0; padding-left: 20px;">
+                        <li>The payroll cut-off periods are the 15th (1st to 15th) and the end of each month (16th to 30th/31st).</li>
+                        <li>Salary shall be distributed five (5) days after each cut-off period (every 20th and 5th of the succeeding month).</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">3. Attendance and Absences Policy</h4>
+            <p style="margin: 0 0 5px 0;"><b>Purpose</b><br>This policy establishes clear rules and sanctions regarding employee attendance, punctuality, and absences to ensure efficient operations and workplace discipline.</p>
+            <p style="margin: 0 0 5px 0;"><b>Work Attendance</b><br>All employees are required to report for work on their scheduled days and time as assigned by management. Employees must be present, punctual, and fit for duty during working hours.</p>
+            <p style="margin: 0 0 5px 0;"><b>Absences</b><br>An absence is defined as failure to report for work during a scheduled workday without prior approval or valid reason.</p>
+            <ul style="margin: 0 0 5px 0; padding-left: 20px;">
+                <li><b>Excused Absence:</b> Absences due to valid reasons such as illness or emergencies, provided that proper notice and supporting documents are submitted.</li>
+                <li><b>Unexcused Absence:</b> Absences without prior approval, notice, or valid supporting documents. Failure to notify management before the start of the scheduled shift shall be considered an unexcused absence unless justified and approved by management.</li>
+            </ul>
+            <p style="margin: 0 0 5px 0;"><b>Tardiness</b><br>Tardiness is defined as failure to report for work at the scheduled start time.</p>
+            <ul style="margin: 0 0 5px 0; padding-left: 20px;">
+                <li>Repeated tardiness shall be subject to disciplinary action.</li>
+                <li>Excessive tardiness may be treated as a violation equivalent to an absence, at the discretion of management.</li>
+                <li>Management reserves the right to deduct corresponding time or wages for late arrivals, in accordance with labor laws.</li>
+            </ul>
+            <p style="margin: 0 0 5px 0;"><b>Disciplinary Actions and Sanctions</b><br>Any violation of this Attendance and Absences Policy shall be subject to progressive disciplinary action, depending on the frequency and severity of the offense:</p>
+            <ul style="margin: 0 0 5px 0; padding-left: 20px;">
+                <li>1st Offense: Verbal Warning / Documented Coaching</li>
+                <li>2nd Offense: Written Warning / Strict Reprimand</li>
+                <li>3rd Offense: 1-Day Suspension</li>
+                <li>4th Offense: 3-Day Suspension</li>
+                <li>5th Offense: 7-Day Suspension</li>
+                <li>6th Offense: 14-Day Suspension</li>
+                <li>7th Offense: Termination of Employment / Dismissal</li>
+            </ul>
+            <p style="margin: 0 0 5px 0;"><b>Suspension Rule:</b> In accordance with the "No Work, No Pay" principle, all disciplinary suspensions imposed shall be strictly without pay.</p>
+            <p style="margin: 0 0 10px 0;"><b>Management Discretion:</b> Management reserves the right to impose stricter penalties or immediate disciplinary action, including suspension or termination, for severe or repeated violations, subject to due process and applicable labor laws.</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">4. Confidentiality Agreement</h4>
+            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
+                <li>The Employee agrees to keep all proprietary information strictly confidential, including recipes, ingredients, preparation processes, supplier lists, and branding materials.</li>
+                <li>Disclosure of any confidential information to outside parties shall be considered a serious breach of this Agreement.</li>
+                <li>In the event of such a breach, the Employee shall be liable for actual damages incurred by the Employer and shall be subject to immediate termination, without prejudice to the Employer’s right to pursue civil or criminal remedies.</li>
+            </ul>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">5. Health Declaration</h4>
+            <p style="margin: 0 0 10px 0;">Upon signing this contract, the Employee affirms that he/she does not suffer from any critical illness and is physically fit to work in a food-handling environment. Should it later be discovered that the Employee concealed any critical illness, the Employer shall not be responsible for any related non-work medical expenses. However, in the event of any work-related injury, the Employer shall provide appropriate assistance in accordance with applicable labor laws and health policies.</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">6. Notice of Resignation</h4>
+            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
+                <li>The Employee agrees to render a standard thirty (30) days written notice prior to voluntarily resigning from their position.</li>
+                <li>Failure to comply with the required notice period shall be considered a breach of contract. The Employer reserves the right to hold the Employee liable for damages caused by the abrupt departure, which may be deducted from the Employee's final pay, in accordance with DOLE regulations. The Employee expressly agrees and understands the enforcement of this clause as a condition of employment.</li>
+            </ul>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">7. Company Uniform and Property</h4>
+            <p style="margin: 0 0 10px 0;">The Employer will provide the Employee with the following items on a borrowed basis: one (1) cap, one (1) apron, and one (1) t-shirt bearing the store logo. The Employee is strictly obliged to take proper care of these items during the course of their employment. Upon resignation or termination of employment, the Employee must immediately return the aforementioned items to the Employer. In the event the Employee is unable to return the items (due to loss, severe damage, or otherwise), the equivalent replacement cost of the unreturned items shall be deducted from the Employee's final payroll.</p>
+
+            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">8. Other Terms and Conditions</h4>
+            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
+                <li>The Employer reserves the right to amend company policies or impose additional guidelines as may be necessary for the efficient operation of the business.</li>
+                <li>The Employee agrees to abide by all lawful instructions, regulations, and policies issued by the Employer.</li>
+            </ul>
+        </div>
+    `;
+};
+
+// 📄 1. UNIFIED EMPLOYMENT CONTRACT UI
+window.showInitialContract = window.showRenewalContract = window.showRegularizationContract = function(staffId, data) {
     let dateToday = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : dateToday;
-    let dailySalary = parseFloat(data.hourlyRate || 0).toFixed(2);
     
     let branchAddress = "Davao City, Philippines";
     if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City";
@@ -555,49 +638,15 @@ window.showInitialContract = function(staffId, data) {
         <p>This Employment Contract ("Agreement") is made and entered into by and between:</p>
         <p><b>TAKODEAL TAKOYAKI FOODCART</b>, a duly registered business engaged in food operations, with principal place of business located at ${branchAddress}, herein referred to as the "Employer";</p>
         <p>-and-</p>
-        <p><b>${data.cashierName.toUpperCase()}</b>, of legal age, residing at ${data.address || 'Davao City, Philippines'}, herein referred to as the "Employee".</p>
+        <p><b>${(data.cashierName || 'Employee').toUpperCase()}</b>, of legal age, residing at ${data.address || 'Davao City, Philippines'}, herein referred to as the "Employee".</p>
+        <p>Collectively referred to as the "Parties."</p>
         
-        <h4 style="color: #0f172a;">1. POSITION AND COMMENCEMENT</h4>
-        <p>The Employer hereby employs the Employee as a <b>${data.role}</b>. Employment shall commence on <b>${dateHired}</b> and shall be valid for a period of six (6) months.</p>
+        ${window.getUnifiedContractContent(data, dateHired)}
 
-        <h4 style="color: #0f172a;">2. WORK SCHEDULE AND COMPENSATION</h4>
-        <p>The Employee shall receive a daily basic salary of <b>₱${(dailySalary * 8).toFixed(2)}</b>. The Employee is entitled to one (1) day off per week. Working hours shall be determined by the Employer.</p>
+        <div style="margin-top: 20px; font-weight: bold; text-align: center;">
+            IN WITNESS WHEREOF, the Parties have hereunto affixed their signatures on this ${dateToday} at Davao City, Philippines.
+        </div>
 
-        <h4 style="color: #0f172a;">3. ATTENDANCE, ABSENCES AND TARDINESS POLICY</h4>
-        <p><b>Absences:</b> Failure to notify management before the start of the scheduled shift shall be considered an unexcused absence.<br>
-        <b>Tardiness:</b> Repeated tardiness shall be subject to disciplinary action. Management reserves the right to deduct corresponding time or wages for late arrivals.<br>
-        <b>Sanctions for Violations:</b> 1st Offense (Verbal Warning) • 2nd Offense (Written Warning) • 3rd Offense (1-Day Suspension) • 4th Offense (3-Day Suspension) • 5th Offense (7-Day Suspension) • 6th Offense (14-Day Suspension) • 7th Offense (Termination / Dismissal).</p>
-
-        <h4 style="color: #0f172a;">4. CONFIDENTIALITY AGREEMENT</h4>
-        <p>The Employee agrees to keep all proprietary information strictly confidential. Disclosure to outside parties shall incur a <b>One Million Pesos (₱1,000,000.00)</b> penalty.</p>
-
-        <h4 style="color: #0f172a;">5. HEALTH DECLARATION</h4>
-        <p>The Employee affirms they are physically fit for a food-handling environment. The Employer is not responsible for medical expenses related to concealed critical illnesses.</p>
-
-        <h4 style="color: #0f172a;">6. NOTICE OF RESIGNATION</h4>
-        <p>The Employee agrees to render a 30-day notice prior to voluntarily resigning to avoid financial damages equivalent to the cost incurred due to the unserved notice period.</p>
-
-        <h4 style="color: #0f172a;">7. COMPANY UNIFORM AND PROPERTY</h4>
-        <p>Items provided on a borrowed basis must be cared for and returned upon resignation to avoid payroll deductions.</p>
-
-        ${window.getSignaturePadHTML(staffId, 'Initial')}
-    `;
-    window.renderContractOverlay(contractHtml, data);
-};
-
-// 📄 2. REGULARIZATION CONTRACT UI (Replaces the old Extension UI)
-window.showRenewalContract = window.showRegularizationContract = function(staffId, data) {
-    let dateToday = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    let dailySalary = parseFloat(data.hourlyRate || 0).toFixed(2);
-
-    let contractHtml = `
-        <h2 style="text-align: center; color: #10b981; text-transform: uppercase; margin-bottom: 20px;">Regularization of Employment Agreement</h2>
-        <p>This Regularization Agreement is executed on <b>${dateToday}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
-        <h4 style="color: #0f172a;">1. REGULARIZATION OF EMPLOYMENT</h4>
-        <p>Effective <b>${dateToday}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
-        <h4 style="color: #0f172a;">2. COMPENSATION & REAFFIRMATION</h4>
-        <p>The daily basic salary is <b>₱${(dailySalary * 8).toFixed(2)}</b>. All original policies (Attendance, ₱1,000,000.00 Confidentiality penalty, 30-Day Notice) remain in full force.</p>
-        
         ${window.getSignaturePadHTML(staffId, 'Regularization')}
     `;
     window.renderContractOverlay(contractHtml, data);
@@ -634,7 +683,6 @@ window.renderContractOverlay = function(contractHtml, data) {
     document.getElementById('appContainer').style.display = 'none';
     overlay.style.display = 'flex';
 
-    // Wake up the signature pad once the HTML is injected!
     setTimeout(() => { window.initContractSignaturePad(); }, 300);
 };
 
@@ -645,7 +693,6 @@ window.initContractSignaturePad = function() {
     let canvas = document.getElementById('contractSigCanvas');
     if (!canvas) return;
     
-    // Fix scaling for crisp lines on mobile screens
     canvas.width = canvas.offsetWidth || 400;
     canvas.height = canvas.offsetHeight || 150;
     
@@ -707,7 +754,7 @@ window.clearContractSignature = function() {
     }
 };
 
-// ✅ UNIVERSAL CONTRACT ACCEPTOR (SAVES SIGNATURE)
+// ✅ UNIVERSAL CONTRACT ACCEPTOR
 window.acceptContract = async function(staffId, type) {
     if (window.isContractSignatureBlank) {
         return Swal.fire('Signature Required', 'Please sign your name in the box to legally accept this contract.', 'warning');
@@ -720,28 +767,20 @@ window.acceptContract = async function(staffId, type) {
 
         let todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         
-        let newStatus = 'Active';
+        // This triggers the 1-time signature event.
         let updatePayload = { 
-            contractStatus: newStatus,
-            contractSignature: signatureBase64 // Save the signature drawing to Firebase!
+            contractStatus: 'Regular', // Automatically flips them to Regular/Active!
+            contractSignature: signatureBase64,
+            ['signedContracts.regularization']: todayStr
         };
-        
-        if (type === 'Initial') { updatePayload.contractStatus = 'Active'; updatePayload['signedContracts.initial'] = todayStr; }
-        if (type === 'Extension') { 
-            let today = new Date(); let yyyy = today.getFullYear(); let mm = String(today.getMonth() + 1).padStart(2, '0'); let dd = String(today.getDate()).padStart(2, '0');
-            updatePayload.contractStatus = 'Extended'; updatePayload.dateHired = `${yyyy}-${mm}-${dd}`; updatePayload['signedContracts.extension'] = todayStr; 
-        }
-        if (type === 'Regularization') { updatePayload.contractStatus = 'Regular'; updatePayload['signedContracts.regularization'] = todayStr; }
 
         await updateDoc(doc(db, "cashiers", staffId), updatePayload);
         
-        // Pass the signature into local memory so the PDF generator can use it instantly!
         window.coePendingData.contractSignature = signatureBase64;
 
         document.getElementById('renewalContractOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         
-        // Trigger the automatic PDF download!
         window.downloadContractPDF(type, window.coePendingData, todayStr, true);
 
     } catch(e) {
@@ -753,49 +792,13 @@ window.acceptContract = async function(staffId, type) {
 // 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR (WITH SIGNATURE & IDs)
 // ========================================================
 window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) {
-    let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
-    if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
-
     let branchAddress = "Davao City, Philippines";
     if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City";
     if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
     if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
 
-    let isRegular = (type === 'Regularization' || type === 'Extension');
-    let title = isRegular ? "REGULARIZATION OF EMPLOYMENT AGREEMENT" : "EMPLOYMENT CONTRACT";
-
-    let durationText = isRegular 
-        ? `Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.`
-        : `Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months, subject to the terms and conditions of this Agreement.`;
-
-    let content = `
-        <div style="font-size: 13px; line-height: 1.5; text-align: justify; color: #1e293b;">
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">1. Position and Commencement</h4>
-            <p style="margin: 0 0 10px 0;">The Employer hereby employs the Employee as a <b>${data.role || 'Service Crew'}</b> for Takodeal. The Employee agrees to faithfully and diligently perform duties assigned by the Employer. ${durationText}</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">2. Work Schedule and Compensation</h4>
-            <p style="margin: 0 0 10px 0;">The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>. The Employee is scheduled to work up to six (6) days per week, subject to operational needs. Working hours shall be determined by the Employer.</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">3. Attendance, Absences and Tardiness Policy</h4>
-            <p style="margin: 0 0 10px 0;">
-                <b>Absences:</b> Failure to notify management before the start of the scheduled shift shall be considered an unexcused absence.<br>
-                <b>Tardiness:</b> Repeated tardiness shall be subject to disciplinary action. Management reserves the right to deduct corresponding time or wages for late arrivals.<br>
-                <b>Sanctions for Violations:</b> 1st Offense (Verbal Warning) • 2nd Offense (Written Warning) • 3rd Offense (1-Day Suspension) • 4th Offense (3-Day Suspension) • 5th Offense (7-Day Suspension) • 6th Offense (14-Day Suspension) • 7th Offense (Termination / Dismissal).
-            </p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">4. Confidentiality Agreement</h4>
-            <p style="margin: 0 0 10px 0;">The Employee agrees to keep all proprietary information strictly confidential (recipes, processes, suppliers). Disclosure to outside parties is a serious breach, making the Employee liable to pay a <b>One Million Pesos (₱1,000,000.00)</b> penalty to the Employer.</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">5. Health Declaration</h4>
-            <p style="margin: 0 0 10px 0;">The Employee affirms they are physically fit for a food-handling environment. The Employer is not responsible for medical expenses related to concealed critical illnesses.</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">6. Notice of Resignation</h4>
-            <p style="margin: 0 0 10px 0;">The Employee agrees to render a <b>30-day notice</b> prior to voluntarily resigning to avoid financial damages equivalent to the cost incurred due to the unserved notice period.</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">7. Company Uniform and Property</h4>
-            <p style="margin: 0 0 10px 0;">Items provided on a borrowed basis (cap, apron, t-shirt) must be cared for and returned upon resignation to avoid payroll deductions.</p>
-        </div>
-    `;
+    let title = "EMPLOYMENT CONTRACT";
+    let content = window.getUnifiedContractContent(data, data.dateHired || signDate);
 
     // 4. Gather Uploaded IDs from Database for Page 2
     let idImagesHtml = "";
@@ -832,7 +835,7 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
             
             ${content}
             
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; font-size: 13px;">
+            <div style="margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; font-size: 13px;">
                 <div>
                     ${employeeSignatureHtml}
                     <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px; padding-bottom: 5px;"><b>${(data.cashierName || 'Employee').toUpperCase()}</b></div>
@@ -862,7 +865,7 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         if (isStaffApp) {
             Swal.fire({
                 title: '<div style="font-size: 32px; animation: bounce 1s infinite;">🎉 CONGRATULATIONS! 🎉</div>',
-                html: `<b>Welcome to the next chapter of your journey at TAKODEÁL!</b> 🐙<br><br>Your contract has been officially signed and a PDF soft copy has been downloaded to your device for your records.`,
+                html: `<b>Welcome to the next chapter of your journey at TAKODEÁL!</b> 🐙<br><br>Your official contract has been digitally signed and a PDF soft copy has been downloaded to your device for your records.`,
                 icon: 'success',
                 confirmButtonText: 'Awesome! 🚀',
                 confirmButtonColor: '#10b981',
@@ -875,6 +878,44 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         console.error("PDF Gen Error:", err);
         Swal.fire('Warning', 'Contract generated, but there was an issue attaching the ID photos. Please ensure IDs are uploaded in the Staff Profile.', 'warning');
     });
+};
+
+window.reprintContract = function(type, encodedData, signDate) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    let printWin = window.open('', '', 'width=850,height=900');
+    printWin.document.write(window.getContractPrintHTML(type, data, signDate));
+};
+
+window.getContractPrintHTML = function(type, data, signDate) {
+    let title = "EMPLOYMENT CONTRACT";
+    let content = window.getUnifiedContractContent(data, data.dateHired || signDate);
+    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
+
+    return `
+        <html><head><title>${title} - ${data.cashierName}</title></head>
+        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.6; position: relative;">
+            <img src="${logoUrl}" style="position: absolute; left: 40px; top: 30px; width: 100px; height: 100px; object-fit: contain;">
+            <div style="text-align: center; margin-bottom: 30px; padding-top: 10px;">
+                <h1 style="margin: 0; font-size: 38px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
+                <p style="margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
+            </div>
+            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 40px;">
+            <h2 style="text-align: center; color: #b45309; text-transform: uppercase;">${title}</h2>
+            <p>This Agreement is executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${(data.cashierName || 'Employee').toUpperCase()}</b> ("Employee").</p>
+            ${content}
+            <div style="margin-top: 80px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${(data.cashierName || 'Employee').toUpperCase()}</b></div>
+                    <span style="font-size: 14px; color: #64748b;">Employee Signature / Digitally Accepted</span>
+                </div>
+                <div>
+                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
+                    <span style="font-size: 14px; color: #64748b;">Owner / Employer</span>
+                </div>
+            </div>
+            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
+        </body></html>
+    `;
 };
 
 window.previewProfileImage = async function(event) {
