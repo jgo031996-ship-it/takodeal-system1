@@ -1,6 +1,7 @@
-// Takodeál Staff Engine v3.0 - Fleet Access Fix
+// Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+// 🔥 UPGRADE: Imported the Offline Cache Engines!
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
@@ -13,10 +14,16 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+
+// 🔥 UPGRADE: This activates the "Indestructible Offline Mode" on the Staff App!
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+});
 const storage = getStorage(app);
+
 window.db = db;
 window.storage = storage;
+
 // 🔥 THE FIREBASE BRIDGE FIX 🔥
 window.query = query;
 window.where = where;
@@ -2195,18 +2202,24 @@ window.loadPayslipVault = async function() {
             }
         });
 
+        // 🔥 THE PAYSLIP CRASH FIX: Gracefully handles missing time outs!
         if (activeShifts[staffName]) {
+            let activeTime = activeShifts[staffName].time;
+            let now = new Date();
+            let hoursSince = (now - activeTime) / (1000 * 60 * 60);
+            let isOrphaned = hoursSince > 18; // If it's been 18+ hours, they definitely forgot to time out!
+
             shiftPairs.push({ 
-                dateObj: activeShifts[staffName].time, 
-                in: activeShifts[staffName].time, 
-                out: "Active Shift", 
+                dateObj: activeTime, 
+                in: activeTime, 
+                out: isOrphaned ? null : "Active Shift", 
                 hrs: 0, 
-                remark: `<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>`,
+                remark: isOrphaned ? `<span style="color:#ef4444; font-weight:bold;">Missing Time Out</span>` : `<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>`,
                 lateMins: (!activeShifts[staffName].lateExempted && activeShifts[staffName].lateMinutes > 0) ? activeShifts[staffName].lateMinutes : 0,
-                isActive: true
+                isActive: !isOrphaned,
+                isMissingOut: isOrphaned
             });
         }
-
         bonusesList.forEach(b => {
             let amt = parseFloat(b.amount) || 0;
             let bDate = b.dateAdded ? safeDate(b.dateAdded) : new Date();
@@ -2292,7 +2305,7 @@ window.loadPayslipVault = async function() {
             shiftPairs.sort((a,b) => b.dateObj.getTime() - a.dateObj.getTime()).forEach(p => {
                 let dateStr = p.dateObj.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
                 let inStr = p.in ? p.in.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : '---';
-                let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---');
+                let outStr = p.isActive ? '<span style="color:#0ea5e9; font-style:italic;">Active Shift</span>' : (p.isMissingOut ? '<span style="color:#ef4444; font-weight:bold;">No Record</span>' : (p.out ? (typeof p.out === 'string' ? p.out : p.out.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})) : '---'));
                 
                 // 🔥 THE CRASH FIX: Safe parseFloat
                 let safeHrs = parseFloat(p.hrs);
