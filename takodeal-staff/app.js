@@ -17,6 +17,19 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 window.db = db;
 window.storage = storage;
+// 🔥 THE FIREBASE BRIDGE FIX 🔥
+window.query = query;
+window.where = where;
+window.collection = collection;
+window.getDocs = getDocs;
+window.getDoc = getDoc;
+window.addDoc = addDoc;
+window.updateDoc = updateDoc;
+window.deleteDoc = deleteDoc;
+window.doc = doc;
+window.setDoc = setDoc;
+window.serverTimestamp = serverTimestamp;
+window.orderBy = orderBy;
 
 console.log("🚀 Takodeál Staff Portal Booted (v3.0 - Fleet Engine Active)");
 
