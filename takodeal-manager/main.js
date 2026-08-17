@@ -16403,14 +16403,14 @@ window.offerRenewalContract = async function() {
     }
 };
 
-window.offerRegularizationContract = async function() {
+window.offerOfficialContract = async function() {
     let docId = document.getElementById('empProfileId').value;
     let name = document.getElementById('empFullName').value;
     if(!docId) return;
 
     let confirm = await Swal.fire({
         title: 'Issue Official Contract? 📄',
-        text: `This will send the Official Employment Contract to ${name}'s tablet for their permanent digital signature.`,
+        text: `This will send the Official Single-Signing Employment Contract to ${name}'s tablet for their permanent digital signature.`,
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#10b981',
