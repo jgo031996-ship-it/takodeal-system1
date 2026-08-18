@@ -2461,7 +2461,16 @@
             <h2 style="margin: 0; color: #b45309;">📘 Staff Loans & Cash Advances</h2>
             <span style="font-size: 12px; color: var(--text-muted);">Track long-term company loans and running balances for all employees.</span>
           </div>
-          <button class="btn-refresh" style="background: white; border: 1px solid var(--border); color: var(--text-main);" onclick="loadLedger()">🔄 Refresh Ledger</button>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <select id="ledgerBranchFilter" class="input-box" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: var(--primary); outline: none; cursor: pointer;" onchange="window.loadLedger()">
+                <option value="All">All Branches</option>
+                <option value="Cabantian">Cabantian</option>
+                <option value="Citygate">Citygate</option>
+                <option value="Maa">Maa</option>
+                <option value="Main Office">Main Office</option>
+            </select>
+            <button class="btn-refresh" style="background: white; border: 1px solid var(--border); color: var(--text-main);" onclick="loadLedger()">🔄 Refresh Ledger</button>
+          </div>
         </div>
         <div class="table-responsive">
           <table class="data-table">
