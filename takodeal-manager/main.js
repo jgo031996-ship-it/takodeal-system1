@@ -628,9 +628,12 @@ window.loadGlobalDashboard = async function() {
             let isActive = shiftData && shiftData.active === true;
             let isClosed = shiftData && shiftData.status === "Closed";
 
-            let displayCashier = shiftData ? (shiftData.cashier || '-') : '-';
+            let displayCashier = '-';
             let branchGross = 0; let branchNet = 0; let branchCashIn = 0; let branchExp = 0;
             let parkedCount = 0;
+            
+            let latestTxTime = 0;
+            let activeCashierNow = null;
 
             if (shiftData) {
                 let shiftStart = shiftData.startTime.toDate();
@@ -652,7 +655,23 @@ window.loadGlobalDashboard = async function() {
                         branchGross += txGross;
                         if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
                     }
+                    
+                    // Track the cashier from the most recent transaction to know who is actively punching orders!
+                    let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : 0;
+                    if (txTimeMs > latestTxTime && tx.cashier) {
+                        latestTxTime = txTimeMs;
+                        activeCashierNow = tx.cashier;
+                    }
                 });
+
+                // 🧠 SMART CASHIER DETECTOR: 
+                // 1. Use the cashier from the most recent transaction.
+                // 2. If no transactions yet, split the shift cashier string and grab the last name!
+                if (activeCashierNow) {
+                    displayCashier = activeCashierNow;
+                } else if (shiftData.cashier) {
+                    displayCashier = shiftData.cashier.split('/').pop().trim();
+                }
 
                 expSnap.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
                 parkedCount = parkedSnap.size;
