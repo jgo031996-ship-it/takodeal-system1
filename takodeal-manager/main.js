@@ -2609,15 +2609,92 @@ window.loadDispatchInventory = async function () {
     } catch (e) { console.error(e); itemInput.placeholder = 'Error loading stock'; }
 };
 
-window.updateDispatchUomLabel = function() {
+window.updateDispatchUomLabel = async function() {
     let itemName = document.getElementById('dispItem').value.trim();
     let uomDrop = document.getElementById('dispUomSelect');
-    if (!itemName) { uomDrop.innerHTML = '<option value="base">Units</option>'; return; }
+    let toBranch = document.getElementById('dispTo').value;
+
+    // 🔥 INJECT AI TRACKER UI DYNAMICALLY
+    let aiContainer = document.getElementById('dispAiTracker');
+    if (!aiContainer) {
+        // Place it beautifully right below the quantity box
+        let qtyContainer = document.getElementById('dispQty').parentElement.parentElement;
+        qtyContainer.insertAdjacentHTML('afterend', `<div id="dispAiTracker" style="width: 100%; margin-top: 10px; flex-basis: 100%;"></div>`);
+        aiContainer = document.getElementById('dispAiTracker');
+    }
+
+    if (!itemName || !toBranch) { 
+        uomDrop.innerHTML = '<option value="base">Units</option>'; 
+        if(aiContainer) aiContainer.innerHTML = '';
+        return; 
+    }
 
     let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
     if (invItem) {
-        let baseUom = invItem.uom || 'units'; let purchUom = invItem.purchaseUom || 'Bulk';
+        let baseUom = invItem.uom || 'units'; 
+        let purchUom = invItem.purchaseUom || 'Bulk';
         uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
+    }
+
+    // 🔥 AWAKEN THE AI TRACKER ENGINE
+    if(aiContainer) {
+        aiContainer.innerHTML = '<span style="color:#0ea5e9; font-size:11px; font-weight:bold; animation: pulse 1s infinite;">🤖 AI Scanning Branch Data...</span>';
+        
+        try {
+            // 1. Fetch current stock at destination branch
+            const invQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemName));
+            const invSnap = await getDocs(invQ);
+            let currentStock = 0; let bUom = 'units';
+            if (!invSnap.empty) {
+                currentStock = parseFloat(invSnap.docs[0].data().currentStock) || 0;
+                bUom = invSnap.docs[0].data().uom || 'units';
+            }
+
+            // 2. Fetch last 14 days burn rate
+            let fourteenDaysAgo = new Date();
+            fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+            const logsQ = query(collection(db, "stock_logs"), where("branch", "==", toBranch), where("item", "==", itemName), where("timestamp", ">=", fourteenDaysAgo));
+            const logsSnap = await getDocs(logsQ);
+
+            let totalBurn = 0;
+            logsSnap.forEach(doc => {
+                let log = doc.data();
+                let v = parseFloat(log.variance) || 0;
+                let t = (log.type || "").toLowerCase();
+                // Mathematically calculate every deduction
+                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                    totalBurn += Math.abs(v);
+                }
+            });
+
+            let dailyBurn = totalBurn / 14;
+            let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : Infinity;
+            let daysText = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1) + " Days";
+            let statusColor = currentStock <= 0 ? "#dc2626" : (daysLeft <= 3 ? "#ea580c" : "#16a34a");
+
+            aiContainer.innerHTML = `
+                <div style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 8px; font-size: 11px; color: #475569; display: flex; flex-direction: column; gap: 4px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 4px;">
+                        <strong style="color: #0f172a;">🤖 AI Stock Radar (${toBranch})</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Current Live Stock:</span>
+                        <strong style="color: ${currentStock <= 0 ? '#dc2626' : '#334155'};">${currentStock.toFixed(2)} ${bUom}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Avg. Daily Burn (14-day):</span>
+                        <strong style="color: #b45309;">${dailyBurn.toFixed(2)} ${bUom}/day</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Estimated Runway:</span>
+                        <strong style="color: ${statusColor};">${daysText}</strong>
+                    </div>
+                </div>
+            `;
+        } catch(e) {
+            console.error("AI Tracker Error:", e);
+            aiContainer.innerHTML = '<span style="color:#ef4444; font-size:11px;">Error loading AI data.</span>';
+        }
     }
 };
 
@@ -3462,7 +3539,7 @@ window.viewDeliveryDetails = function(encodedGroup) {
     if (footerEl) {
         footerEl.innerHTML = '';
         if (canRecall) { footerEl.innerHTML += `<button onclick="window.recallDispatch('${encodedGroup}')" style="background: #f59e0b; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); font-size: 14px; transition: 0.2s; width: 100%; margin-bottom: 10px;">🔙 Back Load / Recall Dispatch</button>`; } 
-        if (hasMissing) { footerEl.innerHTML += `<button onclick="window.requeueLostItems('${encodedGroup}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); font-size: 14px; transition: 0.2s; width: 100%;">🔄 Auto-Requeue Lost Items to Requests</button>`; }
+        if (hasMissing) { footerEl.innerHTML += `<button onclick="window.resolveMissingDispatchItems('${encodedGroup}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); font-size: 14px; transition: 0.2s; width: 100%;">🕵️ Resolve Missing Items</button>`; }
         if (!canRecall && !hasMissing) { footerEl.innerHTML = `<span style="font-size: 12px; color: #64748b; font-weight: bold; background: #e2e8f0; padding: 8px 15px; border-radius: 6px; display: block; text-align: center;">🔒 This delivery has been fully processed by the branch.</span>`; }
     }
 
@@ -3485,31 +3562,94 @@ window.markDispatchArrived = async function(encodedGroup) {
     } catch (e) { console.error(e); Swal.fire('Error', 'Failed to update status.', 'error'); }
 };
 
-window.requeueLostItems = async function(encodedGroup) {
+window.resolveMissingDispatchItems = async function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!confirm(`Re-queue all missing/lost items for ${group.toBranch} as a new Stock Request?`)) return;
+    let lostItems = group.items.filter(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
+    
+    if (lostItems.length === 0) return;
 
-    Swal.fire({title: 'Generating Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    let itemsListHtml = lostItems.map(i => `<li style="margin-bottom: 5px;"><b>${i.item}</b>: Missing <b style="color:#dc2626;">${Math.abs(parseFloat(i.variance) || 0)} ${i.uom}</b></li>`).join('');
+
+    const { value: action } = await Swal.fire({
+        title: '🕵️ Resolve Missing Items',
+        html: `
+            <div style="text-align: left; font-size: 13px; color: #334155; margin-bottom: 15px;">
+                The cashier at <b>${group.toBranch}</b> reported receiving less than what was sent. Please double check with the driver. What happened to these items?
+                <ul style="margin-top: 10px; color: #0f172a; background: #f8fafc; padding: 10px 10px 10px 25px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    ${itemsListHtml}
+                </ul>
+            </div>
+        `,
+        input: 'radio',
+        inputOptions: {
+            'return': '📦 The driver brought them back (Return to HQ Inventory)',
+            'requeue': '🔄 They were genuinely lost/forgotten (Re-queue as a Stock Request)'
+        },
+        inputValidator: (value) => {
+            if (!value) { return 'You need to select an action!'; }
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Confirm Resolution',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!action) return;
+
+    Swal.fire({title: 'Processing Resolution...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        let lostItems = group.items.filter(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
-        
-        let poItems = lostItems.map(item => {
-            let varianceQty = Math.abs(parseFloat(item.variance) || 0);
-            let cRate = parseFloat(item.convRate) || 1;
-            let displayQty = varianceQty / cRate; 
+        if (action === 'return') {
+            // 1. Return to HQ Inventory Safely
+            for (let item of lostItems) {
+                let varianceQty = Math.abs(parseFloat(item.variance) || 0);
+                let originBranch = item.fromBranch || "Main Office";
+                
+                const invQ = query(collection(db, "inventory"), where("branch", "==", originBranch), where("name", "==", item.item));
+                const invSnap = await getDocs(invQ);
+                
+                if (!invSnap.empty) {
+                    let invDoc = invSnap.docs[0];
+                    let currentStock = parseFloat(invDoc.data().currentStock) || 0;
+                    await updateDoc(invDoc.ref, { currentStock: currentStock + varianceQty });
+                    
+                    // Trace Log for Security
+                    await addDoc(collection(db, "stock_logs"), {
+                        branch: originBranch, item: item.item, uom: item.baseUom || item.uom,
+                        oldQty: currentStock, newQty: currentStock + varianceQty, variance: varianceQty,
+                        type: "Dispatch Returned (Backload)", note: `Items bounced from ${group.toBranch} and returned to HQ.`,
+                        user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
+                    });
+                }
+                // Mark Dispatch as cleared
+                await updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Returned to HQ' });
+            }
+            Swal.fire('✅ Returned to HQ', 'The missing items have been successfully returned to your Main Office inventory.', 'success');
+        } 
+        else if (action === 'requeue') {
+            // 2. Re-queue as a Stock Request
+            let poItems = lostItems.map(item => {
+                let varianceQty = Math.abs(parseFloat(item.variance) || 0);
+                let cRate = parseFloat(item.convRate) || 1;
+                let displayQty = varianceQty / cRate; 
+                return { itemName: item.item, name: item.item, qty: varianceQty, displayQty: displayQty, uom: item.baseUom || item.uom, displayUom: item.displayUom || item.purchaseUom || item.uom, requestType: 'Lost in Transit', physicalStock: 0, systemStock: 0 };
+            });
 
-            return { itemName: item.item, name: item.item, qty: varianceQty, displayQty: displayQty, uom: item.baseUom || item.uom, displayUom: item.displayUom || item.purchaseUom || item.uom, requestType: 'Lost in Transit', physicalStock: 0, systemStock: 0 };
-        });
+            await addDoc(collection(db, "purchase_orders"), { branch: group.toBranch, items: poItems, status: "Pending", type: "Lost Item Replacement", requestedBy: "System (HQ Resolved)", timestamp: serverTimestamp() });
 
-        await addDoc(collection(db, "purchase_orders"), { branch: group.toBranch, items: poItems, status: "Pending", type: "Lost Item Replacement", requestedBy: "System (Auto-Requeue)", timestamp: serverTimestamp() });
+            for (let item of lostItems) {
+                await updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Lost (Re-queued)' });
+            }
+            Swal.fire('✅ Re-Queued', 'Lost items have been instantly sent to the Stock Requests feed so you can dispatch them again.', 'success');
+        }
 
-        let promises = lostItems.map(item => updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Lost (Re-queued)' }));
-        await Promise.all(promises);
-
-        Swal.fire('Success', 'Lost items have been instantly sent to the Stock Requests feed!', 'success');
         document.getElementById('dispatchDetailsModal').style.display = 'none';
-    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to requeue lost items.', 'error'); }
+        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+
+    } catch (e) {
+        console.error("Resolution Error:", e);
+        Swal.fire('Error', 'Failed to resolve items. Check console.', 'error');
+    }
 };
 
 window.recallDispatch = async function(encodedGroup) {
@@ -17512,11 +17652,10 @@ window.loadEquipmentDashboard = async function() {
 window.openAddEquipmentModal = async function() {
     let branchOptions = window.globalActiveBranches.map(b => `<option value="${b}">${b}</option>`).join('');
     
-    // Check if accounts exist for the deduction integration
     let accountOptions = '<option value="">-- Do Not Deduct / Just Log Asset --</option>';
     if (window.liveAccounts) {
         window.liveAccounts.forEach(a => {
-            if (a.branch === "Main Office") { // Only pull money from HQ accounts for CAPEX!
+            if (a.branch === "Main Office") {
                 accountOptions += `<option value="${a.id}|${a.name}">Deduct from ${a.name} (Bal: ₱${a.balance.toLocaleString()})</option>`;
             }
         });
@@ -17538,8 +17677,16 @@ window.openAddEquipmentModal = async function() {
                         <select id="swal-eq-branch" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; box-sizing: border-box; font-weight: bold; cursor: pointer; font-size: 14px;">${branchOptions}</select>
                     </div>
                     <div>
-                        <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px;">Cost (₱)</label>
+                        <label style="font-size: 12px; font-weight: bold; color: #0ea5e9; display: block; margin-bottom: 5px;">Quantity to Add</label>
+                        <input type="number" id="swal-eq-qty" value="1" min="1" style="width: 100%; padding: 12px; border-radius: 6px; border: 2px solid #bae6fd; background: #f0f9ff; outline: none; box-sizing: border-box; font-weight: 900; color: #0ea5e9; font-size: 15px;">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px;">Total Cost (₱) for ALL units combined</label>
                         <input type="number" id="swal-eq-cost" placeholder="0.00" style="width: 100%; padding: 12px; border-radius: 6px; border: 2px solid #fca5a5; background: #fef2f2; outline: none; box-sizing: border-box; font-weight: 900; color: #dc2626; font-size: 15px;">
+                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-style: italic;">Ex: If you add Qty: 2 and Total Cost: 1000, it creates two ₱500 assets.</div>
                     </div>
                 </div>
 
@@ -17577,56 +17724,65 @@ window.openAddEquipmentModal = async function() {
                 name: document.getElementById('swal-eq-name').value.trim(),
                 details: document.getElementById('swal-eq-details').value.trim(),
                 branch: document.getElementById('swal-eq-branch').value,
+                qty: parseInt(document.getElementById('swal-eq-qty').value) || 1,
                 cost: parseFloat(document.getElementById('swal-eq-cost').value) || 0,
                 purchaseDate: document.getElementById('swal-eq-pdate').value,
                 operateDate: document.getElementById('swal-eq-odate').value,
-                accountData: document.getElementById('swal-eq-account').value // "id|name"
+                accountData: document.getElementById('swal-eq-account').value
             }
         }
     });
 
     if (!isConfirmed || !formValues.name) return;
 
-    Swal.fire({ title: 'Registering Asset...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    Swal.fire({ title: 'Registering Asset(s)...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
     try {
-        // 1. Save Asset
-        await addDoc(collection(db, "equipment_assets"), {
-            name: formValues.name,
-            details: formValues.details,
-            branch: formValues.branch,
-            cost: formValues.cost,
-            purchaseDate: formValues.purchaseDate,
-            operateDate: formValues.operateDate,
-            status: "Active",
-            timestamp: serverTimestamp()
-        });
+        let totalCost = formValues.cost;
+        let costPerUnit = totalCost / formValues.qty;
 
-        // 2. Optional: Log to P&L Expenses
-        if (formValues.accountData && formValues.cost > 0) {
+        // 1. Loop and generate separate database entries based on the quantity requested
+        for (let i = 0; i < formValues.qty; i++) {
+            let assetDetails = formValues.details;
+            if (formValues.qty > 1) {
+                assetDetails += ` (Unit ${i + 1} of ${formValues.qty})`;
+            }
+
+            await addDoc(collection(db, "equipment_assets"), {
+                name: formValues.name,
+                details: assetDetails,
+                branch: formValues.branch,
+                cost: costPerUnit,
+                purchaseDate: formValues.purchaseDate,
+                operateDate: formValues.operateDate,
+                status: "Active",
+                timestamp: serverTimestamp()
+            });
+        }
+
+        // 2. Optional: Log to P&L Expenses (Deducts the Full Total Cost at once)
+        if (formValues.accountData && totalCost > 0) {
             let [accId, accName] = formValues.accountData.split('|');
             
-            // Deduct from Bank/Cash
             let accRef = doc(db, "cash_accounts", accId);
             let accSnap = await getDoc(accRef);
             if (accSnap.exists()) {
-                await updateDoc(accRef, { balance: (accSnap.data().balance || 0) - formValues.cost });
+                await updateDoc(accRef, { balance: (accSnap.data().balance || 0) - totalCost });
             }
 
-            // Log Expense
             await addDoc(collection(db, "expenses"), {
                 branch: formValues.branch,
-                amount: formValues.cost,
+                amount: totalCost,
                 category: "Equipment / CAPEX",
                 account: accName,
-                description: `Asset Purchase: ${formValues.name}`,
-                timestamp: new Date(formValues.purchaseDate + 'T12:00:00') // Log on purchase date
+                description: `Asset Purchase: ${formValues.qty}x ${formValues.name}`,
+                timestamp: new Date(formValues.purchaseDate + 'T12:00:00') 
             });
             
             if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
         }
 
-        Swal.fire('✅ Asset Logged', `${formValues.name} successfully registered.`, 'success');
+        Swal.fire('✅ Asset Logged', `${formValues.qty}x ${formValues.name} successfully registered.`, 'success');
         window.loadEquipmentDashboard();
     } catch (e) {
         console.error("Save Asset Error:", e);
