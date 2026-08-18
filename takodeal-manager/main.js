@@ -1321,7 +1321,6 @@ window.dismissAlert = async function (docId) {
   }
 };
 
-// 🔥 THE NEW BULK SELECT & DELETE ENGINE
 window.toggleAllAlertCheckboxes = function(source) {
     document.querySelectorAll('.alert-bulk-cb').forEach(cb => cb.checked = source.checked);
 };
@@ -1333,53 +1332,36 @@ window.bulkResolveAlerts = async function() {
     Swal.fire({title: 'Marking Resolved...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     try {
         let promises = [];
-        checkboxes.forEach(cb => {
-            promises.push(updateDoc(doc(db, "manager_alerts", cb.value), { isRead: true }));
-        });
+        checkboxes.forEach(cb => { promises.push(updateDoc(doc(db, "manager_alerts", cb.value), { isRead: true })); });
         await Promise.all(promises);
-        
         let masterCb = document.getElementById('selectAllAlerts');
         if (masterCb) masterCb.checked = false;
-        
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: `Resolved ${checkboxes.length} alerts!`, showConfirmButton: false, timer: 2000});
-    } catch(e) {
-        console.error(e); Swal.fire('Error', 'Failed to resolve alerts.', 'error');
-    }
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to resolve alerts.', 'error'); }
 };
 
 window.bulkDeleteAlerts = async function() {
     let checkboxes = document.querySelectorAll('.alert-bulk-cb:checked');
     if (checkboxes.length === 0) return Swal.fire('No Alerts Selected', 'Please check the boxes of the alerts you want to delete.', 'info');
 
-    let confirm = await Swal.fire({
-        title: 'Delete Alerts?', text: `Are you sure you want to permanently delete ${checkboxes.length} security alerts?`, icon: 'warning',
-        showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Yes, Delete!'
-    });
+    let confirm = await Swal.fire({ title: 'Delete Alerts?', text: `Are you sure you want to permanently delete ${checkboxes.length} security alerts?`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Yes, Delete!' });
 
     if (confirm.isConfirmed) {
         Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
             let promises = [];
-            checkboxes.forEach(cb => {
-                promises.push(deleteDoc(doc(db, "manager_alerts", cb.value)));
-            });
+            checkboxes.forEach(cb => { promises.push(deleteDoc(doc(db, "manager_alerts", cb.value))); });
             await Promise.all(promises);
-            
             let masterCb = document.getElementById('selectAllAlerts');
             if (masterCb) masterCb.checked = false;
-            
             Swal.fire({toast: true, position: 'top-end', icon: 'success', title: `Deleted ${checkboxes.length} alerts!`, showConfirmButton: false, timer: 2000});
-        } catch(e) {
-            console.error(e); Swal.fire('Error', 'Failed to delete alerts.', 'error');
-        }
+        } catch(e) { console.error(e); Swal.fire('Error', 'Failed to delete alerts.', 'error'); }
     }
 };
 
 window.deleteSingleAlert = async function(docId) {
     if(!confirm("Permanently delete this security alert?")) return;
-    try {
-        await deleteDoc(doc(db, "manager_alerts", docId));
-    } catch(e) { console.error(e); alert("Failed to delete alert."); }
+    try { await deleteDoc(doc(db, "manager_alerts", docId)); } catch(e) { console.error(e); alert("Failed to delete alert."); }
 };
 
 // --- NAVIGATION SYSTEM ---
@@ -2501,80 +2483,104 @@ window.backloadDispatchItem = async function(logId, itemName, qtyToReturn, desti
     }
 };
 
-window.viewDispatchDetails = function(encodedItems, branch, driver, date, time) {
-    let items = JSON.parse(decodeURIComponent(encodedItems));
-    let header = document.getElementById('dispatchDetailsHeader');
-    let tbody = document.getElementById('dispatchDetailsBody');
-    
-    let receivedItem = items.find(i => i.receivedBy);
-    let receiverName = receivedItem ? receivedItem.receivedBy : '<span style="color:#ef4444; font-style:italic;">Pending Receipt</span>';
-    
-    let receivedTimeStr = '<span style="color:#ef4444; font-style:italic;">Pending</span>';
-    if (receivedItem && receivedItem.receivedAt) {
-        let rDate = receivedItem.receivedAt.seconds ? new Date(receivedItem.receivedAt.seconds * 1000) : new Date(receivedItem.receivedAt);
-        receivedTimeStr = rDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) + ' ' + rDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-    }
-
-    let dispatchTime = time || items[0].time || 'Unknown';
-
-    header.innerHTML = `
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div style="border-right: 1px dashed #cbd5e1; padding-right: 15px;">
-                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Dispatch Info</div>
-                <div style="margin-top: 5px;"><strong>📍 Destination:</strong> ${branch}</div>
-                <div style="margin-top: 5px;"><strong>🚚 Driver:</strong> ${driver}</div>
-                <div style="margin-top: 5px; color: #475569;"><strong>📅 Dispatched:</strong> ${date} at ${dispatchTime}</div>
-            </div>
-            <div>
-                <div style="font-size: 11px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Receiving Info</div>
-                <div style="margin-top: 5px;"><strong>👤 Received By:</strong> <span style="color: #0f766e; font-weight: bold;">${receiverName}</span></div>
-                <div style="margin-top: 5px; color: #475569;"><strong>⏰ Arrived:</strong> ${receivedTimeStr}</div>
-            </div>
-        </div>
-    `;
-    
-    let html = '';
-    items.forEach(item => {
-        let sent = parseFloat(item.displayQty || item.qty);
-        let baseQty = parseFloat(item.qty); // The raw background number used for refunds
-        let received = item.receivedDisplayQty !== undefined ? parseFloat(item.receivedDisplayQty) : (item.receivedQty !== undefined ? parseFloat(item.receivedQty) : '-');
-        let status = item.status || 'In Transit';
-        let uom = item.displayUom || item.uom;
-        
-        let displayVariance = '-';
-        if (received !== '-' && status !== 'Backloaded') {
-            displayVariance = received - sent;
-        }
-        
-        let varColor = displayVariance === '-' ? '#475569' : (displayVariance < 0 ? '#dc2626' : (displayVariance > 0 ? '#16a34a' : '#475569'));
-        let varText = displayVariance === '-' ? '-' : (displayVariance > 0 ? `+${displayVariance}` : displayVariance) + ' ' + uom;
-
-        // 🔥 THE FIX: Inject the Backload Button if it is still in transit!
-        let cancelBtn = '';
-        if (status === 'In Transit') {
-            let safeItemName = (item.item || "").replace(/'/g, "\\'");
-            let safeBranch = (branch || "").replace(/'/g, "\\'");
-            cancelBtn = `<br><button onclick="window.backloadDispatchItem('${item.id}', '${safeItemName}', ${baseQty}, '${safeBranch}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; margin-top: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); width: 100%;">↩️ Backload / Cancel Item</button>`;
-        }
-
-        let bgRow = status === 'Backloaded' ? '#f8fafc' : 'white';
-        let statusBg = received !== '-' ? '#dcfce7' : (status === 'Backloaded' ? '#e2e8f0' : '#fef9c3');
-        let statusTextColor = received !== '-' ? '#16a34a' : (status === 'Backloaded' ? '#475569' : '#ca8a04');
-
-        html += `<tr style="border-bottom:1px solid #f1f5f9; background: ${bgRow}; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='${bgRow}'">
-            <td style="padding:12px; font-weight:bold; color:${status === 'Backloaded' ? '#94a3b8' : '#334155'}; ${status === 'Backloaded' ? 'text-decoration: line-through;' : ''}">${item.item}</td>
-            <td style="padding:12px; font-weight: bold;">${sent} ${uom}</td>
-            <td style="padding:12px; color:#0284c7; font-weight:bold;">${received !== '-' ? received + ' ' + uom : (status === 'Backloaded' ? '-' : 'Pending')}</td>
-            <td style="padding:12px; color:${varColor}; font-weight:900;">${varText}</td>
-            <td style="padding:12px; text-align: center;">
-                <span style="background: ${statusBg}; color: ${statusTextColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;">${status}</span>
-                ${cancelBtn}
-            </td>
-        </tr>`;
+window.resolveMissingDispatchItems = async function(encodedGroup) {
+    let items = JSON.parse(decodeURIComponent(encodedGroup));
+    let missingItems = items.filter(i => {
+        let sent = parseFloat(i.displayQty || i.qty);
+        let received = i.receivedDisplayQty !== undefined ? parseFloat(i.receivedDisplayQty) : (i.receivedQty !== undefined ? parseFloat(i.receivedQty) : null);
+        if (received === null || i.status === 'Backloaded') return false;
+        return (received - sent) < 0;
     });
     
-    tbody.innerHTML = html;
-    document.getElementById('dispatchDetailsModal').style.display = 'flex';
+    if (missingItems.length === 0) return;
+
+    let itemsListHtml = missingItems.map(i => {
+        let sent = parseFloat(i.displayQty || i.qty);
+        let received = i.receivedDisplayQty !== undefined ? parseFloat(i.receivedDisplayQty) : parseFloat(i.receivedQty);
+        let variance = Math.abs(received - sent);
+        let uom = i.displayUom || i.uom;
+        return `<li style="margin-bottom: 5px;"><b>${i.item || i.name}</b>: Missing <b style="color:#dc2626;">${variance} ${uom}</b></li>`;
+    }).join('');
+
+    const { value: action } = await Swal.fire({
+        title: '🕵️ Resolve Missing Items',
+        html: `
+            <div style="text-align: left; font-size: 13px; color: #334155; margin-bottom: 15px;">
+                The cashier reported receiving less than what was dispatched. Please double-check with the driver. How do you want to resolve this?
+                <ul style="margin-top: 10px; color: #0f172a; background: #f8fafc; padding: 10px 10px 10px 25px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    ${itemsListHtml}
+                </ul>
+            </div>
+        `,
+        input: 'radio',
+        inputOptions: {
+            'return': '📦 The driver brought them back (Return to HQ Inventory)',
+            'requeue': '🔄 They were genuinely lost (Re-queue as a Stock Request)'
+        },
+        inputValidator: (value) => { if (!value) return 'You need to select an action!'; },
+        showCancelButton: true, confirmButtonText: 'Confirm Resolution', confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!action) return;
+    Swal.fire({title: 'Processing Resolution...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        if (action === 'return') {
+            for (let item of missingItems) {
+                let sent = parseFloat(item.displayQty || item.qty);
+                let received = item.receivedDisplayQty !== undefined ? parseFloat(item.receivedDisplayQty) : parseFloat(item.receivedQty);
+                let convRate = parseFloat(item.convRate) || 1;
+                let baseVarianceQty = Math.abs(received - sent) * convRate; 
+                let originBranch = item.fromBranch || "Main Office";
+                
+                const invQ = query(collection(db, "inventory"), where("branch", "==", originBranch), where("name", "==", item.item || item.name));
+                const invSnap = await getDocs(invQ);
+                
+                if (!invSnap.empty) {
+                    let invDoc = invSnap.docs[0];
+                    let currentStock = parseFloat(invDoc.data().currentStock) || 0;
+                    await updateDoc(invDoc.ref, { currentStock: currentStock + baseVarianceQty });
+                    
+                    await addDoc(collection(db, "stock_logs"), {
+                        branch: originBranch, item: item.item || item.name, uom: invDoc.data().uom || 'units',
+                        oldQty: currentStock, newQty: currentStock + baseVarianceQty, variance: baseVarianceQty,
+                        type: "Dispatch Returned (Missing Resolved)", note: `Items missing at destination returned to HQ.`,
+                        user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
+                    });
+                }
+                await updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Missing (Returned to HQ)' });
+            }
+            Swal.fire('✅ Returned to HQ', 'The missing items have been successfully returned to your Main Office inventory.', 'success');
+        } 
+        else if (action === 'requeue') {
+            let toBranch = missingItems[0].toBranch;
+            let poItems = missingItems.map(item => {
+                let sent = parseFloat(item.displayQty || item.qty);
+                let received = item.receivedDisplayQty !== undefined ? parseFloat(item.receivedDisplayQty) : parseFloat(item.receivedQty);
+                let displayVariance = Math.abs(received - sent);
+                let baseVarianceQty = displayVariance * (parseFloat(item.convRate) || 1); 
+
+                return { 
+                    itemName: item.item || item.name, name: item.item || item.name, 
+                    qty: baseVarianceQty, displayQty: displayVariance, 
+                    uom: item.baseUom || item.uom, displayUom: item.displayUom || item.purchaseUom || item.uom, 
+                    requestType: 'Lost in Transit', physicalStock: 0, systemStock: 0 
+                };
+            });
+
+            await addDoc(collection(db, "purchase_orders"), { branch: toBranch, items: poItems, status: "Pending", type: "Lost Item Replacement", requestedBy: "System (HQ Resolved)", timestamp: serverTimestamp() });
+
+            for (let item of missingItems) {
+                await updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Missing (Re-queued)' });
+            }
+            Swal.fire('✅ Re-Queued', 'Lost items have been instantly sent to the Stock Requests feed so you can dispatch them again.', 'success');
+        }
+
+        document.getElementById('dispatchDetailsModal').style.display = 'none';
+        if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+        if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
+    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to resolve items.', 'error'); }
 };
 
 // ========================================================
@@ -3808,24 +3814,85 @@ window.deleteDeliveryGroup = async function(encodedGroup) {
 setTimeout(() => { if (typeof window.startPOListener === 'function') window.startPOListener(); }, 1500);
 
 // 🟢 NEW: Updates the dropdown to show "Packs" vs "grams" based on the item
-window.updateDispatchUomLabel = function() {
-    let itemName = document.getElementById('dispItem').value;
+window.updateDispatchUomLabel = async function() {
+    let itemName = document.getElementById('dispItem').value.trim();
     let uomDrop = document.getElementById('dispUomSelect');
-    
-    if (!itemName) {
-        uomDrop.innerHTML = '<option value="base">Units</option>';
-        return;
+    let toBranch = document.getElementById('dispTo').value;
+
+    let aiContainer = document.getElementById('dispAiTracker');
+    if (!aiContainer) {
+        let qtyContainer = document.getElementById('dispQty').parentElement.parentElement;
+        qtyContainer.insertAdjacentHTML('afterend', `<div id="dispAiTracker" style="width: 100%; margin-top: 10px; flex-basis: 100%;"></div>`);
+        aiContainer = document.getElementById('dispAiTracker');
     }
 
-    let invItem = dispatchInventoryList.find(i => i.name === itemName);
+    if (!itemName || !toBranch) { 
+        uomDrop.innerHTML = '<option value="base">Units</option>'; 
+        if(aiContainer) aiContainer.innerHTML = '';
+        return; 
+    }
+
+    let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
     if (invItem) {
-        let baseUom = invItem.uom || 'units';
+        let baseUom = invItem.uom || 'units'; 
         let purchUom = invItem.purchaseUom || 'Bulk';
-        
-        uomDrop.innerHTML = `
-            <option value="purch">${purchUom}</option>
-            <option value="base">${baseUom}</option>
-        `;
+        uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
+    }
+
+    if(aiContainer) {
+        aiContainer.innerHTML = '<span style="color:#0ea5e9; font-size:11px; font-weight:bold; animation: pulse 1s infinite;">🤖 AI Scanning Branch Data...</span>';
+        try {
+            const invQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemName));
+            const invSnap = await getDocs(invQ);
+            let currentStock = 0; let bUom = 'units';
+            if (!invSnap.empty) {
+                currentStock = parseFloat(invSnap.docs[0].data().currentStock) || 0;
+                bUom = invSnap.docs[0].data().uom || 'units';
+            }
+
+            let pastDate = new Date();
+            pastDate.setDate(pastDate.getDate() - 14);
+            const logsQ = query(collection(db, "stock_logs"), where("branch", "==", toBranch), where("item", "==", itemName), where("timestamp", ">=", pastDate));
+            const logsSnap = await getDocs(logsQ);
+
+            let totalBurn = 0;
+            logsSnap.forEach(doc => {
+                let log = doc.data();
+                let v = parseFloat(log.variance) || 0;
+                let t = (log.type || "").toLowerCase();
+                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                    totalBurn += Math.abs(v);
+                }
+            });
+
+            let dailyBurn = totalBurn / 14;
+            let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : Infinity;
+            let daysText = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1) + " Days";
+            let statusColor = currentStock <= 0 ? "#dc2626" : (daysLeft <= 3 ? "#ea580c" : "#16a34a");
+
+            aiContainer.innerHTML = `
+                <div style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 8px; font-size: 11px; color: #475569; display: flex; flex-direction: column; gap: 4px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 4px;">
+                        <strong style="color: #0f172a;">🤖 AI Stock Radar (${toBranch})</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Current Live Stock:</span>
+                        <strong style="color: ${currentStock <= 0 ? '#dc2626' : '#334155'};">${currentStock.toFixed(2)} ${bUom}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Avg. Daily Burn (14-day):</span>
+                        <strong style="color: #b45309;">${dailyBurn.toFixed(2)} ${bUom}/day</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Estimated Runway:</span>
+                        <strong style="color: ${statusColor};">${daysText}</strong>
+                    </div>
+                </div>
+            `;
+        } catch(e) {
+            console.error("AI Tracker Error:", e);
+            aiContainer.innerHTML = '<span style="color:#ef4444; font-size:11px;">Error loading AI data.</span>';
+        }
     }
 };
 
