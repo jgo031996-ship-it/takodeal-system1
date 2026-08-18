@@ -385,9 +385,14 @@
           document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
           document.getElementById('loginOverlay').style.display = 'none';
 
-          // 🔥 NEW: Check for Shortages on Login!
+          // Check for Shortages on Login!
           if (typeof window.checkLoginShortage === 'function') {
               window.checkLoginShortage(identity.cashierName);
+          }
+          
+          // 🔥 THE FIX: Dynamically update the Active Shift to include this Cashier!
+          if (typeof window.updateActiveShiftCashier === 'function') {
+              window.updateActiveShiftCashier(identity.cashierName);
           }
           
           if (typeof loadPOSData === 'function') await loadPOSData();
@@ -395,7 +400,7 @@
           if (typeof updateParkedBadge === 'function') await updateParkedBadge();
           if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
 
-          // 🔥 THE NEW TRIGGER: Auto-reconnect printers the second they login!
+          // Auto-reconnect printers the second they login!
           if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
       }
   </script>
