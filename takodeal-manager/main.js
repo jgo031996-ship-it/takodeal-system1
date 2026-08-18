@@ -20600,7 +20600,7 @@ window.reviewStockRequest = window.reviewPurchaseOrder;
 // ========================================================
 // 📈 7-DAY REVENUE TREND & TOP 5 CATEGORY CHART ENGINE
 // ========================================================
-window.chartFilters = { cash: true, gcash: true, grab: true };
+window.chartFilters = { cash: true, gcash: true, grab: true, foodpanda: true };
 window.revenueChartInstance = null;
 window.categoryMixChartInstance = null;
 
@@ -20609,10 +20609,12 @@ window.toggleChartFilter = function(filterType) {
     const cashBtn = document.getElementById('btnFilterCash');
     const gcashBtn = document.getElementById('btnFilterGcash');
     const grabBtn = document.getElementById('btnFilterGrab');
+    const fpBtn = document.getElementById('btnFilterFoodpanda');
 
     if (cashBtn) { cashBtn.style.background = window.chartFilters.cash ? '#334155' : '#e2e8f0'; cashBtn.style.color = window.chartFilters.cash ? '#ffffff' : '#94a3b8'; }
     if (gcashBtn) { gcashBtn.style.background = window.chartFilters.gcash ? '#0284c7' : '#e2e8f0'; gcashBtn.style.color = window.chartFilters.gcash ? '#ffffff' : '#94a3b8'; }
     if (grabBtn) { grabBtn.style.background = window.chartFilters.grab ? '#00b14f' : '#e2e8f0'; grabBtn.style.color = window.chartFilters.grab ? '#ffffff' : '#94a3b8'; }
+    if (fpBtn) { fpBtn.style.background = window.chartFilters.foodpanda ? '#d70f64' : '#e2e8f0'; fpBtn.style.color = window.chartFilters.foodpanda ? '#ffffff' : '#94a3b8'; }
 
     window.renderDashboardCharts();
 };
@@ -20698,7 +20700,10 @@ window.renderDashboardCharts = async function() {
                     if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
                         tx.splitDetails.forEach(split => {
                             let method = (split.method || '').toLowerCase();
-                            if ((method === 'cash' && window.chartFilters.cash) || (method.includes('gcash') && window.chartFilters.gcash) || (method.includes('grab') && window.chartFilters.grab)) {
+                            if ((method === 'cash' && window.chartFilters.cash) || 
+                                (method.includes('gcash') && window.chartFilters.gcash) || 
+                                (method.includes('grab') && window.chartFilters.grab) || 
+                                (method.includes('foodpanda') && window.chartFilters.foodpanda)) {
                                 // Use mathematical ratio to split the gross amount perfectly!
                                 let ratio = (tx.netTotal > 0) ? (parseFloat(split.amount) / parseFloat(tx.netTotal)) : 0;
                                 branchSalesData[txBranch][dayIndex] += (txGross * ratio);
@@ -20709,28 +20714,13 @@ window.renderDashboardCharts = async function() {
                         let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
                         let isGcash = method.includes('gcash') && window.chartFilters.gcash;
                         let isGrab = method.includes('grab') && window.chartFilters.grab;
-                        let isOtherDigital = !isCash && !isGcash && !isGrab && window.chartFilters.gcash; 
+                        let isFoodpanda = method.includes('foodpanda') && window.chartFilters.foodpanda;
+                        let isOtherDigital = !isCash && !isGcash && !isGrab && !isFoodpanda && window.chartFilters.gcash; 
 
-                        if (isCash || isGcash || isGrab || isOtherDigital) {
+                        if (isCash || isGcash || isGrab || isFoodpanda || isOtherDigital) {
                             branchSalesData[txBranch][dayIndex] += txGross;
                         }
                     }
-                }
-            }
-
-            // Today's Sales Mix Logic
-            if (txDate === todayStr && pieCanvas && tx.cart) {
-                if (window.isBranchAllowed(txBranch)) { 
-                    tx.cart.forEach(item => {
-                        let itemName = item.name || item.itemName;
-                        let cat = menuCategories[itemName] || item.category || "Uncategorized";
-                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
-                        if (!categorySales[cat]) categorySales[cat] = 0;
-                        categorySales[cat] += lineTotal;
-                    });
-                }
-            }
-        });
 
         // Draw Line Chart
         let lineDatasets = [];
