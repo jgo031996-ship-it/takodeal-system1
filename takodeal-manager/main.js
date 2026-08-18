@@ -12037,6 +12037,9 @@ window.generateAutoPayslips = async function() {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
             for (let name of allStaffNames) {
+                // 🔥 FIX: Completely ignore "Team" penalty accounts from the payroll generator!
+                if (name.toLowerCase().startsWith("team ")) continue;
+
                 let d; let isPaid = false;
                 if (paidRecords[name]) {
                     d = paidRecords[name]; isPaid = true; window.globalPayrollCache[name] = d; 
@@ -24018,20 +24021,26 @@ window.viewStaffSignedPayslips = async function() {
 };
 
 // ========================================================
-// 🛡️ ANTI-FREEZE / AUTO-RECONNECT ENGINE (TASK 4 FIX)
+// 🛡️ ANTI-FREEZE / AUTO-RECONNECT ENGINE
 // ========================================================
-// Browsers throttle inactive tabs, killing the Firebase WebSocket connection.
-// This watchdog actively pings the connection when you switch back to the tab, waking up the database so it never gets stuck on "Loading..." again!
-document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-        console.log("🌐 Tab Awake: Pinging Firebase Network...");
-        try {
-            if (window.db && window.enableNetwork && window.disableNetwork) {
-                window.disableNetwork(window.db).then(() => {
-                    console.log("🔄 Network cycled.");
-                    window.enableNetwork(window.db);
-                });
-            }
-        } catch(e) { console.error("Reconnect Error:", e); }
+// Browsers put inactive tabs to sleep, breaking the database connection.
+// This watchdog actively jolts the UI awake when you return!
+let lastActiveTime = Date.now();
+
+window.addEventListener('focus', () => {
+    let now = Date.now();
+    // If the tab was inactive for more than 5 minutes (300,000 ms), force a reconnect!
+    if (now - lastActiveTime > 300000) {
+        console.log("Waking up from deep sleep... Jolting database!");
+        let activeNav = document.querySelector('.nav-item.active');
+        if (activeNav) {
+            // Simulates clicking the tab again to re-fire the database requests
+            activeNav.click(); 
+        }
     }
+    lastActiveTime = now;
+});
+
+window.addEventListener('blur', () => {
+    lastActiveTime = Date.now();
 });
