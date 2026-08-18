@@ -4270,6 +4270,7 @@ window.openBranchDetails = async function (branch) {
     }
 
     let shiftData = shiftSnap.docs[0].data();
+    let shiftDocId = shiftSnap.docs[0].id;
     let sTime = shiftData.startTime.toDate();
     let eTime = shiftData.active ? new Date() : shiftData.endTime.toDate();
 
@@ -4278,9 +4279,9 @@ window.openBranchDetails = async function (branch) {
     // 🔥 LIGHTNING FAST PARALLEL DATA FETCH 🔥
     const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
     const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
-    const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftSnap.docs[0].id));
-    const invQ = collection(db, "inventory");
-    const bomQ = collection(db, "bom");
+    const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftDocId));
+    const invQ = collection(db, "inventory"); // Get global inventory for costs
+    const bomQ = collection(db, "bom"); // Get recipes for COGS
     const menuQ = collection(db, "menu");
 
     // Blast all 6 queries at the exact same time!
@@ -4289,12 +4290,243 @@ window.openBranchDetails = async function (branch) {
     ]);
 
     let netSales = 0; let totalItems = 0; let transCount = 0; let voidCount = 0;
-    let categories = {}; 
-    let payments = {};   
+    let categories = {};
+    let payments = {};
     let transHtml = '';
 
     let allTx = [];
     txSnap.forEach(doc => allTx.push({ id: doc.id, ...doc.data() }));
+
+    parkedSnap.forEach(doc => {
+        let p = doc.data();
+        allTx.push({
+            id: doc.id,
+            receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(),
+            customerName: p.name || p.customerName || "Guest",
+            netTotal: p.total || p.netTotal || 0,
+            status: "Parked",
+            paymentMethod: "Unpaid",
+            cart: p.items || p.cart || [],
+            timestamp: p.timestamp,
+            cashier: p.cashier || 'Unknown',
+            orderType: p.orderType || 'Dine-In'
+        });
+    });
+
+    // Sort transactions by time (newest first)
+    allTx.sort((a, b) => {
+        let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp)) : 0;
+        let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp)) : 0;
+        return tB - tA;
+    });
+
+    // Process Inventory Costs
+    let inventoryCosts = {};
+    invSnap.forEach(doc => {
+        let data = doc.data();
+        inventoryCosts[data.name] = parseFloat(data.baseCost) || 0;
+    });
+
+    // Process Recipe COGS
+    let recipeCosts = {};
+    bomSnap.forEach(doc => {
+        let data = doc.data();
+        if (!recipeCosts[data.menuItem]) recipeCosts[data.menuItem] = 0;
+        let ingCost = inventoryCosts[data.ingredientName] || 0;
+        recipeCosts[data.menuItem] += (ingCost * (data.qty || 1));
+    });
+
+    // Process Menu Categories
+    let menuCategories = {};
+    menuSnap.forEach(doc => {
+        menuCategories[doc.data().name] = doc.data().category || 'Uncategorized';
+    });
+
+    allTx.forEach(tx => {
+      let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+
+      let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
+      let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
+
+      if (tx.status === "Voided") {
+        voidCount++;
+        transHtml += `<tr style="opacity: 0.5;"><td>${timeStr}</td><td>${tx.receiptId}</td><td>${safeCustomer}</td><td>-</td><td><span class="badge badge-closed"><span class="status-dot red"></span> VOID</span></td><td style="text-decoration: line-through;">${formatMoney(tx.netTotal)}</td><td></td></tr>`;
+      } else {
+        transCount++;
+        netSales += (tx.netTotal || 0);
+
+        // Track Payments
+        let payMethod = tx.paymentMethod || "Unknown";
+        if (!payments[payMethod]) payments[payMethod] = 0;
+        payments[payMethod] += (tx.netTotal || 0);
+
+        // Track True Categories, Sales, and Advanced COGS
+        if (tx.cart && Array.isArray(tx.cart)) {
+          tx.cart.forEach(item => {
+            let qty = item.qty || 1;
+            totalItems += qty;
+
+            let itemName = item.name || item.itemName;
+            let cat = menuCategories[itemName] || item.category || 'Uncategorized';
+
+            if (!categories[cat]) categories[cat] = { qty: 0, sales: 0, cogs: 0 };
+
+            categories[cat].qty += qty;
+
+            // Calculate Sales
+            let lineRevenue = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
+            categories[cat].sales += lineRevenue;
+
+            // Calculate Base Recipe COGS
+            let baseCogs = (recipeCosts[itemName] || 0) * qty;
+            let addonCogs = 0;
+
+            // Calculate Add-on COGS
+            if (item.addons) {
+                for (let key in item.addons) {
+                    let addon = item.addons[key];
+                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                        let aCost = inventoryCosts[addon.linkedIngredient] || 0;
+                        addonCogs += (aCost * addon.deductQty * addon.qty * qty);
+                    }
+                }
+            }
+
+            categories[cat].cogs += (baseCogs + addonCogs);
+          });
+        }
+
+        // SMART DIGITAL PAYMENT VERIFICATION UI
+        let isDigital = payMethod.toLowerCase() !== "cash" && !payMethod.toLowerCase().includes("store use");
+        let verifyBadge = "";
+        let verifyBtn = "";
+
+        if (isDigital) {
+            if (tx.paymentVerified) {
+                verifyBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified by Manager</span>`;
+            } else {
+                verifyBadge = `<br><span style="color: #ea580c; font-size: 10px; font-weight: bold; animation: pulse 2s infinite;">⏳ Awaiting Verification</span>`;
+                verifyBtn = `<button class="btn-bulk-verify" data-txid="${tx.id}" onclick="window.verifyDigitalPayment('${tx.id}', '${tx.receiptId}')" style="background: #16a34a; border: 1px solid #15803d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✅ Verify</button>`;
+            }
+        }
+
+        let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : Date.now();
+        let minutesElapsed = Math.floor((Date.now() - txTimeMs) / 60000);
+
+        let statusDisplay = '';
+        if (tx.status === "Parked") {
+            statusDisplay = `<span style="background: #fef3c7; color: #d97706; border: 1px solid #fcd34d; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 11px;">⏸️ PARKED (Unpaid)</span>`;
+        } else if (minutesElapsed < 10) {
+            let timeLeft = 10 - minutesElapsed;
+            statusDisplay = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
+        } else {
+            statusDisplay = `<span class="badge badge-active"><span class="status-dot green"></span> PAID</span>`;
+        }
+
+        transHtml += `<tr style="border-bottom: 1px solid #f1f5f9; ${isDigital && !tx.paymentVerified ? 'background: #fffbeb;' : ''}">
+            <td style="padding: 10px;">${timeStr}</td>
+            <td style="padding: 10px;"><strong>${tx.receiptId}</strong></td>
+            <td style="padding: 10px; color: #475569; font-weight: bold;">${safeCustomer}</td>
+            <td style="padding: 10px;">${payMethod}${verifyBadge}</td>
+            <td style="padding: 10px;">${statusDisplay}</td>
+            <td style="font-weight: 600; color: var(--primary); padding: 10px;">${formatMoney(tx.netTotal)}</td>
+            <td style="padding: 10px; text-align: center; display: flex; gap: 5px; justify-content: center;">
+                <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${payMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                ${verifyBtn}
+            </td>
+        </tr>`;
+      }
+    });
+
+    // Process Drawer Cash & Audit Engine
+    let dateExpenses = 0;
+    expSnap.forEach(doc => dateExpenses += (doc.data().amount || 0));
+
+    const prevShiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+    const prevShiftSnap = await getDocs(prevShiftQ);
+    let lastClosingCash = prevShiftSnap.empty ? 0 : (prevShiftSnap.docs[0].data().declaredCash || 0);
+
+    let startingCash = 0;
+
+    if (shiftData.active) {
+      startingCash = shiftData.startingCash || 0;
+      let cashSales = payments['Cash'] || 0;
+      let expectedDrawerCash = startingCash + cashSales - dateExpenses;
+
+      document.getElementById('mdlDrawerCash').innerText = formatMoney(expectedDrawerCash);
+      document.getElementById('mdlDrawerMath').innerHTML = `
+        <b>Entered Float:</b> ${formatMoney(startingCash)}<br>
+        <b>Expenses Paid:</b> ${formatMoney(dateExpenses)}
+      `;
+
+      const auditEl = document.getElementById('mdlAuditAlert');
+      if (startingCash === lastClosingCash) {
+        auditEl.innerHTML = `<span style="color: #16a34a;">✅ Matches Last Closing (₱${lastClosingCash})</span>`;
+      } else {
+        let diff = startingCash - lastClosingCash;
+        let sign = diff > 0 ? "+" : "";
+        auditEl.innerHTML = `<span style="color: #dc2626;">⚠️ DISCREPANCY: ${sign}${diff} vs Last Close</span>`;
+      }
+    } else {
+      document.getElementById('mdlDrawerCash').innerText = "No Active Shift";
+      document.getElementById('mdlDrawerMath').innerText = "Register is currently closed.";
+      document.getElementById('mdlAuditAlert').innerText = "";
+    }
+
+    // INJECT KPIs
+    document.getElementById('mdlNet').innerText = formatMoney(netSales);
+    document.getElementById('mdlItems').innerText = totalItems;
+    document.getElementById('mdlTrans').innerText = transCount;
+    document.getElementById('mdlVoids').innerText = voidCount;
+
+    // INJECT ADVANCED CATEGORIES WITH MARGINS
+    let catHtml = '';
+    let sortedCats = Object.keys(categories).sort((a, b) => categories[b].sales - categories[a].sales);
+
+    sortedCats.forEach(cat => {
+        let data = categories[cat];
+        let profit = data.sales - data.cogs;
+        let margin = data.sales > 0 ? (profit / data.sales) * 100 : 0;
+        let marginColor = margin > 50 ? '#16a34a' : (margin > 30 ? '#f59e0b' : '#dc2626');
+
+        catHtml += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="font-weight: bold; color: #334155; padding: 10px;">${cat}</td>
+                <td style="padding: 10px;">${data.qty} items</td>
+                <td style="font-weight: bold; color: #d97706; padding: 10px;">${formatMoney(data.sales)}</td>
+                <td style="font-weight: bold; color: #ef4444; padding: 10px;">${formatMoney(data.cogs)}</td>
+                <td style="font-weight: 900; color: ${marginColor}; padding: 10px;">${margin.toFixed(1)}%</td>
+            </tr>
+        `;
+    });
+
+    let catTableHead = document.getElementById('tbCatBody').previousElementSibling.querySelector('tr');
+    if (catTableHead) {
+        catTableHead.innerHTML = '<th style="text-align:left; padding:10px;">Category</th><th style="text-align:left; padding:10px;">Sold</th><th style="text-align:left; padding:10px;">Gross</th><th style="text-align:left; padding:10px;">Est. COGS</th><th style="text-align:left; padding:10px;">Margin</th>';
+    }
+
+    document.getElementById('tbCatBody').innerHTML = catHtml || '<tr><td colspan="5" class="text-center">No items sold.</td></tr>';
+
+    // INJECT PAYMENTS
+    let payHtml = '';
+    for (let p in payments) {
+      payHtml += `<tr><td style="padding: 10px;"><strong>${p}</strong></td><td style="color: var(--success); font-weight: 600; padding: 10px;">${formatMoney(payments[p])}</td></tr>`;
+    }
+    document.getElementById('tbPayBody').innerHTML = payHtml || '<tr><td colspan="2" class="text-center">No payments logged.</td></tr>';
+
+    // INJECT TRANSACTIONS
+    let transTableHead = document.getElementById('tbTransBody').previousElementSibling.querySelector('tr');
+    if (transTableHead) {
+        transTableHead.innerHTML = '<th style="text-align:left; padding:10px;">Time</th><th style="text-align:left; padding:10px;">Receipt ID</th><th style="text-align:left; padding:10px; color: #0284c7;">Customer</th><th style="text-align:left; padding:10px;">Payment</th><th style="text-align:left; padding:10px;">Status</th><th style="text-align:left; padding:10px;">Total</th><th style="text-align:center; padding:10px;">Action</th>';
+    }
+    
+    document.getElementById('tbTransBody').innerHTML = transHtml || '<tr><td colspan="7" class="text-center">No transactions on this date.</td></tr>';
+
+  } catch (error) {
+    console.error("Analytics Error:", error);
+    document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading analytics.</td></tr>';
+  }
+};
 
 // --- THE LIVE INVENTORY ENGINE (UPGRADED WITH TOTAL VALUE & ACTION DROPDOWNS) ---
 window.refreshInventoryView = function() { window.loadInventoryData(); };
