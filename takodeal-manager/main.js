@@ -3267,16 +3267,34 @@ window.renderLogisticsUI = function() {
                 let hasMissing = group.items.some(i => i.status === 'Lost in Transit' || i.status === 'Discrepancy');
                 let allReceived = group.items.every(i => i.status === 'Received');
                 
+                // Upgraded Status Logic to handle Delayed/Loadback items!
+                let hasDelayed = group.items.some(i => i.status === 'Delayed' || i.status === 'Loadback' || i.status === 'Partial');
+                let hasInTransit = group.items.some(i => i.status === 'In Transit');
+                let hasArrived = group.items.some(i => i.status === 'Arrived');
+                
                 let overallStatus = 'In Transit';
-                if (group.items.some(i => i.status === 'In Transit')) overallStatus = 'In Transit';
-                else if (group.items.every(i => i.status === 'Arrived' || i.status === 'Received') && !allReceived) overallStatus = 'Arrived at Branch';
-                else if (hasMissing) overallStatus = 'Discrepancy / Lost';
-                else if (allReceived) overallStatus = 'Received';
-
-                let statCol = overallStatus === 'Received' ? '#16a34a' : (overallStatus === 'Arrived at Branch' ? '#8b5cf6' : (overallStatus === 'In Transit' ? '#0ea5e9' : '#dc2626'));
-                let encodedGroup = encodeURIComponent(JSON.stringify(group)); 
+                
+                // If the branch has fully processed it, there are no 'In Transit' or 'Arrived' statuses left.
+                if (!hasInTransit && !hasArrived) {
+                    if (hasMissing) overallStatus = 'Discrepancy / Lost';
+                    else if (hasDelayed) overallStatus = 'Partial (Delayed)';
+                    else if (allReceived) overallStatus = 'Received';
+                    else overallStatus = 'Received'; // Safe fallback
+                } else if (hasArrived && !hasInTransit) {
+                    overallStatus = 'Arrived at Branch';
+                } else {
+                    overallStatus = 'In Transit';
+                }
+        
+                let statCol = '#0ea5e9'; // Default Blue
+                if (overallStatus === 'Received') statCol = '#16a34a'; // Green
+                else if (overallStatus === 'Arrived at Branch') statCol = '#8b5cf6'; // Purple
+                else if (overallStatus === 'Partial (Delayed)') statCol = '#d97706'; // Orange
+                else if (overallStatus === 'Discrepancy / Lost') statCol = '#dc2626'; // Red
+        
+                let encodedGroup = encodeURIComponent(JSON.stringify(group));
                 let groupFirebaseIds = group.items.map(i => i.id).join(',');
-
+        
                 let actionButtons = '';
                 if (overallStatus === 'In Transit') {
                     actionButtons = `<button onclick="window.markDispatchArrived('${encodedGroup}')" style="background: #8b5cf6; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">📍 Mark Arrived</button>`;
