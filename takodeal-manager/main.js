@@ -22748,18 +22748,11 @@ window.switchFranTab = function(tabName) {
 // ==========================================
 window.loadFranPerformance = async function() {
     try {
-        // 1. Identify which branches are franchises by checking the hq_managers database
-        const mgrSnap = await getDocs(query(collection(db, "hq_managers"), where("role", "==", "Franchisee")));
-        let franchisedBranches = [];
-        mgrSnap.forEach(d => {
-            let branch = d.data().assignedBranch;
-            if (branch && branch !== "All" && !franchisedBranches.includes(branch)) {
-                franchisedBranches.push(branch);
-            }
-        });
+        // 1. Automatically grab ALL active branches (except HQ) to show on the charts!
+        let franchisedBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
 
         if (franchisedBranches.length === 0) {
-            console.warn("No franchisees registered in the system yet.");
+            console.warn("No franchise branches available yet.");
             return;
         }
 
@@ -22773,7 +22766,6 @@ window.loadFranPerformance = async function() {
         franchisedBranches.forEach(b => { branchSalesData[b] = 0; branchRoyaltyData[b] = 0; });
 
         // 🔥 THE INDEX-FREE FIX: Query by Time only, filter the rest in Javascript!
-        // Tally Gross Sales
         const shiftQ = query(collection(db, "shifts"), where("endTime", ">=", thirtyDaysAgo));
         const shiftSnap = await getDocs(shiftQ);
         
@@ -22784,7 +22776,6 @@ window.loadFranPerformance = async function() {
             }
         });
 
-        // Tally Royalties Owed
         const ledgerQ = query(collection(db, "franchise_ledger"), where("timestamp", ">=", thirtyDaysAgo));
         const ledgerSnap = await getDocs(ledgerQ);
 
@@ -22836,8 +22827,9 @@ window.loadFranLedger = async function() {
     let branchSelect = document.getElementById('franLedgerBranch');
     let tbody = document.getElementById('franLedgerBody');
 
-    // Setup the dropdown dynamically
-    if (!isFranchisee && branchSelect.options.length <= 1) {
+    // Setup the dropdown dynamically ALWAYS so new branches show up!
+    let prevSelection = branchSelect.value;
+    if (!isFranchisee) {
         let html = '<option value="">-- Select Franchise --</option>';
         if (window.globalActiveBranches) {
             window.globalActiveBranches.forEach(b => { 
@@ -22845,6 +22837,9 @@ window.loadFranLedger = async function() {
             });
         }
         branchSelect.innerHTML = html;
+        if (prevSelection && window.globalActiveBranches.includes(prevSelection)) {
+            branchSelect.value = prevSelection; // Restores your choice so it doesn't reset
+        }
     }
 
     let targetBranch = isFranchisee ? myBranch : branchSelect.value;
@@ -23103,10 +23098,15 @@ window.openFranThread = async function(docId) {
         document.getElementById('franChatTitle').innerText = data.title;
         document.getElementById('franChatAuthor').innerText = `${data.author} (${data.branch})`;
 
+        // Add delete button ONLY if user is HQ (Owner/Admin) OR the author of the thread
+        let canDelete = window.sessionUser && (window.sessionUser.isOwner || !window.sessionUser.isFranchisee || window.sessionUser.cashierName === data.author);
+        let deleteBtnHtml = canDelete ? `<button onclick="window.deleteFranThread('${docId}')" style="position: absolute; top: 15px; right: 15px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 4px 8px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">🗑️ Delete Thread</button>` : '';
+
         let html = `
             <!-- The Original Post -->
-            <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+            <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px; position: relative;">
+                ${deleteBtnHtml}
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-right: 120px;">
                     <strong style="color: #0f172a;">${data.author} <span style="font-size:11px; color:#64748b;">(${data.branch})</span></strong>
                     <span style="font-size: 11px; color: #94a3b8;">${dateStr}</span>
                 </div>
@@ -23176,6 +23176,37 @@ window.sendFranReply = async function() {
             console.log(`[SIMULATED WEBHOOK] Triggering Email API -> Subject: New reply in thread from ${authorBranch}.`);
         }
     } catch(e) { console.error("Reply Error:", e); }
+};
+
+window.deleteFranThread = async function(docId) {
+    let confirmDelete = await Swal.fire({
+        title: 'Delete Thread?',
+        text: "Are you sure you want to permanently delete this discussion thread and all its replies? This cannot be undone.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Yes, Delete it!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (confirmDelete.isConfirmed) {
+        Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            await deleteDoc(doc(db, "franchise_comms", docId));
+            
+            // Clear the chat view cleanly
+            window.activeFranThreadId = null;
+            document.getElementById('franChatHeader').style.display = 'none';
+            document.getElementById('franChatInputArea').style.display = 'none';
+            document.getElementById('franChatMessages').innerHTML = '<div style="text-align: center; color: #94a3b8; margin-top: 100px; font-weight: bold;">Select a thread on the left to view the conversation.</div>';
+            
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Thread deleted!', showConfirmButton: false, timer: 2000 });
+        } catch (e) {
+            console.error("Delete Thread Error:", e);
+            Swal.fire('Error', 'Failed to delete thread.', 'error');
+        }
+    }
 };
 
 // ========================================================
