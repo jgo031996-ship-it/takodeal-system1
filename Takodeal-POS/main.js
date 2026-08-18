@@ -9946,3 +9946,206 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }, 1500);
 });
+
+// ========================================================
+// ⚡ EMERGENCY RESTORE: LIGHTNING SHIFT OPEN ENGINE
+// ========================================================
+window.openNewShift = async function (branch, cashier, startCash) {
+  try {
+    let safeCashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || cashier || 'Unknown';
+    
+    // Save to Firebase
+    const docRef = await window.addDoc(window.collection(window.db, "shifts"), {
+      branch: branch,
+      cashier: safeCashier,
+      startingCash: startCash,
+      startTime: window.serverTimestamp(),
+      active: true,
+      grossSales: 0,
+      netSales: 0
+    });
+    
+    return docRef.id;
+  } catch (error) {
+    console.error("Open Shift Error:", error);
+    return null;
+  }
+};
+
+window.submitOpenShift = async function() {
+    let btn = document.getElementById('btnOpenShiftSubmit');
+    let origText = btn ? btn.innerText : "Open Shift";
+    if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
+
+    try {
+        let shiftName = (window.sessionUser && window.sessionUser.cashierName) 
+            ? window.sessionUser.cashierName 
+            : (localStorage.getItem('cashierName') || 'Unknown');
+
+        let startEl = document.getElementById('inputStartingCash');
+        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
+        let lastEndingCash = window.lastEndingCash || 0;
+        let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : 'Unknown');
+
+        // 1. CASH DISPUTE CHECK
+        if (startCash !== lastEndingCash && lastEndingCash > 0) {
+            let diff = lastEndingCash - startCash;
+            if (diff > 0) {
+                let result = await Swal.fire({
+                    title: '⚠️ Missing Cash Detected!',
+                    html: `The previous shift left <b>₱${lastEndingCash.toFixed(2)}</b> in the drawer.<br>You are starting with <b>₱${startCash.toFixed(2)}</b>.<br><br><span style="color:#ef4444; font-weight:bold; font-size: 16px;">Where did the ₱${diff.toFixed(2)} go?</span>`,
+                    icon: 'warning',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: 'Owner/Manager Took It',
+                    denyButtonText: 'I Don\'t Know (Shortage)',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#10b981',
+                    denyButtonColor: '#ef4444',
+                    customClass: { popup: 'rounded-2xl' }
+                });
+
+                if (result.isConfirmed) {
+                    window.addDoc(window.collection(window.db, "remittances"), {
+                        branch: branch, cashierName: "Auto-Logged (Shift Start)", amount: diff, type: "Cash Collection", channel: "Owner Collection", timestamp: window.serverTimestamp(), dateStr: new Date().toLocaleDateString('en-CA')
+                    }).catch(e => console.error(e));
+                } else if (result.isDenied) {
+                    window.addDoc(window.collection(window.db, "expenses"), {
+                        branch: branch, amount: diff, category: "Unexplained Shortage", description: `Missing cash between shifts (Expected: ₱${lastEndingCash}, Started With: ₱${startCash})`, loggedBy: shiftName, timestamp: window.serverTimestamp()
+                    }).catch(e => console.error(e));
+                } else {
+                    if (btn) { btn.innerText = origText; btn.disabled = false; }
+                    return; 
+                }
+            }
+        }
+
+        // 2. STOCK HANDOVER DISPUTES (PARALLEL WRITE)
+        let stockDisputes = [];
+        document.querySelectorAll('input[id^="handoverDispBase_"]').forEach(inp => {
+            let idx = inp.id.split('_')[1];
+            let purchInp = document.getElementById(`handoverDispPurch_${idx}`);
+            
+            let pVal = purchInp ? parseFloat(purchInp.value) || 0 : 0;
+            let bVal = parseFloat(inp.value) || 0;
+            let conv = parseFloat(inp.getAttribute('data-conv')) || 1;
+            let newCount = (pVal * conv) + bVal;
+            let prevCount = parseFloat(inp.getAttribute('data-prev')) || 0;
+            let itemName = inp.getAttribute('data-name');
+            let baseCost = parseFloat(inp.getAttribute('data-cost')) || 0;
+            let uom = inp.getAttribute('data-uom');
+
+            if (!isNaN(newCount) && newCount !== prevCount) {
+                stockDisputes.push({
+                    name: itemName, prevCount: prevCount, newCount: newCount,
+                    variance: newCount - prevCount, baseCost: baseCost, uom: uom
+                });
+            }
+        });
+
+        if (stockDisputes.length > 0) {
+            let prevCashier = window.lastShiftDataForDispute ? window.lastShiftDataForDispute.cashier : 'Previous Staff';
+            let totalPenalty = 0;
+            let disputeHtml = '<div style="text-align: left; font-size: 13px; margin-top: 10px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">';
+            
+            stockDisputes.forEach(d => {
+                if (d.variance < 0) {
+                    let costLost = Math.abs(d.variance) * d.baseCost;
+                    totalPenalty += costLost;
+                    disputeHtml += `<div style="margin-bottom: 5px;"><b style="color:#dc2626;">${d.name}:</b> Missing ${Math.abs(d.variance)} ${d.uom} <span style="font-size:11px; color:#64748b;">(Penalty: ₱${costLost.toFixed(2)})</span></div>`;
+                } else {
+                    disputeHtml += `<div style="margin-bottom: 5px;"><b style="color:#16a34a;">${d.name}:</b> Found excess ${Math.abs(d.variance)} ${d.uom}</div>`;
+                }
+            });
+            
+            if (totalPenalty > 0) {
+                disputeHtml += `</div><div style="margin-top: 15px; padding: 10px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 6px;"><strong style="color: #dc2626; font-size: 15px;">Total Penalty for ${prevCashier}: ₱${totalPenalty.toFixed(2)}</strong></div>`;
+            } else {
+                disputeHtml += `</div>`;
+            }
+
+            let result = await Swal.fire({
+                title: '⚠️ Handover Dispute Detected',
+                html: `You are altering the stock count left by <b>${prevCashier}</b>. Are you sure?<br>${disputeHtml}`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: totalPenalty > 0 ? 'Submit Dispute & Charge' : 'Submit & Adjust Stock',
+                confirmButtonColor: '#dc2626',
+                customClass: { popup: 'rounded-2xl shadow-xl' }
+            });
+
+            if (!result.isConfirmed) {
+                if (btn) { btn.innerText = origText; btn.disabled = false; }
+                return;
+            }
+
+            // Sync stock disputes in background so UI doesn't hang!
+            Promise.all(stockDisputes.map(async (d) => {
+                const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", d.name));
+                const invSnap = await window.getDocs(invQ);
+                if (!invSnap.empty) {
+                    let invDoc = invSnap.docs[0];
+                    await window.updateDoc(invDoc.ref, { currentStock: d.newCount });
+                    await window.addDoc(window.collection(window.db, "stock_logs"), {
+                        branch: branch, item: d.name, uom: d.uom,
+                        oldQty: d.prevCount, newQty: d.newCount, variance: d.variance,
+                        type: d.variance < 0 ? "Audit Adjustment (Penalty)" : "Audit Adjustment (Recovery)", 
+                        note: `Disputed Handover by ${shiftName}. ${prevCashier} claimed ${d.prevCount}, actual is ${d.newCount}.`,
+                        user: "System (HQ)", timestamp: window.serverTimestamp()
+                    });
+                }
+            })).catch(e => console.error("Dispute sync error:", e));
+
+            if (totalPenalty > 0) {
+                window.addDoc(window.collection(window.db, "staff_deductions"), {
+                    staffName: prevCashier, type: "Missing Stock Penalty", amount: totalPenalty,
+                    dateAdded: new Date(), status: "Unpaid", remarks: `Stock missing during handover to ${shiftName}.`
+                }).catch(e => console.error(e));
+
+                window.addDoc(window.collection(window.db, "manager_alerts"), {
+                    type: "STOCK_PENALTY_APPLIED", branch: branch, cashier: prevCashier,
+                    message: `🚨 HANDOVER PENALTY: ${shiftName} disputed ${prevCashier}'s stock count. ₱${totalPenalty.toFixed(2)} penalty issued to ${prevCashier}.`,
+                    timestamp: window.serverTimestamp(), isRead: false
+                }).catch(e => console.error(e));
+            }
+        }
+
+        // 3. CREATE SHIFT & INSTANT MEMORY UNLOCK (Bypasses slow cloud download)
+        let shiftId = await window.openNewShift(branch, shiftName, startCash);
+        
+        if (shiftId) {
+            let newShiftObj = {
+                active: true,
+                startedBy: shiftName,
+                startTime: new Date(),
+                shiftId: shiftId,
+                startingCash: startCash
+            };
+            
+            // Immediate local memory assignment
+            window.currentShift = newShiftObj;
+            window.activeShiftDetails = newShiftObj;
+            localStorage.setItem('currentShiftId', shiftId);
+
+            // Instant UI switch (no cloud roundtrips)
+            let topBtn = document.getElementById('btnTopShift');
+            let lock = document.getElementById('shiftLockout');
+            let placeBtn = document.getElementById('btnMainPlaceOrder');
+            
+            if (topBtn) topBtn.innerText = "🟢 Active Shift";
+            if (lock) lock.style.display = "none";
+            if (placeBtn) placeBtn.disabled = false;
+
+            if (typeof closeModal === 'function') closeModal('shiftModal');
+            else if (typeof window.closeModal === 'function') window.closeModal('shiftModal');
+        } else {
+            alert("Failed to open shift. Check connection!");
+        }
+
+    } catch (e) {
+        console.error("Open shift error:", e);
+        alert("Error opening shift. Please try again.");
+    } finally {
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
+    }
+};
