@@ -1520,8 +1520,11 @@
           <p style="margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px;">Manage, block, or delete tablets
             currently locked to your branches.</p>
         </div>
-        <button class="btn-refresh" style="background: var(--primary); color: white; border: none; padding: 10px 20px;"
-          onclick="loadDeviceFleet()">🔄 Refresh Devices</button>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 10px 20px; font-weight: bold; box-shadow: 0 2px 4px rgba(239,68,68,0.3);" onclick="window.bulkDeleteDevices()">🗑️ Delete Selected</button>
+            <button class="btn-refresh" style="background: var(--primary); color: white; border: none; padding: 10px 20px;"
+              onclick="loadDeviceFleet()">🔄 Refresh Devices</button>
+        </div>
       </div>
 
       <div class="card">
@@ -1529,6 +1532,7 @@
           <table class="data-table">
             <thead>
               <tr>
+                <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAllDevices" onchange="window.toggleAllDeviceCheckboxes(this)" style="cursor: pointer; width: 16px; height: 16px;"></th>
                 <th>Device Name / ID</th>
                 <th>Assigned Branch</th>
                 <th>Registration Date</th>
@@ -1538,7 +1542,7 @@
             </thead>
             <tbody id="deviceFleetBody">
               <tr>
-                <td colspan="5" class="text-center">Loading device fleet...</td>
+                <td colspan="6" class="text-center">Loading device fleet...</td>
               </tr>
             </tbody>
           </table>
