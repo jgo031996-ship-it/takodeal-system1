@@ -11354,6 +11354,17 @@ window.loadLedger = async function() {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating running balances...</td></tr>';
 
+    // 🔥 TASK 3 FIX: Read the new Branch Filter Dropdown
+    let branchFilterEl = document.getElementById('ledgerBranchFilter');
+    let branchFilter = branchFilterEl ? branchFilterEl.value : "All";
+    
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee && branchFilterEl) {
+        branchFilter = window.sessionUser.branch;
+        branchFilterEl.value = branchFilter;
+        branchFilterEl.disabled = true;
+    }
+
     try {
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
@@ -11390,6 +11401,7 @@ window.loadLedger = async function() {
 
         staffList.forEach(staff => {
             if (!window.isBranchAllowed(staff.branch)) return; // 🔥 SECURITY LOCK
+            if (branchFilter !== "All" && staff.branch !== branchFilter) return; // 🔥 TASK 3 FIX: Hide alien branches!
             let name = staff.cashierName;
             
             let record = ledgerData[name] || { totalLoaned: 0, totalPaid: 0, cutoffDeduction: 0 };
