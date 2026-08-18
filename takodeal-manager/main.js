@@ -20684,7 +20684,6 @@ window.renderDashboardCharts = async function() {
                 if (dayIndex !== -1) {
                     
                     // 🔥 THE GROSS SALES UPGRADE 🔥
-                    // Calculate raw Gross Sales before discounts instead of netTotal
                     let txGross = parseFloat(tx.subTotalBeforeDiscount);
                     if (isNaN(txGross) || txGross <= 0) {
                         txGross = 0;
@@ -20721,6 +20720,22 @@ window.renderDashboardCharts = async function() {
                             branchSalesData[txBranch][dayIndex] += txGross;
                         }
                     }
+                }
+            }
+
+            // Today's Sales Mix Logic
+            if (txDate === todayStr && pieCanvas && tx.cart) {
+                if (window.isBranchAllowed(txBranch)) { 
+                    tx.cart.forEach(item => {
+                        let itemName = item.name || item.itemName;
+                        let cat = menuCategories[itemName] || item.category || "Uncategorized";
+                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
+                        if (!categorySales[cat]) categorySales[cat] = 0;
+                        categorySales[cat] += lineTotal;
+                    });
+                }
+            }
+        });
 
         // Draw Line Chart
         let lineDatasets = [];
