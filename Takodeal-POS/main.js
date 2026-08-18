@@ -977,23 +977,35 @@ window.checkShiftStatus = async function (branch) {
   } catch (error) { console.error(error); return { active: false }; }
 };
 
-window.openNewShift = async function (branch, cashier, startCash) {
-  try {
-    const docRef = await addDoc(collection(db, "shifts"), {
-      branch: branch,
-      // 🔥 THE AUTOMATIC MEMORY GRABBER
-      cashier: localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || cashier || 'Unknown',
-      startingCash: startCash,
-      startTime: serverTimestamp(),
-      active: true,
-      grossSales: 0,
-      netSales: 0
-    });
-    return docRef.id;
-  } catch (error) {
-    console.error(error);
-    return null;
-  }
+// ==========================================
+// 🔄 DYNAMIC SHIFT CASHIER UPDATER
+// ==========================================
+window.updateActiveShiftCashier = async function(newCashierName) {
+    try {
+        let branch = localStorage.getItem('takodeal_device_branch');
+        if (!branch || !newCashierName) return;
+
+        const q = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branch), window.where("active", "==", true), window.limit(1));
+        const snap = await window.getDocs(q);
+        
+        if (!snap.empty) {
+            let shiftDoc = snap.docs[0];
+            let shiftRef = shiftDoc.ref;
+            let currentNames = shiftDoc.data().cashier || "";
+            
+            // Convert to an array to check if they are already in the list
+            let namesArray = currentNames.split(' / ').map(n => n.trim()).filter(n => n.length > 0);
+            
+            if (!namesArray.includes(newCashierName)) {
+                namesArray.push(newCashierName);
+                let updatedCashierString = namesArray.join(' / ');
+                // Update Firebase so the Manager App sees all cashiers!
+                await window.updateDoc(shiftRef, { cashier: updatedCashierString });
+            }
+        }
+    } catch(e) {
+        console.error("Failed to update shift cashier:", e);
+    }
 };
 
 // ========================================================
