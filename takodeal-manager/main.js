@@ -582,7 +582,6 @@ window.loadGlobalDashboard = async function() {
     const endOfDay = new Date(endDateInput.value);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // 🔥 INJECT THE BRANCH PICKER NEXT TO THE DATE CONTROLS
     let dashFilter = document.getElementById('dashBranchFilter');
     if (!dashFilter) {
         let dateControls = document.getElementById('globalDateControls');
@@ -600,7 +599,6 @@ window.loadGlobalDashboard = async function() {
     let selectedBranch = dashFilter ? dashFilter.value : "All";
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     
-    // 🔒 FORCE LOCK FOR FRANCHISEES
     if (isFranchisee && dashFilter) {
         selectedBranch = window.sessionUser.branch;
         dashFilter.value = selectedBranch;
@@ -609,120 +607,114 @@ window.loadGlobalDashboard = async function() {
 
     let globalGross = 0; let globalNet = 0; let globalExp = 0;
     
-    // 🔥 SCAN ONLY THE SELECTED BRANCH (OR THEIR ALLOWED BRANCHES)
     let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
     if (selectedBranch !== "All") {
         branches = [selectedBranch];
     } else if (isFranchisee) {
-        branches = window.sessionUser.allowedBranches; // Only scan THEIR branches!
+        branches = window.sessionUser.allowedBranches;
     }
 
     let tableHtml = '';
 
     try {
-        for (let branch of branches) {
-            // 1. FETCH SHIFT DATA FIRST (True Shift Logic)
+        // 🔥 LIGHTNING FAST PARALLEL BRANCH SCANNER 🔥
+        // Blasts all branch queries to Firebase simultaneously!
+        const branchPromises = branches.map(async (branch) => {
             const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"), limit(1));
             const shiftSnap = await getDocs(shiftQ);
 
-      let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
-      let isActive = shiftData && shiftData.active === true;
-      let isClosed = shiftData && shiftData.status === "Closed";
+            let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
+            let shiftDocId = !shiftSnap.empty ? shiftSnap.docs[0].id : null;
+            let isActive = shiftData && shiftData.active === true;
+            let isClosed = shiftData && shiftData.status === "Closed";
 
-      let displayCashier = shiftData ? (shiftData.cashier || '-') : '-';
-      let branchGross = 0; let branchNet = 0; let branchCashIn = 0; let branchExp = 0;
+            let displayCashier = shiftData ? (shiftData.cashier || '-') : '-';
+            let branchGross = 0; let branchNet = 0; let branchCashIn = 0; let branchExp = 0;
+            let parkedCount = 0;
 
-      // 2. ONLY FETCH SALES IF A SHIFT EXISTS
-      if (shiftData) {
-          // Grab the exact millisecond the shift started
-          let shiftStart = shiftData.startTime.toDate();
-          // If active, calculate up to right NOW. If closed, calculate up to when they clocked out.
-          let shiftEnd = isActive ? new Date() : shiftData.endTime.toDate();
+            if (shiftData) {
+                let shiftStart = shiftData.startTime.toDate();
+                let shiftEnd = isActive ? new Date() : shiftData.endTime.toDate();
 
-          const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
-          const txSnap = await getDocs(txQ);
+                // Fire all 3 data logs at the exact same time!
+                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
+                const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftDocId));
+                const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch));
 
-          txSnap.forEach(tDoc => {
-              let tx = tDoc.data();
-              if (tx.status !== "Voided") {
-                  branchNet += (tx.netTotal || 0);
-                  let txGross = 0;
-                  if (tx.cart) { tx.cart.forEach(item => { txGross += ((item.variantPrice || 0) * (item.qty || 1)); }); } else { txGross = tx.netTotal; }
-                  branchGross += txGross;
-                  if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
-              }
-          });
+                const [txSnap, expSnap, parkedSnap] = await Promise.all([getDocs(txQ), getDocs(expQ), getDocs(parkedQ)]);
 
-          const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
-          const expSnap = await getDocs(expQ);
-          expSnap.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
-      }
+                txSnap.forEach(tDoc => {
+                    let tx = tDoc.data();
+                    if (tx.status !== "Voided") {
+                        branchNet += (tx.netTotal || 0);
+                        let txGross = 0;
+                        if (tx.cart) { tx.cart.forEach(item => { txGross += ((item.variantPrice || 0) * (item.qty || 1)); }); } else { txGross = tx.netTotal; }
+                        branchGross += txGross;
+                        if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
+                    }
+                });
 
-      // Calculate Live Expected Cash for Active shifts
-      let expectedCash = 0;
-      if (isActive) {
-        expectedCash = (shiftData.startingCash || 0) + branchCashIn - branchExp;
-      } else if (isClosed) {
-        expectedCash = shiftData.expectedCash || 0;
-      }
+                expSnap.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
+                parkedCount = parkedSnap.size;
+            }
 
-      // Calculate Variance (Short/Over)
-      let varianceHtml = '<span style="color: var(--text-muted);">-</span>';
-            if (isClosed) {
-          // Instead of doing math on zeros, tell the manager exactly where the money went!
-          varianceHtml = `<span style="color: #10b981; font-weight: bold; font-style: italic;">Saved to Z-Reading ✓</span>`;
-      } else if (isActive) {
-          // Keep the normal text for active shifts
-          varianceHtml = `<span style="color: #64748b; font-style: italic;">Shift in progress...</span>`;
-      }
+            let expectedCash = 0;
+            if (isActive) expectedCash = (shiftData.startingCash || 0) + branchCashIn - branchExp;
+            else if (isClosed) expectedCash = shiftData.expectedCash || 0;
 
-      globalGross += branchGross; globalNet += branchNet; globalExp += branchExp;
+            let varianceHtml = '<span style="color: var(--text-muted);">-</span>';
+            if (isClosed) varianceHtml = `<span style="color: #10b981; font-weight: bold; font-style: italic;">Saved to Z-Reading ✓</span>`;
+            else if (isActive) varianceHtml = `<span style="color: #64748b; font-style: italic;">Shift in progress...</span>`;
 
-      if (branchGross === 0 && branchExp === 0 && !shiftData) {
-        // 🔥 THE FIX: Completely hide branches that have absolutely zero activity for the day!
-        continue;
-      }
+            // Skip rendering if ghost branch
+            if (branchGross === 0 && branchExp === 0 && !shiftData) return null;
 
-      // 🚨 PARKED ORDER DETECTOR
-      const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch));
-      const parkedSnap = await getDocs(parkedQ);
-      let parkedAlert = '';
-      if (!parkedSnap.empty) {
-          parkedAlert = `<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">⚠️ ${parkedSnap.size} Parked</span>`;
-      }
+            let parkedAlert = parkedCount > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">⚠️ ${parkedCount} Parked</span>` : '';
 
-      let shiftBadge = isActive
-        ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span> ${parkedAlert}`
-        : (isClosed ? '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>' : '<span class="badge badge-closed">No Shift</span>');
+            let shiftBadge = isActive
+                ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span> ${parkedAlert}`
+                : (isClosed ? '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>' : '<span class="badge badge-closed">No Shift</span>');
 
-      // Grab the starting cash safely
-      let displayStartingCash = (isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-';
+            let displayStartingCash = (isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-';
 
-      tableHtml += `
-        <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-          <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
-          <td style="padding: 15px 25px;">${shiftBadge}</td>
-          <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${displayCashier}</td>
-          <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${displayStartingCash}</td>
-          <td style="padding: 15px 25px; font-weight: 900; color: #0f766e;">${formatMoney(branchNet)}</td>
-          <td style="padding: 15px 25px; color: #dc2626; font-weight: bold;">${formatMoney(branchExp)}</td>
-          <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${(isActive || isClosed) ? formatMoney(expectedCash) : '-'}</td>
-          <td style="padding: 15px 25px;">${varianceHtml}</td>
-        </tr>
-      `;
+            let rowHtml = `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
+                <td style="padding: 15px 25px;">${shiftBadge}</td>
+                <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${displayCashier}</td>
+                <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${displayStartingCash}</td>
+                <td style="padding: 15px 25px; font-weight: 900; color: #0f766e;">${formatMoney(branchNet)}</td>
+                <td style="padding: 15px 25px; color: #dc2626; font-weight: bold;">${formatMoney(branchExp)}</td>
+                <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${(isActive || isClosed) ? formatMoney(expectedCash) : '-'}</td>
+                <td style="padding: 15px 25px;">${varianceHtml}</td>
+                </tr>
+            `;
+
+            return { html: rowHtml, gross: branchGross, net: branchNet, exp: branchExp };
+        });
+
+        // Wait for all branches to finish their simultaneous math
+        const results = await Promise.all(branchPromises);
+
+        results.forEach(res => {
+            if (res) {
+                tableHtml += res.html;
+                globalGross += res.gross;
+                globalNet += res.net;
+                globalExp += res.exp;
+            }
+        });
+
+        document.getElementById('globalGross').innerText = formatMoney(globalGross);
+        document.getElementById('globalNet').innerText = formatMoney(globalNet);
+        document.getElementById('globalExpenses').innerText = formatMoney(globalExp);
+        document.getElementById('branchTableBody').innerHTML = tableHtml;
+
+    } catch (error) {
+        console.error("Radar Engine Error:", error);
+        document.getElementById('branchTableBody').innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
     }
 
-    document.getElementById('globalGross').innerText = formatMoney(globalGross);
-    document.getElementById('globalNet').innerText = formatMoney(globalNet);
-    document.getElementById('globalExpenses').innerText = formatMoney(globalExp);
-    document.getElementById('branchTableBody').innerHTML = tableHtml;
-
-  } catch (error) {
-    console.error("Radar Engine Error:", error);
-    document.getElementById('branchTableBody').innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
-  }
-
-  // 🐙 THE TAKOYAKI MILESTONE TRACKER
     try {
         let dashFilter = document.getElementById('dashBranchFilter');
         let selectedBranch = dashFilter ? dashFilter.value : "All";
@@ -733,48 +725,24 @@ window.loadGlobalDashboard = async function() {
         if (statsSnap.exists()) {
             let data = statsSnap.data();
             let totalBalls = 0;
-            
-            // 🔒 Pull specific branch stats if filtered
-            if (selectedBranch !== "All") {
-                totalBalls = data[`balls_${selectedBranch}`] || 0;
-            } else {
-                totalBalls = data.totalTakoyakiBalls || 0;
-            }
+            if (selectedBranch !== "All") totalBalls = data[`balls_${selectedBranch}`] || 0;
+            else totalBalls = data.totalTakoyakiBalls || 0;
             
             let milestoneDiv = document.getElementById('milestoneCounter');
-            
-            // Change the text above the milestone to show the specific branch
             let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
             if (titleDiv) {
-                titleDiv.innerText = selectedBranch !== "All" 
-                    ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` 
-                    : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
+                titleDiv.innerText = selectedBranch !== "All" ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
             }
-
             if (milestoneDiv) {
-                if (totalBalls === 0 && selectedBranch !== "All") {
-                    milestoneDiv.innerText = "Tracking Initial Sales...";
-                } else {
-                    milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
-                }
+                if (totalBalls === 0 && selectedBranch !== "All") milestoneDiv.innerText = "Tracking Initial Sales...";
+                else milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
             }
         }
     } catch(e) { console.log("Tracker still waiting for first sale."); }
 
-    // 🔥 FIX: WAKE UP THE NEW UNIVERSAL PLATFORM ENGINE!
-    if (typeof window.calculatePlatformFinancials === 'function') {
-        window.calculatePlatformFinancials();
-    }
-
-    // 🔥 NEW: WAKE UP THE PRODUCT ANALYTICS ENGINE!
-    if (typeof window.loadProductAnalytics === 'function') {
-        window.loadProductAnalytics(startOfDay, endOfDay, selectedBranch);
-    }
-  
-    // 📈 WAKE UP THE ADVANCED CHARTS!
-    if (typeof window.renderDashboardCharts === 'function') {
-        window.renderDashboardCharts();
-    }
+    if (typeof window.calculatePlatformFinancials === 'function') window.calculatePlatformFinancials();
+    if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, selectedBranch);
+    if (typeof window.renderDashboardCharts === 'function') window.renderDashboardCharts();
 };
 
 // --- WIRING THE BUTTONS ---
@@ -4277,13 +4245,11 @@ window.openBranchDetails = async function (branch) {
   document.getElementById('analyticsModal').style.display = 'flex';
   document.getElementById('modalBranchName').innerText = `📊 ${branch} Analytics`;
 
-  // Read both dates
   const startDateInput = document.getElementById('dashStartDate');
   const endDateInput = document.getElementById('dashEndDate');
   const startDay = new Date(startDateInput.value);
   const endDay = new Date(endDateInput.value);
 
-  // Display the range in the modal
   document.getElementById('modalDateDisplay').innerText = `${startDay.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${endDay.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
   document.getElementById('mdlNet').innerText = "Loading...";
@@ -4293,283 +4259,42 @@ window.openBranchDetails = async function (branch) {
   const endOfDay = new Date(endDay.setHours(23, 59, 59, 999));
 
   try {
-    // 1. FETCH SHIFT FIRST (True Shift Logic)
+    // 1. FETCH SHIFT FIRST to establish time boundaries
     const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"), limit(1));
     const shiftSnap = await getDocs(shiftQ);
 
     if (shiftSnap.empty) {
         document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No shift found for this date.</td></tr>';
         document.getElementById('modalDateDisplay').innerText = "No Active Shift";
-        return; // Stop running if there's no shift to look at!
+        return; 
     }
 
     let shiftData = shiftSnap.docs[0].data();
     let sTime = shiftData.startTime.toDate();
     let eTime = shiftData.active ? new Date() : shiftData.endTime.toDate();
 
-    // Update the subtitle to show the EXACT shift hours!
     document.getElementById('modalDateDisplay').innerText = `Shift: ${sTime.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'})} to ${shiftData.active ? 'Present' : eTime.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'})}`;
 
-    // 2. Fetch transactions for THIS EXACT SHIFT
+    // 🔥 LIGHTNING FAST PARALLEL DATA FETCH 🔥
     const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
-    const txSnap = await getDocs(txQ);
+    const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
+    const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftSnap.docs[0].id));
+    const invQ = collection(db, "inventory");
+    const bomQ = collection(db, "bom");
+    const menuQ = collection(db, "menu");
+
+    // Blast all 6 queries at the exact same time!
+    const [txSnap, parkedSnap, expSnap, invSnap, bomSnap, menuSnap] = await Promise.all([
+        getDocs(txQ), getDocs(parkedQ), getDocs(expQ), getDocs(invQ), getDocs(bomQ), getDocs(menuQ)
+    ]);
 
     let netSales = 0; let totalItems = 0; let transCount = 0; let voidCount = 0;
-    let categories = {}; // To track Best Sellers and Margins
-    let payments = {};   // To track Cash vs GCash
+    let categories = {}; 
+    let payments = {};   
     let transHtml = '';
 
-    // Sort transactions by time (newest first)
     let allTx = [];
     txSnap.forEach(doc => allTx.push({ id: doc.id, ...doc.data() }));
-    // 🔥 NEW: FETCH PARKED ORDERS AND INJECT THEM INTO THE RECEIPT LOG
-    const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
-    const parkedSnap = await getDocs(parkedQ);
-    parkedSnap.forEach(doc => {
-        let p = doc.data();
-        allTx.push({
-            id: doc.id,
-            receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(),
-            customerName: p.name || p.customerName || "Guest",
-            netTotal: p.total || p.netTotal || 0,
-            status: "Parked",
-            paymentMethod: "Unpaid",
-            cart: p.items || p.cart || [],
-            timestamp: p.timestamp,
-            cashier: p.cashier || 'Unknown',
-            orderType: p.orderType || 'Dine-In'
-        });
-    });
-
-    // Sort transactions by time (newest first)
-    allTx.sort((a, b) => {
-        let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp)) : 0;
-        let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp)) : 0;
-        return tB - tA;
-    });
-
-    // 🔥 NEW: Fetch Inventory Base Costs
-    const invSnap = await getDocs(collection(db, "inventory"));
-    let inventoryCosts = {};
-    invSnap.forEach(doc => {
-        let data = doc.data();
-        inventoryCosts[data.name] = parseFloat(data.baseCost) || 0;
-    });
-
-    // 🔥 NEW: Fetch Recipes to calculate standard COGS
-    const bomSnap = await getDocs(collection(db, "bom"));
-    let recipeCosts = {};
-    bomSnap.forEach(doc => {
-        let data = doc.data();
-        if (!recipeCosts[data.menuItem]) recipeCosts[data.menuItem] = 0;
-        let ingCost = inventoryCosts[data.ingredientName] || 0;
-        recipeCosts[data.menuItem] += (ingCost * (data.qty || 1));
-    });
-
-    // 🔥 NEW: Fetch Menu for True Categories
-    const menuSnap = await getDocs(collection(db, "menu"));
-    let menuCategories = {};
-    menuSnap.forEach(doc => {
-        menuCategories[doc.data().name] = doc.data().category || 'Uncategorized';
-    });
-
-    allTx.forEach(tx => {
-      let timeStr = tx.timestamp ? tx.timestamp.toDate().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
-      
-      // 🔥 NEW: Grab customer name and encode the cart data for the modal!
-      let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
-      let safeCart = encodeURIComponent(JSON.stringify(tx.cart || []));
-
-      if (tx.status === "Voided") {
-        voidCount++;
-        transHtml += `<tr style="opacity: 0.5;"><td>${timeStr}</td><td>${tx.receiptId}</td><td>${safeCustomer}</td><td>-</td><td><span class="badge badge-closed"><span class="status-dot red"></span> VOID</span></td><td style="text-decoration: line-through;">${formatMoney(tx.netTotal)}</td><td></td></tr>`;
-      } else {
-        transCount++;
-        netSales += (tx.netTotal || 0);
-
-        // Track Payments
-        let payMethod = tx.paymentMethod || "Unknown";
-        if (!payments[payMethod]) payments[payMethod] = 0;
-        payments[payMethod] += (tx.netTotal || 0);
-
-        // Track True Categories, Sales, and Advanced COGS
-        if (tx.cart && Array.isArray(tx.cart)) {
-          tx.cart.forEach(item => {
-            let qty = item.qty || 1;
-            totalItems += qty;
-
-            let itemName = item.name || item.itemName;
-            let cat = menuCategories[itemName] || item.category || 'Uncategorized';
-            
-            if (!categories[cat]) categories[cat] = { qty: 0, sales: 0, cogs: 0 };
-
-            categories[cat].qty += qty;
-            
-            // Calculate Sales
-            let lineRevenue = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
-            categories[cat].sales += lineRevenue;
-
-            // Calculate Base Recipe COGS
-            let baseCogs = (recipeCosts[itemName] || 0) * qty;
-            let addonCogs = 0;
-            
-            // Calculate Add-on COGS
-            if (item.addons) {
-                for (let key in item.addons) {
-                    let addon = item.addons[key];
-                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                        let aCost = inventoryCosts[addon.linkedIngredient] || 0;
-                        addonCogs += (aCost * addon.deductQty * addon.qty * qty);
-                    }
-                }
-            }
-            
-            categories[cat].cogs += (baseCogs + addonCogs);
-          });
-        }
-
-        // 🔥 SMART DIGITAL PAYMENT VERIFICATION UI 🔥
-        let isDigital = payMethod.toLowerCase() !== "cash" && !payMethod.toLowerCase().includes("store use");
-        let verifyBadge = "";
-        let verifyBtn = "";
-        
-        if (isDigital) {
-            if (tx.paymentVerified) {
-                verifyBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold;">✅ Verified by Manager</span>`;
-            } else {
-                verifyBadge = `<br><span style="color: #ea580c; font-size: 10px; font-weight: bold; animation: pulse 2s infinite;">⏳ Awaiting Verification</span>`;
-                verifyBtn = `<button class="btn-bulk-verify" data-txid="${tx.id}" onclick="window.verifyDigitalPayment('${tx.id}', '${tx.receiptId}')" style="background: #16a34a; border: 1px solid #15803d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✅ Verify</button>`;
-            }
-        }
-
-        // 🔥 THE ANTI-THEFT PREP TIMER ENGINE 🔥
-        let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : Date.now();
-        let minutesElapsed = Math.floor((Date.now() - txTimeMs) / 60000);
-        
-        let statusDisplay = '';
-        if (tx.status === "Parked") {
-            statusDisplay = `<span style="background: #fef3c7; color: #d97706; border: 1px solid #fcd34d; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 11px;">⏸️ PARKED (Unpaid)</span>`;
-        } else if (minutesElapsed < 10) {
-            let timeLeft = 10 - minutesElapsed;
-            statusDisplay = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
-        } else {
-            statusDisplay = `<span class="badge badge-active"><span class="status-dot green"></span> PAID</span>`;
-        }
-
-        // 🔥 UPGRADED ROW WITH VERIFY BUTTON & TIMER
-        transHtml += `<tr style="border-bottom: 1px solid #f1f5f9; ${isDigital && !tx.paymentVerified ? 'background: #fffbeb;' : ''}">
-            <td style="padding: 10px;">${timeStr}</td>
-            <td style="padding: 10px;"><strong>${tx.receiptId}</strong></td>
-            <td style="padding: 10px; color: #475569; font-weight: bold;">${safeCustomer}</td>
-            <td style="padding: 10px;">${payMethod}${verifyBadge}</td>
-            <td style="padding: 10px;">${statusDisplay}</td>
-            <td style="font-weight: 600; color: var(--primary); padding: 10px;">${formatMoney(tx.netTotal)}</td>
-            <td style="padding: 10px; text-align: center; display: flex; gap: 5px; justify-content: center;">
-                <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${payMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
-                ${verifyBtn}
-            </td>
-        </tr>`;
-      }
-    });
-
-    // --- DRAWER CASH & AUDIT ENGINE ---
-    const expQ = query(collection(db, "expenses"), where("branch", "==", branch), where("timestamp", ">=", sTime), where("timestamp", "<=", eTime));
-    const expSnap = await getDocs(expQ);
-    let dateExpenses = 0;
-    expSnap.forEach(doc => dateExpenses += (doc.data().amount || 0));
-
-    // 🔥 THE FIX: Renamed to activeShiftQ to avoid clashing with the top variable!
-    const activeShiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
-    const activeShiftSnap = await getDocs(activeShiftQ);
-
-    const prevShiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
-    const prevShiftSnap = await getDocs(prevShiftQ);
-    let lastClosingCash = prevShiftSnap.empty ? 0 : (prevShiftSnap.docs[0].data().declaredCash || 0);
-
-    let startingCash = 0;
-    let isActive = !activeShiftSnap.empty;
-
-    if (isActive) {
-      startingCash = activeShiftSnap.docs[0].data().startingCash || 0;
-      let cashSales = payments['Cash'] || 0;
-      let expectedDrawerCash = startingCash + cashSales - dateExpenses;
-
-      document.getElementById('mdlDrawerCash').innerText = formatMoney(expectedDrawerCash);
-      document.getElementById('mdlDrawerMath').innerHTML = `
-        <b>Entered Float:</b> ${formatMoney(startingCash)}<br>
-        <b>Expenses Paid:</b> ${formatMoney(dateExpenses)}
-      `;
-
-      const auditEl = document.getElementById('mdlAuditAlert');
-      if (startingCash === lastClosingCash) {
-        auditEl.innerHTML = `<span style="color: #16a34a;">✅ Matches Last Closing (₱${lastClosingCash})</span>`;
-      } else {
-        let diff = startingCash - lastClosingCash;
-        let sign = diff > 0 ? "+" : "";
-        auditEl.innerHTML = `<span style="color: #dc2626;">⚠️ DISCREPANCY: ${sign}${diff} vs Last Close</span>`;
-      }
-    } else {
-      document.getElementById('mdlDrawerCash').innerText = "No Active Shift";
-      document.getElementById('mdlDrawerMath').innerText = "Register is currently closed.";
-      document.getElementById('mdlAuditAlert').innerText = "";
-    }
-
-    // --- INJECT KPIs ---
-    document.getElementById('mdlNet').innerText = formatMoney(netSales);
-    document.getElementById('mdlItems').innerText = totalItems;
-    document.getElementById('mdlTrans').innerText = transCount;
-    document.getElementById('mdlVoids').innerText = voidCount;
-
-    // --- INJECT ADVANCED CATEGORIES WITH MARGINS ---
-    let catHtml = '';
-    let sortedCats = Object.keys(categories).sort((a, b) => categories[b].sales - categories[a].sales);
-
-    sortedCats.forEach(cat => {
-        let data = categories[cat];
-        let profit = data.sales - data.cogs;
-        let margin = data.sales > 0 ? (profit / data.sales) * 100 : 0;
-        let marginColor = margin > 50 ? '#16a34a' : (margin > 30 ? '#f59e0b' : '#dc2626');
-
-        catHtml += `
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="font-weight: bold; color: #334155; padding: 10px;">${cat}</td>
-                <td style="padding: 10px;">${data.qty} items</td>
-                <td style="font-weight: bold; color: #d97706; padding: 10px;">${formatMoney(data.sales)}</td>
-                <td style="font-weight: bold; color: #ef4444; padding: 10px;">${formatMoney(data.cogs)}</td>
-                <td style="font-weight: 900; color: ${marginColor}; padding: 10px;">${margin.toFixed(1)}%</td>
-            </tr>
-        `;
-    });
-
-    // Dynamically update the table headers so you don't have to edit the HTML!
-    let catTableHead = document.getElementById('tbCatBody').previousElementSibling.querySelector('tr');
-    if (catTableHead) {
-        catTableHead.innerHTML = '<th style="text-align:left; padding:10px;">Category</th><th style="text-align:left; padding:10px;">Sold</th><th style="text-align:left; padding:10px;">Gross</th><th style="text-align:left; padding:10px;">Est. COGS</th><th style="text-align:left; padding:10px;">Margin</th>';
-    }
-
-    document.getElementById('tbCatBody').innerHTML = catHtml || '<tr><td colspan="5" class="text-center">No items sold.</td></tr>';
-
-    // --- INJECT PAYMENTS ---
-    let payHtml = '';
-    for (let p in payments) {
-      payHtml += `<tr><td style="padding: 10px;"><strong>${p}</strong></td><td style="color: var(--success); font-weight: 600; padding: 10px;">${formatMoney(payments[p])}</td></tr>`;
-    }
-    document.getElementById('tbPayBody').innerHTML = payHtml || '<tr><td colspan="2" class="text-center">No payments logged.</td></tr>';
-
-    // --- INJECT TRANSACTIONS ---
-    // Dynamically update the headers to include Customer and Action!
-    let transTableHead = document.getElementById('tbTransBody').previousElementSibling.querySelector('tr');
-    if (transTableHead) {
-        transTableHead.innerHTML = '<th style="text-align:left; padding:10px;">Time</th><th style="text-align:left; padding:10px;">Receipt ID</th><th style="text-align:left; padding:10px; color: #0284c7;">Customer</th><th style="text-align:left; padding:10px;">Payment</th><th style="text-align:left; padding:10px;">Status</th><th style="text-align:left; padding:10px;">Total</th><th style="text-align:center; padding:10px;">Action</th>';
-    }
-    
-    document.getElementById('tbTransBody').innerHTML = transHtml || '<tr><td colspan="7" class="text-center">No transactions on this date.</td></tr>';
-
-  } catch (error) {
-    console.error("Analytics Error:", error);
-    document.getElementById('tbCatBody').innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading analytics.</td></tr>';
-  }
-};
 
 // --- THE LIVE INVENTORY ENGINE (UPGRADED WITH TOTAL VALUE & ACTION DROPDOWNS) ---
 window.refreshInventoryView = function() { window.loadInventoryData(); };
@@ -13131,14 +12856,10 @@ window.loadSalesHistoryTab = async function() {
     let branchFilterEl = document.getElementById('histBranchFilter');
     let branchFilter = branchFilterEl ? branchFilterEl.value : "All";
     
-    // 🔒 FRANCHISE HARD LOCK
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     if (isFranchisee) {
-        branchFilter = window.sessionUser.branch; // Force it to their branch
-        if (branchFilterEl) {
-            branchFilterEl.value = branchFilter;
-            branchFilterEl.disabled = true;
-        }
+        branchFilter = window.sessionUser.branch; 
+        if (branchFilterEl) { branchFilterEl.value = branchFilter; branchFilterEl.disabled = true; }
     }
 
     let startDateRaw = document.getElementById('histStartDate').value;
@@ -13150,8 +12871,7 @@ window.loadSalesHistoryTab = async function() {
         let todayStr = today.toISOString().split('T')[0];
         document.getElementById('histStartDate').value = todayStr;
         document.getElementById('histEndDate').value = todayStr;
-        startDateRaw = todayStr;
-        endDateRaw = todayStr;
+        startDateRaw = todayStr; endDateRaw = todayStr;
     }
 
     let startOfDay = new Date(startDateRaw + 'T00:00:00');
@@ -13161,12 +12881,25 @@ window.loadSalesHistoryTab = async function() {
     if(tbodyShifts) tbodyShifts.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
     
     try {
-        // 1. FETCH COSTS & MENU CATEGORIES
-        const invSnap = await getDocs(collection(db, "inventory"));
+        // 🔥 LIGHTNING FAST PARALLEL QUERY ENGINE 🔥
+        // We launch all 7 heavy database queries at the exact same time!
+        const qInv = collection(db, "inventory");
+        const qBom = collection(db, "bom");
+        const qMenu = collection(db, "menu");
+        const qShifts = query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
+        const qTx = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        const qRej = query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        const qParked = query(collection(db, "parked_orders"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+
+        const [invSnap, bomSnap, menuSnap, shiftSnap, snap, rejectedSnap, parkedSnap] = await Promise.all([
+            getDocs(qInv), getDocs(qBom), getDocs(qMenu), 
+            getDocs(qShifts), getDocs(qTx), getDocs(qRej), getDocs(qParked)
+        ]);
+
+        // 1. PROCESS COSTS & MENU CATEGORIES
         let inventoryCosts = {};
         invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
 
-        const bomSnap = await getDocs(collection(db, "bom"));
         let recipeCosts = {};
         bomSnap.forEach(doc => {
             let data = doc.data();
@@ -13174,15 +12907,11 @@ window.loadSalesHistoryTab = async function() {
             recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
 
-        const menuSnap = await getDocs(collection(db, "menu"));
         let menuCats = {};
         menuSnap.forEach(d => { menuCats[d.data().name] = d.data().category || "Uncategorized"; });
 
-        // 2. FETCH ACTUAL SHIFTS
-        const shiftQ = query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
-        const shiftSnap = await getDocs(shiftQ);
+        // 2. PROCESS ACTUAL SHIFTS
         window.globalShiftReports = {}; // Reset Memory
-        
         shiftSnap.forEach(doc => {
             let s = doc.data();
             if (branchFilter !== "All" && s.branch !== branchFilter) return;
@@ -13193,53 +12922,26 @@ window.loadSalesHistoryTab = async function() {
             let sTimeStr = sTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             let eTimeStr = s.active ? "Present" : eTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
             
-            // 🔥 THE 5:00 AM BUSINESS DAY CUTOFF FIX (For Shifts)
             let businessShiftDate = new Date(sTime.getTime());
-            if (businessShiftDate.getHours() < 5) {
-                businessShiftDate.setDate(businessShiftDate.getDate() - 1);
-            }
+            if (businessShiftDate.getHours() < 5) businessShiftDate.setDate(businessShiftDate.getDate() - 1);
             let dateStr = businessShiftDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
             window.globalShiftReports[doc.id] = {
-                id: doc.id,
-                branch: s.branch,
-                cashier: s.cashier,
-                dateStr: dateStr,
-                timeLabel: `${sTimeStr} - ${eTimeStr}`,
-                timestamp: sTime,
-                sales: 0, cogs: 0, voids: 0, txCount: 0,
-                categorySales: {}, itemSales: {}, transactions: [] 
+                id: doc.id, branch: s.branch, cashier: s.cashier, dateStr: dateStr, timeLabel: `${sTimeStr} - ${eTimeStr}`, timestamp: sTime,
+                sales: 0, cogs: 0, voids: 0, txCount: 0, categorySales: {}, itemSales: {}, transactions: [] 
             };
         });
 
-        // 3. FETCH TRANSACTIONS & REJECTED MOBILE ORDERS
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        const snap = await getDocs(q);
-
-        const rejectedQ = query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        const rejectedSnap = await getDocs(rejectedQ);
-
-        // 4. COMBINE AND SORT
+        // 3. COMBINE TRANSACTIONS AND PARKED ORDERS
         let allTxArray = [];
         snap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
         rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
-        // 🔥 NEW: FETCH PARKED ORDERS AND INJECT THEM INTO SALES HISTORY
-        const parkedQ = query(collection(db, "parked_orders"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        const parkedSnap = await getDocs(parkedQ);
         parkedSnap.forEach(doc => {
             let p = doc.data();
             allTxArray.push({
-                id: doc.id,
-                receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(),
-                customerName: p.name || p.customerName || "Guest",
-                netTotal: p.total || p.netTotal || 0,
-                status: "Parked",
-                paymentMethod: "Unpaid",
-                cart: p.items || p.cart || [],
-                timestamp: p.timestamp,
-                cashier: p.cashier || 'Unknown',
-                orderType: p.orderType || 'Dine-In',
-                branch: p.branch
+                id: doc.id, receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(), customerName: p.name || p.customerName || "Guest",
+                netTotal: p.total || p.netTotal || 0, status: "Parked", paymentMethod: "Unpaid", cart: p.items || p.cart || [],
+                timestamp: p.timestamp, cashier: p.cashier || 'Unknown', orderType: p.orderType || 'Dine-In', branch: p.branch
             });
         });
         allTxArray.sort((a,b) => b.timestamp - a.timestamp);
@@ -13249,21 +12951,17 @@ window.loadSalesHistoryTab = async function() {
         let dailyAggregates = {}; let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
-        // 5. PROCESS EVERYTHING
+        // 4. PROCESS EVERYTHING IN MEMORY
         allTxArray.forEach(tx => {
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
             let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
-            
-            // 🔥 THE 5:00 AM BUSINESS DAY CUTOFF FIX (For Transactions)
             let businessDate = new Date(dDate.getTime());
-            if (businessDate.getHours() < 5) {
-                businessDate.setDate(businessDate.getDate() - 1);
-            }
+            if (businessDate.getHours() < 5) businessDate.setDate(businessDate.getDate() - 1);
             
             let dateStr = businessDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
             let monthStr = businessDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); 
-            let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }); // Keep real time for display
+            let timeStr = dDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }); 
             
             let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
             let safeCashier = tx.cashier || 'Unknown';
@@ -13301,8 +12999,7 @@ window.loadSalesHistoryTab = async function() {
                 sId = `fallback_${tx.branch}_${dateStr}`;
                 if (!window.globalShiftReports[sId]) {
                     window.globalShiftReports[sId] = {
-                        id: sId, branch: tx.branch, cashier: safeCashier,
-                        dateStr: dateStr, timeLabel: "General Sales (No Shift Linked)", timestamp: dDate,
+                        id: sId, branch: tx.branch, cashier: safeCashier, dateStr: dateStr, timeLabel: "General Sales (No Shift Linked)", timestamp: dDate,
                         sales: 0, cogs: 0, voids: 0, txCount: 0, categorySales: {}, itemSales: {}, transactions: [], isFallback: true
                     };
                 }
@@ -13343,36 +13040,19 @@ window.loadSalesHistoryTab = async function() {
             }
             
             shiftRef.transactions.push({
-                time: timeStr,
-                receiptId: tx.receiptId,
-                customer: safeCustomer,
-                status: tx.status || "Paid",
-                netTotal: txNet,
-                cogs: txCogs,
-                paymentMethod: tx.paymentMethod || 'Unknown',
-                cartEncoded: safeCart,
-                isVoid: isVoid
+                time: timeStr, receiptId: tx.receiptId, customer: safeCustomer, status: tx.status || "Paid",
+                netTotal: txNet, cogs: txCogs, paymentMethod: tx.paymentMethod || 'Unknown', cartEncoded: safeCart, isVoid: isVoid
             });
 
             if (!isVoid) {
-                tNet += txNet;
-                tCogs += txCogs;
-                shiftRef.sales += txNet;
-                shiftRef.cogs += txCogs;
-                shiftRef.txCount += 1;
+                tNet += txNet; tCogs += txCogs; shiftRef.sales += txNet; shiftRef.cogs += txCogs; shiftRef.txCount += 1;
 
-                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") {
-                    tGrab += txNet;
-                    tGrabCount += 1; 
-                }
+                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") { tGrab += txNet; tGrabCount += 1; }
 
-                let oType = tx.orderType || "Take-out";
-                let pMeth = tx.paymentMethod || "Cash";
-                
+                let oType = tx.orderType || "Take-out"; let pMeth = tx.paymentMethod || "Cash";
                 distTotalSales += txNet;
                 if (!distOrderType[oType]) distOrderType[oType] = { sales: 0, count: 0 };
                 if (!distPayment[pMeth]) distPayment[pMeth] = { sales: 0, count: 0 };
-                
                 distOrderType[oType].sales += txNet; distOrderType[oType].count++;
                 distPayment[pMeth].sales += txNet; distPayment[pMeth].count++;
             } else {
@@ -13388,22 +13068,14 @@ window.loadSalesHistoryTab = async function() {
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
 
             let statusStyle = isVoid ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
-            
-            // 🔥 ANTI THEFT TIMER FOR MAIN HISTORY TAB 🔥
             let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : Date.now();
             let minutesElapsed = Math.floor((Date.now() - txTimeMs) / 60000);
             
             let statusBadge = '';
-            if (isVoid) {
-                statusBadge = `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>`;
-            } else if (tx.status === "Parked") {
-                statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:2px 8px; border-radius:12px; font-size:11px;">Parked (Unpaid)</span>`;
-            } else if (minutesElapsed < 10) {
-                let timeLeft = 10 - minutesElapsed;
-                statusBadge = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 12px; font-weight: 900; font-size: 11px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
-            } else {
-                statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
-            }
+            if (isVoid) statusBadge = `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>`;
+            else if (tx.status === "Parked") statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:2px 8px; border-radius:12px; font-size:11px;">Parked (Unpaid)</span>`;
+            else if (minutesElapsed < 10) statusBadge = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 12px; font-weight: 900; font-size: 11px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${10 - minutesElapsed}m)</span>`;
+            else statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
 
             txHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
