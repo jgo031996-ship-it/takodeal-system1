@@ -7757,14 +7757,14 @@ window.smartImportCSV = function (event) {
 window.loadDeviceFleet = async function () {
   const tbody = document.getElementById('deviceFleetBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center">Scanning cloud for registered devices...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center">Scanning cloud for registered devices...</td></tr>';
 
   try {
     const snap = await getDocs(collection(db, "pos_devices"));
     let html = '';
 
     if (snap.empty) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 30px; color: var(--text-muted);">No devices are currently registered in the cloud.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: var(--text-muted);">No devices are currently registered in the cloud.</td></tr>';
       return;
     }
 
@@ -7800,6 +7800,7 @@ window.loadDeviceFleet = async function () {
 
       html += `
         <tr style="${d.status === 'Pending' ? 'background: #fffbeb;' : ''}">
+          <td style="text-align: center;"><input type="checkbox" class="device-bulk-cb" value="${d.id}" style="cursor: pointer; width: 16px; height: 16px; accent-color: #ef4444;"></td>
           <td><strong>${d.deviceName || 'Unnamed Tablet'}</strong><br><span style="font-size: 11px; color: gray;">ID: ${d.id}</span></td>
           <td>📍 ${d.branch}</td>
           <td>${dateStr}</td>
@@ -7812,7 +7813,7 @@ window.loadDeviceFleet = async function () {
     tbody.innerHTML = html;
   } catch (error) {
     console.error("Device Fleet Error:", error);
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error connecting to Firebase.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error connecting to Firebase.</td></tr>';
   }
 };
 
@@ -7830,6 +7831,55 @@ window.deleteDevice = async function (deviceId) {
     await deleteDoc(doc(db, "pos_devices", deviceId));
     window.loadDeviceFleet();
   } catch (e) { alert("Failed to delete device."); }
+};
+
+window.toggleAllDeviceCheckboxes = function(source) {
+    document.querySelectorAll('.device-bulk-cb').forEach(cb => cb.checked = source.checked);
+};
+
+window.bulkDeleteDevices = async function() {
+    let checkboxes = document.querySelectorAll('.device-bulk-cb:checked');
+    if (checkboxes.length === 0) {
+        Swal.fire('No Devices Selected', 'Please check the boxes of the devices you want to delete.', 'info');
+        return;
+    }
+
+    let confirmDelete = await Swal.fire({
+        title: 'Bulk Delete?',
+        text: `Are you sure you want to permanently delete ${checkboxes.length} registered devices? They will be logged out immediately.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Delete All!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!confirmDelete.isConfirmed) return;
+
+    Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        checkboxes.forEach(cb => {
+            promises.push(deleteDoc(doc(db, "pos_devices", cb.value)));
+        });
+
+        await Promise.all(promises);
+        let masterCb = document.getElementById('selectAllDevices');
+        if (masterCb) masterCb.checked = false;
+        
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: `Deleted ${checkboxes.length} devices!`, 
+            showConfirmButton: false, timer: 2000
+        });
+        
+        window.loadDeviceFleet();
+    } catch (e) {
+        console.error("Bulk Delete Error:", e);
+        Swal.fire('Error', 'Failed to delete selected devices.', 'error');
+    }
 };
 
 window.loadZReadingArchive = async function() {
