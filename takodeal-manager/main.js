@@ -1204,7 +1204,6 @@ window.renderSecurityFeed = function() {
         if (data.branch) branches.add(data.branch);
     });
     
-    // 🔥 1. Inject the Branch Tabs Dynamically
     let tabContainer = document.getElementById('securityBranchTabs');
     if (!tabContainer) {
         let viewAlerts = document.getElementById('view-alerts');
@@ -1234,7 +1233,6 @@ window.renderSecurityFeed = function() {
 
         activeBranches.sort().forEach(branch => {
             let unread = branchUnreadCounts[branch] || 0;
-            // 🔥 RED COUNTER BADGE FOR TABS
             let badge = unread > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">${unread}</span>` : '';
             let isActive = window.activeSecurityBranch === branch;
             tabHtml += `<button onclick="window.switchSecurityBranch('${branch}')" style="flex: 1; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${isActive ? '#dc2626' : 'transparent'}; background: ${isActive ? 'white' : 'transparent'}; color: ${isActive ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s; white-space: nowrap; border-left: 1px solid #e2e8f0;">📍 ${branch} ${badge}</button>`;
@@ -1245,14 +1243,13 @@ window.renderSecurityFeed = function() {
     let html = '';
     let recentAlerts = new Set(); 
     
-    // Filter alerts based on active tab
     let filteredAlerts = window.globalSecurityAlerts.filter(data => {
         if (window.activeSecurityBranch !== "All" && data.branch !== window.activeSecurityBranch) return false;
         return true;
     });
 
     if (filteredAlerts.length === 0) {
-        html = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: var(--success); font-weight: bold;">🛡️ No security alerts. Your empire is safe.</td></tr>';
+        html = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: var(--success); font-weight: bold;">🛡️ No security alerts. Your empire is safe.</td></tr>';
     } else {
         filteredAlerts.forEach(data => {
             let nowMs = Date.now();
@@ -1286,13 +1283,17 @@ window.renderSecurityFeed = function() {
 
             html += `
               <tr style="background: ${rowBg}; opacity: ${data.isRead ? '0.6' : '1'}; transition: 0.2s;">
-                <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px;">${timeStr}</td>
-                <td style="padding: 12px;"><strong>📍 ${data.branch}</strong></td>
-                <td style="padding: 12px;"><span style="color: ${textColor}; font-weight: ${data.isRead ? 'normal' : 'bold'};">${icon} ${alertMsg}</span></td>
-                <td style="padding: 12px; text-align: right;">
+                <td style="padding: 12px; text-align: center; vertical-align: middle;">
+                    <input type="checkbox" class="alert-bulk-cb" value="${data.id}" style="cursor: pointer; width: 16px; height: 16px;">
+                </td>
+                <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px; vertical-align: middle;">${timeStr}</td>
+                <td style="padding: 12px; vertical-align: middle;"><strong>📍 ${data.branch}</strong></td>
+                <td style="padding: 12px; vertical-align: middle;"><span style="color: ${textColor}; font-weight: ${data.isRead ? 'normal' : 'bold'};">${icon} ${alertMsg}</span></td>
+                <td style="padding: 12px; text-align: right; white-space: nowrap; vertical-align: middle;">
                   ${!data.isRead
-          ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="dismissAlert('${data.id}')">✓ Mark Resolved</button>`
-          : '<span style="color: var(--success); font-weight: bold; font-size: 13px;">✓ Resolved</span>'}
+                    ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-right: 5px;" onclick="dismissAlert('${data.id}')">✓ Resolve</button>`
+                    : '<span style="color: var(--success); font-weight: bold; font-size: 13px; margin-right: 15px;">✓ Resolved</span>'}
+                  <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="deleteSingleAlert('${data.id}')">🗑️ Delete</button>
                 </td>
               </tr>
             `;
@@ -1318,6 +1319,67 @@ window.dismissAlert = async function (docId) {
   } catch (e) {
     console.error(e); alert("Failed to dismiss alert. Check connection.");
   }
+};
+
+// 🔥 THE NEW BULK SELECT & DELETE ENGINE
+window.toggleAllAlertCheckboxes = function(source) {
+    document.querySelectorAll('.alert-bulk-cb').forEach(cb => cb.checked = source.checked);
+};
+
+window.bulkResolveAlerts = async function() {
+    let checkboxes = document.querySelectorAll('.alert-bulk-cb:checked');
+    if (checkboxes.length === 0) return Swal.fire('No Alerts Selected', 'Please check the boxes of the alerts you want to mark as resolved.', 'info');
+
+    Swal.fire({title: 'Marking Resolved...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        let promises = [];
+        checkboxes.forEach(cb => {
+            promises.push(updateDoc(doc(db, "manager_alerts", cb.value), { isRead: true }));
+        });
+        await Promise.all(promises);
+        
+        let masterCb = document.getElementById('selectAllAlerts');
+        if (masterCb) masterCb.checked = false;
+        
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: `Resolved ${checkboxes.length} alerts!`, showConfirmButton: false, timer: 2000});
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to resolve alerts.', 'error');
+    }
+};
+
+window.bulkDeleteAlerts = async function() {
+    let checkboxes = document.querySelectorAll('.alert-bulk-cb:checked');
+    if (checkboxes.length === 0) return Swal.fire('No Alerts Selected', 'Please check the boxes of the alerts you want to delete.', 'info');
+
+    let confirm = await Swal.fire({
+        title: 'Delete Alerts?', text: `Are you sure you want to permanently delete ${checkboxes.length} security alerts?`, icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Yes, Delete!'
+    });
+
+    if (confirm.isConfirmed) {
+        Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            let promises = [];
+            checkboxes.forEach(cb => {
+                promises.push(deleteDoc(doc(db, "manager_alerts", cb.value)));
+            });
+            await Promise.all(promises);
+            
+            let masterCb = document.getElementById('selectAllAlerts');
+            if (masterCb) masterCb.checked = false;
+            
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: `Deleted ${checkboxes.length} alerts!`, showConfirmButton: false, timer: 2000});
+        } catch(e) {
+            console.error(e); Swal.fire('Error', 'Failed to delete alerts.', 'error');
+        }
+    }
+};
+
+window.deleteSingleAlert = async function(docId) {
+    if(!confirm("Permanently delete this security alert?")) return;
+    try {
+        await deleteDoc(doc(db, "manager_alerts", docId));
+    } catch(e) { console.error(e); alert("Failed to delete alert."); }
 };
 
 // --- NAVIGATION SYSTEM ---
