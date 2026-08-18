@@ -7224,9 +7224,23 @@ window.saveInventoryEdit = async function() {
             customClass: { popup: 'rounded-2xl shadow-2xl' }
         });
         
-        document.getElementById('editInvModal').style.display = 'none';
-        window.loadInventoryData();
-        if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
+            document.getElementById('editInvModal').style.display = 'none';
+
+            // 🔥 SMART SCROLL MEMORY FIX 🔥
+            // Captures exactly where you are scrolled to before the table wipes itself to reload
+            let scrollContainer = document.querySelector('.main-content');
+            let savedScrollPosition = scrollContainer ? scrollContainer.scrollTop : 0;
+            
+            await window.loadInventoryData(); // Await the reload so it finishes drawing the table!
+            
+            // Instantly snap the scrollbar back to your exact position
+            if (scrollContainer) {
+                setTimeout(() => {
+                    scrollContainer.scrollTop = savedScrollPosition;
+                }, 50); 
+            }
+
+            if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
 
     } catch (e) {
         console.error(e); alert("Failed to save changes.");
@@ -14754,8 +14768,17 @@ window.bulkDeleteInventory = async function() {
             await deleteDoc(doc(db, "inventory", docId));
         }
         alert(`✅ Successfully deleted ${checkboxes.length} items!`);
-        document.getElementById('selectAllInv').checked = false; // Reset master checkbox
-        window.loadInventoryData();
+            document.getElementById('selectAllInv').checked = false; // Reset master checkbox
+            
+            // 🔥 SMART SCROLL MEMORY FIX 🔥
+            let scrollContainer = document.querySelector('.main-content');
+            let savedScrollPosition = scrollContainer ? scrollContainer.scrollTop : 0;
+            
+            await window.loadInventoryData();
+            
+            if (scrollContainer) {
+                setTimeout(() => { scrollContainer.scrollTop = savedScrollPosition; }, 50);
+            }
     } catch (error) {
         console.error("Bulk Delete Error:", error);
         alert("❌ Error deleting items. Check F12 console.");
