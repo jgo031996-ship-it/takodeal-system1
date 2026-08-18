@@ -2771,10 +2771,13 @@
             </div>
 
             <div style="display: grid; grid-template-columns: 2fr 1.5fr; gap: 15px; margin-bottom: 15px; align-items: end;">
-              <!-- ITEM TO SEND -->
+              
+              <!-- ITEM TO SEND (Restored to Dropdown so AI Triggers!) -->
               <div>
                 <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Item to Send</label>
-                <input type="text" id="dispItem" placeholder="Type to search item..." style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; font-weight: bold; box-sizing: border-box;">
+                <select id="dispItem" onchange="window.updateDispatchUomLabel()" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; font-weight: bold; box-sizing: border-box; cursor: pointer; background: white;">
+                  <option value="">Loading stock...</option>
+                </select>
               </div>
 
               <!-- QUANTITY, UNITS, & ADD BUTTON (GROUPED) -->
@@ -2792,6 +2795,7 @@
                   </button>
                 </div>
               </div>
+
             </div>
 
             <!-- 🤖 AI TRACKER SECURE CONTAINER (Keeps the grid from breaking!) -->
