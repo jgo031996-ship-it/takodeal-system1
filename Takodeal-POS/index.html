@@ -2156,28 +2156,6 @@ window.buildUltraGridDOM = function() {
       }
     }
 
-    async function submitOpenShift() {
-      try {
-        let shiftName = sessionUser.cashierName || localStorage.getItem('cashierName') || 'Unknown';
-
-        let startEl = document.getElementById('inputStartingCash');
-        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
-
-        let btn = document.getElementById('btnOpenShiftSubmit');
-        if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
-
-        let shiftId = await window.openNewShift(sessionUser.branch, shiftName, startCash);
-
-        if (shiftId) {
-          await checkCurrentShift();
-          closeModal('shiftModal');
-        } else {
-          alert("Failed to open shift. Check connection!");
-        }
-        if (btn) { btn.innerText = "Open Shift"; btn.disabled = false; }
-      } catch (e) { console.error(e); }
-    }
-
     function openExpenseModal() { closeModal('shiftModal'); document.getElementById('expAmount').value = ''; document.getElementById('expDesc').value = ''; document.getElementById('expenseModal').style.display = 'flex'; }
     async function submitBranchExpense() {
       let amt = parseFloat(document.getElementById('expAmount').value); let desc = document.getElementById('expDesc').value.trim();
