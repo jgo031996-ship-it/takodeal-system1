@@ -22798,8 +22798,17 @@ window.switchFranTab = function(tabName) {
 // ==========================================
 window.loadFranPerformance = async function() {
     try {
-        // 1. Automatically grab ALL active branches (except HQ) to show on the charts!
-        let franchisedBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
+        // 1. Automatically grab ONLY Franchise branches (Non-Core)
+        let franchisedBranches = [];
+        if (window.globalBranchData) {
+            for (let key in window.globalBranchData) {
+                let b = window.globalBranchData[key];
+                // Exclude company-owned branches (Cabantian, Citygate, Maa)
+                if (b.isCore !== true && b.name !== "Main Office") {
+                    franchisedBranches.push(b.name);
+                }
+            }
+        }
 
         if (franchisedBranches.length === 0) {
             console.warn("No franchise branches available yet.");
@@ -22881,13 +22890,25 @@ window.loadFranLedger = async function() {
     let prevSelection = branchSelect.value;
     if (!isFranchisee) {
         let html = '<option value="">-- Select Franchise --</option>';
-        if (window.globalActiveBranches) {
-            window.globalActiveBranches.forEach(b => { 
-                if (b !== "Main Office") html += `<option value="${b}">${b}</option>`; 
-            });
+        let fBranches = [];
+        
+        if (window.globalBranchData) {
+            for (let key in window.globalBranchData) {
+                let b = window.globalBranchData[key];
+                // Only include non-core (franchise) branches
+                if (b.isCore !== true && b.name !== "Main Office") {
+                    fBranches.push(b.name);
+                }
+            }
         }
+        
+        // Sort alphabetically and build dropdown
+        fBranches.sort().forEach(b => { 
+            html += `<option value="${b}">${b}</option>`; 
+        });
+        
         branchSelect.innerHTML = html;
-        if (prevSelection && window.globalActiveBranches.includes(prevSelection)) {
+        if (prevSelection && fBranches.includes(prevSelection)) {
             branchSelect.value = prevSelection; // Restores your choice so it doesn't reset
         }
     }
