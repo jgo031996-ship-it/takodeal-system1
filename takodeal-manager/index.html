@@ -2836,24 +2836,31 @@
 
     <div id="view-alerts" class="view">
       <div class="card">
-        <div class="card-header">
-          <h2>🚨 Live Security Feed</h2>
-          <span style="font-size: 12px; color: var(--text-muted);">Monitoring all unauthorized actions across
-            branches.</span>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0;">🚨 Live Security Feed</h2>
+            <span style="font-size: 12px; color: var(--text-muted);">Monitoring all unauthorized actions across branches.</span>
+          </div>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button onclick="window.bulkResolveAlerts()" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Mark Selected Resolved</button>
+            <button onclick="window.bulkDeleteAlerts()" style="background: #ef4444; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239,68,68,0.3);">🗑️ Delete Selected</button>
+            <button onclick="downloadExcel('alertsTableBody', 'TAKODEAL_Security_Alerts')" style="background: #0ea5e9; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">📥 Export Excel</button>
+          </div>
         </div>
         <div class="table-responsive">
           <table class="data-table">
             <thead>
               <tr>
+                <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAllAlerts" onchange="window.toggleAllAlertCheckboxes(this)" style="cursor: pointer; width: 16px; height: 16px;"></th>
                 <th>Time</th>
                 <th>Branch Location</th>
                 <th>Alert Details</th>
-                <th>Action</th>
+                <th style="text-align: right;">Action</th>
               </tr>
             </thead>
             <tbody id="alertsTableBody">
               <tr>
-                <td colspan="4" class="text-center">Loading security feed...</td>
+                <td colspan="5" class="text-center">Loading security feed...</td>
               </tr>
             </tbody>
           </table>
