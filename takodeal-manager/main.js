@@ -9453,35 +9453,58 @@ window.saveShiftConfigChanges = function() {
         branchConfig[branch].forEach((shift, index) => {
             shift.active = document.getElementById(`chk_${branch}_${index}`).checked;
             shift.name = document.getElementById(`inp_${branch}_${index}`).value.trim();
-            
-            // 🔥 THE FIX: Save the exact strict Time In and Time Out!
             shift.startTime = document.getElementById(`start_${branch}_${index}`).value; 
             shift.endTime = document.getElementById(`end_${branch}_${index}`).value;
-            
             const dChks = document.querySelectorAll(`.day-chk-${branch}-${index}`);
             shift.days = Array.from(dChks).filter(c => c.checked).map(c => parseInt(c.value));
         });
     }
+    
     if (currentSchedule[1]) {
         for (let day in currentSchedule) {
             const dayOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
             for (const branch in branchConfig) {
-                let bData = currentSchedule[day][branch]; let newSch = {};
+                let bData = currentSchedule[day][branch]; 
+                if (!bData) continue;
+                let newSch = {};
+                
                 branchConfig[branch].filter(s => s.active).forEach(s => {
                     if (!s.days.includes(dayOfWeek)) {
                         newSch[s.id] = "N/A";
-                        let old = bData.scheduled[s.id];
+                        let old = bData.scheduled ? bData.scheduled[s.id] : null;
                         if (old && old !== "N/A" && old !== "UNFILLED" && !bData.rest.includes(old)) bData.rest.push(old);
-                    } else { newSch[s.id] = bData.scheduled[s.id] || "UNFILLED"; }
+                    } else { 
+                        // 🔥 TASK 2 FIX: PRESERVE EXISTING ASSIGNMENTS (No Reshuffle!)
+                        let oldStaff = bData.scheduled ? bData.scheduled[s.id] : null;
+                        newSch[s.id] = (oldStaff && oldStaff !== "N/A") ? oldStaff : "UNFILLED"; 
+                    }
                 });
                 bData.scheduled = newSch;
             }
         }
         window.renderTables();
     }
+    
     window.saveToCloud();
     const msg = document.getElementById("configSaveMsg");
     if(msg) { msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000); }
+};
+
+// 🔥 TASK 2 FIX: Explicit Save Manual Schedule Button Engine
+window.saveManualSchedule = async function() {
+    Swal.fire({title: 'Saving Schedule...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        await window.saveToCloud();
+        Swal.fire({
+            title: '✅ Saved!', 
+            text: 'Your manual schedule edits have been safely locked in.', 
+            icon: 'success', 
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to save schedule.', 'error');
+    }
 };
 
 window.addEmployee = function() {
