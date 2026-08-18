@@ -2,7 +2,11 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+// 🔥 TASK 4 FIX: Expose Network Toggles globally so the Anti-Freeze engine can use them!
+window.enableNetwork = enableNetwork;
+window.disableNetwork = disableNetwork;
 import { getAuth, signInWithPopup, setPersistence, browserLocalPersistence, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -10789,10 +10793,14 @@ window.loadPayrollGenerator = async function() {
         let payrollData = {};
 
         // 1. Base Shifts (Night Shift Safe!)
+        // 1. Base Shifts (Night Shift Safe!)
         shiftSnap.forEach(docSnap => {
             let shift = docSnap.data();
             if (!shift.endTime) return; 
             let name = shift.cashier;
+            
+            // 🔥 TASK 1 FIX: Prevent "Team Branches" from showing up in the Payroll Feed!
+            if (name && name.toLowerCase().startsWith("team ")) return;
             
             if (!payrollData[name]) {
                 payrollData[name] = { branch: shift.branch, hours: 0, deductions: 0, advances: 0, meals: 0, latePenalty: 0, logs: [], start: startDateRaw, end: endDateRaw, profile: staffDict[name] || {} };
@@ -23973,3 +23981,22 @@ window.viewStaffSignedPayslips = async function() {
         console.error(e); Swal.fire('Error', 'Failed to fetch payslips.', 'error');
     }
 };
+
+// ========================================================
+// 🛡️ ANTI-FREEZE / AUTO-RECONNECT ENGINE (TASK 4 FIX)
+// ========================================================
+// Browsers throttle inactive tabs, killing the Firebase WebSocket connection.
+// This watchdog actively pings the connection when you switch back to the tab, waking up the database so it never gets stuck on "Loading..." again!
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        console.log("🌐 Tab Awake: Pinging Firebase Network...");
+        try {
+            if (window.db && window.enableNetwork && window.disableNetwork) {
+                window.disableNetwork(window.db).then(() => {
+                    console.log("🔄 Network cycled.");
+                    window.enableNetwork(window.db);
+                });
+            }
+        } catch(e) { console.error("Reconnect Error:", e); }
+    }
+});
