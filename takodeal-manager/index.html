@@ -2755,35 +2755,47 @@
           </div>
 
           <div style="padding: 24px;">
-            <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
-              <div style="flex: 1; min-width: 200px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+              <div>
                 <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">From (Source)</label>
-                <select id="dispFrom" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold;" onchange="loadDispatchInventory()"></select>
+                <select id="dispFrom" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; outline: none; cursor: pointer;" onchange="window.loadDispatchInventory()">
+                  <option value="">-- Select Source --</option>
+                </select>
               </div>
-              <div style="flex: 1; min-width: 200px;">
+              <div>
                 <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">To (Destination)</label>
-                <select id="dispTo" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; border-color: var(--primary);"></select>
+                <select id="dispTo" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; border-color: var(--primary); outline: none; cursor: pointer;" onchange="window.updateDispatchUomLabel()">
+                  <option value="">-- Select Destination --</option>
+                </select>
               </div>
             </div>
 
-            <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;">
-              <div style="flex: 2; min-width: 200px;">
+            <div style="display: grid; grid-template-columns: 2fr 1.5fr; gap: 15px; margin-bottom: 15px; align-items: end;">
+              <!-- ITEM TO SEND -->
+              <div>
                 <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Item to Send</label>
-                <select id="dispItem" onchange="updateDispatchUomLabel()" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;">
-                  <option value="">Loading stock...</option>
-                </select>
+                <input type="text" id="dispItem" placeholder="Type to search item..." style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; font-weight: bold; box-sizing: border-box;">
               </div>
-              <div style="flex: 1; min-width: 150px;">
+
+              <!-- QUANTITY, UNITS, & ADD BUTTON (GROUPED) -->
+              <div>
                 <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); display: block; margin-bottom: 5px;">Quantity</label>
-                <div style="display: flex; gap: 5px;">
-                  <input type="number" id="dispQty" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none;" placeholder="0">
-                  <select id="dispUomSelect" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; color: var(--primary); background: #f8fafc; outline: none;">
-                     <option value="base">Units</option>
+                <div style="display: flex; gap: 8px; align-items: center; height: 40px;">
+                  <input type="number" id="dispQty" placeholder="0" style="flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; font-weight: bold; height: 100%; box-sizing: border-box;">
+                  
+                  <select id="dispUomSelect" style="padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; font-weight: bold; color: var(--primary); background: #f8fafc; outline: none; cursor: pointer; height: 100%; box-sizing: border-box;">
+                    <option value="base">Units</option>
                   </select>
+
+                  <button onclick="window.addToDispatchCart()" style="background: var(--sidebar-bg); color: white; border: none; padding: 0 20px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 100%; box-sizing: border-box; white-space: nowrap; transition: 0.2s;">
+                    ➕ Add
+                  </button>
                 </div>
               </div>
-              <button onclick="addToDispatchCart()" style="background: var(--sidebar-bg); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; height: 38px;">➕ Add</button>
             </div>
+
+            <!-- 🤖 AI TRACKER SECURE CONTAINER (Keeps the grid from breaking!) -->
+            <div id="dispAiTracker" style="width: 100%; margin-bottom: 15px;"></div>
 
             <table class="data-table" style="background: white; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: 100%; margin-bottom: 20px;">
               <thead style="background: #fafafa;">
