@@ -5981,7 +5981,6 @@ window.submitOpenShift = async function() {
             }
         }
 
-        // 🔥 THE NEW INVENTORY DISPUTE INTERCEPTOR 🔥
         let stockDisputes = [];
         document.querySelectorAll('input[id^="handoverDispBase_"]').forEach(inp => {
             let idx = inp.id.split('_')[1];
@@ -6037,38 +6036,42 @@ window.submitOpenShift = async function() {
                 customClass: { popup: 'rounded-2xl shadow-xl' }
             });
 
-            if (!result.isConfirmed) return; // Halt shift opening so they can reconsider
+            if (!result.isConfirmed) return;
 
-            // Process inventory adjustments and apply penalties!
-            for (let d of stockDisputes) {
+            // 🔥 LIGHTNING FAST PROMISE.ALL FOR HANDOVERS 🔥
+            let disputePromises = stockDisputes.map(async (d) => {
                 const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", sessionUser.branch), window.where("name", "==", d.name));
                 const invSnap = await window.getDocs(invQ);
                 
                 if (!invSnap.empty) {
                     let invDoc = invSnap.docs[0];
-                    await window.updateDoc(invDoc.ref, { currentStock: d.newCount });
-
-                    await window.addDoc(window.collection(window.db, "stock_logs"), {
-                        branch: sessionUser.branch, item: d.name, uom: d.uom,
-                        oldQty: d.prevCount, newQty: d.newCount, variance: d.variance,
-                        type: d.variance < 0 ? "Audit Adjustment (Penalty)" : "Audit Adjustment (Recovery)", 
-                        note: `Disputed Handover by ${shiftName}. ${prevCashier} claimed ${d.prevCount}, actual is ${d.newCount}.`,
-                        user: "System (HQ)", timestamp: window.serverTimestamp()
-                    });
+                    await Promise.all([
+                        window.updateDoc(invDoc.ref, { currentStock: d.newCount }),
+                        window.addDoc(window.collection(window.db, "stock_logs"), {
+                            branch: sessionUser.branch, item: d.name, uom: d.uom,
+                            oldQty: d.prevCount, newQty: d.newCount, variance: d.variance,
+                            type: d.variance < 0 ? "Audit Adjustment (Penalty)" : "Audit Adjustment (Recovery)", 
+                            note: `Disputed Handover by ${shiftName}. ${prevCashier} claimed ${d.prevCount}, actual is ${d.newCount}.`,
+                            user: "System (HQ)", timestamp: window.serverTimestamp()
+                        })
+                    ]);
                 }
-            }
+            });
+            
+            await Promise.all(disputePromises); // EXECUTE ALL DATABASE WRITES AT ONCE!
 
             if (totalPenalty > 0) {
-                await window.addDoc(window.collection(window.db, "staff_deductions"), {
-                    staffName: prevCashier, type: "Missing Stock Penalty", amount: totalPenalty,
-                    dateAdded: new Date(), status: "Unpaid", remarks: `Stock missing during handover to ${shiftName}.`
-                });
-
-                await window.addDoc(window.collection(window.db, "manager_alerts"), {
-                    type: "STOCK_PENALTY_APPLIED", branch: sessionUser.branch, cashier: prevCashier,
-                    message: `🚨 HANDOVER PENALTY: ${shiftName} disputed ${prevCashier}'s stock count. ₱${totalPenalty.toFixed(2)} penalty issued to ${prevCashier}.`,
-                    timestamp: window.serverTimestamp(), isRead: false
-                });
+                await Promise.all([
+                    window.addDoc(window.collection(window.db, "staff_deductions"), {
+                        staffName: prevCashier, type: "Missing Stock Penalty", amount: totalPenalty,
+                        dateAdded: new Date(), status: "Unpaid", remarks: `Stock missing during handover to ${shiftName}.`
+                    }),
+                    window.addDoc(window.collection(window.db, "manager_alerts"), {
+                        type: "STOCK_PENALTY_APPLIED", branch: sessionUser.branch, cashier: prevCashier,
+                        message: `🚨 HANDOVER PENALTY: ${shiftName} disputed ${prevCashier}'s stock count. ₱${totalPenalty.toFixed(2)} penalty issued to ${prevCashier}.`,
+                        timestamp: window.serverTimestamp(), isRead: false
+                    })
+                ]);
             }
         }
 
@@ -7388,10 +7391,12 @@ window.MASTER_CloseShift = async function () {
             });
         }
 
-        if (confirmBtn) confirmBtn.innerHTML = "⏳ Saving to Cloud...";
+        if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
         
+        let batchPromises = [];
+
         // 6. FIREBASE: CLOSE SHIFT (NOW SAVES BLIND COUNT!)
-        await window.updateDoc(window.doc(window.db, "shifts", shiftId), {
+        batchPromises.push(window.updateDoc(window.doc(window.db, "shifts", shiftId), {
             active: false,
             endTime: window.serverTimestamp(),
             declaredCash: declaredCash,
@@ -7400,111 +7405,117 @@ window.MASTER_CloseShift = async function () {
             totalDigitalSales: totalDigitalSales,
             digitalBreakdown: digitalBreakdown,
             cashBreakdown: cashBreakdown, 
-            physicalStockCount: physicalStockCount, // 🔥 SAVING THE BLIND COUNT HERE!
+            physicalStockCount: physicalStockCount,
             status: "Closed"
-        });
+        }));
 
         // 7. FIREBASE: AUTO-SWEEP
         for (let method in digitalBreakdown) {
             if (method.toLowerCase() === "gcash") continue; 
             let amountToDeposit = digitalBreakdown[method];
             if (amountToDeposit > 0) {
-                const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", "Main Office"), window.where("name", "==", method));
-                const accSnap = await window.getDocs(accQ);
-                if (!accSnap.empty) {
-                    let accDoc = accSnap.docs[0];
-                    let currentBal = accDoc.data().balance || 0;
-                    await window.updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
-                    await window.addDoc(window.collection(window.db, "account_logs"), {
-                        accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
-                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: window.serverTimestamp(), note: `From ${branchName}`
-                    });
-                } else {
-                    const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: window.serverTimestamp() });
-                    await window.addDoc(window.collection(window.db, "account_logs"), {
-                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: window.serverTimestamp(), note: `From ${branchName}`
-                    });
-                }
+                batchPromises.push((async () => {
+                    const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", "Main Office"), window.where("name", "==", method));
+                    const accSnap = await window.getDocs(accQ);
+                    if (!accSnap.empty) {
+                        let accDoc = accSnap.docs[0];
+                        let currentBal = accDoc.data().balance || 0;
+                        await window.updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
+                        await window.addDoc(window.collection(window.db, "account_logs"), {
+                            accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
+                            amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: window.serverTimestamp(), note: `From ${branchName}`
+                        });
+                    } else {
+                        const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: window.serverTimestamp() });
+                        await window.addDoc(window.collection(window.db, "account_logs"), {
+                            accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: window.serverTimestamp(), note: `From ${branchName}`
+                        });
+                    }
+                })());
             }
         }
 
         // 👑 7.5 FRANCHISE ROYALTY & PROFIT SHARING ENGINE
-        try {
-            const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
-            const bSnap = await window.getDocs(bQ);
-            let isFranchise = false;
-            let royaltyPct = 0;
-            
-            if (!bSnap.empty) {
-                isFranchise = bSnap.docs[0].data().isFranchise === true || parseFloat(bSnap.docs[0].data().royaltyPercent) > 0;
-                royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
-            }
-
-            if (isFranchise) {
-                let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
-                let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
+        batchPromises.push((async () => {
+            try {
+                const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
+                const bSnap = await window.getDocs(bQ);
+                let isFranchise = false;
+                let royaltyPct = 0;
                 
-                if (royaltyAmount > 0) {
-                    await window.addDoc(window.collection(window.db, "franchise_ledger"), {
-                        branch: branchName,
-                        type: "Charge", 
-                        category: "Daily Franchise Royalty",
-                        amount: royaltyAmount,
-                        description: `Shift Close: Auto-Billed ${royaltyPct}% Royalty on ₱${totalGrossForRoyalty.toLocaleString(undefined, {minimumFractionDigits: 2})} Gross Sales`,
-                        loggedBy: "System Z-Reading",
-                        timestamp: window.serverTimestamp()
-                    });
+                if (!bSnap.empty) {
+                    isFranchise = bSnap.docs[0].data().isFranchise === true || parseFloat(bSnap.docs[0].data().royaltyPercent) > 0;
+                    royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
                 }
-            }
-        } catch(e) { console.error("Franchise Billing Engine Error:", e); }
 
-        // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
-        try {
-            const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
-            const bSnap = await window.getDocs(bQ);
-            let isMallBranch = false;
-            if (!bSnap.empty) {
-                isMallBranch = bSnap.docs[0].data().isMallBranch === true;
-            }
-
-            if (isMallBranch) {
-                let netCashEarned = declaredCash - startingCash;
-                
-                if (netCashEarned !== 0) {
-                    const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", branchName), window.where("name", "==", "Manager Fund"));
-                    const accSnap = await window.getDocs(accQ);
+                if (isFranchise) {
+                    let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
+                    let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
                     
-                    if (!accSnap.empty) {
-                        let accDoc = accSnap.docs[0];
-                        let currentBal = parseFloat(accDoc.data().balance) || 0;
-                        let newBal = currentBal + netCashEarned;
-                        
-                        await window.updateDoc(accDoc.ref, { balance: newBal });
-                        await window.addDoc(window.collection(window.db, "account_logs"), {
-                            accountId: accDoc.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Net)",
-                            amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
-                        });
-                    } else {
-                        const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: window.serverTimestamp() });
-                        await window.addDoc(window.collection(window.db, "account_logs"), {
-                            accountId: newAccRef.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Account Created)",
-                            amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
+                    if (royaltyAmount > 0) {
+                        await window.addDoc(window.collection(window.db, "franchise_ledger"), {
+                            branch: branchName,
+                            type: "Charge", 
+                            category: "Daily Franchise Royalty",
+                            amount: royaltyAmount,
+                            description: `Shift Close: Auto-Billed ${royaltyPct}% Royalty on ₱${totalGrossForRoyalty.toLocaleString(undefined, {minimumFractionDigits: 2})} Gross Sales`,
+                            loggedBy: "System Z-Reading",
+                            timestamp: window.serverTimestamp()
                         });
                     }
                 }
-            }
-        } catch(e) { console.error("Mall Branch Deposit Error:", e); }
+            } catch(e) { console.error("Franchise Billing Engine Error:", e); }
+        })());
+
+        // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
+        batchPromises.push((async () => {
+            try {
+                const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
+                const bSnap = await window.getDocs(bQ);
+                let isMallBranch = false;
+                if (!bSnap.empty) {
+                    isMallBranch = bSnap.docs[0].data().isMallBranch === true;
+                }
+
+                if (isMallBranch) {
+                    let netCashEarned = declaredCash - startingCash;
+                    
+                    if (netCashEarned !== 0) {
+                        const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", branchName), window.where("name", "==", "Manager Fund"));
+                        const accSnap = await window.getDocs(accQ);
+                        
+                        if (!accSnap.empty) {
+                            let accDoc = accSnap.docs[0];
+                            let currentBal = parseFloat(accDoc.data().balance) || 0;
+                            let newBal = currentBal + netCashEarned;
+                            
+                            await window.updateDoc(accDoc.ref, { balance: newBal });
+                            await window.addDoc(window.collection(window.db, "account_logs"), {
+                                accountId: accDoc.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Net)",
+                                amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
+                            });
+                        } else {
+                            const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: window.serverTimestamp() });
+                            await window.addDoc(window.collection(window.db, "account_logs"), {
+                                accountId: newAccRef.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Account Created)",
+                                amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
+                            });
+                        }
+                    }
+                }
+            } catch(e) { console.error("Mall Branch Deposit Error:", e); }
+        })());
 
         // 🚨 7.8 STOCK VARIANCE ALERTS FOR MANAGER
         for (let item of physicalStockCount) {
             let variance = item.actualCount - item.systemExpected;
             if (variance < 0) {
                 let valueLost = Math.abs(variance) * item.baseCost;
-                await window.addDoc(window.collection(window.db, "manager_alerts"), {
+                batchPromises.push(window.addDoc(window.collection(window.db, "manager_alerts"), {
                     type: "STOCK_SHORTAGE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                     message: `STOCK SHORTAGE: ${cashierName} reported ${item.actualCount} ${item.uom} of ${item.name} (System Expected: ${item.systemExpected.toFixed(1)}). Loss Value: ₱${valueLost.toFixed(2)}`,
                     timestamp: window.serverTimestamp(), isRead: false
-                });
+                }));
             }
         }
 
@@ -7512,13 +7523,16 @@ window.MASTER_CloseShift = async function () {
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
             if (totalBurn > 0) {
-                await window.addDoc(window.collection(window.db, "stock_logs"), {
+                batchPromises.push(window.addDoc(window.collection(window.db, "stock_logs"), {
                     branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
                     variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
                     user: cashierName, timestamp: window.serverTimestamp()
-                });
+                }));
             }
         }
+
+        // 🔥 EXECUTE EVERYTHING SIMULTANEOUSLY FOR LIGHTNING SPEED 🔥
+        await Promise.all(batchPromises);
 
         // 9. Memory Wipe & Force UI Lockout
         window.cashDrawerMemory = {};
@@ -7539,7 +7553,7 @@ window.MASTER_CloseShift = async function () {
 
         Swal.fire({
             title: '✅ SHIFT CLOSED!',
-            text: 'Your shift has been successfully ended and securely logged to HQ.',
+            text: `Bookkeeping Complete.\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}`,
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
