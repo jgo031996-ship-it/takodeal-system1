@@ -24019,28 +24019,3 @@ window.viewStaffSignedPayslips = async function() {
         console.error(e); Swal.fire('Error', 'Failed to fetch payslips.', 'error');
     }
 };
-
-// ========================================================
-// 🛡️ ANTI-FREEZE / AUTO-RECONNECT ENGINE
-// ========================================================
-// Browsers put inactive tabs to sleep, breaking the database connection.
-// This watchdog actively jolts the UI awake when you return!
-let lastActiveTime = Date.now();
-
-window.addEventListener('focus', () => {
-    let now = Date.now();
-    // If the tab was inactive for more than 5 minutes (300,000 ms), force a reconnect!
-    if (now - lastActiveTime > 300000) {
-        console.log("Waking up from deep sleep... Jolting database!");
-        let activeNav = document.querySelector('.nav-item.active');
-        if (activeNav) {
-            // Simulates clicking the tab again to re-fire the database requests
-            activeNav.click(); 
-        }
-    }
-    lastActiveTime = now;
-});
-
-window.addEventListener('blur', () => {
-    lastActiveTime = Date.now();
-});
