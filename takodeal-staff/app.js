@@ -2048,6 +2048,17 @@ window.loadPayslipVault = async function() {
         let nickname = staffProfile.scheduleNickname || staffName;
         let isNightEligible = staffProfile.eligibleNightDiff !== false;
 
+        // 🔥 THE FIX: Smart Name Matcher (Bypasses Jr. / Sr. issues!)
+        let baseNameLower = staffName.toLowerCase().trim();
+        let nickNameLower = nickname.toLowerCase().trim();
+        let strippedNameLower = baseNameLower.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
+
+        const isMatch = (dbName) => {
+            if (!dbName) return false;
+            let n = String(dbName).toLowerCase().trim();
+            return n === baseNameLower || n === nickNameLower || n === strippedNameLower || n.includes(strippedNameLower) || strippedNameLower.includes(n);
+        };
+
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
         let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
@@ -2062,19 +2073,20 @@ window.loadPayslipVault = async function() {
             return hour + (minute / 60);
         };
 
-        const attQ = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
+        // Fetch ALL logs for the broad time period to prevent Firebase Index crashes
+        let fetchStart = new Date(prevStartStr + 'T00:00:00');
+        const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", fetchStart), orderBy("timestamp", "asc"));
         const attSnap = await getDocs(attQ);
         
-        const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "==", staffName));
+        const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", fetchStart));
         const bonusSnap = await getDocs(bonusQ);
 
         // 🔥 THE SMART CALCULATOR HELPER
-        // We feed it a start and end date, and it calculates EVERYTHING for that exact period!
         const analyzeCutoff = (startT, endT) => {
             let fLogs = [];
             attSnap.forEach(docSnap => {
                 let log = docSnap.data();
-                if (log.timestamp) {
+                if (log.timestamp && isMatch(log.staffName)) {
                     let t = safeDate(log.timestamp);
                     if (t >= startT && t <= endT) fLogs.push(log);
                 }
@@ -2084,13 +2096,13 @@ window.loadPayslipVault = async function() {
             let tBonuses = 0; let fBonuses = [];
             bonusSnap.forEach(docSnap => {
                 let b = docSnap.data();
-                if (b.dateAdded) {
+                if (b.dateAdded && isMatch(b.staffName)) {
                     let t = safeDate(b.dateAdded);
                     if (t >= startT && t <= endT) { tBonuses += (parseFloat(b.amount) || 0); fBonuses.push(b); }
                 }
             });
 
-            let tShifts = 0; let tLate = 0; let aShifts = {}; let sPairs = [];
+            let tShifts = 0; let tLate = 0; let activeShift = null; let sPairs = [];
             
             fLogs.forEach(log => {
                 let manualPenalty = parseFloat(log.penaltyAmount) || 0;
@@ -2100,13 +2112,19 @@ window.loadPayslipVault = async function() {
                     let logDate = safeDate(log.timestamp); 
                     let lateMinutes = 0; let wasScheduled = false; let expectedStartHour = null;
 
+                    // Ghost punch check
+                    if (activeShift) {
+                        let missedIn = activeShift.time;
+                        sPairs.push({ dateObj: missedIn, in: missedIn, out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>`, lateMins: activeShift.lateMinutes || 0 });
+                    }
+
                     if (scheduleData && scheduleData.currentSchedule) {
                         let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
                         if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
                             let branchSafe = log.branch || "Unknown";
                             let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branchSafe] : null;
                             if (branchSched && branchSched.scheduled) {
-                                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
+                                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => isMatch(branchSched.scheduled[k]));
                                 if (assignedShiftId && scheduleData.branchConfig && scheduleData.branchConfig[branchSafe]) {
                                     wasScheduled = true;
                                     let shiftConfig = scheduleData.branchConfig[branchSafe].find(s => s.id === assignedShiftId);
@@ -2133,20 +2151,20 @@ window.loadPayslipVault = async function() {
                     let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
                     let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
 
-                    aShifts[staffName] = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false, manualPenalty: manualPenalty, wasScheduled: wasScheduled };
+                    activeShift = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false, manualPenalty: manualPenalty, wasScheduled: wasScheduled };
 
-                } else if (logType.includes("TIME OUT") && aShifts[staffName]) {
-                    let timeIn = aShifts[staffName].time; let lMins = aShifts[staffName].lateMinutes;
-                    let lAmt = aShifts[staffName].lateAmount; let lExempt = aShifts[staffName].lateExempted;
-                    let wasScheduled = aShifts[staffName].wasScheduled; 
-                    let totalManualPenaltyForShift = (aShifts[staffName].manualPenalty || 0) + manualPenalty;
+                } else if (logType.includes("TIME OUT") && activeShift) {
+                    let timeIn = activeShift.time; let lMins = activeShift.lateMinutes;
+                    let lAmt = activeShift.lateAmount; let lExempt = activeShift.lateExempted;
+                    let wasScheduled = activeShift.wasScheduled; 
+                    let totalManualPenaltyForShift = (activeShift.manualPenalty || 0) + manualPenalty;
                     
                     let timeOut = safeDate(log.timestamp);
                     let hoursWorked = (timeOut.getTime() - timeIn.getTime()) / (1000 * 60 * 60);
                     
                     if (hoursWorked > 18) {
                         sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h)</span>` });
-                        delete aShifts[staffName]; return; 
+                        activeShift = null; return; 
                     }
 
                     let isAutoClosed = logType === "TIME OUT (AUTO)";
@@ -2173,7 +2191,7 @@ window.loadPayslipVault = async function() {
 
                     tShifts += shiftMultiplier;
                     sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
-                    delete aShifts[staffName];
+                    activeShift = null;
                 } else if (manualPenalty > 0) {
                     tLate += manualPenalty;
                     let logTime = log.timestamp ? safeDate(log.timestamp) : new Date();
@@ -2181,8 +2199,8 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            if (aShifts[staffName]) {
-                let activeTime = aShifts[staffName].time;
+            if (activeShift) {
+                let activeTime = activeShift.time;
                 let isOrphaned = ((new Date() - activeTime) / (1000 * 60 * 60)) > 18; 
                 sPairs.push({ 
                     dateObj: activeTime, in: activeTime, out: isOrphaned ? null : "Active Shift", hrs: 0, 
@@ -2204,7 +2222,7 @@ window.loadPayslipVault = async function() {
             });
 
             return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs };
-        }; // <-- End of Calculator Helper
+        };
 
         // Execute Calculator for Current Cutoff
         let currentData = analyzeCutoff(new Date(startDateStr + 'T00:00:00'), new Date(endDateStr + 'T23:59:59'));
@@ -2213,16 +2231,20 @@ window.loadPayslipVault = async function() {
 
         let estGross = currentData.shiftsWorked * dailyRate;
 
-        // Fetch Universal Deductions & Loans (These apply to whatever cutoff is being generated!)
-        const dedQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName), where("status", "==", "Unpaid"));
-        const dedSnap = await getDocs(dedQ);
+        // Fetch Universal Deductions & Loans
+        const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("status", "==", "Unpaid")));
         let unpaidVales = 0; let activeDeductions = [];
-        dedSnap.forEach(d => { let val = parseFloat(d.data().amount) || 0; unpaidVales += val; activeDeductions.push(d.data()); });
+        dedSnap.forEach(d => { 
+            if (isMatch(d.data().staffName)) {
+                let val = parseFloat(d.data().amount) || 0; unpaidVales += val; activeDeductions.push(d.data()); 
+            }
+        });
 
-        const ledgerQ = query(collection(db, "staff_ledger"), where("staffName", "==", staffName));
-        const ledgerSnap = await getDocs(ledgerQ);
+        const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         let loanData = null;
-        if (!ledgerSnap.empty) loanData = ledgerSnap.docs[0].data();
+        ledgerSnap.forEach(d => {
+            if (isMatch(d.data().staffName)) loanData = d.data();
+        });
 
         let cutoffLoanDeduction = 0; let remBal = 0;
         if (loanData) {
@@ -2268,7 +2290,6 @@ window.loadPayslipVault = async function() {
             document.getElementById('payslipLiveSection').appendChild(logsContainer);
         }
 
-        // Shared function to render the Attendance Table lines
         const generateTableRows = (pairs) => {
             let html = '';
             if (pairs.length > 0) {
@@ -2292,11 +2313,12 @@ window.loadPayslipVault = async function() {
             return html;
         };
 
-        // Render Current Cutoff Tables
         let detailsHtml = `
             <div style="margin-top: 20px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">⏱️ Attendance Logs (This Cutoff)</h3>
-                <div style="max-height: 250px; overflow-y: auto;">
+                
+                <!-- 🔥 THE FIX: Removed max-height here so the table expands beautifully! -->
+                <div style="padding-bottom: 10px; overflow-y: auto;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
                         <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 5;">
                             <tr><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">In</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Out</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Hrs</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Remarks</th></tr>
@@ -2338,15 +2360,19 @@ window.loadPayslipVault = async function() {
         // =====================================
         // 🔥 BUILD PENDING & PAST PAYSLIPS
         // =====================================
-        const prQ = query(collection(db, "payroll_records"), where("staffName", "==", staffName));
-        const prSnap = await getDocs(prQ);
+        const prSnap = await getDocs(collection(db, "payroll_records"));
 
         let pendingHtml = ''; let pastHtml = ''; let pendingCount = 0;
         let allRecords = [];
-        prSnap.forEach(docSnap => allRecords.push({id: docSnap.id, ...docSnap.data()}));
+        
+        prSnap.forEach(docSnap => {
+            if (isMatch(docSnap.data().staffName)) {
+                allRecords.push({id: docSnap.id, ...docSnap.data()});
+            }
+        });
         allRecords.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
 
-        // 🔥 THE NEW PREVIEW FEATURE FOR PREVIOUS CUTOFF 🔥
+        // 🔥 THE FIX: Prevent duplicate previews!
         let hasPrevCutoffRecord = allRecords.some(r => r.startDate === prevStartStr || (r.frozenData && r.frozenData.start === prevStartStr));
         
         if (!hasPrevCutoffRecord) {
@@ -2355,7 +2381,6 @@ window.loadPayslipVault = async function() {
             let prevEstGross = prevData.shiftsWorked * dailyRate;
             let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - unpaidVales - cutoffLoanDeduction;
 
-            // Optional Loan String for Preview
             let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
 
             pendingHtml += `
@@ -2380,11 +2405,12 @@ window.loadPayslipVault = async function() {
                         ${prevLoanStr}
                     </div>
                     
+                    <!-- 🔥 THE FIX: Removed max-height here so the table can fully expand! -->
                     <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
                         <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                             <span>👀 View Attendance Logs</span>
                         </summary>
-                        <div style="margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px; max-height: 200px; overflow-y: auto;">
+                        <div style="margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px; padding-bottom: 10px; overflow-y: auto;">
                             <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;">
                                 <thead style="background: #f8fafc; position: sticky; top: 0;">
                                     <tr><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">In</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Out</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Hrs</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Remarks</th></tr>
@@ -2447,6 +2473,7 @@ window.loadPayslipVault = async function() {
     } catch (e) {
         console.error("Payslip Fetch Error:", e);
         document.getElementById('liveEstNetPay').innerText = "Error";
+        document.getElementById('payslipPendingList').innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px; font-weight: bold;">Error loading data. Check internet connection.</div>`;
         let parentEl = document.getElementById('liveEstNetPay').parentElement;
         if(parentEl && !parentEl.querySelector('.error-text')) {
             parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
