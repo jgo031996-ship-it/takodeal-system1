@@ -2,7 +2,7 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // 🔥 TASK 4 FIX: Expose Network Toggles globally so the Anti-Freeze engine can use them!
 window.enableNetwork = enableNetwork;
@@ -27,12 +27,10 @@ const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 const storage = getStorage(app);
 
-// 🔒 FORCE LOCAL PERSISTENCE FOR SAFARI / IPHONE
-setPersistence(auth, browserLocalPersistence).catch(err => console.error("Persistence error:", err));
-
 // 🔥 ULTRA MAX SPEED FIX: Removed the Multi-Tab Manager to prevent Desktop Chrome deadlocks!
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache() 
+  localCache: persistentLocalCache(),
+  experimentalAutoDetectLongPolling: true // 🔥 STOPS THE 400 BAD REQUEST CONSOLE ERRORS!
 });
 
 window.storage = storage;
@@ -56,6 +54,7 @@ window.limit = limit;
 window.ref = ref;
 window.uploadBytes = uploadBytes;
 window.getDownloadURL = getDownloadURL;
+window.writeBatch = writeBatch; // 🔥 THE BATCH ENGINE EXPOSED!
 
 console.log("🚀 TAKODEÁL Manager Offline Storage is ACTIVE!");
 
@@ -6655,43 +6654,34 @@ window.calcAdvProfit = function (forceCogs = null) {
 
 window.saveAdvancedProduct = async function () {
   let btn = document.getElementById('btnSaveAdvProd');
-  btn.innerText = "⏳ Saving..."; btn.disabled = true;
+  if(btn) { btn.innerText = "⏳ Packaging Data..."; btn.disabled = true; }
 
   let menuId = document.getElementById('advProdId').value;
   let prodName = document.getElementById('advProdName').value.trim();
   let category = document.getElementById('advProdCat').value.trim();
   let price = parseFloat(document.getElementById('advProdPrice').value) || 0;
   
-  // Grab the Mix and Match flavors!
   let mixMatchRaw = document.getElementById('advProdMixMatch') ? document.getElementById('advProdMixMatch').value : "";
   let mixMatchArr = mixMatchRaw.split(',').map(s => s.trim()).filter(Boolean);
 
-  // 🔥 GATHER THE MIX & MATCH INVENTORY CONFIGURATIONS
   let mixMatchConfigArray = [];
   document.querySelectorAll('.mix-match-row').forEach(row => {
       let flavor = row.getAttribute('data-flavor');
       let ingredient = row.querySelector('.mm-ingredient').value;
       let qty = parseFloat(row.querySelector('.mm-qty').value) || 0;
-      
-      if (ingredient && qty > 0) {
-          mixMatchConfigArray.push({ flavor: flavor, linkedIngredient: ingredient, deductQty: qty });
-      }
+      if (ingredient && qty > 0) mixMatchConfigArray.push({ flavor: flavor, linkedIngredient: ingredient, deductQty: qty });
   });
 
-  // Anti-Blank Name Shield
   if (!prodName) {
     alert("❌ Error: Product name is required.");
-    btn.innerText = "Save Changes"; btn.disabled = false;
+    if(btn) { btn.innerText = "Save Changes"; btn.disabled = false; }
     return;
   }
 
   try {
-    // 🍟 GATHER ALL ADD-ONS BEFORE SAVING
     let addonsArray = [];
     document.querySelectorAll('#addonTableBody tr').forEach(row => {
       let nameInput = row.querySelector('.addon-name');
-      
-      // Only save if they actually typed an Add-on name
       if (nameInput && nameInput.value.trim() !== '') { 
         addonsArray.push({
           name: nameInput.value.trim(),
@@ -6702,84 +6692,58 @@ window.saveAdvancedProduct = async function () {
       }
     });
 
-    // 1. Save Menu Details AND Add-ons AND MixMatch configs!
+    // 🔥 1. INITIALIZE THE BATCH ENGINE
+    if(btn) btn.innerText = "⚡ Blasting to Cloud...";
+    const batch = window.writeBatch(window.db);
+
+    let menuPayload = { 
+        name: prodName, category: category, price: price, basePrice: price, 
+        addons: addonsArray, mixMatchFlavors: mixMatchArr, mixMatchConfig: mixMatchConfigArray 
+    };
+
+    // 2. Package Menu Data
     if (menuId) {
-      await updateDoc(doc(db, "menu", menuId), { 
-          name: prodName, 
-          category: category, 
-          price: price,
-          basePrice: price, 
-          addons: addonsArray,
-          mixMatchFlavors: mixMatchArr,
-          mixMatchConfig: mixMatchConfigArray // 🔥 NEW!
-      });
+        batch.update(window.doc(window.db, "menu", menuId), menuPayload);
     } else {
-      let newMenuRef = await addDoc(collection(db, "menu"), { 
-          name: prodName, 
-          category: category, 
-          price: price,
-          basePrice: price, 
-          addons: addonsArray,
-          mixMatchFlavors: mixMatchArr,
-          mixMatchConfig: mixMatchConfigArray // 🔥 NEW!
-      });
-      document.getElementById('advProdId').value = newMenuRef.id;
+        let newMenuRef = window.doc(window.collection(window.db, "menu"));
+        batch.set(newMenuRef, menuPayload);
+        document.getElementById('advProdId').value = newMenuRef.id;
     }
 
-    // 2. Delete removed recipe rows
+    // 3. Package Deleted Recipes
     if (window.deletedAdvRecipes && window.deletedAdvRecipes.length > 0) {
-      for (let delId of window.deletedAdvRecipes) {
-        await deleteDoc(doc(db, "bom", delId));
-      }
-      window.deletedAdvRecipes = [];
+        for (let delId of window.deletedAdvRecipes) {
+            batch.delete(window.doc(window.db, "bom", delId));
+        }
+        window.deletedAdvRecipes = [];
     }
 
-    // 3. Save / Update Recipe Rows
+    // 4. Package New & Updated Recipes
     for (let item of window.currentAdvRecipe) {
-      if (!item.ingredientName || item.qty <= 0) continue; // Skip invalid rows
-
-      if (item.docId && !item.isNew) {
-        // Update existing ingredient row
-        await updateDoc(doc(db, "bom", item.docId), { qty: item.qty });
-      } else {
-        // Add new ingredient row
-        await addDoc(collection(db, "bom"), {
-          menuItem: prodName, // Connects the recipe to the Product Name
-          ingredientName: item.ingredientName,
-          qty: item.qty
-        });
-      }
+        if (!item.ingredientName || item.qty <= 0) continue; 
+        if (item.docId && !item.isNew) {
+            batch.update(window.doc(window.db, "bom", item.docId), { qty: item.qty });
+        } else {
+            let newBomRef = window.doc(window.collection(window.db, "bom"));
+            batch.set(newBomRef, { menuItem: prodName, ingredientName: item.ingredientName, qty: item.qty });
+        }
     }
 
-    alert("✅ Product, Recipe, Add-ons, and Flavors saved successfully!");
+    // 🔥 5. FIRE THE ENTIRE PACKAGE IN ONE SINGLE MILLISECOND BURST!
+    await batch.commit();
+
+    Swal.fire({ toast: true, position: 'top', icon: 'success', title: 'Product & Recipes Saved!', showConfirmButton: false, timer: 2000, customClass: { popup: 'rounded-xl' }});
         
-    // 1. Safely close the modal
     let modal = document.getElementById('advancedProductModal');
-    if (modal) {
-        modal.style.display = 'none';
-    } else {
-        console.warn("Could not find modal to close. Check your HTML ID!");
-    }
+    if (modal) modal.style.display = 'none';
 
-    // 2. Refresh the table
     window.loadMenuCosting(); 
 
   } catch (error) {
     console.error("Save Error:", error); 
     alert("Failed to save product. Check Console for details.");
   } finally {
-    // 3. Bulletproof Button Reset
-    if (typeof btn !== 'undefined' && btn) {
-        btn.innerText = "Save Changes"; 
-        btn.disabled = false;
-    } else {
-        document.querySelectorAll('button').forEach(b => {
-            if (b.innerText.includes("Saving")) {
-                b.innerText = "Save Changes";
-                b.disabled = false;
-            }
-        });
-    }
+    if (typeof btn !== 'undefined' && btn) { btn.innerText = "Save Changes"; btn.disabled = false; }
   }
 };
 
@@ -7180,10 +7144,8 @@ window.saveInventoryEdit = async function() {
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
     
-    // 🔥 THE ISOLATION FIX: Extract BOTH limits so we can route them properly!
     let branchLowPurch = parseFloat(document.getElementById('editInvLowStock').value) || 0;
     let hqLowPurch = parseFloat(document.getElementById('editInvHqLowStock').value) || 0;
-    
     let branchLowBase = branchLowPurch * conversion;
     let hqLowBase = hqLowPurch * conversion;
     
@@ -7200,143 +7162,106 @@ window.saveInventoryEdit = async function() {
     if (newQtyRaw !== "") {
         let parsedInput = parseFloat(newQtyRaw);
         finalQty = countType === 'purch' ? (parsedInput * conversion) : parsedInput;
-        
         isAdjusting = true;
         if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
 
     let btn = document.getElementById('btnSaveInvEdit');
-    if (btn) { btn.innerText = "⏳ Saving & Syncing Globally..."; btn.disabled = true; }
+    if (btn) { btn.innerText = "⏳ Uploading & Syncing..."; btn.disabled = true; }
 
-    // 🔥 UPLOAD INVENTORY PHOTO TO STORAGE
     let photoUrl = undefined;
     let fileInput = document.getElementById('editInvPhoto');
     if (fileInput && fileInput.files.length > 0) {
-        if (btn) btn.innerText = "⏳ Uploading Photo...";
         const file = fileInput.files[0];
         const fileExt = file.name.split('.').pop();
         const fileName = `inventory_images/${docId}_${Date.now()}.${fileExt}`;
-        const storageReference = ref(window.storage, fileName);
-        const snapshot = await uploadBytes(storageReference, file);
-        photoUrl = await getDownloadURL(snapshot.ref);
+        const storageReference = window.ref(window.storage, fileName);
+        const snapshot = await window.uploadBytes(storageReference, file);
+        photoUrl = await window.getDownloadURL(snapshot.ref);
     }
 
     try {
         let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
         let allowReqVal = document.getElementById('editInvAllowRequest') ? document.getElementById('editInvAllowRequest').checked : true;
 
-        const itemRef = doc(db, "inventory", docId);
-        const itemSnap = await getDoc(itemRef);
+        const itemRef = window.doc(window.db, "inventory", docId);
+        const itemSnap = await window.getDoc(itemRef);
         let oldName = itemSnap.exists() ? itemSnap.data().name : name;
 
-        // 1. Prepare Payload for the specific item you clicked
         let targetLowBaseForCurrentItem = (branch === "Main Office") ? hqLowBase : branchLowBase;
 
         let updatePayload = {
-            branch: branch, category: category, name: name,
-            purchaseUom: purchUom, purchUom: purchUom,
-            baseUom: baseUom, uom: baseUom, 
-            conversion: conversion, conversionRate: conversion, 
-            purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, 
-            baseCost: (purchCost / conversion), 
+            branch: branch, category: category, name: name, purchaseUom: purchUom, purchUom: purchUom,
+            baseUom: baseUom, uom: baseUom, conversion: conversion, conversionRate: conversion, 
+            purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
-            currentStock: finalQty, 
-            showInPrep: showPrepVal,
-            allowRequest: allowReqVal,
+            currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
         };
 
-        if (photoUrl !== undefined) {
-            updatePayload.image = photoUrl;
-        }
+        if (photoUrl !== undefined) updatePayload.image = photoUrl;
 
-        // Update the Main Item you clicked on
-        await updateDoc(itemRef, updatePayload);
+        // 🔥 INITIALIZE THE BATCH ENGINE
+        if (btn) btn.innerText = "⚡ Blasting Updates...";
+        const batch = window.writeBatch(window.db);
 
-        // 🔥 2. GLOBAL RENAME, PHOTO & UOM SYNC 🔥
-        const syncQ = query(collection(db, "inventory"), where("name", "==", oldName));
-        const syncSnap = await getDocs(syncQ);
-        let syncPromises = [];
+        // 1. Package the Main Item
+        batch.update(itemRef, updatePayload);
+
+        // 2. Package Global Syncs (Other Branches)
+        const syncQ = window.query(window.collection(window.db, "inventory"), window.where("name", "==", oldName));
+        const syncSnap = await window.getDocs(syncQ);
         
         syncSnap.forEach(d => {
-            if (d.id === docId) return; // Skip the one we just manually updated!
-
-            // 🔥 SMART ROUTER: Checks if the branch getting synced is HQ or not!
+            if (d.id === docId) return; 
             let isMainOffice = d.data().branch === "Main Office";
             let targetLowBase = isMainOffice ? hqLowBase : branchLowBase;
 
-            // Note: currentStock is specifically EXCLUDED from this payload so branch stock is never touched!
             let syncPayload = {
-                name: name, category: category, 
-                purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
-                conversion: conversion, conversionRate: conversion,
-                purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion),
-                lowStockAlert: targetLowBase, 
-                reorderLevel: targetLowBase,
-                allowRequest: allowReqVal,
-                showInPrep: showPrepVal 
+                name: name, category: category, purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
+                conversion: conversion, conversionRate: conversion, purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion),
+                lowStockAlert: targetLowBase, reorderLevel: targetLowBase, allowRequest: allowReqVal, showInPrep: showPrepVal 
             };
+            if (photoUrl !== undefined) syncPayload.image = photoUrl;
             
-            if (photoUrl !== undefined) {
-                syncPayload.image = photoUrl;
-            }
-            
-            syncPromises.push(updateDoc(doc(db, "inventory", d.id), syncPayload));
+            batch.update(window.doc(window.db, "inventory", d.id), syncPayload);
         });
 
-        // 🔥 3. CASCADE RECIPE & ADD-ON RENAME PROTECTOR 🔥
+        // 3. Package Cascade Renames (BOM & Addons)
         if (oldName !== name) {
-            const bomQ = query(collection(db, "bom"), where("ingredientName", "==", oldName));
-            const bomSnap = await getDocs(bomQ);
-            bomSnap.forEach(b => {
-                syncPromises.push(updateDoc(doc(db, "bom", b.id), { ingredientName: name }));
-            });
+            const bomQ = window.query(window.collection(window.db, "bom"), window.where("ingredientName", "==", oldName));
+            const bomSnap = await window.getDocs(bomQ);
+            bomSnap.forEach(b => { batch.update(window.doc(window.db, "bom", b.id), { ingredientName: name }); });
 
-            const addonQ = query(collection(db, "global_addons"), where("linkedIngredient", "==", oldName));
-            const addonSnap = await getDocs(addonQ);
-            addonSnap.forEach(a => {
-                syncPromises.push(updateDoc(doc(db, "global_addons", a.id), { linkedIngredient: name }));
-            });
+            const addonQ = window.query(window.collection(window.db, "global_addons"), window.where("linkedIngredient", "==", oldName));
+            const addonSnap = await window.getDocs(addonQ);
+            addonSnap.forEach(a => { batch.update(window.doc(window.db, "global_addons", a.id), { linkedIngredient: name }); });
         }
 
-        await Promise.all(syncPromises);
-
-        // 4. Log Physical Adjustments
+        // 4. Package Physical Adjustments Log
         if (isAdjusting && finalQty !== oldQty) {
             let variance = finalQty - oldQty;
             let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
             let finalNote = countType === 'purch' ? `[Counted as ${newQtyRaw} ${purchUom}s] ${note}` : note;
 
-            await addDoc(collection(db, "stock_logs"), {
+            let newLogRef = window.doc(window.collection(window.db, "stock_logs"));
+            batch.set(newLogRef, {
                 branch: branch, item: name, oldQty: oldQty, newQty: finalQty, variance: variance, uom: baseUom,
-                type: "Manual Adjustment", note: finalNote, user: safeCashierName, timestamp: serverTimestamp()
+                type: "Manual Adjustment", note: finalNote, user: safeCashierName, timestamp: window.serverTimestamp()
             });
         }
 
-        Swal.fire({
-            title: '✅ Success!',
-            text: 'Item updated, photo synced, and limits isolated successfully!',
-            icon: 'success',
-            confirmButtonColor: '#ea580c',
-            customClass: { popup: 'rounded-2xl shadow-2xl' }
-        });
-        
-            document.getElementById('editInvModal').style.display = 'none';
+        // 🔥 FIRE THE ENTIRE PACKAGE IN ONE GO
+        await batch.commit();
 
-            // 🔥 SMART SCROLL MEMORY FIX 🔥
-            // Captures exactly where you are scrolled to before the table wipes itself to reload
-            let scrollContainer = document.querySelector('.main-content');
-            let savedScrollPosition = scrollContainer ? scrollContainer.scrollTop : 0;
-            
-            await window.loadInventoryData(); // Await the reload so it finishes drawing the table!
-            
-            // Instantly snap the scrollbar back to your exact position
-            if (scrollContainer) {
-                setTimeout(() => {
-                    scrollContainer.scrollTop = savedScrollPosition;
-                }, 50); 
-            }
+        Swal.fire({ title: '✅ Success!', text: 'Item updated and synced globally!', icon: 'success', customClass: { popup: 'rounded-2xl' } });
+        document.getElementById('editInvModal').style.display = 'none';
 
-            if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
+        // Smart Scroll Memory
+        let scrollContainer = document.querySelector('.main-content');
+        let savedScrollPosition = scrollContainer ? scrollContainer.scrollTop : 0;
+        await window.loadInventoryData(); 
+        if (scrollContainer) setTimeout(() => { scrollContainer.scrollTop = savedScrollPosition; }, 50); 
+        if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
 
     } catch (e) {
         console.error(e); alert("Failed to save changes.");
