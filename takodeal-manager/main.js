@@ -6269,7 +6269,7 @@ window.updateInvSummary = function () {
 };
 
 window.saveAdvancedInventoryItem = async function () {
-  let branch = document.getElementById('newInvBranch').value;
+  let selectedBranch = document.getElementById('newInvBranch').value;
   let category = document.getElementById('newInvCat').value;
   let name = document.getElementById('newInvName').value.trim();
   let purchUom = document.getElementById('newInvPurchUom').value.trim();
@@ -6279,17 +6279,16 @@ window.saveAdvancedInventoryItem = async function () {
   let cost = parseFloat(document.getElementById('newInvCost').value);
   let initQty = parseFloat(document.getElementById('newInvInitQty').value);
   
-  // 🔥 Convert Purchase UOM input to Base UOM!
+  // Convert Purchase UOM input to Base UOM for the low-stock alarm!
   let reorderPurch = parseFloat(document.getElementById('newInvReorder').value) || 0;
   let reorderBase = reorderPurch * conv;
-  let reorder = parseFloat(document.getElementById('newInvReorder').value) || 5000;
 
   if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
-    alert("❌ Error: Please fill out all required fields with valid numbers."); return;
+    Swal.fire("Error", "Please fill out all required fields with valid numbers.", "error"); return;
   }
 
   let btn = document.getElementById('btnSaveInv');
-  btn.innerText = "⏳ Saving..."; btn.disabled = true;
+  btn.innerText = "⏳ Broadcasting to All Branches..."; btn.disabled = true;
 
   try {
         let totalBaseStock = conv * initQty;
@@ -6297,28 +6296,69 @@ window.saveAdvancedInventoryItem = async function () {
         
         let checkboxEl = document.getElementById('newInvShowCashier');
         let showCashier = checkboxEl ? checkboxEl.checked : true; 
+        let showPrep = document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true;
+        let allowReq = document.getElementById('newInvAllowRequest') ? document.getElementById('newInvAllowRequest').checked : true;
 
-        await addDoc(collection(db, "inventory"), {
-          branch: branch,
-          name: name,
-          category: category,
-          purchaseUom: purchUom,
-          uom: baseUom, 
-          conversionRate: conv,
-          purchaseCost: cost,
-          baseCost: baseCost, 
-          currentStock: totalBaseStock, 
-          reorderLevel: reorderBase, // 🔥 Saves securely as Base UOM
-          showToCashier: showCashier, 
-          showInPrep: document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true,
-          allowRequest: document.getElementById('newInvAllowRequest') ? document.getElementById('newInvAllowRequest').checked : true,
-        });
+        // 1. CRASH PROTECTOR: Scan the whole system to ensure this item doesn't exist already!
+        const duplicateQuery = query(collection(db, "inventory"), where("name", "==", name));
+        const duplicateSnap = await getDocs(duplicateQuery);
+        let existingBranches = [];
+        duplicateSnap.forEach(d => existingBranches.push(d.data().branch));
+
+        if (existingBranches.includes(selectedBranch)) {
+            Swal.fire("Duplicate", `"${name}" already exists in ${selectedBranch}! Please use HQ Restock if you want to add more quantity.`, "warning");
+            btn.innerText = "💾 Save Item to Cloud"; btn.disabled = false;
+            return;
+        }
+
+        // 2. THE GLOBAL BROADCASTER ENGINE: Map out all active branches in your company
+        let branchesToCreate = window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"];
+        let creationPromises = [];
+        let createdCount = 0;
+
+        for (let branch of branchesToCreate) {
+            // Prevent double-creating if it miraculously already exists in another branch
+            if (existingBranches.includes(branch)) continue;
+            
+            // 🔥 THE SMART LOGIC: Only the selected branch gets the initial stock! The rest get exactly 0.
+            let branchInitialStock = (branch === selectedBranch) ? totalBaseStock : 0;
+            
+            let payload = {
+              branch: branch,
+              name: name,
+              category: category,
+              purchaseUom: purchUom,
+              uom: baseUom, 
+              conversionRate: conv,
+              purchaseCost: cost,
+              baseCost: baseCost, 
+              currentStock: branchInitialStock, 
+              reorderLevel: reorderBase, 
+              showToCashier: showCashier, 
+              showInPrep: showPrep,
+              allowRequest: allowReq,
+            };
+
+            creationPromises.push(addDoc(collection(db, "inventory"), payload));
+            createdCount++;
+        }
+
+        // Send all instructions to Firebase simultaneously!
+        await Promise.all(creationPromises);
     
-    alert(`✅ Success! Added ${name} to ${branch}.`);
+    Swal.fire({
+        title: '✅ Global Sync Complete!',
+        html: `<b>${name}</b> has been successfully added to all <b>${createdCount}</b> branches.<br><br><span style="color: #64748b; font-size: 13px;">(Stock was set to ${initQty} ${purchUom} for ${selectedBranch}, and 0 for the others).</span>`,
+        icon: 'success',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+    
     document.getElementById('addInvModal').style.display = 'none';
-    window.loadInventoryData();
+    window.loadInventoryData(); // Redraws the table to show your newly created items
+    
   } catch (error) {
-    console.error(error); alert("❌ Failed to add item.");
+    console.error("Item Creation Error:", error); 
+    Swal.fire("Error", "Failed to broadcast item to branches. Check your internet connection.", "error");
   } finally {
     btn.innerText = "💾 Save Item to Cloud"; btn.disabled = false;
   }
