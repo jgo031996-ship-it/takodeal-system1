@@ -418,7 +418,7 @@ window.loadPOSData = async function() {
 // 🛒 CORE ORDERING & CART ENGINE
 // ========================================================
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
-    // 🔥 THE FIX: Explicitly WIPE the ghost memory clean every time the modal opens!
+    // 🔥 CLEAR GHOST MEMORY
     window.currentBaseFlavorsInfo = [];
     window.baseFlavorState = {};
     window.mixMatchState = {};
@@ -452,52 +452,67 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
         window.pendingItem.variantPrice = phantomSizes[0].price;
     }
 
-    document.getElementById('modalItemName').innerText = window.pendingItem.name;
-    let priceHeader = document.getElementById('modalItemPrice').parentElement;
+    // 🛡️ ARMOR CHECK: Safely update Name and Price
+    let nameEl = document.getElementById('modalItemName');
+    if (nameEl) nameEl.innerText = window.pendingItem.name;
     
-    if (hasSizes && !existingItem) {
-        priceHeader.style.display = 'none'; 
-    } else {
-        priceHeader.style.display = 'flex';
-        document.getElementById('modalItemPrice').innerText = '₱ ' + window.pendingItem.basePrice.toFixed(2);
+    let priceEl = document.getElementById('modalItemPrice');
+    if (priceEl) {
+        let priceHeader = priceEl.parentElement;
+        if (priceHeader) {
+            if (hasSizes && !existingItem) {
+                priceHeader.style.display = 'none'; 
+            } else {
+                priceHeader.style.display = 'flex';
+                priceEl.innerText = '₱ ' + window.pendingItem.basePrice.toFixed(2);
+            }
+        }
     }
 
-    document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
-    document.getElementById('orderNotesInput').value = window.pendingItem.notes;
+    // 🛡️ ARMOR CHECK: Safely update Quantity and Notes
+    let qtyEl = document.getElementById('modalMainQty');
+    if (qtyEl) qtyEl.innerText = window.pendingItem.qty;
     
-    // 🔥 THE FIX: Auto-Takeout & Dropdown Locker
+    let notesEl = document.getElementById('orderNotesInput');
+    if (notesEl) notesEl.value = window.pendingItem.notes;
+    
+    // 🛡️ ARMOR CHECK: Safely update Order Type Dropdown
     let itemOrderTypeSelect = document.getElementById('modalItemOrderType');
-    if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
-        itemOrderTypeSelect.value = 'Take-Out';
-        itemOrderTypeSelect.disabled = true; // Locks the dropdown!
-        itemOrderTypeSelect.style.background = '#e2e8f0'; // Turns it gray so they know it's locked
-    } else {
-        itemOrderTypeSelect.value = existingItem ? (existingItem.orderType || '') : '';
-        itemOrderTypeSelect.disabled = false; // Unlocks it for normal POS
-        itemOrderTypeSelect.style.background = '#e0f2fe'; // Restores normal color
+    if (itemOrderTypeSelect) {
+        if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
+            itemOrderTypeSelect.value = 'Take-Out';
+            itemOrderTypeSelect.disabled = true; // Locks the dropdown!
+            itemOrderTypeSelect.style.background = '#e2e8f0'; // Turns it gray so they know it's locked
+        } else {
+            itemOrderTypeSelect.value = existingItem ? (existingItem.orderType || '') : '';
+            itemOrderTypeSelect.disabled = false; // Unlocks it for normal POS
+            itemOrderTypeSelect.style.background = '#e0f2fe'; // Restores normal color
+        }
     }
 
-    document.getElementById('variantModal').style.display = 'flex';
+    // 🛡️ ARMOR CHECK: Safely display the Main Modal
+    let variantModal = document.getElementById('variantModal');
+    if (variantModal) variantModal.style.display = 'flex';
 
+    // 🛡️ ARMOR CHECK: Safely hide old dropdown
     let oldDropdown = document.getElementById('addonSelectDropdown');
-    if(oldDropdown) oldDropdown.style.display = 'none';
+    if (oldDropdown) oldDropdown.style.display = 'none';
 
+    // 🛡️ ARMOR CHECK: Safely display variant boxes
     let variantContainer = document.getElementById('variantOptions');
-    let variantSection = variantContainer ? variantContainer.parentElement : null;
-    
-    if (hasSizes) {
-        if (variantSection) variantSection.style.display = 'block';
-        if (variantContainer) {
+    if (variantContainer) {
+        let variantSection = variantContainer.parentElement;
+        if (hasSizes) {
+            if (variantSection) variantSection.style.display = 'block';
             variantContainer.style.width = '100%'; 
             variantContainer.style.display = 'block';
             
             let sizeHtml = '<div style="display: flex; flex-wrap: wrap; gap: 12px; width: 100%; margin-bottom: 15px;">';
             
             phantomSizes.forEach((sizeObj, idx) => {
-                // 🔥 THE FIX: Route the correct price to the button based on the active platform!
                 let sizePriceToUse = sizeObj.price;
-                if (window.posPlatform === 'Grab') sizePriceToUse = sizeObj.grabPrice;
-                if (window.posPlatform === 'Foodpanda') sizePriceToUse = sizeObj.foodpandaPrice;
+                if (window.posPlatform === 'Grab') sizePriceToUse = sizeObj.grabPrice || sizeObj.price;
+                if (window.posPlatform === 'Foodpanda') sizePriceToUse = sizeObj.foodpandaPrice || sizeObj.price;
 
                 let isActive = (window.pendingItem.realName === sizeObj.realName) ? 'active' : '';
                 sizeHtml += `
@@ -509,9 +524,9 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
             });
             sizeHtml += '</div>';
             variantContainer.innerHTML = sizeHtml;
+        } else {
+            if (variantSection) variantSection.style.display = 'none';
         }
-    } else {
-        if (variantSection) variantSection.style.display = 'none';
     }
 
     try {
@@ -537,98 +552,103 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 }
             });
 
-            let imgContainer = document.getElementById('modalDynamicImage');
-            if (!imgContainer) {
-                imgContainer = document.createElement('div');
-                imgContainer.id = 'modalDynamicImage';
-                document.getElementById('modalItemName').parentElement.parentElement.insertAdjacentElement('beforebegin', imgContainer);
-            }
-            if (itemData.image) {
-                imgContainer.innerHTML = `<div style="text-align: center; margin-bottom: 15px; display: flex; justify-content: center; background: #f8fafc; border-radius: 12px;"><img src="${itemData.image}" style="width: 100%; max-height: 160px; object-fit: contain; border-radius: 12px;"></div>`;
-            } else {
-                imgContainer.innerHTML = '';
-            }
-
-            let addonContainer = document.getElementById('addonSelectDropdown').parentElement;
-            let newUiHtml = '';
-
-            if (itemData.addons && itemData.addons.length > 0) {
-                let groupedAddons = {};
-                itemData.addons.forEach(a => {
-                    if (!groupedAddons[a.name]) groupedAddons[a.name] = { ...a, price: parseFloat(a.price) || 0 };
-                    else groupedAddons[a.name].price += (parseFloat(a.price) || 0);
-                });
-
-                let addonsList = Object.values(groupedAddons);
-                
-                if (window.masterPOSData && window.masterPOSData.addonLayoutNames) {
-                    addonsList.sort((a,b) => {
-                        let idxA = window.masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase());
-                        let idxB = window.masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase());
-                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                        if (idxA !== -1) return -1;
-                        if (idxB !== -1) return 1;
-                        return a.name.localeCompare(b.name);
-                    });
+            // 🛡️ ARMOR CHECK: Safely inject image container
+            let nameParent = nameEl ? nameEl.parentElement.parentElement : null;
+            if (nameParent) {
+                let imgContainer = document.getElementById('modalDynamicImage');
+                if (!imgContainer) {
+                    imgContainer = document.createElement('div');
+                    imgContainer.id = 'modalDynamicImage';
+                    nameParent.insertAdjacentElement('beforebegin', imgContainer);
                 }
-                
-                let baseFlavors = addonsList.filter(a => a.price === 0);
-                let extras = addonsList.filter(a => a.price > 0);
+                if (itemData.image) {
+                    imgContainer.innerHTML = `<div style="text-align: center; margin-bottom: 15px; display: flex; justify-content: center; background: #f8fafc; border-radius: 12px;"><img src="${itemData.image}" style="width: 100%; max-height: 160px; object-fit: contain; border-radius: 12px;"></div>`;
+                } else {
+                    imgContainer.innerHTML = '';
+                }
+            }
 
-                if (baseFlavors.length > 0) {
-                    window.currentBaseFlavorsInfo = baseFlavors;
-                    let defaultQty = existingItem ? 0 : window.pendingItem.qty;
+            let addonContainer = oldDropdown ? oldDropdown.parentElement : null;
+            if (addonContainer) {
+                let newUiHtml = '';
+
+                if (itemData.addons && itemData.addons.length > 0) {
+                    let groupedAddons = {};
+                    itemData.addons.forEach(a => {
+                        if (!groupedAddons[a.name]) groupedAddons[a.name] = { ...a, price: parseFloat(a.price) || 0 };
+                        else groupedAddons[a.name].price += (parseFloat(a.price) || 0);
+                    });
+
+                    let addonsList = Object.values(groupedAddons);
                     
-                    baseFlavors.forEach((bf, bfIdx) => {
-                        if (existingItem && existingItem.addons && existingItem.addons[bf.name]) {
-                            window.baseFlavorState[bf.name] = existingItem.addons[bf.name].qty;
-                        } else {
-                            window.baseFlavorState[bf.name] = 0; // 🔥 STRICT LOCK: No longer defaults to the first one!
-                        }
-                    });
+                    if (window.masterPOSData && window.masterPOSData.addonLayoutNames) {
+                        addonsList.sort((a,b) => {
+                            let idxA = window.masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase());
+                            let idxB = window.masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase());
+                            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                            if (idxA !== -1) return -1;
+                            if (idxB !== -1) return 1;
+                            return a.name.localeCompare(b.name);
+                        });
+                    }
+                    
+                    let baseFlavors = addonsList.filter(a => a.price === 0);
+                    let extras = addonsList.filter(a => a.price > 0);
 
-                    newUiHtml += `
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px; width: 100%;">
-                            <label style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">BASE FLAVOR (Required)</label>
-                            <span id="baseFlavorCounter" style="font-size: 11px; font-weight: bold; color: #b45309;">0 Pcs</span>
-                        </div>
-                        <div id="baseFlavorList" style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;"></div>
-                    `;
-                }
+                    if (baseFlavors.length > 0) {
+                        window.currentBaseFlavorsInfo = baseFlavors;
+                        
+                        baseFlavors.forEach((bf, bfIdx) => {
+                            if (existingItem && existingItem.addons && existingItem.addons[bf.name]) {
+                                window.baseFlavorState[bf.name] = existingItem.addons[bf.name].qty;
+                            } else {
+                                window.baseFlavorState[bf.name] = 0; 
+                            }
+                        });
 
-                if (extras.length > 0) {
-                    newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
-                    extras.forEach(a => {
-                        let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
                         newUiHtml += `
-                            <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
-                                <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
-                                <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
-                            </label>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px; width: 100%;">
+                                <label style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">BASE FLAVOR (Required)</label>
+                                <span id="baseFlavorCounter" style="font-size: 11px; font-weight: bold; color: #b45309;">0 Pcs</span>
+                            </div>
+                            <div id="baseFlavorList" style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;"></div>
                         `;
-                    });
-                    newUiHtml += `</div>`;
-                }
-            }
+                    }
 
-            if (newUiHtml === '') newUiHtml = '<div style="font-size:12px; color:#94a3b8; text-align:center; padding:10px; width:100%;">No add-ons available.</div>';
-            
-            let dynamicAddonDiv = document.getElementById('dynamicAddonUI');
-            if(!dynamicAddonDiv) {
-                dynamicAddonDiv = document.createElement('div');
-                dynamicAddonDiv.id = 'dynamicAddonUI';
-                dynamicAddonDiv.style.width = '100%';
-                addonContainer.appendChild(dynamicAddonDiv);
+                    if (extras.length > 0) {
+                        newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
+                        extras.forEach(a => {
+                            let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
+                            newUiHtml += `
+                                <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
+                                    <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
+                                    <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
+                                </label>
+                            `;
+                        });
+                        newUiHtml += `</div>`;
+                    }
+                }
+
+                if (newUiHtml === '') newUiHtml = '<div style="font-size:12px; color:#94a3b8; text-align:center; padding:10px; width:100%;">No add-ons available.</div>';
+                
+                let dynamicAddonDiv = document.getElementById('dynamicAddonUI');
+                if(!dynamicAddonDiv) {
+                    dynamicAddonDiv = document.createElement('div');
+                    dynamicAddonDiv.id = 'dynamicAddonUI';
+                    dynamicAddonDiv.style.width = '100%';
+                    addonContainer.appendChild(dynamicAddonDiv);
+                }
+                dynamicAddonDiv.innerHTML = newUiHtml;
+                
+                if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
             }
-            dynamicAddonDiv.innerHTML = newUiHtml;
-            
-            if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
 
             // 🐙 ITEM-SPECIFIC MIX & MATCH BUILDER
-            window.mixMatchState = {};
-            let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
             let customArea = document.getElementById('takoyakiCustomizationArea');
+            let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
             
+            // 🛡️ ARMOR CHECK: Safely manipulate Mix Match Panel
             if (customArea) {
                 if (hasMixMatch) {
                     itemData.mixMatchFlavors.forEach(flavor => {
@@ -636,12 +656,17 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     });
                     
                     customArea.style.display = 'block';
-                    document.getElementById('mixMatchPanel').style.display = 'none';
-                    document.getElementById('mixMatchToggleIcon').innerText = '▼';
+                    let mmPanel = document.getElementById('mixMatchPanel');
+                    if (mmPanel) mmPanel.style.display = 'none';
+                    
+                    let mmIcon = document.getElementById('mixMatchToggleIcon');
+                    if (mmIcon) mmIcon.innerText = '▼';
                     
                     let sizeMatch = window.pendingItem.realName ? window.pendingItem.realName.match(/(\d+)\s*Pcs/i) : window.pendingItem.name.match(/(\d+)\s*Pcs/i);
                     window.maxMixMatch = sizeMatch ? parseInt(sizeMatch[1]) : 8; 
-                    window.renderMixMatchList();
+                    
+                    if (typeof window.renderMixMatchList === 'function') window.renderMixMatchList();
+                    else if (typeof renderMixMatchList === 'function') renderMixMatchList();
                 } else {
                     customArea.style.display = 'none';
                 }
@@ -653,6 +678,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     }
     
     if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
+    else if (typeof updateModalTotals === 'function') updateModalTotals();
 };
 
 window.renderBaseFlavorsList = function() {
