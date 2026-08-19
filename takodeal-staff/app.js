@@ -2082,13 +2082,26 @@ window.loadPayslipVault = async function() {
         const bonusSnap = await getDocs(bonusQ);
 
         // 🔥 THE SMART CALCULATOR HELPER
+        // We feed it a start and end date, and it calculates EVERYTHING for that exact period!
         const analyzeCutoff = (startT, endT) => {
             let fLogs = [];
             attSnap.forEach(docSnap => {
                 let log = docSnap.data();
                 if (log.timestamp && isMatch(log.staffName)) {
                     let t = safeDate(log.timestamp);
-                    if (t >= startT && t <= endT) fLogs.push(log);
+                    let logType = typeof log.type === 'string' ? log.type.toUpperCase() : "UNKNOWN";
+                    
+                    if (t >= startT) {
+                        if (logType === "TIME IN") {
+                            // Time Ins must strictly happen before the cutoff ends
+                            if (t <= endT) fLogs.push(log);
+                        } else {
+                            // 🔥 THE CUTOFF FIX: Allow Time Outs to cross midnight into the next day (up to 18 hours buffer!)
+                            let bufferEnd = new Date(endT);
+                            bufferEnd.setHours(bufferEnd.getHours() + 18);
+                            if (t <= bufferEnd) fLogs.push(log);
+                        }
+                    }
                 }
             });
             fLogs.sort((a, b) => safeDate(a.timestamp).getTime() - safeDate(b.timestamp).getTime());
@@ -2318,7 +2331,7 @@ window.loadPayslipVault = async function() {
                 <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">⏱️ Attendance Logs (This Cutoff)</h3>
                 
                 <!-- 🔥 THE FIX: Removed max-height here so the table expands beautifully! -->
-                <div style="padding-bottom: 10px; overflow-y: auto;">
+                <div style="padding-bottom: 10px; max-height: none !important; overflow: visible;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
                         <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 5;">
                             <tr><th style="padding: 8px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">In</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Out</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Hrs</th><th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align: center;">Remarks</th></tr>
@@ -2410,7 +2423,7 @@ window.loadPayslipVault = async function() {
                         <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                             <span>👀 View Attendance Logs</span>
                         </summary>
-                        <div style="margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px; padding-bottom: 10px; overflow-y: auto;">
+                        <div style="margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px; padding-bottom: 10px; max-height: none !important; overflow: visible;">
                             <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;">
                                 <thead style="background: #f8fafc; position: sticky; top: 0;">
                                     <tr><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1;">Date</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">In</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Out</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Hrs</th><th style="padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: center;">Remarks</th></tr>
