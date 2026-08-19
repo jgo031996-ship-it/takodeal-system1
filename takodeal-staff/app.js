@@ -2046,7 +2046,8 @@ window.loadPayslipVault = async function() {
         let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
         let ratePerHour = dailyRate / 8;
         let nickname = staffProfile.scheduleNickname || staffName;
-        let isNightEligible = staffProfile.eligibleNightDiff !== false;
+        let isNightEligibleLegacy = staffProfile.eligibleNightDiff !== false;
+        let nightDiffRate = staffProfile.nightDiffRate !== undefined ? parseFloat(staffProfile.nightDiffRate) || 0 : (isNightEligibleLegacy ? 50 : 0);
 
         // 🔥 THE FIX: Smart Name Matcher (Bypasses Jr. / Sr. issues!)
         let baseNameLower = staffName.toLowerCase().trim();
@@ -2159,7 +2160,7 @@ window.loadPayslipVault = async function() {
                     }
 
                     let effectiveDailyRate = dailyRate;
-                    if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) effectiveDailyRate += 50; 
+                    if (nightDiffRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) effectiveDailyRate += nightDiffRate;
                     let currentRatePerHour = effectiveDailyRate / 8;
                     let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
                     let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
@@ -2189,7 +2190,7 @@ window.loadPayslipVault = async function() {
                     else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
 
                     let outHour = timeOut.getHours(); let thisShiftNightBonus = 0;
-                    if (outHour >= 0 && outHour <= 4 && isNightEligible) { thisShiftNightBonus = 50; tBonuses += thisShiftNightBonus; }
+                    if (outHour >= 0 && outHour <= 4 && nightDiffRate > 0) { thisShiftNightBonus = nightDiffRate; tBonuses += thisShiftNightBonus; }
 
                     let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
                     let hType = holidaysObj[logDateStr];
