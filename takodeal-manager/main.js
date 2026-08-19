@@ -881,8 +881,8 @@ window.addNewStaff = function() {
     document.getElementById('empHourlyRate').value = '';
     document.getElementById('empPin').value = '';
     
-    // 🔥 NEW: Set toggle to checked by default for new staff
-    if (document.getElementById('empNightDiff')) document.getElementById('empNightDiff').checked = true;
+    // 🔥 CUSTOM RATE: Set default to 50 for new staff
+    if (document.getElementById('empNightDiffRate')) document.getElementById('empNightDiffRate').value = '50';
     
     // 🎓 STUDENT FIX: Uncheck the student status for new hires
     if (document.getElementById('staffWorkingStudent')) document.getElementById('staffWorkingStudent').checked = false;
@@ -925,8 +925,11 @@ window.openEmployeeProfile = function(docId) {
     document.getElementById('empHourlyRate').value = data.hourlyRate || '';
     document.getElementById('empPin').value = data.pin || '';
     
-    // 🔥 NEW: Load the saved toggle state (defaults to true if not set)
-    if (document.getElementById('empNightDiff')) document.getElementById('empNightDiff').checked = (data.eligibleNightDiff !== false);
+    // 🔥 CUSTOM RATE: Load specific rate or fallback to legacy logic
+    if (document.getElementById('empNightDiffRate')) {
+        let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
+        document.getElementById('empNightDiffRate').value = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
+    }
     
     // 🎓 STUDENT FIX: Load the Working Student status!
     if (document.getElementById('staffWorkingStudent')) document.getElementById('staffWorkingStudent').checked = data.isWorkingStudent || false;
@@ -1086,7 +1089,8 @@ window.saveEmployeeProfile = async function() {
         hourlyRate: rate,
         pin: pin,
         customDeductions: customDeductionsArray,
-        eligibleNightDiff: document.getElementById('empNightDiff') ? document.getElementById('empNightDiff').checked : true,
+        nightDiffRate: document.getElementById('empNightDiffRate') ? (parseFloat(document.getElementById('empNightDiffRate').value) || 0) : 0,
+        eligibleNightDiff: document.getElementById('empNightDiffRate') ? (parseFloat(document.getElementById('empNightDiffRate').value) > 0) : true, // Legacy support
         isWorkingStudent: isWorkingStudent, 
         phone: document.getElementById('empPhone').value.trim(),
         address: document.getElementById('empAddress').value.trim(),
@@ -11900,11 +11904,12 @@ window.generateAutoPayslips = async function() {
                     }
 
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
-                    let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-                    let effectiveDailyRate = dailyRate;
+                    let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+                    let nightDiffRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) || 0 : (isNightEligibleLegacy ? 50 : 0)) : 50;
                     
-                    if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) {
-                        effectiveDailyRate += 50; 
+                    let effectiveDailyRate = dailyRate;
+                    if (nightDiffRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
+                        effectiveDailyRate += nightDiffRate; 
                     }
                     
                     let ratePerHour = effectiveDailyRate / 8; 
@@ -11974,12 +11979,13 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let outHour = timeOut.getHours();
-                let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+                let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+                let nightDiffRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) || 0 : (isNightEligibleLegacy ? 50 : 0)) : 50;
                 let thisShiftNightBonus = 0;
 
                 if (outHour >= 0 && outHour <= 4) {
                     staffData[name].nightShifts += 1;
-                    if (isNightEligible) { thisShiftNightBonus = 50; staffData[name].nightBonusTotal += thisShiftNightBonus; }
+                    if (nightDiffRate > 0) { thisShiftNightBonus = nightDiffRate; staffData[name].nightBonusTotal += thisShiftNightBonus; }
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
