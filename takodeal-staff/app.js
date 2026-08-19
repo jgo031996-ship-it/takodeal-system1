@@ -2013,7 +2013,6 @@ window.loadPayslipVault = async function() {
         return isNaN(d.getTime()) ? new Date() : d;
     };
 
-    // 1. Calculate Current AND Previous Cutoff Dates
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -2040,16 +2039,12 @@ window.loadPayslipVault = async function() {
     document.getElementById('liveCutoffDates').innerText = `Cutoff Period: ${startDateStr} to ${endDateStr}`;
 
     try {
-        // Fetch Baseline Data
         const staffRef = await getDoc(doc(db, "cashiers", staffId));
         let staffProfile = staffRef.exists() ? staffRef.data() : {};
         let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
         let ratePerHour = dailyRate / 8;
         let nickname = staffProfile.scheduleNickname || staffName;
-        let isNightEligibleLegacy = staffProfile.eligibleNightDiff !== false;
-        let nightDiffRate = staffProfile.nightDiffRate !== undefined ? parseFloat(staffProfile.nightDiffRate) || 0 : (isNightEligibleLegacy ? 50 : 0);
-
-        // 🔥 THE FIX: Smart Name Matcher (Bypasses Jr. / Sr. issues!)
+        
         let baseNameLower = staffName.toLowerCase().trim();
         let nickNameLower = nickname.toLowerCase().trim();
         let strippedNameLower = baseNameLower.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
@@ -2074,7 +2069,6 @@ window.loadPayslipVault = async function() {
             return hour + (minute / 60);
         };
 
-        // Fetch ALL logs for the broad time period to prevent Firebase Index crashes
         let fetchStart = new Date(prevStartStr + 'T00:00:00');
         const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", fetchStart), orderBy("timestamp", "asc"));
         const attSnap = await getDocs(attQ);
@@ -2082,10 +2076,11 @@ window.loadPayslipVault = async function() {
         const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", fetchStart));
         const bonusSnap = await getDocs(bonusQ);
 
-        // 🔥 THE SMART CALCULATOR HELPER
-        // We feed it a start and end date, and it calculates EVERYTHING for that exact period!
         const analyzeCutoff = (startT, endT) => {
             let fLogs = [];
+            let bufferEnd = new Date(endT);
+            bufferEnd.setHours(bufferEnd.getHours() + 18);
+
             attSnap.forEach(docSnap => {
                 let log = docSnap.data();
                 if (log.timestamp && isMatch(log.staffName)) {
@@ -2094,12 +2089,8 @@ window.loadPayslipVault = async function() {
                     
                     if (t >= startT) {
                         if (logType === "TIME IN") {
-                            // Time Ins must strictly happen before the cutoff ends
                             if (t <= endT) fLogs.push(log);
                         } else {
-                            // 🔥 THE CUTOFF FIX: Allow Time Outs to cross midnight into the next day (up to 18 hours buffer!)
-                            let bufferEnd = new Date(endT);
-                            bufferEnd.setHours(bufferEnd.getHours() + 18);
                             if (t <= bufferEnd) fLogs.push(log);
                         }
                     }
@@ -2126,7 +2117,6 @@ window.loadPayslipVault = async function() {
                     let logDate = safeDate(log.timestamp); 
                     let lateMinutes = 0; let wasScheduled = false; let expectedStartHour = null;
 
-                    // Ghost punch check
                     if (activeShift) {
                         let missedIn = activeShift.time;
                         sPairs.push({ dateObj: missedIn, in: missedIn, out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>`, lateMins: activeShift.lateMinutes || 0 });
@@ -2159,8 +2149,15 @@ window.loadPayslipVault = async function() {
                         }
                     }
 
+                    // 🔥 THE FIX: Custom Individual Rates Math Injection!
                     let effectiveDailyRate = dailyRate;
-                    if (nightDiffRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) effectiveDailyRate += nightDiffRate;
+                    let isNightEligibleLegacy = staffProfile.eligibleNightDiff !== false;
+                    let customNightRate = staffProfile.nightDiffRate !== undefined ? parseFloat(staffProfile.nightDiffRate) : (isNightEligibleLegacy ? 50 : 0);
+                    
+                    if (customNightRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
+                        effectiveDailyRate += customNightRate; 
+                    }
+                    
                     let currentRatePerHour = effectiveDailyRate / 8;
                     let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
                     let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
@@ -2189,8 +2186,17 @@ window.loadPayslipVault = async function() {
                     else if (hoursWorked >= 13.5) { shiftMultiplier = 2; tBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`; } 
                     else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
 
-                    let outHour = timeOut.getHours(); let thisShiftNightBonus = 0;
-                    if (outHour >= 0 && outHour <= 4 && nightDiffRate > 0) { thisShiftNightBonus = nightDiffRate; tBonuses += thisShiftNightBonus; }
+                    let outHour = timeOut.getHours(); 
+                    
+                    // 🔥 THE FIX: Custom Individual Rates Math Injection!
+                    let isNightEligibleLegacy = staffProfile.eligibleNightDiff !== false;
+                    let customNightRate = staffProfile.nightDiffRate !== undefined ? parseFloat(staffProfile.nightDiffRate) : (isNightEligibleLegacy ? 50 : 0);
+                    let thisShiftNightBonus = 0;
+
+                    if (outHour >= 0 && outHour <= 4 && customNightRate > 0) {
+                        thisShiftNightBonus = customNightRate;
+                        tBonuses += thisShiftNightBonus;
+                    }
 
                     let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
                     let hType = holidaysObj[logDateStr];
@@ -2238,39 +2244,31 @@ window.loadPayslipVault = async function() {
             return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs };
         };
 
-        // Execute Calculator for Current Cutoff
         let currentData = analyzeCutoff(new Date(startDateStr + 'T00:00:00'), new Date(endDateStr + 'T23:59:59'));
-        // Execute Calculator for Previous Cutoff
         let prevData = analyzeCutoff(new Date(prevStartStr + 'T00:00:00'), new Date(prevEndStr + 'T23:59:59'));
 
         let estGross = currentData.shiftsWorked * dailyRate;
+        let prevEstGross = prevData.shiftsWorked * dailyRate;
 
-        // Fetch Universal Deductions & Loans
         const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("status", "==", "Unpaid")));
-        
-        let unpaidVales = 0; let activeDeductions = [];
-        let prevUnpaidVales = 0; // 🔥 THE FIX: A separate memory bank for the pending cutoff!
+        let liveUnpaidVales = 0; let liveActiveDeductions = [];
+        let pendingUnpaidVales = 0; 
         
         let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); 
-        let prevCutoffEndTimestamp = new Date(prevEndStr + 'T23:59:59'); // 🔥 STRICT DATE CUTOFF FOR PENDING TAB
+        let prevCutoffEndTimestamp = new Date(prevEndStr + 'T23:59:59'); 
         
         dedSnap.forEach(d => { 
             let data = d.data();
             if (isMatch(data.staffName)) {
                 let dDate = safeDate(data.dateAdded || data.timestamp);
-                
-                // 1. Calculate for the Live Tab (Current Cutoff)
-                if (dDate <= cutoffEndTimestamp) {
-                    if (data.type === "Cash Advance" || data.type === "Staff Meal") {
-                        unpaidVales += (parseFloat(data.amount) || 0); 
-                        activeDeductions.push(data); 
+                if (data.type === "Cash Advance" || data.type === "Staff Meal") {
+                    let val = parseFloat(data.amount) || 0; 
+                    if (dDate <= cutoffEndTimestamp) {
+                        liveUnpaidVales += val; 
+                        liveActiveDeductions.push(data); 
                     }
-                }
-                
-                // 2. Calculate for the Pending Tab (Previous Cutoff)
-                if (dDate <= prevCutoffEndTimestamp) {
-                    if (data.type === "Cash Advance" || data.type === "Staff Meal") {
-                        prevUnpaidVales += (parseFloat(data.amount) || 0); 
+                    if (dDate <= prevCutoffEndTimestamp) {
+                        pendingUnpaidVales += val; 
                     }
                 }
             }
@@ -2291,14 +2289,11 @@ window.loadPayslipVault = async function() {
             }
         }
 
-        // =====================================
-        // 🔥 BUILD CURRENT CUTOFF (LIVE TAB)
-        // =====================================
-        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - unpaidVales - cutoffLoanDeduction;
+        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction;
 
         document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('liveEstVales').innerText = '-₱' + unpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
 
         let grossRow = document.getElementById('liveEstGross').parentElement;
@@ -2352,8 +2347,6 @@ window.loadPayslipVault = async function() {
         let detailsHtml = `
             <div style="margin-top: 20px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 <h3 style="margin-top: 0; color: #334155; font-size: 14px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">⏱️ Attendance Logs (This Cutoff)</h3>
-                
-                <!-- 🔥 THE FIX: Removed max-height here so the table expands beautifully! -->
                 <div style="padding-bottom: 10px; max-height: none !important; overflow: visible;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
                         <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 5;">
@@ -2377,8 +2370,8 @@ window.loadPayslipVault = async function() {
                 </div>`;
         }
 
-        if (activeDeductions.length > 0) {
-            activeDeductions.forEach(d => {
+        if (liveActiveDeductions.length > 0) {
+            liveActiveDeductions.forEach(d => {
                 let dDate = d.dateAdded || d.timestamp;
                 let dateStr = dDate ? safeDate(dDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
                 detailsHtml += `
@@ -2393,9 +2386,6 @@ window.loadPayslipVault = async function() {
         detailsHtml += `</div></div>`;
         logsContainer.innerHTML = detailsHtml;
 
-        // =====================================
-        // 🔥 BUILD PENDING & PAST PAYSLIPS
-        // =====================================
         const prSnap = await getDocs(collection(db, "payroll_records"));
 
         let pendingHtml = ''; let pastHtml = ''; let pendingCount = 0;
@@ -2408,14 +2398,13 @@ window.loadPayslipVault = async function() {
         });
         allRecords.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
 
-        // 🔥 THE FIX: Prevent duplicate previews!
         let hasPrevCutoffRecord = allRecords.some(r => r.startDate === prevStartStr || (r.frozenData && r.frozenData.start === prevStartStr));
         
         if (!hasPrevCutoffRecord) {
             pendingCount++;
             
             let prevEstGross = prevData.shiftsWorked * dailyRate;
-            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - prevUnpaidVales - cutoffLoanDeduction;
+            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction;
 
             let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
 
@@ -2437,11 +2426,10 @@ window.loadPayslipVault = async function() {
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Estimated Basic Pay:</span> <strong style="color:#16a34a;">₱${prevEstGross.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Overtime / Bonuses:</span> <strong style="color:#0ea5e9;">+₱${prevData.totalBonuses.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Late Penalties:</span> <strong style="color:#ef4444;">-₱${prevData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Unpaid Vales/Meals:</span> <strong style="color:#ef4444;">-₱${prevUnpaidVales.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Unpaid Vales/Meals:</span> <strong style="color:#ef4444;">-₱${pendingUnpaidVales.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         ${prevLoanStr}
                     </div>
                     
-                    <!-- 🔥 THE FIX: Removed max-height here so the table can fully expand! -->
                     <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
                         <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                             <span>👀 View Attendance Logs</span>
@@ -2462,8 +2450,6 @@ window.loadPayslipVault = async function() {
         allRecords.forEach(d => {
             let pd = d.frozenData || {};
             pd.processedAt = d.processedAt; 
-            
-            // 🔥 THE FIX: Grab the Net Pay and Dates from the outer folder so the modal can read them!
             pd.finalNetPay = d.finalNetPay; 
             pd.startDate = d.startDate;
             pd.endDate = d.endDate;
@@ -2502,7 +2488,6 @@ window.loadPayslipVault = async function() {
         });
 
         document.getElementById('payslipPendingList').innerHTML = pendingHtml || '<div style="text-align:center; padding: 40px; color: #16a34a; font-weight: bold;">🎉 All payslips have been acknowledged!</div>';
-        
         let histList = document.getElementById('payslipHistoryList');
         if (histList) histList.innerHTML = pastHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
 
@@ -2515,7 +2500,6 @@ window.loadPayslipVault = async function() {
     } catch (e) {
         console.error("Payslip Fetch Error:", e);
         document.getElementById('liveEstNetPay').innerText = "Error";
-        document.getElementById('payslipPendingList').innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px; font-weight: bold;">Error loading data. Check internet connection.</div>`;
         let parentEl = document.getElementById('liveEstNetPay').parentElement;
         if(parentEl && !parentEl.querySelector('.error-text')) {
             parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
