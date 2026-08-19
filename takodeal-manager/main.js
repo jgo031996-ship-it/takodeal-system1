@@ -881,7 +881,7 @@ window.addNewStaff = function() {
     document.getElementById('empHourlyRate').value = '';
     document.getElementById('empPin').value = '';
     
-    // 🔥 CUSTOM RATE: Set default to 50 for new staff
+    // 🔥 THE FIX: Set the new custom rate box to a default of 50
     if (document.getElementById('empNightDiffRate')) document.getElementById('empNightDiffRate').value = '50';
     
     // 🎓 STUDENT FIX: Uncheck the student status for new hires
@@ -898,7 +898,7 @@ window.addNewStaff = function() {
     document.getElementById('empPagibig').value = '';
     document.getElementById('empScheduleName').value = '';
 
-    // 🔥 NEW: Reset Profile Picture and Links for a blank form
+    // Reset Profile Picture and Links for a blank form
     let profilePicEl = document.getElementById('masterProfilePic');
     if (profilePicEl) profilePicEl.src = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
     
@@ -917,74 +917,56 @@ window.openEmployeeProfile = function(docId) {
     let data = window.globalStaffData[docId];
     if (!data) return;
 
-    document.getElementById('empProfileId').value = docId;
-    document.getElementById('empFullName').value = data.cashierName || '';
-    document.getElementById('empBranchAssign').value = data.branch || 'Cabantian';
-    document.getElementById('empRole').value = data.role || 'Crew';
-    document.getElementById('empDateHired').value = data.dateHired || '';
-    document.getElementById('empHourlyRate').value = data.hourlyRate || '';
-    document.getElementById('empPin').value = data.pin || '';
+    // Force update ALL duplicate HTML elements
+    const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
+    const setAllHtml = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.innerHTML = val);
+
+    setAllVals('empProfileId', docId);
+    setAllVals('empFullName', data.cashierName || '');
+    setAllVals('empBranchAssign', data.branch || 'Cabantian');
+    setAllVals('empRole', data.role || 'Crew');
+    setAllVals('empDateHired', data.dateHired || '');
+    setAllVals('empHourlyRate', data.hourlyRate || '');
+    setAllVals('empPin', data.pin || '');
     
-    // 🔥 CUSTOM RATE: Load specific rate or fallback to legacy logic
-    if (document.getElementById('empNightDiffRate')) {
+    // 🔥 THE FIX: Load their individual custom rate, with a legacy fallback!
+    document.querySelectorAll('[id="empNightDiffRate"]').forEach(el => {
         let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
-        document.getElementById('empNightDiffRate').value = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
-    }
+        el.value = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
+    });
     
-    // 🎓 STUDENT FIX: Load the Working Student status!
-    if (document.getElementById('staffWorkingStudent')) document.getElementById('staffWorkingStudent').checked = data.isWorkingStudent || false;
+    document.querySelectorAll('[id="staffWorkingStudent"]').forEach(el => el.checked = data.isWorkingStudent || false);
+    setAllVals('empPhone', data.phone || '');
+    setAllVals('empAddress', data.address || '');
+    setAllVals('empGcashName', data.gcashName || '');
+    setAllVals('empGcashNum', data.gcashNum || '');
+    setAllVals('empGotymeName', data.gotymeName || '');
+    setAllVals('empGotymeNum', data.gotymeNum || '');
+    setAllVals('empSSS', data.sss || '');
+    setAllVals('empPhilhealth', data.philhealth || '');
+    setAllVals('empPagibig', data.pagibig || '');
 
-    document.getElementById('empPhone').value = data.phone || '';
-    document.getElementById('empAddress').value = data.address || '';
-    document.getElementById('empGcashName').value = data.gcashName || '';
-    document.getElementById('empGcashNum').value = data.gcashNum || '';
-    document.getElementById('empGotymeName').value = data.gotymeName || '';
-    document.getElementById('empGotymeNum').value = data.gotymeNum || '';
-    document.getElementById('empSSS').value = data.sss || '';
-    document.getElementById('empPhilhealth').value = data.philhealth || '';
-    document.getElementById('empPagibig').value = data.pagibig || '';
-    
-    // Load Dynamic Deductions
-    document.getElementById('customDeductionsContainer').innerHTML = ''; 
+    setAllHtml('customDeductionsContainer', '');
     if (data.customDeductions && data.customDeductions.length > 0) {
-        data.customDeductions.forEach(d => window.addCustomDeductionRow(d.name, d.amount));
-    }
-    
-    document.getElementById('empSSSAmount').value = data.sssAmount || '';
-    document.getElementById('empPhilAmount').value = data.philHealthAmount || '';
-    document.getElementById('empPagibigAmount').value = data.pagibigAmount || '';
-    document.getElementById('empEmergencyName').value = data.emergencyName || '';
-    document.getElementById('empEmergencyPhone').value = data.emergencyPhone || '';
-    document.getElementById('empEmail').value = data.email || '';
-    document.getElementById('empScheduleName').value = data.scheduleNickname || data.scheduleName || '';
-
-    // 🔥 NEW: LOAD PROFILE PICTURE AND GOV ID LINKS 🔥
-    let profilePicEl = document.getElementById('masterProfilePic');
-    if (profilePicEl) {
-        if (data.profilePicUrl) {
-            profilePicEl.src = data.profilePicUrl;
-        } else {
-            profilePicEl.src = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E"; // Default blank avatar
-        }
+        data.customDeductions.forEach(d => {
+            if(typeof window.addCustomDeductionRow === 'function') window.addCustomDeductionRow(d.name, d.amount);
+        });
     }
 
-    const setupMasterLink = (linkId, url) => {
-        let el = document.getElementById(linkId);
-        if (el) {
-            if (url) {
-                el.href = url;
-                el.style.display = 'inline-block';
-            } else {
-                el.style.display = 'none'; // Hide the button if they haven't uploaded an ID
-            }
-        }
-    };
-    
-    setupMasterLink('masterSssLink', data.sssIdUrl);
-    setupMasterLink('masterPhilLink', data.philhealthIdUrl);
-    setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
+    setAllVals('empSSSAmount', data.sssAmount || '');
+    setAllVals('empPhilAmount', data.philHealthAmount || '');
+    setAllVals('empPagibigAmount', data.pagibigAmount || '');
+    setAllVals('empEmergencyName', data.emergencyName || '');
+    setAllVals('empEmergencyPhone', data.emergencyPhone || '');
+    setAllVals('empEmail', data.email || '');
+    setAllVals('empScheduleName', data.scheduleNickname || data.scheduleName || '');
 
-    document.getElementById('employeeProfileModal').style.display = 'flex';
+    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    document.querySelectorAll('[id="masterProfilePic"]').forEach(el => {
+        el.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
+    });
+
+    document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
 
     // 🔥 HR ENGINE: Render the Document Vault Buttons
     let vaultContainer = document.getElementById('contractVaultContainer');
@@ -1008,42 +990,45 @@ window.openEmployeeProfile = function(docId) {
             vaultContainer.style.display = 'none';
         }
     }
-    
-    // Fetch History
-    const tbody = document.getElementById('empProfileHistoryBody');
-    if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
-        getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
-        .then(snap => {
-            let histHtml = '';
-            snap.forEach(dDoc => {
-                let d = dDoc.data();
-                let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
-                let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
-                
-                // 🔥 HERE IS THE NEW ACTION HTML WITH THE DELETE BUTTON
-                let actionHtml = d.status === 'Unpaid' 
-                    ? `<div style="display: flex; gap: 5px; justify-content: center;">
-                         <button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>
-                         <button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>
-                       </div>` 
-                    : `<span style="font-size:11px; color:#94a3b8; font-weight:bold;">Cleared</span>`;
 
-                histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <td style="padding:10px 8px; color: #64748b;">${dateStr}</td>
-                    <td style="padding:10px 8px; font-weight: bold; color: #334155;">${d.type}</td>
-                    <td style="padding:10px 8px; font-weight:bold; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                    <td style="padding:10px 8px; color:${color}; font-weight:bold;">
-                        ${d.status}
-                    </td>
-                    <td style="padding:10px 8px; text-align: center;">
-                        ${actionHtml}
-                    </td>
-                </tr>`;
-            });
+    document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
+    });
+
+    getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
+    .then(snap => {
+        let histHtml = '';
+        snap.forEach(dDoc => {
+            let d = dDoc.data();
+            let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
+            let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
+
+            let actionHtml = d.status === 'Unpaid' 
+                ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>`
+                : `<div style="background:#f0fdf4; color:#15803d; border: 1px solid #bbf7d0; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; width: 85px; text-align: center; box-sizing: border-box;">✔️ Paid</div>`;
+                
+            actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>`;
+
+            histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
+                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${d.type}</td>
+                <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
+                <td style="padding:12px 8px;">
+                    <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">${actionHtml}</div>
+                </td>
+            </tr>`;
+        });
+
+        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
             tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
-        }).catch(e => { console.error(e); tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>'; });
-    }
+        });
+    }).catch(e => {
+        console.error(e);
+        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
+        });
+    });
 };
 
 window.saveEmployeeProfile = async function() {
@@ -1068,7 +1053,6 @@ window.saveEmployeeProfile = async function() {
         if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
     });
 
-    // 🔥 HR ENGINE: Track Promotions and Role History Automatically
     let oldData = docId ? window.globalStaffData[docId] : null;
     let currentHistory = (oldData && oldData.roleHistory) ? oldData.roleHistory : [];
     
@@ -1084,13 +1068,16 @@ window.saveEmployeeProfile = async function() {
         cashierName: name,
         branch: branch,
         role: newRole,
-        roleHistory: currentHistory, // Save the history array
+        roleHistory: currentHistory,
         dateHired: document.getElementById('empDateHired').value,
         hourlyRate: rate,
         pin: pin,
         customDeductions: customDeductionsArray,
+        
+        // 🔥 THE FIX: Capture the individual rate perfectly, while keeping legacy support
         nightDiffRate: document.getElementById('empNightDiffRate') ? (parseFloat(document.getElementById('empNightDiffRate').value) || 0) : 0,
-        eligibleNightDiff: document.getElementById('empNightDiffRate') ? (parseFloat(document.getElementById('empNightDiffRate').value) > 0) : true, // Legacy support
+        eligibleNightDiff: document.getElementById('empNightDiffRate') ? (parseFloat(document.getElementById('empNightDiffRate').value) > 0) : true, 
+        
         isWorkingStudent: isWorkingStudent, 
         phone: document.getElementById('empPhone').value.trim(),
         address: document.getElementById('empAddress').value.trim(),
@@ -1110,7 +1097,6 @@ window.saveEmployeeProfile = async function() {
         scheduleNickname: document.getElementById('empScheduleName').value.trim(),
     };
 
-    // 🔥 HR ENGINE: Flag brand new staff for their Initial Contract
     if (!docId) {
         payload.contractStatus = 'Pending Initial Contract';
         payload.signedContracts = {};
@@ -11773,7 +11759,6 @@ window.globalPayrollCache = {};
 // ==========================================
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
-
 window.generateAutoPayslips = async function() {
     let startInput = document.getElementById('payrollStart').value;
     let endInput = document.getElementById('payrollEnd').value;
@@ -11813,17 +11798,14 @@ window.generateAutoPayslips = async function() {
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
         let staffDict = {}; 
-        let nameMap = {}; // 🔥 NEW: Smart Name Matcher Dictionary
+        let nameMap = {}; 
         
         staffSnap.forEach(d => { 
             let data = d.data();
             let masterName = data.cashierName;
             staffDict[masterName] = data; 
             
-            // Map lowercased
             nameMap[masterName.toLowerCase()] = masterName;
-            
-            // Map stripped (removes Jr, Sr, etc. to catch edits mid-shift)
             let stripped = masterName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim().toLowerCase();
             nameMap[stripped] = masterName;
         });
@@ -11846,7 +11828,6 @@ window.generateAutoPayslips = async function() {
             let rawName = log.staffName;
             if (!rawName) return;
 
-            // 🔥 SMART NAME MATCHER: Fixes the "Nelson Mabua" vs "Nelson Mabua, Jr." mismatch!
             let lowerName = rawName.toLowerCase();
             let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
             let name = nameMap[lowerName] || nameMap[strippedName] || rawName;
@@ -11903,13 +11884,14 @@ window.generateAutoPayslips = async function() {
                         }
                     }
 
+                    // 🔥 THE FIX: Custom Individual Rates & Math Injection!
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
                     let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-                    let nightDiffRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) || 0 : (isNightEligibleLegacy ? 50 : 0)) : 50;
+                    let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
                     
                     let effectiveDailyRate = dailyRate;
-                    if (nightDiffRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
-                        effectiveDailyRate += nightDiffRate; 
+                    if (customNightRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
+                        effectiveDailyRate += customNightRate; 
                     }
                     
                     let ratePerHour = effectiveDailyRate / 8; 
@@ -11979,13 +11961,15 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let outHour = timeOut.getHours();
+                
+                // 🔥 THE FIX: Custom Individual Rates Math Injection!
                 let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-                let nightDiffRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) || 0 : (isNightEligibleLegacy ? 50 : 0)) : 50;
+                let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
                 let thisShiftNightBonus = 0;
 
                 if (outHour >= 0 && outHour <= 4) {
                     staffData[name].nightShifts += 1;
-                    if (nightDiffRate > 0) { thisShiftNightBonus = nightDiffRate; staffData[name].nightBonusTotal += thisShiftNightBonus; }
+                    if (customNightRate > 0) { thisShiftNightBonus = customNightRate; staffData[name].nightBonusTotal += thisShiftNightBonus; }
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
@@ -12021,7 +12005,6 @@ window.generateAutoPayslips = async function() {
             }
         });
 
-        // 🔥 THE FIX: Flush any hanging shifts that NEVER got a Time Out so they display correctly!
         for (let pendingName in activeShifts) {
             let missedIn = activeShifts[pendingName].time;
             if (staffData[pendingName]) {
@@ -12060,17 +12043,14 @@ window.generateAutoPayslips = async function() {
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             let dateStr = bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
             
-            // 🔥 THE OT MERGE FIX: Try to append the OT to the existing day!
             let existingLog = staffData[name].logs.find(l => l.date === dateStr && l.in !== "---");
             
             if (existingLog) {
-                // If they have a Complete shift, beautifully change it to indicate OT
                 if (existingLog.remark.includes('Complete')) {
                     existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
                 }
                 existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
             } else {
-                // If they literally didn't work that day but still got an OT bonus (rare fallback)
                 staffData[name].logs.push({ 
                     date: dateStr, 
                     in: "---", 
@@ -12090,7 +12070,6 @@ window.generateAutoPayslips = async function() {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
             for (let name of allStaffNames) {
-                // 🔥 FIX: Completely ignore "Team" penalty accounts from the payroll generator!
                 if (name.toLowerCase().startsWith("team ")) continue;
 
                 let d; let isPaid = false;
