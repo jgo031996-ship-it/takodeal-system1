@@ -11808,7 +11808,22 @@ window.generateAutoPayslips = async function() {
 
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
-        let staffDict = {}; staffSnap.forEach(d => { staffDict[d.data().cashierName] = d.data(); });
+        let staffDict = {}; 
+        let nameMap = {}; // 🔥 NEW: Smart Name Matcher Dictionary
+        
+        staffSnap.forEach(d => { 
+            let data = d.data();
+            let masterName = data.cashierName;
+            staffDict[masterName] = data; 
+            
+            // Map lowercased
+            nameMap[masterName.toLowerCase()] = masterName;
+            
+            // Map stripped (removes Jr, Sr, etc. to catch edits mid-shift)
+            let stripped = masterName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim().toLowerCase();
+            nameMap[stripped] = masterName;
+        });
+        
         let ledgerDict = {}; ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
 
         const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", trueStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc"));
@@ -11824,7 +11839,13 @@ window.generateAutoPayslips = async function() {
 
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
-            let name = log.staffName;
+            let rawName = log.staffName;
+            if (!rawName) return;
+
+            // 🔥 SMART NAME MATCHER: Fixes the "Nelson Mabua" vs "Nelson Mabua, Jr." mismatch!
+            let lowerName = rawName.toLowerCase();
+            let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
+            let name = nameMap[lowerName] || nameMap[strippedName] || rawName;
             
             if (!staffData[name]) {
                 staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
@@ -11842,7 +11863,7 @@ window.generateAutoPayslips = async function() {
                     let logDate = log.timestamp.toDate();
                     let lateMinutes = 0;
                     let wasScheduled = false; 
-                    let expectedStartHour = null; // 🔥 THE FIX: Moved outside so the whole math engine can see it!
+                    let expectedStartHour = null; 
                     
                     if (scheduleData && scheduleData.currentSchedule) {
                         let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
@@ -11856,7 +11877,6 @@ window.generateAutoPayslips = async function() {
                                     wasScheduled = true; 
                                     let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
                                     if (shiftConfig) {
-                                        // Removed the 'let' here so it uses our global variable above!
                                         if (shiftConfig.startTime) {
                                             let parts = shiftConfig.startTime.split(':');
                                             expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
@@ -11883,7 +11903,6 @@ window.generateAutoPayslips = async function() {
                     let isNightEligible = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
                     let effectiveDailyRate = dailyRate;
                     
-                    // 🔥 THE MATH FIX: If the shift starts at 2 PM (14.0) or later, calculate penalty against Base + ₱50!
                     if (isNightEligible && expectedStartHour !== null && expectedStartHour >= 14) {
                         effectiveDailyRate += 50; 
                     }
@@ -11972,7 +11991,6 @@ window.generateAutoPayslips = async function() {
                 if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
                 else if (hType === 'Special') { hBonus = baseForHoliday * 0.10; remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Hol: +₱${hBonus.toFixed(2)})</span>`; }
 
-                // 🔥 THE FIX: Push the late minutes into the array so the modal can read it!
                 staffData[name].logs.push({ 
                     date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), 
                     in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
@@ -11996,6 +12014,21 @@ window.generateAutoPayslips = async function() {
                 });
             }
         });
+
+        // 🔥 THE FIX: Flush any hanging shifts that NEVER got a Time Out so they display correctly!
+        for (let pendingName in activeShifts) {
+            let missedIn = activeShifts[pendingName].time;
+            if (staffData[pendingName]) {
+                 staffData[pendingName].logs.push({ 
+                     date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), 
+                     in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
+                     out: "MISSED", 
+                     hrs: "0.00", 
+                     remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>`, 
+                     lateMins: activeShifts[pendingName].lateMinutes || 0 
+                 });
+            }
+        }
 
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data(); let name = deduct.staffName;
