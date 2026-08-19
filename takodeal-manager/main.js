@@ -30,9 +30,9 @@ const storage = getStorage(app);
 // 🔒 FORCE LOCAL PERSISTENCE FOR SAFARI / IPHONE
 setPersistence(auth, browserLocalPersistence).catch(err => console.error("Persistence error:", err));
 
-// 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
+// 🔥 ULTRA MAX SPEED FIX: Removed the Multi-Tab Manager to prevent Desktop Chrome deadlocks!
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+  localCache: persistentLocalCache() 
 });
 
 window.storage = storage;
@@ -4643,16 +4643,19 @@ window.showInventoryActions = function(id, name, stock, uom, baseCost, branch) {
     });
 };
 
+window.isFetchingInventory = false;
 window.loadInventoryData = async function() {
+    if (window.isFetchingInventory) return; // 🛡️ Safety Lock: Prevents overlapping queries!
+    window.isFetchingInventory = true;
+
     let branchFilter = document.getElementById('invBranchFilter').value;
     let catFilter = document.getElementById('invCategoryFilter') ? document.getElementById('invCategoryFilter').value : "All";
     let search = document.getElementById('liveInvSearch').value.toLowerCase();
     
     let tbody = document.getElementById('inventoryTableBody');
-    if (!tbody) return;
+    if (!tbody) { window.isFetchingInventory = false; return; }
     
-    // Updated colspan to 9 for the new Total Value column
-    tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 20px;">Loading inventory...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 25px; color: #0ea5e9; font-weight: bold;">⚡ Fast-scanning inventory...</td></tr>';
     
     try {
         let q = branchFilter === "All" ? query(collection(db, "inventory")) : query(collection(db, "inventory"), where("branch", "==", branchFilter));
@@ -4682,7 +4685,6 @@ window.loadInventoryData = async function() {
                  baseCost = d.purchaseCost / d.conversionRate;
             }
 
-            // 🔥 NEW: Calculate the specific row's total value (only if stock is positive)
             let rowTotalValue = 0;
             if (stock > 0 && !isNaN(baseCost)) {
                 rowTotalValue = baseCost * stock;
@@ -4729,7 +4731,6 @@ window.loadInventoryData = async function() {
             `;
         });
 
-        // Updated colspan to 9
         tbody.innerHTML = html || '<tr><td colspan="9" class="text-center" style="padding: 30px; color: #64748b; font-weight: bold;">No items match your filters.</td></tr>';
         
         let tItemsEl = document.getElementById('invTotalItems');
@@ -4745,8 +4746,9 @@ window.loadInventoryData = async function() {
 
     } catch (e) {
         console.error("Inventory Load Error: ", e);
-        // Updated colspan to 9
         tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="color:red; padding:20px;">Error loading inventory. Check connection.</td></tr>';
+    } finally {
+        window.isFetchingInventory = false; // 🔓 Unlock!
     }
 };
 
@@ -4768,10 +4770,16 @@ window.toggleInvDropdown = function(e) {
     }
 };
 
+// ========================================================
+// ⚡ LIGHTNING NAVIGATION: NO MORE DOUBLE QUERIES!
+// ========================================================
 window.switchInvTab = function(tab) {
     window.activeInvTab = tab; 
     
-    window.switchView('inventory');
+    // 🔥 THE FIX: Bypasses the heavy switchView function so data doesn't load twice!
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    let targetView = document.getElementById('view-inventory');
+    if (targetView) targetView.classList.add('active');
     
     document.querySelectorAll('.nav-subitem').forEach(el => el.classList.remove('active'));
     let activeSub = document.getElementById('subnav-' + tab);
@@ -4786,7 +4794,7 @@ window.switchInvTab = function(tab) {
     let alertsSec = document.getElementById('invSectionAlerts'); 
     let aiBriefSec = document.getElementById('invSectionAIBrief');
     let yieldSec = document.getElementById('invSectionYield'); 
-    let invoicesSec = document.getElementById('invSectionInvoices'); // 🔥 NEW
+    let invoicesSec = document.getElementById('invSectionInvoices');
 
     [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec, aiBriefSec, yieldSec, invoicesSec].forEach(s => { if(s) s.style.display = 'none'; });
 
@@ -4799,8 +4807,9 @@ window.switchInvTab = function(tab) {
     else if (tab === 'Alerts') { if(alertsSec) alertsSec.style.display = 'block'; }
     else if (tab === 'AIBrief') { if(aiBriefSec) aiBriefSec.style.display = 'block'; }
     else if (tab === 'Yield') { if(yieldSec) yieldSec.style.display = 'block'; }
-    else if (tab === 'Invoices') { if(invoicesSec) invoicesSec.style.display = 'block'; } // 🔥 NEW
+    else if (tab === 'Invoices') { if(invoicesSec) invoicesSec.style.display = 'block'; } 
 
+    // Safely trigger the singular data load
     window.refreshActiveInventoryTab();
 };
 
@@ -7859,9 +7868,14 @@ window.smartImportCSV = function (event) {
 // ========================================================
 // 💻 ULTRA-FAST DEVICE FLEET MANAGER ENGINE
 // ========================================================
+window.isFetchingDevices = false;
 window.loadDeviceFleet = async function () {
+  if (window.isFetchingDevices) return;
+  window.isFetchingDevices = true;
+
   const tbody = document.getElementById('deviceFleetBody');
-  if (!tbody) return;
+  if (!tbody) { window.isFetchingDevices = false; return; }
+  
   tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 25px; color: #0ea5e9; font-weight: bold;">⚡ Fast-scanning registered fleet...</td></tr>';
 
   try {
@@ -7918,6 +7932,8 @@ window.loadDeviceFleet = async function () {
   } catch (error) {
     console.error("Device Fleet Error:", error);
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 25px;">Error loading fleet. Check console.</td></tr>';
+  } finally {
+      window.isFetchingDevices = false; // 🔓 Unlock!
   }
 };
 
