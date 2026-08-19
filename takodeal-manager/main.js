@@ -20097,14 +20097,51 @@ window.reviewStockRequest = async function(docId) {
 };
 
 // ========================================================
-// 👥 LIVE STAFF ON DUTY ENGINE (REAL-TIME UPGRADE WITH LATE DETECTOR)
+// 🚨 AUTO-SANCTION ENGINE: GHOST PUNCH DETECTOR
+// ========================================================
+window.triggerAutoSanctionForMissedTimeOut = async function(staffName, timeInDate, branch) {
+    let dateStr = timeInDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+    let details = `Failed to Time Out for the shift starting on ${dateStr}. Please explain why you left the system clocked in without timing out.`;
+    
+    try {
+        // Check if we already issued a sanction for this exact ghost punch so we don't spam them!
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("details", "==", details));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            // Issue the Sanction!
+            await addDoc(collection(db, "hr_sanctions"), {
+                staffName: staffName,
+                branch: branch || 'Unknown',
+                type: 'Failure to Time Out', 
+                severity: '1st Offense - Warning', // Basic default
+                details: details,
+                status: 'Pending Reply',
+                issuedBy: 'System Auto-Audit',
+                timestamp: serverTimestamp()
+            });
+            
+            // Send an alert to your Manager Security Feed!
+            await addDoc(collection(db, "manager_alerts"), {
+                type: "MISSED_TIMEOUT",
+                branch: branch || 'Unknown',
+                message: `🚨 SANCTION AUTO-ISSUED: ${staffName} forgot to Time Out on ${dateStr}. POS App is locked until they submit a Notice to Explain.`,
+                timestamp: serverTimestamp(),
+                isRead: false
+            });
+            console.log(`Auto-issued missed timeout sanction for ${staffName}`);
+        }
+    } catch(e) { console.error("Auto Sanction Error:", e); }
+};
+
+// ========================================================
+// 👥 LIVE STAFF ON DUTY ENGINE (WITH GHOST DETECTOR)
 // ========================================================
 window.fetchLiveStaffOnDuty = async function() {
     let container = document.getElementById('liveStaffGrid');
     if (!container) return;
     
     try {
-        // 1. Fetch Global Schedule & Staff Profiles for Late Detection
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
         let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
 
@@ -20129,95 +20166,109 @@ window.fetchLiveStaffOnDuty = async function() {
             return hour + (minute / 60);
         };
 
-        // 2. Get the very beginning of today
-        let startOfDay = new Date();
-        startOfDay.setHours(0,0,0,0);
+        // 🔥 THE FIX: Look back 3 days to catch ghost punches from yesterday!
+        let lookbackDate = new Date();
+        lookbackDate.setDate(lookbackDate.getDate() - 3);
+        lookbackDate.setHours(0,0,0,0);
         
-        // 3. TRUE REAL-TIME LISTENER (Bypasses offline cache freezing)
-        const q = query(collection(db, "attendance_logs"), where("timestamp", ">=", startOfDay));
+        const q = query(collection(db, "attendance_logs"), where("timestamp", ">=", lookbackDate));
         
         onSnapshot(q, (snap) => {
-            let latestPunches = {};
+            let logsArray = [];
+            snap.forEach(docSnap => logsArray.push({ id: docSnap.id, ...docSnap.data() }));
             
-            // Find the LATEST punch for every single staff member today
-            snap.forEach(docSnap => {
-                let data = docSnap.data();
+            // Sort strictly chronological so we can see if they Timed In twice in a row
+            logsArray.sort((a,b) => {
+                let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp)) : new Date(0);
+                let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp)) : new Date(0);
+                return tA - tB;
+            });
+
+            let staffState = {};
+            
+            logsArray.forEach(data => {
                 let staff = data.staffName;
                 let punchTime = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
                 
-                if (!latestPunches[staff] || punchTime > latestPunches[staff].time) {
-                    latestPunches[staff] = {
-                        branch: data.branch,
-                        type: data.type, 
-                        time: punchTime,
-                        lateExempted: data.lateExempted || false
-                    };
+                if (data.type === "TIME IN") {
+                    // 🚨 GHOST DETECTOR: If they were ALREADY timed in, the previous one was a missed time out!
+                    if (staffState[staff] && staffState[staff].status === "IN") {
+                        let isStudent = staffProfiles[staff] ? staffProfiles[staff].isWorkingStudent : false;
+                        if (!isStudent && !data.isManual) {
+                            window.triggerAutoSanctionForMissedTimeOut(staff, staffState[staff].time, staffState[staff].branch);
+                        }
+                    }
+                    staffState[staff] = { status: "IN", time: punchTime, branch: data.branch, lateExempted: data.lateExempted };
+                } else if (data.type.includes("TIME OUT")) {
+                    staffState[staff] = { status: "OUT", time: punchTime, branch: data.branch };
                 }
             });
-            
-            // Filter: Keep ONLY staff whose latest punch was "TIME IN"
+
             let activeStaffByBranch = {};
-            for (let staff in latestPunches) {
-                let punch = latestPunches[staff];
-                
-                // 🔥 THE FIX: Strict Franchisee Firewall! Only process branches they own!
-                if (!window.isBranchAllowed(punch.branch)) continue;
+            let now = new Date();
 
-                if (punch.type === "TIME IN") {
-                    if (!activeStaffByBranch[punch.branch]) {
-                        activeStaffByBranch[punch.branch] = [];
-                    }
+            for (let staff in staffState) {
+                let state = staffState[staff];
+                if (!window.isBranchAllowed(state.branch)) continue; 
 
-                    // 🚨 THE LATE DETECTOR ALGORITHM 🚨
-                    let lateMinutes = 0;
-                    if (scheduleData && scheduleData.currentSchedule) {
-                        let logDate = punch.time;
-                        let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
+                if (state.status === "IN") {
+                    let hrsSinceIn = (now - state.time) / (1000 * 60 * 60);
+                    let isStudent = staffProfiles[staff] ? staffProfiles[staff].isWorkingStudent : false;
+                    
+                    // 🚨 GHOST DETECTOR 2: If they've been timed in for >16 hours right now
+                    if (hrsSinceIn > 16 && !isStudent) {
+                        window.triggerAutoSanctionForMissedTimeOut(staff, state.time, state.branch);
+                    } else {
+                        // Truly active! Calculate late minutes.
+                        if (!activeStaffByBranch[state.branch]) activeStaffByBranch[state.branch] = [];
+                        
+                        let lateMinutes = 0;
+                        if (scheduleData && scheduleData.currentSchedule) {
+                            let lDay = state.time.getDate(); let lMonth = state.time.getMonth() + 1; let lYear = state.time.getFullYear();
 
-                        if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-                            let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][punch.branch] : null;
+                            if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
+                                let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][state.branch] : null;
 
-                            if (branchSched && branchSched.scheduled) {
-                                let nickname = staffProfiles[staff] ? staffProfiles[staff].nickname : staff;
-                                let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
+                                if (branchSched && branchSched.scheduled) {
+                                    let nickname = staffProfiles[staff] ? staffProfiles[staff].nickname : staff;
+                                    let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
 
-                                if (assignedShiftId && scheduleData.branchConfig[punch.branch]) {
-                                    let shiftConfig = scheduleData.branchConfig[punch.branch].find(s => s.id === assignedShiftId);
-                                    if (shiftConfig) {
-                                        let expectedStartHour = null;
-                                        if (shiftConfig.startTime) {
-                                            let parts = shiftConfig.startTime.split(':');
-                                            expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                                        } else {
-                                            let match = shiftConfig.name.match(/\((.*?)-/);
-                                            if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
-                                        }
+                                    if (assignedShiftId && scheduleData.branchConfig[state.branch]) {
+                                        let shiftConfig = scheduleData.branchConfig[state.branch].find(s => s.id === assignedShiftId);
+                                        if (shiftConfig) {
+                                            let expectedStartHour = null;
+                                            if (shiftConfig.startTime) {
+                                                let parts = shiftConfig.startTime.split(':');
+                                                expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                            } else {
+                                                let match = shiftConfig.name.match(/\((.*?)-/);
+                                                if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                            }
 
-                                        if (expectedStartHour !== null) {
-                                            let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                            let diffHours = actualHour - expectedStartHour;
-                                            
-                                            // 3 minutes grace period
-                                            if (diffHours > 0.05 && diffHours < 4) {
-                                                lateMinutes = Math.floor(diffHours * 60);
+                                            if (expectedStartHour !== null) {
+                                                let actualHour = state.time.getHours() + (state.time.getMinutes() / 60);
+                                                let diffHours = actualHour - expectedStartHour;
+                                                if (diffHours > 0.05 && diffHours < 4) {
+                                                    lateMinutes = Math.floor(diffHours * 60);
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    activeStaffByBranch[punch.branch].push({
-                        name: staff,
-                        timeIn: punch.time,
-                        lateMinutes: lateMinutes,
-                        lateExempted: punch.lateExempted
-                    });
+                        activeStaffByBranch[state.branch].push({
+                            name: staff,
+                            timeIn: state.time,
+                            lateMinutes: lateMinutes,
+                            lateExempted: state.lateExempted
+                        });
+                    }
                 }
             }
             
-            // Render the UI Boxes
+            // Render UI
             let html = '';
             let branches = Object.keys(activeStaffByBranch).sort();
             
@@ -20226,12 +20277,10 @@ window.fetchLiveStaffOnDuty = async function() {
             } else {
                 branches.forEach(branch => {
                     let staffListHtml = '';
-                    
                     activeStaffByBranch[branch].sort((a,b) => a.timeIn - b.timeIn);
                     
                     activeStaffByBranch[branch].forEach(s => {
                         let timeStr = s.timeIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                        
                         let lateBadge = '';
                         if (s.lateMinutes > 0) {
                             if (s.lateExempted) {
@@ -20268,14 +20317,8 @@ window.fetchLiveStaffOnDuty = async function() {
                     `;
                 });
             }
-            
             container.innerHTML = html;
-            
-        }, (error) => {
-            console.error("Live Staff Listener Error:", error);
-            container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #ef4444; background: #fef2f2; padding: 20px; border-radius: 8px; border: 1px dashed #fca5a5;">Failed to load live staff data. Check console.</div>';
         });
-        
     } catch (e) {
         console.error("Live Staff Setup Error:", e);
         container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #ef4444; background: #fef2f2; padding: 20px; border-radius: 8px; border: 1px dashed #fca5a5;">Failed to initialize live staff scanner.</div>';
