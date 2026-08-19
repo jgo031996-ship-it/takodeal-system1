@@ -2247,9 +2247,21 @@ window.loadPayslipVault = async function() {
         // Fetch Universal Deductions & Loans
         const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("status", "==", "Unpaid")));
         let unpaidVales = 0; let activeDeductions = [];
+        let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); // 🔥 STRICT DATE CUTOFF
+        
         dedSnap.forEach(d => { 
-            if (isMatch(d.data().staffName)) {
-                let val = parseFloat(d.data().amount) || 0; unpaidVales += val; activeDeductions.push(d.data()); 
+            let data = d.data();
+            if (isMatch(data.staffName)) {
+                let dDate = safeDate(data.dateAdded || data.timestamp);
+                
+                // 🔥 STRICT MIRROR FIX: Only include items from THIS cutoff, and ONLY Vales/Meals!
+                if (dDate <= cutoffEndTimestamp) {
+                    if (data.type === "Cash Advance" || data.type === "Staff Meal") {
+                        let val = parseFloat(data.amount) || 0; 
+                        unpaidVales += val; 
+                        activeDeductions.push(data); 
+                    }
+                }
             }
         });
 
