@@ -20568,37 +20568,40 @@ window.verifyAllPendingHistory = async function() {
 
     Swal.fire({
         title: 'Verifying Payments...', 
-        html: `Please wait, processing <b>0</b> of ${window.pendingVerifications.length}...`,
+        html: `Launching bulk verification for <b style="color:#0ea5e9;">${window.pendingVerifications.length}</b> transactions...`,
         allowOutsideClick: false, 
         didOpen: () => Swal.showLoading()
     });
 
     try {
-        let count = 0;
+        let promises = [];
+        let cashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
         
-        // Loop through each ID and use the standard update function we know works
+        // Loop through each ID and load the updates into the chamber simultaneously!
         for (let id of window.pendingVerifications) {
-            await updateDoc(doc(db, "transactions", id), { paymentVerified: true });
-            count++;
-            
-            // Update the loading screen text every 5 items so the browser doesn't freeze
-            if (count % 5 === 0 || count === window.pendingVerifications.length) {
-                Swal.update({ html: `Please wait, processing <b style="color:#0ea5e9;">${count}</b> of ${window.pendingVerifications.length}...` });
-            }
+            promises.push(updateDoc(doc(db, "transactions", id), { 
+                paymentVerified: true,
+                verifiedBy: cashierName,
+                verifiedAt: serverTimestamp()
+            }));
         }
+
+        // 🔥 THE FIX: Execute all updates AT THE EXACT SAME TIME!
+        await Promise.all(promises);
 
         Swal.fire({
             title: 'All Verified!', 
             text: 'The cashiers alarms are now cleared.', 
             icon: 'success', 
             timer: 2000, 
-            showConfirmButton: false
+            showConfirmButton: false,
+            customClass: { popup: 'rounded-2xl' }
         });
         
         window.loadUnverifiedHistory();
         
     } catch(e) {
-        console.error("Batch Verification Error:", e); // Added to console so we can see exact errors!
+        console.error("Batch Verification Error:", e);
         Swal.fire('Error', 'Failed to verify payments. Check the developer console.', 'error');
     }
 };
