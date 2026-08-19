@@ -2461,6 +2461,12 @@ window.loadPayslipVault = async function() {
         allRecords.forEach(d => {
             let pd = d.frozenData || {};
             pd.processedAt = d.processedAt; 
+            
+            // 🔥 THE FIX: Grab the Net Pay and Dates from the outer folder so the modal can read them!
+            pd.finalNetPay = d.finalNetPay; 
+            pd.startDate = d.startDate;
+            pd.endDate = d.endDate;
+            
             let dateStr = d.processedAt ? safeDate(d.processedAt).toLocaleDateString('en-PH', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
             let safeData = encodeURIComponent(JSON.stringify(pd));
 
@@ -3617,17 +3623,60 @@ window.loadMySanctionsHistory = async function() {
 window.openPayslipSignatureModal = function(recordId, encodedData) {
     let d = JSON.parse(decodeURIComponent(encodedData));
     
+    // Calculate preview math
+    let basicPay = parseFloat(d.basicPay || 0).toFixed(2);
+    let otPay = parseFloat(d.nightBonus || d.overtime || 0).toFixed(2);
+    let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
+    let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
+    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay)).toFixed(2);
+
+    let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
+    let sss = parseFloat(d.sss || 0).toFixed(2);
+    let phil = parseFloat(d.philhealth || 0).toFixed(2);
+    let pagibig = parseFloat(d.pagibig || 0).toFixed(2);
+    let vale = parseFloat(d.advances || 0).toFixed(2);
+    let loans = parseFloat(d.loans || 0).toFixed(2);
+    let meals = parseFloat(d.meals || 0).toFixed(2);
+    let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
+    
+    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts)).toFixed(2);
+    let netPayFmt = (d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+
     Swal.fire({
         title: `<h3 style="margin: 0; color: #b45309; text-transform: uppercase;">Acknowledge Payslip</h3>`,
         html: `
-            <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1;">
-                By signing below, you acknowledge that you have received your exact net pay of <strong style="color: #dc2626; font-size: 16px;">₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong> for the period of <b>${d.start || d.startDate}</b> to <b>${d.end || d.endDate}</b>.
-                <br><br>You confirm that all deductions (SSS, Vales, Lates) are correct and legally applied.
+            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px; font-size: 13px; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="font-weight: 900; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 10px; text-align: center; color: #334155; letter-spacing: 1px;">PAYSLIP PREVIEW</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <div style="font-weight:bold; color:#16a34a; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; padding-bottom: 2px;">INCOME</div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Basic:</span> <span>₱${basicPay}</span></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Bonus/OT:</span> <span>₱${(parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay)).toFixed(2)}</span></div>
+                        <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; color:#15803d; border-top: 1px dashed #cbd5e1; padding-top: 4px;"><span>GROSS:</span> <span>₱${grossIncome}</span></div>
+                    </div>
+                    <div>
+                        <div style="font-weight:bold; color:#dc2626; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; padding-bottom: 2px;">DEDUCTIONS</div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Lates:</span> <span>₱${lateDeduct}</span></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Loans/Gov:</span> <span>₱${(parseFloat(sss)+parseFloat(phil)+parseFloat(pagibig)+parseFloat(loans)).toFixed(2)}</span></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Vales/Meals:</span> <span>₱${(parseFloat(vale)+parseFloat(meals)+parseFloat(customDeducts)).toFixed(2)}</span></div>
+                        <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; color:#b91c1c; border-top: 1px dashed #cbd5e1; padding-top: 4px;"><span>DEDUCT:</span> <span>₱${totalDeduct}</span></div>
+                    </div>
+                </div>
+                <div style="background: #f1f5f9; text-align: center; padding: 10px; font-weight: 900; font-size: 18px; margin-top: 15px; border-radius: 6px; color: #0f172a; border: 1px solid #e2e8f0;">
+                    NET PAY: <span style="color: #16a34a;">₱${netPayFmt}</span>
+                </div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button type="button" onclick="window.viewPastPayslip('${encodedData}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; transition: 0.2s;">🔍 View Full Detailed Payslip</button>
+                </div>
+            </div>
+
+            <div style="text-align: left; font-size: 12px; color: #475569; margin-bottom: 15px; background: #fffbeb; padding: 12px; border-radius: 8px; border: 1px dashed #fcd34d;">
+                By signing below, you acknowledge the receipt of <strong style="color: #dc2626; font-size: 14px;">₱${netPayFmt}</strong> for the period of <b>${d.start || d.startDate}</b> to <b>${d.end || d.endDate}</b>.
             </div>
             
             <div style="border: 2px dashed #d97706; border-radius: 8px; background: white; position: relative; margin-bottom: 10px; overflow: hidden;">
                 <canvas id="payslipSignatureCanvas" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none; display: block;"></canvas>
-                <button onclick="window.clearStaffAppSignature('payslipSignatureCanvas')" style="position: absolute; top: 5px; right: 5px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 10px; font-weight: bold; padding: 6px 10px; cursor: pointer; color: #dc2626;">Clear</button>
+                <button type="button" onclick="const c = document.getElementById('payslipSignatureCanvas'); c.getContext('2d').clearRect(0,0,c.width,c.height); window.hasSignedStaffNTE = false;" style="position: absolute; top: 5px; right: 5px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; font-size: 10px; font-weight: bold; padding: 6px 10px; cursor: pointer; color: #dc2626; z-index: 10;">Clear</button>
             </div>
         `,
         showCancelButton: true,
