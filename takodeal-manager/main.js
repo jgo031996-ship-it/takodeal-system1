@@ -1694,7 +1694,27 @@ window.confirmMultiRestock = async function() {
     }
 
     let supplier = document.getElementById('restockSupplierInput').value || "HQ Restock";
-    let totalCost = parseFloat(document.getElementById('restockCostInput').value) || 0;
+    let totalCostInput = document.getElementById('restockCostInput').value;
+    let totalCost = parseFloat(totalCostInput);
+
+    // 🔥 THE FIX: Auto-compute the exact cost if the manager leaves the box blank!
+    if (isNaN(totalCost) || totalCostInput.trim() === "") {
+        totalCost = 0;
+        window.restockCart.forEach(item => {
+            // Find the item in live memory to get its exact cost
+            let invData = window.globalInventoryList.find(i => i.id === item.id);
+            if (invData) {
+                let unitCost = parseFloat(invData.purchaseCost) || parseFloat(invData.purchCost) || parseFloat(invData.cost) || 0;
+                
+                // Fallback to base cost if purchase cost isn't set yet
+                if (unitCost === 0) {
+                    unitCost = (parseFloat(invData.baseCost) || 0) * parseFloat(item.conversionRate || 1);
+                }
+                
+                totalCost += (unitCost * parseFloat(item.purchQty));
+            }
+        });
+    }
     let cashier = localStorage.getItem('cashierName') || 'Manager';
 
     let btn = document.getElementById('btnConfirmRestock');
@@ -1780,68 +1800,76 @@ window.updateLifetimeRestockCost = async function() {
     } catch(e) { console.error("Error calculating lifetime cost", e); }
 };
 
-window.openGroupedRestocks = async function() {
-    Swal.fire({title: 'Loading Invoices...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+// ==========================================
+// 📦 HQ RESTOCK INVOICE ENGINE (FULL PAGE UPGRADE)
+// ==========================================
+window.updateLifetimeRestockCost = async function() {
+    try {
+        const snap = await getDocs(collection(db, "hq_restocks"));
+        let totalCost = 0;
+        snap.forEach(doc => { totalCost += (parseFloat(doc.data().totalCost) || 0); });
+        
+        let formattedCost = '₱' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2});
+        
+        // Update both possible locations
+        let costEl = document.getElementById('lifetimeRestockCost');
+        if (costEl) costEl.innerText = formattedCost;
+        
+        let pageCostEl = document.getElementById('pageLifetimeRestockCost');
+        if (pageCostEl) pageCostEl.innerText = formattedCost;
+    } catch(e) { console.error("Error calculating lifetime cost", e); }
+};
+
+window.loadGroupedRestocks = async function() {
+    const tbody = document.getElementById('invoicesTableBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Fetching HQ Restock Invoices...</td></tr>';
+    
     try {
         const q = query(collection(db, "hq_restocks"), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
         
-        let html = `
-        <div class="table-responsive" style="max-height: 50vh; overflow-y: auto;">
-            <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;">
-                <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 10;">
-                    <tr>
-                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Date & User</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Supplier / Ref</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Total Cost</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569;">Items</th>
-                        <th style="padding: 10px; border-bottom: 2px solid #cbd5e1; color: #475569; text-align: right;">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
+        let html = '';
 
         if (snap.empty) {
-            html += `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No restock invoices found.</td></tr>`;
+            html = `<tr><td colspan="5" style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">No restock invoices found in the system.</td></tr>`;
         } else {
             snap.forEach(docSnap => {
                 let d = docSnap.data();
                 let dateStr = d.timestamp?.toDate ? d.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+                
+                // Fallback computation just in case old data doesn't have a total cost
                 let cost = parseFloat(d.totalCost) || 0;
 
-                let itemsList = (d.items || []).map(i => `<span style="background:#f1f5f9; padding:2px 6px; border-radius:4px; margin:2px; display:inline-block; border:1px solid #e2e8f0;">${i.qty}x ${i.name}</span>`).join(' ');
+                // Format the chips so they don't break the layout
+                let itemsList = (d.items || []).map(i => `<span style="background:#f1f5f9; padding:6px 10px; border-radius:6px; margin:4px; display:inline-block; border:1px solid #cbd5e1; font-size:12px; color:#334155; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">${i.purchQty || i.qty}x ${i.name}</span>`).join('');
                 
                 let encodedData = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
 
                 html += `
-                    <tr style="border-bottom: 1px solid #e2e8f0;">
-                        <td style="padding: 10px;"><b>${dateStr}</b><br><span style="color:#64748b; font-size: 11px;">${d.user || 'Admin'}</span></td>
-                        <td style="padding: 10px; font-weight: bold; color: #0ea5e9;">${d.supplier || 'N/A'}</td>
-                        <td style="padding: 10px; font-weight: bold; color: #dc2626;">₱${cost.toLocaleString()}</td>
-                        <td style="padding: 10px; font-size: 11px; color: #475569;">${itemsList}</td>
-                        <td style="padding: 10px; text-align: right;">
-                            <button onclick="window.revertAndEditRestock('${encodedData}')" style="background: white; color: #f59e0b; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; white-space: nowrap; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.1);">↩️ Revert & Edit</button>
+                    <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <td style="padding: 15px; vertical-align: middle;">
+                            <strong style="color: #0f172a; font-size: 14px;">${dateStr}</strong><br>
+                            <span style="color:#64748b; font-size: 12px; font-weight: bold;">👤 ${d.user || 'Admin'}</span>
+                        </td>
+                        <td style="padding: 15px; font-weight: 900; color: #0ea5e9; font-size: 14px; vertical-align: middle;">${d.supplier || 'HQ Restock'}</td>
+                        <td style="padding: 15px; font-weight: 900; color: #dc2626; font-size: 16px; vertical-align: middle;">₱${cost.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                        <td style="padding: 15px; line-height: 1.8; vertical-align: middle;">${itemsList}</td>
+                        <td style="padding: 15px; text-align: right; vertical-align: middle;">
+                            <button onclick="window.revertAndEditRestock('${encodedData}')" style="background: white; color: #f59e0b; border: 2px solid #fcd34d; padding: 10px 15px; border-radius: 6px; font-weight: 900; cursor: pointer; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.1); transition: 0.2s;" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background='white'">↩️ Revert & Edit</button>
                         </td>
                     </tr>
                 `;
             });
         }
 
-        html += `</tbody></table></div>`;
-        window.updateLifetimeRestockCost(); // Refresh cost in background
-
-        Swal.fire({
-            title: '📦 HQ Restock Invoices',
-            html: html,
-            width: 850,
-            showConfirmButton: true,
-            confirmButtonText: 'Close Window',
-            confirmButtonColor: '#64748b',
-            customClass: { popup: 'rounded-2xl shadow-2xl' }
-        });
+        tbody.innerHTML = html;
+        window.updateLifetimeRestockCost(); 
 
     } catch(e) {
-        console.error(e); Swal.fire('Error', 'Failed to load invoices', 'error');
+        console.error(e); 
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 40px; color: #ef4444; font-weight: bold;">Failed to load invoices. Check internet connection.</td></tr>`;
     }
 };
 
@@ -4738,15 +4766,12 @@ window.toggleInvDropdown = function(e) {
 window.switchInvTab = function(tab) {
     window.activeInvTab = tab; 
     
-    // Ensure parent view is visible
     window.switchView('inventory');
     
-    // 1. Highlight the correct sidebar sub-item
     document.querySelectorAll('.nav-subitem').forEach(el => el.classList.remove('active'));
     let activeSub = document.getElementById('subnav-' + tab);
     if (activeSub) activeSub.classList.add('active');
 
-    // 2. Hide all sections
     let liveSec = document.getElementById('invTabLiveContent'); 
     let auditsSec = document.getElementById('invSectionAudits'); 
     let wasteSec = document.getElementById('invSectionWaste'); 
@@ -4755,11 +4780,11 @@ window.switchInvTab = function(tab) {
     let forecasterSec = document.getElementById('invSectionForecaster'); 
     let alertsSec = document.getElementById('invSectionAlerts'); 
     let aiBriefSec = document.getElementById('invSectionAIBrief');
-    let yieldSec = document.getElementById('invSectionYield'); // 🔥 New Yield Section
+    let yieldSec = document.getElementById('invSectionYield'); 
+    let invoicesSec = document.getElementById('invSectionInvoices'); // 🔥 NEW
 
-    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec, aiBriefSec, yieldSec].forEach(s => { if(s) s.style.display = 'none'; });
+    [liveSec, auditsSec, wasteSec, prepSec, logsSec, forecasterSec, alertsSec, aiBriefSec, yieldSec, invoicesSec].forEach(s => { if(s) s.style.display = 'none'; });
 
-    // 3. Show correct section
     if (tab === 'Overview') { if(liveSec) liveSec.style.display = 'block'; } 
     else if (tab === 'Audits') { if(auditsSec) auditsSec.style.display = 'block'; } 
     else if (tab === 'Waste') { if(wasteSec) wasteSec.style.display = 'block'; } 
@@ -4769,6 +4794,7 @@ window.switchInvTab = function(tab) {
     else if (tab === 'Alerts') { if(alertsSec) alertsSec.style.display = 'block'; }
     else if (tab === 'AIBrief') { if(aiBriefSec) aiBriefSec.style.display = 'block'; }
     else if (tab === 'Yield') { if(yieldSec) yieldSec.style.display = 'block'; }
+    else if (tab === 'Invoices') { if(invoicesSec) invoicesSec.style.display = 'block'; } // 🔥 NEW
 
     window.refreshActiveInventoryTab();
 };
@@ -4784,6 +4810,7 @@ window.refreshActiveInventoryTab = function() {
     else if (tab === 'Alerts') window.loadPurchasesAndAlerts(); 
     else if (tab === 'AIBrief') window.generateAIReport(); 
     else if (tab === 'Yield') window.loadYieldCalculator(); 
+    else if (tab === 'Invoices') window.loadGroupedRestocks(); // 🔥 NEW
 };
 
 window.openInventoryLogs = function() { window.switchInvTab('StockLogs'); };
