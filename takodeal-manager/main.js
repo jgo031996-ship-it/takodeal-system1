@@ -1189,12 +1189,17 @@ window.switchSecurityBranch = function(branch) {
     window.renderSecurityFeed();
 };
 
-onSnapshot(query(collection(db, "manager_alerts"), orderBy("timestamp", "desc")), (snapshot) => {
+// ==========================================
+// 🚨 HIGH-SPEED SECURITY FEED LISTENER (CAPPED AT 50)
+// ==========================================
+onSnapshot(query(collection(db, "manager_alerts"), orderBy("timestamp", "desc"), limit(50)), (snapshot) => {
     window.globalSecurityAlerts = [];
     snapshot.forEach(docSnap => {
         window.globalSecurityAlerts.push({id: docSnap.id, ...docSnap.data()});
     });
-    window.renderSecurityFeed();
+    if (typeof window.renderSecurityFeed === 'function') {
+        window.renderSecurityFeed();
+    }
 });
 
 window.renderSecurityFeed = function() {
@@ -7852,15 +7857,16 @@ window.smartImportCSV = function (event) {
 };
 
 // ========================================================
-// 💻 DEVICE FLEET MANAGER ENGINE 💻
+// 💻 ULTRA-FAST DEVICE FLEET MANAGER ENGINE
 // ========================================================
 window.loadDeviceFleet = async function () {
   const tbody = document.getElementById('deviceFleetBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" class="text-center">Scanning cloud for registered devices...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 25px; color: #0ea5e9; font-weight: bold;">⚡ Fast-scanning registered fleet...</td></tr>';
 
   try {
-    const snap = await getDocs(collection(db, "pos_devices"));
+    const q = query(collection(db, "pos_devices"), orderBy("registeredAt", "desc"), limit(50));
+    const snap = await getDocs(q);
     let html = '';
 
     if (snap.empty) {
@@ -7868,13 +7874,12 @@ window.loadDeviceFleet = async function () {
       return;
     }
 
-    // Sort in memory so we don't need to create a complex Firebase Index!
     let devices = [];
     snap.forEach(doc => devices.push({ id: doc.id, ...doc.data() }));
-    devices.sort((a, b) => (b.registeredAt?.toDate() || 0) - (a.registeredAt?.toDate() || 0));
 
     devices.forEach(d => {
-      if (!window.isBranchAllowed(d.branch)) return; // 🔥 SECURITY LOCK
+      if (!window.isBranchAllowed(d.branch)) return;
+      
       let statusBadge = '';
       if (d.status === 'Blocked') {
           statusBadge = `<span class="badge" style="background: var(--danger); color: white; padding: 4px 8px; border-radius: 6px;">🚫 Blocked</span>`;
@@ -7884,28 +7889,27 @@ window.loadDeviceFleet = async function () {
           statusBadge = `<span class="badge badge-active" style="padding: 4px 8px; border-radius: 6px;">✅ Active</span>`;
       }
 
-      let dateStr = d.registeredAt ? d.registeredAt.toDate().toLocaleDateString() : 'Unknown';
+      let dateStr = d.registeredAt ? (d.registeredAt.toDate ? d.registeredAt.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(d.registeredAt).toLocaleDateString()) : 'Unknown';
 
-      // Build the dynamic action buttons!
-      let actionsHtml = '';
+      let actionsHtml = '<div style="display: flex; gap: 5px; flex-wrap: wrap;">';
       if (d.status === 'Pending') {
-          actionsHtml += `<button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 5px 10px; margin-right: 5px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Approve</button>`;
-          actionsHtml += `<button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 5px 10px; margin-right: 5px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Reject</button>`;
-      } else if (d.status === 'Active') {
-          actionsHtml += `<button class="btn-refresh" style="background: #fef2f2; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; margin-right: 5px; border-radius: 4px; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Block</button>`;
+          actionsHtml += `<button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Approve</button>`;
+          actionsHtml += `<button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Reject</button>`;
+      } else if (d.status === 'Active' || d.status === 'Approved') {
+          actionsHtml += `<button class="btn-refresh" style="background: #fef2f2; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Block</button>`;
       } else {
-          actionsHtml += `<button class="btn-refresh" style="background: #f0fdf4; border: 1px solid var(--success); color: var(--success); padding: 5px 10px; margin-right: 5px; border-radius: 4px; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Unblock</button>`;
+          actionsHtml += `<button class="btn-refresh" style="background: #f0fdf4; border: 1px solid var(--success); color: var(--success); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Unblock</button>`;
       }
-      actionsHtml += `<button class="btn-refresh" style="background: white; border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 10px; border-radius: 4px; cursor: pointer;" onclick="deleteDevice('${d.id}')">🗑️ Delete</button>`;
+      actionsHtml += `<button class="btn-refresh" style="background: white; border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 10px; border-radius: 4px; cursor: pointer;" onclick="deleteDevice('${d.id}')">🗑️ Delete</button></div>`;
 
       html += `
-        <tr style="${d.status === 'Pending' ? 'background: #fffbeb;' : ''}">
-          <td style="text-align: center;"><input type="checkbox" class="device-bulk-cb" value="${d.id}" style="cursor: pointer; width: 16px; height: 16px; accent-color: #ef4444;"></td>
-          <td><strong>${d.deviceName || 'Unnamed Tablet'}</strong><br><span style="font-size: 11px; color: gray;">ID: ${d.id}</span></td>
-          <td>📍 ${d.branch}</td>
-          <td>${dateStr}</td>
-          <td>${statusBadge}</td>
-          <td>${actionsHtml}</td>
+        <tr style="${d.status === 'Pending' ? 'background: #fffbeb;' : ''}; border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+          <td style="text-align: center; vertical-align: middle;"><input type="checkbox" class="device-bulk-cb" value="${d.id}" style="cursor: pointer; width: 16px; height: 16px; accent-color: #ef4444;"></td>
+          <td style="vertical-align: middle;"><strong>${d.deviceName || 'Unnamed Tablet'}</strong><br><span style="font-size: 11px; color: gray; font-family: monospace;">ID: ${d.id}</span></td>
+          <td style="vertical-align: middle;">📍 ${d.branch}</td>
+          <td style="vertical-align: middle; color: #64748b; font-size: 13px;">${dateStr}</td>
+          <td style="vertical-align: middle;">${statusBadge}</td>
+          <td style="vertical-align: middle;">${actionsHtml}</td>
         </tr>
       `;
     });
@@ -7913,7 +7917,7 @@ window.loadDeviceFleet = async function () {
     tbody.innerHTML = html;
   } catch (error) {
     console.error("Device Fleet Error:", error);
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error connecting to Firebase.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 25px;">Error loading fleet. Check console.</td></tr>';
   }
 };
 
